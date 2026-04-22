@@ -1,0 +1,77 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# Editors
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code project settings are often useful to commit, so keep this disabled by default.
+# .vscode/
+
+# Dart and Flutter
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+
+# Flutter generated/debug artifacts
+app.*.symbols
+app.*.map.json
+
+# Android
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/captures/
+android/local.properties
+android/key.properties
+android/hs_err_pid*.log
+*.jks
+*.keystore
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/App.framework
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/ServiceDefinitions.json
+ios/Runner.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcuserdata/
+ios/**/DerivedData/
+
+# Local app data, imports, and backups
+shiduchim_backup_import.json
+*_backup_import.json
+backup_*.json
+backups/
+exports/
