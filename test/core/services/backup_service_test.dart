@@ -3,13 +3,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
-import 'package:shadchan/core/constants/enums.dart';
-import 'package:shadchan/core/services/backup_service.dart';
-import 'package:shadchan/data/models/match_idea.dart';
-import 'package:shadchan/data/models/match_note.dart';
-import 'package:shadchan/data/models/person.dart';
-import 'package:shadchan/data/repositories/match_repository.dart';
-import 'package:shadchan/data/repositories/person_repository.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/services/backup_service.dart';
+import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/match_note.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/person_repository.dart';
 
 void main() {
   late Directory hiveDirectory;

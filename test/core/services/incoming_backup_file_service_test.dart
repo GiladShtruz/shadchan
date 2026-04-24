@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shadchan/core/services/incoming_backup_file_service.dart';
+import 'package:shadchan/services/incoming_backup_file_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

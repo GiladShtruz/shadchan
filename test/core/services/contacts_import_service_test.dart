@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
-import 'package:shadchan/core/constants/enums.dart';
-import 'package:shadchan/core/services/contacts_import_service.dart';
-import 'package:shadchan/core/utils/phone_utils.dart';
-import 'package:shadchan/data/models/person.dart';
-import 'package:shadchan/data/repositories/person_repository.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/services/contacts_import_service.dart';
+import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/person_repository.dart';
 
 void main() {
   late Directory hiveDirectory;

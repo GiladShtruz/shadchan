@@ -30,6 +30,7 @@ dependencies:
   flutter_native_splash: ^2.4.1
   flutter_contacts: ^2.0.2
   kosher_dart: ^2.0.16
+  flutter_card_swiper: ^7.0.2
 
 dev_dependencies:
   flutter_test:

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter pub *)",
+      "Bash(dart run *)",
+      "Bash(git mv *)",
+      "Bash(cat)",
+      "Bash(bash /tmp/fix_imports.sh)"
+    ]
+  }
+}
