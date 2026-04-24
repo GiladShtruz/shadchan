@@ -32,9 +32,14 @@ class BackupImportFeedback {
   }) {
     final String message = error is FormatException
         ? error.message
-        : fallbackMessage;
+        : '$fallbackMessage: $error';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 10),
+        ),
+      );
   }
 }

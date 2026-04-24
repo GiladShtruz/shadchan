@@ -1,12 +1,17 @@
 package com.gilad.shadchan
 
+import android.Manifest
 import android.content.ContentResolver
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.provider.CallLog
 import android.os.Bundle
 import android.provider.OpenableColumns
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -18,10 +23,11 @@ import java.util.UUID
 class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     private val pendingFilePaths = mutableListOf<String>()
     private var eventSink: EventChannel.EventSink? = null
+    private var pendingCallLogResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        consumeIncomingIntent(intent)
         super.onCreate(savedInstanceState)
-        enqueueIncomingFiles(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -41,6 +47,16 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             }
         }
 
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            CALL_LOG_CHANNEL_NAME,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getRecentCallNumbers" -> getRecentCallNumbers(result)
+                else -> result.notImplemented()
+            }
+        }
+
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             EVENT_CHANNEL_NAME,
@@ -48,9 +64,29 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     }
 
     override fun onNewIntent(intent: Intent) {
+        consumeIncomingIntent(intent)
         super.onNewIntent(intent)
         setIntent(intent)
+    }
+
+    private fun consumeIncomingIntent(intent: Intent?) {
+        if (intent == null) {
+            return
+        }
+
         enqueueIncomingFiles(intent)
+
+        val hadBackupPayload = intent.action == Intent.ACTION_VIEW ||
+            intent.action == Intent.ACTION_SEND ||
+            intent.action == Intent.ACTION_SEND_MULTIPLE
+        if (!hadBackupPayload) {
+            return
+        }
+
+        intent.action = Intent.ACTION_MAIN
+        intent.data = null
+        intent.replaceExtras(Bundle())
+        intent.clipData = null
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -60,6 +96,27 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
 
     override fun onCancel(arguments: Any?) {
         eventSink = null
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode != CALL_LOG_PERMISSION_REQUEST_CODE) {
+            return
+        }
+
+        val result = pendingCallLogResult ?: return
+        pendingCallLogResult = null
+
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            result.success(queryRecentCallNumbers())
+        } else {
+            result.error("PERMISSION_NOT_GRANTED", "READ_CALL_LOG permission was not granted", null)
+        }
     }
 
     private fun enqueueIncomingFiles(intent: Intent?) {
@@ -185,8 +242,61 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
     }
 
+    private fun getRecentCallNumbers(result: MethodChannel.Result) {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_CALL_LOG,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(queryRecentCallNumbers())
+            return
+        }
+
+        pendingCallLogResult?.error("SUPERSEDED", "A newer call log request replaced this one", null)
+        pendingCallLogResult = result
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.READ_CALL_LOG),
+            CALL_LOG_PERMISSION_REQUEST_CODE,
+        )
+    }
+
+    private fun queryRecentCallNumbers(): List<String> {
+        return try {
+            val numbers = mutableListOf<String>()
+            val projection = arrayOf(CallLog.Calls.NUMBER)
+            val sortOrder = "${CallLog.Calls.DATE} DESC"
+
+            contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                projection,
+                null,
+                null,
+                sortOrder,
+            )?.use { cursor: Cursor ->
+                val numberIndex = cursor.getColumnIndex(CallLog.Calls.NUMBER)
+                if (numberIndex < 0) {
+                    return@use
+                }
+
+                while (cursor.moveToNext() && numbers.size < MAX_CALL_LOG_NUMBERS) {
+                    cursor.getString(numberIndex)
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let(numbers::add)
+                }
+            }
+
+            numbers
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     companion object {
         private const val METHOD_CHANNEL_NAME = "shadchan/incoming_backup_files/methods"
         private const val EVENT_CHANNEL_NAME = "shadchan/incoming_backup_files/events"
+        private const val CALL_LOG_CHANNEL_NAME = "shadchan/call_log"
+        private const val CALL_LOG_PERMISSION_REQUEST_CODE = 4601
+        private const val MAX_CALL_LOG_NUMBERS = 5000
     }
 }

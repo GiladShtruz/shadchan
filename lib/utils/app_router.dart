@@ -15,6 +15,13 @@ import 'package:shadchan/screens/settings_screen.dart';
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/people',
+    redirect: (BuildContext context, GoRouterState state) {
+      final String location = state.uri.toString();
+      if (location.startsWith('/') && !location.startsWith('//')) {
+        return null;
+      }
+      return '/people';
+    },
     routes: <RouteBase>[
       StatefulShellRoute.indexedStack(
         builder:

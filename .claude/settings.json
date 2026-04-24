@@ -5,7 +5,9 @@
       "Bash(dart run *)",
       "Bash(git mv *)",
       "Bash(cat)",
-      "Bash(bash /tmp/fix_imports.sh)"
+      "Bash(bash /tmp/fix_imports.sh)",
+      "Bash(flutter test *)",
+      "Bash(flutter build *)"
     ]
   }
 }

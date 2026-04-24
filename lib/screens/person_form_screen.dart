@@ -35,6 +35,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   int? _hebrewBirthYear;
   int? _hebrewBirthMonth;
   int? _hebrewBirthDay;
+  _BirthDateCalendar _birthDateCalendar = _BirthDateCalendar.gregorian;
   ReligiousLevel? _selectedReligiousLevel;
   ProfileStatus _selectedProfileStatus = ProfileStatus.available;
   Person? _person;
@@ -224,18 +225,31 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text('תאריך לידה', style: theme.textTheme.labelLarge),
+                          Text(
+                            _birthDateCalendar == _BirthDateCalendar.hebrew
+                                ? 'תאריך לידה (עברי)'
+                                : 'תאריך לידה (לועזי)',
+                            style: theme.textTheme.labelLarge,
+                          ),
                           const SizedBox(height: 4),
                           Text(
-                            _birthDate != null
-                                ? AppDateUtils.formatDate(_birthDate!)
-                                : 'לא הוזן',
+                            _birthDatePrimaryText(),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: _birthDate != null
                                   ? theme.colorScheme.onSurface
                                   : theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
+                          if (_birthDateSecondaryText() case final String txt)
+                            ...<Widget>[
+                              const SizedBox(height: 2),
+                              Text(
+                                txt,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                         ],
                       ),
                     ),
@@ -246,64 +260,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                         onPressed: () {
                           setState(() {
                             _birthDate = null;
-                          });
-                        },
-                      )
-                    else
-                      const Icon(Icons.calendar_today_outlined),
-                  ],
-                ),
-              ),
-            ),
-            if (_birthDate != null) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                'גיל: ${AppDateUtils.calculateAge(_birthDate!)}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            Text('תאריך לידה עברי', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: _pickHebrewBirthDate,
-              borderRadius: BorderRadius.circular(12),
-              child: Ink(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color:
-                      theme.inputDecorationTheme.fillColor ??
-                      theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: theme.colorScheme.outline),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        _hebrewBirthYear != null &&
-                                _hebrewBirthMonth != null &&
-                                _hebrewBirthDay != null
-                            ? HebrewDateUtils.format(
-                                year: _hebrewBirthYear!,
-                                month: _hebrewBirthMonth!,
-                                day: _hebrewBirthDay!,
-                              )
-                            : 'לא הוזן',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    if (_hebrewBirthYear != null)
-                      IconButton(
-                        icon: const Icon(Icons.clear),
-                        tooltip: 'ניקוי תאריך עברי',
-                        onPressed: () {
-                          setState(() {
                             _hebrewBirthYear = null;
                             _hebrewBirthMonth = null;
                             _hebrewBirthDay = null;
@@ -316,6 +272,42 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: <Widget>[
+                ChoiceChip(
+                  label: const Text('לוח לועזי'),
+                  selected:
+                      _birthDateCalendar == _BirthDateCalendar.gregorian,
+                  onSelected: (bool v) {
+                    if (!v) return;
+                    setState(() {
+                      _birthDateCalendar = _BirthDateCalendar.gregorian;
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('לוח עברי'),
+                  selected: _birthDateCalendar == _BirthDateCalendar.hebrew,
+                  onSelected: (bool v) {
+                    if (!v) return;
+                    setState(() {
+                      _birthDateCalendar = _BirthDateCalendar.hebrew;
+                    });
+                  },
+                ),
+              ],
+            ),
+            if (_birthDate != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                'גיל: ${AppDateUtils.calculateAge(_birthDate!)}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             if (_birthDate == null) ...<Widget>[
               const SizedBox(height: 16),
               TextFormField(
@@ -426,47 +418,15 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     );
   }
 
-  Future<void> _pickHebrewBirthDate() async {
-    final DateTime now = DateTime.now();
-    final DateTime initialGregorian =
-        _hebrewBirthYear != null &&
-            _hebrewBirthMonth != null &&
-            _hebrewBirthDay != null
-        ? (HebrewDateUtils.toGregorian(
-                year: _hebrewBirthYear!,
-                month: _hebrewBirthMonth!,
-                day: _hebrewBirthDay!,
-              ) ??
-              DateTime(now.year - 22, now.month, now.day))
-        : DateTime(now.year - 22, now.month, now.day);
-
-    final DateTime? selectedDate = await showDatePicker(
-      context: context,
-      initialDate: initialGregorian.isAfter(now) ? now : initialGregorian,
-      firstDate: DateTime(now.year - 100, now.month, now.day),
-      lastDate: now,
-      locale: const Locale('he'),
-      helpText: 'בחר תאריך לועזי — יומר לעברי',
-    );
-
-    if (selectedDate == null) {
+  Future<void> _pickBirthDate() async {
+    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
+      await _pickHebrewBirthDate();
       return;
     }
-
-    final ({int year, int month, int day})? hebrew =
-        HebrewDateUtils.fromGregorian(selectedDate);
-    if (hebrew == null) {
-      return;
-    }
-
-    setState(() {
-      _hebrewBirthYear = hebrew.year;
-      _hebrewBirthMonth = hebrew.month;
-      _hebrewBirthDay = hebrew.day;
-    });
+    await _pickGregorianBirthDate();
   }
 
-  Future<void> _pickBirthDate() async {
+  Future<void> _pickGregorianBirthDate() async {
     final DateTime now = DateTime.now();
     final DateTime initialDate =
         _birthDate ?? DateTime(now.year - 22, now.month, now.day);
@@ -483,9 +443,199 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       return;
     }
 
+    final ({int year, int month, int day})? hebrew =
+        HebrewDateUtils.fromGregorian(selectedDate);
+
     setState(() {
       _birthDate = selectedDate;
+      _hebrewBirthYear = hebrew?.year;
+      _hebrewBirthMonth = hebrew?.month;
+      _hebrewBirthDay = hebrew?.day;
     });
+  }
+
+  Future<void> _pickHebrewBirthDate() async {
+    final DateTime now = DateTime.now();
+    final ({int year, int month, int day})? picked =
+        await _showHebrewDatePicker();
+    if (picked == null) {
+      return;
+    }
+
+    final DateTime? gregorian = HebrewDateUtils.toGregorian(
+      year: picked.year,
+      month: picked.month,
+      day: picked.day,
+    );
+    if (gregorian == null || gregorian.isAfter(now)) {
+      return;
+    }
+
+    setState(() {
+      _birthDate = gregorian;
+      _hebrewBirthYear = picked.year;
+      _hebrewBirthMonth = picked.month;
+      _hebrewBirthDay = picked.day;
+    });
+  }
+
+  Future<({int year, int month, int day})?> _showHebrewDatePicker() async {
+    final DateTime now = DateTime.now();
+    final ({int year, int month, int day}) todayHebrew =
+        HebrewDateUtils.fromGregorian(now) ??
+        (year: 5785, month: 1, day: 1);
+    final int initYear = _hebrewBirthYear ?? (todayHebrew.year - 22);
+    final int initMonth = _hebrewBirthMonth ?? todayHebrew.month;
+    final int initDay = _hebrewBirthDay ?? todayHebrew.day;
+
+    int selYear = initYear;
+    int selMonth = initMonth;
+    int selDay = initDay;
+
+    return showDialog<({int year, int month, int day})>(
+      context: context,
+      builder: (BuildContext ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext ctx, StateSetter setDialogState) {
+            return AlertDialog(
+              title: const Text('בחר תאריך לידה עברי'),
+              content: SizedBox(
+                width: 320,
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: selDay,
+                        decoration: const InputDecoration(labelText: 'יום'),
+                        items: List<DropdownMenuItem<int>>.generate(
+                          30,
+                          (int i) => DropdownMenuItem<int>(
+                            value: i + 1,
+                            child: Text('${i + 1}'),
+                          ),
+                        ),
+                        onChanged: (int? v) {
+                          if (v != null) {
+                            setDialogState(() => selDay = v);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: selMonth,
+                        decoration: const InputDecoration(labelText: 'חודש'),
+                        items: List<DropdownMenuItem<int>>.generate(
+                          13,
+                          (int i) => DropdownMenuItem<int>(
+                            value: i + 1,
+                            child: Text(_hebrewMonthName(i + 1)),
+                          ),
+                        ),
+                        onChanged: (int? v) {
+                          if (v != null) {
+                            setDialogState(() => selMonth = v);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: selYear,
+                        decoration: const InputDecoration(labelText: 'שנה'),
+                        items: List<DropdownMenuItem<int>>.generate(
+                          101,
+                          (int i) {
+                            final int y = todayHebrew.year - i;
+                            return DropdownMenuItem<int>(
+                              value: y,
+                              child: Text('$y'),
+                            );
+                          },
+                        ),
+                        onChanged: (int? v) {
+                          if (v != null) {
+                            setDialogState(() => selYear = v);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('ביטול'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(
+                    (year: selYear, month: selMonth, day: selDay),
+                  ),
+                  child: const Text('אישור'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  static String _hebrewMonthName(int month) {
+    const List<String> names = <String>[
+      'ניסן',
+      'אייר',
+      'סיוון',
+      'תמוז',
+      'אב',
+      'אלול',
+      'תשרי',
+      'חשוון',
+      'כסלו',
+      'טבת',
+      'שבט',
+      'אדר',
+      'אדר ב׳',
+    ];
+    if (month < 1 || month > names.length) return '$month';
+    return names[month - 1];
+  }
+
+  String _birthDatePrimaryText() {
+    if (_birthDate == null) return 'לא הוזן';
+    if (_birthDateCalendar == _BirthDateCalendar.hebrew &&
+        _hebrewBirthYear != null &&
+        _hebrewBirthMonth != null &&
+        _hebrewBirthDay != null) {
+      final String f = HebrewDateUtils.format(
+        year: _hebrewBirthYear!,
+        month: _hebrewBirthMonth!,
+        day: _hebrewBirthDay!,
+      );
+      if (f.isNotEmpty) return f;
+    }
+    return AppDateUtils.formatDate(_birthDate!);
+  }
+
+  String? _birthDateSecondaryText() {
+    if (_birthDate == null) return null;
+    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
+      return AppDateUtils.formatDate(_birthDate!);
+    }
+    if (_hebrewBirthYear != null &&
+        _hebrewBirthMonth != null &&
+        _hebrewBirthDay != null) {
+      final String f = HebrewDateUtils.format(
+        year: _hebrewBirthYear!,
+        month: _hebrewBirthMonth!,
+        day: _hebrewBirthDay!,
+      );
+      if (f.isNotEmpty) return f;
+    }
+    return null;
   }
 
   Future<void> _handleBackPressed() async {
@@ -608,6 +758,27 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _hebrewBirthYear = person.hebrewBirthYear;
     _hebrewBirthMonth = person.hebrewBirthMonth;
     _hebrewBirthDay = person.hebrewBirthDay;
+
+    if (_birthDate == null &&
+        _hebrewBirthYear != null &&
+        _hebrewBirthMonth != null &&
+        _hebrewBirthDay != null) {
+      _birthDate = HebrewDateUtils.toGregorian(
+        year: _hebrewBirthYear!,
+        month: _hebrewBirthMonth!,
+        day: _hebrewBirthDay!,
+      );
+      _birthDateCalendar = _BirthDateCalendar.hebrew;
+    } else if (_birthDate != null &&
+        (_hebrewBirthYear == null ||
+            _hebrewBirthMonth == null ||
+            _hebrewBirthDay == null)) {
+      final ({int year, int month, int day})? h =
+          HebrewDateUtils.fromGregorian(_birthDate!);
+      _hebrewBirthYear = h?.year;
+      _hebrewBirthMonth = h?.month;
+      _hebrewBirthDay = h?.day;
+    }
   }
 
   _PersonFormSnapshot _currentSnapshot() {
@@ -729,3 +900,5 @@ class _PersonFormSnapshot {
     );
   }
 }
+
+enum _BirthDateCalendar { gregorian, hebrew }

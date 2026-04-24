@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/widgets/empty_state.dart';
@@ -19,8 +20,9 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
 
   bool _isLoading = true;
   ContactsPermissionState? _permissionState;
-  List<ContactImportCandidate> _candidates =
-      const <ContactImportCandidate>[];
+  double? _loadingProgress;
+  String _loadingMessage = 'טוענים אנשי קשר...';
+  List<ContactImportCandidate> _candidates = const <ContactImportCandidate>[];
   int _addedCount = 0;
   int _skippedCount = 0;
   int _remaining = 0;
@@ -41,6 +43,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
   Future<void> _loadContacts() async {
     setState(() {
       _isLoading = true;
+      _loadingProgress = null;
+      _loadingMessage = 'מבקשים גישה לאנשי קשר...';
     });
 
     final ContactsPermissionState permissionState =
@@ -56,19 +60,77 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     }
 
     final PersonRepository personRepository = context.read<PersonRepository>();
-    final List<ContactImportCandidate> candidates =
-        await ContactsImportService.loadCandidates(personRepository);
+    final List<ContactImportCandidate> cachedCandidates =
+        await ContactsImportService.loadCachedCandidates(personRepository);
+    if (!mounted) return;
+
+    if (cachedCandidates.isNotEmpty) {
+      final List<ContactImportCandidate> sortedCachedCandidates =
+          await _prepareCandidates(cachedCandidates);
+      if (!mounted) return;
+
+      setState(() {
+        _permissionState = permissionState;
+        _candidates = sortedCachedCandidates;
+        _remaining = _candidates.length;
+        _isLoading = false;
+        _isFinished = _candidates.isEmpty;
+      });
+
+      unawaited(_refreshCandidatesCache(personRepository));
+      return;
+    }
+
+    setState(() {
+      _loadingMessage = 'טוענים אנשי קשר מהמכשיר...';
+    });
+
+    final List<ContactImportCandidate>
+    candidates = await ContactsImportService.loadCandidates(
+      personRepository,
+      onProgress: (ContactImportLoadProgress progress) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _loadingProgress = progress.value;
+          _loadingMessage =
+              'מסננים אנשי קשר (${progress.processedCount}/${progress.totalCount})...';
+        });
+      },
+    );
+    final List<ContactImportCandidate> sortedCandidates =
+        await _prepareCandidates(candidates);
     if (!mounted) return;
 
     setState(() {
       _permissionState = permissionState;
-      _candidates = candidates
-          .where((ContactImportCandidate c) => !c.alreadyExists)
-          .toList();
+      _candidates = sortedCandidates;
       _remaining = _candidates.length;
       _isLoading = false;
+      _loadingProgress = null;
+      _loadingMessage = 'טוענים אנשי קשר...';
       _isFinished = _candidates.isEmpty;
     });
+  }
+
+  Future<List<ContactImportCandidate>> _prepareCandidates(
+    List<ContactImportCandidate> candidates,
+  ) {
+    return CallLogSortService.sortByRecentCalls(
+      candidates
+          .where(
+            (ContactImportCandidate candidate) => !candidate.isFilteredByName,
+          )
+          .toList(),
+    );
+  }
+
+  Future<void> _refreshCandidatesCache(
+    PersonRepository personRepository,
+  ) async {
+    await ContactsImportService.loadCandidates(personRepository);
   }
 
   Future<void> _openSettings() async {
@@ -84,7 +146,11 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     });
   }
 
-  bool _onSwipe(int previousIndex, int? currentIndex, CardSwiperDirection direction) {
+  bool _onSwipe(
+    int previousIndex,
+    int? currentIndex,
+    CardSwiperDirection direction,
+  ) {
     final ContactImportCandidate candidate = _candidates[previousIndex];
     if (direction == CardSwiperDirection.right) {
       _handleAccept(candidate);
@@ -128,15 +194,9 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
 
   Widget _buildBody(BuildContext context) {
     if (_isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('טוענים אנשי קשר...'),
-          ],
-        ),
+      return _LoadingContactsView(
+        message: _loadingMessage,
+        progress: _loadingProgress,
       );
     }
 
@@ -158,7 +218,9 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
                     ? 'כדי לייבא אנשי קשר צריך לאשר גישה בהגדרות המכשיר'
                     : 'כדי לייבא אנשי קשר צריך לאשר גישה לספר הטלפונים',
                 buttonText: isPermanentlyDenied ? 'פתח הגדרות' : 'נסה שוב',
-                onButtonPressed: isPermanentlyDenied ? _openSettings : _loadContacts,
+                onButtonPressed: isPermanentlyDenied
+                    ? _openSettings
+                    : _loadContacts,
               ),
               if (isPermanentlyDenied)
                 TextButton(
@@ -197,20 +259,23 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
             child: CardSwiper(
               controller: _controller,
               cardsCount: _candidates.length,
-              numberOfCardsDisplayed: _candidates.length >= 3 ? 3 : _candidates.length,
+              numberOfCardsDisplayed: _candidates.length >= 3
+                  ? 3
+                  : _candidates.length,
               allowedSwipeDirection: const AllowedSwipeDirection.symmetric(
                 horizontal: true,
               ),
               onSwipe: _onSwipe,
               onEnd: _onEnd,
-              cardBuilder: (
-                BuildContext context,
-                int index,
-                int percentThresholdX,
-                int percentThresholdY,
-              ) {
-                return _NameCard(candidate: _candidates[index]);
-              },
+              cardBuilder:
+                  (
+                    BuildContext context,
+                    int index,
+                    int percentThresholdX,
+                    int percentThresholdY,
+                  ) {
+                    return _NameCard(candidate: _candidates[index]);
+                  },
             ),
           ),
         ),
@@ -229,10 +294,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: <Widget>[
-        Text(
-          '${done + 1} / $total',
-          style: theme.textTheme.titleMedium,
-        ),
+        Text('${done + 1} / $total', style: theme.textTheme.titleMedium),
         Text(
           'נוספו $_addedCount · דולגו $_skippedCount',
           style: theme.textTheme.bodyMedium?.copyWith(
@@ -272,7 +334,11 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.check_circle, size: 80, color: theme.colorScheme.primary),
+            Icon(
+              Icons.check_circle,
+              size: 80,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(height: 16),
             Text('סיימנו!', style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
@@ -285,6 +351,38 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
             FilledButton(
               onPressed: () => Navigator.of(context).maybePop(),
               child: const Text('חזרה'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingContactsView extends StatelessWidget {
+  const _LoadingContactsView({required this.message, required this.progress});
+
+  final String message;
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: double.infinity,
+              child: LinearProgressIndicator(value: progress),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: theme.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
             ),
           ],
         ),

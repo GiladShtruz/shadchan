@@ -1,11 +1,31 @@
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/names.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:uuid/uuid.dart';
 
 enum ContactsPermissionState { granted, denied, permanentlyDenied }
+
+class ContactImportLoadProgress {
+  const ContactImportLoadProgress({
+    required this.processedCount,
+    required this.totalCount,
+  });
+
+  final int processedCount;
+  final int totalCount;
+
+  double? get value {
+    if (totalCount == 0) {
+      return null;
+    }
+
+    return processedCount / totalCount;
+  }
+}
 
 class ContactImportCandidate {
   const ContactImportCandidate({
@@ -15,6 +35,7 @@ class ContactImportCandidate {
     required this.normalizedPhone,
     required this.alreadyExists,
     required this.hasAdditionalPhones,
+    required this.isFilteredByName,
   });
 
   final String deviceContactId;
@@ -23,6 +44,7 @@ class ContactImportCandidate {
   final String normalizedPhone;
   final bool alreadyExists;
   final bool hasAdditionalPhones;
+  final bool isFilteredByName;
 
   bool matchesQuery(String query) {
     final String normalizedQuery = _normalizeSearchText(query);
@@ -55,7 +77,10 @@ class ContactImportCandidate {
 }
 
 class ContactImportSelection {
-  const ContactImportSelection({required this.candidate, required this.gender});
+  const ContactImportSelection({
+    required this.candidate,
+    this.gender = Gender.unknown,
+  });
 
   final ContactImportCandidate candidate;
   final Gender gender;
@@ -73,6 +98,22 @@ class ContactImportResult {
 
 abstract final class ContactsImportService {
   static const Uuid _uuid = Uuid();
+  static const String _cacheBoxName = 'contact_import_cache';
+  static const String _cacheCandidatesKey = 'candidates_v2';
+  static const int _processingBatchSize = 100;
+  static const List<String> _blockedNameKeywords = <String>[
+    ...familyKeywords,
+    ...religiousTitlesKeywords,
+    ...professionalKeywords,
+    ...businessKeywords,
+    ...suspiciousKeywords,
+  ];
+  static final List<String> _normalizedBlockedNameKeywords =
+      _blockedNameKeywords
+          .map(_normalizeNameFilterText)
+          .where((String keyword) => keyword.trim().isNotEmpty)
+          .toSet()
+          .toList(growable: false);
 
   static Future<ContactsPermissionState> requestPermission() async {
     final PermissionStatus status = await FlutterContacts.permissions.request(
@@ -92,9 +133,32 @@ abstract final class ContactsImportService {
     return FlutterContacts.permissions.openSettings();
   }
 
-  static Future<List<ContactImportCandidate>> loadCandidates(
+  static Future<List<ContactImportCandidate>> loadCachedCandidates(
     PersonRepository personRepository,
   ) async {
+    final Box<dynamic> cacheBox = await _openCacheBox();
+    final Object? rawCandidates = cacheBox.get(_cacheCandidatesKey);
+    if (rawCandidates is! List) {
+      return const <ContactImportCandidate>[];
+    }
+
+    final Set<String> existingPhones = personRepository.getNormalizedPhones();
+    final List<ContactImportCandidate> candidates = rawCandidates
+        .map(
+          (Object? rawCandidate) =>
+              _candidateFromCache(rawCandidate, existingPhones),
+        )
+        .whereType<ContactImportCandidate>()
+        .toList();
+
+    _sortCandidatesByName(candidates);
+    return candidates;
+  }
+
+  static Future<List<ContactImportCandidate>> loadCandidates(
+    PersonRepository personRepository, {
+    void Function(ContactImportLoadProgress progress)? onProgress,
+  }) async {
     final Set<String> existingPhones = personRepository.getNormalizedPhones();
     final List<Contact> contacts = await FlutterContacts.getAll(
       properties: <ContactProperty>{
@@ -103,21 +167,33 @@ abstract final class ContactsImportService {
       },
     );
 
-    final List<ContactImportCandidate> candidates = contacts
-        .map(
-          (Contact contact) => buildCandidate(
-            deviceContactId: contact.id ?? contact.hashCode.toString(),
-            displayName: _resolveDisplayName(contact),
-            phones: contact.phones.map((Phone phone) => phone.number).toList(),
-            existingPhones: existingPhones,
-          ),
-        )
-        .whereType<ContactImportCandidate>()
-        .toList();
+    final List<ContactImportCandidate> candidates = <ContactImportCandidate>[];
+    for (int index = 0; index < contacts.length; index++) {
+      final Contact contact = contacts[index];
+      final ContactImportCandidate? candidate = buildCandidate(
+        deviceContactId: contact.id ?? contact.hashCode.toString(),
+        displayName: _resolveDisplayName(contact),
+        phones: contact.phones.map((Phone phone) => phone.number).toList(),
+        existingPhones: existingPhones,
+      );
 
-    candidates.sort((ContactImportCandidate a, ContactImportCandidate b) {
-      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
-    });
+      if (candidate != null && !candidate.alreadyExists) {
+        candidates.add(candidate);
+      }
+
+      if (index % _processingBatchSize == 0 || index == contacts.length - 1) {
+        onProgress?.call(
+          ContactImportLoadProgress(
+            processedCount: index + 1,
+            totalCount: contacts.length,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    _sortCandidatesByName(candidates);
+    await _saveCandidatesToCache(candidates);
 
     return candidates;
   }
@@ -144,6 +220,10 @@ abstract final class ContactsImportService {
     String? selectedPhone;
     String? normalizedPhone;
     for (final String phone in cleanedPhones) {
+      if (!isSuggestedMobilePhone(phone)) {
+        continue;
+      }
+
       final String? normalized = PhoneUtils.normalizeForComparison(phone);
       if (normalized == null) {
         continue;
@@ -165,7 +245,35 @@ abstract final class ContactsImportService {
       normalizedPhone: normalizedPhone,
       alreadyExists: existingPhones.contains(normalizedPhone),
       hasAdditionalPhones: cleanedPhones.length > 1,
+      isFilteredByName: isFilteredByName(trimmedName),
     );
+  }
+
+  static bool isSuggestedMobilePhone(String phone) {
+    final String compactPhone = phone
+        .trim()
+        .replaceAll(RegExp(r'[\s\-().]'), '')
+        .replaceAll('־', '');
+
+    return compactPhone.startsWith('05') || compactPhone.startsWith('+9725');
+  }
+
+  static bool isFilteredByName(String displayName) {
+    final String normalizedName =
+        ' ${_normalizeNameFilterText(displayName).trim()} ';
+    if (normalizedName.trim().isEmpty) {
+      return false;
+    }
+
+    return _normalizedBlockedNameKeywords.any(normalizedName.contains);
+  }
+
+  static String _normalizeNameFilterText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202e]'), '')
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
   }
 
   static ({String firstName, String lastName}) splitDisplayName(
@@ -283,5 +391,73 @@ abstract final class ContactsImportService {
     ].where((String part) => part.isNotEmpty).toList();
 
     return parts.join(' ').trim();
+  }
+
+  static void _sortCandidatesByName(List<ContactImportCandidate> candidates) {
+    candidates.sort((ContactImportCandidate a, ContactImportCandidate b) {
+      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+    });
+  }
+
+  static Future<Box<dynamic>> _openCacheBox() async {
+    if (Hive.isBoxOpen(_cacheBoxName)) {
+      return Hive.box<dynamic>(_cacheBoxName);
+    }
+
+    return Hive.openBox<dynamic>(_cacheBoxName);
+  }
+
+  static Future<void> _saveCandidatesToCache(
+    List<ContactImportCandidate> candidates,
+  ) async {
+    final Box<dynamic> cacheBox = await _openCacheBox();
+    await cacheBox.put(
+      _cacheCandidatesKey,
+      candidates.map(_candidateToCache).toList(growable: false),
+    );
+  }
+
+  static Map<String, Object> _candidateToCache(
+    ContactImportCandidate candidate,
+  ) {
+    return <String, Object>{
+      'deviceContactId': candidate.deviceContactId,
+      'displayName': candidate.displayName,
+      'phone': candidate.phone,
+      'normalizedPhone': candidate.normalizedPhone,
+      'hasAdditionalPhones': candidate.hasAdditionalPhones,
+      'isFilteredByName': candidate.isFilteredByName,
+    };
+  }
+
+  static ContactImportCandidate? _candidateFromCache(
+    Object? rawCandidate,
+    Set<String> existingPhones,
+  ) {
+    if (rawCandidate is! Map) {
+      return null;
+    }
+
+    final String? deviceContactId = rawCandidate['deviceContactId'] as String?;
+    final String? displayName = rawCandidate['displayName'] as String?;
+    final String? phone = rawCandidate['phone'] as String?;
+    final String? normalizedPhone = rawCandidate['normalizedPhone'] as String?;
+    if (deviceContactId == null ||
+        displayName == null ||
+        phone == null ||
+        normalizedPhone == null ||
+        existingPhones.contains(normalizedPhone)) {
+      return null;
+    }
+
+    return ContactImportCandidate(
+      deviceContactId: deviceContactId,
+      displayName: displayName,
+      phone: phone,
+      normalizedPhone: normalizedPhone,
+      alreadyExists: false,
+      hasAdditionalPhones: rawCandidate['hasAdditionalPhones'] == true,
+      isFilteredByName: rawCandidate['isFilteredByName'] == true,
+    );
   }
 }

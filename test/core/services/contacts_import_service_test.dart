@@ -63,6 +63,47 @@ void main() {
     expect(candidate.hasAdditionalPhones, isTrue);
   });
 
+  test('buildCandidate only accepts Israeli mobile phone prefixes', () {
+    final ContactImportCandidate? landlineCandidate =
+        ContactsImportService.buildCandidate(
+          deviceContactId: 'contact_1',
+          displayName: 'מוקד עירוני',
+          phones: const <String>['02-6751234'],
+          existingPhones: const <String>{},
+        );
+    final ContactImportCandidate? shortCodeCandidate =
+        ContactsImportService.buildCandidate(
+          deviceContactId: 'contact_2',
+          displayName: 'שירות קצר',
+          phones: const <String>['100'],
+          existingPhones: const <String>{},
+        );
+    final ContactImportCandidate? mobileCandidate =
+        ContactsImportService.buildCandidate(
+          deviceContactId: 'contact_3',
+          displayName: 'יוסי כהן',
+          phones: const <String>['+972 52 123 4567'],
+          existingPhones: const <String>{},
+        );
+
+    expect(landlineCandidate, isNull);
+    expect(shortCodeCandidate, isNull);
+    expect(mobileCandidate, isNotNull);
+  });
+
+  test('buildCandidate marks names that match blocked keywords', () {
+    final ContactImportCandidate? candidate =
+        ContactsImportService.buildCandidate(
+          deviceContactId: 'contact_1',
+          displayName: 'יוסי אבא של גלעד',
+          phones: const <String>['0521234567'],
+          existingPhones: const <String>{},
+        );
+
+    expect(candidate, isNotNull);
+    expect(candidate!.isFilteredByName, isTrue);
+  });
+
   test('splitDisplayName supports single-word names', () {
     final ({String firstName, String lastName}) parsedName =
         ContactsImportService.splitDisplayName('שרה');
@@ -79,6 +120,7 @@ void main() {
       normalizedPhone: '0521234567',
       alreadyExists: false,
       hasAdditionalPhones: false,
+      isFilteredByName: false,
     );
 
     expect(candidate.matchesQuery('דוד'), isTrue);
@@ -118,8 +160,8 @@ void main() {
                 normalizedPhone: '0541111111',
                 alreadyExists: false,
                 hasAdditionalPhones: false,
+                isFilteredByName: false,
               ),
-              gender: Gender.female,
             ),
             ContactImportSelection(
               candidate: ContactImportCandidate(
@@ -129,6 +171,7 @@ void main() {
                 normalizedPhone: '0521234567',
                 alreadyExists: true,
                 hasAdditionalPhones: false,
+                isFilteredByName: false,
               ),
               gender: Gender.male,
             ),
@@ -140,6 +183,7 @@ void main() {
                 normalizedPhone: '0541111111',
                 alreadyExists: false,
                 hasAdditionalPhones: false,
+                isFilteredByName: false,
               ),
               gender: Gender.female,
             ),
@@ -157,7 +201,7 @@ void main() {
         (Person person) =>
             person.phone == '054-1111111' &&
             person.source == 'אנשי קשר' &&
-            person.gender == Gender.female,
+            person.gender == Gender.unknown,
       ),
       isTrue,
     );

@@ -1,51 +1,69 @@
 # AGENTS.md
 
-- UI text in this project should remain Hebrew only.
-- The app should use full RTL direction when the implementation is added.
-- Keep the minimum platforms aligned to Android 21 and iOS 14.
-- When a task is unclear or there is a meaningful choice, ask before proceeding.
+Guidance for future agents working in this repository.
+
+## Project Snapshot
+
+- This is a Flutter app named `shadchan`, a Hebrew RTL shidduchim management app.
+- The current Dart source layout is intentionally simple and flat:
+  - `lib/models/` - Hive data models and generated adapters.
+  - `lib/providers/` - `ChangeNotifier` repositories for people and matches.
+  - `lib/screens/` - top-level app screens and flows.
+  - `lib/services/` - backup/import, contacts import, incoming files, notifications.
+  - `lib/utils/` - routing, theme, enums, formatting, phone/share/name helpers.
+  - `lib/widgets/` - reusable UI widgets.
+  - `lib/dialogs/` - reusable dialogs and sheets.
+- App entry points are `lib/main.dart` and `lib/app.dart`.
+- Navigation is centralized in `lib/utils/app_router.dart` using `go_router`.
+- Tests live under `test/`, with service tests in `test/core/services/` and the app boot test in `test/widget_test.dart`.
+
+## Product Rules
+
+- All user-facing UI text must be Hebrew.
+- Keep the app fully RTL. `lib/app.dart` wraps the app in `Directionality.rtl`; new screens and widgets should fit that assumption.
+- Preserve local-first behavior. User data is stored locally with Hive, local files, and explicit import/export flows.
+- Be careful with privacy-sensitive features: contacts, photos, sharing, backup JSON files, and notifications.
+- If a task is unclear or has a meaningful product/technical choice, ask before proceeding.
+
+## Platform Rules
+
+- Keep the minimum platform intent aligned to Android 21 and iOS 14 unless the user explicitly approves a change.
+- iOS deployment target is currently set to `14.0` in `ios/Runner.xcodeproj/project.pbxproj`.
+- Android uses the Flutter Gradle values in `android/app/build.gradle.kts`; do not raise the effective min SDK casually.
+- Android release builds use `android/app/proguard-rules.pro` and `android/app/src/main/res/raw/keep.xml` for notification/Gson/R8 safety.
+- Native file-open backup import is wired through:
+  - Android: `android/app/src/main/kotlin/com/gilad/shadchan/MainActivity.kt` and `AndroidManifest.xml`.
+  - iOS: `ios/Runner/IncomingBackupFileBridge.swift`, `SceneDelegate.swift`, and `Info.plist`.
+
+## Development Workflow
+
+- Read this file before starting work and update it after meaningful project changes.
+- Prefer the existing folder structure before adding new layers.
+- Keep generated Hive files (`*.g.dart`) in sync when changing Hive models/enums:
+  - `flutter packages pub run build_runner build --delete-conflicting-outputs`
+- Run targeted checks first, then broader checks when the change touches shared behavior.
+- Useful verification commands:
+  - `flutter analyze`
+  - `flutter test`
+  - `flutter build apk --debug`
+  - `flutter build apk --release` for release/platform-sensitive changes.
+- iOS native compilation is not normally verifiable from this Windows environment; mention that when relevant.
+
+## Current Capabilities To Preserve
+
+- People management: list, search/filter/sort, add/edit/detail, favorites, gallery photos, sharing, delete warnings.
+- Matches management: list, create, duplicate detection, detail, status/handler updates, notes timeline.
+- Dashboard tab at `/dashboard`.
+- Contacts import: explicit permission-on-entry flow, search by name/phone, multi-select import, duplicate blocking by normalized phone.
+- Swipe import flow at `/people/swipe`.
+- Local JSON backup/export/import from Settings.
+- Open-with-app backup import for JSON backups.
+- Birthday notifications using local timezone support.
+- Hebrew privacy policy screen and Settings entry.
 
 ## Recent Notes
 
-- 2026-04-23: Rewrote the root `.gitignore` for the Flutter project, covering Dart/Flutter build artifacts, Android/iOS generated files, signing secrets, IDE files, and local backup/import JSON exports.
-- 2026-04-14: Verified the initial Flutter scaffold against the placeholder-only setup prompt, including the requested dependencies, Android minSdk 21, iOS deployment target 14.0, and a successful `flutter pub get`.
-- 2026-04-14: Verified the theme implementation prompt has not been applied yet. `lib/core/theme/app_colors.dart`, `lib/core/theme/app_theme.dart`, `lib/app.dart`, `lib/main.dart`, and `lib/core/constants/enums.dart` are still placeholder-only, and `flutter analyze` / `flutter test` currently fail because `test/widget_test.dart` still references `MyApp`.
-- 2026-04-14: Implemented shared enums in `lib/core/constants/enums.dart` with Hebrew `displayName` getters for all values, plus `MatchStatus.icon` and `MatchStatus.isArchived`. Verified with `dart analyze lib/core/constants/enums.dart`.
-- 2026-04-14: Implemented `lib/core/utils/date_utils.dart` as `AppDateUtils` with age calculation, Hebrew relative time, birthday helpers, and `intl`-based date formatting. Verified with `dart analyze lib/core/utils/date_utils.dart`.
-- 2026-04-14: Implemented Hive-annotated enums and data models for `Person`, `MatchIdea`, and `MatchNote`, then generated adapters with `flutter packages pub run build_runner build --delete-conflicting-outputs`. Generated files exist for `enums`, `person`, `match_idea`, and `match_note`.
-- 2026-04-14: Implemented Hive startup in `main.dart`, provider wiring, `PersonRepository`, and `MatchRepository`. Added a minimal runnable `App` scaffold so the app can compile before the fuller theme/router work lands. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`. Android build also required enabling core library desugaring while preserving `minSdk = 21`.
-- 2026-04-14: Implemented GoRouter navigation with a persistent bottom navigation shell for `אנשים` and `הצעות`, plus placeholder detail/form/settings screens. Added `flutter_localizations` and aligned `intl` to `^0.20.2` so the Hebrew app locale works correctly. Verified with `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented the main `אנשים` screen with real-time search, local filters, sort options, empty states, avatar handling from local files, favorite/delete actions, and `ListView.builder` for larger datasets. Updated widget testing to boot the app with temporary Hive boxes and providers. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented the add/edit person form with validation, edit-mode prefilling, Hebrew date picking, discard-confirmation on unsaved changes, and repository-backed save logic. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented the full person detail screen with a sliver header, quick-info chips, call/share/edit/delete actions, photos, private notes, related matches, and birthday highlights. Added `url_launcher` for phone actions. Verified with `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented person photo management with camera/gallery picking, local file copying into the app documents `photos` folder, reusable `PersonAvatar`, and fullscreen `PhotoViewer` delete flow that removes files from disk and updates Hive. Verified with `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented the `הצעות` list screen with active/archive toggle, inline AppBar search, status-colored cards, empty states, and reusable person avatars for both sides of each match. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented the create-match flow with male/female selection cards, reusable `PersonPickerSheet`, pre-selection from person details, duplicate detection with direct navigation to the existing proposal, and route-level query param support for `preSelectedPersonId`. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented and verified the match detail screen with linked people cards, status and handler management, chronological notes timeline, note composer, and delete flow back to `/matches`. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug` (successful APK output at `build/app/outputs/flutter-apk/app-debug.apk`).
-- 2026-04-14: Implemented person sharing via `ShareUtils.sharePerson`, including optional first-photo sharing, privacy-safe text generation that excludes private notes, and real share integration from the person detail screen with failure handling. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented birthday reminder notifications with `NotificationService`, local-timezone setup via `timezone` + `flutter_timezone`, repository-triggered rescheduling after person add/update/delete, startup scheduling in `main.dart`, and updated birthday copy in person details. Verified with `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Added reusable `EmptyState`, `ConfirmDialog`, and `SectionHeader` widgets; replaced duplicated empty/confirmation UI in people, matches, person detail, match detail, and photo viewer; added person avatar Hero transitions, match-card RTL status border polish, favorite toggle scale animation, and keyboard-dismiss gesture handling on form flows. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Implemented local JSON backup/export/import with `BackupService`, added `file_picker`, created a real `SettingsScreen` with backup actions and app stats, exposed repository helpers for import/export counts and note access, and wired `/settings` to the shared screen. Verified with `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Wired the person-detail "פתח הצעה" action end-to-end through `PersonPickerSheet`, duplicate detection, and direct navigation to existing/new match details, while enforcing male-as-`personA` / female-as-`personB` ordering in both person-detail and create-match flows. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Completed a final polish pass for RTL/theme/edge cases by wiring `AppTheme` into `App`, removing hardcoded deleted-state colors in key screens, adding delete warnings for people with active matches, improving empty search states and long-name truncation, disabling empty match-note sends, handling photo permission denial more gracefully, switching remaining list views to builder variants, and reducing thumbnail memory via `cacheWidth`. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-14: Fixed Android release startup failure caused by `flutter_local_notifications` scheduled-notification cache parsing under R8/ProGuard. Updated `android/app/proguard-rules.pro` to the plugin's current Gson `TypeToken` rules, added Android resource keep rules in `android/app/src/main/res/raw/keep.xml`, and made `NotificationService` fail-safe so notification issues no longer block app launch. Verified with `flutter analyze` and `flutter build apk --release`. Direct device re-install verification was blocked by Android with `INSTALL_FAILED_USER_RESTRICTED` after the device canceled the install prompt.
-- 2026-04-14: Generated `shiduchim_backup_import.json` from `C:\Users\97250\Downloads\שידוכים.xlsx` in the app backup format for Settings import. The generated backup currently includes 353 people, 15 matches, and 2 match notes based on the workbook's people sheets plus the explicit match-ideas areas.
-- 2026-04-14: Hardened `BackupService.importData` to skip imported matches whose person references do not exist and skip notes whose match reference does not exist, preventing broken imported relationships. Verified with `flutter test test/core/services/backup_service_test.dart` and `flutter analyze lib/core/services/backup_service.dart test/core/services/backup_service_test.dart`.
-- 2026-04-14: Added open-with-app backup import flow for JSON backups. The app now listens for externally opened backup files, imports them with merge semantics, and shows the standard Hebrew import summary dialog. Android wiring was added in `android/app/src/main/kotlin/com/gilad/shadchan/MainActivity.kt` plus `AndroidManifest.xml` intent filters; iOS wiring was added in `ios/Runner/SceneDelegate.swift`, `ios/Runner/IncomingBackupFileBridge.swift`, and `ios/Runner/Info.plist` document-type registration.
-- 2026-04-14: Added `IncomingBackupFileService` and shared `BackupImportFeedback`, and updated Settings import copy so skipped rows are described as general skipped records rather than duplicates only. Verified with `flutter analyze`, `flutter test test/core/services/backup_service_test.dart`, `flutter test test/core/services/incoming_backup_file_service_test.dart`, `flutter test test/widget_test.dart`, and `flutter build apk --debug`. iOS native compilation was not verified from this Windows environment.
-- 2026-04-14: Wrote a product specification for contact-based onboarding/import, focused on selecting phone contacts in bulk, creating an initial people pool quickly, and leaving profile enrichment (age, religious level, etc.) for a follow-up step rather than required upfront entry.
-- 2026-04-14: Condensed the contacts-import product idea into a short reusable Hebrew prompt for starting a fresh implementation/design conversation.
-- 2026-04-14: Refined the reusable contacts feature prompt into an even shorter paste-ready version that asks for end-to-end product thinking, UX flow, permissions, duplicate handling, search by contacts/phone, and future WhatsApp integration.
-- 2026-04-14: Product direction reaffirmed for contacts import: keep the first version focused on fast search + select + add from device contacts, request contacts permission only on entry to the flow, prefer explicit user-driven import over background sync, and include duplicate detection by phone/name before creating people records.
-- 2026-04-15: Implemented one-time device-contacts import with `flutter_contacts`: a new `/people/import` flow supports permission-on-entry, search by name or phone, multi-select import, per-contact gender selection, and duplicate blocking by normalized phone number only. Imported people keep `source: אנשי קשר`, use the first available phone when a contact has multiple numbers, and allow single-word contact names by storing an empty last name. Verified with `flutter pub get`, `flutter analyze`, `flutter test`, and `flutter build apk --debug`. iOS native compilation was not verified from this Windows environment.
-- 2026-04-15: Fixed contacts-import search reliability by normalizing search input and contact names before matching, including removal of invisible RTL formatting marks, punctuation cleanup, whitespace collapsing, token-based name matching, and digit-only phone matching. Verified with `flutter analyze` and `flutter test test/core/services/contacts_import_service_test.dart test/widget_test.dart`.
-- 2026-04-15: Reduced post-import confirmation delay by moving birthday-notification rescheduling out of the critical UI path in `PersonRepository` and running it in the background. Also optimized `NotificationService.scheduleBirthdayNotifications` to replace the slow per-ID cancellation loop with a queued `cancelAll()`-based refresh that coalesces rapid consecutive reschedule requests. Verified with `flutter analyze` and `flutter test`.
-- 2026-04-15: Supplied standalone Kotlin examples for a `shareDescription` field, WhatsApp-only share intent with attached images, and Android media-permission handling guidance for new Android versions. No project source files were changed because the current workspace is Flutter-based rather than a Kotlin app.
-- 2026-04-15: Supplied standalone Kotlin examples for Hebrew birth-date storage, yearly Hebrew-birthday notification scheduling with `AlarmManager`, and rescheduling on boot / exact-alarm permission changes. No project source files were changed because the current workspace is Flutter-based rather than a Kotlin app.
-- 2026-04-15: Supplied standalone Kotlin examples for async Room saves with coroutines/UI feedback and dashboard aggregate queries for totals, matches, active matches, past matches, and `מזל טוב` cards. No project source files were changed because the current workspace is Flutter-based rather than a Kotlin app.
-- 2026-04-15: Reiterated the standalone Kotlin pattern for async save UX and dashboard aggregate Room queries, keeping the recommendation centered on `ViewModel + StateFlow + Dispatchers.IO` and a single aggregate `SELECT` for dashboard counts. No project source files were changed because the current workspace is Flutter-based rather than a Kotlin app.
-- 2026-04-15: Fixed photo-add permission flow by stopping pre-emptive Android gallery/camera permission gating before `image_picker`, adding Android `CAMERA` manifest permission, adding iOS `NSCameraUsageDescription` and `NSPhotoLibraryUsageDescription`, and improving the blocked-permission dialog with a direct settings shortcut. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
-- 2026-04-16: Investigated Google Play Console upload warning for `android.permission.CAMERA`. Confirmed the permission is declared in `android/app/src/main/AndroidManifest.xml` and used by the add-photo camera flow in `lib/presentation/people/person_detail_screen.dart`. Current recommendation: either publish a public privacy-policy URL and complete the Play Console privacy/data-safety disclosures, or remove the camera capture path and the manifest permission if camera support is not needed for release.
-- 2026-04-16: Removed camera support and kept gallery-only photo selection. Deleted `android.permission.CAMERA` from Android, removed `NSCameraUsageDescription` on iOS, simplified the person photo picker to open the gallery directly, and updated the permission explanation copy to gallery-only. Verified with `flutter analyze`, `flutter test`, `flutter build apk --release`, and confirmed the merged Android release manifest no longer contains `CAMERA`.
-- 2026-04-16: Investigated the remaining Google Play Console warning for `android.permission.READ_CONTACTS`. Confirmed the permission is still declared in `android/app/src/main/AndroidManifest.xml` and is required by the existing contacts-import flow (`ContactsImportService` and `import_contacts_screen.dart`). Current recommendation: either publish a public privacy policy and complete Play Console Data safety disclosures for contacts access, or remove the contacts-import feature and the manifest permission for a simpler release path.
-- 2026-04-16: Added a Hebrew privacy policy draft in `PRIVACY_POLICY.md`, added an in-app `מדיניות פרטיות` screen plus a Settings entry and route, and aligned the text with the current local-only architecture, contacts import, gallery photos, backup/export, sharing, and birthday notifications. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --release`.
+- 2026-04-24: Improved large contact-book import performance. `ContactsImportService` now precomputes normalized blocked-name keywords, processes contacts in small async batches with progress callbacks, and stores filtered import candidates in a local Hive cache (`contact_import_cache`) so repeat entries can render quickly while a refresh runs. List and swipe import screens now show Hebrew progress text/linear loading instead of appearing frozen. Privacy policy text was updated to mention the local import-candidate cache.
+- 2026-04-24: Added stronger contact import narrowing for large address books. Candidate contacts now require Israeli mobile prefixes (`05` or `+9725`), existing people remain filtered out before display, names matching `lib/utils/names.dart` keywords are hidden by default in the list import screen but still searchable and can be shown with a Hebrew toggle, and the swipe import screen excludes those name-filtered candidates. Android swipe import now sorts candidates by recent call log order through a native `READ_CALL_LOG` method channel with graceful fallback. Privacy policy text was updated for call log usage. Verified with `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
+- 2026-04-24: Updated the contacts list import flow so existing contacts are filtered out before display, selected contacts import with `Gender.unknown` by default instead of asking for gender, and import candidate cards stay compact without expanding to a gender selector. Also removed two stale analyzer warnings in dashboard/person detail. Verified with `flutter analyze` and `flutter test`.
+- 2026-04-24: Rewrote `AGENTS.md` to match the current flat Flutter structure (`models`, `providers`, `screens`, `services`, `utils`, `widgets`, `dialogs`) and removed the long outdated implementation history. Verified the current file layout, `pubspec.yaml`, router, app entry points, and iOS deployment target while updating these instructions.

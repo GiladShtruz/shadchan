@@ -19,9 +19,6 @@ class DashboardScreen extends StatelessWidget {
     final List<MatchIdea> allMatches = matchRepository.getAll();
 
     final int peopleCount = allPeople.length;
-    final int activePeopleCount = allPeople
-        .where((Person p) => !p.profileStatus.isArchived)
-        .length;
     final int mazelTovCount = allPeople
         .where((Person p) => p.profileStatus == ProfileStatus.mazelTov)
         .length;

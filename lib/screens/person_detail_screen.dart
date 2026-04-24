@@ -21,7 +21,6 @@ import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/photo_viewer.dart';
 import 'package:shadchan/widgets/section_header.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class PersonDetailScreen extends StatelessWidget {
   const PersonDetailScreen({super.key, required this.personId});
@@ -377,14 +376,6 @@ class PersonDetailScreen extends StatelessWidget {
     }
 
     return null;
-  }
-
-  Future<void> _callPerson(BuildContext context, String phone) async {
-    final Uri uri = Uri(scheme: 'tel', path: phone);
-    final bool launched = await launchUrl(uri);
-    if (!launched && context.mounted) {
-      _showSnackBar(context, 'לא ניתן לפתוח את החיוג כרגע');
-    }
   }
 
   Future<void> _pickAndSavePhoto(BuildContext context, Person person) async {
