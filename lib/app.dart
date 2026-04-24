@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
+import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
 import 'package:shadchan/utils/app_router.dart';
@@ -9,12 +11,14 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeMode themeMode = context.watch<ThemeModeProvider>().themeMode;
+
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       title: 'שדכן',
       theme: AppTheme.lightTheme(),
       darkTheme: AppTheme.darkTheme(),
-      themeMode: ThemeMode.system,
+      themeMode: themeMode,
       routerConfig: AppRouter.router,
       locale: const Locale('he'),
       supportedLocales: const <Locale>[Locale('he')],

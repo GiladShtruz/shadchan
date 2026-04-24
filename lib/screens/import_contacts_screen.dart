@@ -351,42 +351,16 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
           )
           .toList();
 
-      final ContactImportResult result =
-          await ContactsImportService.importSelections(
-            selections,
-            personRepository,
-          );
-
-      if (!mounted) {
-        return;
-      }
-
-      await showDialog<void>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('הייבוא הסתיים'),
-            content: Text(
-              result.skippedExistingCount == 0
-                  ? 'נוספו ${result.addedCount} אנשים חדשים'
-                  : 'נוספו ${result.addedCount} אנשים חדשים\n'
-                        '${result.skippedExistingCount} אנשי קשר דולגו כי המספר כבר קיים',
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('סגירה'),
-              ),
-            ],
-          );
-        },
+      await ContactsImportService.importSelections(
+        selections,
+        personRepository,
       );
 
       if (!mounted) {
         return;
       }
 
-      context.pop();
+      context.go('/people');
     } catch (_) {
       if (!mounted) {
         return;

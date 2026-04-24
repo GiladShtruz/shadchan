@@ -11,6 +11,7 @@ import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/theme_mode_provider.dart';
 
 void main() {
   late Directory hiveDirectory;
@@ -48,6 +49,7 @@ void main() {
     await Hive.openBox<Person>('people');
     await Hive.openBox<MatchIdea>('matches');
     await Hive.openBox<MatchNote>('match_notes');
+    await Hive.openBox<dynamic>('settings');
   });
 
   tearDownAll(() async {
@@ -80,6 +82,9 @@ Widget _buildTestApp() {
           Hive.box<MatchIdea>('matches'),
           Hive.box<MatchNote>('match_notes'),
         ),
+      ),
+      ChangeNotifierProvider<ThemeModeProvider>(
+        create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
       ),
     ],
     child: const App(),

@@ -7,8 +7,10 @@ import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/theme_mode_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,8 +19,10 @@ Future<void> main() async {
   _registerAdapters();
 
   await Hive.openBox<Person>('people');
+  await Hive.openBox<PersonNote>('person_notes');
   await Hive.openBox<MatchIdea>('matches');
   await Hive.openBox<MatchNote>('match_notes');
+  await Hive.openBox<dynamic>('settings');
   await NotificationService.initialize();
   await NotificationService.scheduleBirthdayNotifications(
     Hive.box<Person>('people').values.toList(),
@@ -28,13 +32,19 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider<PersonRepository>(
-          create: (_) => PersonRepository(Hive.box<Person>('people')),
+          create: (_) => PersonRepository(
+            Hive.box<Person>('people'),
+            Hive.box<PersonNote>('person_notes'),
+          ),
         ),
         ChangeNotifierProvider<MatchRepository>(
           create: (_) => MatchRepository(
             Hive.box<MatchIdea>('matches'),
             Hive.box<MatchNote>('match_notes'),
           ),
+        ),
+        ChangeNotifierProvider<ThemeModeProvider>(
+          create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
         ),
       ],
       child: const App(),
@@ -66,5 +76,8 @@ void _registerAdapters() {
   }
   if (!Hive.isAdapterRegistered(7)) {
     Hive.registerAdapter(ProfileStatusAdapter());
+  }
+  if (!Hive.isAdapterRegistered(8)) {
+    Hive.registerAdapter(PersonNoteAdapter());
   }
 }

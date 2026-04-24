@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -11,9 +13,11 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/hebrew_date_utils.dart';
+import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
@@ -21,11 +25,58 @@ import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/photo_viewer.dart';
 import 'package:shadchan/widgets/section_header.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class PersonDetailScreen extends StatelessWidget {
-  const PersonDetailScreen({super.key, required this.personId});
+class PersonDetailScreen extends StatefulWidget {
+  const PersonDetailScreen({
+    super.key,
+    required this.personId,
+    this.initiallyEditing = false,
+  });
 
   final String personId;
+  final bool initiallyEditing;
+
+  @override
+  State<PersonDetailScreen> createState() => _PersonDetailScreenState();
+}
+
+class _PersonDetailScreenState extends State<PersonDetailScreen> {
+  final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _manualAgeController = TextEditingController();
+  final TextEditingController _cityController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _sourceController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+
+  bool _isSavingEdit = false;
+  String? _editingPersonId;
+  Gender _selectedGender = Gender.unknown;
+  DateTime? _birthDate;
+  int? _hebrewBirthYear;
+  int? _hebrewBirthMonth;
+  int? _hebrewBirthDay;
+  _BirthDateCalendar _birthDateCalendar = _BirthDateCalendar.gregorian;
+  ReligiousLevel? _selectedReligiousLevel;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _manualAgeController.dispose();
+    _cityController.dispose();
+    _phoneController.dispose();
+    _sourceController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +85,7 @@ class PersonDetailScreen extends StatelessWidget {
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final MatchRepository matchRepository = context.watch<MatchRepository>();
 
-    final Person? person = personRepository.getById(personId);
+    final Person? person = personRepository.getById(widget.personId);
     if (person == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('פרטי איש קשר'), centerTitle: true),
@@ -68,270 +119,532 @@ class PersonDetailScreen extends StatelessWidget {
     }
 
     final List<MatchIdea> relatedMatches = matchRepository.getByPersonId(
-      personId,
+      widget.personId,
     );
-    final List<String> quickInfoLabels = _buildQuickInfoLabels(person);
+    final List<PersonNote> personNotes = personRepository.getNotesForPerson(
+      person.id,
+    );
+    _ensureEditData(person);
 
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: <Widget>[
-          SliverAppBar(
-            expandedHeight: 200,
-            pinned: true,
-            stretch: true,
-            title: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Hero(
-                  tag: 'person-${person.id}',
-                  child: PersonAvatar(person: person, radius: 16),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    person.fullName.trim(),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            actions: <Widget>[
-              IconButton(
-                icon: const Icon(Icons.share),
-                tooltip: 'שיתוף',
-                onPressed: () => _sharePerson(context, person),
-              ),
-              IconButton(
-                icon: const Icon(Icons.edit),
-                tooltip: 'עריכה',
-                onPressed: () => context.push('/people/${person.id}/edit'),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (String value) async {
-                  if (value != 'delete') {
-                    return;
-                  }
-
-                  final bool shouldDelete = await _confirmDelete(
-                    context,
-                    person,
-                  );
-                  if (!shouldDelete) {
-                    return;
-                  }
-
-                  await personRepository.delete(person.id);
-                  if (context.mounted) {
-                    context.go('/people');
-                  }
-                },
-                itemBuilder: (BuildContext context) {
-                  return const <PopupMenuEntry<String>>[
-                    PopupMenuItem<String>(
-                      value: 'delete',
-                      child: Text('מחיקה'),
-                    ),
-                  ];
-                },
-              ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: _DetailHeader(person: person),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop || _isSavingEdit) {
+          return;
+        }
+        await _saveInlineEdit(person);
+        if (mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        body: CustomScrollView(
+          slivers: <Widget>[
+            SliverAppBar(
+              expandedHeight: 200,
+              pinned: true,
+              stretch: true,
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  if (quickInfoLabels.isNotEmpty)
-                    SizedBox(
-                      height: 52,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: quickInfoLabels.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 8),
-                        itemBuilder: (BuildContext context, int index) {
-                          final String label = quickInfoLabels[index];
-                          return _QuickInfoChip(
-                            label: label,
-                            backgroundColor: theme.colorScheme.primaryContainer,
-                            textColor: theme.colorScheme.primary,
-                          );
-                        },
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: <Widget>[
-                          ElevatedButton.icon(
-                            onPressed: () =>
-                                _openMatchProposal(context, person),
-                            icon: const Icon(Icons.favorite),
-                            label: const Text('פתח הצעה'),
-                          ),
-                          const SizedBox(width: 12),
-                          _FavoriteToggleButton(
-                            isFavorite: person.isFavorite,
-                            onPressed: () =>
-                                personRepository.toggleFavorite(person.id),
-                            activeColor: colorScheme.secondary,
-                            inactiveColor: colorScheme.onSurfaceVariant,
-                          ),
-                        ],
-                      ),
-                    ),
+                  Hero(
+                    tag: 'person-${person.id}',
+                    child: PersonAvatar(person: person, radius: 16),
                   ),
-                  _Section(
-                    title: 'תמונות',
-                    trailing: TextButton(
-                      onPressed: () => _pickAndSavePhoto(context, person),
-                      child: const Text('הוספה'),
-                    ),
-                    child: _PhotosSection(
-                      person: person,
-                      onTapPhoto: (int index) =>
-                          _openPhotoViewer(context, person, index),
-                    ),
-                  ),
-                  _Section(
-                    title: 'תיאור',
-                    trailing: TextButton(
-                      onPressed: () =>
-                          context.push('/people/${person.id}/edit'),
-                      child: const Text('עריכה'),
-                    ),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer.withValues(
-                          alpha: 0.2,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        (person.description ?? '').trim().isNotEmpty
-                            ? person.description!.trim()
-                            : 'אין תיאור',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                  ),
-                  _Section(
-                    title: 'הערות פרטיות',
-                    trailing: TextButton(
-                      onPressed: () =>
-                          context.push('/people/${person.id}/edit'),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Icon(
-                            Icons.lock_outline,
-                            size: 16,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 6),
-                          const Text('עריכה'),
-                        ],
-                      ),
-                    ),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: colorScheme.secondaryContainer.withValues(
-                          alpha: 0.3,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        (person.notes ?? '').trim().isNotEmpty
-                            ? person.notes!.trim()
-                            : 'אין הערות',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                  ),
-                  _Section(
-                    title: 'הצעות קשורות',
-                    child: _RelatedMatchesSection(
-                      person: person,
-                      matches: relatedMatches,
-                      personRepository: personRepository,
-                    ),
-                  ),
-                  _Section(
-                    title: 'פרטים נוספים',
-                    child: Column(
-                      children: <Widget>[
-                        if (_birthdayMessage(person, theme)
-                            case final Widget birthdayBanner)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: birthdayBanner,
-                          ),
-                        _DetailRow(
-                          label: 'מגדר',
-                          value: person.gender.displayName,
-                        ),
-                        _DetailRow(
-                          label: 'תאריך לידה',
-                          value: person.birthDate != null
-                              ? AppDateUtils.formatDate(person.birthDate!)
-                              : 'לא הוזן',
-                        ),
-                        _DetailRow(
-                          label: 'תאריך לידה עברי',
-                          value: _hebrewBirthText(person),
-                        ),
-                        _DetailRow(
-                          label: 'נוצר',
-                          value: AppDateUtils.formatDate(person.createdAt),
-                        ),
-                        _DetailRow(
-                          label: 'עודכן',
-                          value: AppDateUtils.timeAgo(person.updatedAt),
-                          isLast: true,
-                        ),
-                      ],
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      person.fullName.trim(),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
+              actions: <Widget>[
+                      IconButton(
+                        icon: const Icon(Icons.share),
+                        tooltip: 'שיתוף',
+                        onPressed: () => _sharePerson(context, person),
+                      ),
+
+                      PopupMenuButton<String>(
+                        onSelected: (String value) async {
+                          if (value != 'delete') {
+                            return;
+                          }
+
+                          final bool shouldDelete = await _confirmDelete(
+                            context,
+                            person,
+                          );
+                          if (!shouldDelete) {
+                            return;
+                          }
+
+                          await personRepository.delete(person.id);
+                          if (context.mounted) {
+                            context.go('/people');
+                          }
+                        },
+                        itemBuilder: (BuildContext context) {
+                          return const <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Text('מחיקה'),
+                            ),
+                          ];
+                        },
+                      ),
+                    ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: _DetailHeader(person: person),
+              ),
             ),
-          ),
-        ],
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: <Widget>[
+                            ElevatedButton.icon(
+                              onPressed: () =>
+                                  _openMatchProposal(context, person),
+                              icon: const Icon(Icons.favorite),
+                              label: const Text('פתח הצעה'),
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton.icon(
+                              onPressed: () =>
+                                  _openWhatsAppMessage(context, person),
+                              icon: const FaIcon(FontAwesomeIcons.whatsapp),
+                              label: const Text('וואטסאפ'),
+                            ),
+                            const SizedBox(width: 12),
+                            _FavoriteToggleButton(
+                              isFavorite: person.isFavorite,
+                              onPressed: () =>
+                                  personRepository.toggleFavorite(person.id),
+                              activeColor: colorScheme.secondary,
+                              inactiveColor: colorScheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _InlinePersonEditForm(
+                      formKey: _editFormKey,
+                      firstNameController: _firstNameController,
+                      lastNameController: _lastNameController,
+                      manualAgeController: _manualAgeController,
+                      cityController: _cityController,
+                      phoneController: _phoneController,
+                      sourceController: _sourceController,
+                      descriptionController: _descriptionController,
+                      selectedGender: _selectedGender,
+                      birthDate: _birthDate,
+                      birthDateCalendar: _birthDateCalendar,
+                      birthDatePrimaryText: _birthDatePrimaryText(),
+                      birthDateSecondaryText: _birthDateSecondaryText(),
+                      selectedReligiousLevel: _selectedReligiousLevel,
+                      onGenderChanged: (Gender gender) {
+                        setState(() => _selectedGender = gender);
+                      },
+                      onBirthDateTap: _pickBirthDate,
+                      onBirthDateCleared: () {
+                        setState(() {
+                          _birthDate = null;
+                          _hebrewBirthYear = null;
+                          _hebrewBirthMonth = null;
+                          _hebrewBirthDay = null;
+                        });
+                      },
+                      onBirthDateCalendarChanged:
+                          (_BirthDateCalendar calendar) {
+                            setState(() => _birthDateCalendar = calendar);
+                          },
+                      onReligiousLevelChanged: (ReligiousLevel? level) {
+                        setState(() => _selectedReligiousLevel = level);
+                      },
+                    ),
+                    _ProfileStatusSection(
+                      person: person,
+                      repository: personRepository,
+                    ),
+                    _PersonNotesSection(person: person, notes: personNotes),
+                    _Section(
+                      title: 'תמונות',
+                      trailing: TextButton(
+                        onPressed: () => _pickAndSavePhoto(context, person),
+                        child: const Text('הוספה'),
+                      ),
+                      child: _PhotosSection(
+                        person: person,
+                        onTapPhoto: (int index) =>
+                            _openPhotoViewer(context, person, index),
+                      ),
+                    ),
+                    _Section(
+                      title: 'הצעות קשורות',
+                      child: _RelatedMatchesSection(
+                        person: person,
+                        matches: relatedMatches,
+                        personRepository: personRepository,
+                      ),
+                    ),
+                    _Section(
+                      title: 'פרטים נוספים',
+                      child: Column(
+                        children: <Widget>[
+                          if (_birthdayMessage(person, theme)
+                              case final Widget birthdayBanner)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: birthdayBanner,
+                            ),
+                          _DetailRow(
+                            label: 'נוצר',
+                            value: AppDateUtils.formatDate(person.createdAt),
+                          ),
+                          _DetailRow(
+                            label: 'עודכן',
+                            value: AppDateUtils.timeAgo(person.updatedAt),
+                            isLast: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  String _hebrewBirthText(Person person) {
-    final int? year = person.hebrewBirthYear;
-    final int? month = person.hebrewBirthMonth;
-    final int? day = person.hebrewBirthDay;
-    if (year == null || month == null || day == null) {
-      return 'לא הוזן';
+  void _ensureEditData(Person person) {
+    if (_editingPersonId == person.id) {
+      return;
     }
-    final String formatted = HebrewDateUtils.format(
-      year: year,
-      month: month,
-      day: day,
-    );
-    return formatted.isNotEmpty ? formatted : 'לא הוזן';
+    _populateInlineEdit(person);
   }
 
-  List<String> _buildQuickInfoLabels(Person person) {
-    return <String>[
-      '${person.profileStatus.emoji} ${person.profileStatus.displayName}',
-      if (person.age != null) 'גיל ${person.age}',
-      if (person.religiousLevel != null) person.religiousLevel!.displayName,
+  void _populateInlineEdit(Person person) {
+    _editingPersonId = person.id;
+    _firstNameController.text = person.firstName;
+    _lastNameController.text = person.lastName;
+    _manualAgeController.text = person.manualAge?.toString() ?? '';
+    _cityController.text = person.city ?? '';
+    _phoneController.text = person.phone ?? '';
+    _sourceController.text = person.source ?? '';
+    _descriptionController.text = person.description ?? '';
+    _selectedGender = person.gender;
+    _birthDate = person.birthDate;
+    _selectedReligiousLevel = person.religiousLevel;
+    _hebrewBirthYear = person.hebrewBirthYear;
+    _hebrewBirthMonth = person.hebrewBirthMonth;
+    _hebrewBirthDay = person.hebrewBirthDay;
+
+    if (_birthDate == null &&
+        _hebrewBirthYear != null &&
+        _hebrewBirthMonth != null &&
+        _hebrewBirthDay != null) {
+      _birthDate = HebrewDateUtils.toGregorian(
+        year: _hebrewBirthYear!,
+        month: _hebrewBirthMonth!,
+        day: _hebrewBirthDay!,
+      );
+      _birthDateCalendar = _BirthDateCalendar.hebrew;
+    } else {
+      _birthDateCalendar = _BirthDateCalendar.gregorian;
+      if (_birthDate != null &&
+          (_hebrewBirthYear == null ||
+              _hebrewBirthMonth == null ||
+              _hebrewBirthDay == null)) {
+        final ({int year, int month, int day})? hebrew =
+            HebrewDateUtils.fromGregorian(_birthDate!);
+        _hebrewBirthYear = hebrew?.year;
+        _hebrewBirthMonth = hebrew?.month;
+        _hebrewBirthDay = hebrew?.day;
+      }
+    }
+  }
+
+  Future<void> _saveInlineEdit(Person person) async {
+    FocusScope.of(context).unfocus();
+
+    if (!_editFormKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isSavingEdit = true;
+    });
+
+    try {
+      final int? manualAge = _birthDate == null
+          ? int.tryParse(_manualAgeController.text.trim())
+          : null;
+      person
+        ..firstName = _firstNameController.text.trim()
+        ..lastName = _lastNameController.text.trim()
+        ..gender = _selectedGender
+        ..birthDate = _birthDate
+        ..manualAge = manualAge
+        ..religiousLevel = _selectedReligiousLevel
+        ..city = _normalizedText(_cityController.text)
+        ..phone = _normalizedText(_phoneController.text)
+        ..source = _normalizedText(_sourceController.text)
+        ..description = _normalizedText(_descriptionController.text)
+        ..hebrewBirthYear = _hebrewBirthYear
+        ..hebrewBirthMonth = _hebrewBirthMonth
+        ..hebrewBirthDay = _hebrewBirthDay;
+
+      await context.read<PersonRepository>().update(person);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSavingEdit = false;
+      });
+      _showSnackBar(context, 'השינויים נשמרו');
+    } finally {
+      if (mounted && _isSavingEdit) {
+        setState(() {
+          _isSavingEdit = false;
+        });
+      }
+    }
+  }
+
+  String? _normalizedText(String value) {
+    final String trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  Future<void> _pickBirthDate() async {
+    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
+      await _pickHebrewBirthDate();
+      return;
+    }
+    await _pickGregorianBirthDate();
+  }
+
+  Future<void> _pickGregorianBirthDate() async {
+    final DateTime now = DateTime.now();
+    final DateTime initialDate =
+        _birthDate ?? DateTime(now.year - 22, now.month, now.day);
+
+    final DateTime? selectedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate.isAfter(now) ? now : initialDate,
+      firstDate: DateTime(now.year - 100, now.month, now.day),
+      lastDate: now,
+      locale: const Locale('he'),
+    );
+
+    if (selectedDate == null) {
+      return;
+    }
+
+    final ({int year, int month, int day})? hebrew =
+        HebrewDateUtils.fromGregorian(selectedDate);
+
+    setState(() {
+      _birthDate = selectedDate;
+      _hebrewBirthYear = hebrew?.year;
+      _hebrewBirthMonth = hebrew?.month;
+      _hebrewBirthDay = hebrew?.day;
+    });
+  }
+
+  Future<void> _pickHebrewBirthDate() async {
+    final DateTime now = DateTime.now();
+    final ({int year, int month, int day})? picked =
+        await _showHebrewDatePicker();
+    if (picked == null) {
+      return;
+    }
+
+    final DateTime? gregorian = HebrewDateUtils.toGregorian(
+      year: picked.year,
+      month: picked.month,
+      day: picked.day,
+    );
+    if (gregorian == null || gregorian.isAfter(now)) {
+      return;
+    }
+
+    setState(() {
+      _birthDate = gregorian;
+      _hebrewBirthYear = picked.year;
+      _hebrewBirthMonth = picked.month;
+      _hebrewBirthDay = picked.day;
+    });
+  }
+
+  Future<({int year, int month, int day})?> _showHebrewDatePicker() async {
+    final DateTime now = DateTime.now();
+    final ({int year, int month, int day}) todayHebrew =
+        HebrewDateUtils.fromGregorian(now) ?? (year: 5785, month: 1, day: 1);
+    final int initYear = _hebrewBirthYear ?? (todayHebrew.year - 22);
+    final int initMonth = _hebrewBirthMonth ?? todayHebrew.month;
+    final int initDay = _hebrewBirthDay ?? todayHebrew.day;
+
+    int selYear = initYear;
+    int selMonth = initMonth;
+    int selDay = initDay;
+
+    return showDialog<({int year, int month, int day})>(
+      context: context,
+      builder: (BuildContext ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext ctx, StateSetter setDialogState) {
+            return AlertDialog(
+              title: const Text('בחר תאריך לידה עברי'),
+              content: SizedBox(
+                width: 320,
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: selDay,
+                        decoration: const InputDecoration(labelText: 'יום'),
+                        items: List<DropdownMenuItem<int>>.generate(
+                          30,
+                          (int i) => DropdownMenuItem<int>(
+                            value: i + 1,
+                            child: Text('${i + 1}'),
+                          ),
+                        ),
+                        onChanged: (int? v) {
+                          if (v != null) {
+                            setDialogState(() => selDay = v);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: selMonth,
+                        decoration: const InputDecoration(labelText: 'חודש'),
+                        items: List<DropdownMenuItem<int>>.generate(
+                          13,
+                          (int i) => DropdownMenuItem<int>(
+                            value: i + 1,
+                            child: Text(_hebrewMonthName(i + 1)),
+                          ),
+                        ),
+                        onChanged: (int? v) {
+                          if (v != null) {
+                            setDialogState(() => selMonth = v);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: selYear,
+                        decoration: const InputDecoration(labelText: 'שנה'),
+                        items: List<DropdownMenuItem<int>>.generate(101, (
+                          int i,
+                        ) {
+                          final int y = todayHebrew.year - i;
+                          return DropdownMenuItem<int>(
+                            value: y,
+                            child: Text('$y'),
+                          );
+                        }),
+                        onChanged: (int? v) {
+                          if (v != null) {
+                            setDialogState(() => selYear = v);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('ביטול'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(
+                    ctx,
+                  ).pop((year: selYear, month: selMonth, day: selDay)),
+                  child: const Text('אישור'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  static String _hebrewMonthName(int month) {
+    const List<String> names = <String>[
+      'ניסן',
+      'אייר',
+      'סיוון',
+      'תמוז',
+      'אב',
+      'אלול',
+      'תשרי',
+      'חשוון',
+      'כסלו',
+      'טבת',
+      'שבט',
+      'אדר',
+      'אדר ב׳',
     ];
+    if (month < 1 || month > names.length) return '$month';
+    return names[month - 1];
+  }
+
+  String _birthDatePrimaryText() {
+    if (_birthDate == null) return 'לא הוזן';
+    if (_birthDateCalendar == _BirthDateCalendar.hebrew &&
+        _hebrewBirthYear != null &&
+        _hebrewBirthMonth != null &&
+        _hebrewBirthDay != null) {
+      final String formatted = HebrewDateUtils.format(
+        year: _hebrewBirthYear!,
+        month: _hebrewBirthMonth!,
+        day: _hebrewBirthDay!,
+      );
+      if (formatted.isNotEmpty) return formatted;
+    }
+    return AppDateUtils.formatDate(_birthDate!);
+  }
+
+  String? _birthDateSecondaryText() {
+    if (_birthDate == null) return null;
+    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
+      return AppDateUtils.formatDate(_birthDate!);
+    }
+    if (_hebrewBirthYear != null &&
+        _hebrewBirthMonth != null &&
+        _hebrewBirthDay != null) {
+      final String formatted = HebrewDateUtils.format(
+        year: _hebrewBirthYear!,
+        month: _hebrewBirthMonth!,
+        day: _hebrewBirthDay!,
+      );
+      if (formatted.isNotEmpty) return formatted;
+    }
+    return null;
   }
 
   Widget? _birthdayMessage(Person person, ThemeData theme) {
@@ -528,6 +841,36 @@ class PersonDetailScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _openWhatsAppMessage(BuildContext context, Person person) async {
+    final String? phone = PhoneUtils.toWhatsAppNumber(person.phone);
+    if (phone == null) {
+      _showSnackBar(context, 'אין מספר טלפון תקין לאיש הקשר');
+      return;
+    }
+
+    const String message = '''
+היי 🙂 מה קורה?
+
+אני רוצה להכניס אותך לאפליקציית שדכן (אפליקציית שידוכים ממאגר אישי), זורם לך? רק לי יש גישה
+
+אם כן, אשמח לפרטים שלך:
+- תאריך לידה
+- כרטיסיה לשליחה - כמה משפטים על עצמך (5-10 שורות, משהו קליל שמייצג אותך)
+- 2-3 תמונות עדכניות 📸''';
+
+    final Uri uri = Uri.https('wa.me', '/$phone', <String, String>{
+      'text': message,
+    });
+
+    final bool launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched && context.mounted) {
+      _showSnackBar(context, 'לא הצלחנו לפתוח את וואטסאפ');
+    }
+  }
+
   Future<bool> _confirmDelete(BuildContext context, Person person) async {
     final MatchRepository matchRepository = context.read<MatchRepository>();
     final int activeMatches = matchRepository
@@ -647,35 +990,270 @@ class PersonDetailScreen extends StatelessWidget {
   }
 }
 
-class _QuickInfoChip extends StatelessWidget {
-  const _QuickInfoChip({
-    required this.label,
-    required this.backgroundColor,
-    required this.textColor,
+enum _BirthDateCalendar { gregorian, hebrew }
+
+class _InlinePersonEditForm extends StatelessWidget {
+  const _InlinePersonEditForm({
+    required this.formKey,
+    required this.firstNameController,
+    required this.lastNameController,
+    required this.manualAgeController,
+    required this.cityController,
+    required this.phoneController,
+    required this.sourceController,
+    required this.descriptionController,
+    required this.selectedGender,
+    required this.birthDate,
+    required this.birthDateCalendar,
+    required this.birthDatePrimaryText,
+    required this.birthDateSecondaryText,
+    required this.selectedReligiousLevel,
+    required this.onGenderChanged,
+    required this.onBirthDateTap,
+    required this.onBirthDateCleared,
+    required this.onBirthDateCalendarChanged,
+    required this.onReligiousLevelChanged,
   });
 
-  final String label;
-  final Color backgroundColor;
-  final Color textColor;
+  final GlobalKey<FormState> formKey;
+  final TextEditingController firstNameController;
+  final TextEditingController lastNameController;
+  final TextEditingController manualAgeController;
+  final TextEditingController cityController;
+  final TextEditingController phoneController;
+  final TextEditingController sourceController;
+  final TextEditingController descriptionController;
+  final Gender selectedGender;
+  final DateTime? birthDate;
+  final _BirthDateCalendar birthDateCalendar;
+  final String birthDatePrimaryText;
+  final String? birthDateSecondaryText;
+  final ReligiousLevel? selectedReligiousLevel;
+  final ValueChanged<Gender> onGenderChanged;
+  final VoidCallback onBirthDateTap;
+  final VoidCallback onBirthDateCleared;
+  final ValueChanged<_BirthDateCalendar> onBirthDateCalendarChanged;
+  final ValueChanged<ReligiousLevel?> onReligiousLevelChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: textColor,
-          fontWeight: FontWeight.w600,
+    final ThemeData theme = Theme.of(context);
+
+    return Form(
+      key: formKey,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            TextFormField(
+              controller: firstNameController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'שם פרטי'),
+              validator: _requiredText('יש להזין שם פרטי'),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: lastNameController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'שם משפחה'),
+              validator: _requiredText('יש להזין שם משפחה'),
+            ),
+            const SizedBox(height: 20),
+            Text('מגדר', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: Gender.values.map((Gender gender) {
+                return ChoiceChip(
+                  label: Text(gender.displayName),
+                  selected: selectedGender == gender,
+                  onSelected: (bool selected) {
+                    if (selected) {
+                      onGenderChanged(gender);
+                    }
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+            Text('תאריך לידה', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: onBirthDateTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Ink(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color:
+                      theme.inputDecorationTheme.fillColor ??
+                      theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: theme.colorScheme.outline),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            birthDateCalendar == _BirthDateCalendar.hebrew
+                                ? 'תאריך לידה (עברי)'
+                                : 'תאריך לידה (לועזי)',
+                            style: theme.textTheme.labelLarge,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            birthDatePrimaryText,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: birthDate != null
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          if (birthDateSecondaryText
+                              case final String text) ...<Widget>[
+                            const SizedBox(height: 2),
+                            Text(
+                              text,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (birthDate != null)
+                      IconButton(
+                        icon: const Icon(Icons.clear),
+                        tooltip: 'ניקוי תאריך',
+                        onPressed: onBirthDateCleared,
+                      )
+                    else
+                      const Icon(Icons.calendar_today_outlined),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: <Widget>[
+                ChoiceChip(
+                  label: const Text('לוח לועזי'),
+                  selected: birthDateCalendar == _BirthDateCalendar.gregorian,
+                  onSelected: (bool selected) {
+                    if (selected) {
+                      onBirthDateCalendarChanged(_BirthDateCalendar.gregorian);
+                    }
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('לוח עברי'),
+                  selected: birthDateCalendar == _BirthDateCalendar.hebrew,
+                  onSelected: (bool selected) {
+                    if (selected) {
+                      onBirthDateCalendarChanged(_BirthDateCalendar.hebrew);
+                    }
+                  },
+                ),
+              ],
+            ),
+            if (birthDate != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                'גיל: ${AppDateUtils.calculateAge(birthDate!)}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (birthDate == null) ...<Widget>[
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: manualAgeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'גיל (הערכה)'),
+                validator: (String? value) {
+                  final String trimmed = value?.trim() ?? '';
+                  if (trimmed.isEmpty) {
+                    return null;
+                  }
+                  final int? parsed = int.tryParse(trimmed);
+                  if (parsed == null || parsed < 10 || parsed > 120) {
+                    return 'יש להזין גיל בין 10 ל-120';
+                  }
+                  return null;
+                },
+              ),
+            ],
+            const SizedBox(height: 20),
+            Text('סגנון דתי', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ReligiousLevel.values.map((ReligiousLevel level) {
+                final bool selected = selectedReligiousLevel == level;
+                return FilterChip(
+                  label: Text(level.displayName),
+                  selected: selected,
+                  onSelected: (bool value) {
+                    onReligiousLevelChanged(value && !selected ? level : null);
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+            TextFormField(
+              controller: cityController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'עיר'),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: phoneController,
+              textInputAction: TextInputAction.next,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'טלפון'),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: sourceController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'מקור היכרות'),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: descriptionController,
+              textInputAction: TextInputAction.newline,
+              maxLines: 10,
+              minLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'כרטיסייה לשליחה',
+                hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  FormFieldValidator<String> _requiredText(String message) {
+    return (String? value) {
+      if (value == null || value.trim().isEmpty) {
+        return message;
+      }
+      return null;
+    };
   }
 }
 
@@ -744,6 +1322,294 @@ class _DetailHeader extends StatelessWidget {
       }
     }
     return null;
+  }
+}
+
+class _ProfileStatusSection extends StatelessWidget {
+  const _ProfileStatusSection({required this.person, required this.repository});
+
+  final Person person;
+  final PersonRepository repository;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return _Section(
+      title: 'סטטוס',
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: ProfileStatus.values.map((ProfileStatus status) {
+              final bool selected = person.profileStatus == status;
+              return ChoiceChip(
+                label: Text('${status.emoji} ${status.displayName}'),
+                selected: selected,
+                onSelected: selected
+                    ? null
+                    : (_) => repository.updateProfileStatus(person.id, status),
+                labelStyle: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonNotesSection extends StatefulWidget {
+  const _PersonNotesSection({required this.person, required this.notes});
+
+  final Person person;
+  final List<PersonNote> notes;
+
+  @override
+  State<_PersonNotesSection> createState() => _PersonNotesSectionState();
+}
+
+class _PersonNotesSectionState extends State<_PersonNotesSection> {
+  final TextEditingController _controller = TextEditingController();
+  final DateFormat _dateFormat = DateFormat('dd.MM.yyyy HH:mm');
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_handleChanged);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_handleChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<_PersonNoteEntry> entries = _buildEntries();
+
+    return _Section(
+      title: 'יומן הערות',
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(entries.length.toString()),
+      ),
+      child: Column(
+        children: <Widget>[
+          _PersonNotesTimeline(entries: entries, dateFormat: _dateFormat),
+          const SizedBox(height: 16),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  minLines: 1,
+                  maxLines: 4,
+                  decoration: const InputDecoration(hintText: 'הוסיפו הערה...'),
+                  onSubmitted: (_) => _addNote(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _canSend ? _addNote : null,
+                icon: Icon(
+                  Icons.send,
+                  color: _canSend
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<_PersonNoteEntry> _buildEntries() {
+    final List<_PersonNoteEntry> entries = widget.notes.map((PersonNote note) {
+      return _PersonNoteEntry(
+        text: note.text,
+        createdAt: note.createdAt,
+        isAutomatic: note.isAutomatic,
+      );
+    }).toList();
+
+    final String legacyNotes = (widget.person.notes ?? '').trim();
+    if (legacyNotes.isNotEmpty) {
+      entries.add(
+        _PersonNoteEntry(
+          text: legacyNotes,
+          createdAt: widget.person.createdAt,
+          isAutomatic: false,
+        ),
+      );
+    }
+
+    entries.sort(
+      (_PersonNoteEntry a, _PersonNoteEntry b) =>
+          a.createdAt.compareTo(b.createdAt),
+    );
+    return entries;
+  }
+
+  Future<void> _addNote() async {
+    final String text = _controller.text.trim();
+    if (text.isEmpty) {
+      return;
+    }
+
+    await context.read<PersonRepository>().addNote(widget.person.id, text);
+    _controller.clear();
+  }
+
+  bool get _canSend => _controller.text.trim().isNotEmpty;
+
+  void _handleChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+}
+
+class _PersonNoteEntry {
+  const _PersonNoteEntry({
+    required this.text,
+    required this.createdAt,
+    required this.isAutomatic,
+  });
+
+  final String text;
+  final DateTime createdAt;
+  final bool isAutomatic;
+}
+
+class _PersonNotesTimeline extends StatelessWidget {
+  const _PersonNotesTimeline({required this.entries, required this.dateFormat});
+
+  final List<_PersonNoteEntry> entries;
+  final DateFormat dateFormat;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'אין הערות עדיין',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      children: <Widget>[
+        PositionedDirectional(
+          top: 0,
+          bottom: 0,
+          start: 5,
+          child: Container(
+            width: 2,
+            color: Theme.of(context).colorScheme.primaryContainer,
+          ),
+        ),
+        Column(
+          children: entries.map((_PersonNoteEntry entry) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SizedBox(
+                    width: 24,
+                    child: Center(
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            if (entry.isAutomatic)
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.info_outline,
+                                    size: 16,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      entry.text,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Text(
+                                entry.text,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            const SizedBox(height: 8),
+                            Text(
+                              dateFormat.format(entry.createdAt),
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
   }
 }
 

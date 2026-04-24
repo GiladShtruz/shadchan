@@ -169,14 +169,19 @@ class NotificationService {
           notifId += 2;
         }
 
-        final int? hebrewMonth = person.hebrewBirthMonth;
-        final int? hebrewDay = person.hebrewBirthDay;
+        final ({int year, int month, int day})? convertedHebrew =
+            birthDate == null ? null : HebrewDateUtils.fromGregorian(birthDate);
+        final int? hebrewMonth =
+            person.hebrewBirthMonth ?? convertedHebrew?.month;
+        final int? hebrewDay = person.hebrewBirthDay ?? convertedHebrew?.day;
         if (hebrewMonth != null && hebrewDay != null) {
-          final DateTime? nextHebrew = HebrewDateUtils.nextGregorianOccurrence(
-            month: hebrewMonth,
-            day: hebrewDay,
-          );
-          if (nextHebrew != null) {
+          final List<DateTime> hebrewOccurrences =
+              HebrewDateUtils.upcomingGregorianOccurrences(
+                month: hebrewMonth,
+                day: hebrewDay,
+                count: 3,
+              );
+          for (final DateTime nextHebrew in hebrewOccurrences) {
             final tz.TZDateTime hebrewMorning = tz.TZDateTime(
               tz.local,
               nextHebrew.year,
@@ -184,6 +189,27 @@ class NotificationService {
               nextHebrew.day,
               9,
             );
+            final tz.TZDateTime hebrewEve = tz.TZDateTime(
+              tz.local,
+              nextHebrew.year,
+              nextHebrew.month,
+              nextHebrew.day,
+              20,
+            ).subtract(const Duration(days: 1));
+            final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
+            if (hebrewEve.isAfter(now)) {
+              await _plugin.zonedSchedule(
+                notifId,
+                'תזכורת ליום הולדת עברי',
+                '🎂 מחר יום ההולדת העברי של ${person.fullName.trim()}',
+                hebrewEve,
+                _birthdayNotificationDetails,
+                uiLocalNotificationDateInterpretation:
+                    UILocalNotificationDateInterpretation.absoluteTime,
+                androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+              );
+              notifId += 1;
+            }
             if (hebrewMorning.isAfter(tz.TZDateTime.now(tz.local))) {
               await _plugin.zonedSchedule(
                 notifId,
@@ -196,6 +222,10 @@ class NotificationService {
                 androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
               );
               notifId += 1;
+            }
+
+            if (notifId >= 20000) {
+              break;
             }
           }
         }

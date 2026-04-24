@@ -16,9 +16,9 @@ enum Gender {
   String get displayName {
     switch (this) {
       case Gender.male:
-        return 'בחור';
+        return 'זכר';
       case Gender.female:
-        return 'בחורה';
+        return 'נקבה';
       case Gender.unknown:
         return 'לא מוגדר';
     }
@@ -131,13 +131,13 @@ enum MatchStatus {
 
   bool get isArchived {
     switch (this) {
-      case MatchStatus.unavailable:
       case MatchStatus.rejected:
       case MatchStatus.dated:
       case MatchStatus.married:
         return true;
       case MatchStatus.idea:
       case MatchStatus.checking:
+      case MatchStatus.unavailable:
       case MatchStatus.dating:
         return false;
     }

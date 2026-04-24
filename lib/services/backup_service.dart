@@ -8,6 +8,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 
@@ -20,8 +21,9 @@ class BackupService {
       'version': 1,
       'exportDate': DateTime.now().toIso8601String(),
       'people': personRepo.getAll().map(_personToJson).toList(),
+      'personNotes': personRepo.getAllNotes().map(_personNoteToJson).toList(),
       'matches': matchRepo.getAll().map(_matchToJson).toList(),
-      'matchNotes': matchRepo.getAllNotes().map(_noteToJson).toList(),
+      'matchNotes': matchRepo.getAllNotes().map(_matchNoteToJson).toList(),
     };
 
     final Directory tempDirectory = await getTemporaryDirectory();
@@ -106,6 +108,29 @@ class BackupService {
       matchesAdded++;
     }
 
+    final List<dynamic> personNotesJson =
+        decoded['personNotes'] as List<dynamic>? ?? <dynamic>[];
+    for (final Object? item in personNotesJson) {
+      if (item is! Map<String, dynamic>) {
+        skipped++;
+        continue;
+      }
+
+      final PersonNote note = _personNoteFromJson(item);
+      if (!personRepo.containsId(note.personId)) {
+        skipped++;
+        continue;
+      }
+
+      if (personRepo.containsNoteId(note.id)) {
+        skipped++;
+        continue;
+      }
+
+      await personRepo.addImportedNote(note);
+      notesAdded++;
+    }
+
     final List<dynamic> notesJson =
         decoded['matchNotes'] as List<dynamic>? ?? <dynamic>[];
     for (final Object? item in notesJson) {
@@ -114,7 +139,7 @@ class BackupService {
         continue;
       }
 
-      final MatchNote note = _noteFromJson(item);
+      final MatchNote note = _matchNoteFromJson(item);
       if (!matchRepo.containsMatchId(note.matchId)) {
         skipped++;
         continue;
@@ -178,7 +203,17 @@ class BackupService {
     };
   }
 
-  static Map<String, Object?> _noteToJson(MatchNote note) {
+  static Map<String, Object?> _personNoteToJson(PersonNote note) {
+    return <String, Object?>{
+      'id': note.id,
+      'personId': note.personId,
+      'text': note.text,
+      'createdAt': note.createdAt.toIso8601String(),
+      'isAutomatic': note.isAutomatic,
+    };
+  }
+
+  static Map<String, Object?> _matchNoteToJson(MatchNote note) {
     return <String, Object?>{
       'id': note.id,
       'matchId': note.matchId,
@@ -228,7 +263,17 @@ class BackupService {
     );
   }
 
-  static MatchNote _noteFromJson(Map<String, dynamic> json) {
+  static PersonNote _personNoteFromJson(Map<String, dynamic> json) {
+    return PersonNote(
+      id: json['id'] as String,
+      personId: json['personId'] as String,
+      text: json['text'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      isAutomatic: json['isAutomatic'] as bool? ?? false,
+    );
+  }
+
+  static MatchNote _matchNoteFromJson(Map<String, dynamic> json) {
     return MatchNote(
       id: json['id'] as String,
       matchId: json['matchId'] as String,

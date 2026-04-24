@@ -3,15 +3,19 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:uuid/uuid.dart';
 
 class PersonRepository extends ChangeNotifier {
-  PersonRepository(this._box);
+  PersonRepository(this._box, [this._noteBox]);
 
   final Box<Person> _box;
+  final Box<PersonNote>? _noteBox;
+  final Uuid _uuid = const Uuid();
 
   int get count => _box.length;
 
@@ -148,6 +152,17 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> delete(String id) async {
+    final Box<PersonNote>? noteBox = _noteBox;
+    if (noteBox != null) {
+      final List<dynamic> noteKeys = noteBox.keys.where((dynamic key) {
+        final PersonNote? note = noteBox.get(key);
+        return note?.personId == id;
+      }).toList();
+      if (noteKeys.isNotEmpty) {
+        await noteBox.deleteAll(noteKeys);
+      }
+    }
+
     await _box.delete(id);
     notifyListeners();
     _refreshBirthdayNotificationsInBackground();
@@ -168,6 +183,78 @@ class PersonRepository extends ChangeNotifier {
     person.updatedAt = DateTime.now();
     await person.save();
     notifyListeners();
+  }
+
+  Future<void> updateProfileStatus(String id, ProfileStatus newStatus) async {
+    final Person? person = getById(id);
+    if (person == null || person.profileStatus == newStatus) {
+      return;
+    }
+
+    person.profileStatus = newStatus;
+    person.updatedAt = DateTime.now();
+    await person.save();
+    await _createNote(
+      personId: id,
+      text: 'סטטוס שונה ל-${newStatus.displayName}',
+      createdAt: person.updatedAt,
+      isAutomatic: true,
+    );
+    notifyListeners();
+  }
+
+  List<PersonNote> getNotesForPerson(String personId) {
+    final Box<PersonNote>? noteBox = _noteBox;
+    if (noteBox == null) {
+      return const <PersonNote>[];
+    }
+
+    final List<PersonNote> notes = noteBox.values
+        .where((PersonNote note) => note.personId == personId)
+        .toList();
+    notes.sort(
+      (PersonNote a, PersonNote b) => a.createdAt.compareTo(b.createdAt),
+    );
+    return notes;
+  }
+
+  List<PersonNote> getAllNotes() {
+    final Box<PersonNote>? noteBox = _noteBox;
+    if (noteBox == null) {
+      return const <PersonNote>[];
+    }
+
+    final List<PersonNote> notes = noteBox.values.toList();
+    notes.sort(
+      (PersonNote a, PersonNote b) => a.createdAt.compareTo(b.createdAt),
+    );
+    return notes;
+  }
+
+  bool containsNoteId(String id) {
+    return _noteBox?.containsKey(id) ?? false;
+  }
+
+  Future<void> addNote(String personId, String text) async {
+    final DateTime now = DateTime.now();
+    await _createNote(
+      personId: personId,
+      text: text,
+      createdAt: now,
+      isAutomatic: false,
+    );
+
+    final Person? person = getById(personId);
+    if (person != null) {
+      person.updatedAt = now;
+      await person.save();
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> addImportedNote(PersonNote note) async {
+    await _noteBox?.put(note.id, note);
   }
 
   List<Person> getBirthdaysToday() {
@@ -211,5 +298,26 @@ class PersonRepository extends ChangeNotifier {
 
   void _refreshBirthdayNotificationsInBackground() {
     unawaited(_refreshBirthdayNotifications());
+  }
+
+  Future<void> _createNote({
+    required String personId,
+    required String text,
+    required DateTime createdAt,
+    required bool isAutomatic,
+  }) async {
+    final Box<PersonNote>? noteBox = _noteBox;
+    if (noteBox == null) {
+      return;
+    }
+
+    final PersonNote note = PersonNote(
+      id: _uuid.v4(),
+      personId: personId,
+      text: text,
+      createdAt: createdAt,
+      isAutomatic: isAutomatic,
+    );
+    await noteBox.put(note.id, note);
   }
 }

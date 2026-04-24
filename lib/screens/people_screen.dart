@@ -180,10 +180,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
         ),
         const SizedBox(width: 8),
         Material(
-          color: theme.colorScheme.primaryContainer,
+          color: theme.colorScheme.primary,
           borderRadius: BorderRadius.circular(12),
           child: IconButton(
             icon: const Icon(Icons.tune),
+            color: theme.colorScheme.onPrimary,
             tooltip: 'סינון',
             onPressed: _openFiltersSheet,
           ),
@@ -596,15 +597,67 @@ class _PersonSubtitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final List<String> missingInfo = <String>[
+      if (person.gender == Gender.unknown) 'מגדר',
+      if (person.age == null) 'גיל',
+    ];
     final List<String> parts = <String>[
       if (person.age != null) person.age!.toString(),
       if (person.religiousLevel != null) person.religiousLevel!.displayName,
     ];
 
-    return Text(
-      parts.join(' · '),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
+    if (missingInfo.isEmpty) {
+      return Text(
+        parts.join(' · '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (parts.isNotEmpty) ...<Widget>[
+          Text(parts.join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 6),
+        ],
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: missingInfo.map((String label) {
+            return _MissingInfoTag(label: 'חסר $label');
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _MissingInfoTag extends StatelessWidget {
+  const _MissingInfoTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.error.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: theme.colorScheme.error.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.error,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }
@@ -680,17 +733,18 @@ class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
                 children: Gender.values
                     .where((Gender g) => g != Gender.unknown)
                     .map((Gender gender) {
-                  final bool isSelected = tempGender == gender;
-                  return ChoiceChip(
-                    label: Text(gender.displayName),
-                    selected: isSelected,
-                    onSelected: (_) {
-                      setState(() {
-                        tempGender = isSelected ? null : gender;
-                      });
-                    },
-                  );
-                }).toList(),
+                      final bool isSelected = tempGender == gender;
+                      return ChoiceChip(
+                        label: Text(gender.displayName),
+                        selected: isSelected,
+                        onSelected: (_) {
+                          setState(() {
+                            tempGender = isSelected ? null : gender;
+                          });
+                        },
+                      );
+                    })
+                    .toList(),
               ),
               const SizedBox(height: 20),
               Text(

@@ -47,6 +47,12 @@ void main() {
     expect(PhoneUtils.normalizeForComparison('052 123 4567'), '0521234567');
   });
 
+  test('toWhatsAppNumber converts Israeli phones to international format', () {
+    expect(PhoneUtils.toWhatsAppNumber('052 123 4567'), '972521234567');
+    expect(PhoneUtils.toWhatsAppNumber('+972-52-123-4567'), '972521234567');
+    expect(PhoneUtils.toWhatsAppNumber(''), isNull);
+  });
+
   test('buildCandidate keeps first valid phone and marks existing numbers', () {
     final ContactImportCandidate? candidate =
         ContactsImportService.buildCandidate(

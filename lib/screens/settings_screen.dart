@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/services/backup_service.dart';
+import 'package:shadchan/services/excel_export_service.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/dialogs/backup_import_feedback.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
@@ -19,13 +21,53 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _isExporting = false;
+  bool _isExportingExcel = false;
   bool _isImporting = false;
 
   @override
   Widget build(BuildContext context) {
     final PersonRepository personRepo = context.watch<PersonRepository>();
     final MatchRepository matchRepo = context.watch<MatchRepository>();
+    final ThemeModeProvider themeModeProvider = context
+        .watch<ThemeModeProvider>();
     final List<Widget> sections = <Widget>[
+      const SectionHeader(title: 'תצוגה'),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('ערכת נושא', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              SegmentedButton<ThemeMode>(
+                segments: const <ButtonSegment<ThemeMode>>[
+                  ButtonSegment<ThemeMode>(
+                    value: ThemeMode.system,
+                    icon: Icon(Icons.brightness_auto_outlined),
+                    label: Text('מערכת'),
+                  ),
+                  ButtonSegment<ThemeMode>(
+                    value: ThemeMode.light,
+                    icon: Icon(Icons.light_mode_outlined),
+                    label: Text('בהיר'),
+                  ),
+                  ButtonSegment<ThemeMode>(
+                    value: ThemeMode.dark,
+                    icon: Icon(Icons.dark_mode_outlined),
+                    label: Text('כהה'),
+                  ),
+                ],
+                selected: <ThemeMode>{themeModeProvider.themeMode},
+                onSelectionChanged: (Set<ThemeMode> selection) {
+                  themeModeProvider.setThemeMode(selection.first);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 24),
       const SectionHeader(title: 'גיבוי ושחזור'),
       Card(
         child: Column(
@@ -39,10 +81,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     )
                   : const Icon(Icons.upload_file),
               title: const Text('ייצוא נתונים'),
-              enabled: !_isExporting && !_isImporting,
-              onTap: _isExporting || _isImporting
+              enabled: !_isExporting && !_isExportingExcel && !_isImporting,
+              onTap: _isExporting || _isExportingExcel || _isImporting
                   ? null
                   : () => _exportData(personRepo, matchRepo),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: _isExportingExcel
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    )
+                  : const Icon(Icons.table_chart_outlined),
+              title: const Text('ייצוא לאקסל'),
+              enabled: !_isExporting && !_isExportingExcel && !_isImporting,
+              onTap: _isExporting || _isExportingExcel || _isImporting
+                  ? null
+                  : () => _exportExcel(personRepo, matchRepo),
             ),
             const Divider(height: 1),
             ListTile(
@@ -54,8 +111,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     )
                   : const Icon(Icons.download),
               title: const Text('ייבוא נתונים'),
-              enabled: !_isExporting && !_isImporting,
-              onTap: _isExporting || _isImporting
+              enabled: !_isExporting && !_isExportingExcel && !_isImporting,
+              onTap: _isExporting || _isExportingExcel || _isImporting
                   ? null
                   : () => _importData(personRepo, matchRepo),
             ),
@@ -193,6 +250,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         setState(() {
           _isImporting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _exportExcel(
+    PersonRepository personRepo,
+    MatchRepository matchRepo,
+  ) async {
+    setState(() {
+      _isExportingExcel = true;
+    });
+
+    try {
+      final File excelFile = await ExcelExportService.exportData(
+        personRepo,
+        matchRepo,
+      );
+      await ExcelExportService.shareExport(excelFile);
+
+      if (!mounted) {
+        return;
+      }
+
+      _showSnackBar('קובץ האקסל מוכן לשיתוף');
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      _showSnackBar('לא הצלחנו לייצא לאקסל');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExportingExcel = false;
         });
       }
     }

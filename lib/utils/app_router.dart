@@ -70,7 +70,10 @@ abstract final class AppRouter {
                         path: 'edit',
                         builder: (BuildContext context, GoRouterState state) {
                           final String personId = state.pathParameters['id']!;
-                          return PersonFormScreen(personId: personId);
+                          return PersonDetailScreen(
+                            personId: personId,
+                            initiallyEditing: true,
+                          );
                         },
                       ),
                     ],

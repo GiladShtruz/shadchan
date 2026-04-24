@@ -1,5 +1,12 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/date_utils.dart';
@@ -40,6 +47,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   ProfileStatus _selectedProfileStatus = ProfileStatus.available;
   Person? _person;
   _PersonFormSnapshot? _initialSnapshot;
+  final Set<String> _newPhotoPaths = <String>{};
+  List<String> _photoPaths = <String>[];
   bool _didLoadInitialData = false;
   bool _isSaving = false;
 
@@ -90,6 +99,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
 
         final bool shouldPop = await _handleWillPop();
         if (shouldPop && context.mounted) {
+          if (_hasUnsavedChanges) {
+            _deleteNewPhotos();
+          }
           context.pop(result);
         }
       },
@@ -179,6 +191,13 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               },
             ),
             const SizedBox(height: 20),
+            if (_isEditMode && _person != null) ...<Widget>[
+              _PhotoEditor(
+                photoPaths: _photoPaths,
+                onAddPhoto: _pickPhotoForEdit,
+              ),
+              const SizedBox(height: 20),
+            ],
             Text('מגדר', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Wrap(
@@ -186,20 +205,21 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               children: Gender.values
                   .where((Gender g) => g != Gender.unknown)
                   .map((Gender gender) {
-                return ChoiceChip(
-                  label: Text(gender.displayName),
-                  selected: _selectedGender == gender,
-                  onSelected: (bool selected) {
-                    if (!selected) {
-                      return;
-                    }
+                    return ChoiceChip(
+                      label: Text(gender.displayName),
+                      selected: _selectedGender == gender,
+                      onSelected: (bool selected) {
+                        if (!selected) {
+                          return;
+                        }
 
-                    setState(() {
-                      _selectedGender = gender;
-                    });
-                  },
-                );
-              }).toList(),
+                        setState(() {
+                          _selectedGender = gender;
+                        });
+                      },
+                    );
+                  })
+                  .toList(),
             ),
             const SizedBox(height: 20),
             Text('תאריך לידה', style: theme.textTheme.titleMedium),
@@ -240,16 +260,16 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                                   : theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          if (_birthDateSecondaryText() case final String txt)
-                            ...<Widget>[
-                              const SizedBox(height: 2),
-                              Text(
-                                txt,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                          if (_birthDateSecondaryText()
+                              case final String txt) ...<Widget>[
+                            const SizedBox(height: 2),
+                            Text(
+                              txt,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
                               ),
-                            ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -278,8 +298,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               children: <Widget>[
                 ChoiceChip(
                   label: const Text('לוח לועזי'),
-                  selected:
-                      _birthDateCalendar == _BirthDateCalendar.gregorian,
+                  selected: _birthDateCalendar == _BirthDateCalendar.gregorian,
                   onSelected: (bool v) {
                     if (!v) return;
                     setState(() {
@@ -371,35 +390,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _notesController,
-              textInputAction: TextInputAction.newline,
-              maxLines: 5,
-              minLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'הערות פרטיות',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Icon(
-                  Icons.lock_outline,
-                  size: 14,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'הערות אלה לא ישותפו לעולם',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 24),
             TextFormField(
               controller: _descriptionController,
@@ -407,8 +397,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               maxLines: 10,
               minLines: 5,
               decoration: const InputDecoration(
-                labelText: 'תיאור',
-                hintText: 'תיאור לשיתוף בוואטסאפ (5-10 משפטים)',
+                labelText: 'כרטיסייה לשליחה',
+                hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
                 alignLabelWithHint: true,
               ),
             ),
@@ -482,8 +472,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   Future<({int year, int month, int day})?> _showHebrewDatePicker() async {
     final DateTime now = DateTime.now();
     final ({int year, int month, int day}) todayHebrew =
-        HebrewDateUtils.fromGregorian(now) ??
-        (year: 5785, month: 1, day: 1);
+        HebrewDateUtils.fromGregorian(now) ?? (year: 5785, month: 1, day: 1);
     final int initYear = _hebrewBirthYear ?? (todayHebrew.year - 22);
     final int initMonth = _hebrewBirthMonth ?? todayHebrew.month;
     final int initDay = _hebrewBirthDay ?? todayHebrew.day;
@@ -545,16 +534,15 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                       child: DropdownButtonFormField<int>(
                         initialValue: selYear,
                         decoration: const InputDecoration(labelText: 'שנה'),
-                        items: List<DropdownMenuItem<int>>.generate(
-                          101,
-                          (int i) {
-                            final int y = todayHebrew.year - i;
-                            return DropdownMenuItem<int>(
-                              value: y,
-                              child: Text('$y'),
-                            );
-                          },
-                        ),
+                        items: List<DropdownMenuItem<int>>.generate(101, (
+                          int i,
+                        ) {
+                          final int y = todayHebrew.year - i;
+                          return DropdownMenuItem<int>(
+                            value: y,
+                            child: Text('$y'),
+                          );
+                        }),
                         onChanged: (int? v) {
                           if (v != null) {
                             setDialogState(() => selYear = v);
@@ -571,9 +559,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   child: const Text('ביטול'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(
-                    (year: selYear, month: selMonth, day: selDay),
-                  ),
+                  onPressed: () => Navigator.of(
+                    ctx,
+                  ).pop((year: selYear, month: selMonth, day: selDay)),
                   child: const Text('אישור'),
                 ),
               ],
@@ -641,6 +629,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   Future<void> _handleBackPressed() async {
     final bool shouldPop = await _handleWillPop();
     if (shouldPop && mounted) {
+      if (_hasUnsavedChanges) {
+        _deleteNewPhotos();
+      }
       context.pop();
     }
   }
@@ -697,7 +688,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           ..profileStatus = _selectedProfileStatus
           ..hebrewBirthYear = _hebrewBirthYear
           ..hebrewBirthMonth = _hebrewBirthMonth
-          ..hebrewBirthDay = _hebrewBirthDay;
+          ..hebrewBirthDay = _hebrewBirthDay
+          ..photosPaths = List<String>.from(_photoPaths);
 
         await repository.update(_person!);
       } else {
@@ -731,6 +723,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       }
 
       _initialSnapshot = _currentSnapshot();
+      _newPhotoPaths.clear();
       context.pop();
     } finally {
       if (mounted) {
@@ -750,11 +743,13 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _sourceController.text = person.source ?? '';
     _notesController.text = person.notes ?? '';
     _descriptionController.text = person.description ?? '';
-    _selectedGender =
-        person.gender == Gender.unknown ? Gender.male : person.gender;
+    _selectedGender = person.gender == Gender.unknown
+        ? Gender.male
+        : person.gender;
     _birthDate = person.birthDate;
     _selectedReligiousLevel = person.religiousLevel;
     _selectedProfileStatus = person.profileStatus;
+    _photoPaths = List<String>.from(person.photosPaths);
     _hebrewBirthYear = person.hebrewBirthYear;
     _hebrewBirthMonth = person.hebrewBirthMonth;
     _hebrewBirthDay = person.hebrewBirthDay;
@@ -773,8 +768,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         (_hebrewBirthYear == null ||
             _hebrewBirthMonth == null ||
             _hebrewBirthDay == null)) {
-      final ({int year, int month, int day})? h =
-          HebrewDateUtils.fromGregorian(_birthDate!);
+      final ({int year, int month, int day})? h = HebrewDateUtils.fromGregorian(
+        _birthDate!,
+      );
       _hebrewBirthYear = h?.year;
       _hebrewBirthMonth = h?.month;
       _hebrewBirthDay = h?.day;
@@ -802,7 +798,142 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       hebrewBirthYear: _hebrewBirthYear,
       hebrewBirthMonth: _hebrewBirthMonth,
       hebrewBirthDay: _hebrewBirthDay,
+      photoPaths: _photoPaths,
     );
+  }
+
+  Future<void> _pickPhotoForEdit() async {
+    final Person? person = _person;
+    if (person == null) {
+      return;
+    }
+
+    final bool hasPermission = await _ensureMediaPermission();
+    if (!hasPermission || !mounted) {
+      return;
+    }
+
+    try {
+      final XFile? pickedFile = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+      );
+      if (pickedFile == null || !mounted) {
+        return;
+      }
+
+      final Directory documentsDirectory =
+          await getApplicationDocumentsDirectory();
+      final Directory photosDirectory = Directory(
+        '${documentsDirectory.path}${Platform.pathSeparator}photos',
+      );
+
+      if (!photosDirectory.existsSync()) {
+        photosDirectory.createSync(recursive: true);
+      }
+
+      final String targetPath =
+          '${photosDirectory.path}${Platform.pathSeparator}${person.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      await File(pickedFile.path).copy(targetPath);
+
+      setState(() {
+        _photoPaths = List<String>.from(_photoPaths)..add(targetPath);
+        _newPhotoPaths.add(targetPath);
+      });
+
+      _showSnackBar('התמונה נוספה לטופס. יש לשמור כדי לעדכן את איש הקשר');
+    } on PlatformException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      if (_looksLikePermissionError(error)) {
+        await _showPermissionExplanationDialog();
+        return;
+      }
+
+      _showSnackBar('לא הצלחנו לבחור תמונה כרגע');
+    } catch (_) {
+      if (mounted) {
+        _showSnackBar('לא הצלחנו לשמור את התמונה');
+      }
+    }
+  }
+
+  Future<bool> _ensureMediaPermission() async {
+    if (Platform.isAndroid) {
+      return true;
+    }
+
+    final PermissionStatus status = await Permission.photos.request();
+
+    if (status.isGranted || status.isLimited) {
+      return true;
+    }
+
+    if (mounted) {
+      await _showPermissionExplanationDialog(
+        openSettingsAction: status.isPermanentlyDenied || status.isRestricted,
+      );
+    }
+
+    return false;
+  }
+
+  bool _looksLikePermissionError(PlatformException error) {
+    final String combined = '${error.code} ${error.message ?? ''}'
+        .toLowerCase();
+    return combined.contains('denied') || combined.contains('permission');
+  }
+
+  Future<void> _showPermissionExplanationDialog({
+    bool openSettingsAction = false,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('נדרשת הרשאה'),
+          content: const Text(
+            'כדי להוסיף תמונה צריך לאשר גישה לגלריה בהגדרות המכשיר.',
+          ),
+          actions: <Widget>[
+            if (openSettingsAction)
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await openAppSettings();
+                },
+                child: const Text('פתיחת הגדרות'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('הבנתי'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _deleteNewPhotos() {
+    for (final String path in _newPhotoPaths) {
+      final File file = File(path);
+      if (file.existsSync()) {
+        try {
+          file.deleteSync();
+        } catch (_) {
+          // Best-effort cleanup for photos copied during an abandoned edit.
+        }
+      }
+    }
+    _newPhotoPaths.clear();
   }
 
   String? _normalizedText(String value) {
@@ -821,7 +952,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
 }
 
 class _PersonFormSnapshot {
-  const _PersonFormSnapshot({
+  _PersonFormSnapshot({
     required this.firstName,
     required this.lastName,
     required this.gender,
@@ -837,7 +968,8 @@ class _PersonFormSnapshot {
     required this.hebrewBirthYear,
     required this.hebrewBirthMonth,
     required this.hebrewBirthDay,
-  });
+    required List<String> photoPaths,
+  }) : photoPaths = List<String>.unmodifiable(photoPaths);
 
   final String firstName;
   final String lastName;
@@ -854,6 +986,7 @@ class _PersonFormSnapshot {
   final int? hebrewBirthYear;
   final int? hebrewBirthMonth;
   final int? hebrewBirthDay;
+  final List<String> photoPaths;
 
   @override
   bool operator ==(Object other) {
@@ -876,7 +1009,8 @@ class _PersonFormSnapshot {
         other.profileStatus == profileStatus &&
         other.hebrewBirthYear == hebrewBirthYear &&
         other.hebrewBirthMonth == hebrewBirthMonth &&
-        other.hebrewBirthDay == hebrewBirthDay;
+        other.hebrewBirthDay == hebrewBirthDay &&
+        listEquals(other.photoPaths, photoPaths);
   }
 
   @override
@@ -897,8 +1031,78 @@ class _PersonFormSnapshot {
       hebrewBirthYear,
       hebrewBirthMonth,
       hebrewBirthDay,
+      Object.hashAll(photoPaths),
     );
   }
 }
 
 enum _BirthDateCalendar { gregorian, hebrew }
+
+class _PhotoEditor extends StatelessWidget {
+  const _PhotoEditor({required this.photoPaths, required this.onAddPhoto});
+
+  final List<String> photoPaths;
+  final VoidCallback onAddPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(child: Text('תמונות', style: theme.textTheme.titleMedium)),
+            TextButton.icon(
+              onPressed: onAddPhoto,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('הוספת תמונה'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (photoPaths.isEmpty)
+          Text(
+            'אין תמונות',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          )
+        else
+          SizedBox(
+            height: 96,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: photoPaths.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (BuildContext context, int index) {
+                final File file = File(photoPaths[index]);
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: file.existsSync()
+                      ? Image.file(
+                          file,
+                          width: 80,
+                          height: 96,
+                          cacheWidth: 160,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          width: 80,
+                          height: 96,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}

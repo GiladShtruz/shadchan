@@ -93,6 +93,69 @@ abstract final class HebrewDateUtils {
     return null;
   }
 
+  static List<DateTime> upcomingGregorianOccurrences({
+    required int month,
+    required int day,
+    DateTime? from,
+    int count = 3,
+  }) {
+    final DateTime reference = from ?? DateTime.now();
+    final DateTime referenceDate = DateTime(
+      reference.year,
+      reference.month,
+      reference.day,
+    );
+    final List<DateTime> occurrences = <DateTime>[];
+
+    try {
+      final JewishDate today = JewishDate.fromDateTime(reference);
+      final int currentJewishYear = today.getJewishYear();
+
+      for (
+        int offset = 0;
+        offset <= count + 2 && occurrences.length < count;
+        offset++
+      ) {
+        try {
+          final JewishDate candidate = JewishDate.initDate(
+            jewishYear: currentJewishYear + offset,
+            jewishMonth: month,
+            jewishDayOfMonth: day,
+          );
+          final DateTime gregorian = DateTime(
+            candidate.getGregorianYear(),
+            candidate.getGregorianMonth(),
+            candidate.getGregorianDayOfMonth(),
+          );
+          if (!gregorian.isBefore(referenceDate)) {
+            occurrences.add(gregorian);
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+    } catch (_) {
+      return const <DateTime>[];
+    }
+
+    return occurrences;
+  }
+
+  static ({int year, int month, int day})? today({DateTime? from}) {
+    try {
+      final JewishDate current = JewishDate.fromDateTime(
+        from ?? DateTime.now(),
+      );
+      return (
+        year: current.getJewishYear(),
+        month: current.getJewishMonth(),
+        day: current.getJewishDayOfMonth(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   static bool isBirthdayToday({
     required int month,
     required int day,

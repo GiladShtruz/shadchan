@@ -30,4 +30,29 @@ abstract final class PhoneUtils {
   static String digitsOnly(String value) {
     return value.replaceAll(RegExp(r'\D'), '');
   }
+
+  static String? toWhatsAppNumber(String? value) {
+    if (value == null) {
+      return null;
+    }
+
+    String digits = digitsOnly(value);
+    if (digits.isEmpty) {
+      return null;
+    }
+
+    if (digits.startsWith('00')) {
+      digits = digits.substring(2);
+    }
+
+    if (digits.startsWith('972')) {
+      return digits.length >= 11 ? digits : null;
+    }
+
+    if (digits.startsWith('0') && digits.length >= 9) {
+      return '972${digits.substring(1)}';
+    }
+
+    return digits.length >= 8 ? digits : null;
+  }
 }
