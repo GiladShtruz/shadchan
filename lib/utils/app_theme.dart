@@ -23,7 +23,7 @@ abstract final class AppTheme {
         outlineVariant: AppColors.divider,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      appBarBackgroundColor: AppColors.primaryDark,
+      appBarBackgroundColor: AppColors.primary,
       appBarForegroundColor: AppColors.onPrimary,
       cardColor: AppColors.surface,
       chipBackgroundColor: AppColors.primaryLight,

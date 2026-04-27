@@ -19,8 +19,26 @@ class PersonRepository extends ChangeNotifier {
 
   int get count => _box.length;
 
+  int get pendingCount {
+    int total = 0;
+    for (final Person person in _box.values) {
+      if (person.needsReview) total++;
+    }
+    return total;
+  }
+
+  int get activeCount => count - pendingCount;
+
   List<Person> getAll() {
     final List<Person> people = _box.values.toList();
+    people.sort(_sortByFirstName);
+    return people;
+  }
+
+  List<Person> getPending() {
+    final List<Person> people = _box.values
+        .where((Person person) => person.needsReview)
+        .toList();
     people.sort(_sortByFirstName);
     return people;
   }
@@ -53,8 +71,10 @@ class PersonRepository extends ChangeNotifier {
     int? minAge,
     int? maxAge,
     List<ReligiousLevel>? religiousLevels,
+    List<ProfileStatus>? profileStatuses,
     String? city,
     bool? favoritesOnly,
+    bool includePending = false,
   }) {
     final String? normalizedCity = city?.trim().toLowerCase();
     final bool shouldFilterByCity =
@@ -63,8 +83,16 @@ class PersonRepository extends ChangeNotifier {
         religiousLevels != null && religiousLevels.isNotEmpty;
     final List<ReligiousLevel> selectedReligiousLevels =
         religiousLevels ?? const <ReligiousLevel>[];
+    final bool shouldFilterByProfileStatus =
+        profileStatuses != null && profileStatuses.isNotEmpty;
+    final List<ProfileStatus> selectedProfileStatuses =
+        profileStatuses ?? const <ProfileStatus>[];
 
     final List<Person> people = _box.values.where((Person person) {
+      if (!includePending && person.needsReview) {
+        return false;
+      }
+
       if (gender != null && person.gender != gender) {
         return false;
       }
@@ -79,6 +107,11 @@ class PersonRepository extends ChangeNotifier {
 
       if (shouldFilterByReligiousLevel &&
           !selectedReligiousLevels.contains(person.religiousLevel)) {
+        return false;
+      }
+
+      if (shouldFilterByProfileStatus &&
+          !selectedProfileStatuses.contains(person.profileStatus)) {
         return false;
       }
 
@@ -146,6 +179,7 @@ class PersonRepository extends ChangeNotifier {
 
   Future<void> update(Person person) async {
     person.updatedAt = DateTime.now();
+    person.needsReview = false;
     await person.save();
     notifyListeners();
     _refreshBirthdayNotificationsInBackground();
@@ -180,6 +214,59 @@ class PersonRepository extends ChangeNotifier {
     }
 
     person.isFavorite = !person.isFavorite;
+    person.updatedAt = DateTime.now();
+    await person.save();
+    notifyListeners();
+  }
+
+  Future<void> updateManualAge(String id, int? newAge) async {
+    final Person? person = getById(id);
+    if (person == null || person.manualAge == newAge) {
+      return;
+    }
+
+    person.manualAge = newAge;
+    person.updatedAt = DateTime.now();
+    await person.save();
+    notifyListeners();
+  }
+
+  Future<void> updateCity(String id, String? newCity) async {
+    final Person? person = getById(id);
+    if (person == null) {
+      return;
+    }
+    final String? normalized =
+        (newCity == null || newCity.trim().isEmpty) ? null : newCity.trim();
+    if (person.city == normalized) {
+      return;
+    }
+
+    person.city = normalized;
+    person.updatedAt = DateTime.now();
+    await person.save();
+    notifyListeners();
+  }
+
+  Future<void> updateGender(String id, Gender newGender) async {
+    final Person? person = getById(id);
+    if (person == null || person.gender == newGender) {
+      return;
+    }
+
+    person.gender = newGender;
+    person.updatedAt = DateTime.now();
+    await person.save();
+    notifyListeners();
+  }
+
+  Future<void> updateReligiousLevel(String id, ReligiousLevel? newLevel) async {
+    final Person? person = getById(id);
+    if (person == null || person.religiousLevel == newLevel) {
+      return;
+    }
+
+    person.religiousLevel = newLevel;
     person.updatedAt = DateTime.now();
     await person.save();
     notifyListeners();

@@ -5,6 +5,7 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/notification_service.dart';
 import 'package:uuid/uuid.dart';
 
 class MatchRepository extends ChangeNotifier {
@@ -120,7 +121,15 @@ class MatchRepository extends ChangeNotifier {
       isAutomatic: true,
     );
     notifyListeners();
+    _refreshNotifications();
     return match;
+  }
+
+  Future<void> update(MatchIdea match) async {
+    match.updatedAt = DateTime.now();
+    await match.save();
+    notifyListeners();
+    _refreshNotifications();
   }
 
   Future<void> updateStatus(String matchId, MatchStatus newStatus) async {
@@ -140,6 +149,7 @@ class MatchRepository extends ChangeNotifier {
       isAutomatic: true,
     );
     notifyListeners();
+    _refreshNotifications();
   }
 
   Future<void> updateHandler(
@@ -171,6 +181,7 @@ class MatchRepository extends ChangeNotifier {
 
     await _matchBox.delete(matchId);
     notifyListeners();
+    _refreshNotifications();
   }
 
   List<MatchNote> getNotesForMatch(String matchId) {
@@ -262,5 +273,10 @@ class MatchRepository extends ChangeNotifier {
 
   int _sortByUpdatedAtDesc(MatchIdea a, MatchIdea b) {
     return b.updatedAt.compareTo(a.updatedAt);
+  }
+
+  void _refreshNotifications() {
+    final List<MatchIdea> allMatches = _matchBox.values.toList();
+    NotificationService.scheduleMatchReminders(allMatches);
   }
 }

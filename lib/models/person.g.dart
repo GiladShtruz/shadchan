@@ -37,13 +37,14 @@ class PersonAdapter extends TypeAdapter<Person> {
       hebrewBirthDay: fields[19] as int?,
       photosPaths: (fields[11] as List).cast<String>(),
       isFavorite: fields[12] as bool,
+      needsReview: fields[20] as bool? ?? false,
     );
   }
 
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(20)
+      ..writeByte(21)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -83,7 +84,9 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..writeByte(18)
       ..write(obj.hebrewBirthMonth)
       ..writeByte(19)
-      ..write(obj.hebrewBirthDay);
+      ..write(obj.hebrewBirthDay)
+      ..writeByte(20)
+      ..write(obj.needsReview);
   }
 
   @override

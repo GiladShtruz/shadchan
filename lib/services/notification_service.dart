@@ -5,6 +5,7 @@ import 'package:shadchan/utils/hebrew_date_utils.dart';
 import 'package:shadchan/models/person.dart' as model;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:shadchan/models/match_idea.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
@@ -33,6 +34,28 @@ class NotificationService {
       NotificationDetails(
         android: _androidBirthdayDetails,
         iOS: _iosBirthdayDetails,
+      );
+
+  static const AndroidNotificationDetails _androidMatchDetails =
+      AndroidNotificationDetails(
+        'match_reminders',
+        'תזכורות להצעות',
+        channelDescription: 'התראות על הצעות שידוך',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+
+  static const DarwinNotificationDetails _iosMatchDetails =
+      DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+  static const NotificationDetails _matchNotificationDetails =
+      NotificationDetails(
+        android: _androidMatchDetails,
+        iOS: _iosMatchDetails,
       );
 
   static Future<void> initialize() async {
@@ -104,6 +127,37 @@ class NotificationService {
     await _scheduleQueue;
   }
 
+  static Future<void> scheduleMatchReminders(
+    List<MatchIdea> matches,
+  ) async {
+    if (!_isInitialized) {
+      return;
+    }
+
+    final int requestId = ++_latestScheduleRequestId;
+    final List<MatchIdea> matchesSnapshot = List<MatchIdea>.from(matches);
+
+    _scheduleQueue = _scheduleQueue
+        .then((_) async {
+          if (requestId != _latestScheduleRequestId) {
+            return;
+          }
+
+          await _scheduleMatchRemindersInternal(
+            matchesSnapshot,
+            requestId: requestId,
+          );
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint(
+            'NotificationService.scheduleMatchReminders failed: '
+            '$error\n$stackTrace',
+          );
+        });
+
+    await _scheduleQueue;
+  }
+
   static Future<void> cancelAll() async {
     if (!_isInitialized) {
       return;
@@ -121,7 +175,13 @@ class NotificationService {
     required int requestId,
   }) async {
     try {
-      await _plugin.cancelAll();
+      final List<PendingNotificationRequest> pending =
+          await _plugin.pendingNotificationRequests();
+      for (final PendingNotificationRequest req in pending) {
+        if (req.id >= 10000 && req.id < 20000) {
+          await _plugin.cancel(req.id);
+        }
+      }
 
       int notifId = 10000;
 
@@ -237,6 +297,58 @@ class NotificationService {
     } catch (error, stackTrace) {
       debugPrint(
         'NotificationService.scheduleBirthdayNotifications failed: '
+        '$error\n$stackTrace',
+      );
+    }
+  }
+
+  static Future<void> _scheduleMatchRemindersInternal(
+    List<MatchIdea> matches, {
+    required int requestId,
+  }) async {
+    try {
+      final List<PendingNotificationRequest> pending =
+          await _plugin.pendingNotificationRequests();
+      for (final PendingNotificationRequest req in pending) {
+        if (req.id >= 20000 && req.id < 30000) {
+          await _plugin.cancel(req.id);
+        }
+      }
+
+      int notifId = 20000;
+
+      for (final MatchIdea match in matches) {
+        if (requestId != _latestScheduleRequestId) {
+          return;
+        }
+
+        final DateTime? reminderDate = match.reminderDate;
+        if (reminderDate != null && reminderDate.isAfter(DateTime.now())) {
+          final tz.TZDateTime scheduledTime = tz.TZDateTime.from(
+            reminderDate,
+            tz.local,
+          );
+
+          await _plugin.zonedSchedule(
+            notifId,
+            'תזכורת להצעה',
+            match.reminderNote ?? 'יש לך תזכורת להצעת שידוך',
+            scheduledTime,
+            _matchNotificationDetails,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          );
+          notifId++;
+        }
+
+        if (notifId >= 30000) {
+          break;
+        }
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'NotificationService.scheduleMatchReminders failed: '
         '$error\n$stackTrace',
       );
     }

@@ -15,6 +15,7 @@ import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/hebrew_date_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_note.dart';
@@ -25,7 +26,6 @@ import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/photo_viewer.dart';
 import 'package:shadchan/widgets/section_header.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class PersonDetailScreen extends StatefulWidget {
   const PersonDetailScreen({
@@ -61,9 +61,38 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   _BirthDateCalendar _birthDateCalendar = _BirthDateCalendar.gregorian;
   ReligiousLevel? _selectedReligiousLevel;
 
+  final FocusNode _firstNameFocus = FocusNode();
+  final FocusNode _lastNameFocus = FocusNode();
+  final FocusNode _manualAgeFocus = FocusNode();
+  final FocusNode _phoneFocus = FocusNode();
+  final FocusNode _descriptionFocus = FocusNode();
+
+  String _origFirstName = '';
+  String _origLastName = '';
+  String _origManualAge = '';
+  String _origCity = '';
+  String _origPhone = '';
+  String _origSource = '';
+  String _origDescription = '';
+  Gender _origGender = Gender.unknown;
+  DateTime? _origBirthDate;
+  ReligiousLevel? _origReligiousLevel;
+  int? _origHebrewBirthYear;
+  int? _origHebrewBirthMonth;
+  int? _origHebrewBirthDay;
+
   @override
   void initState() {
     super.initState();
+    for (final FocusNode node in <FocusNode>[
+      _firstNameFocus,
+      _lastNameFocus,
+      _manualAgeFocus,
+      _phoneFocus,
+      _descriptionFocus,
+    ]) {
+      node.addListener(_handleFocusChange);
+    }
   }
 
   @override
@@ -75,7 +104,54 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     _phoneController.dispose();
     _sourceController.dispose();
     _descriptionController.dispose();
+    for (final FocusNode node in <FocusNode>[
+      _firstNameFocus,
+      _lastNameFocus,
+      _manualAgeFocus,
+      _phoneFocus,
+      _descriptionFocus,
+    ]) {
+      node
+        ..removeListener(_handleFocusChange)
+        ..dispose();
+    }
     super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _hasChanges {
+    return _firstNameController.text != _origFirstName ||
+        _lastNameController.text != _origLastName ||
+        _manualAgeController.text != _origManualAge ||
+        _cityController.text != _origCity ||
+        _phoneController.text != _origPhone ||
+        _sourceController.text != _origSource ||
+        _descriptionController.text != _origDescription ||
+        _selectedGender != _origGender ||
+        _birthDate != _origBirthDate ||
+        _selectedReligiousLevel != _origReligiousLevel ||
+        _hebrewBirthYear != _origHebrewBirthYear ||
+        _hebrewBirthMonth != _origHebrewBirthMonth ||
+        _hebrewBirthDay != _origHebrewBirthDay;
+  }
+
+  void _captureOriginals() {
+    _origFirstName = _firstNameController.text;
+    _origLastName = _lastNameController.text;
+    _origManualAge = _manualAgeController.text;
+    _origCity = _cityController.text;
+    _origPhone = _phoneController.text;
+    _origSource = _sourceController.text;
+    _origDescription = _descriptionController.text;
+    _origGender = _selectedGender;
+    _origBirthDate = _birthDate;
+    _origReligiousLevel = _selectedReligiousLevel;
+    _origHebrewBirthYear = _hebrewBirthYear;
+    _origHebrewBirthMonth = _hebrewBirthMonth;
+    _origHebrewBirthDay = _hebrewBirthDay;
   }
 
   @override
@@ -132,8 +208,18 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         if (didPop || _isSavingEdit) {
           return;
         }
-        await _saveInlineEdit(person);
-        if (mounted) Navigator.of(context).pop();
+        final NavigatorState navigator = Navigator.of(context);
+        if (!_hasChanges) {
+          navigator.pop();
+          return;
+        }
+        final bool? action = await _showUnsavedChangesDialog(context);
+        if (action == null) return;
+        if (action) {
+          final bool saved = await _saveInlineEdit(person);
+          if (!saved) return;
+        }
+        if (mounted) navigator.pop();
       },
       child: Scaffold(
         body: CustomScrollView(
@@ -159,41 +245,41 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 ],
               ),
               actions: <Widget>[
-                      IconButton(
-                        icon: const Icon(Icons.share),
-                        tooltip: 'שיתוף',
-                        onPressed: () => _sharePerson(context, person),
+                IconButton(
+                  icon: const Icon(Icons.share),
+                  tooltip: 'שיתוף',
+                  onPressed: () => _sharePerson(context, person),
+                ),
+
+                PopupMenuButton<String>(
+                  onSelected: (String value) async {
+                    if (value != 'delete') {
+                      return;
+                    }
+
+                    final bool shouldDelete = await _confirmDelete(
+                      context,
+                      person,
+                    );
+                    if (!shouldDelete) {
+                      return;
+                    }
+
+                    await personRepository.delete(person.id);
+                    if (context.mounted) {
+                      context.go('/people');
+                    }
+                  },
+                  itemBuilder: (BuildContext context) {
+                    return const <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        child: Text('מחיקה'),
                       ),
-
-                      PopupMenuButton<String>(
-                        onSelected: (String value) async {
-                          if (value != 'delete') {
-                            return;
-                          }
-
-                          final bool shouldDelete = await _confirmDelete(
-                            context,
-                            person,
-                          );
-                          if (!shouldDelete) {
-                            return;
-                          }
-
-                          await personRepository.delete(person.id);
-                          if (context.mounted) {
-                            context.go('/people');
-                          }
-                        },
-                        itemBuilder: (BuildContext context) {
-                          return const <PopupMenuEntry<String>>[
-                            PopupMenuItem<String>(
-                              value: 'delete',
-                              child: Text('מחיקה'),
-                            ),
-                          ];
-                        },
-                      ),
-                    ],
+                    ];
+                  },
+                ),
+              ],
               flexibleSpace: FlexibleSpaceBar(
                 background: _DetailHeader(person: person),
               ),
@@ -204,6 +290,49 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
+                    _ProfileStatusSection(
+                      person: person,
+                      repository: personRepository,
+                    ),
+                    _Section(
+                      title: 'תמונות',
+                      trailing: TextButton(
+                        onPressed: () => _pickAndSavePhoto(context, person),
+                        child: const Text('הוספת תמונות'),
+                      ),
+                      child: _PhotosSection(
+                        person: person,
+                        onTapPhoto: (int index) =>
+                            _openPhotoViewer(context, person, index),
+                        onSetPrimary: (int index) =>
+                            _setPrimaryPhoto(context, person, index),
+                      ),
+                    ),
+                    _Section(
+                      title: 'כרטיסייה לשליחה',
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: TextFormField(
+                          controller: _descriptionController,
+                          focusNode: _descriptionFocus,
+                          textInputAction: TextInputAction.newline,
+                          maxLines: 10,
+                          minLines: 5,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
+                            alignLabelWithHint: true,
+                            suffixIcon: _descriptionFocus.hasFocus
+                                ? IconButton(
+                                    icon: const Icon(Icons.check),
+                                    tooltip: 'שמירה',
+                                    onPressed: () => _saveInlineEdit(person),
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: SingleChildScrollView(
@@ -240,10 +369,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       firstNameController: _firstNameController,
                       lastNameController: _lastNameController,
                       manualAgeController: _manualAgeController,
-                      cityController: _cityController,
                       phoneController: _phoneController,
-                      sourceController: _sourceController,
-                      descriptionController: _descriptionController,
+                      firstNameFocus: _firstNameFocus,
+                      lastNameFocus: _lastNameFocus,
+                      manualAgeFocus: _manualAgeFocus,
+                      phoneFocus: _phoneFocus,
+                      onSavePressed: () => _saveInlineEdit(person),
+                      onFieldChanged: () => setState(() {}),
                       selectedGender: _selectedGender,
                       birthDate: _birthDate,
                       birthDateCalendar: _birthDateCalendar,
@@ -270,23 +402,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                         setState(() => _selectedReligiousLevel = level);
                       },
                     ),
-                    _ProfileStatusSection(
-                      person: person,
-                      repository: personRepository,
-                    ),
                     _PersonNotesSection(person: person, notes: personNotes),
-                    _Section(
-                      title: 'תמונות',
-                      trailing: TextButton(
-                        onPressed: () => _pickAndSavePhoto(context, person),
-                        child: const Text('הוספה'),
-                      ),
-                      child: _PhotosSection(
-                        person: person,
-                        onTapPhoto: (int index) =>
-                            _openPhotoViewer(context, person, index),
-                      ),
-                    ),
                     _Section(
                       title: 'הצעות קשורות',
                       child: _RelatedMatchesSection(
@@ -373,13 +489,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         _hebrewBirthDay = hebrew?.day;
       }
     }
+    _captureOriginals();
   }
 
-  Future<void> _saveInlineEdit(Person person) async {
+  Future<bool> _saveInlineEdit(Person person) async {
     FocusScope.of(context).unfocus();
 
     if (!_editFormKey.currentState!.validate()) {
-      return;
+      return false;
     }
 
     setState(() {
@@ -408,13 +525,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       await context.read<PersonRepository>().update(person);
 
       if (!mounted) {
-        return;
+        return true;
       }
 
+      _captureOriginals();
       setState(() {
         _isSavingEdit = false;
       });
       _showSnackBar(context, 'השינויים נשמרו');
+      return true;
     } finally {
       if (mounted && _isSavingEdit) {
         setState(() {
@@ -422,6 +541,29 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         });
       }
     }
+  }
+
+  Future<bool?> _showUnsavedChangesDialog(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          title: const Text('השינויים שלך לא נשמרו'),
+          content: const Text('האם לשמור את השינויים לפני יציאה?'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('מחק'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('שמירה'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   String? _normalizedText(String value) {
@@ -693,7 +835,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   Future<void> _pickAndSavePhoto(BuildContext context, Person person) async {
     final PersonRepository repository = context.read<PersonRepository>();
-    const ImageSource source = ImageSource.gallery;
 
     if (!context.mounted) {
       return;
@@ -705,8 +846,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     }
 
     try {
-      final XFile? pickedFile = await ImagePicker().pickImage(source: source);
-      if (pickedFile == null || !context.mounted) {
+      final List<XFile> pickedFiles = await ImagePicker().pickMultiImage();
+      if (pickedFiles.isEmpty || !context.mounted) {
         return;
       }
 
@@ -720,17 +861,28 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         photosDirectory.createSync(recursive: true);
       }
 
-      final String targetPath =
-          '${photosDirectory.path}${Platform.pathSeparator}${person.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final List<String> copiedPhotoPaths = <String>[];
+      final int timestamp = DateTime.now().millisecondsSinceEpoch;
 
-      await File(pickedFile.path).copy(targetPath);
+      for (int index = 0; index < pickedFiles.length; index++) {
+        final XFile pickedFile = pickedFiles[index];
+        final String targetPath =
+            '${photosDirectory.path}${Platform.pathSeparator}${person.id}_${timestamp}_$index.jpg';
+        await File(pickedFile.path).copy(targetPath);
+        copiedPhotoPaths.add(targetPath);
+      }
 
       person.photosPaths = List<String>.from(person.photosPaths)
-        ..add(targetPath);
+        ..addAll(copiedPhotoPaths);
       await repository.update(person);
 
       if (context.mounted) {
-        _showSnackBar(context, 'התמונה נוספה בהצלחה');
+        _showSnackBar(
+          context,
+          copiedPhotoPaths.length == 1
+              ? 'התמונה נוספה בהצלחה'
+              : '${copiedPhotoPaths.length} תמונות נוספו בהצלחה',
+        );
       }
     } on PlatformException catch (error) {
       if (!context.mounted) {
@@ -747,6 +899,29 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       if (context.mounted) {
         _showSnackBar(context, 'לא הצלחנו לשמור את התמונה');
       }
+    }
+  }
+
+  Future<void> _setPrimaryPhoto(
+    BuildContext context,
+    Person person,
+    int index,
+  ) async {
+    if (index <= 0 || index >= person.photosPaths.length) {
+      return;
+    }
+
+    final List<String> reorderedPhotoPaths = List<String>.from(
+      person.photosPaths,
+    );
+    final String selectedPhotoPath = reorderedPhotoPaths.removeAt(index);
+    reorderedPhotoPaths.insert(0, selectedPhotoPath);
+
+    person.photosPaths = reorderedPhotoPaths;
+    await context.read<PersonRepository>().update(person);
+
+    if (context.mounted) {
+      _showSnackBar(context, 'התמונה הראשית עודכנה');
     }
   }
 
@@ -785,11 +960,23 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         ? Gender.female
         : Gender.male;
 
+    final MatchProposalFilters? filters = await MatchProposalFilterSheet.show(
+      context,
+      targetGender: oppositeGender,
+    );
+    if (filters == null || !context.mounted) {
+      return;
+    }
+
     final Person? selectedPerson = await PersonPickerSheet.show(
       context,
       title: 'בחרו ${oppositeGender.displayName}',
       filterGender: oppositeGender,
       excludeIds: <String>{currentPerson.id},
+      minAge: filters.minAge,
+      maxAge: filters.maxAge,
+      religiousLevels: filters.religiousLevels,
+      profileStatuses: filters.profileStatuses,
     );
 
     if (selectedPerson == null || !context.mounted) {
@@ -842,30 +1029,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   Future<void> _openWhatsAppMessage(BuildContext context, Person person) async {
-    final String? phone = PhoneUtils.toWhatsAppNumber(person.phone);
-    if (phone == null) {
+    if (PhoneUtils.toWhatsAppNumber(person.phone) == null) {
       _showSnackBar(context, 'אין מספר טלפון תקין לאיש הקשר');
       return;
     }
 
-    const String message = '''
-היי 🙂 מה קורה?
-
-אני רוצה להכניס אותך לאפליקציית שדכן (אפליקציית שידוכים ממאגר אישי), זורם לך? רק לי יש גישה
-
-אם כן, אשמח לפרטים שלך:
-- תאריך לידה
-- כרטיסיה לשליחה - כמה משפטים על עצמך (5-10 שורות, משהו קליל שמייצג אותך)
-- 2-3 תמונות עדכניות 📸''';
-
-    final Uri uri = Uri.https('wa.me', '/$phone', <String, String>{
-      'text': message,
-    });
-
-    final bool launched = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final bool launched = await WhatsAppUtils.openChat(person);
     if (!launched && context.mounted) {
       _showSnackBar(context, 'לא הצלחנו לפתוח את וואטסאפ');
     }
@@ -998,10 +1167,13 @@ class _InlinePersonEditForm extends StatelessWidget {
     required this.firstNameController,
     required this.lastNameController,
     required this.manualAgeController,
-    required this.cityController,
     required this.phoneController,
-    required this.sourceController,
-    required this.descriptionController,
+    required this.firstNameFocus,
+    required this.lastNameFocus,
+    required this.manualAgeFocus,
+    required this.phoneFocus,
+    required this.onSavePressed,
+    required this.onFieldChanged,
     required this.selectedGender,
     required this.birthDate,
     required this.birthDateCalendar,
@@ -1019,10 +1191,13 @@ class _InlinePersonEditForm extends StatelessWidget {
   final TextEditingController firstNameController;
   final TextEditingController lastNameController;
   final TextEditingController manualAgeController;
-  final TextEditingController cityController;
   final TextEditingController phoneController;
-  final TextEditingController sourceController;
-  final TextEditingController descriptionController;
+  final FocusNode firstNameFocus;
+  final FocusNode lastNameFocus;
+  final FocusNode manualAgeFocus;
+  final FocusNode phoneFocus;
+  final VoidCallback onSavePressed;
+  final VoidCallback onFieldChanged;
   final Gender selectedGender;
   final DateTime? birthDate;
   final _BirthDateCalendar birthDateCalendar;
@@ -1034,6 +1209,15 @@ class _InlinePersonEditForm extends StatelessWidget {
   final VoidCallback onBirthDateCleared;
   final ValueChanged<_BirthDateCalendar> onBirthDateCalendarChanged;
   final ValueChanged<ReligiousLevel?> onReligiousLevelChanged;
+
+  Widget? _saveSuffix(FocusNode node) {
+    if (!node.hasFocus) return null;
+    return IconButton(
+      icon: const Icon(Icons.check),
+      tooltip: 'שמירה',
+      onPressed: onSavePressed,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1048,15 +1232,25 @@ class _InlinePersonEditForm extends StatelessWidget {
           children: <Widget>[
             TextFormField(
               controller: firstNameController,
+              focusNode: firstNameFocus,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'שם פרטי'),
+              onChanged: (_) => onFieldChanged(),
+              decoration: InputDecoration(
+                labelText: 'שם פרטי',
+                suffixIcon: _saveSuffix(firstNameFocus),
+              ),
               validator: _requiredText('יש להזין שם פרטי'),
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: lastNameController,
+              focusNode: lastNameFocus,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'שם משפחה'),
+              onChanged: (_) => onFieldChanged(),
+              decoration: InputDecoration(
+                labelText: 'שם משפחה',
+                suffixIcon: _saveSuffix(lastNameFocus),
+              ),
               validator: _requiredText('יש להזין שם משפחה'),
             ),
             const SizedBox(height: 20),
@@ -1077,6 +1271,47 @@ class _InlinePersonEditForm extends StatelessWidget {
                 );
               }).toList(),
             ),
+            const SizedBox(height: 20),
+            Text('סגנון דתי', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ReligiousLevel.values.map((ReligiousLevel level) {
+                final bool selected = selectedReligiousLevel == level;
+                return FilterChip(
+                  label: Text(level.displayName),
+                  selected: selected,
+                  onSelected: (bool value) {
+                    onReligiousLevelChanged(value && !selected ? level : null);
+                  },
+                );
+              }).toList(),
+            ),
+            if (birthDate == null) ...<Widget>[
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: manualAgeController,
+                focusNode: manualAgeFocus,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => onFieldChanged(),
+                decoration: InputDecoration(
+                  labelText: 'גיל (הערכה)',
+                  suffixIcon: _saveSuffix(manualAgeFocus),
+                ),
+                validator: (String? value) {
+                  final String trimmed = value?.trim() ?? '';
+                  if (trimmed.isEmpty) {
+                    return null;
+                  }
+                  final int? parsed = int.tryParse(trimmed);
+                  if (parsed == null || parsed < 10 || parsed > 120) {
+                    return 'יש להזין גיל בין 10 ל-120';
+                  }
+                  return null;
+                },
+              ),
+            ],
             const SizedBox(height: 20),
             Text('תאריך לידה', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -1174,71 +1409,16 @@ class _InlinePersonEditForm extends StatelessWidget {
                 ),
               ),
             ],
-            if (birthDate == null) ...<Widget>[
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: manualAgeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'גיל (הערכה)'),
-                validator: (String? value) {
-                  final String trimmed = value?.trim() ?? '';
-                  if (trimmed.isEmpty) {
-                    return null;
-                  }
-                  final int? parsed = int.tryParse(trimmed);
-                  if (parsed == null || parsed < 10 || parsed > 120) {
-                    return 'יש להזין גיל בין 10 ל-120';
-                  }
-                  return null;
-                },
-              ),
-            ],
             const SizedBox(height: 20),
-            Text('סגנון דתי', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ReligiousLevel.values.map((ReligiousLevel level) {
-                final bool selected = selectedReligiousLevel == level;
-                return FilterChip(
-                  label: Text(level.displayName),
-                  selected: selected,
-                  onSelected: (bool value) {
-                    onReligiousLevelChanged(value && !selected ? level : null);
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: cityController,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'עיר'),
-            ),
-            const SizedBox(height: 16),
             TextFormField(
               controller: phoneController,
+              focusNode: phoneFocus,
               textInputAction: TextInputAction.next,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'טלפון'),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: sourceController,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'מקור היכרות'),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: descriptionController,
-              textInputAction: TextInputAction.newline,
-              maxLines: 10,
-              minLines: 5,
-              decoration: const InputDecoration(
-                labelText: 'כרטיסייה לשליחה',
-                hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
-                alignLabelWithHint: true,
+              onChanged: (_) => onFieldChanged(),
+              decoration: InputDecoration(
+                labelText: 'טלפון',
+                suffixIcon: _saveSuffix(phoneFocus),
               ),
             ),
           ],
@@ -1614,10 +1794,15 @@ class _PersonNotesTimeline extends StatelessWidget {
 }
 
 class _PhotosSection extends StatelessWidget {
-  const _PhotosSection({required this.person, required this.onTapPhoto});
+  const _PhotosSection({
+    required this.person,
+    required this.onTapPhoto,
+    required this.onSetPrimary,
+  });
 
   final Person person;
   final ValueChanged<int> onTapPhoto;
+  final ValueChanged<int> onSetPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -1636,28 +1821,73 @@ class _PhotosSection extends StatelessWidget {
           final File file = File(path);
           return GestureDetector(
             onTap: () => onTapPhoto(index),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: file.existsSync()
-                  ? Image.file(
-                      file,
-                      width: 100,
-                      height: 120,
-                      cacheWidth: 200,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      width: 100,
-                      height: 120,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+            child: Stack(
+              children: <Widget>[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: file.existsSync()
+                      ? Image.file(
+                          file,
+                          width: 100,
+                          height: 120,
+                          cacheWidth: 200,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          width: 100,
+                          height: 120,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                ),
+                PositionedDirectional(
+                  top: 6,
+                  end: 6,
+                  child: Material(
+                    color: Colors.black54,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 18,
+                      tooltip: index == 0
+                          ? 'זו התמונה הראשית'
+                          : 'בחר כתמונה ראשית',
+                      onPressed: index == 0 ? null : () => onSetPrimary(index),
+                      icon: Icon(
+                        index == 0 ? Icons.star : Icons.star_border,
+                        color: index == 0 ? Colors.amber : Colors.white,
                       ),
                     ),
+                  ),
+                ),
+                if (index == 0)
+                  PositionedDirectional(
+                    bottom: 6,
+                    start: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'ראשית',
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           );
         },

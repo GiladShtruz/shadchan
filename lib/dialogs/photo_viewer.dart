@@ -102,9 +102,24 @@ class _PhotoViewerState extends State<PhotoViewer> {
               Positioned(
                 top: 8,
                 right: 8,
-                child: IconButton(
-                  onPressed: _deleteCurrentPhoto,
-                  icon: const Icon(Icons.delete, color: Colors.white),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    IconButton(
+                      onPressed: _currentIndex == 0 ? null : _setCurrentPrimary,
+                      tooltip: _currentIndex == 0
+                          ? 'זו התמונה הראשית'
+                          : 'בחר כתמונה ראשית',
+                      icon: Icon(
+                        _currentIndex == 0 ? Icons.star : Icons.star_border,
+                        color: _currentIndex == 0 ? Colors.amber : Colors.white,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _deleteCurrentPhoto,
+                      icon: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                  ],
                 ),
               ),
             if (_photoPaths.isNotEmpty)
@@ -133,6 +148,44 @@ class _PhotoViewerState extends State<PhotoViewer> {
         ),
       ),
     );
+  }
+
+  Future<void> _setCurrentPrimary() async {
+    if (_currentIndex <= 0 || _photoPaths.isEmpty) {
+      return;
+    }
+
+    final PersonRepository repository = context.read<PersonRepository>();
+    final Person? person = repository.getById(widget.personId);
+    if (person == null) {
+      return;
+    }
+
+    final String selectedPath = _photoPaths[_currentIndex];
+    final List<String> reorderedPhotoPaths = List<String>.from(
+      person.photosPaths,
+    );
+    if (!reorderedPhotoPaths.remove(selectedPath)) {
+      return;
+    }
+    person.photosPaths = reorderedPhotoPaths..insert(0, selectedPath);
+    await repository.update(person);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _photoPaths = List<String>.from(_photoPaths)
+        ..removeAt(_currentIndex)
+        ..insert(0, selectedPath);
+      _currentIndex = 0;
+    });
+    _pageController.jumpToPage(0);
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('התמונה הראשית עודכנה')));
   }
 
   Future<void> _deleteCurrentPhoto() async {

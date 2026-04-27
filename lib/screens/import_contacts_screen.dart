@@ -6,7 +6,9 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 
 class ImportContactsScreen extends StatefulWidget {
-  const ImportContactsScreen({super.key});
+  const ImportContactsScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<ImportContactsScreen> createState() => _ImportContactsScreenState();
@@ -46,6 +48,18 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     final ThemeData theme = Theme.of(context);
     final List<ContactImportCandidate> visibleCandidates = _visibleCandidates;
 
+    if (widget.embedded) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Column(
+          children: <Widget>[
+            Expanded(child: _buildBody(theme, visibleCandidates)),
+            if (_buildBottomBar() != null) _buildBottomBar()!,
+          ],
+        ),
+      );
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
@@ -91,24 +105,34 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       children: <Widget>[
         if (_isRefreshing) const LinearProgressIndicator(minHeight: 3),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Column(
             children: <Widget>[
               TextField(
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   hintText: 'חיפוש לפי שם או טלפון...',
-                  prefixIcon: const Icon(Icons.search),
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                   suffixIcon: _searchController.text.trim().isEmpty
                       ? null
                       : IconButton(
-                          icon: const Icon(Icons.clear),
+                          icon: const Icon(Icons.clear, size: 20),
+                          visualDensity: VisualDensity.compact,
                           onPressed: _searchController.clear,
                         ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
               _NameFilterSwitch(
                 value: _filterSuggestedNames,
                 filteredCount: _nameFilteredCount,
@@ -118,7 +142,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                   });
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
               _SelectionSummaryCard(
                 selectedCount: _selectedContactIds.length,
                 totalCount: visibleCandidates.length,
@@ -496,27 +520,34 @@ class _SelectionSummaryCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: <Widget>[
           Text(
-            'זמינים לייבוא: $totalCount',
-            style: theme.textTheme.titleSmall?.copyWith(
+            'זמינים: $totalCount',
+            style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 4),
-          Text('נבחרו: $selectedCount', style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 4),
+          const SizedBox(width: 12),
           Text(
-            subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            'נבחרו: $selectedCount',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         ],
@@ -540,19 +571,31 @@ class _NameFilterSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Container(
+      padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(
           alpha: 0.45,
         ),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: SwitchListTile(
-        value: value,
-        onChanged: onChanged,
-        dense: true,
-        contentPadding: const EdgeInsetsDirectional.only(start: 12, end: 8),
-        title: const Text('סינון אנשי קשר לא רלוונטיים'),
-        subtitle: filteredCount == 0 ? null : Text('מוסתרים: $filteredCount'),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              filteredCount == 0
+                  ? 'סינון אנשי קשר לא רלוונטיים'
+                  : 'סינון אנשי קשר לא רלוונטיים (מוסתרים: $filteredCount)',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
       ),
     );
   }

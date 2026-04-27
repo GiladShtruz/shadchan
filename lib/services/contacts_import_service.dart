@@ -315,6 +315,7 @@ abstract final class ContactsImportService {
       source: source,
       createdAt: now,
       updatedAt: now,
+      needsReview: true,
     );
 
     await personRepository.addImported(person);
@@ -353,6 +354,7 @@ abstract final class ContactsImportService {
         source: 'אנשי קשר',
         createdAt: now,
         updatedAt: now,
+        needsReview: true,
       );
 
       await personRepository.addImported(person);

@@ -7,7 +7,9 @@
       "Bash(cat)",
       "Bash(bash /tmp/fix_imports.sh)",
       "Bash(flutter test *)",
-      "Bash(flutter build *)"
+      "Bash(flutter build *)",
+      "Bash(wait)",
+      "Read(//tmp/**)"
     ]
   }
 }

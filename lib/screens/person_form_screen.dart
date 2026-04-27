@@ -195,6 +195,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               _PhotoEditor(
                 photoPaths: _photoPaths,
                 onAddPhoto: _pickPhotoForEdit,
+                onSetPrimary: _setPrimaryPhotoForEdit,
               ),
               const SizedBox(height: 20),
             ],
@@ -221,6 +222,47 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   })
                   .toList(),
             ),
+            const SizedBox(height: 20),
+            Text('סגנון דתי', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ReligiousLevel.values.map((ReligiousLevel level) {
+                final bool selected = _selectedReligiousLevel == level;
+                return ChoiceChip(
+                  label: Text(level.displayName),
+                  selected: selected,
+                  onSelected: (bool value) {
+                    setState(() {
+                      _selectedReligiousLevel = value && !selected
+                          ? level
+                          : null;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            if (_birthDate == null) ...<Widget>[
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _manualAgeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'גיל (הערכה)'),
+                validator: (String? value) {
+                  final String trimmed = value?.trim() ?? '';
+                  if (trimmed.isEmpty) {
+                    return null;
+                  }
+
+                  final int? parsed = int.tryParse(trimmed);
+                  if (parsed == null || parsed < 10 || parsed > 120) {
+                    return 'יש להזין גיל בין 10 ל-120';
+                  }
+                  return null;
+                },
+              ),
+            ],
             const SizedBox(height: 20),
             Text('תאריך לידה', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -327,26 +369,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 ),
               ),
             ],
-            if (_birthDate == null) ...<Widget>[
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _manualAgeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'גיל (הערכה)'),
-                validator: (String? value) {
-                  final String trimmed = value?.trim() ?? '';
-                  if (trimmed.isEmpty) {
-                    return null;
-                  }
-
-                  final int? parsed = int.tryParse(trimmed);
-                  if (parsed == null || parsed < 10 || parsed > 120) {
-                    return 'יש להזין גיל בין 10 ל-120';
-                  }
-                  return null;
-                },
-              ),
-            ],
             const SizedBox(height: 20),
             Text('סטטוס', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -364,27 +386,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     }
                     setState(() {
                       _selectedProfileStatus = status;
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            Text('סגנון דתי', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ReligiousLevel.values.map((ReligiousLevel level) {
-                final bool selected = _selectedReligiousLevel == level;
-                return ChoiceChip(
-                  label: Text(level.displayName),
-                  selected: selected,
-                  onSelected: (bool value) {
-                    setState(() {
-                      _selectedReligiousLevel = value && !selected
-                          ? level
-                          : null;
                     });
                   },
                 );
@@ -814,10 +815,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     }
 
     try {
-      final XFile? pickedFile = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-      );
-      if (pickedFile == null || !mounted) {
+      final List<XFile> pickedFiles = await ImagePicker().pickMultiImage();
+      if (pickedFiles.isEmpty || !mounted) {
         return;
       }
 
@@ -831,17 +830,27 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         photosDirectory.createSync(recursive: true);
       }
 
-      final String targetPath =
-          '${photosDirectory.path}${Platform.pathSeparator}${person.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final List<String> copiedPhotoPaths = <String>[];
+      final int timestamp = DateTime.now().millisecondsSinceEpoch;
 
-      await File(pickedFile.path).copy(targetPath);
+      for (int index = 0; index < pickedFiles.length; index++) {
+        final XFile pickedFile = pickedFiles[index];
+        final String targetPath =
+            '${photosDirectory.path}${Platform.pathSeparator}${person.id}_${timestamp}_$index.jpg';
+        await File(pickedFile.path).copy(targetPath);
+        copiedPhotoPaths.add(targetPath);
+      }
 
       setState(() {
-        _photoPaths = List<String>.from(_photoPaths)..add(targetPath);
-        _newPhotoPaths.add(targetPath);
+        _photoPaths = List<String>.from(_photoPaths)..addAll(copiedPhotoPaths);
+        _newPhotoPaths.addAll(copiedPhotoPaths);
       });
 
-      _showSnackBar('התמונה נוספה לטופס. יש לשמור כדי לעדכן את איש הקשר');
+      _showSnackBar(
+        copiedPhotoPaths.length == 1
+            ? 'התמונה נוספה לטופס. יש לשמור כדי לעדכן את איש הקשר'
+            : '${copiedPhotoPaths.length} תמונות נוספו לטופס. יש לשמור כדי לעדכן את איש הקשר',
+      );
     } on PlatformException catch (error) {
       if (!mounted) {
         return;
@@ -858,6 +867,19 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         _showSnackBar('לא הצלחנו לשמור את התמונה');
       }
     }
+  }
+
+  void _setPrimaryPhotoForEdit(int index) {
+    if (index <= 0 || index >= _photoPaths.length) {
+      return;
+    }
+
+    setState(() {
+      final List<String> reorderedPhotoPaths = List<String>.from(_photoPaths);
+      final String selectedPhotoPath = reorderedPhotoPaths.removeAt(index);
+      reorderedPhotoPaths.insert(0, selectedPhotoPath);
+      _photoPaths = reorderedPhotoPaths;
+    });
   }
 
   Future<bool> _ensureMediaPermission() async {
@@ -1039,10 +1061,15 @@ class _PersonFormSnapshot {
 enum _BirthDateCalendar { gregorian, hebrew }
 
 class _PhotoEditor extends StatelessWidget {
-  const _PhotoEditor({required this.photoPaths, required this.onAddPhoto});
+  const _PhotoEditor({
+    required this.photoPaths,
+    required this.onAddPhoto,
+    required this.onSetPrimary,
+  });
 
   final List<String> photoPaths;
   final VoidCallback onAddPhoto;
+  final ValueChanged<int> onSetPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -1057,7 +1084,7 @@ class _PhotoEditor extends StatelessWidget {
             TextButton.icon(
               onPressed: onAddPhoto,
               icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: const Text('הוספת תמונה'),
+              label: const Text('הוספת תמונות'),
             ),
           ],
         ),
@@ -1078,26 +1105,71 @@ class _PhotoEditor extends StatelessWidget {
               separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (BuildContext context, int index) {
                 final File file = File(photoPaths[index]);
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: file.existsSync()
-                      ? Image.file(
-                          file,
-                          width: 80,
-                          height: 96,
-                          cacheWidth: 160,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          width: 80,
-                          height: 96,
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            color: theme.colorScheme.onSurfaceVariant,
+                return Stack(
+                  children: <Widget>[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: file.existsSync()
+                          ? Image.file(
+                              file,
+                              width: 80,
+                              height: 96,
+                              cacheWidth: 160,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(
+                              width: 80,
+                              height: 96,
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                    ),
+                    PositionedDirectional(
+                      top: 4,
+                      end: 4,
+                      child: Material(
+                        color: Colors.black54,
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 16,
+                          tooltip: index == 0
+                              ? 'זו התמונה הראשית'
+                              : 'בחר כתמונה ראשית',
+                          onPressed: index == 0
+                              ? null
+                              : () => onSetPrimary(index),
+                          icon: Icon(
+                            index == 0 ? Icons.star : Icons.star_border,
+                            color: index == 0 ? Colors.amber : Colors.white,
                           ),
                         ),
+                      ),
+                    ),
+                    if (index == 0)
+                      PositionedDirectional(
+                        bottom: 4,
+                        start: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'ראשית',
+                            style: TextStyle(color: Colors.white, fontSize: 10),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               },
             ),

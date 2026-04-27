@@ -8,6 +8,7 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/widgets/app_drawer.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -18,7 +19,10 @@ class DashboardScreen extends StatelessWidget {
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final MatchRepository matchRepository = context.watch<MatchRepository>();
 
-    final List<Person> allPeople = personRepository.getAll();
+    final List<Person> allPeople = personRepository
+        .getAll()
+        .where((Person p) => !p.needsReview)
+        .toList();
     final List<MatchIdea> allMatches = matchRepository.getAll();
 
     final int peopleCount = allPeople.length;
@@ -60,6 +64,7 @@ class DashboardScreen extends StatelessWidget {
         subtitle: '',
         icon: Icons.people_outline,
         color: theme.colorScheme.primary,
+        route: '/people',
       ),
       _StatItem(
         title: 'רעיונות פתוחים',
@@ -67,13 +72,7 @@ class DashboardScreen extends StatelessWidget {
         subtitle: 'רעיון, בדיקה או צד תפוס',
         icon: Icons.lightbulb_outline,
         color: Colors.amber.shade700,
-      ),
-      _StatItem(
-        title: 'רעיונות שנפסלו',
-        value: rejectedIdeasCount.toString(),
-        subtitle: 'הצעות שנדחו',
-        icon: Icons.cancel_outlined,
-        color: Colors.red.shade500,
+        route: '/matches?statuses=idea,checking,unavailable',
       ),
       _StatItem(
         title: 'זוגות שיוצאים',
@@ -81,36 +80,53 @@ class DashboardScreen extends StatelessWidget {
         subtitle: '',
         icon: Icons.favorite,
         color: Colors.green.shade600,
+        route: '/matches?statuses=dating',
       ),
       _StatItem(
         title: 'זוגות שיצאו',
         value: datedCount.toString(),
         subtitle: '',
-        icon: Icons.history,
+        icon: Icons.heart_broken,
         color: Colors.deepPurple,
+        route: '/matches?archived=true&statuses=dated',
       ),
       _StatItem(
-        title: 'חתונות',
-        value: marriedCount.toString(),
-        subtitle: 'שידוכים שלי',
-        icon: Icons.favorite_border,
-        color: Colors.pink.shade400,
+        title: 'רעיונות שנפסלו',
+        value: rejectedIdeasCount.toString(),
+        subtitle: 'הצעות שנדחו',
+        icon: Icons.cancel_outlined,
+        color: Colors.red.shade500,
+        route: '/matches?archived=true&statuses=rejected',
       ),
       _StatItem(
         title: 'מזל טוב',
         value: mazelTovCount.toString(),
         subtitle: 'חברים שהתחתנו',
         icon: Icons.celebration_outlined,
-        color: Colors.orange.shade600,
+        color: Colors.teal.shade500,
+        route: '/people?archived=true&statuses=mazelTov',
       ),
     ];
 
+    final _StatItem marriedStat = _StatItem(
+      title: 'חתונות',
+      value: marriedCount.toString(),
+      subtitle: 'שידוכים שלי',
+      icon: Icons.favorite,
+      color: Colors.pink.shade400,
+      route: '/matches?archived=true&statuses=married',
+    );
+
     return Scaffold(
-      appBar: AppBar(title: const Text('נתונים'), centerTitle: true),
+      drawer: const AppDrawer(),
+      appBar: AppBar(
+        title: const Text('נתונים'),
+        centerTitle: true,
+      ),
       body: CustomScrollView(
         slivers: <Widget>[
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             sliver: SliverGrid.builder(
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
@@ -126,7 +142,13 @@ class DashboardScreen extends StatelessWidget {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: _WideStatCard(item: marriedStat),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               child: _MonthlyBirthdaysSection(
                 people: birthdaysThisMonth,
                 currentHebrewDate: currentHebrewDate,
@@ -185,6 +207,7 @@ class _StatItem {
     required this.subtitle,
     required this.icon,
     required this.color,
+    required this.route,
   });
 
   final String title;
@@ -192,6 +215,7 @@ class _StatItem {
   final String subtitle;
   final IconData icon;
   final Color color;
+  final String route;
 }
 
 class _StatCard extends StatelessWidget {
@@ -203,35 +227,102 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.go(item.route),
+        child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(item.icon, color: item.color, size: 28),
+            Icon(item.icon, color: item.color, size: 24),
             const Spacer(),
-            Text(
-              item.value,
-              style: theme.textTheme.displaySmall?.copyWith(
-                color: item.color,
-                fontWeight: FontWeight.bold,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                item.value,
+                style: theme.textTheme.headlineLarge?.copyWith(
+                  color: item.color,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (item.subtitle.isNotEmpty)
+              Text(
+                item.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+}
+
+class _WideStatCard extends StatelessWidget {
+  const _WideStatCard({required this.item});
+
+  final _StatItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.go(item.route),
+        child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(
+          children: <Widget>[
+            Icon(item.icon, color: item.color, size: 32),
+            const SizedBox(width: 16),
             Text(
-              item.subtitle,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              item.value,
+              style: theme.textTheme.headlineMedium?.copyWith(
+                color: item.color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    item.title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (item.subtitle.isNotEmpty)
+                    Text(
+                      item.subtitle,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
         ),
+      ),
       ),
     );
   }

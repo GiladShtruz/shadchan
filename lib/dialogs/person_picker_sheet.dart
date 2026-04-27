@@ -12,17 +12,29 @@ class PersonPickerSheet extends StatefulWidget {
     required this.title,
     this.filterGender,
     this.excludeIds = const <String>{},
+    this.minAge,
+    this.maxAge,
+    this.religiousLevels = const <ReligiousLevel>[],
+    this.profileStatuses = const <ProfileStatus>[],
   });
 
   final Gender? filterGender;
   final Set<String> excludeIds;
   final String title;
+  final int? minAge;
+  final int? maxAge;
+  final List<ReligiousLevel> religiousLevels;
+  final List<ProfileStatus> profileStatuses;
 
   static Future<Person?> show(
     BuildContext context, {
     required String title,
     Gender? filterGender,
     Set<String> excludeIds = const <String>{},
+    int? minAge,
+    int? maxAge,
+    List<ReligiousLevel> religiousLevels = const <ReligiousLevel>[],
+    List<ProfileStatus> profileStatuses = const <ProfileStatus>[],
   }) {
     return showModalBottomSheet<Person>(
       context: context,
@@ -35,6 +47,10 @@ class PersonPickerSheet extends StatefulWidget {
             title: title,
             filterGender: filterGender,
             excludeIds: excludeIds,
+            minAge: minAge,
+            maxAge: maxAge,
+            religiousLevels: religiousLevels,
+            profileStatuses: profileStatuses,
           ),
         );
       },
@@ -70,11 +86,35 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
     final List<Person> people = personRepository.getAll().where((
       Person person,
     ) {
+      if (person.needsReview) {
+        return false;
+      }
+
       if (widget.filterGender != null && person.gender != widget.filterGender) {
         return false;
       }
 
       if (widget.excludeIds.contains(person.id)) {
+        return false;
+      }
+
+      final int? personAge = person.age;
+      if (widget.minAge != null &&
+          (personAge == null || personAge < widget.minAge!)) {
+        return false;
+      }
+      if (widget.maxAge != null &&
+          (personAge == null || personAge > widget.maxAge!)) {
+        return false;
+      }
+
+      if (widget.religiousLevels.isNotEmpty &&
+          !widget.religiousLevels.contains(person.religiousLevel)) {
+        return false;
+      }
+
+      if (widget.profileStatuses.isNotEmpty &&
+          !widget.profileStatuses.contains(person.profileStatus)) {
         return false;
       }
 
@@ -156,5 +196,188 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
 
   void _handleSearchChanged() {
     setState(() {});
+  }
+}
+
+class MatchProposalFilters {
+  const MatchProposalFilters({
+    this.minAge,
+    this.maxAge,
+    this.religiousLevels = const <ReligiousLevel>[],
+    this.profileStatuses = const <ProfileStatus>[],
+  });
+
+  final int? minAge;
+  final int? maxAge;
+  final List<ReligiousLevel> religiousLevels;
+  final List<ProfileStatus> profileStatuses;
+}
+
+class MatchProposalFilterSheet extends StatefulWidget {
+  const MatchProposalFilterSheet({super.key, required this.targetGender});
+
+  final Gender targetGender;
+
+  static const int _minAge = 18;
+  static const int _maxAge = 50;
+  static const RangeValues _defaultAgeRange = RangeValues(18, 50);
+
+  static Future<MatchProposalFilters?> show(
+    BuildContext context, {
+    required Gender targetGender,
+  }) {
+    return showModalBottomSheet<MatchProposalFilters>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (BuildContext context) {
+        return MatchProposalFilterSheet(targetGender: targetGender);
+      },
+    );
+  }
+
+  @override
+  State<MatchProposalFilterSheet> createState() =>
+      _MatchProposalFilterSheetState();
+}
+
+class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
+  RangeValues _ageRange = MatchProposalFilterSheet._defaultAgeRange;
+  final List<ReligiousLevel> _religiousLevels = <ReligiousLevel>[];
+  final List<ProfileStatus> _profileStatuses = <ProfileStatus>[
+    ProfileStatus.available,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool hasAgeFilter =
+        _ageRange != MatchProposalFilterSheet._defaultAgeRange;
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          16 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                'סינון ${widget.targetGender.displayName}',
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'טווח גילאים: ${_ageRange.start.round()}-${_ageRange.end.round()}',
+                style: theme.textTheme.titleMedium,
+              ),
+              RangeSlider(
+                min: MatchProposalFilterSheet._minAge.toDouble(),
+                max: MatchProposalFilterSheet._maxAge.toDouble(),
+                values: _ageRange,
+                divisions: MatchProposalFilterSheet._maxAge -
+                    MatchProposalFilterSheet._minAge,
+                labels: RangeLabels(
+                  _ageRange.start.round().toString(),
+                  _ageRange.end.round().toString(),
+                ),
+                onChanged: (RangeValues value) {
+                  setState(() => _ageRange = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              Text('סגנון דתי', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: ReligiousLevel.values.map((ReligiousLevel level) {
+                  final bool selected = _religiousLevels.contains(level);
+                  return FilterChip(
+                    label: Text(level.displayName),
+                    selected: selected,
+                    onSelected: (bool value) {
+                      setState(() {
+                        if (value) {
+                          _religiousLevels.add(level);
+                        } else {
+                          _religiousLevels.remove(level);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              Text('סטטוס', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <ProfileStatus>[
+                  ProfileStatus.available,
+                  ProfileStatus.busy,
+                  ProfileStatus.onBreak,
+                ].map((ProfileStatus status) {
+                  final bool selected = _profileStatuses.contains(status);
+                  return FilterChip(
+                    label: Text('${status.emoji} ${status.displayName}'),
+                    selected: selected,
+                    onSelected: (bool value) {
+                      setState(() {
+                        if (value) {
+                          _profileStatuses.add(status);
+                        } else {
+                          _profileStatuses.remove(status);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(
+                      MatchProposalFilters(
+                        minAge: hasAgeFilter ? _ageRange.start.round() : null,
+                        maxAge: hasAgeFilter ? _ageRange.end.round() : null,
+                        religiousLevels: List<ReligiousLevel>.from(
+                          _religiousLevels,
+                        ),
+                        profileStatuses: List<ProfileStatus>.from(
+                          _profileStatuses,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('הצג תוצאות'),
+                ),
+              ),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _ageRange = MatchProposalFilterSheet._defaultAgeRange;
+                      _religiousLevels.clear();
+                      _profileStatuses.clear();
+                    });
+                  },
+                  child: const Text('נקה הכל'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

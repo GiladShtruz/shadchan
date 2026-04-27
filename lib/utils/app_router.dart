@@ -1,16 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/screens/add_contacts_screen.dart';
 import 'package:shadchan/screens/create_match_screen.dart';
 import 'package:shadchan/screens/match_detail_screen.dart';
 import 'package:shadchan/screens/matches_screen.dart';
-import 'package:shadchan/screens/import_contacts_screen.dart';
+import 'package:shadchan/screens/pending_people_screen.dart';
 import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
-import 'package:shadchan/screens/swipe_import_screen.dart';
 import 'package:shadchan/screens/dashboard_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/settings_screen.dart';
+import 'package:shadchan/utils/enums.dart';
+
+List<T> _parseEnumList<T extends Enum>(String? raw, List<T> values) {
+  if (raw == null || raw.isEmpty) {
+    return <T>[];
+  }
+  final Set<String> names = raw.split(',').map((String s) => s.trim()).toSet();
+  return values.where((T v) => names.contains(v.name)).toList();
+}
+
+PeopleSortOption _parsePeopleSort(String? raw) {
+  switch (raw) {
+    case 'age':
+      return PeopleSortOption.ageAscending;
+    case 'newest':
+      return PeopleSortOption.newest;
+    case 'updated':
+      return PeopleSortOption.recentlyUpdated;
+    case 'alphabetical':
+    default:
+      return PeopleSortOption.alphabetical;
+  }
+}
 
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
@@ -38,25 +61,44 @@ abstract final class AppRouter {
               GoRoute(
                 path: '/people',
                 builder: (BuildContext context, GoRouterState state) {
-                  return const PeopleScreen();
+                  final Map<String, String> q = state.uri.queryParameters;
+                  final bool archived = q['archived'] == 'true';
+                  final List<ProfileStatus> statuses = _parseEnumList<ProfileStatus>(
+                    q['statuses'],
+                    ProfileStatus.values,
+                  );
+                  final bool tableView = q['view'] == 'table';
+                  final PeopleSortOption sort = _parsePeopleSort(q['sort']);
+                  return PeopleScreen(
+                    key: ValueKey<String>('people:${state.uri}'),
+                    initialShowArchived: archived,
+                    initialProfileStatuses: statuses,
+                    initialTableView: tableView,
+                    initialSort: sort,
+                  );
                 },
                 routes: <RouteBase>[
                   GoRoute(
                     path: 'import',
                     builder: (BuildContext context, GoRouterState state) {
-                      return const ImportContactsScreen();
+                      return const AddContactsScreen();
                     },
                   ),
                   GoRoute(
                     path: 'swipe',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const SwipeImportScreen();
-                    },
+                    redirect: (BuildContext context, GoRouterState state) =>
+                        '/people/import',
                   ),
                   GoRoute(
                     path: 'add',
                     builder: (BuildContext context, GoRouterState state) {
                       return const PersonFormScreen();
+                    },
+                  ),
+                  GoRoute(
+                    path: 'pending',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const PendingPeopleScreen();
                     },
                   ),
                   GoRoute(
@@ -87,7 +129,17 @@ abstract final class AppRouter {
               GoRoute(
                 path: '/matches',
                 builder: (BuildContext context, GoRouterState state) {
-                  return const MatchesScreen();
+                  final Map<String, String> q = state.uri.queryParameters;
+                  final bool archived = q['archived'] == 'true';
+                  final List<MatchStatus> statuses = _parseEnumList<MatchStatus>(
+                    q['statuses'],
+                    MatchStatus.values,
+                  );
+                  return MatchesScreen(
+                    key: ValueKey<String>('matches:${state.uri}'),
+                    initialShowArchived: archived,
+                    initialStatuses: statuses,
+                  );
                 },
                 routes: <RouteBase>[
                   GoRoute(
@@ -144,16 +196,32 @@ class _AppShell extends StatelessWidget {
 
   final StatefulNavigationShell navigationShell;
 
+  static const int _addVisualIndex = 2;
+
+  int _visualFromBranch(int branchIndex) {
+    return branchIndex < _addVisualIndex ? branchIndex : branchIndex + 1;
+  }
+
+  int _branchFromVisual(int visualIndex) {
+    return visualIndex < _addVisualIndex ? visualIndex : visualIndex - 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: navigationShell.currentIndex,
-        onTap: (int index) {
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _visualFromBranch(navigationShell.currentIndex),
+        onTap: (int visual) {
+          if (visual == _addVisualIndex) {
+            context.push('/people/import');
+            return;
+          }
+          final int branch = _branchFromVisual(visual);
           navigationShell.goBranch(
-            index,
-            initialLocation: index == navigationShell.currentIndex,
+            branch,
+            initialLocation: branch == navigationShell.currentIndex,
           );
         },
         items: const <BottomNavigationBarItem>[
@@ -166,6 +234,10 @@ class _AppShell extends StatelessWidget {
             icon: Icon(Icons.favorite_border),
             activeIcon: Icon(Icons.favorite),
             label: 'הצעות',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.add_circle, size: 32),
+            label: 'הוספה',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard_outlined),

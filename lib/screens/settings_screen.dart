@@ -45,7 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ButtonSegment<ThemeMode>(
                     value: ThemeMode.system,
                     icon: Icon(Icons.brightness_auto_outlined),
-                    label: Text('מערכת'),
+                    label: Text('אוטומטי'),
                   ),
                   ButtonSegment<ThemeMode>(
                     value: ThemeMode.light,

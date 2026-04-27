@@ -14,6 +14,8 @@ class MatchIdea extends HiveObject {
     required this.createdAt,
     required this.updatedAt,
     this.handlerName,
+    this.reminderDate,
+    this.reminderNote,
   });
 
   @HiveField(0)
@@ -39,4 +41,10 @@ class MatchIdea extends HiveObject {
 
   @HiveField(7)
   DateTime updatedAt;
+
+  @HiveField(8)
+  DateTime? reminderDate;
+
+  @HiveField(9)
+  String? reminderNote;
 }

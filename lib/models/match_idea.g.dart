@@ -25,13 +25,15 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       createdAt: fields[6] as DateTime,
       updatedAt: fields[7] as DateTime,
       handlerName: fields[5] as String?,
+      reminderDate: fields[8] as DateTime?,
+      reminderNote: fields[9] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, MatchIdea obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -47,7 +49,11 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       ..writeByte(6)
       ..write(obj.createdAt)
       ..writeByte(7)
-      ..write(obj.updatedAt);
+      ..write(obj.updatedAt)
+      ..writeByte(8)
+      ..write(obj.reminderDate)
+      ..writeByte(9)
+      ..write(obj.reminderNote);
   }
 
   @override

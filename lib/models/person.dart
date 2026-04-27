@@ -27,6 +27,7 @@ class Person extends HiveObject {
     this.hebrewBirthDay,
     List<String> photosPaths = const [],
     this.isFavorite = false,
+    this.needsReview = false,
   }) : photosPaths = List<String>.from(photosPaths);
 
   @HiveField(0)
@@ -89,6 +90,9 @@ class Person extends HiveObject {
   @HiveField(19)
   int? hebrewBirthDay;
 
+  @HiveField(20)
+  bool needsReview;
+
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 
   int? get age {
@@ -126,6 +130,7 @@ class Person extends HiveObject {
     Object? hebrewBirthDay = _sentinel,
     List<String>? photosPaths,
     bool? isFavorite,
+    bool? needsReview,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -162,6 +167,7 @@ class Person extends HiveObject {
           : hebrewBirthDay as int?,
       photosPaths: photosPaths ?? this.photosPaths,
       isFavorite: isFavorite ?? this.isFavorite,
+      needsReview: needsReview ?? this.needsReview,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
