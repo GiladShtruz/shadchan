@@ -165,6 +165,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (person == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('פרטי איש קשר'), centerTitle: true),
+
         body: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),

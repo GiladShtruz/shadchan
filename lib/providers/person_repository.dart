@@ -29,6 +29,30 @@ class PersonRepository extends ChangeNotifier {
 
   int get activeCount => count - pendingCount;
 
+  ({int min, int max})? get activeAgeBounds {
+    int? min;
+    int? max;
+    for (final Person person in _box.values) {
+      if (person.needsReview || person.profileStatus.isArchived) {
+        continue;
+      }
+      final int? age = person.age;
+      if (age == null) {
+        continue;
+      }
+      if (min == null || age < min) {
+        min = age;
+      }
+      if (max == null || age > max) {
+        max = age;
+      }
+    }
+    if (min == null || max == null) {
+      return null;
+    }
+    return (min: min, max: max);
+  }
+
   List<Person> getAll() {
     final List<Person> people = _box.values.toList();
     people.sort(_sortByFirstName);

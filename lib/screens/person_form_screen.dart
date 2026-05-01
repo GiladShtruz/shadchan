@@ -124,7 +124,19 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               ),
             ],
           ),
+          
           body: _buildBody(theme),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: _isSaving ? null : _save,
+            icon: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check),
+            label: const Text('שמור'),
+          ),
         ),
       ),
     );

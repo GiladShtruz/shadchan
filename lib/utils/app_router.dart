@@ -196,29 +196,14 @@ class _AppShell extends StatelessWidget {
 
   final StatefulNavigationShell navigationShell;
 
-  static const int _addVisualIndex = 2;
-
-  int _visualFromBranch(int branchIndex) {
-    return branchIndex < _addVisualIndex ? branchIndex : branchIndex + 1;
-  }
-
-  int _branchFromVisual(int visualIndex) {
-    return visualIndex < _addVisualIndex ? visualIndex : visualIndex - 1;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        currentIndex: _visualFromBranch(navigationShell.currentIndex),
-        onTap: (int visual) {
-          if (visual == _addVisualIndex) {
-            context.push('/people/import');
-            return;
-          }
-          final int branch = _branchFromVisual(visual);
+        currentIndex: navigationShell.currentIndex,
+        onTap: (int branch) {
           navigationShell.goBranch(
             branch,
             initialLocation: branch == navigationShell.currentIndex,
@@ -234,10 +219,6 @@ class _AppShell extends StatelessWidget {
             icon: Icon(Icons.favorite_border),
             activeIcon: Icon(Icons.favorite),
             label: 'הצעות',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle, size: 32),
-            label: 'הוספה',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard_outlined),

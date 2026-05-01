@@ -8,7 +8,6 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/widgets/app_drawer.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -79,10 +78,23 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final bool filterActive = _statusFilter.isNotEmpty;
 
     return Scaffold(
-      drawer: const AppDrawer(),
       appBar: AppBar(
         title: Text(_showArchived ? 'ארכיון' : 'הצעות'),
         centerTitle: true,
+        actions: <Widget>[
+          IconButton(
+            tooltip: _showArchived ? 'הצעות פעילות' : 'ארכיון הצעות',
+            icon: Icon(
+              _showArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+            ),
+            onPressed: () {
+              setState(() {
+                _showArchived = !_showArchived;
+                _statusFilter.clear();
+              });
+            },
+          ),
+        ],
       ),
       body: Column(
         children: <Widget>[

@@ -12,7 +12,6 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
-import 'package:shadchan/widgets/app_drawer.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -37,14 +36,10 @@ class PeopleScreen extends StatefulWidget {
 }
 
 class _PeopleScreenState extends State<PeopleScreen> {
-  static const int _minFilterAge = 18;
-  static const int _maxFilterAge = 50;
-  static const RangeValues _defaultAgeRange = RangeValues(18, 50);
-
   final TextEditingController _searchController = TextEditingController();
 
   Gender? _selectedGender;
-  RangeValues _selectedAgeRange = _defaultAgeRange;
+  RangeValues? _selectedAgeRange;
   List<ReligiousLevel> _selectedReligiousLevels = <ReligiousLevel>[];
   List<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>[];
   String _cityFilter = '';
@@ -79,11 +74,46 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final PersonRepository personRepository = context.watch<PersonRepository>();
 
     final int activeCount = personRepository.activeCount;
+    final int pendingCount = personRepository.pendingCount;
     final List<Person> visiblePeople = _getVisiblePeople(personRepository);
 
     return Scaffold(
-      drawer: const AppDrawer(),
-      appBar: AppBar(title: const Text('אנשים'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('אנשים'),
+        centerTitle: true,
+        actions: <Widget>[
+          IconButton(
+            tooltip: _tableView ? 'תצוגת רשימה' : 'תצוגת טבלה',
+            icon: Icon(
+              _tableView ? Icons.view_list_outlined : Icons.table_chart_outlined,
+            ),
+            onPressed: () {
+              setState(() {
+                _tableView = !_tableView;
+              });
+            },
+          ),
+          IconButton(
+            tooltip: 'מיין לפי',
+            icon: const Icon(Icons.sort),
+            onPressed: _openSortSheet,
+          ),
+          IconButton(
+            tooltip: 'בהמתנה לעדכון',
+            icon: Badge.count(
+              count: pendingCount,
+              isLabelVisible: pendingCount > 1,
+              child: const Icon(Icons.inbox_outlined),
+            ),
+            onPressed: () => context.push('/people/pending'),
+          ),
+          IconButton(
+            tooltip: 'הגדרות',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
+      ),
       body: Column(
         children: <Widget>[
           Padding(
@@ -110,6 +140,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'הוספה',
+        onPressed: () => context.push('/people/import'),
+        child: const Icon(Icons.add),
       ),
     );
   }
@@ -311,15 +346,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
       );
     }
 
-    if (_selectedAgeRange != _defaultAgeRange) {
+    final RangeValues? ageRange = _selectedAgeRange;
+    if (ageRange != null) {
       chips.add(
         InputChip(
           label: Text(
-            'גיל ${_selectedAgeRange.start.round()}-${_selectedAgeRange.end.round()}',
+            'גיל ${ageRange.start.round()}-${ageRange.end.round()}',
           ),
           onDeleted: () {
             setState(() {
-              _selectedAgeRange = _defaultAgeRange;
+              _selectedAgeRange = null;
             });
           },
         ),
@@ -396,11 +432,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   List<Person> _getVisiblePeople(PersonRepository repository) {
-    final bool hasAgeFilter = _selectedAgeRange != _defaultAgeRange;
+    final RangeValues? ageRange = _selectedAgeRange;
     final List<Person> filteredPeople = repository.filter(
       gender: _selectedGender,
-      minAge: hasAgeFilter ? _selectedAgeRange.start.round() : null,
-      maxAge: hasAgeFilter ? _selectedAgeRange.end.round() : null,
+      minAge: ageRange?.start.round(),
+      maxAge: ageRange?.end.round(),
       religiousLevels: _selectedReligiousLevels,
       profileStatuses: _selectedProfileStatuses,
       favoritesOnly: _favoritesOnly ? true : null,
@@ -481,7 +517,58 @@ class _PeopleScreenState extends State<PeopleScreen> {
     return a.lastName.toLowerCase().compareTo(b.lastName.toLowerCase());
   }
 
+  Future<void> _openSortSheet() async {
+    final PeopleSortOption? selected = await showModalBottomSheet<PeopleSortOption>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    'מיין לפי',
+                    style: Theme.of(sheetContext).textTheme.titleMedium,
+                  ),
+                ),
+              ),
+              for (final ({PeopleSortOption value, String label}) option in const <({PeopleSortOption value, String label})>[
+                (value: PeopleSortOption.alphabetical, label: 'א-ב'),
+                (value: PeopleSortOption.ageAscending, label: 'לפי גיל'),
+                (value: PeopleSortOption.newest, label: 'חדשים'),
+                (value: PeopleSortOption.recentlyUpdated, label: 'עודכנו לאחרונה'),
+              ])
+                ListTile(
+                  title: Text(option.label),
+                  trailing: _sortOption == option.value
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(sheetContext).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () => Navigator.of(sheetContext).pop(option.value),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null) {
+      return;
+    }
+    setState(() {
+      _sortOption = selected;
+    });
+  }
+
   Future<void> _openFiltersSheet() async {
+    final ({int min, int max})? bounds =
+        context.read<PersonRepository>().activeAgeBounds;
     final _PeopleFilterState? result =
         await showModalBottomSheet<_PeopleFilterState>(
           context: context,
@@ -494,6 +581,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             return _PeopleFiltersSheet(
               initialGender: _selectedGender,
               initialAgeRange: _selectedAgeRange,
+              ageBounds: bounds,
               initialReligiousLevels: _selectedReligiousLevels,
               initialProfileStatuses: _selectedProfileStatuses,
               initialCity: _cityFilter,
@@ -583,7 +671,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   bool get _hasActiveFilters {
     return _selectedGender != null ||
-        _selectedAgeRange != _defaultAgeRange ||
+        _selectedAgeRange != null ||
         _selectedReligiousLevels.isNotEmpty ||
         _selectedProfileStatuses.isNotEmpty ||
         _cityFilter.trim().isNotEmpty ||
@@ -596,7 +684,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   void _resetFilters() {
     _selectedGender = null;
-    _selectedAgeRange = _defaultAgeRange;
+    _selectedAgeRange = null;
     _selectedReligiousLevels = <ReligiousLevel>[];
     _selectedProfileStatuses = <ProfileStatus>[];
     _cityFilter = '';
@@ -680,6 +768,7 @@ class _PeopleFiltersSheet extends StatefulWidget {
   const _PeopleFiltersSheet({
     required this.initialGender,
     required this.initialAgeRange,
+    required this.ageBounds,
     required this.initialReligiousLevels,
     required this.initialProfileStatuses,
     required this.initialCity,
@@ -687,7 +776,8 @@ class _PeopleFiltersSheet extends StatefulWidget {
   });
 
   final Gender? initialGender;
-  final RangeValues initialAgeRange;
+  final RangeValues? initialAgeRange;
+  final ({int min, int max})? ageBounds;
   final List<ReligiousLevel> initialReligiousLevels;
   final List<ProfileStatus> initialProfileStatuses;
   final String initialCity;
@@ -699,7 +789,7 @@ class _PeopleFiltersSheet extends StatefulWidget {
 
 class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
   Gender? tempGender;
-  late RangeValues tempAgeRange;
+  RangeValues? tempAgeRange;
   late List<ReligiousLevel> tempReligiousLevels;
   late List<ProfileStatus> tempProfileStatuses;
   late bool tempFavoritesOnly;
@@ -724,6 +814,19 @@ class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
   void dispose() {
     cityController.dispose();
     super.dispose();
+  }
+
+  RangeValues? _normalizedAgeRange() {
+    final RangeValues? range = tempAgeRange;
+    final ({int min, int max})? bounds = widget.ageBounds;
+    if (range == null || bounds == null) {
+      return null;
+    }
+    if (range.start.round() <= bounds.min &&
+        range.end.round() >= bounds.max) {
+      return null;
+    }
+    return range;
   }
 
   @override
@@ -767,28 +870,50 @@ class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
                     .toList(),
               ),
               const SizedBox(height: 20),
-              Text(
-                'טווח גילאים: ${tempAgeRange.start.round()}-${tempAgeRange.end.round()}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              RangeSlider(
-                min: _PeopleScreenState._minFilterAge.toDouble(),
-                max: _PeopleScreenState._maxFilterAge.toDouble(),
-                values: tempAgeRange,
-                divisions:
-                    _PeopleScreenState._maxFilterAge -
-                    _PeopleScreenState._minFilterAge,
-                labels: RangeLabels(
-                  tempAgeRange.start.round().toString(),
-                  tempAgeRange.end.round().toString(),
+              if (widget.ageBounds != null) ...<Widget>[
+                Builder(
+                  builder: (BuildContext context) {
+                    final ({int min, int max}) bounds = widget.ageBounds!;
+                    final RangeValues effective = tempAgeRange ??
+                        RangeValues(
+                          bounds.min.toDouble(),
+                          bounds.max.toDouble(),
+                        );
+                    final bool sliderDisabled = bounds.min == bounds.max;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'טווח גילאים: ${effective.start.round()}-${effective.end.round()}',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        RangeSlider(
+                          min: bounds.min.toDouble(),
+                          max: sliderDisabled
+                              ? (bounds.max + 1).toDouble()
+                              : bounds.max.toDouble(),
+                          values: effective,
+                          divisions: sliderDisabled
+                              ? 1
+                              : (bounds.max - bounds.min),
+                          labels: RangeLabels(
+                            effective.start.round().toString(),
+                            effective.end.round().toString(),
+                          ),
+                          onChanged: sliderDisabled
+                              ? null
+                              : (RangeValues value) {
+                                  setState(() {
+                                    tempAgeRange = value;
+                                  });
+                                },
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                onChanged: (RangeValues value) {
-                  setState(() {
-                    tempAgeRange = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               Text('סגנון דתי', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Wrap(
@@ -873,7 +998,7 @@ class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
                     Navigator.of(context).pop(
                       _PeopleFilterState(
                         gender: tempGender,
-                        ageRange: tempAgeRange,
+                        ageRange: _normalizedAgeRange(),
                         religiousLevels: tempReligiousLevels,
                         profileStatuses: tempProfileStatuses,
                         city: cityController.text,
@@ -890,7 +1015,7 @@ class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
                   onPressed: () {
                     setState(() {
                       tempGender = null;
-                      tempAgeRange = _PeopleScreenState._defaultAgeRange;
+                      tempAgeRange = null;
                       tempReligiousLevels = <ReligiousLevel>[];
                       tempProfileStatuses = <ProfileStatus>[];
                       tempFavoritesOnly = false;
@@ -919,7 +1044,7 @@ class _PeopleFilterState {
   });
 
   final Gender? gender;
-  final RangeValues ageRange;
+  final RangeValues? ageRange;
   final List<ReligiousLevel> religiousLevels;
   final List<ProfileStatus> profileStatuses;
   final String city;
@@ -936,9 +1061,6 @@ class _PeopleTable extends StatefulWidget {
 }
 
 class _PeopleTableState extends State<_PeopleTable> {
-  static const double _minAge = 10;
-  static const double _maxAge = 120;
-
   final Set<Gender> _selectedGenders = <Gender>{};
   final Set<ReligiousLevel?> _selectedReligiousLevels = <ReligiousLevel?>{};
   final Set<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>{};
@@ -976,6 +1098,15 @@ class _PeopleTableState extends State<_PeopleTable> {
     });
     _finishPreparingSoon();
   }
+
+  static const double _nameWidth = 130;
+  static const double _genderWidth = 60;
+  static const double _ageWidth = 50;
+  static const double _religiousWidth = 110;
+  static const double _statusWidth = 60;
+  static const double _rowHeight = 48;
+  static const double _tableWidth =
+      _nameWidth + _genderWidth + _ageWidth + _religiousWidth + _statusWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1026,100 +1157,187 @@ class _PeopleTableState extends State<_PeopleTable> {
           ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 96),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingTextStyle: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-                columnSpacing: 18,
-                horizontalMargin: 8,
-                columns: <DataColumn>[
-                  const DataColumn(label: Text('שם')),
-                  DataColumn(
-                    label: _TableFilterHeader(
-                      label: 'מגדר',
-                      isActive: _selectedGenders.isNotEmpty,
-                      onTap: _openGenderFilter,
-                    ),
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: SizedBox(
+              width: _tableWidth,
+              child: Column(
+                children: <Widget>[
+                  _buildHeader(theme),
+                  Divider(
+                    height: 1,
+                    color: theme.colorScheme.outlineVariant,
                   ),
-                  DataColumn(
-                    numeric: true,
-                    label: _TableFilterHeader(
-                      label: 'גיל',
-                      isActive: _selectedAgeRange != null,
-                      onTap: _openAgeFilter,
-                    ),
-                  ),
-                  DataColumn(
-                    label: _TableFilterHeader(
-                      label: 'סגנון דתי',
-                      isActive: _selectedReligiousLevels.isNotEmpty,
-                      onTap: _openReligiousLevelFilter,
-                    ),
-                  ),
-                  DataColumn(
-                    label: _TableFilterHeader(
-                      label: 'סטטוס',
-                      isActive: _selectedProfileStatuses.isNotEmpty,
-                      onTap: _openProfileStatusFilter,
-                    ),
+                  Expanded(
+                    child: filteredPeople.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                'אין אנשים שמתאימים לסינון הטבלה',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.only(bottom: 96),
+                            itemCount: filteredPeople.length,
+                            separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              color: theme.colorScheme.outlineVariant,
+                            ),
+                            itemBuilder: (BuildContext context, int index) {
+                              return _buildRow(
+                                theme: theme,
+                                person: filteredPeople[index],
+                                repository: repository,
+                              );
+                            },
+                          ),
                   ),
                 ],
-                rows: filteredPeople.map((Person person) {
-                  void openDetail() => context.push('/people/${person.id}');
-                  return DataRow(
-                    cells: <DataCell>[
-                      DataCell(
-                        Text(
-                          person.fullName.trim(),
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        onTap: openDetail,
-                      ),
-                      DataCell(
-                        _GenderDropdown(person: person, repository: repository),
-                      ),
-                      DataCell(
-                        Text(person.displayAge),
-                        onTap: person.birthDate != null
-                            ? openDetail
-                            : () => _editAge(context, person, repository),
-                      ),
-                      DataCell(
-                        _ReligiousLevelDropdown(
-                          person: person,
-                          repository: repository,
-                        ),
-                      ),
-                      DataCell(
-                        _ProfileStatusDropdown(
-                          person: person,
-                          repository: repository,
-                        ),
-                      ),
-                    ],
-                  );
-                }).toList(),
               ),
             ),
           ),
         ),
-        if (filteredPeople.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Text(
-              'אין אנשים שמתאימים לסינון הטבלה',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+      ],
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme) {
+    return Container(
+      height: _rowHeight,
+      color: theme.colorScheme.surface,
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: _nameWidth,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(start: 4),
+              child: Text(
+                'שם',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              textAlign: TextAlign.center,
             ),
           ),
-      ],
+          SizedBox(
+            width: _genderWidth,
+            child: _TableFilterHeader(
+              label: 'מגדר',
+              isActive: _selectedGenders.isNotEmpty,
+              onTap: _openGenderFilter,
+            ),
+          ),
+          SizedBox(
+            width: _ageWidth,
+            child: _TableFilterHeader(
+              label: 'גיל',
+              isActive: _selectedAgeRange != null,
+              onTap: _openAgeFilter,
+            ),
+          ),
+          SizedBox(
+            width: _religiousWidth,
+            child: _TableFilterHeader(
+              label: 'סגנון דתי',
+              isActive: _selectedReligiousLevels.isNotEmpty,
+              onTap: _openReligiousLevelFilter,
+            ),
+          ),
+          SizedBox(
+            width: _statusWidth,
+            child: _TableFilterHeader(
+              label: 'סטטוס',
+              isActive: _selectedProfileStatuses.isNotEmpty,
+              onTap: _openProfileStatusFilter,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRow({
+    required ThemeData theme,
+    required Person person,
+    required PersonRepository repository,
+  }) {
+    return SizedBox(
+      height: _rowHeight,
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: _nameWidth,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(start: 4),
+              child: Text(
+                person.fullName.trim(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: _genderWidth,
+            child: Text(
+              person.gender.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          SizedBox(
+            width: _ageWidth,
+            child: Text(
+              person.displayAge,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          SizedBox(
+            width: _religiousWidth,
+            child: Text(
+              person.religiousLevel?.displayName ?? '—',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          SizedBox(
+            width: _statusWidth,
+            child: PopupMenuButton<ProfileStatus>(
+              tooltip: person.profileStatus.displayName,
+              initialValue: person.profileStatus,
+              padding: EdgeInsets.zero,
+              position: PopupMenuPosition.under,
+              onSelected: (ProfileStatus value) {
+                repository.updateProfileStatus(person.id, value);
+              },
+              itemBuilder: (BuildContext context) {
+                return ProfileStatus.values.map((ProfileStatus status) {
+                  return PopupMenuItem<ProfileStatus>(
+                    value: status,
+                    child: Text('${status.emoji} ${status.displayName}'),
+                  );
+                }).toList();
+              },
+              child: Center(
+                child: Text(
+                  person.profileStatus.emoji,
+                  style: const TextStyle(fontSize: 20),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1218,7 +1436,20 @@ class _PeopleTableState extends State<_PeopleTable> {
   }
 
   Future<void> _openAgeFilter() async {
-    RangeValues tempRange = _selectedAgeRange ?? const RangeValues(23, 27);
+    final ({int min, int max})? bounds =
+        context.read<PersonRepository>().activeAgeBounds;
+    if (bounds == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('אין גילאים זמינים לסינון')));
+      return;
+    }
+
+    final double minAge = bounds.min.toDouble();
+    final double maxAge = bounds.max.toDouble();
+    final bool sliderDisabled = bounds.min == bounds.max;
+    final double sliderMax = sliderDisabled ? maxAge + 1 : maxAge;
+    RangeValues tempRange = _selectedAgeRange ?? RangeValues(minAge, maxAge);
 
     final _AgeFilterResult?
     result = await showModalBottomSheet<_AgeFilterResult>(
@@ -1244,19 +1475,21 @@ class _PeopleTableState extends State<_PeopleTable> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     RangeSlider(
-                      min: _minAge,
-                      max: _maxAge,
+                      min: minAge,
+                      max: sliderMax,
                       values: tempRange,
-                      divisions: (_maxAge - _minAge).round(),
+                      divisions: sliderDisabled ? 1 : (maxAge - minAge).round(),
                       labels: RangeLabels(
                         tempRange.start.round().toString(),
                         tempRange.end.round().toString(),
                       ),
-                      onChanged: (RangeValues value) {
-                        setSheetState(() {
-                          tempRange = value;
-                        });
-                      },
+                      onChanged: sliderDisabled
+                          ? null
+                          : (RangeValues value) {
+                              setSheetState(() {
+                                tempRange = value;
+                              });
+                            },
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -1290,8 +1523,15 @@ class _PeopleTableState extends State<_PeopleTable> {
       return;
     }
 
+    final RangeValues? chosen = result.range;
     setState(() {
-      _selectedAgeRange = result.range;
+      if (chosen != null &&
+          chosen.start.round() <= bounds.min &&
+          chosen.end.round() >= bounds.max) {
+        _selectedAgeRange = null;
+      } else {
+        _selectedAgeRange = chosen;
+      }
     });
     _pulseLoading();
   }
@@ -1413,153 +1653,3 @@ class _TableFilterHeader extends StatelessWidget {
   }
 }
 
-Future<void> _editAge(
-  BuildContext context,
-  Person person,
-  PersonRepository repository,
-) async {
-  final TextEditingController controller = TextEditingController(
-    text: person.manualAge?.toString() ?? '',
-  );
-  String? errorText;
-
-  final int? result = await showDialog<int?>(
-    context: context,
-    builder: (BuildContext dialogContext) {
-      return StatefulBuilder(
-        builder: (BuildContext ctx, StateSetter setDialogState) {
-          return AlertDialog(
-            title: Text('עריכת גיל – ${person.fullName.trim()}'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'גיל (הערכה)',
-                errorText: errorText,
-              ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('ביטול'),
-              ),
-              if (person.manualAge != null)
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(-1),
-                  child: const Text('ניקוי'),
-                ),
-              FilledButton(
-                onPressed: () {
-                  final String trimmed = controller.text.trim();
-                  if (trimmed.isEmpty) {
-                    Navigator.of(dialogContext).pop(-1);
-                    return;
-                  }
-                  final int? parsed = int.tryParse(trimmed);
-                  if (parsed == null || parsed < 10 || parsed > 120) {
-                    setDialogState(() {
-                      errorText = 'יש להזין גיל בין 10 ל-120';
-                    });
-                    return;
-                  }
-                  Navigator.of(dialogContext).pop(parsed);
-                },
-                child: const Text('שמור'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-
-  if (result == null) {
-    return;
-  }
-  await repository.updateManualAge(person.id, result == -1 ? null : result);
-}
-
-class _GenderDropdown extends StatelessWidget {
-  const _GenderDropdown({required this.person, required this.repository});
-
-  final Person person;
-  final PersonRepository repository;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButton<Gender>(
-      value: person.gender,
-      isDense: true,
-      underline: const SizedBox.shrink(),
-      items: Gender.values.map((Gender g) {
-        return DropdownMenuItem<Gender>(value: g, child: Text(g.displayName));
-      }).toList(),
-      onChanged: (Gender? value) {
-        if (value == null) return;
-        repository.updateGender(person.id, value);
-      },
-    );
-  }
-}
-
-class _ReligiousLevelDropdown extends StatelessWidget {
-  const _ReligiousLevelDropdown({
-    required this.person,
-    required this.repository,
-  });
-
-  final Person person;
-  final PersonRepository repository;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButton<ReligiousLevel?>(
-      value: person.religiousLevel,
-      isDense: true,
-      underline: const SizedBox.shrink(),
-      hint: const Text('—'),
-      items: <DropdownMenuItem<ReligiousLevel?>>[
-        const DropdownMenuItem<ReligiousLevel?>(value: null, child: Text('—')),
-        ...ReligiousLevel.values.map((ReligiousLevel level) {
-          return DropdownMenuItem<ReligiousLevel?>(
-            value: level,
-            child: Text(level.displayName),
-          );
-        }),
-      ],
-      onChanged: (ReligiousLevel? value) {
-        repository.updateReligiousLevel(person.id, value);
-      },
-    );
-  }
-}
-
-class _ProfileStatusDropdown extends StatelessWidget {
-  const _ProfileStatusDropdown({
-    required this.person,
-    required this.repository,
-  });
-
-  final Person person;
-  final PersonRepository repository;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButton<ProfileStatus>(
-      value: person.profileStatus,
-      isDense: true,
-      underline: const SizedBox.shrink(),
-      items: ProfileStatus.values.map((ProfileStatus status) {
-        return DropdownMenuItem<ProfileStatus>(
-          value: status,
-          child: Text('${status.emoji} ${status.displayName}'),
-        );
-      }).toList(),
-      onChanged: (ProfileStatus? value) {
-        if (value == null) return;
-        repository.updateProfileStatus(person.id, value);
-      },
-    );
-  }
-}

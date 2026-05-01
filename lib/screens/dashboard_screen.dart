@@ -8,7 +8,6 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/widgets/app_drawer.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -118,7 +117,6 @@ class DashboardScreen extends StatelessWidget {
     );
 
     return Scaffold(
-      drawer: const AppDrawer(),
       appBar: AppBar(
         title: const Text('נתונים'),
         centerTitle: true,
