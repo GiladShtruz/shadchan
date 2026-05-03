@@ -184,6 +184,36 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            const SectionHeader(title: 'תזכורת להצעה'),
+            Card(
+              child: ListTile(
+                leading: Icon(
+                  match.reminderDate != null
+                      ? Icons.notifications_active
+                      : Icons.notifications_none,
+                  color: match.reminderDate != null
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+                title: Text(
+                  match.reminderDate != null
+                      ? 'תזכורת פעילה'
+                      : 'אין תזכורת להצעה',
+                ),
+                subtitle: Text(_reminderSubtitle(match)),
+                trailing: TextButton.icon(
+                  onPressed: () =>
+                      _showReminderDialog(context, matchRepository, match),
+                  icon: Icon(
+                    match.reminderDate != null ? Icons.edit : Icons.add_alert,
+                  ),
+                  label: Text(match.reminderDate != null ? 'עריכה' : 'הוספה'),
+                ),
+                onTap: () =>
+                    _showReminderDialog(context, matchRepository, match),
+              ),
+            ),
+            const SizedBox(height: 16),
             const SectionHeader(title: 'אחראי נוכחי'),
             Card(
               child: Padding(
@@ -393,6 +423,137 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       CurrentHandler.thirdParty,
       handlerName: normalized,
     );
+  }
+
+  String _reminderSubtitle(MatchIdea match) {
+    final DateTime? reminderDate = match.reminderDate;
+    if (reminderDate == null) {
+      return 'אפשר להוסיף תזכורת מתוך ההצעה עצמה';
+    }
+
+    final String dateText = AppDateUtils.formatDateShort(reminderDate);
+    final String? note = match.reminderNote?.trim();
+    if (note == null || note.isEmpty) {
+      return dateText;
+    }
+
+    return '$dateText · $note';
+  }
+
+  Future<void> _showReminderDialog(
+    BuildContext context,
+    MatchRepository repository,
+    MatchIdea match,
+  ) async {
+    final TextEditingController noteController = TextEditingController(
+      text: match.reminderNote,
+    );
+    DateTime? selectedDate = match.reminderDate;
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              title: const Text('תזכורת להצעה'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('תאריך תזכורת'),
+                    subtitle: Text(
+                      selectedDate != null
+                          ? AppDateUtils.formatDateShort(selectedDate!)
+                          : 'לא נבחר תאריך',
+                    ),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final DateTime now = DateTime.now();
+                      final DateTime today = DateTime(
+                        now.year,
+                        now.month,
+                        now.day,
+                      );
+                      final DateTime initialDate =
+                          selectedDate != null && !selectedDate!.isBefore(today)
+                          ? selectedDate!
+                          : today;
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: initialDate,
+                        firstDate: today,
+                        lastDate: today.add(const Duration(days: 365)),
+                        locale: const Locale('he'),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: noteController,
+                    decoration: const InputDecoration(
+                      labelText: 'הערה (אופציונלי)',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                if (match.reminderDate != null)
+                  TextButton(
+                    onPressed: () async {
+                      match
+                        ..reminderDate = null
+                        ..reminderNote = null;
+                      await repository.update(match);
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    },
+                    child: Text(
+                      'מחק תזכורת',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('ביטול'),
+                ),
+                FilledButton(
+                  onPressed: selectedDate == null
+                      ? null
+                      : () async {
+                          match
+                            ..reminderDate = selectedDate
+                            ..reminderNote =
+                                noteController.text.trim().isEmpty
+                                ? null
+                                : noteController.text.trim();
+                          await repository.update(match);
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                        },
+                  child: const Text('שמור'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    noteController.dispose();
   }
 
   Future<void> _addNote(MatchRepository repository, String matchId) async {

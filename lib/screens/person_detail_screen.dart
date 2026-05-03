@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -41,18 +42,24 @@ class PersonDetailScreen extends StatefulWidget {
   State<PersonDetailScreen> createState() => _PersonDetailScreenState();
 }
 
-class _PersonDetailScreenState extends State<PersonDetailScreen> {
+class _PersonDetailScreenState extends State<PersonDetailScreen>
+    with WidgetsBindingObserver {
   final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _manualAgeController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _inquiryContactNameController =
+      TextEditingController();
+  final TextEditingController _inquiryContactPhoneController =
+      TextEditingController();
   final TextEditingController _sourceController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
 
   bool _isSavingEdit = false;
   String? _editingPersonId;
+  Timer? _autoSaveTimer;
   Gender _selectedGender = Gender.unknown;
   DateTime? _birthDate;
   int? _hebrewBirthYear;
@@ -65,6 +72,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   final FocusNode _lastNameFocus = FocusNode();
   final FocusNode _manualAgeFocus = FocusNode();
   final FocusNode _phoneFocus = FocusNode();
+  final FocusNode _inquiryContactNameFocus = FocusNode();
+  final FocusNode _inquiryContactPhoneFocus = FocusNode();
   final FocusNode _descriptionFocus = FocusNode();
 
   String _origFirstName = '';
@@ -72,6 +81,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   String _origManualAge = '';
   String _origCity = '';
   String _origPhone = '';
+  String _origInquiryContactName = '';
+  String _origInquiryContactPhone = '';
   String _origSource = '';
   String _origDescription = '';
   Gender _origGender = Gender.unknown;
@@ -84,11 +95,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     for (final FocusNode node in <FocusNode>[
       _firstNameFocus,
       _lastNameFocus,
       _manualAgeFocus,
       _phoneFocus,
+      _inquiryContactNameFocus,
+      _inquiryContactPhoneFocus,
       _descriptionFocus,
     ]) {
       node.addListener(_handleFocusChange);
@@ -97,11 +111,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _firstNameController.dispose();
     _lastNameController.dispose();
     _manualAgeController.dispose();
     _cityController.dispose();
     _phoneController.dispose();
+    _inquiryContactNameController.dispose();
+    _inquiryContactPhoneController.dispose();
     _sourceController.dispose();
     _descriptionController.dispose();
     for (final FocusNode node in <FocusNode>[
@@ -109,6 +127,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       _lastNameFocus,
       _manualAgeFocus,
       _phoneFocus,
+      _inquiryContactNameFocus,
+      _inquiryContactPhoneFocus,
       _descriptionFocus,
     ]) {
       node
@@ -118,8 +138,34 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _autoSaveTimer?.cancel();
+      unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
+    }
+  }
+
   void _handleFocusChange() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    if (!_hasFocusedInlineField) {
+      _autoSaveTimer?.cancel();
+      unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
+    }
+  }
+
+  bool get _hasFocusedInlineField {
+    return _firstNameFocus.hasFocus ||
+        _lastNameFocus.hasFocus ||
+        _manualAgeFocus.hasFocus ||
+        _phoneFocus.hasFocus ||
+        _inquiryContactNameFocus.hasFocus ||
+        _inquiryContactPhoneFocus.hasFocus ||
+        _descriptionFocus.hasFocus;
   }
 
   bool get _hasChanges {
@@ -128,6 +174,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         _manualAgeController.text != _origManualAge ||
         _cityController.text != _origCity ||
         _phoneController.text != _origPhone ||
+        _inquiryContactNameController.text != _origInquiryContactName ||
+        _inquiryContactPhoneController.text != _origInquiryContactPhone ||
         _sourceController.text != _origSource ||
         _descriptionController.text != _origDescription ||
         _selectedGender != _origGender ||
@@ -139,19 +187,57 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   void _captureOriginals() {
-    _origFirstName = _firstNameController.text;
-    _origLastName = _lastNameController.text;
-    _origManualAge = _manualAgeController.text;
-    _origCity = _cityController.text;
-    _origPhone = _phoneController.text;
-    _origSource = _sourceController.text;
-    _origDescription = _descriptionController.text;
-    _origGender = _selectedGender;
-    _origBirthDate = _birthDate;
-    _origReligiousLevel = _selectedReligiousLevel;
-    _origHebrewBirthYear = _hebrewBirthYear;
-    _origHebrewBirthMonth = _hebrewBirthMonth;
-    _origHebrewBirthDay = _hebrewBirthDay;
+    _captureOriginalValues(
+      firstName: _firstNameController.text,
+      lastName: _lastNameController.text,
+      manualAge: _manualAgeController.text,
+      city: _cityController.text,
+      phone: _phoneController.text,
+      inquiryContactName: _inquiryContactNameController.text,
+      inquiryContactPhone: _inquiryContactPhoneController.text,
+      source: _sourceController.text,
+      description: _descriptionController.text,
+      gender: _selectedGender,
+      birthDate: _birthDate,
+      religiousLevel: _selectedReligiousLevel,
+      hebrewBirthYear: _hebrewBirthYear,
+      hebrewBirthMonth: _hebrewBirthMonth,
+      hebrewBirthDay: _hebrewBirthDay,
+    );
+  }
+
+  void _captureOriginalValues({
+    required String firstName,
+    required String lastName,
+    required String manualAge,
+    required String city,
+    required String phone,
+    required String inquiryContactName,
+    required String inquiryContactPhone,
+    required String source,
+    required String description,
+    required Gender gender,
+    required DateTime? birthDate,
+    required ReligiousLevel? religiousLevel,
+    required int? hebrewBirthYear,
+    required int? hebrewBirthMonth,
+    required int? hebrewBirthDay,
+  }) {
+    _origFirstName = firstName;
+    _origLastName = lastName;
+    _origManualAge = manualAge;
+    _origCity = city;
+    _origPhone = phone;
+    _origInquiryContactName = inquiryContactName;
+    _origInquiryContactPhone = inquiryContactPhone;
+    _origSource = source;
+    _origDescription = description;
+    _origGender = gender;
+    _origBirthDate = birthDate;
+    _origReligiousLevel = religiousLevel;
+    _origHebrewBirthYear = hebrewBirthYear;
+    _origHebrewBirthMonth = hebrewBirthMonth;
+    _origHebrewBirthDay = hebrewBirthDay;
   }
 
   @override
@@ -214,15 +300,19 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           navigator.pop();
           return;
         }
-        final bool? action = await _showUnsavedChangesDialog(context);
-        if (action == null) return;
-        if (action) {
-          final bool saved = await _saveInlineEdit(person);
-          if (!saved) return;
-        }
+        final bool saved = await _saveInlineEdit(person, showSnackBar: false);
+        if (!saved) return;
         if (mounted) navigator.pop();
       },
       child: Scaffold(
+        floatingActionButton: FloatingActionButton.extended(
+          tooltip: 'שמירה',
+          onPressed: _isSavingEdit ? null : () => _saveAndPop(person),
+          icon: const Icon(Icons.save),
+          label: const Text('שמירה'),
+          shape: const StadiumBorder(),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
         body: CustomScrollView(
           slivers: <Widget>[
             SliverAppBar(
@@ -287,7 +377,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 32),
+                padding: const EdgeInsets.only(bottom: 96),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -319,7 +409,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                           textInputAction: TextInputAction.newline,
                           maxLines: 10,
                           minLines: 5,
-                          onChanged: (_) => setState(() {}),
+                          onChanged: (_) => _handleInlineFieldChanged(),
                           decoration: InputDecoration(
                             hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
                             alignLabelWithHint: true,
@@ -371,12 +461,18 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       lastNameController: _lastNameController,
                       manualAgeController: _manualAgeController,
                       phoneController: _phoneController,
+                      inquiryContactNameController:
+                          _inquiryContactNameController,
+                      inquiryContactPhoneController:
+                          _inquiryContactPhoneController,
                       firstNameFocus: _firstNameFocus,
                       lastNameFocus: _lastNameFocus,
                       manualAgeFocus: _manualAgeFocus,
                       phoneFocus: _phoneFocus,
+                      inquiryContactNameFocus: _inquiryContactNameFocus,
+                      inquiryContactPhoneFocus: _inquiryContactPhoneFocus,
                       onSavePressed: () => _saveInlineEdit(person),
-                      onFieldChanged: () => setState(() {}),
+                      onFieldChanged: _handleInlineFieldChanged,
                       selectedGender: _selectedGender,
                       birthDate: _birthDate,
                       birthDateCalendar: _birthDateCalendar,
@@ -385,6 +481,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       selectedReligiousLevel: _selectedReligiousLevel,
                       onGenderChanged: (Gender gender) {
                         setState(() => _selectedGender = gender);
+                        unawaited(
+                          _saveCurrentInlineEdit(
+                            showSnackBar: false,
+                            unfocus: false,
+                          ),
+                        );
                       },
                       onBirthDateTap: _pickBirthDate,
                       onBirthDateCleared: () {
@@ -394,6 +496,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                           _hebrewBirthMonth = null;
                           _hebrewBirthDay = null;
                         });
+                        unawaited(
+                          _saveCurrentInlineEdit(
+                            showSnackBar: false,
+                            unfocus: false,
+                          ),
+                        );
                       },
                       onBirthDateCalendarChanged:
                           (_BirthDateCalendar calendar) {
@@ -401,6 +509,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                           },
                       onReligiousLevelChanged: (ReligiousLevel? level) {
                         setState(() => _selectedReligiousLevel = level);
+                        unawaited(
+                          _saveCurrentInlineEdit(
+                            showSnackBar: false,
+                            unfocus: false,
+                          ),
+                        );
                       },
                     ),
                     _PersonNotesSection(person: person, notes: personNotes),
@@ -422,6 +536,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                               padding: const EdgeInsets.only(bottom: 12),
                               child: birthdayBanner,
                             ),
+                          _DetailRow(
+                            label: 'לבירורים',
+                            value: _inquiryContactText(person),
+                          ),
                           _DetailRow(
                             label: 'נוצר',
                             value: AppDateUtils.formatDate(person.createdAt),
@@ -451,6 +569,62 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     _populateInlineEdit(person);
   }
 
+  void _handleInlineFieldChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+    _scheduleInlineAutoSave();
+  }
+
+  void _scheduleInlineAutoSave({
+    Duration delay = const Duration(milliseconds: 700),
+  }) {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(delay, () {
+      if (!mounted) return;
+      unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
+    });
+  }
+
+  Future<bool> _saveCurrentInlineEdit({
+    bool showSnackBar = true,
+    bool unfocus = true,
+  }) async {
+    if (!mounted || !_hasChanges) {
+      return true;
+    }
+
+    if (_isSavingEdit) {
+      _scheduleInlineAutoSave(delay: const Duration(milliseconds: 300));
+      return false;
+    }
+
+    final String? personId = _editingPersonId;
+    if (personId == null) {
+      return false;
+    }
+
+    final Person? person = context.read<PersonRepository>().getById(personId);
+    if (person == null) {
+      return false;
+    }
+
+    return _saveInlineEdit(
+      person,
+      showSnackBar: showSnackBar,
+      unfocus: unfocus,
+    );
+  }
+
+  Future<void> _saveAndPop(Person person) async {
+    final bool saved = await _saveInlineEdit(person, showSnackBar: false);
+    if (!saved || !mounted) {
+      return;
+    }
+
+    Navigator.of(context).pop();
+  }
+
   void _populateInlineEdit(Person person) {
     _editingPersonId = person.id;
     _firstNameController.text = person.firstName;
@@ -458,6 +632,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     _manualAgeController.text = person.manualAge?.toString() ?? '';
     _cityController.text = person.city ?? '';
     _phoneController.text = person.phone ?? '';
+    _inquiryContactNameController.text = person.inquiryContactName ?? '';
+    _inquiryContactPhoneController.text = person.inquiryContactPhone ?? '';
     _sourceController.text = person.source ?? '';
     _descriptionController.text = person.description ?? '';
     _selectedGender = person.gender;
@@ -493,8 +669,20 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     _captureOriginals();
   }
 
-  Future<bool> _saveInlineEdit(Person person) async {
-    FocusScope.of(context).unfocus();
+  Future<bool> _saveInlineEdit(
+    Person person, {
+    bool showSnackBar = true,
+    bool unfocus = true,
+  }) async {
+    _autoSaveTimer?.cancel();
+
+    if (!_hasChanges) {
+      return true;
+    }
+
+    if (unfocus) {
+      FocusScope.of(context).unfocus();
+    }
 
     if (!_editFormKey.currentState!.validate()) {
       return false;
@@ -505,23 +693,42 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     });
 
     try {
-      final int? manualAge = _birthDate == null
-          ? int.tryParse(_manualAgeController.text.trim())
+      final String savedFirstName = _firstNameController.text.trim();
+      final String savedLastName = _lastNameController.text.trim();
+      final String savedManualAgeText = _manualAgeController.text.trim();
+      final String savedCityText = _cityController.text;
+      final String savedPhoneText = _phoneController.text;
+      final String savedInquiryContactNameText =
+          _inquiryContactNameController.text;
+      final String savedInquiryContactPhoneText =
+          _inquiryContactPhoneController.text;
+      final String savedSourceText = _sourceController.text;
+      final String savedDescriptionText = _descriptionController.text;
+      final Gender savedGender = _selectedGender;
+      final DateTime? savedBirthDate = _birthDate;
+      final ReligiousLevel? savedReligiousLevel = _selectedReligiousLevel;
+      final int? savedHebrewBirthYear = _hebrewBirthYear;
+      final int? savedHebrewBirthMonth = _hebrewBirthMonth;
+      final int? savedHebrewBirthDay = _hebrewBirthDay;
+      final int? manualAge = savedBirthDate == null
+          ? int.tryParse(savedManualAgeText)
           : null;
       person
-        ..firstName = _firstNameController.text.trim()
-        ..lastName = _lastNameController.text.trim()
-        ..gender = _selectedGender
-        ..birthDate = _birthDate
+        ..firstName = savedFirstName
+        ..lastName = savedLastName
+        ..gender = savedGender
+        ..birthDate = savedBirthDate
         ..manualAge = manualAge
-        ..religiousLevel = _selectedReligiousLevel
-        ..city = _normalizedText(_cityController.text)
-        ..phone = _normalizedText(_phoneController.text)
-        ..source = _normalizedText(_sourceController.text)
-        ..description = _normalizedText(_descriptionController.text)
-        ..hebrewBirthYear = _hebrewBirthYear
-        ..hebrewBirthMonth = _hebrewBirthMonth
-        ..hebrewBirthDay = _hebrewBirthDay;
+        ..religiousLevel = savedReligiousLevel
+        ..city = _normalizedText(savedCityText)
+        ..phone = _normalizedText(savedPhoneText)
+        ..inquiryContactName = _normalizedText(savedInquiryContactNameText)
+        ..inquiryContactPhone = _normalizedText(savedInquiryContactPhoneText)
+        ..source = _normalizedText(savedSourceText)
+        ..description = _normalizedText(savedDescriptionText)
+        ..hebrewBirthYear = savedHebrewBirthYear
+        ..hebrewBirthMonth = savedHebrewBirthMonth
+        ..hebrewBirthDay = savedHebrewBirthDay;
 
       await context.read<PersonRepository>().update(person);
 
@@ -529,11 +736,29 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         return true;
       }
 
-      _captureOriginals();
+      _captureOriginalValues(
+        firstName: savedFirstName,
+        lastName: savedLastName,
+        manualAge: savedManualAgeText,
+        city: savedCityText,
+        phone: savedPhoneText,
+        inquiryContactName: savedInquiryContactNameText,
+        inquiryContactPhone: savedInquiryContactPhoneText,
+        source: savedSourceText,
+        description: savedDescriptionText,
+        gender: savedGender,
+        birthDate: savedBirthDate,
+        religiousLevel: savedReligiousLevel,
+        hebrewBirthYear: savedHebrewBirthYear,
+        hebrewBirthMonth: savedHebrewBirthMonth,
+        hebrewBirthDay: savedHebrewBirthDay,
+      );
       setState(() {
         _isSavingEdit = false;
       });
-      _showSnackBar(context, 'השינויים נשמרו');
+      if (showSnackBar) {
+        _showSnackBar(context, 'השינויים נשמרו');
+      }
       return true;
     } finally {
       if (mounted && _isSavingEdit) {
@@ -544,32 +769,24 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     }
   }
 
-  Future<bool?> _showUnsavedChangesDialog(BuildContext context) {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('השינויים שלך לא נשמרו'),
-          content: const Text('האם לשמור את השינויים לפני יציאה?'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('מחק'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('שמירה'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   String? _normalizedText(String value) {
     final String trimmed = value.trim();
     return trimmed.isEmpty ? null : trimmed;
+  }
+
+  String _inquiryContactText(Person person) {
+    final String name = (person.inquiryContactName ?? '').trim();
+    final String phone = (person.inquiryContactPhone ?? '').trim();
+    if (name.isEmpty && phone.isEmpty) {
+      return '—';
+    }
+    if (name.isEmpty) {
+      return phone;
+    }
+    if (phone.isEmpty) {
+      return name;
+    }
+    return '$name · $phone';
   }
 
   Future<void> _pickBirthDate() async {
@@ -606,6 +823,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       _hebrewBirthMonth = hebrew?.month;
       _hebrewBirthDay = hebrew?.day;
     });
+    unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
   }
 
   Future<void> _pickHebrewBirthDate() async {
@@ -631,6 +849,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       _hebrewBirthMonth = picked.month;
       _hebrewBirthDay = picked.day;
     });
+    unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
   }
 
   Future<({int year, int month, int day})?> _showHebrewDatePicker() async {
@@ -948,7 +1167,19 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     BuildContext context,
     Person currentPerson,
   ) async {
-    if (currentPerson.gender == Gender.unknown) {
+    final bool saved = await _saveInlineEdit(
+      currentPerson,
+      showSnackBar: false,
+    );
+    if (!saved || !context.mounted) {
+      return;
+    }
+
+    final Person personForProposal =
+        context.read<PersonRepository>().getById(currentPerson.id) ??
+        currentPerson;
+
+    if (personForProposal.gender == Gender.unknown) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('יש לבחור מגדר לאיש הקשר לפני יצירת הצעה'),
@@ -957,7 +1188,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       return;
     }
 
-    final Gender oppositeGender = currentPerson.gender == Gender.male
+    final Gender oppositeGender = personForProposal.gender == Gender.male
         ? Gender.female
         : Gender.male;
 
@@ -971,9 +1202,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
     final Person? selectedPerson = await PersonPickerSheet.show(
       context,
-      title: 'בחרו ${oppositeGender.displayName}',
+      title: 'בחרו:',
       filterGender: oppositeGender,
-      excludeIds: <String>{currentPerson.id},
+      excludeIds: <String>{personForProposal.id},
       minAge: filters.minAge,
       maxAge: filters.maxAge,
       religiousLevels: filters.religiousLevels,
@@ -984,11 +1215,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       return;
     }
 
-    final Person male = currentPerson.gender == Gender.male
-        ? currentPerson
+    final Person male = personForProposal.gender == Gender.male
+        ? personForProposal
         : selectedPerson;
-    final Person female = currentPerson.gender == Gender.female
-        ? currentPerson
+    final Person female = personForProposal.gender == Gender.female
+        ? personForProposal
         : selectedPerson;
 
     final MatchRepository matchRepository = context.read<MatchRepository>();
@@ -1169,10 +1400,14 @@ class _InlinePersonEditForm extends StatelessWidget {
     required this.lastNameController,
     required this.manualAgeController,
     required this.phoneController,
+    required this.inquiryContactNameController,
+    required this.inquiryContactPhoneController,
     required this.firstNameFocus,
     required this.lastNameFocus,
     required this.manualAgeFocus,
     required this.phoneFocus,
+    required this.inquiryContactNameFocus,
+    required this.inquiryContactPhoneFocus,
     required this.onSavePressed,
     required this.onFieldChanged,
     required this.selectedGender,
@@ -1193,10 +1428,14 @@ class _InlinePersonEditForm extends StatelessWidget {
   final TextEditingController lastNameController;
   final TextEditingController manualAgeController;
   final TextEditingController phoneController;
+  final TextEditingController inquiryContactNameController;
+  final TextEditingController inquiryContactPhoneController;
   final FocusNode firstNameFocus;
   final FocusNode lastNameFocus;
   final FocusNode manualAgeFocus;
   final FocusNode phoneFocus;
+  final FocusNode inquiryContactNameFocus;
+  final FocusNode inquiryContactPhoneFocus;
   final VoidCallback onSavePressed;
   final VoidCallback onFieldChanged;
   final Gender selectedGender;
@@ -1421,6 +1660,41 @@ class _InlinePersonEditForm extends StatelessWidget {
                 labelText: 'טלפון',
                 suffixIcon: _saveSuffix(phoneFocus),
               ),
+            ),
+            const SizedBox(height: 20),
+            Text('איש קשר לבירורים', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextFormField(
+                    controller: inquiryContactNameController,
+                    focusNode: inquiryContactNameFocus,
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) => onFieldChanged(),
+                    decoration: InputDecoration(
+                      labelText: 'שם',
+                      isDense: true,
+                      suffixIcon: _saveSuffix(inquiryContactNameFocus),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: inquiryContactPhoneController,
+                    focusNode: inquiryContactPhoneFocus,
+                    textInputAction: TextInputAction.next,
+                    keyboardType: TextInputType.phone,
+                    onChanged: (_) => onFieldChanged(),
+                    decoration: InputDecoration(
+                      labelText: 'טלפון',
+                      isDense: true,
+                      suffixIcon: _saveSuffix(inquiryContactPhoneFocus),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

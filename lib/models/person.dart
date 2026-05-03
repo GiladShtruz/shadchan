@@ -21,6 +21,8 @@ class Person extends HiveObject {
     this.source,
     this.notes,
     this.description,
+    this.inquiryContactName,
+    this.inquiryContactPhone,
     this.profileStatus = ProfileStatus.available,
     this.hebrewBirthYear,
     this.hebrewBirthMonth,
@@ -93,6 +95,12 @@ class Person extends HiveObject {
   @HiveField(20)
   bool needsReview;
 
+  @HiveField(21)
+  String? inquiryContactName;
+
+  @HiveField(22)
+  String? inquiryContactPhone;
+
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 
   int? get age {
@@ -124,6 +132,8 @@ class Person extends HiveObject {
     Object? source = _sentinel,
     Object? notes = _sentinel,
     Object? description = _sentinel,
+    Object? inquiryContactName = _sentinel,
+    Object? inquiryContactPhone = _sentinel,
     ProfileStatus? profileStatus,
     Object? hebrewBirthYear = _sentinel,
     Object? hebrewBirthMonth = _sentinel,
@@ -155,6 +165,12 @@ class Person extends HiveObject {
       description: identical(description, _sentinel)
           ? this.description
           : description as String?,
+      inquiryContactName: identical(inquiryContactName, _sentinel)
+          ? this.inquiryContactName
+          : inquiryContactName as String?,
+      inquiryContactPhone: identical(inquiryContactPhone, _sentinel)
+          ? this.inquiryContactPhone
+          : inquiryContactPhone as String?,
       profileStatus: profileStatus ?? this.profileStatus,
       hebrewBirthYear: identical(hebrewBirthYear, _sentinel)
           ? this.hebrewBirthYear

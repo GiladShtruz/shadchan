@@ -32,10 +32,15 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   final TextEditingController _manualAgeController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _inquiryContactNameController =
+      TextEditingController();
+  final TextEditingController _inquiryContactPhoneController =
+      TextEditingController();
   final TextEditingController _sourceController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final Uuid _uuid = const Uuid();
+  late final String _draftPersonId = _uuid.v4();
 
   Gender _selectedGender = Gender.male;
   DateTime? _birthDate;
@@ -80,6 +85,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _manualAgeController.dispose();
     _cityController.dispose();
     _phoneController.dispose();
+    _inquiryContactNameController.dispose();
+    _inquiryContactPhoneController.dispose();
     _sourceController.dispose();
     _notesController.dispose();
     _descriptionController.dispose();
@@ -124,7 +131,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               ),
             ],
           ),
-          
+
           body: _buildBody(theme),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: _isSaving ? null : _save,
@@ -136,7 +143,10 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   )
                 : const Icon(Icons.check),
             label: const Text('שמור'),
+            shape: const StadiumBorder(),
           ),
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerFloat,
         ),
       ),
     );
@@ -203,14 +213,12 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               },
             ),
             const SizedBox(height: 20),
-            if (_isEditMode && _person != null) ...<Widget>[
-              _PhotoEditor(
-                photoPaths: _photoPaths,
-                onAddPhoto: _pickPhotoForEdit,
-                onSetPrimary: _setPrimaryPhotoForEdit,
-              ),
-              const SizedBox(height: 20),
-            ],
+            _PhotoEditor(
+              photoPaths: _photoPaths,
+              onAddPhoto: _pickPhotos,
+              onSetPrimary: _setPrimaryPhoto,
+            ),
+            const SizedBox(height: 20),
             Text('מגדר', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Wrap(
@@ -381,6 +389,35 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 20),
+            Text('איש קשר לבירורים', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextFormField(
+                    controller: _inquiryContactNameController,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'שם',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: _inquiryContactPhoneController,
+                    textInputAction: TextInputAction.next,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'טלפון',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 20),
             Text('סטטוס', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -698,6 +735,12 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           ..source = _normalizedText(_sourceController.text)
           ..notes = _normalizedText(_notesController.text)
           ..description = _normalizedText(_descriptionController.text)
+          ..inquiryContactName = _normalizedText(
+            _inquiryContactNameController.text,
+          )
+          ..inquiryContactPhone = _normalizedText(
+            _inquiryContactPhoneController.text,
+          )
           ..profileStatus = _selectedProfileStatus
           ..hebrewBirthYear = _hebrewBirthYear
           ..hebrewBirthMonth = _hebrewBirthMonth
@@ -708,7 +751,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       } else {
         final DateTime now = DateTime.now();
         final Person person = Person(
-          id: _uuid.v4(),
+          id: _draftPersonId,
           firstName: firstName,
           lastName: lastName,
           gender: _selectedGender,
@@ -720,10 +763,17 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           source: _normalizedText(_sourceController.text),
           notes: _normalizedText(_notesController.text),
           description: _normalizedText(_descriptionController.text),
+          inquiryContactName: _normalizedText(
+            _inquiryContactNameController.text,
+          ),
+          inquiryContactPhone: _normalizedText(
+            _inquiryContactPhoneController.text,
+          ),
           profileStatus: _selectedProfileStatus,
           hebrewBirthYear: _hebrewBirthYear,
           hebrewBirthMonth: _hebrewBirthMonth,
           hebrewBirthDay: _hebrewBirthDay,
+          photosPaths: List<String>.from(_photoPaths),
           createdAt: now,
           updatedAt: now,
         );
@@ -753,6 +803,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _manualAgeController.text = person.manualAge?.toString() ?? '';
     _cityController.text = person.city ?? '';
     _phoneController.text = person.phone ?? '';
+    _inquiryContactNameController.text = person.inquiryContactName ?? '';
+    _inquiryContactPhoneController.text = person.inquiryContactPhone ?? '';
     _sourceController.text = person.source ?? '';
     _notesController.text = person.notes ?? '';
     _descriptionController.text = person.description ?? '';
@@ -804,6 +856,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       religiousLevel: _selectedReligiousLevel,
       city: _normalizedText(_cityController.text),
       phone: _normalizedText(_phoneController.text),
+      inquiryContactName: _normalizedText(_inquiryContactNameController.text),
+      inquiryContactPhone: _normalizedText(_inquiryContactPhoneController.text),
       source: _normalizedText(_sourceController.text),
       notes: _normalizedText(_notesController.text),
       description: _normalizedText(_descriptionController.text),
@@ -815,12 +869,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     );
   }
 
-  Future<void> _pickPhotoForEdit() async {
-    final Person? person = _person;
-    if (person == null) {
-      return;
-    }
-
+  Future<void> _pickPhotos() async {
     final bool hasPermission = await _ensureMediaPermission();
     if (!hasPermission || !mounted) {
       return;
@@ -844,11 +893,12 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
 
       final List<String> copiedPhotoPaths = <String>[];
       final int timestamp = DateTime.now().millisecondsSinceEpoch;
+      final String personId = _person?.id ?? _draftPersonId;
 
       for (int index = 0; index < pickedFiles.length; index++) {
         final XFile pickedFile = pickedFiles[index];
         final String targetPath =
-            '${photosDirectory.path}${Platform.pathSeparator}${person.id}_${timestamp}_$index.jpg';
+            '${photosDirectory.path}${Platform.pathSeparator}${personId}_${timestamp}_$index.jpg';
         await File(pickedFile.path).copy(targetPath);
         copiedPhotoPaths.add(targetPath);
       }
@@ -858,10 +908,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         _newPhotoPaths.addAll(copiedPhotoPaths);
       });
 
+      final String saveActionText = _isEditMode ? 'לעדכן' : 'ליצור';
       _showSnackBar(
         copiedPhotoPaths.length == 1
-            ? 'התמונה נוספה לטופס. יש לשמור כדי לעדכן את איש הקשר'
-            : '${copiedPhotoPaths.length} תמונות נוספו לטופס. יש לשמור כדי לעדכן את איש הקשר',
+            ? 'התמונה נוספה לטופס. יש לשמור כדי $saveActionText את איש הקשר'
+            : '${copiedPhotoPaths.length} תמונות נוספו לטופס. יש לשמור כדי $saveActionText את איש הקשר',
       );
     } on PlatformException catch (error) {
       if (!mounted) {
@@ -881,7 +932,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     }
   }
 
-  void _setPrimaryPhotoForEdit(int index) {
+  void _setPrimaryPhoto(int index) {
     if (index <= 0 || index >= _photoPaths.length) {
       return;
     }
@@ -995,6 +1046,8 @@ class _PersonFormSnapshot {
     required this.religiousLevel,
     required this.city,
     required this.phone,
+    required this.inquiryContactName,
+    required this.inquiryContactPhone,
     required this.source,
     required this.notes,
     required this.description,
@@ -1013,6 +1066,8 @@ class _PersonFormSnapshot {
   final ReligiousLevel? religiousLevel;
   final String? city;
   final String? phone;
+  final String? inquiryContactName;
+  final String? inquiryContactPhone;
   final String? source;
   final String? notes;
   final String? description;
@@ -1037,6 +1092,8 @@ class _PersonFormSnapshot {
         other.religiousLevel == religiousLevel &&
         other.city == city &&
         other.phone == phone &&
+        other.inquiryContactName == inquiryContactName &&
+        other.inquiryContactPhone == inquiryContactPhone &&
         other.source == source &&
         other.notes == notes &&
         other.description == description &&
@@ -1058,6 +1115,8 @@ class _PersonFormSnapshot {
       religiousLevel,
       city,
       phone,
+      inquiryContactName,
+      inquiryContactPhone,
       source,
       notes,
       description,

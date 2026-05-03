@@ -85,7 +85,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
           IconButton(
             tooltip: _tableView ? 'תצוגת רשימה' : 'תצוגת טבלה',
             icon: Icon(
-              _tableView ? Icons.view_list_outlined : Icons.table_chart_outlined,
+              _tableView
+                  ? Icons.view_list_outlined
+                  : Icons.table_chart_outlined,
             ),
             onPressed: () {
               setState(() {
@@ -141,11 +143,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         tooltip: 'הוספה',
         onPressed: () => context.push('/people/import'),
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('הוסף'),
+        shape: const StadiumBorder(),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -350,9 +355,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     if (ageRange != null) {
       chips.add(
         InputChip(
-          label: Text(
-            'גיל ${ageRange.start.round()}-${ageRange.end.round()}',
-          ),
+          label: Text('גיל ${ageRange.start.round()}-${ageRange.end.round()}'),
           onDeleted: () {
             setState(() {
               _selectedAgeRange = null;
@@ -518,45 +521,53 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   Future<void> _openSortSheet() async {
-    final PeopleSortOption? selected = await showModalBottomSheet<PeopleSortOption>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Text(
-                    'מיין לפי',
-                    style: Theme.of(sheetContext).textTheme.titleMedium,
+    final PeopleSortOption? selected =
+        await showModalBottomSheet<PeopleSortOption>(
+          context: context,
+          showDragHandle: true,
+          builder: (BuildContext sheetContext) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        'מיין לפי',
+                        style: Theme.of(sheetContext).textTheme.titleMedium,
+                      ),
+                    ),
                   ),
-                ),
+                  for (final ({PeopleSortOption value, String label}) option
+                      in const <({PeopleSortOption value, String label})>[
+                        (value: PeopleSortOption.alphabetical, label: 'א-ב'),
+                        (
+                          value: PeopleSortOption.ageAscending,
+                          label: 'לפי גיל',
+                        ),
+                        (value: PeopleSortOption.newest, label: 'חדשים'),
+                        (
+                          value: PeopleSortOption.recentlyUpdated,
+                          label: 'עודכנו לאחרונה',
+                        ),
+                      ])
+                    ListTile(
+                      title: Text(option.label),
+                      trailing: _sortOption == option.value
+                          ? Icon(
+                              Icons.check,
+                              color: Theme.of(sheetContext).colorScheme.primary,
+                            )
+                          : null,
+                      onTap: () => Navigator.of(sheetContext).pop(option.value),
+                    ),
+                ],
               ),
-              for (final ({PeopleSortOption value, String label}) option in const <({PeopleSortOption value, String label})>[
-                (value: PeopleSortOption.alphabetical, label: 'א-ב'),
-                (value: PeopleSortOption.ageAscending, label: 'לפי גיל'),
-                (value: PeopleSortOption.newest, label: 'חדשים'),
-                (value: PeopleSortOption.recentlyUpdated, label: 'עודכנו לאחרונה'),
-              ])
-                ListTile(
-                  title: Text(option.label),
-                  trailing: _sortOption == option.value
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(sheetContext).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () => Navigator.of(sheetContext).pop(option.value),
-                ),
-            ],
-          ),
+            );
+          },
         );
-      },
-    );
 
     if (selected == null) {
       return;
@@ -567,8 +578,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   Future<void> _openFiltersSheet() async {
-    final ({int min, int max})? bounds =
-        context.read<PersonRepository>().activeAgeBounds;
+    final ({int min, int max})? bounds = context
+        .read<PersonRepository>()
+        .activeAgeBounds;
     final _PeopleFilterState? result =
         await showModalBottomSheet<_PeopleFilterState>(
           context: context,
@@ -707,8 +719,9 @@ class _PersonSubtitle extends StatelessWidget {
       if (person.age != null) person.age!.toString(),
       if (person.religiousLevel != null) person.religiousLevel!.displayName,
     ];
+    final String inquiryContact = _inquiryContactText(person);
 
-    if (missingInfo.isEmpty) {
+    if (missingInfo.isEmpty && inquiryContact.isEmpty) {
       return Text(
         parts.join(' · '),
         maxLines: 1,
@@ -723,6 +736,14 @@ class _PersonSubtitle extends StatelessWidget {
           Text(parts.join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 6),
         ],
+        if (inquiryContact.isNotEmpty) ...<Widget>[
+          Text(
+            'לבירורים: $inquiryContact',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (missingInfo.isNotEmpty) const SizedBox(height: 6),
+        ],
         Wrap(
           spacing: 6,
           runSpacing: 4,
@@ -732,6 +753,21 @@ class _PersonSubtitle extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _inquiryContactText(Person person) {
+    final String name = (person.inquiryContactName ?? '').trim();
+    final String phone = (person.inquiryContactPhone ?? '').trim();
+    if (name.isEmpty && phone.isEmpty) {
+      return '';
+    }
+    if (name.isEmpty) {
+      return phone;
+    }
+    if (phone.isEmpty) {
+      return name;
+    }
+    return '$name · $phone';
   }
 }
 
@@ -822,8 +858,7 @@ class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
     if (range == null || bounds == null) {
       return null;
     }
-    if (range.start.round() <= bounds.min &&
-        range.end.round() >= bounds.max) {
+    if (range.start.round() <= bounds.min && range.end.round() >= bounds.max) {
       return null;
     }
     return range;
@@ -874,7 +909,8 @@ class _PeopleFiltersSheetState extends State<_PeopleFiltersSheet> {
                 Builder(
                   builder: (BuildContext context) {
                     final ({int min, int max}) bounds = widget.ageBounds!;
-                    final RangeValues effective = tempAgeRange ??
+                    final RangeValues effective =
+                        tempAgeRange ??
                         RangeValues(
                           bounds.min.toDouble(),
                           bounds.max.toDouble(),
@@ -1164,10 +1200,7 @@ class _PeopleTableState extends State<_PeopleTable> {
               child: Column(
                 children: <Widget>[
                   _buildHeader(theme),
-                  Divider(
-                    height: 1,
-                    color: theme.colorScheme.outlineVariant,
-                  ),
+                  Divider(height: 1, color: theme.colorScheme.outlineVariant),
                   Expanded(
                     child: filteredPeople.isEmpty
                         ? Center(
@@ -1296,10 +1329,7 @@ class _PeopleTableState extends State<_PeopleTable> {
           ),
           SizedBox(
             width: _ageWidth,
-            child: Text(
-              person.displayAge,
-              style: theme.textTheme.bodyMedium,
-            ),
+            child: Text(person.displayAge, style: theme.textTheme.bodyMedium),
           ),
           SizedBox(
             width: _religiousWidth,
@@ -1436,12 +1466,15 @@ class _PeopleTableState extends State<_PeopleTable> {
   }
 
   Future<void> _openAgeFilter() async {
-    final ({int min, int max})? bounds =
-        context.read<PersonRepository>().activeAgeBounds;
+    final ({int min, int max})? bounds = context
+        .read<PersonRepository>()
+        .activeAgeBounds;
     if (bounds == null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('אין גילאים זמינים לסינון')));
+        ..showSnackBar(
+          const SnackBar(content: Text('אין גילאים זמינים לסינון')),
+        );
       return;
     }
 
@@ -1652,4 +1685,3 @@ class _TableFilterHeader extends StatelessWidget {
     );
   }
 }
-

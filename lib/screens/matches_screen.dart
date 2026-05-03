@@ -186,11 +186,13 @@ class _MatchesScreenState extends State<MatchesScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/matches/add'),
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('הוסף'),
+        shape: const StadiumBorder(),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -398,7 +400,7 @@ class _MatchCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 const SizedBox(height: 10),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: <Widget>[
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,18 +421,6 @@ class _MatchCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    IconButton(
-                      icon: Icon(
-                        match.reminderDate != null
-                            ? Icons.notifications_active
-                            : Icons.notifications_none,
-                        color: match.reminderDate != null
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                      tooltip: 'תזכורת',
-                      onPressed: () => _showReminderDialog(context, match),
-                    ),
                   ],
                 ),
               ],
@@ -441,107 +431,6 @@ class _MatchCard extends StatelessWidget {
     );
   }
 
-  Future<void> _showReminderDialog(
-    BuildContext context,
-    MatchIdea match,
-  ) async {
-    final MatchRepository repository = context.read<MatchRepository>();
-    final TextEditingController noteController = TextEditingController(
-      text: match.reminderNote,
-    );
-    DateTime? selectedDate = match.reminderDate;
-
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return AlertDialog(
-              title: const Text('תזכורת להצעה'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('תאריך תזכורת'),
-                    subtitle: Text(
-                      selectedDate != null
-                          ? AppDateUtils.formatDateShort(selectedDate!)
-                          : 'לא נבחר תאריך',
-                    ),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final DateTime? picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate ?? DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          selectedDate = picked;
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: noteController,
-                    decoration: const InputDecoration(
-                      labelText: 'הערה (אופציונלי)',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-              actions: <Widget>[
-                if (match.reminderDate != null)
-                  TextButton(
-                    onPressed: () async {
-                      match.reminderDate = null;
-                      match.reminderNote = null;
-                      await repository.update(match);
-                      if (context.mounted) {
-                        Navigator.of(dialogContext).pop();
-                      }
-                    },
-                    child: Text(
-                      'מחק תזכורת',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: const Text('ביטול'),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    if (selectedDate != null) {
-                      match.reminderDate = selectedDate;
-                      match.reminderNote = noteController.text.trim().isEmpty
-                          ? null
-                          : noteController.text.trim();
-                      await repository.update(match);
-                    }
-                    if (context.mounted) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                  },
-                  child: const Text('שמור'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
 }
 
 class _AvatarOrDeleted extends StatelessWidget {

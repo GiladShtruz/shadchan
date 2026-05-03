@@ -30,11 +30,28 @@ class App extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: IncomingBackupImportListener(
-            child: child ?? const SizedBox.shrink(),
+          child: _DismissKeyboardOnTap(
+            child: IncomingBackupImportListener(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+class _DismissKeyboardOnTap extends StatelessWidget {
+  const _DismissKeyboardOnTap({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: FocusManager.instance.primaryFocus?.unfocus,
+      child: child,
     );
   }
 }
