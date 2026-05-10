@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
+import 'package:shadchan/widgets/incoming_shared_profile_listener.dart';
 import 'package:shadchan/utils/app_router.dart';
 
 class App extends StatelessWidget {
@@ -19,7 +20,10 @@ class App extends StatelessWidget {
       theme: AppTheme.lightTheme(),
       darkTheme: AppTheme.darkTheme(),
       themeMode: themeMode,
-      routerConfig: AppRouter.router,
+      routeInformationProvider: AppRouter.router.routeInformationProvider,
+      routeInformationParser: AppRouter.router.routeInformationParser,
+      routerDelegate: AppRouter.router.routerDelegate,
+      backButtonDispatcher: _ExitThroughPeopleBackButtonDispatcher(),
       locale: const Locale('he'),
       supportedLocales: const <Locale>[Locale('he')],
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
@@ -30,8 +34,8 @@ class App extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: _DismissKeyboardOnTap(
-            child: IncomingBackupImportListener(
+          child: IncomingBackupImportListener(
+            child: IncomingSharedProfileListener(
               child: child ?? const SizedBox.shrink(),
             ),
           ),
@@ -41,17 +45,20 @@ class App extends StatelessWidget {
   }
 }
 
-class _DismissKeyboardOnTap extends StatelessWidget {
-  const _DismissKeyboardOnTap({required this.child});
-
-  final Widget child;
-
+class _ExitThroughPeopleBackButtonDispatcher extends RootBackButtonDispatcher {
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: FocusManager.instance.primaryFocus?.unfocus,
-      child: child,
-    );
+  Future<bool> didPopRoute() {
+    final router = AppRouter.router;
+    if (router.canPop()) {
+      return super.didPopRoute();
+    }
+
+    final String currentPath = router.routeInformationProvider.value.uri.path;
+    if (currentPath != '/people') {
+      router.go('/people');
+      return Future<bool>.value(true);
+    }
+
+    return super.didPopRoute();
   }
 }

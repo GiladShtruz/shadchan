@@ -11,6 +11,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
@@ -27,6 +28,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   final TextEditingController _noteController = TextEditingController();
   final TextEditingController _thirdPartyController = TextEditingController();
   final DateFormat _noteDateFormat = DateFormat('dd.MM.yyyy HH:mm');
+  String? _promptedWhatsAppMatchId;
+  bool _isWhatsAppPromptOpen = false;
 
   @override
   void initState() {
@@ -85,6 +88,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     final Person? personA = personRepository.getById(match.personAId);
     final Person? personB = personRepository.getById(match.personBId);
     final List<MatchNote> notes = matchRepository.getNotesForMatch(match.id);
+    _scheduleWhatsAppPrompt(match, personA: personA, personB: personB);
 
     if (match.currentHandler == CurrentHandler.thirdParty &&
         _thirdPartyController.text != (match.handlerName ?? '')) {
@@ -392,6 +396,139 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     }
   }
 
+  void _scheduleWhatsAppPrompt(
+    MatchIdea match, {
+    required Person? personA,
+    required Person? personB,
+  }) {
+    if (_promptedWhatsAppMatchId == match.id || _isWhatsAppPromptOpen) {
+      return;
+    }
+
+    if (personA == null && personB == null) {
+      return;
+    }
+
+    _promptedWhatsAppMatchId = match.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _isWhatsAppPromptOpen) {
+        return;
+      }
+
+      final MatchIdea? currentMatch = context.read<MatchRepository>().getById(
+        match.id,
+      );
+      if (currentMatch == null) {
+        return;
+      }
+
+      final PersonRepository personRepository = context
+          .read<PersonRepository>();
+      final Person? currentPersonA = personRepository.getById(
+        currentMatch.personAId,
+      );
+      final Person? currentPersonB = personRepository.getById(
+        currentMatch.personBId,
+      );
+
+      await _showWhatsAppPrompt(
+        personA: currentPersonA,
+        personB: currentPersonB,
+      );
+    });
+  }
+
+  Future<void> _showWhatsAppPrompt({
+    required Person? personA,
+    required Person? personB,
+  }) async {
+    final ({Person? male, Person? female}) people = _matchPeopleByGender(
+      personA,
+      personB,
+    );
+
+    _isWhatsAppPromptOpen = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: const Text('תרצה לשלוח להם ווטסאפ?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _MatchWhatsAppActionTile(
+                  title: 'פתיחת שיחת ווטסאפ עם הבחור',
+                  person: people.male,
+                  onTap: () => _openWhatsAppFromPrompt(
+                    dialogContext,
+                    people.male,
+                    'אין מספר טלפון תקין לבחור',
+                  ),
+                ),
+                _MatchWhatsAppActionTile(
+                  title: 'פתיחת שיחת ווטסאפ עם הבחורה',
+                  person: people.female,
+                  onTap: () => _openWhatsAppFromPrompt(
+                    dialogContext,
+                    people.female,
+                    'אין מספר טלפון תקין לבחורה',
+                  ),
+                ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('בהמשך'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      _isWhatsAppPromptOpen = false;
+    }
+  }
+
+  ({Person? male, Person? female}) _matchPeopleByGender(
+    Person? personA,
+    Person? personB,
+  ) {
+    final Person? male = personA?.gender == Gender.male
+        ? personA
+        : personB?.gender == Gender.male
+        ? personB
+        : personA ?? personB;
+    final Person? female = personA?.gender == Gender.female
+        ? personA
+        : personB?.gender == Gender.female
+        ? personB
+        : identical(male, personA)
+        ? personB
+        : personB;
+
+    return (male: male, female: female);
+  }
+
+  Future<void> _openWhatsAppFromPrompt(
+    BuildContext dialogContext,
+    Person? person,
+    String errorMessage,
+  ) async {
+    if (person == null) {
+      return;
+    }
+
+    Navigator.of(dialogContext).pop();
+    final bool launched = await WhatsAppUtils.openChat(person);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(errorMessage)));
+    }
+  }
+
   Future<void> _changeHandler(
     BuildContext context,
     MatchRepository repository,
@@ -535,8 +672,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                       : () async {
                           match
                             ..reminderDate = selectedDate
-                            ..reminderNote =
-                                noteController.text.trim().isEmpty
+                            ..reminderNote = noteController.text.trim().isEmpty
                                 ? null
                                 : noteController.text.trim();
                           await repository.update(match);
@@ -663,6 +799,41 @@ class _PersonCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MatchWhatsAppActionTile extends StatelessWidget {
+  const _MatchWhatsAppActionTile({
+    required this.title,
+    required this.person,
+    required this.onTap,
+  });
+
+  final String title;
+  final Person? person;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Person? currentPerson = person;
+    final bool canOpen =
+        currentPerson != null &&
+        WhatsAppUtils.buildChatUri(currentPerson) != null;
+    final String subtitle = currentPerson == null
+        ? 'איש הקשר חסר'
+        : canOpen
+        ? currentPerson.fullName.trim()
+        : 'אין מספר טלפון תקין';
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      enabled: canOpen,
+      leading: const Icon(Icons.chat_outlined),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.open_in_new),
+      onTap: canOpen ? onTap : null,
     );
   }
 }

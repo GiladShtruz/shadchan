@@ -47,9 +47,24 @@ Future<void> main() async {
           create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
         ),
       ],
-      child: const App(),
+      child: const _DismissKeyboardOnTap(child: App()),
     ),
   );
+}
+
+class _DismissKeyboardOnTap extends StatelessWidget {
+  const _DismissKeyboardOnTap({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: FocusManager.instance.primaryFocus?.unfocus,
+      child: child,
+    );
+  }
 }
 
 void _registerAdapters() {

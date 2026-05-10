@@ -28,6 +28,18 @@
 					<string>public.json</string>
 				</array>
 			</dict>
+			<dict>
+				<key>CFBundleTypeName</key>
+				<string>תמונה להוספה לשדכן</string>
+				<key>CFBundleTypeRole</key>
+				<string>Viewer</string>
+				<key>LSHandlerRank</key>
+				<string>Alternate</string>
+				<key>LSItemContentTypes</key>
+				<array>
+					<string>public.image</string>
+				</array>
+			</dict>
 		</array>
 		<key>CFBundleName</key>
 		<string>shadchan</string>

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -14,6 +15,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/hebrew_date_utils.dart';
+import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
@@ -23,8 +25,9 @@ import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
-import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/dialogs/match_suggestion_flow.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
+import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/dialogs/photo_viewer.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
@@ -58,6 +61,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
   final TextEditingController _descriptionController = TextEditingController();
 
   bool _isSavingEdit = false;
+  late bool _showInlineEdit;
   String? _editingPersonId;
   Timer? _autoSaveTimer;
   Gender _selectedGender = Gender.unknown;
@@ -95,6 +99,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
   @override
   void initState() {
     super.initState();
+    _showInlineEdit = widget.initiallyEditing;
     WidgetsBinding.instance.addObserver(this);
     for (final FocusNode node in <FocusNode>[
       _firstNameFocus,
@@ -284,9 +289,28 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     final List<MatchIdea> relatedMatches = matchRepository.getByPersonId(
       widget.personId,
     );
+    final MatchProposalFilters? savedSuggestionFilters =
+        MatchProposalFilterSheet.savedFiltersFor(person.id);
+    final List<Person> suggestedPeople = personRepository
+        .getAll()
+        .where(
+          (Person candidate) => _matchesSuggestionFilters(
+            source: person,
+            candidate: candidate,
+            filters: savedSuggestionFilters,
+          ),
+        )
+        .toList();
+    final List<MatchIdea> openMatches = relatedMatches
+        .where((MatchIdea match) => !match.status.isArchived)
+        .toList();
+    final List<MatchIdea> rejectedMatches = relatedMatches
+        .where((MatchIdea match) => match.status == MatchStatus.rejected)
+        .toList();
     final List<PersonNote> personNotes = personRepository.getNotesForPerson(
       person.id,
     );
+    final int personNotesCount = _personNotesCount(person, personNotes);
     _ensureEditData(person);
 
     return PopScope(
@@ -304,262 +328,355 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
         if (!saved) return;
         if (mounted) navigator.pop();
       },
-      child: Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-          tooltip: 'שמירה',
-          onPressed: _isSavingEdit ? null : () => _saveAndPop(person),
-          icon: const Icon(Icons.save),
-          label: const Text('שמירה'),
-          shape: const StadiumBorder(),
-        ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-        body: CustomScrollView(
-          slivers: <Widget>[
-            SliverAppBar(
-              expandedHeight: 200,
-              pinned: true,
-              stretch: true,
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Hero(
-                    tag: 'person-${person.id}',
-                    child: PersonAvatar(person: person, radius: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      person.fullName.trim(),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              actions: <Widget>[
-                IconButton(
-                  icon: const Icon(Icons.share),
-                  tooltip: 'שיתוף',
-                  onPressed: () => _sharePerson(context, person),
-                ),
-
-                PopupMenuButton<String>(
-                  onSelected: (String value) async {
-                    if (value != 'delete') {
-                      return;
-                    }
-
-                    final bool shouldDelete = await _confirmDelete(
-                      context,
-                      person,
-                    );
-                    if (!shouldDelete) {
-                      return;
-                    }
-
-                    await personRepository.delete(person.id);
-                    if (context.mounted) {
-                      context.go('/people');
-                    }
-                  },
-                  itemBuilder: (BuildContext context) {
-                    return const <PopupMenuEntry<String>>[
-                      PopupMenuItem<String>(
-                        value: 'delete',
-                        child: Text('מחיקה'),
-                      ),
-                    ];
-                  },
-                ),
-              ],
-              flexibleSpace: FlexibleSpaceBar(
-                background: _DetailHeader(person: person),
-              ),
+      child: DefaultTabController(
+        length: 4,
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(
+              person.fullName.trim(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 96),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            centerTitle: true,
+            actions: <Widget>[
+              IconButton(
+                icon: _showInlineEdit
+                    ? _isSavingEdit
+                          ? const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.check)
+                    : const Icon(Icons.edit_outlined),
+                tooltip: _showInlineEdit ? 'שמירה' : 'עריכה',
+                onPressed: _isSavingEdit
+                    ? null
+                    : () async {
+                        if (!_showInlineEdit) {
+                          setState(() => _showInlineEdit = true);
+                          return;
+                        }
+                        final bool saved = await _saveInlineEdit(person);
+                        if (saved && mounted) {
+                          setState(() => _showInlineEdit = false);
+                        }
+                      },
+              ),
+              PopupMenuButton<String>(
+                onSelected: (String value) async {
+                  if (value != 'delete') {
+                    return;
+                  }
+
+                  final bool shouldDelete = await _confirmDelete(
+                    context,
+                    person,
+                  );
+                  if (!shouldDelete) {
+                    return;
+                  }
+
+                  await personRepository.delete(person.id);
+                  if (context.mounted) {
+                    context.go('/people');
+                  }
+                },
+                itemBuilder: (BuildContext context) {
+                  return const <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Text('מחיקה'),
+                    ),
+                  ];
+                },
+              ),
+            ],
+          ),
+          body: Column(
+            children: <Widget>[
+              _ProfileSummaryHeader(
+                person: person,
+                onEditPressed: () => setState(() {
+                  _showInlineEdit = true;
+                }),
+                onStatusChanged: (ProfileStatus status) =>
+                    personRepository.updateProfileStatus(person.id, status),
+                onSharePressed: () => _sharePerson(context, person),
+                onWhatsAppPressed: () => _openWhatsAppMessage(context, person),
+                onMatchesPressed: () => _openMatchProposal(context, person),
+                favoriteButton: _FavoriteToggleButton(
+                  isFavorite: person.isFavorite,
+                  onPressed: () => personRepository.toggleFavorite(person.id),
+                  activeColor: colorScheme.secondary,
+                  inactiveColor: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              _PersonNotesButton(
+                noteCount: personNotesCount,
+                onPressed: () => _openPersonNotes(context, person),
+              ),
+              Material(
+                color: theme.colorScheme.surface,
+                child: const TabBar(
+                  isScrollable: true,
+                  tabs: <Widget>[
+                    Tab(text: 'כרטיס לתצוגה'),
+                    Tab(text: 'התאמות'),
+                    Tab(text: 'רעיונות פתוחים'),
+                    Tab(text: 'רעיונות שנשללו'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
                   children: <Widget>[
-                    _ProfileStatusSection(
+                    _ProfileCardTab(
                       person: person,
-                      repository: personRepository,
-                    ),
-                    _Section(
-                      title: 'תמונות',
-                      trailing: TextButton(
-                        onPressed: () => _pickAndSavePhoto(context, person),
-                        child: const Text('הוספת תמונות'),
-                      ),
-                      child: _PhotosSection(
-                        person: person,
-                        onTapPhoto: (int index) =>
-                            _openPhotoViewer(context, person, index),
-                        onSetPrimary: (int index) =>
-                            _setPrimaryPhoto(context, person, index),
-                      ),
-                    ),
-                    _Section(
-                      title: 'כרטיסייה לשליחה',
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: TextFormField(
-                          controller: _descriptionController,
-                          focusNode: _descriptionFocus,
-                          textInputAction: TextInputAction.newline,
-                          maxLines: 10,
-                          minLines: 5,
-                          onChanged: (_) => _handleInlineFieldChanged(),
-                          decoration: InputDecoration(
-                            hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
-                            alignLabelWithHint: true,
-                            suffixIcon: _descriptionFocus.hasFocus
-                                ? IconButton(
-                                    icon: const Icon(Icons.check),
-                                    tooltip: 'שמירה',
-                                    onPressed: () => _saveInlineEdit(person),
-                                  )
-                                : null,
-                          ),
-                        ),
+                      showInlineEdit: _showInlineEdit,
+                      onEditPressed: () => setState(() {
+                        _showInlineEdit = true;
+                      }),
+                      onAddPhotos: () => _pickAndSavePhoto(context, person),
+                      onTapPhoto: (int index) =>
+                          _openPhotoViewer(context, person, index),
+                      onSetPrimary: (int index) =>
+                          _setPrimaryPhoto(context, person, index),
+                      descriptionController: _descriptionController,
+                      descriptionFocus: _descriptionFocus,
+                      onDescriptionChanged: _handleInlineFieldChanged,
+                      onSaveDescription: () => _saveInlineEdit(person),
+                      editForm: _buildInlineEditForm(person),
+                      detailsSection: _PersonExtraDetailsSection(
+                        birthdayMessage: _birthdayMessage(person, theme),
+                        inquiryContactText: _inquiryContactText(person),
+                        createdAt: AppDateUtils.formatDate(person.createdAt),
+                        updatedAt: AppDateUtils.timeAgo(person.updatedAt),
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: <Widget>[
-                            ElevatedButton.icon(
-                              onPressed: () =>
-                                  _openMatchProposal(context, person),
-                              icon: const Icon(Icons.favorite),
-                              label: const Text('פתח הצעה'),
-                            ),
-                            const SizedBox(width: 12),
-                            FilledButton.icon(
-                              onPressed: () =>
-                                  _openWhatsAppMessage(context, person),
-                              icon: const FaIcon(FontAwesomeIcons.whatsapp),
-                              label: const Text('וואטסאפ'),
-                            ),
-                            const SizedBox(width: 12),
-                            _FavoriteToggleButton(
-                              isFavorite: person.isFavorite,
-                              onPressed: () =>
-                                  personRepository.toggleFavorite(person.id),
-                              activeColor: colorScheme.secondary,
-                              inactiveColor: colorScheme.onSurfaceVariant,
-                            ),
-                          ],
-                        ),
-                      ),
+                    _SuggestedMatchesTab(
+                      sourcePerson: person,
+                      suggestedPeople: suggestedPeople,
+                      matchRepository: matchRepository,
+                      hasCustomFilters: savedSuggestionFilters != null,
+                      onFilterPressed: () =>
+                          _openSuggestionFilters(context, person),
+                      onOpenCandidate: (Person candidate) =>
+                          _showSuggestedCandidateActions(
+                            context,
+                            person,
+                            candidate,
+                          ),
                     ),
-                    _InlinePersonEditForm(
-                      formKey: _editFormKey,
-                      firstNameController: _firstNameController,
-                      lastNameController: _lastNameController,
-                      manualAgeController: _manualAgeController,
-                      phoneController: _phoneController,
-                      inquiryContactNameController:
-                          _inquiryContactNameController,
-                      inquiryContactPhoneController:
-                          _inquiryContactPhoneController,
-                      firstNameFocus: _firstNameFocus,
-                      lastNameFocus: _lastNameFocus,
-                      manualAgeFocus: _manualAgeFocus,
-                      phoneFocus: _phoneFocus,
-                      inquiryContactNameFocus: _inquiryContactNameFocus,
-                      inquiryContactPhoneFocus: _inquiryContactPhoneFocus,
-                      onSavePressed: () => _saveInlineEdit(person),
-                      onFieldChanged: _handleInlineFieldChanged,
-                      selectedGender: _selectedGender,
-                      birthDate: _birthDate,
-                      birthDateCalendar: _birthDateCalendar,
-                      birthDatePrimaryText: _birthDatePrimaryText(),
-                      birthDateSecondaryText: _birthDateSecondaryText(),
-                      selectedReligiousLevel: _selectedReligiousLevel,
-                      onGenderChanged: (Gender gender) {
-                        setState(() => _selectedGender = gender);
-                        unawaited(
-                          _saveCurrentInlineEdit(
-                            showSnackBar: false,
-                            unfocus: false,
-                          ),
-                        );
-                      },
-                      onBirthDateTap: _pickBirthDate,
-                      onBirthDateCleared: () {
-                        setState(() {
-                          _birthDate = null;
-                          _hebrewBirthYear = null;
-                          _hebrewBirthMonth = null;
-                          _hebrewBirthDay = null;
-                        });
-                        unawaited(
-                          _saveCurrentInlineEdit(
-                            showSnackBar: false,
-                            unfocus: false,
-                          ),
-                        );
-                      },
-                      onBirthDateCalendarChanged:
-                          (_BirthDateCalendar calendar) {
-                            setState(() => _birthDateCalendar = calendar);
-                          },
-                      onReligiousLevelChanged: (ReligiousLevel? level) {
-                        setState(() => _selectedReligiousLevel = level);
-                        unawaited(
-                          _saveCurrentInlineEdit(
-                            showSnackBar: false,
-                            unfocus: false,
-                          ),
-                        );
-                      },
+                    _MatchesTab(
+                      person: person,
+                      matches: openMatches,
+                      personRepository: personRepository,
+                      emptyText: 'אין רעיונות פתוחים עדיין',
                     ),
-                    _PersonNotesSection(person: person, notes: personNotes),
-                    _Section(
-                      title: 'הצעות קשורות',
-                      child: _RelatedMatchesSection(
-                        person: person,
-                        matches: relatedMatches,
-                        personRepository: personRepository,
-                      ),
-                    ),
-                    _Section(
-                      title: 'פרטים נוספים',
-                      child: Column(
-                        children: <Widget>[
-                          if (_birthdayMessage(person, theme)
-                              case final Widget birthdayBanner)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: birthdayBanner,
-                            ),
-                          _DetailRow(
-                            label: 'לבירורים',
-                            value: _inquiryContactText(person),
-                          ),
-                          _DetailRow(
-                            label: 'נוצר',
-                            value: AppDateUtils.formatDate(person.createdAt),
-                          ),
-                          _DetailRow(
-                            label: 'עודכן',
-                            value: AppDateUtils.timeAgo(person.updatedAt),
-                            isLast: true,
-                          ),
-                        ],
-                      ),
+                    _MatchesTab(
+                      person: person,
+                      matches: rejectedMatches,
+                      personRepository: personRepository,
+                      emptyText: 'אין רעיונות שנשללו',
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildInlineEditForm(Person person) {
+    return _InlinePersonEditForm(
+      formKey: _editFormKey,
+      firstNameController: _firstNameController,
+      lastNameController: _lastNameController,
+      manualAgeController: _manualAgeController,
+      phoneController: _phoneController,
+      inquiryContactNameController: _inquiryContactNameController,
+      inquiryContactPhoneController: _inquiryContactPhoneController,
+      firstNameFocus: _firstNameFocus,
+      lastNameFocus: _lastNameFocus,
+      manualAgeFocus: _manualAgeFocus,
+      phoneFocus: _phoneFocus,
+      inquiryContactNameFocus: _inquiryContactNameFocus,
+      inquiryContactPhoneFocus: _inquiryContactPhoneFocus,
+      onSavePressed: () => _saveInlineEdit(person),
+      onFieldChanged: _handleInlineFieldChanged,
+      selectedGender: _selectedGender,
+      birthDate: _birthDate,
+      birthDateCalendar: _birthDateCalendar,
+      birthDatePrimaryText: _birthDatePrimaryText(),
+      birthDateSecondaryText: _birthDateSecondaryText(),
+      selectedReligiousLevel: _selectedReligiousLevel,
+      onGenderChanged: (Gender gender) {
+        setState(() => _selectedGender = gender);
+        unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
+      },
+      onBirthDateTap: _pickBirthDate,
+      onBirthDateCleared: () {
+        setState(() {
+          _birthDate = null;
+          _hebrewBirthYear = null;
+          _hebrewBirthMonth = null;
+          _hebrewBirthDay = null;
+        });
+        unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
+      },
+      onBirthDateCalendarChanged: (_BirthDateCalendar calendar) {
+        setState(() => _birthDateCalendar = calendar);
+      },
+      onReligiousLevelChanged: (ReligiousLevel? level) {
+        setState(() => _selectedReligiousLevel = level);
+        unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
+      },
+    );
+  }
+
+  bool _matchesSuggestionFilters({
+    required Person source,
+    required Person candidate,
+    required MatchProposalFilters? filters,
+  }) {
+    if (filters == null) {
+      return MatchSuggestionUtils.isSuggestedCandidate(
+        source: source,
+        candidate: candidate,
+      );
+    }
+
+    if (!MatchSuggestionUtils.isEligibleCandidate(
+      source: source,
+      candidate: candidate,
+    )) {
+      return false;
+    }
+
+    final int? candidateAge = candidate.age;
+    if (filters.minAge != null &&
+        (candidateAge == null || candidateAge < filters.minAge!)) {
+      return false;
+    }
+    if (filters.maxAge != null &&
+        (candidateAge == null || candidateAge > filters.maxAge!)) {
+      return false;
+    }
+
+    if (filters.religiousLevels.isNotEmpty &&
+        !filters.religiousLevels.contains(candidate.religiousLevel)) {
+      return false;
+    }
+
+    if (filters.profileStatuses.isNotEmpty &&
+        !filters.profileStatuses.contains(candidate.profileStatus)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _openSuggestionFilters(
+    BuildContext context,
+    Person sourcePerson,
+  ) async {
+    if (sourcePerson.gender == Gender.unknown) {
+      _showSnackBar(context, 'יש לבחור מגדר לפני סינון התאמות');
+      return;
+    }
+
+    final Gender targetGender = sourcePerson.gender == Gender.male
+        ? Gender.female
+        : Gender.male;
+
+    final MatchProposalFilters? filters = await MatchProposalFilterSheet.show(
+      context,
+      targetGender: targetGender,
+      sourcePersonId: sourcePerson.id,
+      initialFilters: _defaultSuggestionFilters(sourcePerson),
+    );
+
+    if (filters != null && mounted) {
+      setState(() {});
+    }
+  }
+
+  MatchProposalFilters _defaultSuggestionFilters(Person sourcePerson) {
+    final ({int minAge, int maxAge})? femaleAgeRange =
+        sourcePerson.gender == Gender.male
+        ? MatchSuggestionUtils.femaleAgeRangeForMale(sourcePerson.age)
+        : null;
+
+    return MatchProposalFilters(
+      minAge: femaleAgeRange?.minAge,
+      maxAge: femaleAgeRange?.maxAge,
+      religiousLevels: MatchSuggestionUtils.religiousLevelsFor(
+        sourcePerson.religiousLevel,
+      ),
+      profileStatuses: const <ProfileStatus>[],
+    );
+  }
+
+  Future<void> _openSuggestedCandidate(
+    BuildContext context,
+    Person sourcePerson,
+    Person selectedPerson,
+  ) async {
+    final Person male = sourcePerson.gender == Gender.male
+        ? sourcePerson
+        : selectedPerson;
+    final Person female = sourcePerson.gender == Gender.female
+        ? sourcePerson
+        : selectedPerson;
+
+    final MatchRepository matchRepository = context.read<MatchRepository>();
+    final MatchIdea? existingMatch = matchRepository.findExisting(
+      male.id,
+      female.id,
+    );
+
+    if (existingMatch != null) {
+      context.push('/matches/${existingMatch.id}');
+      return;
+    }
+
+    final MatchIdea? newMatch = await matchRepository.create(
+      male.id,
+      female.id,
+    );
+    if (newMatch != null && context.mounted) {
+      context.push('/matches/${newMatch.id}');
+    }
+  }
+
+  Future<void> _showSuggestedCandidateActions(
+    BuildContext context,
+    Person sourcePerson,
+    Person candidate,
+  ) async {
+    final _SuggestedCandidateAction? action =
+        await showModalBottomSheet<_SuggestedCandidateAction>(
+          context: context,
+          showDragHandle: true,
+          builder: (BuildContext context) {
+            return _SuggestedCandidateActionSheet(candidate: candidate);
+          },
+        );
+
+    if (action == null || !context.mounted) {
+      return;
+    }
+
+    switch (action) {
+      case _SuggestedCandidateAction.viewProfile:
+        context.push('/people/${candidate.id}');
+        break;
+      case _SuggestedCandidateAction.openMatch:
+        await _openSuggestedCandidate(context, sourcePerson, candidate);
+        break;
+    }
   }
 
   void _ensureEditData(Person person) {
@@ -614,15 +731,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
       showSnackBar: showSnackBar,
       unfocus: unfocus,
     );
-  }
-
-  Future<void> _saveAndPop(Person person) async {
-    final bool saved = await _saveInlineEdit(person, showSnackBar: false);
-    if (!saved || !mounted) {
-      return;
-    }
-
-    Navigator.of(context).pop();
   }
 
   void _populateInlineEdit(Person person) {
@@ -1179,75 +1287,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
         context.read<PersonRepository>().getById(currentPerson.id) ??
         currentPerson;
 
-    if (personForProposal.gender == Gender.unknown) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('יש לבחור מגדר לאיש הקשר לפני יצירת הצעה'),
-        ),
-      );
-      return;
-    }
+    await MatchSuggestionFlow.open(context, sourcePerson: personForProposal);
+  }
 
-    final Gender oppositeGender = personForProposal.gender == Gender.male
-        ? Gender.female
-        : Gender.male;
-
-    final MatchProposalFilters? filters = await MatchProposalFilterSheet.show(
-      context,
-      targetGender: oppositeGender,
+  Future<void> _openPersonNotes(BuildContext context, Person person) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) {
+          return _PersonNotesPage(personId: person.id);
+        },
+      ),
     );
-    if (filters == null || !context.mounted) {
-      return;
-    }
-
-    final Person? selectedPerson = await PersonPickerSheet.show(
-      context,
-      title: 'בחרו:',
-      filterGender: oppositeGender,
-      excludeIds: <String>{personForProposal.id},
-      minAge: filters.minAge,
-      maxAge: filters.maxAge,
-      religiousLevels: filters.religiousLevels,
-      profileStatuses: filters.profileStatuses,
-    );
-
-    if (selectedPerson == null || !context.mounted) {
-      return;
-    }
-
-    final Person male = personForProposal.gender == Gender.male
-        ? personForProposal
-        : selectedPerson;
-    final Person female = personForProposal.gender == Gender.female
-        ? personForProposal
-        : selectedPerson;
-
-    final MatchRepository matchRepository = context.read<MatchRepository>();
-    final MatchIdea? existingMatch = matchRepository.findExisting(
-      male.id,
-      female.id,
-    );
-
-    if (existingMatch != null) {
-      final bool shouldView = await _showDuplicateMatchDialog(
-        context,
-        nameA: male.fullName.trim(),
-        nameB: female.fullName.trim(),
-      );
-
-      if (shouldView && context.mounted) {
-        context.push('/matches/${existingMatch.id}');
-      }
-      return;
-    }
-
-    final MatchIdea? newMatch = await matchRepository.create(
-      male.id,
-      female.id,
-    );
-    if (newMatch != null && context.mounted) {
-      context.push('/matches/${newMatch.id}');
-    }
   }
 
   Future<void> _sharePerson(BuildContext context, Person person) async {
@@ -1289,34 +1339,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
       confirmText: 'מחיקה',
       isDestructive: true,
     );
-  }
-
-  Future<bool> _showDuplicateMatchDialog(
-    BuildContext context, {
-    required String nameA,
-    required String nameB,
-  }) async {
-    final bool? result = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('כבר קיימת הצעה'),
-          content: Text('כבר קיימת הצעה בין $nameA ל-$nameB'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('סגור'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('צפה בהצעה'),
-            ),
-          ],
-        );
-      },
-    );
-
-    return result ?? false;
   }
 
   void _showSnackBar(BuildContext context, String message) {
@@ -1712,107 +1734,1345 @@ class _InlinePersonEditForm extends StatelessWidget {
   }
 }
 
-class _DetailHeader extends StatelessWidget {
-  const _DetailHeader({required this.person});
+class _ProfileSummaryHeader extends StatelessWidget {
+  const _ProfileSummaryHeader({
+    required this.person,
+    required this.onEditPressed,
+    required this.onStatusChanged,
+    required this.onSharePressed,
+    required this.onWhatsAppPressed,
+    required this.onMatchesPressed,
+    required this.favoriteButton,
+  });
 
   final Person person;
+  final VoidCallback onEditPressed;
+  final ValueChanged<ProfileStatus> onStatusChanged;
+  final VoidCallback onSharePressed;
+  final VoidCallback onWhatsAppPressed;
+  final VoidCallback onMatchesPressed;
+  final Widget favoriteButton;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final File? photoFile = _firstExistingPhoto(person.photosPaths);
+    final ColorScheme colorScheme = theme.colorScheme;
 
-    if (photoFile != null) {
-      return Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          Image.file(photoFile, fit: BoxFit.cover),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[Color(0x00000000), Color(0x99000000)],
+    return Material(
+      color: colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+        child: Row(
+          children: <Widget>[
+            Hero(
+              tag: 'person-${person.id}',
+              child: PersonAvatar(person: person, radius: 48),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    person.fullName.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      _InfoPill(
+                        icon: Icons.cake_outlined,
+                        label: person.age == null
+                            ? 'גיל לא הוזן'
+                            : 'גיל ${person.age}',
+                      ),
+                      if (person.religiousLevel != null)
+                        _InfoPill(
+                          icon: Icons.auto_awesome_outlined,
+                          label: person.religiousLevel!.displayName,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _ProfileStatusSwitcher(
+                    status: person.profileStatus,
+                    onStatusChanged: onStatusChanged,
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: <Widget>[
+                      FilledButton.tonalIcon(
+                        onPressed: onSharePressed,
+                        icon: const Icon(Icons.share_outlined),
+                        label: const Text('שיתוף'),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: onWhatsAppPressed,
+                        icon: const FaIcon(FontAwesomeIcons.whatsapp),
+                        label: const Text('וואטסאפ'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: () {
+                          DefaultTabController.of(context).animateTo(0);
+                          onEditPressed();
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('עריכה'),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: onMatchesPressed,
+                        icon: const Icon(Icons.favorite_outline),
+                        label: const Text('התאמות'),
+                      ),
+                      favoriteButton,
+                    ],
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
-      );
-    }
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            theme.colorScheme.primary,
-            theme.colorScheme.primaryContainer,
           ],
         ),
       ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Text(
-            person.fullName.trim(),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.headlineMedium?.copyWith(
-              color: theme.colorScheme.onPrimary,
-              fontWeight: FontWeight.bold,
-            ),
+    );
+  }
+}
+
+class _PersonNotesButton extends StatelessWidget {
+  const _PersonNotesButton({required this.noteCount, required this.onPressed});
+
+  final int noteCount;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: const Icon(Icons.notes_outlined),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text('יומן הערות'),
+              if (noteCount > 0) ...<Widget>[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    noteCount.toString(),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
     );
   }
-
-  File? _firstExistingPhoto(List<String> paths) {
-    for (final String path in paths) {
-      final File file = File(path);
-      if (file.existsSync()) {
-        return file;
-      }
-    }
-    return null;
-  }
 }
 
-class _ProfileStatusSection extends StatelessWidget {
-  const _ProfileStatusSection({required this.person, required this.repository});
+class _ProfileStatusSwitcher extends StatefulWidget {
+  const _ProfileStatusSwitcher({
+    required this.status,
+    required this.onStatusChanged,
+  });
 
-  final Person person;
-  final PersonRepository repository;
+  final ProfileStatus status;
+  final ValueChanged<ProfileStatus> onStatusChanged;
+
+  @override
+  State<_ProfileStatusSwitcher> createState() => _ProfileStatusSwitcherState();
+}
+
+class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant _ProfileStatusSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.status != widget.status) {
+      _expanded = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return _Section(
-      title: 'סטטוס',
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: ProfileStatus.values.map((ProfileStatus status) {
-              final bool selected = person.profileStatus == status;
-              return ChoiceChip(
-                label: Text('${status.emoji} ${status.displayName}'),
-                selected: selected,
-                onSelected: selected
-                    ? null
-                    : (_) => repository.updateProfileStatus(person.id, status),
-                labelStyle: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(widget.status.emoji),
+                const SizedBox(width: 6),
+                Text(
+                  'סטטוס: ${widget.status.displayName}',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              );
-            }).toList(),
+                const SizedBox(width: 4),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
           ),
         ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ProfileStatus.values
+                  .where((ProfileStatus status) => status != widget.status)
+                  .map((ProfileStatus status) {
+                    return ActionChip(
+                      avatar: Text(status.emoji),
+                      label: Text(status.displayName),
+                      onPressed: () => widget.onStatusChanged(status),
+                    );
+                  })
+                  .toList(),
+            ),
+          ),
+          crossFadeState: _expanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 160),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileCardTab extends StatelessWidget {
+  const _ProfileCardTab({
+    required this.person,
+    required this.showInlineEdit,
+    required this.onEditPressed,
+    required this.onAddPhotos,
+    required this.onTapPhoto,
+    required this.onSetPrimary,
+    required this.descriptionController,
+    required this.descriptionFocus,
+    required this.onDescriptionChanged,
+    required this.onSaveDescription,
+    required this.editForm,
+    required this.detailsSection,
+  });
+
+  final Person person;
+  final bool showInlineEdit;
+  final VoidCallback onEditPressed;
+  final VoidCallback onAddPhotos;
+  final ValueChanged<int> onTapPhoto;
+  final ValueChanged<int> onSetPrimary;
+  final TextEditingController descriptionController;
+  final FocusNode descriptionFocus;
+  final VoidCallback onDescriptionChanged;
+  final VoidCallback onSaveDescription;
+  final Widget editForm;
+  final Widget detailsSection;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      children: <Widget>[
+        _ShareCardPreview(
+          person: person,
+          onTapPhoto: onTapPhoto,
+          onAddPhotos: onAddPhotos,
+          onSetPrimary: onSetPrimary,
+          onEditPressed: onEditPressed,
+        ),
+        if (showInlineEdit) ...<Widget>[
+          const SizedBox(height: 16),
+          _Section(
+            title: 'עריכת כרטיסייה',
+            child: TextFormField(
+              controller: descriptionController,
+              focusNode: descriptionFocus,
+              textInputAction: TextInputAction.newline,
+              maxLines: 10,
+              minLines: 5,
+              onChanged: (_) => onDescriptionChanged(),
+              decoration: InputDecoration(
+                hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
+                alignLabelWithHint: true,
+                suffixIcon: descriptionFocus.hasFocus
+                    ? IconButton(
+                        icon: const Icon(Icons.check),
+                        tooltip: 'שמירה',
+                        onPressed: onSaveDescription,
+                      )
+                    : null,
+              ),
+            ),
+          ),
+          editForm,
+        ],
+        detailsSection,
+      ],
+    );
+  }
+}
+
+class _ShareCardPreview extends StatelessWidget {
+  const _ShareCardPreview({
+    required this.person,
+    required this.onTapPhoto,
+    required this.onAddPhotos,
+    required this.onSetPrimary,
+    required this.onEditPressed,
+  });
+
+  final Person person;
+  final ValueChanged<int> onTapPhoto;
+  final VoidCallback onAddPhotos;
+  final ValueChanged<int> onSetPrimary;
+  final VoidCallback onEditPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String description = (person.description ?? '').trim();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'כרטיס לתצוגה',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: onEditPressed,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('עריכה'),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _PhotosSection(
+              person: person,
+              onTapPhoto: onTapPhoto,
+              onSetPrimary: onSetPrimary,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: OutlinedButton.icon(
+              onPressed: onAddPhotos,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('הוספת תמונות'),
+            ),
+          ),
+          Divider(height: 1, color: theme.colorScheme.outlineVariant),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: description.isEmpty
+                ? Text(
+                    'עדיין אין כרטיסייה לשליחה',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                : Text(
+                    description,
+                    textAlign: TextAlign.start,
+                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.55),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _SuggestedCandidateAction { viewProfile, openMatch }
+
+class _SuggestedCandidateActionSheet extends StatelessWidget {
+  const _SuggestedCandidateActionSheet({required this.candidate});
+
+  final Person candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                PersonAvatar(person: candidate, radius: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        candidate.fullName.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'מה לעשות עם ההתאמה?',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: const Text('צפייה בכרטיס'),
+              onTap: () => Navigator.of(
+                context,
+              ).pop(_SuggestedCandidateAction.viewProfile),
+            ),
+            ListTile(
+              leading: const Icon(Icons.favorite_outline),
+              title: const Text('פתיחת הצעה'),
+              onTap: () => Navigator.of(
+                context,
+              ).pop(_SuggestedCandidateAction.openMatch),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _SuggestionViewMode { list, swipe }
+
+class _SuggestedMatchesTab extends StatefulWidget {
+  const _SuggestedMatchesTab({
+    required this.sourcePerson,
+    required this.suggestedPeople,
+    required this.matchRepository,
+    required this.hasCustomFilters,
+    required this.onFilterPressed,
+    required this.onOpenCandidate,
+  });
+
+  final Person sourcePerson;
+  final List<Person> suggestedPeople;
+  final MatchRepository matchRepository;
+  final bool hasCustomFilters;
+  final VoidCallback onFilterPressed;
+  final ValueChanged<Person> onOpenCandidate;
+
+  @override
+  State<_SuggestedMatchesTab> createState() => _SuggestedMatchesTabState();
+}
+
+class _SuggestedMatchesTabState extends State<_SuggestedMatchesTab> {
+  final CardSwiperController _swipeController = CardSwiperController();
+  _SuggestionViewMode _viewMode = _SuggestionViewMode.list;
+  int _yesCount = 0;
+  int _noCount = 0;
+  bool _isSwipeFinished = false;
+  int _deckVersion = 0;
+
+  @override
+  void didUpdateWidget(covariant _SuggestedMatchesTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_suggestionIds(oldWidget.suggestedPeople) !=
+        _suggestionIds(widget.suggestedPeople)) {
+      _resetSwipeProgress();
+    }
+  }
+
+  @override
+  void dispose() {
+    _swipeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.sourcePerson.gender == Gender.unknown) {
+      return _SuggestionTabScaffold(
+        header: _SuggestionFilterHeader(
+          count: 0,
+          hasCustomFilters: widget.hasCustomFilters,
+          onFilterPressed: widget.onFilterPressed,
+        ),
+        child: const _TabEmptyState(
+          icon: Icons.wc_outlined,
+          title: 'צריך לבחור מגדר',
+          subtitle: 'אחרי עדכון מגדר יוצגו התאמות אוטומטיות',
+        ),
+      );
+    }
+
+    if (widget.suggestedPeople.isEmpty) {
+      return _SuggestionTabScaffold(
+        header: _SuggestionFilterHeader(
+          count: 0,
+          hasCustomFilters: widget.hasCustomFilters,
+          onFilterPressed: widget.onFilterPressed,
+        ),
+        child: _TabEmptyState(
+          icon: Icons.favorite_border,
+          title: 'לא נמצאו התאמות',
+          subtitle: widget.hasCustomFilters
+              ? 'אפשר לשנות את הסינון ולנסות שוב'
+              : 'אין כרגע אנשים שעומדים בסינון האוטומטי',
+        ),
+      );
+    }
+
+    return Column(
+      children: <Widget>[
+        _SuggestionFilterHeader(
+          count: widget.suggestedPeople.length,
+          hasCustomFilters: widget.hasCustomFilters,
+          onFilterPressed: widget.onFilterPressed,
+        ),
+        _SuggestionViewSwitcher(
+          selectedMode: _viewMode,
+          onChanged: (Set<_SuggestionViewMode> values) {
+            final _SuggestionViewMode selected = values.first;
+            if (selected != _viewMode) {
+              setState(() => _viewMode = selected);
+            }
+          },
+        ),
+        Expanded(
+          child: _viewMode == _SuggestionViewMode.list
+              ? _SuggestedMatchesList(
+                  sourcePerson: widget.sourcePerson,
+                  suggestedPeople: widget.suggestedPeople,
+                  matchRepository: widget.matchRepository,
+                  onOpenCandidate: widget.onOpenCandidate,
+                )
+              : _SuggestedMatchesSwipeDeck(
+                  key: ValueKey<int>(_deckVersion),
+                  sourcePerson: widget.sourcePerson,
+                  suggestedPeople: widget.suggestedPeople,
+                  matchRepository: widget.matchRepository,
+                  controller: _swipeController,
+                  yesCount: _yesCount,
+                  noCount: _noCount,
+                  isFinished: _isSwipeFinished,
+                  onOpenCandidate: widget.onOpenCandidate,
+                  onSwipe: _handleSwipe,
+                  onEnd: _handleSwipeEnd,
+                  onReset: _resetSwipeProgress,
+                ),
+        ),
+      ],
+    );
+  }
+
+  bool _handleSwipe(
+    int previousIndex,
+    int? currentIndex,
+    CardSwiperDirection direction,
+  ) {
+    if (previousIndex < 0 || previousIndex >= widget.suggestedPeople.length) {
+      return false;
+    }
+
+    if (direction == CardSwiperDirection.right) {
+      final Person candidate = widget.suggestedPeople[previousIndex];
+      setState(() {
+        _yesCount++;
+        _isSwipeFinished = currentIndex == null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onOpenCandidate(candidate);
+        }
+      });
+      return true;
+    }
+
+    if (direction == CardSwiperDirection.left) {
+      setState(() {
+        _noCount++;
+        _isSwipeFinished = currentIndex == null;
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  void _resetSwipeProgress() {
+    setState(() {
+      _yesCount = 0;
+      _noCount = 0;
+      _isSwipeFinished = false;
+      _deckVersion++;
+    });
+  }
+
+  void _handleSwipeEnd() {
+    if (!_isSwipeFinished) {
+      setState(() => _isSwipeFinished = true);
+    }
+  }
+
+  String _suggestionIds(List<Person> people) {
+    return people.map((Person person) => person.id).join('|');
+  }
+}
+
+class _SuggestionViewSwitcher extends StatelessWidget {
+  const _SuggestionViewSwitcher({
+    required this.selectedMode,
+    required this.onChanged,
+  });
+
+  final _SuggestionViewMode selectedMode;
+  final ValueChanged<Set<_SuggestionViewMode>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<_SuggestionViewMode>(
+          segments: const <ButtonSegment<_SuggestionViewMode>>[
+            ButtonSegment<_SuggestionViewMode>(
+              value: _SuggestionViewMode.list,
+              icon: Icon(Icons.list_alt_outlined),
+              label: Text('רשימה'),
+            ),
+            ButtonSegment<_SuggestionViewMode>(
+              value: _SuggestionViewMode.swipe,
+              icon: Icon(Icons.swipe_outlined),
+              label: Text('החלקה'),
+            ),
+          ],
+          selected: <_SuggestionViewMode>{selectedMode},
+          showSelectedIcon: false,
+          onSelectionChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestedMatchesList extends StatelessWidget {
+  const _SuggestedMatchesList({
+    required this.sourcePerson,
+    required this.suggestedPeople,
+    required this.matchRepository,
+    required this.onOpenCandidate,
+  });
+
+  final Person sourcePerson;
+  final List<Person> suggestedPeople;
+  final MatchRepository matchRepository;
+  final ValueChanged<Person> onOpenCandidate;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      itemCount: suggestedPeople.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (BuildContext context, int index) {
+        final Person candidate = suggestedPeople[index];
+        final MatchIdea? existingMatch = matchRepository.findExisting(
+          sourcePerson.id,
+          candidate.id,
+        );
+
+        return Card(
+          child: ListTile(
+            leading: PersonAvatar(person: candidate, radius: 24),
+            title: Text(
+              candidate.fullName.trim(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              _personSummary(candidate),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: existingMatch == null
+                ? Icon(
+                    Icons.add_circle_outline,
+                    color: Theme.of(context).colorScheme.primary,
+                  )
+                : _StatusChip(status: existingMatch.status),
+            onTap: () => onOpenCandidate(candidate),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SuggestedMatchesSwipeDeck extends StatelessWidget {
+  const _SuggestedMatchesSwipeDeck({
+    super.key,
+    required this.sourcePerson,
+    required this.suggestedPeople,
+    required this.matchRepository,
+    required this.controller,
+    required this.yesCount,
+    required this.noCount,
+    required this.isFinished,
+    required this.onOpenCandidate,
+    required this.onSwipe,
+    required this.onEnd,
+    required this.onReset,
+  });
+
+  final Person sourcePerson;
+  final List<Person> suggestedPeople;
+  final MatchRepository matchRepository;
+  final CardSwiperController controller;
+  final int yesCount;
+  final int noCount;
+  final bool isFinished;
+  final ValueChanged<Person> onOpenCandidate;
+  final CardSwiperOnSwipe onSwipe;
+  final VoidCallback onEnd;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isFinished) {
+      return _SuggestedSwipeSummary(
+        yesCount: yesCount,
+        noCount: noCount,
+        onReset: onReset,
+      );
+    }
+
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: _SuggestedSwipeCounter(
+            yesCount: yesCount,
+            noCount: noCount,
+            total: suggestedPeople.length,
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: CardSwiper(
+              controller: controller,
+              cardsCount: suggestedPeople.length,
+              numberOfCardsDisplayed: suggestedPeople.length >= 3
+                  ? 3
+                  : suggestedPeople.length,
+              allowedSwipeDirection: const AllowedSwipeDirection.symmetric(
+                horizontal: true,
+              ),
+              onSwipe: onSwipe,
+              onEnd: onEnd,
+              cardBuilder:
+                  (
+                    BuildContext context,
+                    int index,
+                    int percentThresholdX,
+                    int percentThresholdY,
+                  ) {
+                    final Person candidate = suggestedPeople[index];
+                    final MatchIdea? existingMatch = matchRepository
+                        .findExisting(sourcePerson.id, candidate.id);
+                    return _SuggestedMatchSwipeCard(
+                      candidate: candidate,
+                      existingMatch: existingMatch,
+                      onTap: () => onOpenCandidate(candidate),
+                    );
+                  },
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => controller.swipe(CardSwiperDirection.left),
+                  icon: const Icon(Icons.close),
+                  label: const Text('לא'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => controller.swipe(CardSwiperDirection.right),
+                  icon: const Icon(Icons.favorite_outline),
+                  label: const Text('כן'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SuggestedSwipeCounter extends StatelessWidget {
+  const _SuggestedSwipeCounter({
+    required this.yesCount,
+    required this.noCount,
+    required this.total,
+  });
+
+  final int yesCount;
+  final int noCount;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final int reviewed = (yesCount + noCount).clamp(0, total);
+    return Row(
+      children: <Widget>[
+        Text('$reviewed / $total', style: theme.textTheme.titleSmall),
+        const Spacer(),
+        _SwipeCountPill(
+          icon: Icons.favorite_outline,
+          label: yesCount.toString(),
+          color: theme.colorScheme.primary,
+        ),
+        const SizedBox(width: 8),
+        _SwipeCountPill(
+          icon: Icons.close,
+          label: noCount.toString(),
+          color: theme.colorScheme.error,
+        ),
+      ],
+    );
+  }
+}
+
+class _SwipeCountPill extends StatelessWidget {
+  const _SwipeCountPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestedSwipeSummary extends StatelessWidget {
+  const _SuggestedSwipeSummary({
+    required this.yesCount,
+    required this.noCount,
+    required this.onReset,
+  });
+
+  final int yesCount;
+  final int noCount;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.check_circle_outline,
+              size: 72,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text('סיימת לעבור על ההתאמות', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              'כן $yesCount · לא $noCount',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: onReset,
+              icon: const Icon(Icons.refresh),
+              label: const Text('התחלה מחדש'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestedMatchSwipeCard extends StatelessWidget {
+  const _SuggestedMatchSwipeCard({
+    required this.candidate,
+    required this.existingMatch,
+    required this.onTap,
+  });
+
+  final Person candidate;
+  final MatchIdea? existingMatch;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String description = (candidate.description ?? '').trim();
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                child: Center(
+                  child: PersonAvatar(person: candidate, radius: 72),
+                ),
+              ),
+              Text(
+                candidate.fullName.trim(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _personSummary(candidate),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (description.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 16),
+                Text(
+                  description,
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.center,
+                child: existingMatch == null
+                    ? _InfoPill(
+                        icon: Icons.add_circle_outline,
+                        label: 'אין הצעה פתוחה',
+                      )
+                    : _StatusChip(status: existingMatch!.status),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionTabScaffold extends StatelessWidget {
+  const _SuggestionTabScaffold({required this.header, required this.child});
+
+  final Widget header;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        header,
+        Expanded(child: child),
+      ],
+    );
+  }
+}
+
+class _SuggestionFilterHeader extends StatelessWidget {
+  const _SuggestionFilterHeader({
+    required this.count,
+    required this.hasCustomFilters,
+    required this.onFilterPressed,
+  });
+
+  final int count;
+  final bool hasCustomFilters;
+  final VoidCallback onFilterPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              hasCustomFilters ? 'סינון אישי פעיל' : 'סינון אוטומטי',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          if (count > 0)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: Text(
+                '$count תוצאות',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          OutlinedButton.icon(
+            onPressed: onFilterPressed,
+            icon: Icon(hasCustomFilters ? Icons.tune : Icons.tune_outlined),
+            label: const Text('סינון'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MatchesTab extends StatelessWidget {
+  const _MatchesTab({
+    required this.person,
+    required this.matches,
+    required this.personRepository,
+    required this.emptyText,
+  });
+
+  final Person person;
+  final List<MatchIdea> matches;
+  final PersonRepository personRepository;
+  final String emptyText;
+
+  @override
+  Widget build(BuildContext context) {
+    if (matches.isEmpty) {
+      return _TabEmptyState(
+        icon: Icons.lightbulb_outline,
+        title: emptyText,
+        subtitle: 'כאן יופיעו הצעות ששייכות לאיש הקשר',
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      children: <Widget>[
+        _RelatedMatchesSection(
+          person: person,
+          matches: matches,
+          personRepository: personRepository,
+        ),
+      ],
+    );
+  }
+}
+
+class _TabEmptyState extends StatelessWidget {
+  const _TabEmptyState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 56, color: theme.colorScheme.primary),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonExtraDetailsSection extends StatelessWidget {
+  const _PersonExtraDetailsSection({
+    required this.birthdayMessage,
+    required this.inquiryContactText,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final Widget? birthdayMessage;
+  final String inquiryContactText;
+  final String createdAt;
+  final String updatedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Section(
+      title: 'פרטים נוספים',
+      child: Column(
+        children: <Widget>[
+          if (birthdayMessage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: birthdayMessage,
+            ),
+          _DetailRow(label: 'לבירורים', value: inquiryContactText),
+          _DetailRow(label: 'נוצר', value: createdAt),
+          _DetailRow(label: 'עודכן', value: updatedAt, isLast: true),
+        ],
+      ),
+    );
+  }
+}
+
+String _personSummary(Person person) {
+  final List<String> parts = <String>[
+    if (person.age != null) 'גיל ${person.age}',
+    if (person.religiousLevel != null) person.religiousLevel!.displayName,
+    if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
+  ];
+  return parts.isEmpty ? 'פרטים חסרים' : parts.join(' · ');
+}
+
+int _personNotesCount(Person person, List<PersonNote> notes) {
+  final bool hasLegacyNote = (person.notes ?? '').trim().isNotEmpty;
+  return notes.length + (hasLegacyNote ? 1 : 0);
+}
+
+class _PersonNotesPage extends StatelessWidget {
+  const _PersonNotesPage({required this.personId});
+
+  final String personId;
+
+  @override
+  Widget build(BuildContext context) {
+    final PersonRepository personRepository = context.watch<PersonRepository>();
+    final Person? person = personRepository.getById(personId);
+
+    if (person == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('יומן הערות'), centerTitle: true),
+        body: const Center(child: Text('איש הקשר לא נמצא')),
+      );
+    }
+
+    final List<PersonNote> notes = personRepository.getNotesForPerson(
+      person.id,
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('יומן הערות'), centerTitle: true),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: _PersonalNotesNotice(),
+            ),
+            const SizedBox(height: 16),
+            _PersonNotesSection(person: person, notes: notes),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonalNotesNotice extends StatelessWidget {
+  const _PersonalNotesNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            Icons.lock_outline,
+            color: theme.colorScheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'ההערות כאן הן לצפייה אישית שלך בלבד.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

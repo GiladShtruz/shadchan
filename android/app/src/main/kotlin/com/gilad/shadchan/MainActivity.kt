@@ -22,7 +22,9 @@ import java.util.UUID
 
 class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     private val pendingFilePaths = mutableListOf<String>()
+    private val pendingSharedProfiles = mutableListOf<Map<String, Any>>()
     private var eventSink: EventChannel.EventSink? = null
+    private var sharedProfilesEventSink: EventChannel.EventSink? = null
     private var pendingCallLogResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,10 +59,38 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             }
         }
 
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SHARED_PROFILES_METHOD_CHANNEL_NAME,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "takePendingDrafts" -> {
+                    result.success(pendingSharedProfiles.toList())
+                    pendingSharedProfiles.clear()
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             EVENT_CHANNEL_NAME,
         ).setStreamHandler(this)
+
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SHARED_PROFILES_EVENT_CHANNEL_NAME,
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                sharedProfilesEventSink = events
+                flushPendingSharedProfiles()
+            }
+
+            override fun onCancel(arguments: Any?) {
+                sharedProfilesEventSink = null
+            }
+        })
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -74,12 +104,21 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             return
         }
 
-        enqueueIncomingFiles(intent)
+        val handled = when {
+            isBackupIntent(intent) -> {
+                enqueueIncomingFiles(intent)
+                true
+            }
 
-        val hadBackupPayload = intent.action == Intent.ACTION_VIEW ||
-            intent.action == Intent.ACTION_SEND ||
-            intent.action == Intent.ACTION_SEND_MULTIPLE
-        if (!hadBackupPayload) {
+            isSharedProfileIntent(intent) -> {
+                enqueueIncomingSharedProfile(intent)
+                true
+            }
+
+            else -> false
+        }
+
+        if (!handled) {
             return
         }
 
@@ -133,6 +172,58 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         flushPendingFilePaths()
     }
 
+    private fun enqueueIncomingSharedProfile(intent: Intent?) {
+        if (intent == null) {
+            return
+        }
+
+        val text = extractIncomingText(intent)
+        val copiedPaths = extractIncomingUris(intent)
+            .mapNotNull { uri -> copySharedUriToCache(uri) }
+
+        if (text.isNullOrBlank() && copiedPaths.isEmpty()) {
+            return
+        }
+
+        val draft = mutableMapOf<String, Any>(
+            "id" to UUID.randomUUID().toString(),
+            "filePaths" to copiedPaths,
+        )
+        if (!text.isNullOrBlank()) {
+            draft["text"] = text.trim()
+        }
+
+        pendingSharedProfiles.add(draft)
+        flushPendingSharedProfiles()
+    }
+
+    private fun isBackupIntent(intent: Intent): Boolean {
+        return when (intent.action) {
+            Intent.ACTION_VIEW -> true
+            Intent.ACTION_SEND,
+            Intent.ACTION_SEND_MULTIPLE -> looksLikeBackupMimeType(intent.type)
+            else -> false
+        }
+    }
+
+    private fun isSharedProfileIntent(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_SEND &&
+            intent.action != Intent.ACTION_SEND_MULTIPLE
+        ) {
+            return false
+        }
+
+        val mimeType = intent.type?.lowercase() ?: return false
+        return mimeType == "text/plain" || mimeType.startsWith("image/")
+    }
+
+    private fun looksLikeBackupMimeType(mimeType: String?): Boolean {
+        val type = mimeType?.lowercase() ?: return false
+        return type == "application/json" ||
+            type == "text/json" ||
+            type == "application/octet-stream"
+    }
+
     private fun extractIncomingUris(intent: Intent?): List<Uri> {
         if (intent == null) {
             return emptyList()
@@ -182,6 +273,20 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
     }
 
+    private fun extractIncomingText(intent: Intent): String? {
+        val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
+            ?.toString()
+            ?.trim()
+        if (!text.isNullOrEmpty()) {
+            return text
+        }
+
+        return intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT)
+            ?.toString()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
     private fun copyUriToCache(uri: Uri): String? {
         return try {
             val fileName = ensureJsonExtension(resolveDisplayName(uri) ?: "shadchan_backup.json")
@@ -191,6 +296,29 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             }
 
             val safeFileName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val outputFile = File(importsDirectory, "${UUID.randomUUID()}_$safeFileName")
+
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(outputFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            } ?: return null
+
+            outputFile.absolutePath
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun copySharedUriToCache(uri: Uri): String? {
+        return try {
+            val fileName = resolveDisplayName(uri) ?: "shared_profile_image.jpg"
+            val importsDirectory = File(cacheDir, "incoming_shared_profiles")
+            if (!importsDirectory.exists()) {
+                importsDirectory.mkdirs()
+            }
+
+            val safeFileName = sanitizeFileName(fileName)
             val outputFile = File(importsDirectory, "${UUID.randomUUID()}_$safeFileName")
 
             contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -229,6 +357,10 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
     }
 
+    private fun sanitizeFileName(fileName: String): String {
+        return fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    }
+
     private fun flushPendingFilePaths() {
         val sink = eventSink ?: return
         if (pendingFilePaths.isEmpty()) {
@@ -239,6 +371,19 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         pendingFilePaths.clear()
         for (path in pathsToSend) {
             sink.success(path)
+        }
+    }
+
+    private fun flushPendingSharedProfiles() {
+        val sink = sharedProfilesEventSink ?: return
+        if (pendingSharedProfiles.isEmpty()) {
+            return
+        }
+
+        val draftsToSend = pendingSharedProfiles.toList()
+        pendingSharedProfiles.clear()
+        for (draft in draftsToSend) {
+            sink.success(draft)
         }
     }
 
@@ -295,6 +440,10 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     companion object {
         private const val METHOD_CHANNEL_NAME = "shadchan/incoming_backup_files/methods"
         private const val EVENT_CHANNEL_NAME = "shadchan/incoming_backup_files/events"
+        private const val SHARED_PROFILES_METHOD_CHANNEL_NAME =
+            "shadchan/incoming_shared_profiles/methods"
+        private const val SHARED_PROFILES_EVENT_CHANNEL_NAME =
+            "shadchan/incoming_shared_profiles/events"
         private const val CALL_LOG_CHANNEL_NAME = "shadchan/call_log"
         private const val CALL_LOG_PERMISSION_REQUEST_CODE = 4601
         private const val MAX_CALL_LOG_NUMBERS = 5000

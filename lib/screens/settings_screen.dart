@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/services/backup_service.dart';
@@ -65,6 +66,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+      const SizedBox(height: 24),
+      const SectionHeader(title: 'הודעות'),
+      Card(
+        child: ListTile(
+          leading: const FaIcon(FontAwesomeIcons.whatsapp),
+          title: const Text('הודעה לבקשת פרטים בוואטסאפ'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push('/settings/whatsapp-message'),
         ),
       ),
       const SizedBox(height: 24),

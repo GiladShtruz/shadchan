@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -14,12 +15,14 @@ import 'package:shadchan/utils/hebrew_date_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:uuid/uuid.dart';
 
 class PersonFormScreen extends StatefulWidget {
-  const PersonFormScreen({super.key, this.personId});
+  const PersonFormScreen({super.key, this.personId, this.incomingDraft});
 
   final String? personId;
+  final IncomingSharedProfileDraft? incomingDraft;
 
   @override
   State<PersonFormScreen> createState() => _PersonFormScreenState();
@@ -56,6 +59,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   List<String> _photoPaths = <String>[];
   bool _didLoadInitialData = false;
   bool _isSaving = false;
+  bool _isImportingIncomingPhotos = false;
 
   bool get _isEditMode =>
       widget.personId != null && widget.personId!.isNotEmpty;
@@ -74,6 +78,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       }
     }
 
+    _applyIncomingDraft(widget.incomingDraft);
     _initialSnapshot = _currentSnapshot();
     _didLoadInitialData = true;
   }
@@ -127,15 +132,17 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               IconButton(
                 icon: const Icon(Icons.check),
                 tooltip: 'שמירה',
-                onPressed: _isSaving ? null : _save,
+                onPressed: _isSaving || _isImportingIncomingPhotos
+                    ? null
+                    : _save,
               ),
             ],
           ),
 
           body: _buildBody(theme),
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: _isSaving ? null : _save,
-            icon: _isSaving
+            onPressed: _isSaving || _isImportingIncomingPhotos ? null : _save,
+            icon: _isSaving || _isImportingIncomingPhotos
                 ? const SizedBox(
                     width: 20,
                     height: 20,
@@ -223,24 +230,21 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              children: Gender.values
-                  .where((Gender g) => g != Gender.unknown)
-                  .map((Gender gender) {
-                    return ChoiceChip(
-                      label: Text(gender.displayName),
-                      selected: _selectedGender == gender,
-                      onSelected: (bool selected) {
-                        if (!selected) {
-                          return;
-                        }
+              children: Gender.values.map((Gender gender) {
+                return ChoiceChip(
+                  label: Text(gender.displayName),
+                  selected: _selectedGender == gender,
+                  onSelected: (bool selected) {
+                    if (!selected) {
+                      return;
+                    }
 
-                        setState(() {
-                          _selectedGender = gender;
-                        });
-                      },
-                    );
-                  })
-                  .toList(),
+                    setState(() {
+                      _selectedGender = gender;
+                    });
+                  },
+                );
+              }).toList(),
             ),
             const SizedBox(height: 20),
             Text('סגנון דתי', style: theme.textTheme.titleMedium),
@@ -706,6 +710,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   Future<void> _save() async {
     FocusScope.of(context).unfocus();
 
+    if (_isImportingIncomingPhotos) {
+      _showSnackBar('רק רגע, התמונה ששותפה עדיין מתווספת לטופס');
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -842,6 +851,30 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     }
   }
 
+  void _applyIncomingDraft(IncomingSharedProfileDraft? draft) {
+    if (draft == null || !draft.hasContent) {
+      return;
+    }
+
+    if (!_isEditMode) {
+      _selectedGender = Gender.unknown;
+    }
+
+    final String? sharedText = draft.text?.trim();
+    if (sharedText != null && sharedText.isNotEmpty) {
+      final String existingDescription = _descriptionController.text.trim();
+      if (existingDescription.isEmpty) {
+        _descriptionController.text = sharedText;
+      } else if (!existingDescription.contains(sharedText)) {
+        _descriptionController.text = '$existingDescription\n\n$sharedText';
+      }
+    }
+
+    if (draft.filePaths.isNotEmpty) {
+      unawaited(_copyIncomingPhotos(draft.filePaths));
+    }
+  }
+
   _PersonFormSnapshot _currentSnapshot() {
     return _PersonFormSnapshot(
       firstName: _firstNameController.text.trim(),
@@ -930,6 +963,79 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         _showSnackBar('לא הצלחנו לשמור את התמונה');
       }
     }
+  }
+
+  Future<void> _copyIncomingPhotos(List<String> sourcePaths) async {
+    _isImportingIncomingPhotos = true;
+    try {
+      final Directory documentsDirectory =
+          await getApplicationDocumentsDirectory();
+      final Directory photosDirectory = Directory(
+        '${documentsDirectory.path}${Platform.pathSeparator}photos',
+      );
+
+      if (!photosDirectory.existsSync()) {
+        photosDirectory.createSync(recursive: true);
+      }
+
+      final List<String> copiedPhotoPaths = <String>[];
+      final int timestamp = DateTime.now().millisecondsSinceEpoch;
+      final String personId = _person?.id ?? _draftPersonId;
+
+      for (int index = 0; index < sourcePaths.length; index++) {
+        final File sourceFile = File(sourcePaths[index]);
+        if (!sourceFile.existsSync()) {
+          continue;
+        }
+
+        final String extension = _extensionForPath(sourceFile.path);
+        final String targetPath =
+            '${photosDirectory.path}${Platform.pathSeparator}${personId}_${timestamp}_shared_$index$extension';
+        await sourceFile.copy(targetPath);
+        copiedPhotoPaths.add(targetPath);
+      }
+
+      if (copiedPhotoPaths.isEmpty || !mounted) {
+        return;
+      }
+
+      setState(() {
+        _photoPaths = List<String>.from(_photoPaths)..addAll(copiedPhotoPaths);
+        _newPhotoPaths.addAll(copiedPhotoPaths);
+      });
+
+      final String saveActionText = _isEditMode ? 'לעדכן' : 'ליצור';
+      _showSnackBar(
+        copiedPhotoPaths.length == 1
+            ? 'התמונה ששותפה נוספה לטופס. יש לשמור כדי $saveActionText את איש הקשר'
+            : '${copiedPhotoPaths.length} תמונות ששותפו נוספו לטופס. יש לשמור כדי $saveActionText את איש הקשר',
+      );
+    } catch (_) {
+      if (mounted) {
+        _showSnackBar('לא הצלחנו להוסיף את התמונה ששותפה');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isImportingIncomingPhotos = false;
+        });
+      } else {
+        _isImportingIncomingPhotos = false;
+      }
+    }
+  }
+
+  String _extensionForPath(String path) {
+    final String fileName = path.split(RegExp(r'[\\/]')).last;
+    final int dotIndex = fileName.lastIndexOf('.');
+    if (dotIndex < 0 || dotIndex == fileName.length - 1) {
+      return '.jpg';
+    }
+
+    final String extension = fileName.substring(dotIndex).toLowerCase();
+    return RegExp(r'^\.[a-z0-9]{1,5}$').hasMatch(extension)
+        ? extension
+        : '.jpg';
   }
 
   void _setPrimaryPhoto(int index) {

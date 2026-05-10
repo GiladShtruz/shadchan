@@ -12,6 +12,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/match_suggestion_flow.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -208,7 +209,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
     }
 
     if (_tableView) {
-      return _PeopleTable(people: visiblePeople);
+      return _PeopleTable(
+        people: visiblePeople,
+        onOpenMatches: (Person person) =>
+            _openMatchSuggestions(context, person),
+      );
     }
 
     return ListView.builder(
@@ -255,6 +260,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
                     Icon(Icons.star, color: theme.colorScheme.secondary),
                   IconButton(
                     visualDensity: VisualDensity.compact,
+                    tooltip: 'התאמות',
+                    icon: Icon(
+                      Icons.favorite_outline,
+                      color: theme.colorScheme.primary,
+                    ),
+                    onPressed: () => _openMatchSuggestions(context, person),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
                     tooltip: hasPhone ? 'וואטסאפ' : 'אין מספר טלפון תקין',
                     icon: FaIcon(
                       FontAwesomeIcons.whatsapp,
@@ -276,6 +290,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
         );
       },
     );
+  }
+
+  Future<void> _openMatchSuggestions(
+    BuildContext context,
+    Person person,
+  ) async {
+    await MatchSuggestionFlow.open(context, sourcePerson: person);
   }
 
   Future<void> _openWhatsApp(BuildContext context, Person person) async {
@@ -627,6 +648,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.favorite_outline),
+                title: const Text('התאמות'),
+                onTap: () {
+                  Navigator.of(bottomSheetContext).pop();
+                  _openMatchSuggestions(context, person);
+                },
+              ),
               ListTile(
                 leading: Icon(
                   person.isFavorite ? Icons.star_outline : Icons.star,
@@ -1088,9 +1117,10 @@ class _PeopleFilterState {
 }
 
 class _PeopleTable extends StatefulWidget {
-  const _PeopleTable({required this.people});
+  const _PeopleTable({required this.people, required this.onOpenMatches});
 
   final List<Person> people;
+  final ValueChanged<Person> onOpenMatches;
 
   @override
   State<_PeopleTable> createState() => _PeopleTableState();
@@ -1140,9 +1170,15 @@ class _PeopleTableState extends State<_PeopleTable> {
   static const double _ageWidth = 50;
   static const double _religiousWidth = 110;
   static const double _statusWidth = 60;
+  static const double _actionsWidth = 48;
   static const double _rowHeight = 48;
   static const double _tableWidth =
-      _nameWidth + _genderWidth + _ageWidth + _religiousWidth + _statusWidth;
+      _nameWidth +
+      _genderWidth +
+      _ageWidth +
+      _religiousWidth +
+      _statusWidth +
+      _actionsWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1290,6 +1326,7 @@ class _PeopleTableState extends State<_PeopleTable> {
               onTap: _openProfileStatusFilter,
             ),
           ),
+          const SizedBox(width: _actionsWidth),
         ],
       ),
     );
@@ -1364,6 +1401,18 @@ class _PeopleTableState extends State<_PeopleTable> {
                   style: const TextStyle(fontSize: 20),
                 ),
               ),
+            ),
+          ),
+          SizedBox(
+            width: _actionsWidth,
+            child: IconButton(
+              tooltip: 'התאמות',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                Icons.favorite_outline,
+                color: theme.colorScheme.primary,
+              ),
+              onPressed: () => widget.onOpenMatches(person),
             ),
           ),
         ],
@@ -1669,17 +1718,27 @@ class _TableFilterHeader extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(label, style: TextStyle(color: color)),
-            const SizedBox(width: 4),
-            Icon(
-              isActive ? Icons.filter_alt : Icons.filter_alt_outlined,
-              size: 16,
-              color: color,
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: color),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  isActive ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  size: 14,
+                  color: color,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

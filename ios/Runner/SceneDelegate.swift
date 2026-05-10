@@ -11,9 +11,12 @@ class SceneDelegate: FlutterSceneDelegate {
     IncomingBackupFileBridge.shared.configure(
       with: window?.rootViewController as? FlutterViewController
     )
+    IncomingSharedProfileBridge.shared.configure(
+      with: window?.rootViewController as? FlutterViewController
+    )
 
     for context in connectionOptions.urlContexts {
-      IncomingBackupFileBridge.shared.handleIncomingFile(url: context.url)
+      handleIncomingURL(context.url)
     }
   }
 
@@ -22,9 +25,21 @@ class SceneDelegate: FlutterSceneDelegate {
     IncomingBackupFileBridge.shared.configure(
       with: window?.rootViewController as? FlutterViewController
     )
+    IncomingSharedProfileBridge.shared.configure(
+      with: window?.rootViewController as? FlutterViewController
+    )
 
     for context in URLContexts {
-      IncomingBackupFileBridge.shared.handleIncomingFile(url: context.url)
+      handleIncomingURL(context.url)
     }
+  }
+
+  private func handleIncomingURL(_ url: URL) {
+    if IncomingSharedProfileBridge.canHandle(url: url) {
+      IncomingSharedProfileBridge.shared.handleIncomingFile(url: url)
+      return
+    }
+
+    IncomingBackupFileBridge.shared.handleIncomingFile(url: url)
   }
 }
