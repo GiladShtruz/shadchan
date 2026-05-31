@@ -20,7 +20,7 @@ class DashboardScreen extends StatelessWidget {
 
     final List<Person> allPeople = personRepository
         .getAll()
-        .where((Person p) => !p.needsReview)
+        .where((Person p) => !p.needsReview && !p.hidden)
         .toList();
     final List<MatchIdea> allMatches = matchRepository.getAll();
 

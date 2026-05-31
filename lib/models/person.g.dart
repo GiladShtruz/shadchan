@@ -40,13 +40,14 @@ class PersonAdapter extends TypeAdapter<Person> {
       needsReview: fields[20] as bool? ?? false,
       inquiryContactName: fields[21] as String?,
       inquiryContactPhone: fields[22] as String?,
+      hidden: fields[23] as bool? ?? false,
     );
   }
 
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(23)
+      ..writeByte(24)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -92,7 +93,9 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..writeByte(21)
       ..write(obj.inquiryContactName)
       ..writeByte(22)
-      ..write(obj.inquiryContactPhone);
+      ..write(obj.inquiryContactPhone)
+      ..writeByte(23)
+      ..write(obj.hidden);
   }
 
   @override

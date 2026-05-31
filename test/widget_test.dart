@@ -12,6 +12,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 
 void main() {
   late Directory hiveDirectory;
@@ -49,7 +50,12 @@ void main() {
     await Hive.openBox<Person>('people');
     await Hive.openBox<MatchIdea>('matches');
     await Hive.openBox<MatchNote>('match_notes');
-    await Hive.openBox<dynamic>('settings');
+    final Box<dynamic> settings = await Hive.openBox<dynamic>('settings');
+
+    // Mark onboarding as completed so the app lands on the main shell instead
+    // of the welcome screen.
+    await settings.put('userName', 'בודק');
+    await settings.put('userGender', 'male');
   });
 
   tearDownAll(() async {
@@ -85,6 +91,9 @@ Widget _buildTestApp() {
       ),
       ChangeNotifierProvider<ThemeModeProvider>(
         create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<UserProfileProvider>(
+        create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
       ),
     ],
     child: const App(),

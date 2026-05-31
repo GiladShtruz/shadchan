@@ -11,6 +11,7 @@ import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +46,9 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider<ThemeModeProvider>(
           create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
+        ),
+        ChangeNotifierProvider<UserProfileProvider>(
+          create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
         ),
       ],
       child: const _DismissKeyboardOnTap(child: App()),

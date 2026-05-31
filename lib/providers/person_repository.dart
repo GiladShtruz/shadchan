@@ -61,7 +61,7 @@ class PersonRepository extends ChangeNotifier {
 
   List<Person> getPending() {
     final List<Person> people = _box.values
-        .where((Person person) => person.needsReview)
+        .where((Person person) => person.needsReview && !person.hidden)
         .toList();
     people.sort(_sortByFirstName);
     return people;
@@ -113,6 +113,10 @@ class PersonRepository extends ChangeNotifier {
         profileStatuses ?? const <ProfileStatus>[];
 
     final List<Person> people = _box.values.where((Person person) {
+      if (person.hidden) {
+        return false;
+      }
+
       if (!includePending && person.needsReview) {
         return false;
       }
@@ -184,11 +188,55 @@ class PersonRepository extends ChangeNotifier {
     return findByPhone(phone) != null;
   }
 
+  /// Phones of active (non-hidden) people. Used to decide which device
+  /// contacts are already imported. Hidden people are excluded so their device
+  /// contacts can resurface in the import list (where they appear only while
+  /// searching).
   Set<String> getNormalizedPhones() {
     return _box.values
+        .where((Person person) => !person.hidden)
         .map((Person person) => PhoneUtils.normalizeForComparison(person.phone))
         .whereType<String>()
         .toSet();
+  }
+
+  /// Phones of hidden (soft-deleted) people.
+  Set<String> getHiddenNormalizedPhones() {
+    return _box.values
+        .where((Person person) => person.hidden)
+        .map((Person person) => PhoneUtils.normalizeForComparison(person.phone))
+        .whereType<String>()
+        .toSet();
+  }
+
+  Future<void> setHidden(String id, bool hidden) async {
+    final Person? person = getById(id);
+    if (person == null || person.hidden == hidden) {
+      return;
+    }
+
+    person.hidden = hidden;
+    person.updatedAt = DateTime.now();
+    await person.save();
+    notifyListeners();
+    _refreshBirthdayNotificationsInBackground();
+  }
+
+  /// Restores a previously hidden person back into the import queue so the user
+  /// can fill in their details again. Returns the restored person.
+  Future<Person?> restoreHidden(String id) async {
+    final Person? person = getById(id);
+    if (person == null) {
+      return null;
+    }
+
+    person.hidden = false;
+    person.needsReview = true;
+    person.updatedAt = DateTime.now();
+    await person.save();
+    notifyListeners();
+    _refreshBirthdayNotificationsInBackground();
+    return person;
   }
 
   Future<void> add(Person person) async {

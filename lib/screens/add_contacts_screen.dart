@@ -16,6 +16,27 @@ class AddContactsScreen extends StatefulWidget {
 class _AddContactsScreenState extends State<AddContactsScreen> {
   _AddContactsMode _mode = _AddContactsMode.swipe;
   bool _listMounted = false;
+  int _swipeAddedCount = 0;
+
+  bool get _shouldCelebrate =>
+      _mode == _AddContactsMode.swipe && _swipeAddedCount > 1;
+
+  Future<void> _handleLeave() async {
+    if (_shouldCelebrate) {
+      await _BravoCelebration.show(context, _swipeAddedCount);
+      if (!mounted) {
+        return;
+      }
+      context.go('/home');
+      return;
+    }
+
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,9 +54,22 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
         ? theme.colorScheme.onSurface
         : AppColors.primaryDark;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        _handleLeave();
+      },
+      child: Scaffold(
       appBar: AppBar(
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_forward),
+          tooltip: 'חזרה',
+          onPressed: _handleLeave,
+        ),
         title: const Text('הוספת אנשי קשר'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
@@ -122,10 +156,114 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
         child: IndexedStack(
           index: _mode == _AddContactsMode.list ? 1 : 0,
           children: <Widget>[
-            const SwipeImportScreen(embedded: true),
+            SwipeImportScreen(
+              embedded: true,
+              onAddedCountChanged: (int count) {
+                setState(() => _swipeAddedCount = count);
+              },
+            ),
             _listMounted
                 ? const ImportContactsScreen(embedded: true)
                 : const SizedBox.shrink(),
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+}
+
+/// A celebratory animated dialog shown after the user adds several contacts in
+/// the swipe view, before returning to the home screen.
+class _BravoCelebration extends StatefulWidget {
+  const _BravoCelebration({required this.count});
+
+  final int count;
+
+  static Future<void> show(BuildContext context, int count) {
+    return showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'בראבו',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 450),
+      pageBuilder: (_, _, _) => _BravoCelebration(count: count),
+      transitionBuilder: (_, Animation<double> animation, _, Widget child) {
+        final Animation<double> curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+        );
+        return Transform.scale(
+          scale: curved.value,
+          child: Opacity(opacity: animation.value.clamp(0.0, 1.0), child: child),
+        );
+      },
+    );
+  }
+
+  @override
+  State<_BravoCelebration> createState() => _BravoCelebrationState();
+}
+
+class _BravoCelebrationState extends State<_BravoCelebration> {
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.elasticOut,
+              builder: (BuildContext context, double value, Widget? child) {
+                return Transform.scale(
+                  scale: value,
+                  child: Transform.rotate(
+                    angle: (1 - value) * 0.6,
+                    child: child,
+                  ),
+                );
+              },
+              child: const Text('🎉', style: TextStyle(fontSize: 72)),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'בראבו!',
+              style: theme.textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'הוספת ${widget.count} חברים חדשים למאגר שלך!',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'עדכן את הפרטים שלהם במסך הבית.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('מעולה!'),
+              ),
+            ),
           ],
         ),
       ),

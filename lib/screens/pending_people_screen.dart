@@ -55,9 +55,9 @@ class _PendingPeopleScreenState extends State<PendingPeopleScreen> {
         actions: <Widget>[
           if (person != null)
             TextButton.icon(
-              onPressed: () => context.push('/people/${person.id}'),
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('לכרטיס המלא'),
+              onPressed: () => context.push('/people/${person.id}/edit'),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('עריכה מלאה'),
             ),
         ],
       ),
@@ -190,6 +190,9 @@ class _PendingPeopleScreenState extends State<PendingPeopleScreen> {
       if (!mounted) {
         return;
       }
+
+      // Clearing the editing id lets the next pending person populate the form.
+      _editingPersonId = null;
 
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()

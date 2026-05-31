@@ -10,9 +10,16 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 
 class SwipeImportScreen extends StatefulWidget {
-  const SwipeImportScreen({super.key, this.embedded = false});
+  const SwipeImportScreen({
+    super.key,
+    this.embedded = false,
+    this.onAddedCountChanged,
+  });
 
   final bool embedded;
+
+  /// Called whenever the number of contacts accepted in this session changes.
+  final ValueChanged<int>? onAddedCountChanged;
 
   @override
   State<SwipeImportScreen> createState() => _SwipeImportScreenState();
@@ -227,6 +234,11 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       _addedCount++;
       _remaining = (_remaining - 1).clamp(0, _candidates.length);
     });
+    _notifyAddedCount();
+  }
+
+  void _notifyAddedCount() {
+    widget.onAddedCountChanged?.call(_addedCount);
   }
 
   Future<void> _importAcceptedCandidate(
@@ -263,6 +275,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       entry.importedCounted = false;
       _addedCount = (_addedCount - 1).clamp(0, _candidates.length);
     });
+    _notifyAddedCount();
   }
 
   void _undoAccept(_SwipeHistoryEntry entry) {
@@ -280,6 +293,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       _remaining = (_remaining + 1).clamp(0, _candidates.length);
       _isFinished = false;
     });
+    _notifyAddedCount();
   }
 
   void _handleReject(ContactImportCandidate candidate) {

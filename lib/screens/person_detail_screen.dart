@@ -362,6 +362,30 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                         }
                       },
               ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'הסרה מהמאגר',
+                onPressed: () async {
+                  final bool shouldHide = await ConfirmDialog.show(
+                    context,
+                    title: 'להסיר מהמאגר?',
+                    message:
+                        'האם להסיר את ${person.fullName.trim()} מהמאגר? '
+                        'הוא לא יופיע ברשימות ובהחלקות, אך עדיין ניתן יהיה '
+                        'למצוא אותו בחיפוש ולהחזיר אותו.',
+                    confirmText: 'הסרה',
+                    isDestructive: true,
+                  );
+                  if (!shouldHide) {
+                    return;
+                  }
+
+                  await personRepository.setHidden(person.id, true);
+                  if (context.mounted) {
+                    context.go('/home');
+                  }
+                },
+              ),
               PopupMenuButton<String>(
                 onSelected: (String value) async {
                   if (value != 'delete') {
@@ -385,7 +409,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                   return const <PopupMenuEntry<String>>[
                     PopupMenuItem<String>(
                       value: 'delete',
-                      child: Text('מחיקה'),
+                      child: Text('מחיקה לצמיתות'),
                     ),
                   ];
                 },

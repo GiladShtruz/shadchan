@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/add_contacts_screen.dart';
+import 'package:shadchan/screens/onboarding_screen.dart';
 import 'package:shadchan/screens/create_match_screen.dart';
 import 'package:shadchan/screens/incoming_shared_profile_screen.dart';
 import 'package:shadchan/screens/match_detail_screen.dart';
@@ -10,6 +13,7 @@ import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
 import 'package:shadchan/screens/dashboard_screen.dart';
+import 'package:shadchan/screens/home_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/settings_screen.dart';
 import 'package:shadchan/screens/whatsapp_message_settings_screen.dart';
@@ -40,15 +44,31 @@ PeopleSortOption _parsePeopleSort(String? raw) {
 
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
-    initialLocation: '/people',
+    initialLocation: '/home',
     redirect: (BuildContext context, GoRouterState state) {
+      final bool isOnboarded = context.read<UserProfileProvider>().isOnboarded;
+      final bool atWelcome = state.uri.path == '/welcome';
+
+      if (!isOnboarded) {
+        return atWelcome ? null : '/welcome';
+      }
+      if (atWelcome) {
+        return '/home';
+      }
+
       final String location = state.uri.toString();
       if (location.startsWith('/') && !location.startsWith('//')) {
         return null;
       }
-      return '/people';
+      return '/home';
     },
     routes: <RouteBase>[
+      GoRoute(
+        path: '/welcome',
+        builder: (BuildContext context, GoRouterState state) {
+          return const OnboardingScreen();
+        },
+      ),
       StatefulShellRoute.indexedStack(
         builder:
             (
@@ -59,6 +79,16 @@ abstract final class AppRouter {
               return _AppShell(navigationShell: navigationShell);
             },
         branches: <StatefulShellBranch>[
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/home',
+                builder: (BuildContext context, GoRouterState state) {
+                  return const HomeScreen();
+                },
+              ),
+            ],
+          ),
           StatefulShellBranch(
             routes: <RouteBase>[
               GoRoute(
@@ -254,6 +284,11 @@ class _AppShell extends StatelessWidget {
           );
         },
         items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'בית',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.people_outlined),
             activeIcon: Icon(Icons.people),

@@ -97,7 +97,7 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
     final List<Person> people = personRepository.getAll().where((
       Person person,
     ) {
-      if (person.needsReview) {
+      if (person.needsReview || person.hidden) {
         return false;
       }
 

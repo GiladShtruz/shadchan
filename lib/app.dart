@@ -54,8 +54,8 @@ class _ExitThroughPeopleBackButtonDispatcher extends RootBackButtonDispatcher {
     }
 
     final String currentPath = router.routeInformationProvider.value.uri.path;
-    if (currentPath != '/people') {
-      router.go('/people');
+    if (currentPath != '/home') {
+      router.go('/home');
       return Future<bool>.value(true);
     }
 

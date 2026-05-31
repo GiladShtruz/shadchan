@@ -143,10 +143,12 @@ abstract final class ContactsImportService {
     }
 
     final Set<String> existingPhones = personRepository.getNormalizedPhones();
+    final Set<String> hiddenPhones =
+        personRepository.getHiddenNormalizedPhones();
     final List<ContactImportCandidate> candidates = rawCandidates
         .map(
           (Object? rawCandidate) =>
-              _candidateFromCache(rawCandidate, existingPhones),
+              _candidateFromCache(rawCandidate, existingPhones, hiddenPhones),
         )
         .whereType<ContactImportCandidate>()
         .toList();
@@ -160,6 +162,8 @@ abstract final class ContactsImportService {
     void Function(ContactImportLoadProgress progress)? onProgress,
   }) async {
     final Set<String> existingPhones = personRepository.getNormalizedPhones();
+    final Set<String> hiddenPhones =
+        personRepository.getHiddenNormalizedPhones();
     final List<Contact> contacts = await FlutterContacts.getAll(
       properties: <ContactProperty>{
         ContactProperty.name,
@@ -175,6 +179,7 @@ abstract final class ContactsImportService {
         displayName: _resolveDisplayName(contact),
         phones: contact.phones.map((Phone phone) => phone.number).toList(),
         existingPhones: existingPhones,
+        hiddenPhones: hiddenPhones,
       );
 
       if (candidate != null && !candidate.alreadyExists) {
@@ -203,6 +208,7 @@ abstract final class ContactsImportService {
     required String displayName,
     required List<String> phones,
     required Set<String> existingPhones,
+    Set<String> hiddenPhones = const <String>{},
   }) {
     final String trimmedName = displayName.trim();
     if (trimmedName.isEmpty) {
@@ -245,7 +251,9 @@ abstract final class ContactsImportService {
       normalizedPhone: normalizedPhone,
       alreadyExists: existingPhones.contains(normalizedPhone),
       hasAdditionalPhones: cleanedPhones.length > 1,
-      isFilteredByName: isFilteredByName(trimmedName),
+      isFilteredByName:
+          isFilteredByName(trimmedName) ||
+          hiddenPhones.contains(normalizedPhone),
     );
   }
 
@@ -298,7 +306,11 @@ abstract final class ContactsImportService {
     Gender gender = Gender.unknown,
     String source = 'סריקה',
   }) async {
-    if (personRepository.containsPhone(candidate.phone)) {
+    final Person? existing = personRepository.findByPhone(candidate.phone);
+    if (existing != null) {
+      if (existing.hidden) {
+        return personRepository.restoreHidden(existing.id);
+      }
       return null;
     }
 
@@ -334,9 +346,20 @@ abstract final class ContactsImportService {
     for (final ContactImportSelection selection in selections) {
       final ContactImportCandidate candidate = selection.candidate;
       final String normalizedPhone = candidate.normalizedPhone;
-      if (personRepository.containsPhone(candidate.phone) ||
-          importedPhones.contains(normalizedPhone)) {
+      if (importedPhones.contains(normalizedPhone)) {
         skippedExistingCount++;
+        continue;
+      }
+
+      final Person? existing = personRepository.findByPhone(candidate.phone);
+      if (existing != null) {
+        importedPhones.add(normalizedPhone);
+        if (existing.hidden) {
+          await personRepository.restoreHidden(existing.id);
+          addedCount++;
+        } else {
+          skippedExistingCount++;
+        }
         continue;
       }
 
@@ -435,6 +458,7 @@ abstract final class ContactsImportService {
   static ContactImportCandidate? _candidateFromCache(
     Object? rawCandidate,
     Set<String> existingPhones,
+    Set<String> hiddenPhones,
   ) {
     if (rawCandidate is! Map) {
       return null;
@@ -459,7 +483,9 @@ abstract final class ContactsImportService {
       normalizedPhone: normalizedPhone,
       alreadyExists: false,
       hasAdditionalPhones: rawCandidate['hasAdditionalPhones'] == true,
-      isFilteredByName: rawCandidate['isFilteredByName'] == true,
+      isFilteredByName:
+          rawCandidate['isFilteredByName'] == true ||
+          hiddenPhones.contains(normalizedPhone),
     );
   }
 }

@@ -1,7 +1,7 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.12+13
+version: 1.0.13+14
 
 environment:
   sdk: ^3.11.0
@@ -31,6 +31,7 @@ dependencies:
   flutter_contacts: ^2.0.2
   kosher_dart: ^2.0.16
   flutter_card_swiper: ^7.0.2
+  flutter_slidable: ^4.0.0
   font_awesome_flutter: ^11.0.0
   excel: ^4.0.6
   archive: ^3.6.1
