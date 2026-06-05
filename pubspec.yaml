@@ -60,3 +60,5 @@ flutter_native_splash:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon3.png

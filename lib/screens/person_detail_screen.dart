@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -25,7 +24,6 @@ import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
-import 'package:shadchan/dialogs/match_suggestion_flow.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/dialogs/photo_viewer.dart';
@@ -329,16 +327,25 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
         if (mounted) navigator.pop();
       },
       child: DefaultTabController(
-        length: 4,
+        length: 2,
         child: Scaffold(
+          backgroundColor: _profileCanvasColor(theme),
           appBar: AppBar(
-            title: Text(
-              person.fullName.trim(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            backgroundColor: _profileCanvasColor(theme),
+            foregroundColor: _profileTextColor(theme),
+
             centerTitle: true,
             actions: <Widget>[
+              IconButton(
+                icon: const FaIcon(FontAwesomeIcons.whatsapp),
+                tooltip: 'וואטסאפ',
+                onPressed: () => _openWhatsAppMessage(context, person),
+              ),
+              IconButton(
+                icon: const Icon(Icons.share_outlined),
+                tooltip: 'שיתוף',
+                onPressed: () => _sharePerson(context, person),
+              ),
               IconButton(
                 icon: _showInlineEdit
                     ? _isSavingEdit
@@ -362,30 +369,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                         }
                       },
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'הסרה מהמאגר',
-                onPressed: () async {
-                  final bool shouldHide = await ConfirmDialog.show(
-                    context,
-                    title: 'להסיר מהמאגר?',
-                    message:
-                        'האם להסיר את ${person.fullName.trim()} מהמאגר? '
-                        'הוא לא יופיע ברשימות ובהחלקות, אך עדיין ניתן יהיה '
-                        'למצוא אותו בחיפוש ולהחזיר אותו.',
-                    confirmText: 'הסרה',
-                    isDestructive: true,
-                  );
-                  if (!shouldHide) {
-                    return;
-                  }
 
-                  await personRepository.setHidden(person.id, true);
-                  if (context.mounted) {
-                    context.go('/home');
-                  }
-                },
-              ),
               PopupMenuButton<String>(
                 onSelected: (String value) async {
                   if (value != 'delete') {
@@ -409,51 +393,58 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                   return const <PopupMenuEntry<String>>[
                     PopupMenuItem<String>(
                       value: 'delete',
-                      child: Text('מחיקה לצמיתות'),
+                      child: Text('מחיקת כרטיס'),
                     ),
                   ];
                 },
               ),
             ],
           ),
-          body: Column(
-            children: <Widget>[
-              _ProfileSummaryHeader(
-                person: person,
-                onEditPressed: () => setState(() {
-                  _showInlineEdit = true;
-                }),
-                onStatusChanged: (ProfileStatus status) =>
-                    personRepository.updateProfileStatus(person.id, status),
-                onSharePressed: () => _sharePerson(context, person),
-                onWhatsAppPressed: () => _openWhatsAppMessage(context, person),
-                onMatchesPressed: () => _openMatchProposal(context, person),
-                favoriteButton: _FavoriteToggleButton(
-                  isFavorite: person.isFavorite,
-                  onPressed: () => personRepository.toggleFavorite(person.id),
-                  activeColor: colorScheme.secondary,
-                  inactiveColor: colorScheme.onSurfaceVariant,
+          body: NestedScrollView(
+            headerSliverBuilder:
+                (BuildContext context, bool innerBoxIsScrolled) => <Widget>[
+              SliverToBoxAdapter(
+                child: _ProfileSummaryHeader(
+                  person: person,
+                  onStatusChanged: (ProfileStatus status) =>
+                      personRepository.updateProfileStatus(person.id, status),
                 ),
               ),
-              _PersonNotesButton(
-                noteCount: personNotesCount,
-                onPressed: () => _openPersonNotes(context, person),
-              ),
-              Material(
-                color: theme.colorScheme.surface,
-                child: const TabBar(
-                  isScrollable: true,
-                  tabs: <Widget>[
-                    Tab(text: 'כרטיס לתצוגה'),
-                    Tab(text: 'התאמות'),
-                    Tab(text: 'רעיונות פתוחים'),
-                    Tab(text: 'רעיונות שנשללו'),
-                  ],
+              SliverToBoxAdapter(
+                child: _PersonNotesButton(
+                  noteCount: personNotesCount,
+                  onPressed: () => _openPersonNotes(context, person),
                 ),
               ),
-              Expanded(
-                child: TabBarView(
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _PinnedTabBarDelegate(
+                  backgroundColor: _profileCanvasColor(theme),
+                  tabBar: const TabBar(
+                    dividerColor: Colors.transparent,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    tabs: <Widget>[
+                      Tab(text: 'התאמות'),
+                      Tab(text: 'כרטיס'),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            body: TabBarView(
                   children: <Widget>[
+                    _SuggestedMatchesTab(
+                      sourcePerson: person,
+                      suggestedPeople: suggestedPeople,
+                      matchRepository: matchRepository,
+                      hasCustomFilters: savedSuggestionFilters != null,
+                      onFilterPressed: () =>
+                          _openSuggestionFilters(context, person),
+                      onAccept: (Person candidate) =>
+                          _acceptSuggestion(context, person, candidate),
+                      onReject: (Person candidate) =>
+                          _rejectSuggestion(context, person, candidate),
+                    ),
                     _ProfileCardTab(
                       person: person,
                       showInlineEdit: _showInlineEdit,
@@ -470,44 +461,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                       onDescriptionChanged: _handleInlineFieldChanged,
                       onSaveDescription: () => _saveInlineEdit(person),
                       editForm: _buildInlineEditForm(person),
-                      detailsSection: _PersonExtraDetailsSection(
-                        birthdayMessage: _birthdayMessage(person, theme),
-                        inquiryContactText: _inquiryContactText(person),
-                        createdAt: AppDateUtils.formatDate(person.createdAt),
-                        updatedAt: AppDateUtils.timeAgo(person.updatedAt),
-                      ),
-                    ),
-                    _SuggestedMatchesTab(
-                      sourcePerson: person,
-                      suggestedPeople: suggestedPeople,
-                      matchRepository: matchRepository,
-                      hasCustomFilters: savedSuggestionFilters != null,
-                      onFilterPressed: () =>
-                          _openSuggestionFilters(context, person),
-                      onOpenCandidate: (Person candidate) =>
-                          _showSuggestedCandidateActions(
-                            context,
-                            person,
-                            candidate,
-                          ),
-                    ),
-                    _MatchesTab(
-                      person: person,
-                      matches: openMatches,
+
                       personRepository: personRepository,
-                      emptyText: 'אין רעיונות פתוחים עדיין',
+                      openMatches: openMatches,
+                      rejectedMatches: rejectedMatches,
                     ),
-                    _MatchesTab(
-                      person: person,
-                      matches: rejectedMatches,
-                      personRepository: personRepository,
-                      emptyText: 'אין רעיונות שנשללו',
-                    ),
+
                   ],
                 ),
               ),
-            ],
-          ),
         ),
       ),
     );
@@ -675,31 +637,60 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     }
   }
 
-  Future<void> _showSuggestedCandidateActions(
+  Future<void> _acceptSuggestion(
     BuildContext context,
     Person sourcePerson,
     Person candidate,
   ) async {
-    final _SuggestedCandidateAction? action =
-        await showModalBottomSheet<_SuggestedCandidateAction>(
-          context: context,
-          showDragHandle: true,
-          builder: (BuildContext context) {
-            return _SuggestedCandidateActionSheet(candidate: candidate);
-          },
-        );
-
-    if (action == null || !context.mounted) {
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'פתיחת הצעה',
+      message:
+          'האם לפתוח הצעה בין ${sourcePerson.fullName.trim()} '
+          'ל${candidate.fullName.trim()}?',
+      confirmText: 'פתיחה',
+    );
+    if (!confirmed || !context.mounted) {
       return;
     }
 
-    switch (action) {
-      case _SuggestedCandidateAction.viewProfile:
-        context.push('/people/${candidate.id}');
-        break;
-      case _SuggestedCandidateAction.openMatch:
-        await _openSuggestedCandidate(context, sourcePerson, candidate);
-        break;
+    await _openSuggestedCandidate(context, sourcePerson, candidate);
+  }
+
+  Future<void> _rejectSuggestion(
+    BuildContext context,
+    Person sourcePerson,
+    Person candidate,
+  ) async {
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'לא מתאים?',
+      message: 'בטוח שזה לא מתאים?',
+      confirmText: 'לא מתאים',
+      isDestructive: true,
+    );
+    if (!confirmed || !context.mounted) {
+      return;
+    }
+
+    final Person male = sourcePerson.gender == Gender.male
+        ? sourcePerson
+        : candidate;
+    final Person female = sourcePerson.gender == Gender.female
+        ? sourcePerson
+        : candidate;
+
+    final MatchRepository matchRepository = context.read<MatchRepository>();
+    final MatchIdea? match =
+        matchRepository.findExisting(male.id, female.id) ??
+        await matchRepository.create(male.id, female.id);
+
+    if (match != null) {
+      await matchRepository.updateStatus(match.id, MatchStatus.rejected);
+    }
+
+    if (context.mounted) {
+      _showSnackBar(context, 'ההצעה סומנה כלא מתאימה');
     }
   }
 
@@ -1295,25 +1286,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     );
   }
 
-  Future<void> _openMatchProposal(
-    BuildContext context,
-    Person currentPerson,
-  ) async {
-    final bool saved = await _saveInlineEdit(
-      currentPerson,
-      showSnackBar: false,
-    );
-    if (!saved || !context.mounted) {
-      return;
-    }
-
-    final Person personForProposal =
-        context.read<PersonRepository>().getById(currentPerson.id) ??
-        currentPerson;
-
-    await MatchSuggestionFlow.open(context, sourcePerson: personForProposal);
-  }
-
   Future<void> _openPersonNotes(BuildContext context, Person person) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -1438,6 +1410,87 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
 }
 
 enum _BirthDateCalendar { gregorian, hebrew }
+
+class _PinnedTabBarDelegate extends SliverPersistentHeaderDelegate {
+  _PinnedTabBarDelegate({required this.tabBar, required this.backgroundColor});
+
+  final TabBar tabBar;
+  final Color backgroundColor;
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Material(color: backgroundColor, child: tabBar);
+  }
+
+  @override
+  bool shouldRebuild(_PinnedTabBarDelegate oldDelegate) {
+    return tabBar != oldDelegate.tabBar ||
+        backgroundColor != oldDelegate.backgroundColor;
+  }
+}
+
+const Color _profileCanvasLight = Color(0xFFFBF7EE);
+const Color _profileSurfaceLight = Color(0xFFFFFFFF);
+const Color _profileSurfaceWarmLight = Color(0xFFF6F2E9);
+const Color _profileBlushLight = Color(0xFFF3DBDD);
+const Color _profileGoldLight = Color(0xFFF2E5C2);
+const Color _profileTextLight = Color(0xFF1B1916);
+const Color _profileMutedLight = Color(0xFF7B746A);
+const Color _profileGoldTextLight = Color(0xFF79571B);
+
+Color _profileCanvasColor(ThemeData theme) {
+  return theme.brightness == Brightness.dark
+      ? theme.scaffoldBackgroundColor
+      : _profileCanvasLight;
+}
+
+Color _profileSurfaceColor(ThemeData theme) {
+  return theme.brightness == Brightness.dark
+      ? theme.colorScheme.surface
+      : _profileSurfaceLight;
+}
+
+Color _profileWarmSurfaceColor(ThemeData theme) {
+  return theme.brightness == Brightness.dark
+      ? theme.colorScheme.surfaceContainerHighest
+      : _profileSurfaceWarmLight;
+}
+
+Color _profileTextColor(ThemeData theme) {
+  return theme.brightness == Brightness.dark
+      ? theme.colorScheme.onSurface
+      : _profileTextLight;
+}
+
+Color _profileMutedColor(ThemeData theme) {
+  return theme.brightness == Brightness.dark
+      ? theme.colorScheme.onSurfaceVariant
+      : _profileMutedLight;
+}
+
+List<BoxShadow> _profileSoftShadow(ThemeData theme) {
+  if (theme.brightness == Brightness.dark) {
+    return const <BoxShadow>[];
+  }
+
+  return <BoxShadow>[
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.07),
+      blurRadius: 28,
+      offset: const Offset(0, 14),
+    ),
+  ];
+}
 
 class _InlinePersonEditForm extends StatelessWidget {
   const _InlinePersonEditForm({
@@ -1761,109 +1814,105 @@ class _InlinePersonEditForm extends StatelessWidget {
 class _ProfileSummaryHeader extends StatelessWidget {
   const _ProfileSummaryHeader({
     required this.person,
-    required this.onEditPressed,
     required this.onStatusChanged,
-    required this.onSharePressed,
-    required this.onWhatsAppPressed,
-    required this.onMatchesPressed,
-    required this.favoriteButton,
   });
 
   final Person person;
-  final VoidCallback onEditPressed;
   final ValueChanged<ProfileStatus> onStatusChanged;
-  final VoidCallback onSharePressed;
-  final VoidCallback onWhatsAppPressed;
-  final VoidCallback onMatchesPressed;
-  final Widget favoriteButton;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme colorScheme = theme.colorScheme;
+    final String summary = _personSummary(person);
 
     return Material(
-      color: colorScheme.surface,
+      color: _profileCanvasColor(theme),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-        child: Row(
-          children: <Widget>[
-            Hero(
-              tag: 'person-${person.id}',
-              child: PersonAvatar(person: person, radius: 48),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    person.fullName.trim(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          decoration: BoxDecoration(
+            color: _profileSurfaceColor(theme),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: _profileSoftShadow(theme),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Hero(
+                tag: 'person-${person.id}',
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: _profileWarmSurfaceColor(theme),
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: <Widget>[
-                      _InfoPill(
-                        icon: Icons.cake_outlined,
-                        label: person.age == null
-                            ? 'גיל לא הוזן'
-                            : 'גיל ${person.age}',
-                      ),
-                      if (person.religiousLevel != null)
-                        _InfoPill(
-                          icon: Icons.auto_awesome_outlined,
-                          label: person.religiousLevel!.displayName,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  _ProfileStatusSwitcher(
-                    status: person.profileStatus,
-                    onStatusChanged: onStatusChanged,
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: <Widget>[
-                      FilledButton.tonalIcon(
-                        onPressed: onSharePressed,
-                        icon: const Icon(Icons.share_outlined),
-                        label: const Text('שיתוף'),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: onWhatsAppPressed,
-                        icon: const FaIcon(FontAwesomeIcons.whatsapp),
-                        label: const Text('וואטסאפ'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: () {
-                          DefaultTabController.of(context).animateTo(0);
-                          onEditPressed();
-                        },
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('עריכה'),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: onMatchesPressed,
-                        icon: const Icon(Icons.favorite_outline),
-                        label: const Text('התאמות'),
-                      ),
-                      favoriteButton,
-                    ],
-                  ),
-                ],
+                  child: PersonAvatar(person: person, radius: 54),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                person.fullName.trim(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  color: _profileTextColor(theme),
+                  fontWeight: FontWeight.w800,
+                  height: 1.05,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                summary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: _profileMutedColor(theme),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _ProfileStatusSwitcher(
+                status: person.profileStatus,
+                onStatusChanged: onStatusChanged,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileSecondaryButton extends StatelessWidget {
+  const _ProfileSecondaryButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
+
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 17),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: muted,
+        side: BorderSide(color: muted.withValues(alpha: 0.22)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        textStyle: theme.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -1879,37 +1928,56 @@ class _PersonNotesButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: onPressed,
-          icon: const Icon(Icons.notes_outlined),
-          label: Row(
-            mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            color: _profileSurfaceColor(theme),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: muted.withValues(alpha: 0.16)),
+          ),
+          child: Row(
             children: <Widget>[
-              const Text('יומן הערות'),
-              if (noteCount > 0) ...<Widget>[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    noteCount.toString(),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
+              Icon(Icons.notes_outlined, color: muted, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'הערות אישיות',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-              ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.brightness == Brightness.dark
+                      ? theme.colorScheme.surfaceContainerHighest
+                      : _profileBlushLight,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  noteCount > 0 ? noteCount.toString() : 'רק לעיניך',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.brightness == Brightness.dark
+                        ? theme.colorScheme.onSurfaceVariant
+                        : Color(0xFF6E2B30),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_left, color: muted),
             ],
           ),
         ),
@@ -1947,17 +2015,21 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
     final ThemeData theme = Theme.of(context);
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
         InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(999),
           onTap: () => setState(() => _expanded = !_expanded),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
+              color: theme.brightness == Brightness.dark
+                  ? theme.colorScheme.surfaceContainerHighest
+                  : _profileWarmSurfaceColor(theme),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: _profileMutedColor(theme).withValues(alpha: 0.14),
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1965,16 +2037,17 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
                 Text(widget.status.emoji),
                 const SizedBox(width: 6),
                 Text(
-                  'סטטוס: ${widget.status.displayName}',
+                  widget.status.displayName,
                   style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(width: 4),
                 Icon(
                   _expanded ? Icons.expand_less : Icons.expand_more,
                   size: 18,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: _profileMutedColor(theme),
                 ),
               ],
             ),
@@ -1985,6 +2058,7 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
           secondChild: Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Wrap(
+              alignment: WrapAlignment.center,
               spacing: 8,
               runSpacing: 8,
               children: ProfileStatus.values
@@ -2009,38 +2083,6 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
   }
 }
 
-class _InfoPill extends StatelessWidget {
-  const _InfoPill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ProfileCardTab extends StatelessWidget {
   const _ProfileCardTab({
     required this.person,
@@ -2054,7 +2096,10 @@ class _ProfileCardTab extends StatelessWidget {
     required this.onDescriptionChanged,
     required this.onSaveDescription,
     required this.editForm,
-    required this.detailsSection,
+
+    required this.personRepository,
+    required this.openMatches,
+    required this.rejectedMatches,
   });
 
   final Person person;
@@ -2068,12 +2113,15 @@ class _ProfileCardTab extends StatelessWidget {
   final VoidCallback onDescriptionChanged;
   final VoidCallback onSaveDescription;
   final Widget editForm;
-  final Widget detailsSection;
+
+  final PersonRepository personRepository;
+  final List<MatchIdea> openMatches;
+  final List<MatchIdea> rejectedMatches;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 32),
       children: <Widget>[
         _ShareCardPreview(
           person: person,
@@ -2108,7 +2156,60 @@ class _ProfileCardTab extends StatelessWidget {
           ),
           editForm,
         ],
-        detailsSection,
+
+        if (openMatches.isNotEmpty)
+          _MatchesGroup(
+            title: 'רעיונות פתוחים',
+            person: person,
+            matches: openMatches,
+            personRepository: personRepository,
+          ),
+        if (rejectedMatches.isNotEmpty)
+          _MatchesGroup(
+            title: 'רעיונות שנשללו',
+            person: person,
+            matches: rejectedMatches,
+            personRepository: personRepository,
+          ),
+      ],
+    );
+  }
+}
+
+class _MatchesGroup extends StatelessWidget {
+  const _MatchesGroup({
+    required this.title,
+    required this.person,
+    required this.matches,
+    required this.personRepository,
+  });
+
+  final String title;
+  final Person person;
+  final List<MatchIdea> matches;
+  final PersonRepository personRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+          child: Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: _profileTextColor(theme),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        _RelatedMatchesSection(
+          person: person,
+          matches: matches,
+          personRepository: personRepository,
+        ),
       ],
     );
   }
@@ -2133,38 +2234,59 @@ class _ShareCardPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String description = (person.description ?? '').trim();
+    final Color muted = _profileMutedColor(theme);
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        color: _profileSurfaceColor(theme),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: muted.withValues(alpha: 0.14)),
+        boxShadow: _profileSoftShadow(theme),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
             child: Row(
               children: <Widget>[
                 Expanded(
                   child: Text(
-                    'כרטיס לתצוגה',
+                    'כרטיס לשליחה',
                     style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+                      color: _profileTextColor(theme),
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                TextButton.icon(
+                if (person.photosPaths.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsetsDirectional.only(end: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _profileWarmSurfaceColor(theme),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${person.photosPaths.length} תמונות',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: muted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                TextButton(
                   onPressed: onEditPressed,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('עריכה'),
+                  child: const Text('עריכה'),
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             child: _PhotosSection(
               person: person,
               onTapPhoto: onTapPhoto,
@@ -2172,27 +2294,28 @@ class _ShareCardPreview extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: OutlinedButton.icon(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+            child: _ProfileSecondaryButton(
+              label: 'הוספת תמונות',
+              icon: Icons.add_photo_alternate_outlined,
               onPressed: onAddPhotos,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: const Text('הוספת תמונות'),
             ),
           ),
-          Divider(height: 1, color: theme.colorScheme.outlineVariant),
+          Divider(height: 1, color: muted.withValues(alpha: 0.16)),
           Padding(
             padding: const EdgeInsets.all(18),
             child: description.isEmpty
                 ? Text(
                     'עדיין אין כרטיסייה לשליחה',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    style: theme.textTheme.bodyLarge?.copyWith(color: muted),
                   )
                 : Text(
                     description,
                     textAlign: TextAlign.start,
-                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.55),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: _profileTextColor(theme),
+                      height: 1.58,
+                    ),
                   ),
           ),
         ],
@@ -2201,83 +2324,15 @@ class _ShareCardPreview extends StatelessWidget {
   }
 }
 
-enum _SuggestedCandidateAction { viewProfile, openMatch }
-
-class _SuggestedCandidateActionSheet extends StatelessWidget {
-  const _SuggestedCandidateActionSheet({required this.candidate});
-
-  final Person candidate;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                PersonAvatar(person: candidate, radius: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        candidate.fullName.trim(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'מה לעשות עם ההתאמה?',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: const Icon(Icons.badge_outlined),
-              title: const Text('צפייה בכרטיס'),
-              onTap: () => Navigator.of(
-                context,
-              ).pop(_SuggestedCandidateAction.viewProfile),
-            ),
-            ListTile(
-              leading: const Icon(Icons.favorite_outline),
-              title: const Text('פתיחת הצעה'),
-              onTap: () => Navigator.of(
-                context,
-              ).pop(_SuggestedCandidateAction.openMatch),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-enum _SuggestionViewMode { list, swipe }
-
-class _SuggestedMatchesTab extends StatefulWidget {
+class _SuggestedMatchesTab extends StatelessWidget {
   const _SuggestedMatchesTab({
     required this.sourcePerson,
     required this.suggestedPeople,
     required this.matchRepository,
     required this.hasCustomFilters,
     required this.onFilterPressed,
-    required this.onOpenCandidate,
+    required this.onAccept,
+    required this.onReject,
   });
 
   final Person sourcePerson;
@@ -2285,43 +2340,17 @@ class _SuggestedMatchesTab extends StatefulWidget {
   final MatchRepository matchRepository;
   final bool hasCustomFilters;
   final VoidCallback onFilterPressed;
-  final ValueChanged<Person> onOpenCandidate;
-
-  @override
-  State<_SuggestedMatchesTab> createState() => _SuggestedMatchesTabState();
-}
-
-class _SuggestedMatchesTabState extends State<_SuggestedMatchesTab> {
-  final CardSwiperController _swipeController = CardSwiperController();
-  _SuggestionViewMode _viewMode = _SuggestionViewMode.list;
-  int _yesCount = 0;
-  int _noCount = 0;
-  bool _isSwipeFinished = false;
-  int _deckVersion = 0;
-
-  @override
-  void didUpdateWidget(covariant _SuggestedMatchesTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_suggestionIds(oldWidget.suggestedPeople) !=
-        _suggestionIds(widget.suggestedPeople)) {
-      _resetSwipeProgress();
-    }
-  }
-
-  @override
-  void dispose() {
-    _swipeController.dispose();
-    super.dispose();
-  }
+  final ValueChanged<Person> onAccept;
+  final ValueChanged<Person> onReject;
 
   @override
   Widget build(BuildContext context) {
-    if (widget.sourcePerson.gender == Gender.unknown) {
+    if (sourcePerson.gender == Gender.unknown) {
       return _SuggestionTabScaffold(
         header: _SuggestionFilterHeader(
           count: 0,
-          hasCustomFilters: widget.hasCustomFilters,
-          onFilterPressed: widget.onFilterPressed,
+          hasCustomFilters: hasCustomFilters,
+          onFilterPressed: onFilterPressed,
         ),
         child: const _TabEmptyState(
           icon: Icons.wc_outlined,
@@ -2331,17 +2360,17 @@ class _SuggestedMatchesTabState extends State<_SuggestedMatchesTab> {
       );
     }
 
-    if (widget.suggestedPeople.isEmpty) {
+    if (suggestedPeople.isEmpty) {
       return _SuggestionTabScaffold(
         header: _SuggestionFilterHeader(
           count: 0,
-          hasCustomFilters: widget.hasCustomFilters,
-          onFilterPressed: widget.onFilterPressed,
+          hasCustomFilters: hasCustomFilters,
+          onFilterPressed: onFilterPressed,
         ),
         child: _TabEmptyState(
           icon: Icons.favorite_border,
           title: 'לא נמצאו התאמות',
-          subtitle: widget.hasCustomFilters
+          subtitle: hasCustomFilters
               ? 'אפשר לשנות את הסינון ולנסות שוב'
               : 'אין כרגע אנשים שעומדים בסינון האוטומטי',
         ),
@@ -2351,133 +2380,20 @@ class _SuggestedMatchesTabState extends State<_SuggestedMatchesTab> {
     return Column(
       children: <Widget>[
         _SuggestionFilterHeader(
-          count: widget.suggestedPeople.length,
-          hasCustomFilters: widget.hasCustomFilters,
-          onFilterPressed: widget.onFilterPressed,
-        ),
-        _SuggestionViewSwitcher(
-          selectedMode: _viewMode,
-          onChanged: (Set<_SuggestionViewMode> values) {
-            final _SuggestionViewMode selected = values.first;
-            if (selected != _viewMode) {
-              setState(() => _viewMode = selected);
-            }
-          },
+          count: suggestedPeople.length,
+          hasCustomFilters: hasCustomFilters,
+          onFilterPressed: onFilterPressed,
         ),
         Expanded(
-          child: _viewMode == _SuggestionViewMode.list
-              ? _SuggestedMatchesList(
-                  sourcePerson: widget.sourcePerson,
-                  suggestedPeople: widget.suggestedPeople,
-                  matchRepository: widget.matchRepository,
-                  onOpenCandidate: widget.onOpenCandidate,
-                )
-              : _SuggestedMatchesSwipeDeck(
-                  key: ValueKey<int>(_deckVersion),
-                  sourcePerson: widget.sourcePerson,
-                  suggestedPeople: widget.suggestedPeople,
-                  matchRepository: widget.matchRepository,
-                  controller: _swipeController,
-                  yesCount: _yesCount,
-                  noCount: _noCount,
-                  isFinished: _isSwipeFinished,
-                  onOpenCandidate: widget.onOpenCandidate,
-                  onSwipe: _handleSwipe,
-                  onEnd: _handleSwipeEnd,
-                  onReset: _resetSwipeProgress,
-                ),
+          child: _SuggestedMatchesList(
+            sourcePerson: sourcePerson,
+            suggestedPeople: suggestedPeople,
+            matchRepository: matchRepository,
+            onAccept: onAccept,
+            onReject: onReject,
+          ),
         ),
       ],
-    );
-  }
-
-  bool _handleSwipe(
-    int previousIndex,
-    int? currentIndex,
-    CardSwiperDirection direction,
-  ) {
-    if (previousIndex < 0 || previousIndex >= widget.suggestedPeople.length) {
-      return false;
-    }
-
-    if (direction == CardSwiperDirection.right) {
-      final Person candidate = widget.suggestedPeople[previousIndex];
-      setState(() {
-        _yesCount++;
-        _isSwipeFinished = currentIndex == null;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          widget.onOpenCandidate(candidate);
-        }
-      });
-      return true;
-    }
-
-    if (direction == CardSwiperDirection.left) {
-      setState(() {
-        _noCount++;
-        _isSwipeFinished = currentIndex == null;
-      });
-      return true;
-    }
-
-    return false;
-  }
-
-  void _resetSwipeProgress() {
-    setState(() {
-      _yesCount = 0;
-      _noCount = 0;
-      _isSwipeFinished = false;
-      _deckVersion++;
-    });
-  }
-
-  void _handleSwipeEnd() {
-    if (!_isSwipeFinished) {
-      setState(() => _isSwipeFinished = true);
-    }
-  }
-
-  String _suggestionIds(List<Person> people) {
-    return people.map((Person person) => person.id).join('|');
-  }
-}
-
-class _SuggestionViewSwitcher extends StatelessWidget {
-  const _SuggestionViewSwitcher({
-    required this.selectedMode,
-    required this.onChanged,
-  });
-
-  final _SuggestionViewMode selectedMode;
-  final ValueChanged<Set<_SuggestionViewMode>> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: SizedBox(
-        width: double.infinity,
-        child: SegmentedButton<_SuggestionViewMode>(
-          segments: const <ButtonSegment<_SuggestionViewMode>>[
-            ButtonSegment<_SuggestionViewMode>(
-              value: _SuggestionViewMode.list,
-              icon: Icon(Icons.list_alt_outlined),
-              label: Text('רשימה'),
-            ),
-            ButtonSegment<_SuggestionViewMode>(
-              value: _SuggestionViewMode.swipe,
-              icon: Icon(Icons.swipe_outlined),
-              label: Text('החלקה'),
-            ),
-          ],
-          selected: <_SuggestionViewMode>{selectedMode},
-          showSelectedIcon: false,
-          onSelectionChanged: onChanged,
-        ),
-      ),
     );
   }
 }
@@ -2487,47 +2403,95 @@ class _SuggestedMatchesList extends StatelessWidget {
     required this.sourcePerson,
     required this.suggestedPeople,
     required this.matchRepository,
-    required this.onOpenCandidate,
+    required this.onAccept,
+    required this.onReject,
   });
 
   final Person sourcePerson;
   final List<Person> suggestedPeople;
   final MatchRepository matchRepository;
-  final ValueChanged<Person> onOpenCandidate;
+  final ValueChanged<Person> onAccept;
+  final ValueChanged<Person> onReject;
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 32),
       itemCount: suggestedPeople.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
+        final ThemeData theme = Theme.of(context);
         final Person candidate = suggestedPeople[index];
         final MatchIdea? existingMatch = matchRepository.findExisting(
           sourcePerson.id,
           candidate.id,
         );
 
-        return Card(
-          child: ListTile(
-            leading: PersonAvatar(person: candidate, radius: 24),
-            title: Text(
-              candidate.fullName.trim(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+        return Material(
+          color: _profileSurfaceColor(theme),
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            onTap: () => context.push('/people/${candidate.id}'),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: <Widget>[
+                  PersonAvatar(person: candidate, radius: 25),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          candidate.fullName.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: _profileTextColor(theme),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _personSummary(candidate),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: _profileMutedColor(theme),
+                          ),
+                        ),
+                        if (existingMatch != null) ...<Widget>[
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: _StatusChip(status: existingMatch.status),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  _SuggestionIconButton(
+                    icon: Icons.close,
+                    tooltip: 'לא מתאים',
+                    backgroundColor: theme.colorScheme.error.withValues(
+                      alpha: 0.12,
+                    ),
+                    foregroundColor: theme.colorScheme.error,
+                    onPressed: () => onReject(candidate),
+                  ),
+                  const SizedBox(width: 8),
+                  _SuggestionIconButton(
+                    icon: Icons.add,
+                    tooltip: 'פתיחת הצעה',
+                    backgroundColor: _profileGoldLight,
+                    foregroundColor: _profileGoldTextLight,
+                    onPressed: () => onAccept(candidate),
+                  ),
+                ],
+              ),
             ),
-            subtitle: Text(
-              _personSummary(candidate),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: existingMatch == null
-                ? Icon(
-                    Icons.add_circle_outline,
-                    color: Theme.of(context).colorScheme.primary,
-                  )
-                : _StatusChip(status: existingMatch.status),
-            onTap: () => onOpenCandidate(candidate),
           ),
         );
       },
@@ -2535,301 +2499,35 @@ class _SuggestedMatchesList extends StatelessWidget {
   }
 }
 
-class _SuggestedMatchesSwipeDeck extends StatelessWidget {
-  const _SuggestedMatchesSwipeDeck({
-    super.key,
-    required this.sourcePerson,
-    required this.suggestedPeople,
-    required this.matchRepository,
-    required this.controller,
-    required this.yesCount,
-    required this.noCount,
-    required this.isFinished,
-    required this.onOpenCandidate,
-    required this.onSwipe,
-    required this.onEnd,
-    required this.onReset,
-  });
-
-  final Person sourcePerson;
-  final List<Person> suggestedPeople;
-  final MatchRepository matchRepository;
-  final CardSwiperController controller;
-  final int yesCount;
-  final int noCount;
-  final bool isFinished;
-  final ValueChanged<Person> onOpenCandidate;
-  final CardSwiperOnSwipe onSwipe;
-  final VoidCallback onEnd;
-  final VoidCallback onReset;
-
-  @override
-  Widget build(BuildContext context) {
-    if (isFinished) {
-      return _SuggestedSwipeSummary(
-        yesCount: yesCount,
-        noCount: noCount,
-        onReset: onReset,
-      );
-    }
-
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: _SuggestedSwipeCounter(
-            yesCount: yesCount,
-            noCount: noCount,
-            total: suggestedPeople.length,
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: CardSwiper(
-              controller: controller,
-              cardsCount: suggestedPeople.length,
-              numberOfCardsDisplayed: suggestedPeople.length >= 3
-                  ? 3
-                  : suggestedPeople.length,
-              allowedSwipeDirection: const AllowedSwipeDirection.symmetric(
-                horizontal: true,
-              ),
-              onSwipe: onSwipe,
-              onEnd: onEnd,
-              cardBuilder:
-                  (
-                    BuildContext context,
-                    int index,
-                    int percentThresholdX,
-                    int percentThresholdY,
-                  ) {
-                    final Person candidate = suggestedPeople[index];
-                    final MatchIdea? existingMatch = matchRepository
-                        .findExisting(sourcePerson.id, candidate.id);
-                    return _SuggestedMatchSwipeCard(
-                      candidate: candidate,
-                      existingMatch: existingMatch,
-                      onTap: () => onOpenCandidate(candidate),
-                    );
-                  },
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => controller.swipe(CardSwiperDirection.left),
-                  icon: const Icon(Icons.close),
-                  label: const Text('לא'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => controller.swipe(CardSwiperDirection.right),
-                  icon: const Icon(Icons.favorite_outline),
-                  label: const Text('כן'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SuggestedSwipeCounter extends StatelessWidget {
-  const _SuggestedSwipeCounter({
-    required this.yesCount,
-    required this.noCount,
-    required this.total,
-  });
-
-  final int yesCount;
-  final int noCount;
-  final int total;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final int reviewed = (yesCount + noCount).clamp(0, total);
-    return Row(
-      children: <Widget>[
-        Text('$reviewed / $total', style: theme.textTheme.titleSmall),
-        const Spacer(),
-        _SwipeCountPill(
-          icon: Icons.favorite_outline,
-          label: yesCount.toString(),
-          color: theme.colorScheme.primary,
-        ),
-        const SizedBox(width: 8),
-        _SwipeCountPill(
-          icon: Icons.close,
-          label: noCount.toString(),
-          color: theme.colorScheme.error,
-        ),
-      ],
-    );
-  }
-}
-
-class _SwipeCountPill extends StatelessWidget {
-  const _SwipeCountPill({
+class _SuggestionIconButton extends StatelessWidget {
+  const _SuggestionIconButton({
     required this.icon,
-    required this.label,
-    required this.color,
+    required this.tooltip,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.onPressed,
   });
 
   final IconData icon;
-  final String label;
-  final Color color;
+  final String tooltip;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: color),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SuggestedSwipeSummary extends StatelessWidget {
-  const _SuggestedSwipeSummary({
-    required this.yesCount,
-    required this.noCount,
-    required this.onReset,
-  });
-
-  final int yesCount;
-  final int noCount;
-  final VoidCallback onReset;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.check_circle_outline,
-              size: 72,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(height: 16),
-            Text('סיימת לעבור על ההתאמות', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              'כן $yesCount · לא $noCount',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: onReset,
-              icon: const Icon(Icons.refresh),
-              label: const Text('התחלה מחדש'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SuggestedMatchSwipeCard extends StatelessWidget {
-  const _SuggestedMatchSwipeCard({
-    required this.candidate,
-    required this.existingMatch,
-    required this.onTap,
-  });
-
-  final Person candidate;
-  final MatchIdea? existingMatch;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String description = (candidate.description ?? '').trim();
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(
-                child: Center(
-                  child: PersonAvatar(person: candidate, radius: 72),
-                ),
-              ),
-              Text(
-                candidate.fullName.trim(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _personSummary(candidate),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (description.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 16),
-                Text(
-                  description,
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.center,
-                child: existingMatch == null
-                    ? _InfoPill(
-                        icon: Icons.add_circle_outline,
-                        label: 'אין הצעה פתוחה',
-                      )
-                    : _StatusChip(status: existingMatch!.status),
-              ),
-            ],
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: backgroundColor,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(icon, color: foregroundColor, size: 22),
           ),
         ),
       ),
@@ -2869,70 +2567,55 @@ class _SuggestionFilterHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              hasCustomFilters ? 'סינון אישי פעיל' : 'סינון אוטומטי',
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _profileSurfaceColor(theme),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: _profileMutedColor(theme).withValues(alpha: 0.12),
           ),
-          if (count > 0)
-            Padding(
-              padding: const EdgeInsetsDirectional.only(end: 8),
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
               child: Text(
-                '$count תוצאות',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                hasCustomFilters ? 'סינון אישי פעיל' : 'סינון אוטומטי',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: _profileTextColor(theme),
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-          OutlinedButton.icon(
-            onPressed: onFilterPressed,
-            icon: Icon(hasCustomFilters ? Icons.tune : Icons.tune_outlined),
-            label: const Text('סינון'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MatchesTab extends StatelessWidget {
-  const _MatchesTab({
-    required this.person,
-    required this.matches,
-    required this.personRepository,
-    required this.emptyText,
-  });
-
-  final Person person;
-  final List<MatchIdea> matches;
-  final PersonRepository personRepository;
-  final String emptyText;
-
-  @override
-  Widget build(BuildContext context) {
-    if (matches.isEmpty) {
-      return _TabEmptyState(
-        icon: Icons.lightbulb_outline,
-        title: emptyText,
-        subtitle: 'כאן יופיעו הצעות ששייכות לאיש הקשר',
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: <Widget>[
-        _RelatedMatchesSection(
-          person: person,
-          matches: matches,
-          personRepository: personRepository,
+            if (count > 0)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 8),
+                child: Text(
+                  '$count תוצאות',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: _profileMutedColor(theme),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            OutlinedButton.icon(
+              onPressed: onFilterPressed,
+              icon: Icon(hasCustomFilters ? Icons.tune : Icons.tune_outlined),
+              label: const Text('סינון'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _profileMutedColor(theme),
+                side: BorderSide(
+                  color: _profileMutedColor(theme).withValues(alpha: 0.18),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -2961,14 +2644,17 @@ class _TabEmptyState extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               title,
-              style: theme.textTheme.titleMedium,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: _profileTextColor(theme),
+                fontWeight: FontWeight.w800,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
             Text(
               subtitle,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: _profileMutedColor(theme),
               ),
               textAlign: TextAlign.center,
             ),
@@ -2979,38 +2665,6 @@ class _TabEmptyState extends StatelessWidget {
   }
 }
 
-class _PersonExtraDetailsSection extends StatelessWidget {
-  const _PersonExtraDetailsSection({
-    required this.birthdayMessage,
-    required this.inquiryContactText,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-
-  final Widget? birthdayMessage;
-  final String inquiryContactText;
-  final String createdAt;
-  final String updatedAt;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Section(
-      title: 'פרטים נוספים',
-      child: Column(
-        children: <Widget>[
-          if (birthdayMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: birthdayMessage,
-            ),
-          _DetailRow(label: 'לבירורים', value: inquiryContactText),
-          _DetailRow(label: 'נוצר', value: createdAt),
-          _DetailRow(label: 'עודכן', value: updatedAt, isLast: true),
-        ],
-      ),
-    );
-  }
-}
 
 String _personSummary(Person person) {
   final List<String> parts = <String>[
@@ -3485,17 +3139,36 @@ class _RelatedMatchesSection extends StatelessWidget {
             ? otherPerson!.fullName.trim()
             : 'אדם נמחק';
 
+        final ThemeData theme = Theme.of(context);
+
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Card(
-            child: ListTile(
+          child: Material(
+            color: _profileSurfaceColor(theme),
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
               onTap: () => context.push('/matches/${match.id}'),
-              title: Text(
-                otherName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        otherName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: _profileTextColor(theme),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _StatusChip(status: match.status),
+                  ],
+                ),
               ),
-              trailing: _StatusChip(status: match.status),
             ),
           ),
         );
@@ -3538,74 +3211,29 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SectionHeader(title: title ?? '', trailing: trailing),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _FavoriteToggleButton extends StatefulWidget {
-  const _FavoriteToggleButton({
-    required this.isFavorite,
-    required this.onPressed,
-    required this.activeColor,
-    required this.inactiveColor,
-  });
-
-  final bool isFavorite;
-  final Future<void> Function() onPressed;
-  final Color activeColor;
-  final Color inactiveColor;
-
-  @override
-  State<_FavoriteToggleButton> createState() => _FavoriteToggleButtonState();
-}
-
-class _FavoriteToggleButtonState extends State<_FavoriteToggleButton> {
-  double _scale = 1;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: widget.isFavorite ? 'הסר ממועדפים' : 'הוסף למועדפים',
-      onPressed: _handlePressed,
-      icon: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 180),
-        child: Icon(
-          widget.isFavorite ? Icons.star : Icons.star_outline,
-          color: widget.isFavorite ? widget.activeColor : widget.inactiveColor,
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+        decoration: BoxDecoration(
+          color: _profileSurfaceColor(theme),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: _profileMutedColor(theme).withValues(alpha: 0.14),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            SectionHeader(title: title ?? '', trailing: trailing),
+            child,
+          ],
         ),
       ),
     );
-  }
-
-  Future<void> _handlePressed() async {
-    setState(() {
-      _scale = 1.3;
-    });
-
-    await widget.onPressed();
-    if (!mounted) {
-      return;
-    }
-
-    Future<void>.delayed(const Duration(milliseconds: 180), () {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _scale = 1;
-      });
-    });
   }
 }
 
@@ -3633,11 +3261,19 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               label,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: _profileMutedColor(theme),
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: _profileTextColor(theme),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -3649,7 +3285,10 @@ class _DetailRow extends StatelessWidget {
     return Column(
       children: <Widget>[
         row,
-        Divider(height: 1, color: theme.colorScheme.outlineVariant),
+        Divider(
+          height: 1,
+          color: _profileMutedColor(theme).withValues(alpha: 0.14),
+        ),
       ],
     );
   }

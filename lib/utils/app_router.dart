@@ -42,6 +42,14 @@ PeopleSortOption _parsePeopleSort(String? raw) {
   }
 }
 
+int _parsePositiveInt(String? raw, {int defaultValue = 1}) {
+  final int? value = int.tryParse(raw ?? '');
+  if (value == null || value < 1) {
+    return defaultValue;
+  }
+  return value;
+}
+
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/home',
@@ -84,7 +92,16 @@ abstract final class AppRouter {
               GoRoute(
                 path: '/home',
                 builder: (BuildContext context, GoRouterState state) {
-                  return const HomeScreen();
+                  final Map<String, String> q = state.uri.queryParameters;
+                  final int page = _parsePositiveInt(q['page']);
+                  final int? seed = int.tryParse(q['seed'] ?? '');
+                  return HomeScreen(
+                    key: ValueKey<String>('home:${state.uri}'),
+                    initialPageIndex: page - 1,
+                    initialSeed: seed,
+                    initialSearch: q['q'] ?? '',
+                    initialSort: q['sort'] ?? 'random',
+                  );
                 },
               ),
             ],
@@ -268,44 +285,73 @@ abstract final class AppRouter {
 class _AppShell extends StatelessWidget {
   const _AppShell({required this.navigationShell});
 
+  // Each entry maps a bottom-bar item (by index) to its location. The index in
+  // this list is both the highlighted item and the way we decide whether to
+  // show the bar at all (only on these exact locations).
+  static const List<String> _barLocations = <String>[
+    '/home',
+    '/people/import',
+    '/matches',
+  ];
+
   final StatefulNavigationShell navigationShell;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: navigationShell.currentIndex,
-        onTap: (int branch) {
-          navigationShell.goBranch(
-            branch,
-            initialLocation: branch == navigationShell.currentIndex,
-          );
-        },
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'בית',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_outlined),
-            activeIcon: Icon(Icons.people),
-            label: 'אנשים',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_border),
-            activeIcon: Icon(Icons.favorite),
-            label: 'הצעות',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_outlined),
-            activeIcon: Icon(Icons.dashboard),
-            label: 'נתונים',
-          ),
-        ],
-      ),
+    final GoRouter router = GoRouter.of(context);
+
+    return ValueListenableBuilder<RouteInformation>(
+      valueListenable: router.routeInformationProvider,
+      builder:
+          (BuildContext context, RouteInformation routeInfo, Widget? child) {
+            final int selectedIndex = _barLocations.indexOf(routeInfo.uri.path);
+            final bool showBottomBar = selectedIndex != -1;
+
+            return Scaffold(
+              body: navigationShell,
+              bottomNavigationBar: showBottomBar
+                  ? BottomNavigationBar(
+                      type: BottomNavigationBarType.fixed,
+                      currentIndex: selectedIndex,
+                      onTap: (int index) {
+                        switch (index) {
+                          case 0:
+                            navigationShell.goBranch(
+                              0,
+                              initialLocation:
+                                  navigationShell.currentIndex == 0,
+                            );
+                          case 1:
+                            context.go('/people/import');
+                          case 2:
+                            navigationShell.goBranch(
+                              2,
+                              initialLocation:
+                                  navigationShell.currentIndex == 2,
+                            );
+                        }
+                      },
+                      items: const <BottomNavigationBarItem>[
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.home_outlined),
+                          activeIcon: Icon(Icons.home),
+                          label: 'בית',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.person_add_outlined),
+                          activeIcon: Icon(Icons.person_add),
+                          label: 'הוספה',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.favorite_border),
+                          activeIcon: Icon(Icons.favorite),
+                          label: 'רעיונות',
+                        ),
+                      ],
+                    )
+                  : null,
+            );
+          },
     );
   }
 }

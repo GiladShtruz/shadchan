@@ -25,33 +25,20 @@ class MatchesScreen extends StatefulWidget {
   State<MatchesScreen> createState() => _MatchesScreenState();
 }
 
-class _MatchesScreenState extends State<MatchesScreen> {
+class _MatchesScreenState extends State<MatchesScreen>
+    with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
+
+  TabController? _tabController;
+  List<MatchProposalTab> _visibleTabs = const <MatchProposalTab>[];
+  bool _appliedInitialTab = false;
   bool _showArchived = false;
-  final Set<MatchStatus> _statusFilter = <MatchStatus>{};
-
-  static const List<MatchStatus> _activeStatuses = <MatchStatus>[
-    MatchStatus.idea,
-    MatchStatus.checking,
-    MatchStatus.unavailable,
-    MatchStatus.dating,
-  ];
-
-  static const List<MatchStatus> _archivedStatuses = <MatchStatus>[
-    MatchStatus.rejected,
-    MatchStatus.dated,
-    MatchStatus.married,
-  ];
-
-  List<MatchStatus> get _currentViewStatuses =>
-      _showArchived ? _archivedStatuses : _activeStatuses;
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_handleSearchChanged);
     _showArchived = widget.initialShowArchived;
-    _statusFilter.addAll(widget.initialStatuses);
+    _searchController.addListener(_handleSearchChanged);
   }
 
   @override
@@ -59,6 +46,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
+    _tabController?.dispose();
     super.dispose();
   }
 
@@ -69,258 +57,223 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final PersonRepository personRepository = context.read<PersonRepository>();
 
     final String query = _searchController.text.trim();
-    final List<MatchIdea> matches = _getMatches(
-      matchRepository: matchRepository,
-      personRepository: personRepository,
-      query: query,
-    );
-
-    final bool filterActive = _statusFilter.isNotEmpty;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_showArchived ? 'ארכיון' : 'הצעות'),
-        centerTitle: true,
-        actions: <Widget>[
-          IconButton(
-            tooltip: _showArchived ? 'הצעות פעילות' : 'ארכיון הצעות',
-            icon: Icon(
-              _showArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
-            ),
-            onPressed: () {
-              setState(() {
-                _showArchived = !_showArchived;
-                _statusFilter.clear();
-              });
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    textInputAction: TextInputAction.search,
-                    decoration: InputDecoration(
-                      hintText: 'חיפוש הצעה...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: query.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: _searchController.clear,
-                            )
-                          : null,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Material(
-                  color: theme.colorScheme.primary,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: <Widget>[
-                      IconButton(
-                        icon: const Icon(Icons.tune),
-                        color: theme.colorScheme.onPrimary,
-                        tooltip: 'סינון לפי סטטוס',
-                        onPressed: () => _openFilterSheet(context),
-                      ),
-                      if (filterActive)
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.onPrimary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: matches.isEmpty
-                ? _EmptyMatchesState(
-                    isArchived: _showArchived,
-                    isSearchResult: query.isNotEmpty,
-                    isFiltered: filterActive,
-                    onCreate: () => context.push('/matches/add'),
-                    onClearFilter: () => setState(_statusFilter.clear),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                    itemCount: matches.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final MatchIdea match = matches[index];
-                      final Person? personA = personRepository.getById(
-                        match.personAId,
-                      );
-                      final Person? personB = personRepository.getById(
-                        match.personBId,
-                      );
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _MatchCard(
-                          match: match,
-                          personA: personA,
-                          personB: personB,
-                          onTap: () => context.push('/matches/${match.id}'),
-                          theme: theme,
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/matches/add'),
-        icon: const Icon(Icons.add),
-        label: const Text('הוסף'),
-        shape: const StadiumBorder(),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-    );
-  }
-
-  void _openFilterSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext sheetContext) {
-        return StatefulBuilder(
-          builder: (BuildContext ctx, StateSetter setSheetState) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: <Widget>[
-                      Text(
-                        'סינון לפי סטטוס',
-                        style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (_statusFilter.isNotEmpty)
-                        TextButton(
-                          onPressed: () {
-                            setState(_statusFilter.clear);
-                            setSheetState(() {});
-                          },
-                          child: const Text('נקה הכל'),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _currentViewStatuses.map((MatchStatus status) {
-                      final bool selected = _statusFilter.contains(status);
-                      final Color statusColor = AppColors.statusColor(
-                        status.name,
-                      );
-                      return FilterChip(
-                        label: Text('${status.icon} ${status.displayName}'),
-                        selected: selected,
-                        selectedColor: statusColor.withValues(alpha: 0.2),
-                        checkmarkColor: statusColor,
-                        labelStyle: TextStyle(
-                          color: selected
-                              ? statusColor
-                              : Theme.of(ctx).colorScheme.onSurface,
-                          fontWeight: selected
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                        ),
-                        side: BorderSide(
-                          color: selected
-                              ? statusColor
-                              : Theme.of(ctx).colorScheme.outline,
-                        ),
-                        onSelected: (bool value) {
-                          setState(() {
-                            if (value) {
-                              _statusFilter.add(status);
-                            } else {
-                              _statusFilter.remove(status);
-                            }
-                          });
-                          setSheetState(() {});
-                        },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_statusFilter.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        'לא נבחר סינון – מוצגות כל ההצעות',
-                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  List<MatchIdea> _getMatches({
-    required MatchRepository matchRepository,
-    required PersonRepository personRepository,
-    required String query,
-  }) {
-    final List<MatchIdea> baseMatches = query.isNotEmpty
+    final List<MatchIdea> matches = query.isNotEmpty
         ? matchRepository.search(query, personRepository)
         : matchRepository.getAll();
 
-    return baseMatches.where((MatchIdea match) {
-      final Person? a = personRepository.getById(match.personAId);
-      final Person? b = personRepository.getById(match.personBId);
-      final bool archived =
-          match.status.isArchived ||
-          (a?.profileStatus.isArchived ?? false) ||
-          (b?.profileStatus.isArchived ?? false);
+    final Map<MatchProposalTab, List<MatchIdea>> groups = _groupMatches(
+      matches: matches,
+      personRepository: personRepository,
+    );
 
-      if (_showArchived ? !archived : archived) {
-        return false;
+    final List<MatchProposalTab> visibleTabs = _showArchived
+        ? <MatchProposalTab>[
+            MatchProposalTab.dated,
+            MatchProposalTab.rejected,
+            if (groups[MatchProposalTab.weddings]!.isNotEmpty)
+              MatchProposalTab.weddings,
+          ]
+        : <MatchProposalTab>[
+            MatchProposalTab.open,
+            MatchProposalTab.waiting,
+            MatchProposalTab.dating,
+          ];
+
+    final TabController tabController = _syncTabController(visibleTabs);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_showArchived ? 'ארכיון' : 'רעיונות'),
+        centerTitle: true,
+        actions: <Widget>[
+          IconButton(
+            icon: Icon(
+              _showArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+            ),
+            tooltip: _showArchived ? 'חזרה לרעיונות' : 'ארכיון',
+            onPressed: () => setState(() => _showArchived = !_showArchived),
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: TabBar(
+            controller: tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: visibleTabs.map((MatchProposalTab tab) {
+              return Tab(text: tab.displayName);
+            }).toList(),
+          ),
+        ),
+      ),
+      body: Column(
+        children: <Widget>[
+
+          Expanded(
+            child: TabBarView(
+              controller: tabController,
+              children: visibleTabs.map((MatchProposalTab tab) {
+                return _MatchesTabView(
+                  matches: groups[tab]!,
+                  tab: tab,
+                  isSearchResult: query.isNotEmpty,
+                  personRepository: personRepository,
+                  theme: theme,
+                  onCreate: () => context.push('/matches/add'),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+
+
+    );
+  }
+
+  Map<MatchProposalTab, List<MatchIdea>> _groupMatches({
+    required List<MatchIdea> matches,
+    required PersonRepository personRepository,
+  }) {
+    final Map<MatchProposalTab, List<MatchIdea>> groups =
+        <MatchProposalTab, List<MatchIdea>>{
+          for (final MatchProposalTab tab in MatchProposalTab.values)
+            tab: <MatchIdea>[],
+        };
+
+    for (final MatchIdea match in matches) {
+      final Person? personA = personRepository.getById(match.personAId);
+      final Person? personB = personRepository.getById(match.personBId);
+      final bool anyArchived =
+          (personA?.profileStatus.isArchived ?? false) ||
+          (personB?.profileStatus.isArchived ?? false);
+      final bool anyPaused =
+          (personA?.profileStatus.pausesMatches ?? false) ||
+          (personB?.profileStatus.pausesMatches ?? false);
+
+      final MatchProposalTab? tab = matchProposalTabFor(
+        status: match.status,
+        anyPersonArchived: anyArchived,
+        anyPersonPaused: anyPaused,
+      );
+      if (tab != null) {
+        groups[tab]!.add(match);
       }
+    }
 
-      if (_statusFilter.isNotEmpty && !_statusFilter.contains(match.status)) {
-        return false;
+    return groups;
+  }
+
+  TabController _syncTabController(List<MatchProposalTab> visibleTabs) {
+    final TabController? current = _tabController;
+    if (current != null && current.length == visibleTabs.length) {
+      _visibleTabs = visibleTabs;
+      return current;
+    }
+
+    int initialIndex = 0;
+    if (!_appliedInitialTab) {
+      final MatchProposalTab? initialTab = _initialTab();
+      if (initialTab != null) {
+        final int index = visibleTabs.indexOf(initialTab);
+        if (index >= 0) {
+          initialIndex = index;
+        }
       }
+    } else if (current != null && _visibleTabs.isNotEmpty) {
+      final MatchProposalTab previous =
+          _visibleTabs[current.index.clamp(0, _visibleTabs.length - 1)];
+      final int index = visibleTabs.indexOf(previous);
+      initialIndex = index >= 0
+          ? index
+          : current.index.clamp(0, visibleTabs.length - 1);
+    }
 
-      return true;
-    }).toList();
+    current?.dispose();
+    final TabController controller = TabController(
+      length: visibleTabs.length,
+      vsync: this,
+      initialIndex: initialIndex.clamp(0, visibleTabs.length - 1),
+    );
+    _tabController = controller;
+    _visibleTabs = visibleTabs;
+    _appliedInitialTab = true;
+    return controller;
+  }
+
+  MatchProposalTab? _initialTab() {
+    if (widget.initialStatuses.isEmpty) {
+      return null;
+    }
+    switch (widget.initialStatuses.first) {
+      case MatchStatus.dating:
+        return MatchProposalTab.dating;
+      case MatchStatus.dated:
+        return MatchProposalTab.dated;
+      case MatchStatus.rejected:
+        return MatchProposalTab.rejected;
+      case MatchStatus.married:
+        return MatchProposalTab.weddings;
+      case MatchStatus.unavailable:
+        return MatchProposalTab.waiting;
+      case MatchStatus.idea:
+      case MatchStatus.checking:
+        return MatchProposalTab.open;
+    }
   }
 
   void _handleSearchChanged() {
     setState(() {});
+  }
+}
+
+class _MatchesTabView extends StatelessWidget {
+  const _MatchesTabView({
+    required this.matches,
+    required this.tab,
+    required this.isSearchResult,
+    required this.personRepository,
+    required this.theme,
+    required this.onCreate,
+  });
+
+  final List<MatchIdea> matches;
+  final MatchProposalTab tab;
+  final bool isSearchResult;
+  final PersonRepository personRepository;
+  final ThemeData theme;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    if (matches.isEmpty) {
+      return _EmptyMatchesState(
+        tab: tab,
+        isSearchResult: isSearchResult,
+        onCreate: onCreate,
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      itemCount: matches.length,
+      itemBuilder: (BuildContext context, int index) {
+        final MatchIdea match = matches[index];
+        final Person? personA = personRepository.getById(match.personAId);
+        final Person? personB = personRepository.getById(match.personBId);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _MatchCard(
+            match: match,
+            personA: personA,
+            personB: personB,
+            onTap: () => context.push('/matches/${match.id}'),
+            theme: theme,
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -398,7 +351,6 @@ class _MatchCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: <Widget>[
@@ -430,7 +382,6 @@ class _MatchCard extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _AvatarOrDeleted extends StatelessWidget {
@@ -459,18 +410,14 @@ class _AvatarOrDeleted extends StatelessWidget {
 
 class _EmptyMatchesState extends StatelessWidget {
   const _EmptyMatchesState({
-    required this.isArchived,
+    required this.tab,
     required this.isSearchResult,
-    required this.isFiltered,
     required this.onCreate,
-    required this.onClearFilter,
   });
 
-  final bool isArchived;
+  final MatchProposalTab tab;
   final bool isSearchResult;
-  final bool isFiltered;
   final VoidCallback onCreate;
-  final VoidCallback onClearFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -482,30 +429,45 @@ class _EmptyMatchesState extends StatelessWidget {
       );
     }
 
-    if (isFiltered) {
-      return EmptyState(
-        icon: Icons.filter_list_off,
-        title: 'אין הצעות בסינון זה',
-        subtitle: 'נסו לשנות או לנקות את הסינון',
-        buttonText: 'נקה סינון',
-        onButtonPressed: onClearFilter,
-      );
+    switch (tab) {
+      case MatchProposalTab.open:
+        return EmptyState(
+          icon: Icons.favorite_border,
+          title: 'אין הצעות פתוחות',
+          subtitle: 'צרו הצעה חדשה בין שני אנשים',
+          buttonText: 'הצעה חדשה',
+          onButtonPressed: onCreate,
+        );
+      case MatchProposalTab.waiting:
+        return const EmptyState(
+          icon: Icons.pause_circle_outline,
+          title: 'אין הצעות בהמתנה',
+          subtitle: 'הצעות שאחד הצדדים בהן אינו פנוי יופיעו כאן',
+        );
+      case MatchProposalTab.dating:
+        return const EmptyState(
+          icon: Icons.volunteer_activism_outlined,
+          title: 'אין זוגות שיוצאים',
+          subtitle: 'זוגות בתהליך יציאה יופיעו כאן',
+        );
+      case MatchProposalTab.dated:
+        return const EmptyState(
+          icon: Icons.history,
+          title: 'אין הצעות שיצאו',
+          subtitle: 'זוגות שיצאו ונפרדו יופיעו כאן',
+        );
+      case MatchProposalTab.rejected:
+        return const EmptyState(
+          icon: Icons.cancel_outlined,
+          title: 'אין הצעות שנדחו',
+          subtitle: 'הצעות שנדחו יופיעו כאן',
+        );
+      case MatchProposalTab.weddings:
+        return const EmptyState(
+          icon: Icons.celebration_outlined,
+          title: 'אין חתונות עדיין',
+          subtitle: 'שידוכים שהגיעו לחופה יופיעו כאן',
+        );
     }
-
-    if (isArchived) {
-      return const EmptyState(
-        icon: Icons.archive_outlined,
-        title: 'הארכיון ריק',
-        subtitle: 'הצעות שנדחו או לא פנויות יופיעו כאן',
-      );
-    }
-
-    return EmptyState(
-      icon: Icons.favorite_border,
-      title: 'אין הצעות פעילות',
-      subtitle: 'צרו הצעה חדשה בין שני אנשים',
-      buttonText: 'הצעה חדשה',
-      onButtonPressed: onCreate,
-    );
   }
 }

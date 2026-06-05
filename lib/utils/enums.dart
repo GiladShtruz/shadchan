@@ -98,7 +98,7 @@ enum MatchStatus {
       case MatchStatus.checking:
         return 'בבדיקה';
       case MatchStatus.unavailable:
-        return 'צד לא פנוי';
+        return 'בהמתנה';
       case MatchStatus.rejected:
         return 'נדחה';
       case MatchStatus.dating:
@@ -144,6 +144,70 @@ enum MatchStatus {
   }
 }
 
+/// Logical groups for the proposals screen tabs. These are derived from a
+/// match's [MatchStatus] together with the availability of the two people,
+/// so they are not stored on the model directly.
+enum MatchProposalTab {
+  open,
+  waiting,
+  dating,
+  dated,
+  rejected,
+  weddings;
+
+  String get displayName {
+    switch (this) {
+      case MatchProposalTab.open:
+        return 'פתוח';
+      case MatchProposalTab.waiting:
+        return 'בהמתנה';
+      case MatchProposalTab.dating:
+        return 'יוצאים';
+      case MatchProposalTab.dated:
+        return 'יצאו';
+      case MatchProposalTab.rejected:
+        return 'נדחו';
+      case MatchProposalTab.weddings:
+        return 'חתונות';
+    }
+  }
+}
+
+/// Resolves which proposals tab a match belongs to.
+///
+/// Returns `null` when the match should be hidden entirely (a non-terminal
+/// proposal whose side is already engaged / married).
+///
+/// A proposal moves to [MatchProposalTab.waiting] either when its own status
+/// is [MatchStatus.unavailable] or when one of the people is currently paused
+/// (busy / on a break) on their personal card.
+MatchProposalTab? matchProposalTabFor({
+  required MatchStatus status,
+  required bool anyPersonArchived,
+  required bool anyPersonPaused,
+}) {
+  switch (status) {
+    case MatchStatus.married:
+      return MatchProposalTab.weddings;
+    case MatchStatus.dated:
+      return MatchProposalTab.dated;
+    case MatchStatus.rejected:
+      return MatchProposalTab.rejected;
+    case MatchStatus.dating:
+      return MatchProposalTab.dating;
+    case MatchStatus.idea:
+    case MatchStatus.checking:
+    case MatchStatus.unavailable:
+      if (anyPersonArchived) {
+        return null;
+      }
+      if (status == MatchStatus.unavailable || anyPersonPaused) {
+        return MatchProposalTab.waiting;
+      }
+      return MatchProposalTab.open;
+  }
+}
+
 @HiveType(typeId: 7)
 enum ProfileStatus {
   @HiveField(0)
@@ -185,6 +249,11 @@ enum ProfileStatus {
   }
 
   bool get isArchived => this == ProfileStatus.mazelTov;
+
+  /// Whether this status means the person is currently not available, so their
+  /// open proposals should move to the "בהמתנה" tab.
+  bool get pausesMatches =>
+      this == ProfileStatus.busy || this == ProfileStatus.onBreak;
 }
 
 @HiveType(typeId: 6)

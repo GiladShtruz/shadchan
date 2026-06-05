@@ -25,6 +25,17 @@ class MatchDetailScreen extends StatefulWidget {
 }
 
 class _MatchDetailScreenState extends State<MatchDetailScreen> {
+  // Status options shown to the user, ordered to match the proposals tabs.
+  // "בבדיקה" is intentionally omitted so an open proposal is just "רעיון".
+  static const List<MatchStatus> _selectableStatuses = <MatchStatus>[
+    MatchStatus.idea,
+    MatchStatus.unavailable,
+    MatchStatus.dating,
+    MatchStatus.dated,
+    MatchStatus.rejected,
+    MatchStatus.married,
+  ];
+
   final TextEditingController _noteController = TextEditingController();
   final TextEditingController _thirdPartyController = TextEditingController();
   final DateFormat _noteDateFormat = DateFormat('dd.MM.yyyy HH:mm');
@@ -153,7 +164,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: MatchStatus.values.map((MatchStatus status) {
+                      children: _selectableStatuses.map((MatchStatus status) {
                         final bool isSelected = match.status == status;
                         return ChoiceChip(
                           label: Text('${status.icon} ${status.displayName}'),
@@ -377,7 +388,11 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     final bool confirmed = await ConfirmDialog.show(
       context,
       title: 'שינוי סטטוס',
-      message: 'לשנות סטטוס ל-${newStatus.displayName}?',
+      message: '''
+לשנות סטטוס ל-${newStatus.displayName}?${newStatus.displayName == 'בהמתנה'
+          ? '\n(אחד הצדדים תפוס או בהפסקה)'
+          : ''}
+''',
     );
 
     if (confirmed != true) {
@@ -385,15 +400,6 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     }
 
     await repository.updateStatus(match.id, newStatus);
-    if (!context.mounted) {
-      return;
-    }
-
-    if (newStatus.isArchived) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('ההצעה הועברה לארכיון')));
-    }
   }
 
   void _scheduleWhatsAppPrompt(

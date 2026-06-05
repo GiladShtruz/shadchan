@@ -9,7 +9,8 @@
       "Bash(flutter test *)",
       "Bash(flutter build *)",
       "Bash(wait)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(dart format *)"
     ]
   }
 }
