@@ -5,8 +5,8 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/enums.dart';
 
-/// Quick editor for the three fields most often missing on imported contacts:
-/// gender, religious level and age. Offers a shortcut to the full card.
+/// Quick editor for the fields most often missing on imported contacts:
+/// name, gender, religious level and age. Offers a shortcut to the full card.
 class QuickUpdateDialog extends StatefulWidget {
   const QuickUpdateDialog({super.key, required this.person});
 
@@ -26,6 +26,7 @@ class QuickUpdateDialog extends StatefulWidget {
 class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
   late Gender _gender;
   late ReligiousLevel? _religiousLevel;
+  late final TextEditingController _nameController;
   late final TextEditingController _ageController;
   String? _ageError;
 
@@ -34,6 +35,7 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
     super.initState();
     _gender = widget.person.gender;
     _religiousLevel = widget.person.religiousLevel;
+    _nameController = TextEditingController(text: widget.person.fullName);
     _ageController = TextEditingController(
       text: widget.person.manualAge?.toString() ?? '',
     );
@@ -41,6 +43,7 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _ageController.dispose();
     super.dispose();
   }
@@ -50,20 +53,29 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
     final ThemeData theme = Theme.of(context);
 
     return AlertDialog(
-      title: Text(
-        widget.person.fullName.trim().isEmpty
-            ? 'עדכון פרטים'
-            : widget.person.fullName.trim(),
-      ),
-      content: SingleChildScrollView(
+      // Keep the dialog from running into the screen edges and let the whole
+      // thing scroll, so nothing gets clipped when the keyboard is open.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      scrollable: true,
+      title: const Text('עדכון פרטים'),
+      content: SizedBox(
+        width: double.maxFinite,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            TextField(
+              controller: _nameController,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'שם'),
+            ),
+            const SizedBox(height: 16),
             Text('מגדר', style: theme.textTheme.titleSmall),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: Gender.values.map((Gender gender) {
                 return ChoiceChip(
                   label: Text(gender.displayName),
@@ -141,8 +153,22 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
       manualAge = parsed;
     }
 
+    // The dialog exposes a single "name" field; split it back into the
+    // first / last name pair the model stores (everything after the first
+    // space becomes the last name).
+    final String fullName = _nameController.text.trim();
+    final int spaceIndex = fullName.indexOf(' ');
+    final String firstName = spaceIndex == -1
+        ? fullName
+        : fullName.substring(0, spaceIndex).trim();
+    final String lastName = spaceIndex == -1
+        ? ''
+        : fullName.substring(spaceIndex + 1).trim();
+
     final PersonRepository repository = context.read<PersonRepository>();
     final Person person = widget.person
+      ..firstName = firstName
+      ..lastName = lastName
       ..gender = _gender
       ..religiousLevel = _religiousLevel
       ..manualAge = manualAge;

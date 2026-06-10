@@ -285,73 +285,57 @@ abstract final class AppRouter {
 class _AppShell extends StatelessWidget {
   const _AppShell({required this.navigationShell});
 
-  // Each entry maps a bottom-bar item (by index) to its location. The index in
-  // this list is both the highlighted item and the way we decide whether to
-  // show the bar at all (only on these exact locations).
-  static const List<String> _barLocations = <String>[
-    '/home',
-    '/people/import',
-    '/matches',
-  ];
-
   final StatefulNavigationShell navigationShell;
 
   @override
   Widget build(BuildContext context) {
-    final GoRouter router = GoRouter.of(context);
+    // The bar is always visible inside the shell so navigation never gets
+    // "stuck" on an inner screen. The highlighted item follows the active
+    // branch (which is always in sync), rather than an exact path match that
+    // breaks after an imperative push/pop. The dashboard branch (index 3) has
+    // no bar item, so it falls back to the home item.
+    final int branchIndex = navigationShell.currentIndex;
+    final int selectedIndex = branchIndex <= 2 ? branchIndex : 0;
 
-    return ValueListenableBuilder<RouteInformation>(
-      valueListenable: router.routeInformationProvider,
-      builder:
-          (BuildContext context, RouteInformation routeInfo, Widget? child) {
-            final int selectedIndex = _barLocations.indexOf(routeInfo.uri.path);
-            final bool showBottomBar = selectedIndex != -1;
-
-            return Scaffold(
-              body: navigationShell,
-              bottomNavigationBar: showBottomBar
-                  ? BottomNavigationBar(
-                      type: BottomNavigationBarType.fixed,
-                      currentIndex: selectedIndex,
-                      onTap: (int index) {
-                        switch (index) {
-                          case 0:
-                            navigationShell.goBranch(
-                              0,
-                              initialLocation:
-                                  navigationShell.currentIndex == 0,
-                            );
-                          case 1:
-                            context.go('/people/import');
-                          case 2:
-                            navigationShell.goBranch(
-                              2,
-                              initialLocation:
-                                  navigationShell.currentIndex == 2,
-                            );
-                        }
-                      },
-                      items: const <BottomNavigationBarItem>[
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.home_outlined),
-                          activeIcon: Icon(Icons.home),
-                          label: 'בית',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.person_add_outlined),
-                          activeIcon: Icon(Icons.person_add),
-                          label: 'הוספה',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.favorite_border),
-                          activeIcon: Icon(Icons.favorite),
-                          label: 'רעיונות',
-                        ),
-                      ],
-                    )
-                  : null,
-            );
-          },
+    return Scaffold(
+      body: navigationShell,
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: selectedIndex,
+        onTap: (int index) {
+          switch (index) {
+            case 0:
+              navigationShell.goBranch(
+                0,
+                initialLocation: navigationShell.currentIndex == 0,
+              );
+            case 1:
+              context.go('/people/import');
+            case 2:
+              navigationShell.goBranch(
+                2,
+                initialLocation: navigationShell.currentIndex == 2,
+              );
+          }
+        },
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'בית',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_add_outlined),
+            activeIcon: Icon(Icons.person_add),
+            label: 'הוספה',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.favorite_border),
+            activeIcon: Icon(Icons.favorite),
+            label: 'רעיונות',
+          ),
+        ],
+      ),
     );
   }
 }

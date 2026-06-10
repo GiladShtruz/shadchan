@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
@@ -163,23 +162,21 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                   title: 'לא נמצאו תוצאות',
                   subtitle: 'נסו לחפש בשם אחר או לבטל את הסינון',
                 )
-              : SlidableAutoCloseBehavior(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                    itemCount: visibleCandidates.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (BuildContext context, int index) {
-                      final ContactImportCandidate candidate =
-                          visibleCandidates[index];
-                      return _ImportCandidateRow(
-                        key: ValueKey<String>(candidate.deviceContactId),
-                        candidate: candidate,
-                        busy: _importingIds.contains(candidate.deviceContactId),
-                        onHeart: () => _onHeart(candidate),
-                        onRemove: () => _onSkip(candidate),
-                      );
-                    },
-                  ),
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  itemCount: visibleCandidates.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (BuildContext context, int index) {
+                    final ContactImportCandidate candidate =
+                        visibleCandidates[index];
+                    return _ImportCandidateRow(
+                      key: ValueKey<String>(candidate.deviceContactId),
+                      candidate: candidate,
+                      busy: _importingIds.contains(candidate.deviceContactId),
+                      onHeart: () => _onHeart(candidate),
+                      onRemove: () => _onSkip(candidate),
+                    );
+                  },
                 ),
         ),
       ],
@@ -417,9 +414,10 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
   }
 }
 
-/// A single importable contact rendered with [Slidable]: the name is centered,
-/// a ❤️ sits on the right and a (black) ✕ on the left. Swiping reveals the same
-/// action underneath the card and a full swipe triggers it.
+/// A single importable contact rendered with [Dismissible]: the name is
+/// centered, a ❤️ sits on the right and a (black) ✕ on the left. A full swipe
+/// from the start side (right, in RTL) adds the contact; a full swipe from the
+/// end side (left) removes it. A partial swipe snaps back without resting open.
 class _ImportCandidateRow extends StatelessWidget {
   const _ImportCandidateRow({
     super.key,
@@ -438,41 +436,41 @@ class _ImportCandidateRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return Slidable(
+    return Dismissible(
       key: ValueKey<String>(candidate.deviceContactId),
-      enabled: !busy,
-      // Right side (start, in RTL): the heart / add action.
-      startActionPane: ActionPane(
-        motion: const BehindMotion(),
-        extentRatio: 0.4,
-        dismissible: DismissiblePane(onDismissed: onHeart),
-        children: <Widget>[
-          SlidableAction(
-            onPressed: (_) => onHeart(),
-            backgroundColor: theme.colorScheme.primary,
-            foregroundColor: theme.colorScheme.onPrimary,
-            icon: Icons.favorite,
-            label: 'הוספה',
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ],
+      direction: busy ? DismissDirection.none : DismissDirection.horizontal,
+      // Require a near-full swipe: a small drag snaps back instead of resting
+      // half-open to reveal the action underneath.
+      dismissThresholds: const <DismissDirection, double>{
+        DismissDirection.startToEnd: 0.6,
+        DismissDirection.endToStart: 0.6,
+      },
+      movementDuration: const Duration(milliseconds: 200),
+      // Swiping from the start side (right, in RTL) reveals and triggers the
+      // heart / add action.
+      background: _SwipeActionBackground(
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: theme.colorScheme.onPrimary,
+        icon: Icons.favorite,
+        label: 'הוספה',
+        alignment: AlignmentDirectional.centerStart,
       ),
-      // Left side (end, in RTL): the remove action with a black ✕.
-      endActionPane: ActionPane(
-        motion: const BehindMotion(),
-        extentRatio: 0.4,
-        dismissible: DismissiblePane(onDismissed: onRemove),
-        children: <Widget>[
-          SlidableAction(
-            onPressed: (_) => onRemove(),
-            backgroundColor: const Color(0xFFE0E0E0),
-            foregroundColor: Colors.black,
-            icon: Icons.close,
-            label: 'הסרה',
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ],
+      // Swiping from the end side (left, in RTL) reveals and triggers the
+      // remove action with a black ✕.
+      secondaryBackground: const _SwipeActionBackground(
+        backgroundColor: Color(0xFFE0E0E0),
+        foregroundColor: Colors.black,
+        icon: Icons.close,
+        label: 'הסרה',
+        alignment: AlignmentDirectional.centerEnd,
       ),
+      onDismissed: (DismissDirection direction) {
+        if (direction == DismissDirection.startToEnd) {
+          onHeart();
+        } else {
+          onRemove();
+        }
+      },
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -510,6 +508,51 @@ class _ImportCandidateRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The colored pane revealed behind a [_ImportCandidateRow] while swiping. The
+/// icon + label is pinned to [alignment] so it appears on the side being
+/// uncovered.
+class _SwipeActionBackground extends StatelessWidget {
+  const _SwipeActionBackground({
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.icon,
+    required this.label,
+    required this.alignment,
+  });
+
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final IconData icon;
+  final String label;
+  final AlignmentGeometry alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, color: foregroundColor),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: foregroundColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

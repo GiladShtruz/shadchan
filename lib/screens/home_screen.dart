@@ -844,7 +844,7 @@ class _PendingUpdateCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_left, color: accent),
+              Icon(Icons.chevron_right, color: accent),
             ],
           ),
         ),

@@ -81,6 +81,11 @@ class _MatchesScreenState extends State<MatchesScreen>
 
     final TabController tabController = _syncTabController(visibleTabs);
 
+    // The tab bar lives on the app bar, so its labels must use the app bar's
+    // foreground colour (white on the purple bar) instead of purple-on-purple.
+    final Color appBarForeground =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_showArchived ? 'ארכיון' : 'רעיונות'),
@@ -95,11 +100,25 @@ class _MatchesScreenState extends State<MatchesScreen>
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+          preferredSize: const Size.fromHeight(52),
           child: TabBar(
             controller: tabController,
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
+            // Spread the tabs evenly across the full width of the app bar.
+            isScrollable: false,
+            labelColor: appBarForeground,
+            unselectedLabelColor: appBarForeground.withValues(alpha: 0.7),
+            indicatorColor: appBarForeground,
+            indicatorWeight: 3,
+            indicatorSize: TabBarIndicatorSize.tab,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+            labelStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
             tabs: visibleTabs.map((MatchProposalTab tab) {
               return Tab(text: tab.displayName);
             }).toList(),

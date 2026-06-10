@@ -73,7 +73,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final ThemeData theme = Theme.of(context);
     final PersonRepository personRepository = context.watch<PersonRepository>();
 
-    final int activeCount = personRepository.activeCount;
+    final int totalCount = personRepository.count;
     final int pendingCount = personRepository.pendingCount;
     final List<Person> visiblePeople = _getVisiblePeople(personRepository);
 
@@ -137,7 +137,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
           Expanded(
             child: _buildBody(
               context: context,
-              activeCount: activeCount,
+              totalCount: totalCount,
               visiblePeople: visiblePeople,
             ),
           ),
@@ -190,12 +190,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   Widget _buildBody({
     required BuildContext context,
-    required int activeCount,
+    required int totalCount,
     required List<Person> visiblePeople,
   }) {
     final ThemeData theme = Theme.of(context);
 
-    if (activeCount == 0) {
+    if (totalCount == 0) {
       return _buildEmptyPeopleState(context, theme);
     }
 
@@ -403,6 +403,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       religiousLevels: _selectedReligiousLevels,
       profileStatuses: _selectedProfileStatuses,
       favoritesOnly: _favoritesOnly ? true : null,
+      // Contacts still waiting for an update are part of the general list too.
+      includePending: true,
     );
 
     final String normalizedSearch = _searchController.text.trim().toLowerCase();

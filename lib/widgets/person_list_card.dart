@@ -105,7 +105,9 @@ class _PersonSubtitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<String> missingInfo = <String>[
+      if (person.fullName.trim().isEmpty) 'שם',
       if (person.gender == Gender.unknown) 'מגדר',
+      if (person.religiousLevel == null) 'סגנון דתי',
       if (person.age == null) 'גיל',
     ];
     final List<String> parts = <String>[
@@ -137,13 +139,7 @@ class _PersonSubtitle extends StatelessWidget {
           ),
           if (missingInfo.isNotEmpty) const SizedBox(height: 6),
         ],
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: missingInfo.map((String label) {
-            return _MissingInfoTag(label: 'חסר $label');
-          }).toList(),
-        ),
+        if (missingInfo.isNotEmpty) _MissingInfoNote(missing: missingInfo),
       ],
     );
   }
@@ -164,30 +160,45 @@ class _PersonSubtitle extends StatelessWidget {
   }
 }
 
-class _MissingInfoTag extends StatelessWidget {
-  const _MissingInfoTag({required this.label});
+/// A prominent note listing the details that still need to be filled in for a
+/// contact (e.g. "חסר לעדכון: שם · מגדר · גיל").
+class _MissingInfoNote extends StatelessWidget {
+  const _MissingInfoNote({required this.missing});
 
-  final String label;
+  final List<String> missing;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: theme.colorScheme.error.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: theme.colorScheme.error.withValues(alpha: 0.35),
+          color: theme.colorScheme.error.withValues(alpha: 0.4),
         ),
       ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.error,
-          fontWeight: FontWeight.w700,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.error_outline,
+            size: 16,
+            color: theme.colorScheme.error,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'חסר לעדכון: ${missing.join(' · ')}',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.error,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

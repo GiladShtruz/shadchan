@@ -44,8 +44,10 @@ class PersonDetailScreen extends StatefulWidget {
 }
 
 class _PersonDetailScreenState extends State<PersonDetailScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
+  final GlobalKey _editSectionKey = GlobalKey();
+  late final TabController _tabController;
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _manualAgeController = TextEditingController();
@@ -98,6 +100,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
   void initState() {
     super.initState();
     _showInlineEdit = widget.initiallyEditing;
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      // Open straight on the "כרטיס" tab when entering in edit mode.
+      initialIndex: widget.initiallyEditing ? 1 : 0,
+    );
+    if (widget.initiallyEditing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToEditSection();
+      });
+    }
     WidgetsBinding.instance.addObserver(this);
     for (final FocusNode node in <FocusNode>[
       _firstNameFocus,
@@ -116,6 +129,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
   void dispose() {
     _autoSaveTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    _tabController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
     _manualAgeController.dispose();
@@ -139,6 +153,42 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
         ..dispose();
     }
     super.dispose();
+  }
+
+  /// Turns on inline editing, switches to the "כרטיס" tab and scrolls to the
+  /// edit section so the user lands directly on the fields to edit.
+  Future<void> _enterEditMode() async {
+    if (_showInlineEdit && _tabController.index == 1) {
+      _scrollToEditSection();
+      return;
+    }
+    final bool needsTabSwitch = _tabController.index != 1;
+    setState(() => _showInlineEdit = true);
+    if (needsTabSwitch) {
+      _tabController.animateTo(1);
+    }
+    // Let the tab change and the freshly-built edit form settle before
+    // scrolling, otherwise the target isn't in the tree yet.
+    await Future<void>.delayed(
+      Duration(milliseconds: needsTabSwitch ? 350 : 50),
+    );
+    if (!mounted) {
+      return;
+    }
+    _scrollToEditSection();
+  }
+
+  void _scrollToEditSection() {
+    final BuildContext? sectionContext = _editSectionKey.currentContext;
+    if (sectionContext == null) {
+      return;
+    }
+    Scrollable.ensureVisible(
+      sectionContext,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+      alignment: 0.05,
+    );
   }
 
   @override
@@ -326,150 +376,143 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
         if (!saved) return;
         if (mounted) navigator.pop();
       },
-      child: DefaultTabController(
-        length: 2,
-        child: Scaffold(
+      child: Scaffold(
+        backgroundColor: _profileCanvasColor(theme),
+        appBar: AppBar(
           backgroundColor: _profileCanvasColor(theme),
-          appBar: AppBar(
-            backgroundColor: _profileCanvasColor(theme),
-            foregroundColor: _profileTextColor(theme),
+          foregroundColor: _profileTextColor(theme),
 
-            centerTitle: true,
-            actions: <Widget>[
-              IconButton(
-                icon: const FaIcon(FontAwesomeIcons.whatsapp),
-                tooltip: 'וואטסאפ',
-                onPressed: () => _openWhatsAppMessage(context, person),
-              ),
-              IconButton(
-                icon: const Icon(Icons.share_outlined),
-                tooltip: 'שיתוף',
-                onPressed: () => _sharePerson(context, person),
-              ),
-              IconButton(
-                icon: _showInlineEdit
-                    ? _isSavingEdit
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.check)
-                    : const Icon(Icons.edit_outlined),
-                tooltip: _showInlineEdit ? 'שמירה' : 'עריכה',
-                onPressed: _isSavingEdit
-                    ? null
-                    : () async {
-                        if (!_showInlineEdit) {
-                          setState(() => _showInlineEdit = true);
-                          return;
-                        }
-                        final bool saved = await _saveInlineEdit(person);
-                        if (saved && mounted) {
-                          setState(() => _showInlineEdit = false);
-                        }
-                      },
-              ),
+          centerTitle: true,
+          actions: <Widget>[
+            IconButton(
+              icon: const FaIcon(FontAwesomeIcons.whatsapp),
+              tooltip: 'וואטסאפ',
+              onPressed: () => _openWhatsAppMessage(context, person),
+            ),
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'שיתוף',
+              onPressed: () => _sharePerson(context, person),
+            ),
+            IconButton(
+              icon: _showInlineEdit
+                  ? _isSavingEdit
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check)
+                  : const Icon(Icons.edit_outlined),
+              tooltip: _showInlineEdit ? 'שמירה' : 'עריכה',
+              onPressed: _isSavingEdit
+                  ? null
+                  : () async {
+                      if (!_showInlineEdit) {
+                        await _enterEditMode();
+                        return;
+                      }
+                      final bool saved = await _saveInlineEdit(person);
+                      if (saved && mounted) {
+                        setState(() => _showInlineEdit = false);
+                      }
+                    },
+            ),
 
-              PopupMenuButton<String>(
-                onSelected: (String value) async {
-                  if (value != 'delete') {
-                    return;
-                  }
+            PopupMenuButton<String>(
+              onSelected: (String value) async {
+                if (value != 'delete') {
+                  return;
+                }
 
-                  final bool shouldDelete = await _confirmDelete(
-                    context,
-                    person,
-                  );
-                  if (!shouldDelete) {
-                    return;
-                  }
+                final bool shouldDelete = await _confirmDelete(context, person);
+                if (!shouldDelete) {
+                  return;
+                }
 
-                  await personRepository.delete(person.id);
-                  if (context.mounted) {
-                    context.go('/people');
-                  }
-                },
-                itemBuilder: (BuildContext context) {
-                  return const <PopupMenuEntry<String>>[
-                    PopupMenuItem<String>(
-                      value: 'delete',
-                      child: Text('מחיקת כרטיס'),
+                await personRepository.delete(person.id);
+                if (context.mounted) {
+                  context.go('/people');
+                }
+              },
+              itemBuilder: (BuildContext context) {
+                return const <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Text('מחיקת כרטיס'),
+                  ),
+                ];
+              },
+            ),
+          ],
+        ),
+        body: NestedScrollView(
+          headerSliverBuilder:
+              (BuildContext context, bool innerBoxIsScrolled) => <Widget>[
+                SliverToBoxAdapter(
+                  child: _ProfileSummaryHeader(
+                    person: person,
+                    onStatusChanged: (ProfileStatus status) =>
+                        personRepository.updateProfileStatus(person.id, status),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: _PersonNotesButton(
+                    noteCount: personNotesCount,
+                    onPressed: () => _openPersonNotes(context, person),
+                  ),
+                ),
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _PinnedTabBarDelegate(
+                    backgroundColor: _profileCanvasColor(theme),
+                    tabBar: TabBar(
+                      controller: _tabController,
+                      dividerColor: Colors.transparent,
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      tabs: const <Widget>[
+                        Tab(text: 'התאמות'),
+                        Tab(text: 'כרטיס'),
+                      ],
                     ),
-                  ];
-                },
+                  ),
+                ),
+              ],
+          body: TabBarView(
+            controller: _tabController,
+            children: <Widget>[
+              _SuggestedMatchesTab(
+                sourcePerson: person,
+                suggestedPeople: suggestedPeople,
+                matchRepository: matchRepository,
+                hasCustomFilters: savedSuggestionFilters != null,
+                onFilterPressed: () => _openSuggestionFilters(context, person),
+                onAccept: (Person candidate) =>
+                    _acceptSuggestion(context, person, candidate),
+                onReject: (Person candidate) =>
+                    _rejectSuggestion(context, person, candidate),
+              ),
+              _ProfileCardTab(
+                person: person,
+                showInlineEdit: _showInlineEdit,
+                onEditPressed: _enterEditMode,
+                editSectionKey: _editSectionKey,
+                onAddPhotos: () => _pickAndSavePhoto(context, person),
+                onTapPhoto: (int index) =>
+                    _openPhotoViewer(context, person, index),
+                onSetPrimary: (int index) =>
+                    _setPrimaryPhoto(context, person, index),
+                descriptionController: _descriptionController,
+                descriptionFocus: _descriptionFocus,
+                onDescriptionChanged: _handleInlineFieldChanged,
+                onSaveDescription: () => _saveInlineEdit(person),
+                editForm: _buildInlineEditForm(person),
+
+                personRepository: personRepository,
+                openMatches: openMatches,
+                rejectedMatches: rejectedMatches,
               ),
             ],
           ),
-          body: NestedScrollView(
-            headerSliverBuilder:
-                (BuildContext context, bool innerBoxIsScrolled) => <Widget>[
-              SliverToBoxAdapter(
-                child: _ProfileSummaryHeader(
-                  person: person,
-                  onStatusChanged: (ProfileStatus status) =>
-                      personRepository.updateProfileStatus(person.id, status),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _PersonNotesButton(
-                  noteCount: personNotesCount,
-                  onPressed: () => _openPersonNotes(context, person),
-                ),
-              ),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _PinnedTabBarDelegate(
-                  backgroundColor: _profileCanvasColor(theme),
-                  tabBar: const TabBar(
-                    dividerColor: Colors.transparent,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    tabs: <Widget>[
-                      Tab(text: 'התאמות'),
-                      Tab(text: 'כרטיס'),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            body: TabBarView(
-                  children: <Widget>[
-                    _SuggestedMatchesTab(
-                      sourcePerson: person,
-                      suggestedPeople: suggestedPeople,
-                      matchRepository: matchRepository,
-                      hasCustomFilters: savedSuggestionFilters != null,
-                      onFilterPressed: () =>
-                          _openSuggestionFilters(context, person),
-                      onAccept: (Person candidate) =>
-                          _acceptSuggestion(context, person, candidate),
-                      onReject: (Person candidate) =>
-                          _rejectSuggestion(context, person, candidate),
-                    ),
-                    _ProfileCardTab(
-                      person: person,
-                      showInlineEdit: _showInlineEdit,
-                      onEditPressed: () => setState(() {
-                        _showInlineEdit = true;
-                      }),
-                      onAddPhotos: () => _pickAndSavePhoto(context, person),
-                      onTapPhoto: (int index) =>
-                          _openPhotoViewer(context, person, index),
-                      onSetPrimary: (int index) =>
-                          _setPrimaryPhoto(context, person, index),
-                      descriptionController: _descriptionController,
-                      descriptionFocus: _descriptionFocus,
-                      onDescriptionChanged: _handleInlineFieldChanged,
-                      onSaveDescription: () => _saveInlineEdit(person),
-                      editForm: _buildInlineEditForm(person),
-
-                      personRepository: personRepository,
-                      openMatches: openMatches,
-                      rejectedMatches: rejectedMatches,
-                    ),
-
-                  ],
-                ),
-              ),
         ),
       ),
     );
@@ -2088,6 +2131,7 @@ class _ProfileCardTab extends StatelessWidget {
     required this.person,
     required this.showInlineEdit,
     required this.onEditPressed,
+    required this.editSectionKey,
     required this.onAddPhotos,
     required this.onTapPhoto,
     required this.onSetPrimary,
@@ -2105,6 +2149,7 @@ class _ProfileCardTab extends StatelessWidget {
   final Person person;
   final bool showInlineEdit;
   final VoidCallback onEditPressed;
+  final GlobalKey editSectionKey;
   final VoidCallback onAddPhotos;
   final ValueChanged<int> onTapPhoto;
   final ValueChanged<int> onSetPrimary;
@@ -2130,32 +2175,36 @@ class _ProfileCardTab extends StatelessWidget {
           onSetPrimary: onSetPrimary,
           onEditPressed: onEditPressed,
         ),
-        if (showInlineEdit) ...<Widget>[
-          const SizedBox(height: 16),
-          _Section(
-            title: 'עריכת כרטיסייה',
-            child: TextFormField(
-              controller: descriptionController,
-              focusNode: descriptionFocus,
-              textInputAction: TextInputAction.newline,
-              maxLines: 10,
-              minLines: 5,
-              onChanged: (_) => onDescriptionChanged(),
-              decoration: InputDecoration(
-                hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
-                alignLabelWithHint: true,
-                suffixIcon: descriptionFocus.hasFocus
-                    ? IconButton(
-                        icon: const Icon(Icons.check),
-                        tooltip: 'שמירה',
-                        onPressed: onSaveDescription,
-                      )
-                    : null,
+        if (showInlineEdit)
+          Column(
+            key: editSectionKey,
+            children: <Widget>[
+              const SizedBox(height: 16),
+              _Section(
+                title: 'עריכת כרטיסייה',
+                child: TextFormField(
+                  controller: descriptionController,
+                  focusNode: descriptionFocus,
+                  textInputAction: TextInputAction.newline,
+                  maxLines: 10,
+                  minLines: 5,
+                  onChanged: (_) => onDescriptionChanged(),
+                  decoration: InputDecoration(
+                    hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
+                    alignLabelWithHint: true,
+                    suffixIcon: descriptionFocus.hasFocus
+                        ? IconButton(
+                            icon: const Icon(Icons.check),
+                            tooltip: 'שמירה',
+                            onPressed: onSaveDescription,
+                          )
+                        : null,
+                  ),
+                ),
               ),
-            ),
+              editForm,
+            ],
           ),
-          editForm,
-        ],
 
         if (openMatches.isNotEmpty)
           _MatchesGroup(
@@ -2664,7 +2713,6 @@ class _TabEmptyState extends StatelessWidget {
     );
   }
 }
-
 
 String _personSummary(Person person) {
   final List<String> parts = <String>[

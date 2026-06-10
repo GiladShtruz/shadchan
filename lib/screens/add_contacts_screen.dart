@@ -31,11 +31,7 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
       return;
     }
 
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/home');
-    }
+    context.go('/home');
   }
 
   @override
@@ -65,11 +61,11 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
       child: Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_forward),
-          tooltip: 'חזרה',
-          onPressed: _handleLeave,
-        ),
+        // leading: IconButton(
+        //   icon: const Icon(Icons.arrow_back),
+        //   tooltip: 'חזרה',
+        //   onPressed: _handleLeave,
+        // ),
         title: const Text('הוספת אנשי קשר'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),

@@ -114,6 +114,10 @@ abstract final class ContactsImportService {
           .where((String keyword) => keyword.trim().isNotEmpty)
           .toSet()
           .toList(growable: false);
+  static final Set<String> _normalizedNameAllowlist = nameFilterAllowlist
+      .map((String name) => _normalizeNameFilterText(name).trim())
+      .where((String name) => name.isNotEmpty)
+      .toSet();
 
   static Future<ContactsPermissionState> requestPermission() async {
     final PermissionStatus status = await FlutterContacts.permissions.request(
@@ -267,12 +271,19 @@ abstract final class ContactsImportService {
   }
 
   static bool isFilteredByName(String displayName) {
-    final String normalizedName =
-        ' ${_normalizeNameFilterText(displayName).trim()} ';
-    if (normalizedName.trim().isEmpty) {
+    final String trimmed = _normalizeNameFilterText(displayName).trim();
+    if (trimmed.isEmpty) {
       return false;
     }
 
+    // A name that contains a known legitimate word (first/last name) is never
+    // auto-filtered, even if it happens to contain a blocked substring.
+    final List<String> words = trimmed.split(' ');
+    if (words.any(_normalizedNameAllowlist.contains)) {
+      return false;
+    }
+
+    final String normalizedName = ' $trimmed ';
     return _normalizedBlockedNameKeywords.any(normalizedName.contains);
   }
 
@@ -483,8 +494,11 @@ abstract final class ContactsImportService {
       normalizedPhone: normalizedPhone,
       alreadyExists: false,
       hasAdditionalPhones: rawCandidate['hasAdditionalPhones'] == true,
+      // Recompute from the name (rather than trusting the cached flag) so
+      // changes to the filtering logic / allowlist take effect immediately,
+      // even for contacts loaded from the cache.
       isFilteredByName:
-          rawCandidate['isFilteredByName'] == true ||
+          isFilteredByName(displayName) ||
           hiddenPhones.contains(normalizedPhone),
     );
   }

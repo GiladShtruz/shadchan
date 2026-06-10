@@ -20,12 +20,17 @@ List<Widget> buildDashboardSummarySlivers(
   final MatchRepository matchRepository = context.watch<MatchRepository>();
 
   final List<Person> storedPeople = personRepository.getAll();
-  final List<Person> allPeople = storedPeople
-      .where((Person p) => !p.needsReview && !p.hidden)
+  // Every non-deleted contact counts towards the general total, including those
+  // still waiting for an update.
+  final List<Person> visiblePeople = storedPeople
+      .where((Person p) => !p.hidden)
+      .toList();
+  final List<Person> allPeople = visiblePeople
+      .where((Person p) => !p.needsReview)
       .toList();
   final List<MatchIdea> allMatches = matchRepository.getAll();
 
-  final int peopleCount = allPeople.length;
+  final int peopleCount = visiblePeople.length;
   final int mazelTovCount = allPeople
       .where((Person p) => p.profileStatus == ProfileStatus.mazelTov)
       .length;
