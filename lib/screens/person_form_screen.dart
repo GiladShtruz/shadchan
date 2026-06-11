@@ -737,7 +737,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           ..lastName = lastName
           ..gender = _selectedGender
           ..birthDate = _birthDate
-          ..manualAge = manualAge
+          ..setManualAge(manualAge)
           ..religiousLevel = _selectedReligiousLevel
           ..city = _normalizedText(_cityController.text)
           ..phone = _normalizedText(_phoneController.text)
@@ -766,6 +766,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           gender: _selectedGender,
           birthDate: _birthDate,
           manualAge: manualAge,
+          manualAgeUpdatedAt: manualAge != null ? now : null,
           religiousLevel: _selectedReligiousLevel,
           city: _normalizedText(_cityController.text),
           phone: _normalizedText(_phoneController.text),
@@ -809,7 +810,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   void _populateFromPerson(Person person) {
     _firstNameController.text = person.firstName;
     _lastNameController.text = person.lastName;
-    _manualAgeController.text = person.manualAge?.toString() ?? '';
+    // Show the up-to-date age (manual age advances over time) so editing it
+    // re-anchors from the value the user actually sees.
+    _manualAgeController.text = person.birthDate == null
+        ? (person.age?.toString() ?? '')
+        : (person.manualAge?.toString() ?? '');
     _cityController.text = person.city ?? '';
     _phoneController.text = person.phone ?? '';
     _inquiryContactNameController.text = person.inquiryContactName ?? '';

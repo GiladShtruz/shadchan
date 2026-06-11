@@ -58,7 +58,14 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final List<ContactImportCandidate> visibleCandidates = _visibleCandidates;
+    // Watch the repository so contacts added elsewhere (e.g. the swipe view)
+    // drop out of this list automatically and can't be imported twice.
+    final PersonRepository personRepository = context
+        .watch<PersonRepository>();
+    final Set<String> existingPhones = personRepository.getNormalizedPhones();
+    final List<ContactImportCandidate> visibleCandidates = _visibleCandidatesFor(
+      existingPhones,
+    );
 
     if (widget.embedded) {
       return GestureDetector(
@@ -183,12 +190,20 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     );
   }
 
-  List<ContactImportCandidate> get _visibleCandidates {
+  List<ContactImportCandidate> _visibleCandidatesFor(
+    Set<String> existingPhones,
+  ) {
     final String query = _searchController.text.trim();
     final bool searching = query.isNotEmpty;
 
     return _allCandidates.where((ContactImportCandidate candidate) {
       if (_handledIds.contains(candidate.deviceContactId)) {
+        return false;
+      }
+
+      // Already in the repository (e.g. just added from the swipe view) — hide
+      // it everywhere, even while searching, to avoid duplicate imports.
+      if (existingPhones.contains(candidate.normalizedPhone)) {
         return false;
       }
 
@@ -414,10 +429,10 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
   }
 }
 
-/// A single importable contact rendered with [Dismissible]: the name is
-/// centered, a ❤️ sits on the right and a (black) ✕ on the left. A full swipe
-/// from the start side (right, in RTL) adds the contact; a full swipe from the
-/// end side (left) removes it. A partial swipe snaps back without resting open.
+/// A single importable contact rendered with [Dismissible]. A full swipe from
+/// the start side (right, in RTL) removes the contact; a full swipe from the
+/// end side (left) adds it. The revealed background always matches the action
+/// it triggers, and a partial swipe snaps back without resting open.
 class _ImportCandidateRow extends StatelessWidget {
   const _ImportCandidateRow({
     super.key,
@@ -447,28 +462,28 @@ class _ImportCandidateRow extends StatelessWidget {
       },
       movementDuration: const Duration(milliseconds: 200),
       // Swiping from the start side (right, in RTL) reveals and triggers the
-      // heart / add action.
-      background: _SwipeActionBackground(
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-        icon: Icons.favorite,
-        label: 'הוספה',
-        alignment: AlignmentDirectional.centerStart,
-      ),
-      // Swiping from the end side (left, in RTL) reveals and triggers the
       // remove action with a black ✕.
-      secondaryBackground: const _SwipeActionBackground(
+      background: const _SwipeActionBackground(
         backgroundColor: Color(0xFFE0E0E0),
         foregroundColor: Colors.black,
         icon: Icons.close,
         label: 'הסרה',
+        alignment: AlignmentDirectional.centerStart,
+      ),
+      // Swiping from the end side (left, in RTL) reveals and triggers the
+      // heart / add action.
+      secondaryBackground: _SwipeActionBackground(
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: theme.colorScheme.onPrimary,
+        icon: Icons.favorite,
+        label: 'הוספה',
         alignment: AlignmentDirectional.centerEnd,
       ),
       onDismissed: (DismissDirection direction) {
         if (direction == DismissDirection.startToEnd) {
-          onHeart();
-        } else {
           onRemove();
+        } else {
+          onHeart();
         }
       },
       child: Card(

@@ -17,6 +17,12 @@ class PersonRepository extends ChangeNotifier {
   final Box<PersonNote>? _noteBox;
   final Uuid _uuid = const Uuid();
 
+  /// Invoked with a person id whenever that person becomes unavailable (busy /
+  /// on a break) so related open proposals can be moved to "בהמתנה". Wired to
+  /// [MatchRepository] in `main.dart` to avoid a hard dependency between the
+  /// two repositories.
+  Future<void> Function(String personId)? onPersonStatusPaused;
+
   int get count => _box.length;
 
   int get pendingCount {
@@ -254,6 +260,9 @@ class PersonRepository extends ChangeNotifier {
     person.needsReview = false;
     await person.save();
     notifyListeners();
+    if (person.profileStatus.pausesMatches) {
+      await onPersonStatusPaused?.call(person.id);
+    }
     _refreshBirthdayNotificationsInBackground();
   }
 
@@ -360,6 +369,9 @@ class PersonRepository extends ChangeNotifier {
       isAutomatic: true,
     );
     notifyListeners();
+    if (newStatus.pausesMatches) {
+      await onPersonStatusPaused?.call(id);
+    }
   }
 
   List<PersonNote> getNotesForPerson(String personId) {

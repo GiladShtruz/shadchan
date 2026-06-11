@@ -152,6 +152,44 @@ class MatchRepository extends ChangeNotifier {
     _refreshNotifications();
   }
 
+  /// Moves a person's open proposals (still "רעיון"/"בבדיקה") to
+  /// [MatchStatus.unavailable] ("בהמתנה") when that person is marked busy or on
+  /// a break. Already-progressed proposals (dating, archived, etc.) are left
+  /// untouched.
+  Future<void> pauseOpenMatchesForPerson(String personId) async {
+    final DateTime now = DateTime.now();
+    bool changed = false;
+
+    for (final MatchIdea match in _matchBox.values) {
+      final bool involvesPerson =
+          match.personAId == personId || match.personBId == personId;
+      if (!involvesPerson) {
+        continue;
+      }
+      if (match.status != MatchStatus.idea &&
+          match.status != MatchStatus.checking) {
+        continue;
+      }
+
+      match.status = MatchStatus.unavailable;
+      match.updatedAt = now;
+      await match.save();
+      await _createNote(
+        matchId: match.id,
+        text:
+            'סטטוס שונה ל-${MatchStatus.unavailable.displayName} (אחד הצדדים לא פנוי)',
+        createdAt: now,
+        isAutomatic: true,
+      );
+      changed = true;
+    }
+
+    if (changed) {
+      notifyListeners();
+      _refreshNotifications();
+    }
+  }
+
   Future<void> updateHandler(
     String matchId,
     CurrentHandler handler, {

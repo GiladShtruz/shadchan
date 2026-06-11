@@ -57,7 +57,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// How many times the user pressed "skip" — advances the featured contact.
   int _skips = 0;
-  late int _pageIndex = widget.initialPageIndex;
+  /// How many pages of the "החברים שלך" list are currently revealed. Pressing
+  /// "הצג עוד" reveals one more page in place instead of opening a new screen.
+  late int _visiblePages = widget.initialPageIndex + 1;
   bool _searchVisible = false;
   late _HomePeopleSortOption _sortOption = _sortFromName(widget.initialSort);
 
@@ -143,16 +145,19 @@ class _HomeScreenState extends State<HomeScreen> {
     List<Person> visiblePeople,
     int pendingCount,
   ) {
-    final Person? featured = eligiblePeople.isEmpty
+    // The auto-featured contact skips anyone marked busy ("תפוס") or on a
+    // break ("הפסקה"); they still appear in the full list below.
+    final List<Person> featuredCandidates = eligiblePeople
+        .where((Person p) => !p.profileStatus.pausesMatches)
+        .toList();
+    final Person? featured = featuredCandidates.isEmpty
         ? null
-        : eligiblePeople[_skips % eligiblePeople.length];
-    final int pageStart = _pageIndex * _peoplePageSize;
+        : featuredCandidates[_skips % featuredCandidates.length];
     final List<Person> pagedPeople = visiblePeople
-        .skip(pageStart)
-        .take(_peoplePageSize)
+        .take(_visiblePages * _peoplePageSize)
         .toList();
     final bool hasNextPeoplePage =
-        visiblePeople.length > pageStart + pagedPeople.length;
+        visiblePeople.length > pagedPeople.length;
 
     return CustomScrollView(
       slivers: <Widget>[
@@ -323,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _handleSearchChanged() {
     setState(() {
-      _pageIndex = 0;
+      _visiblePages = 1;
     });
   }
 
@@ -382,7 +387,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() {
       _sortOption = selected;
-      _pageIndex = 0;
+      _visiblePages = 1;
     });
   }
 
@@ -422,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedProfileStatuses = result.profileStatuses;
       _cityFilter = result.city.trim();
       _favoritesOnly = result.favoritesOnly;
-      _pageIndex = 0;
+      _visiblePages = 1;
     });
   }
 
@@ -445,7 +450,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onDeleted: () {
             setState(() {
               _selectedGender = null;
-              _pageIndex = 0;
+              _visiblePages = 1;
             });
           },
         ),
@@ -460,7 +465,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onDeleted: () {
             setState(() {
               _selectedAgeRange = null;
-              _pageIndex = 0;
+              _visiblePages = 1;
             });
           },
         ),
@@ -476,7 +481,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _selectedReligiousLevels = _selectedReligiousLevels
                   .where((ReligiousLevel item) => item != level)
                   .toList();
-              _pageIndex = 0;
+              _visiblePages = 1;
             });
           },
         ),
@@ -492,7 +497,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _selectedProfileStatuses = _selectedProfileStatuses
                   .where((ProfileStatus item) => item != status)
                   .toList();
-              _pageIndex = 0;
+              _visiblePages = 1;
             });
           },
         ),
@@ -506,7 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onDeleted: () {
             setState(() {
               _cityFilter = '';
-              _pageIndex = 0;
+              _visiblePages = 1;
             });
           },
         ),
@@ -520,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onDeleted: () {
             setState(() {
               _favoritesOnly = false;
-              _pageIndex = 0;
+              _visiblePages = 1;
             });
           },
         ),
@@ -534,7 +539,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () {
           setState(() {
             _resetFilters();
-            _pageIndex = 0;
+            _visiblePages = 1;
           });
         },
       ),
@@ -553,7 +558,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showNextPeoplePage() {
-    context.push(_homePageLocation(_pageIndex + 1));
+    setState(() => _visiblePages++);
   }
 
   List<Person> _getVisiblePeople(PersonRepository repository) {
@@ -741,29 +746,31 @@ class _HomeScreenState extends State<HomeScreen> {
               !p.needsReview && !p.hidden && !p.profileStatus.isArchived,
         )
         .toList();
-    people.sort(
-      (Person a, Person b) => _shuffleKey(a).compareTo(_shuffleKey(b)),
-    );
+    // Surface contacts that already have a photo and a shareable card first so
+    // the randomly-featured contact on each launch is a "ready" one; contacts
+    // without a card follow, shuffled among themselves.
+    people.sort((Person a, Person b) {
+      final bool aReady = _hasShareableCard(a);
+      final bool bReady = _hasShareableCard(b);
+      if (aReady != bReady) {
+        return aReady ? -1 : 1;
+      }
+      return _shuffleKey(a).compareTo(_shuffleKey(b));
+    });
     return people;
   }
+
+  /// Whether a contact has both a photo and a description, i.e. a card that's
+  /// ready to be shared.
+  bool _hasShareableCard(Person person) =>
+      person.photosPaths.isNotEmpty &&
+      (person.description ?? '').trim().isNotEmpty;
 
   /// Deterministic per-launch ordering key: stable for the lifetime of this
   /// screen (so the list doesn't jump around on rebuilds) yet reshuffled on the
   /// next launch via [_seed]. New contacts slot in deterministically too.
   int _shuffleKey(Person person) => (person.id.hashCode ^ _seed) & 0x7fffffff;
 
-  String _homePageLocation(int pageIndex) {
-    return Uri(
-      path: '/home',
-      queryParameters: <String, String>{
-        'page': (pageIndex + 1).toString(),
-        'seed': _seed.toString(),
-        'sort': _sortOption.name,
-        if (_searchController.text.trim().isNotEmpty)
-          'q': _searchController.text.trim(),
-      },
-    ).toString();
-  }
 
   static _HomePeopleSortOption _sortFromName(String name) {
     for (final _HomePeopleSortOption option in _HomePeopleSortOption.values) {
@@ -866,7 +873,7 @@ class _NextPageButton extends StatelessWidget {
         width: double.infinity,
         child: OutlinedButton(
           onPressed: onPressed,
-          child: const Text('עמוד הבא'),
+          child: const Text('הצג עוד'),
         ),
       ),
     );

@@ -15,6 +15,7 @@ class Person extends HiveObject {
     required this.updatedAt,
     this.birthDate,
     this.manualAge,
+    this.manualAgeUpdatedAt,
     this.religiousLevel,
     this.city,
     this.phone,
@@ -107,6 +108,12 @@ class Person extends HiveObject {
   @HiveField(23)
   bool hidden;
 
+  /// When the manual age was last set. Used to advance the age by a year every
+  /// 365 days so a manually-entered age doesn't go stale. Null when the age
+  /// comes from a birth date instead.
+  @HiveField(24)
+  DateTime? manualAgeUpdatedAt;
+
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 
   int? get age {
@@ -114,7 +121,42 @@ class Person extends HiveObject {
       return AppDateUtils.calculateAge(birthDate!);
     }
 
-    return manualAge;
+    return _effectiveManualAge;
+  }
+
+  /// The manually-entered age advanced by one year for every 365 days elapsed
+  /// since it was last set. Falls back to the raw value when no anchor exists
+  /// (legacy records, until the next time the age is saved).
+  int? get _effectiveManualAge {
+    final int? base = manualAge;
+    if (base == null) {
+      return null;
+    }
+    final DateTime? anchor = manualAgeUpdatedAt;
+    if (anchor == null) {
+      return base;
+    }
+    final int elapsedYears = DateTime.now().difference(anchor).inDays ~/ 365;
+    return elapsedYears > 0 ? base + elapsedYears : base;
+  }
+
+  /// Sets a manually-entered age and stamps [manualAgeUpdatedAt] so it can age
+  /// forward over time. Editing other fields leaves the anchor untouched (the
+  /// effective age is unchanged), so the 365-day clock isn't reset. Pass null
+  /// to clear the age (e.g. when a birth date is used instead).
+  void setManualAge(int? value) {
+    if (value == null) {
+      manualAge = null;
+      manualAgeUpdatedAt = null;
+      return;
+    }
+    // Unchanged from the current effective age (and already anchored) — keep
+    // the original base value and anchor so aging continues uninterrupted.
+    if (manualAgeUpdatedAt != null && value == _effectiveManualAge) {
+      return;
+    }
+    manualAge = value;
+    manualAgeUpdatedAt = DateTime.now();
   }
 
   String get displayAge => age?.toString() ?? '';
@@ -132,6 +174,7 @@ class Person extends HiveObject {
     Gender? gender,
     Object? birthDate = _sentinel,
     Object? manualAge = _sentinel,
+    Object? manualAgeUpdatedAt = _sentinel,
     Object? religiousLevel = _sentinel,
     Object? city = _sentinel,
     Object? phone = _sentinel,
@@ -162,6 +205,9 @@ class Person extends HiveObject {
       manualAge: identical(manualAge, _sentinel)
           ? this.manualAge
           : manualAge as int?,
+      manualAgeUpdatedAt: identical(manualAgeUpdatedAt, _sentinel)
+          ? this.manualAgeUpdatedAt
+          : manualAgeUpdatedAt as DateTime?,
       religiousLevel: identical(religiousLevel, _sentinel)
           ? this.religiousLevel
           : religiousLevel as ReligiousLevel?,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -86,7 +85,19 @@ class _MatchesScreenState extends State<MatchesScreen>
     final Color appBarForeground =
         theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary;
 
-    return Scaffold(
+    return PopScope(
+      // In the archive view, back returns to the main ideas list instead of
+      // popping the whole screen (e.g. out to home).
+      canPop: !_showArchived,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        if (_showArchived) {
+          setState(() => _showArchived = false);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_showArchived ? 'ארכיון' : 'רעיונות'),
         centerTitle: true,
@@ -145,8 +156,7 @@ class _MatchesScreenState extends State<MatchesScreen>
           ),
         ],
       ),
-
-
+      ),
     );
   }
 
@@ -273,7 +283,7 @@ class _MatchesTabView extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
+    final Widget list = ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       itemCount: matches.length,
       itemBuilder: (BuildContext context, int index) {
@@ -292,6 +302,58 @@ class _MatchesTabView extends StatelessWidget {
           ),
         );
       },
+    );
+
+    if (tab != MatchProposalTab.waiting) {
+      return list;
+    }
+
+    // Explain why proposals land in the "בהמתנה" tab.
+    return Column(
+      children: <Widget>[
+        _WaitingTabHint(theme: theme),
+        Expanded(child: list),
+      ],
+    );
+  }
+}
+
+/// Short banner shown at the top of the "בהמתנה" tab explaining that a side is
+/// currently unavailable.
+class _WaitingTabHint extends StatelessWidget {
+  const _WaitingTabHint({required this.theme});
+
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.5,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.info_outline,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'אחד הצדדים תפוס או בהפסקה',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -367,31 +429,6 @@ class _MatchCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     _AvatarOrDeleted(person: personB),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: <Widget>[
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          '${match.status.icon} ${match.status.displayName}',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: statusColor,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'נפתח: ${AppDateUtils.formatDateShort(match.createdAt)} · עודכן: ${AppDateUtils.timeAgo(match.updatedAt)}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ],

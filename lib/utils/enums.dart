@@ -42,6 +42,11 @@ enum ReligiousLevel {
   @HiveField(4)
   datiLeumiTorani,
 
+  // Declared between "דתי לאומי תורני" and "חרדי" for natural ordering, but
+  // keeps a unique HiveField index so existing stored data stays valid.
+  @HiveField(7)
+  chardal,
+
   @HiveField(5)
   haredi,
 
@@ -60,6 +65,8 @@ enum ReligiousLevel {
         return 'דתי לאומי';
       case ReligiousLevel.datiLeumiTorani:
         return 'דתי לאומי תורני';
+      case ReligiousLevel.chardal:
+        return 'חרד״ל';
       case ReligiousLevel.haredi:
         return 'חרדי';
       case ReligiousLevel.hiloni:
@@ -194,6 +201,11 @@ MatchProposalTab? matchProposalTabFor({
     case MatchStatus.rejected:
       return MatchProposalTab.rejected;
     case MatchStatus.dating:
+      // A "מזל טוב" (archived) side drops the active proposal out of the
+      // matches view entirely.
+      if (anyPersonArchived) {
+        return null;
+      }
       return MatchProposalTab.dating;
     case MatchStatus.idea:
     case MatchStatus.checking:

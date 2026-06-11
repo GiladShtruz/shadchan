@@ -16,9 +16,17 @@ import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
 class MatchDetailScreen extends StatefulWidget {
-  const MatchDetailScreen({super.key, required this.matchId});
+  const MatchDetailScreen({
+    super.key,
+    required this.matchId,
+    this.autoPromptWhatsApp = false,
+  });
 
   final String matchId;
+
+  /// Whether to auto-open the "send WhatsApp?" prompt. Only true when the
+  /// proposal was just created, so revisiting it from a list stays quiet.
+  final bool autoPromptWhatsApp;
 
   @override
   State<MatchDetailScreen> createState() => _MatchDetailScreenState();
@@ -30,9 +38,9 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   static const List<MatchStatus> _selectableStatuses = <MatchStatus>[
     MatchStatus.idea,
     MatchStatus.unavailable,
+    MatchStatus.rejected,
     MatchStatus.dating,
     MatchStatus.dated,
-    MatchStatus.rejected,
     MatchStatus.married,
   ];
 
@@ -407,6 +415,10 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     required Person? personA,
     required Person? personB,
   }) {
+    // Only prompt when the proposal was just opened for the first time.
+    if (!widget.autoPromptWhatsApp) {
+      return;
+    }
     if (_promptedWhatsAppMatchId == match.id || _isWhatsAppPromptOpen) {
       return;
     }
@@ -459,13 +471,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         context: context,
         builder: (BuildContext dialogContext) {
           return AlertDialog(
-            title: const Text('תרצה לשלוח להם ווטסאפ?'),
+            titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 4),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+            actionsPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            title: const Text('תרצה לשלוח ווטסאפ?'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 _MatchWhatsAppActionTile(
-                  title: 'פתיחת שיחת ווטסאפ עם הבחור',
                   person: people.male,
+                  fallbackLabel: 'הבחור',
                   onTap: () => _openWhatsAppFromPrompt(
                     dialogContext,
                     people.male,
@@ -473,8 +488,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                   ),
                 ),
                 _MatchWhatsAppActionTile(
-                  title: 'פתיחת שיחת ווטסאפ עם הבחורה',
                   person: people.female,
+                  fallbackLabel: 'הבחורה',
                   onTap: () => _openWhatsAppFromPrompt(
                     dialogContext,
                     people.female,
@@ -811,13 +826,15 @@ class _PersonCard extends StatelessWidget {
 
 class _MatchWhatsAppActionTile extends StatelessWidget {
   const _MatchWhatsAppActionTile({
-    required this.title,
     required this.person,
+    required this.fallbackLabel,
     required this.onTap,
   });
 
-  final String title;
   final Person? person;
+
+  /// Shown instead of a first name when the contact is missing or unnamed.
+  final String fallbackLabel;
   final VoidCallback onTap;
 
   @override
@@ -826,18 +843,24 @@ class _MatchWhatsAppActionTile extends StatelessWidget {
     final bool canOpen =
         currentPerson != null &&
         WhatsAppUtils.buildChatUri(currentPerson) != null;
-    final String subtitle = currentPerson == null
+    final String firstName = (currentPerson?.firstName ?? '').trim();
+    final String label = firstName.isEmpty ? fallbackLabel : firstName;
+    // Only show a subtitle for the error states; the first name alone is enough
+    // otherwise, keeping the popup compact.
+    final String? subtitle = currentPerson == null
         ? 'איש הקשר חסר'
         : canOpen
-        ? currentPerson.fullName.trim()
+        ? null
         : 'אין מספר טלפון תקין';
 
     return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
       contentPadding: EdgeInsets.zero,
       enabled: canOpen,
       leading: const Icon(Icons.chat_outlined),
-      title: Text(title),
-      subtitle: Text(subtitle),
+      title: Text('ל$label'),
+      subtitle: subtitle == null ? null : Text(subtitle),
       trailing: const Icon(Icons.open_in_new),
       onTap: canOpen ? onTap : null,
     );

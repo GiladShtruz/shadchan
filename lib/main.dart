@@ -39,10 +39,17 @@ Future<void> main() async {
           ),
         ),
         ChangeNotifierProvider<MatchRepository>(
-          create: (_) => MatchRepository(
-            Hive.box<MatchIdea>('matches'),
-            Hive.box<MatchNote>('match_notes'),
-          ),
+          create: (BuildContext context) {
+            final MatchRepository matchRepository = MatchRepository(
+              Hive.box<MatchIdea>('matches'),
+              Hive.box<MatchNote>('match_notes'),
+            );
+            // When a person is marked busy / on a break, move their open
+            // proposals to "בהמתנה" automatically.
+            context.read<PersonRepository>().onPersonStatusPaused =
+                matchRepository.pauseOpenMatchesForPerson;
+            return matchRepository;
+          },
         ),
         ChangeNotifierProvider<ThemeModeProvider>(
           create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),

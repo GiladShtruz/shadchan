@@ -239,7 +239,14 @@ abstract final class AppRouter {
                     path: ':id',
                     builder: (BuildContext context, GoRouterState state) {
                       final String matchId = state.pathParameters['id']!;
-                      return MatchDetailScreen(matchId: matchId);
+                      // The WhatsApp prompt only auto-opens the first time a
+                      // proposal is created, not when revisiting it from a list.
+                      final bool justCreated =
+                          state.uri.queryParameters['justCreated'] == 'true';
+                      return MatchDetailScreen(
+                        matchId: matchId,
+                        autoPromptWhatsApp: justCreated,
+                      );
                     },
                   ),
                 ],

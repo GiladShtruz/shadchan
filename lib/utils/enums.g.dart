@@ -71,6 +71,8 @@ class ReligiousLevelAdapter extends TypeAdapter<ReligiousLevel> {
         return ReligiousLevel.haredi;
       case 6:
         return ReligiousLevel.hiloni;
+      case 7:
+        return ReligiousLevel.chardal;
       default:
         return ReligiousLevel.datlashi;
     }
@@ -99,6 +101,9 @@ class ReligiousLevelAdapter extends TypeAdapter<ReligiousLevel> {
         break;
       case ReligiousLevel.hiloni:
         writer.writeByte(6);
+        break;
+      case ReligiousLevel.chardal:
+        writer.writeByte(7);
         break;
     }
   }

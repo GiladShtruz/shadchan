@@ -339,7 +339,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     );
     final MatchProposalFilters? savedSuggestionFilters =
         MatchProposalFilterSheet.savedFiltersFor(person.id);
-    final List<Person> suggestedPeople = personRepository
+    final List<Person> matchingCandidates = personRepository
         .getAll()
         .where(
           (Person candidate) => _matchesSuggestionFilters(
@@ -349,6 +349,34 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
           ),
         )
         .toList();
+    // Order the suggestions in three tiers, preserving relative order within
+    // each: candidates that already have an open/בהמתנה proposal with this
+    // person come first, then the remaining active suggestions, and finally
+    // already-rejected candidates at the very end.
+    final List<Person> prioritizedSuggestions = <Person>[];
+    final List<Person> activeSuggestions = <Person>[];
+    final List<Person> rejectedSuggestions = <Person>[];
+    for (final Person candidate in matchingCandidates) {
+      final MatchIdea? existingMatch = matchRepository.findExisting(
+        person.id,
+        candidate.id,
+      );
+      final MatchStatus? existingStatus = existingMatch?.status;
+      if (existingStatus == MatchStatus.rejected) {
+        rejectedSuggestions.add(candidate);
+      } else if (existingStatus == MatchStatus.idea ||
+          existingStatus == MatchStatus.checking ||
+          existingStatus == MatchStatus.unavailable) {
+        prioritizedSuggestions.add(candidate);
+      } else {
+        activeSuggestions.add(candidate);
+      }
+    }
+    final List<Person> suggestedPeople = <Person>[
+      ...prioritizedSuggestions,
+      ...activeSuggestions,
+      ...rejectedSuggestions,
+    ];
     final List<MatchIdea> openMatches = relatedMatches
         .where((MatchIdea match) => !match.status.isArchived)
         .toList();
@@ -676,7 +704,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
       female.id,
     );
     if (newMatch != null && context.mounted) {
-      context.push('/matches/${newMatch.id}');
+      context.push('/matches/${newMatch.id}?justCreated=true');
     }
   }
 
@@ -795,7 +823,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     _editingPersonId = person.id;
     _firstNameController.text = person.firstName;
     _lastNameController.text = person.lastName;
-    _manualAgeController.text = person.manualAge?.toString() ?? '';
+    // Show the current (auto-advancing) manual age so re-saving re-anchors it.
+    _manualAgeController.text = person.birthDate == null
+        ? (person.age?.toString() ?? '')
+        : (person.manualAge?.toString() ?? '');
     _cityController.text = person.city ?? '';
     _phoneController.text = person.phone ?? '';
     _inquiryContactNameController.text = person.inquiryContactName ?? '';
@@ -884,7 +915,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
         ..lastName = savedLastName
         ..gender = savedGender
         ..birthDate = savedBirthDate
-        ..manualAge = manualAge
+        ..setManualAge(manualAge)
         ..religiousLevel = savedReligiousLevel
         ..city = _normalizedText(savedCityText)
         ..phone = _normalizedText(savedPhoneText)
@@ -3072,7 +3103,7 @@ class _PhotosSection extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 120,
+      height: 200,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: person.photosPaths.length,
@@ -3089,14 +3120,14 @@ class _PhotosSection extends StatelessWidget {
                   child: file.existsSync()
                       ? Image.file(
                           file,
-                          width: 100,
-                          height: 120,
-                          cacheWidth: 200,
+                          width: 165,
+                          height: 200,
+                          cacheWidth: 330,
                           fit: BoxFit.cover,
                         )
                       : Container(
-                          width: 100,
-                          height: 120,
+                          width: 165,
+                          height: 200,
                           color: Theme.of(
                             context,
                           ).colorScheme.surfaceContainerHighest,

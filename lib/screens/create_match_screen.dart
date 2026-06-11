@@ -197,7 +197,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       return;
     }
 
-    context.go('/matches/${newMatch.id}');
+    context.go('/matches/${newMatch.id}?justCreated=true');
   }
 
   ({Person male, Person female}) _orderedPeople(Person first, Person second) {

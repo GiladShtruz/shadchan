@@ -88,7 +88,7 @@ abstract final class MatchSuggestionFlow {
       female.id,
     );
     if (newMatch != null && context.mounted) {
-      context.push('/matches/${newMatch.id}');
+      context.push('/matches/${newMatch.id}?justCreated=true');
     }
   }
 

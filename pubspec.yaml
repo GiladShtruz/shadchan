@@ -1,7 +1,7 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.14+15
+version: 1.0.15+16
 
 environment:
   sdk: ^3.11.0

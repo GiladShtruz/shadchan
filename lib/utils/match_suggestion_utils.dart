@@ -8,6 +8,12 @@ abstract final class MatchSuggestionUtils {
         return const <ReligiousLevel>[
           ReligiousLevel.datiLeumiTorani,
           ReligiousLevel.datiLeumi,
+          ReligiousLevel.chardal,
+        ];
+      case ReligiousLevel.chardal:
+        return const <ReligiousLevel>[
+          ReligiousLevel.chardal,
+          ReligiousLevel.datiLeumiTorani,
         ];
       case ReligiousLevel.datiLeumi:
         return const <ReligiousLevel>[
