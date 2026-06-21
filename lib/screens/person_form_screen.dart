@@ -41,6 +41,10 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       TextEditingController();
   final TextEditingController _sourceController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
+  // A free-text personal note added on save straight to the person's notes
+  // timeline ("אזור ההערות בכרטיס"). Starts empty even when editing, since it
+  // appends a new note rather than showing the existing ones.
+  final TextEditingController _personalNotesController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final Uuid _uuid = const Uuid();
   late final String _draftPersonId = _uuid.v4();
@@ -94,6 +98,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _inquiryContactPhoneController.dispose();
     _sourceController.dispose();
     _notesController.dispose();
+    _personalNotesController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -456,6 +461,18 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 alignLabelWithHint: true,
               ),
             ),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _personalNotesController,
+              textInputAction: TextInputAction.newline,
+              maxLines: 5,
+              minLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'הערות אישיות',
+                hintText: 'הערה שתתווסף ליומן ההערות בכרטיס',
+                alignLabelWithHint: true,
+              ),
+            ),
           ],
         ),
       ),
@@ -791,10 +808,19 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         await repository.add(person);
       }
 
+      // A personal note typed in the form is appended straight to the person's
+      // notes timeline ("אזור ההערות בכרטיס").
+      final String personalNote = _personalNotesController.text.trim();
+      if (personalNote.isNotEmpty) {
+        final String personId = _person?.id ?? _draftPersonId;
+        await repository.addNote(personId, personalNote);
+      }
+
       if (!mounted) {
         return;
       }
 
+      _personalNotesController.clear();
       _initialSnapshot = _currentSnapshot();
       _newPhotoPaths.clear();
       context.pop();
@@ -898,6 +924,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       inquiryContactPhone: _normalizedText(_inquiryContactPhoneController.text),
       source: _normalizedText(_sourceController.text),
       notes: _normalizedText(_notesController.text),
+      personalNote: _normalizedText(_personalNotesController.text),
       description: _normalizedText(_descriptionController.text),
       profileStatus: _selectedProfileStatus,
       hebrewBirthYear: _hebrewBirthYear,
@@ -1161,6 +1188,7 @@ class _PersonFormSnapshot {
     required this.inquiryContactPhone,
     required this.source,
     required this.notes,
+    required this.personalNote,
     required this.description,
     required this.profileStatus,
     required this.hebrewBirthYear,
@@ -1181,6 +1209,7 @@ class _PersonFormSnapshot {
   final String? inquiryContactPhone;
   final String? source;
   final String? notes;
+  final String? personalNote;
   final String? description;
   final ProfileStatus profileStatus;
   final int? hebrewBirthYear;
@@ -1207,6 +1236,7 @@ class _PersonFormSnapshot {
         other.inquiryContactPhone == inquiryContactPhone &&
         other.source == source &&
         other.notes == notes &&
+        other.personalNote == personalNote &&
         other.description == description &&
         other.profileStatus == profileStatus &&
         other.hebrewBirthYear == hebrewBirthYear &&
@@ -1230,6 +1260,7 @@ class _PersonFormSnapshot {
       inquiryContactPhone,
       source,
       notes,
+      personalNote,
       description,
       profileStatus,
       hebrewBirthYear,

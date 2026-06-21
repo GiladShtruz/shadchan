@@ -2511,7 +2511,9 @@ class _SuggestedMatchesList extends StatelessWidget {
           color: _profileSurfaceColor(theme),
           borderRadius: BorderRadius.circular(20),
           child: InkWell(
-            onTap: () => context.push('/people/${candidate.id}'),
+            onTap: () => existingMatch != null
+                ? context.push('/matches/${existingMatch.id}')
+                : context.push('/people/${candidate.id}'),
             borderRadius: BorderRadius.circular(20),
             child: Padding(
               padding: const EdgeInsets.all(12),

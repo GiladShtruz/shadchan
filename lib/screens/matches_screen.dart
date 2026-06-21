@@ -53,7 +53,9 @@ class _MatchesScreenState extends State<MatchesScreen>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final MatchRepository matchRepository = context.watch<MatchRepository>();
-    final PersonRepository personRepository = context.read<PersonRepository>();
+    // Watch (not read) so that changing a person's status to תפוס / הפסקה
+    // rebuilds the grouping and moves their open proposals into "בהמתנה".
+    final PersonRepository personRepository = context.watch<PersonRepository>();
 
     final String query = _searchController.text.trim();
     final List<MatchIdea> matches = query.isNotEmpty

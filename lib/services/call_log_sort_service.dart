@@ -12,7 +12,11 @@ abstract final class CallLogSortService {
       return candidates;
     }
 
-    final Map<String, int> recentCallOrder = await _loadRecentCallOrder();
+    // Adding contacts is the one place we may prompt for the call-log
+    // permission, since the recent-call order materially improves the import.
+    final Map<String, int> recentCallOrder = await _loadOrder(
+      'getRecentCallNumbers',
+    );
     if (recentCallOrder.isEmpty) {
       return candidates;
     }
@@ -39,11 +43,22 @@ abstract final class CallLogSortService {
     return sorted;
   }
 
-  static Future<Map<String, int>> _loadRecentCallOrder() async {
+  /// Returns a map of normalized phone number -> recency index (0 = most
+  /// recently called) **only when the `READ_CALL_LOG` permission is already
+  /// granted** — it never prompts. Empty when the call log is unavailable, the
+  /// permission is missing, or on iOS (where the call log can't be read). The
+  /// permission is requested elsewhere, only while adding contacts.
+  static Future<Map<String, int>> loadRecentCallOrder() =>
+      _loadOrder('getRecentCallNumbersIfGranted');
+
+  /// Like [loadRecentCallOrder] but may request the `READ_CALL_LOG` permission.
+  /// Only call this from the add-contacts flow, where prompting is expected.
+  static Future<Map<String, int>> loadRecentCallOrderRequestingPermission() =>
+      _loadOrder('getRecentCallNumbers');
+
+  static Future<Map<String, int>> _loadOrder(String method) async {
     try {
-      final List<dynamic>? rawNumbers = await _channel.invokeListMethod(
-        'getRecentCallNumbers',
-      );
+      final List<dynamic>? rawNumbers = await _channel.invokeListMethod(method);
       if (rawNumbers == null || rawNumbers.isEmpty) {
         return const <String, int>{};
       }

@@ -14,6 +14,7 @@ import 'package:shadchan/dialogs/match_suggestion_flow.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
 enum PeopleSortOption { alphabetical, ageAscending, newest, recentlyUpdated }
 
@@ -43,10 +44,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
   List<ReligiousLevel> _selectedReligiousLevels = <ReligiousLevel>[];
   List<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>[];
   String _cityFilter = '';
-  bool _favoritesOnly = false;
   bool _showArchived = false;
   bool _tableView = false;
   PeopleSortOption _sortOption = PeopleSortOption.alphabetical;
+
+  /// Sort direction applied on top of [_sortOption]. `true` keeps each option's
+  /// natural order; `false` reverses it ("עולה" / "יורד").
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -368,19 +372,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
       );
     }
 
-    if (_favoritesOnly) {
-      chips.add(
-        InputChip(
-          label: const Text('מועדפים'),
-          onDeleted: () {
-            setState(() {
-              _favoritesOnly = false;
-            });
-          },
-        ),
-      );
-    }
-
     chips.add(
       ActionChip(
         avatar: const Icon(Icons.close, size: 18),
@@ -402,7 +393,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
       maxAge: ageRange?.end.round(),
       religiousLevels: _selectedReligiousLevels,
       profileStatuses: _selectedProfileStatuses,
-      favoritesOnly: _favoritesOnly ? true : null,
       // Contacts still waiting for an update are part of the general list too.
       includePending: true,
     );
@@ -433,12 +423,17 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   void _sortPeople(List<Person> people) {
+    final Comparator<Person> base = _baseComparator();
+    final int direction = _sortAscending ? 1 : -1;
+    people.sort((Person a, Person b) => direction * base(a, b));
+  }
+
+  Comparator<Person> _baseComparator() {
     switch (_sortOption) {
       case PeopleSortOption.alphabetical:
-        people.sort(_sortByName);
-        return;
+        return _sortByName;
       case PeopleSortOption.ageAscending:
-        people.sort((Person a, Person b) {
+        return (Person a, Person b) {
           final int? ageA = a.age;
           final int? ageB = b.age;
 
@@ -454,20 +449,17 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
           final int ageComparison = ageA.compareTo(ageB);
           return ageComparison != 0 ? ageComparison : _sortByName(a, b);
-        });
-        return;
+        };
       case PeopleSortOption.newest:
-        people.sort((Person a, Person b) {
+        return (Person a, Person b) {
           final int comparison = b.createdAt.compareTo(a.createdAt);
           return comparison != 0 ? comparison : _sortByName(a, b);
-        });
-        return;
+        };
       case PeopleSortOption.recentlyUpdated:
-        people.sort((Person a, Person b) {
+        return (Person a, Person b) {
           final int comparison = b.updatedAt.compareTo(a.updatedAt);
           return comparison != 0 ? comparison : _sortByName(a, b);
-        });
-        return;
+        };
     }
   }
 
@@ -483,8 +475,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   Future<void> _openSortSheet() async {
-    final PeopleSortOption? selected =
-        await showModalBottomSheet<PeopleSortOption>(
+    final ({PeopleSortOption value, bool ascending})? selected =
+        await showModalBottomSheet<({PeopleSortOption value, bool ascending})>(
           context: context,
           showDragHandle: true,
           builder: (BuildContext sheetContext) {
@@ -500,6 +492,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
                         'מיין לפי',
                         style: Theme.of(sheetContext).textTheme.titleMedium,
                       ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: SortDirectionToggle(
+                      ascending: _sortAscending,
+                      onChanged: (bool ascending) => Navigator.of(
+                        sheetContext,
+                      ).pop((value: _sortOption, ascending: ascending)),
                     ),
                   ),
                   for (final ({PeopleSortOption value, String label}) option
@@ -523,7 +524,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
                               color: Theme.of(sheetContext).colorScheme.primary,
                             )
                           : null,
-                      onTap: () => Navigator.of(sheetContext).pop(option.value),
+                      onTap: () => Navigator.of(sheetContext).pop((
+                        value: option.value,
+                        ascending: _sortAscending,
+                      )),
                     ),
                 ],
               ),
@@ -535,7 +539,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       return;
     }
     setState(() {
-      _sortOption = selected;
+      _sortOption = selected.value;
+      _sortAscending = selected.ascending;
     });
   }
 
@@ -559,7 +564,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
               initialReligiousLevels: _selectedReligiousLevels,
               initialProfileStatuses: _selectedProfileStatuses,
               initialCity: _cityFilter,
-              initialFavoritesOnly: _favoritesOnly,
             );
           },
         );
@@ -574,7 +578,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
       _selectedReligiousLevels = result.religiousLevels;
       _selectedProfileStatuses = result.profileStatuses;
       _cityFilter = result.city.trim();
-      _favoritesOnly = result.favoritesOnly;
     });
   }
 
@@ -656,8 +659,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         _selectedAgeRange != null ||
         _selectedReligiousLevels.isNotEmpty ||
         _selectedProfileStatuses.isNotEmpty ||
-        _cityFilter.trim().isNotEmpty ||
-        _favoritesOnly;
+        _cityFilter.trim().isNotEmpty;
   }
 
   void _handleSearchChanged() {
@@ -670,7 +672,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
     _selectedReligiousLevels = <ReligiousLevel>[];
     _selectedProfileStatuses = <ProfileStatus>[];
     _cityFilter = '';
-    _favoritesOnly = false;
   }
 }
 

@@ -30,10 +30,28 @@ class IncomingSharedProfileDraft {
     );
   }
 
+  /// Lines added automatically by the OS / app share sheet (e.g. "נשלח מ-
+  /// WhatsApp"). They carry no profile information, so we strip them out and
+  /// leave the text field empty for manual entry when nothing else remains.
+  static final RegExp _shareAttribution = RegExp(
+    r'^(נשלח|שותף)\s+(מ[-־‑ ]|מאת\s|דרך\s).*$'
+    r'|^(sent|shared)\s+(from|via)\s.*$',
+    caseSensitive: false,
+  );
+
   static String? _normalizedText(Object? value) {
     final String? text = value as String?;
-    final String trimmed = text?.trim() ?? '';
-    return trimmed.isEmpty ? null : trimmed;
+    if (text == null) {
+      return null;
+    }
+
+    final List<String> kept = text
+        .split('\n')
+        .where((String line) => !_shareAttribution.hasMatch(line.trim()))
+        .toList();
+
+    final String result = kept.join('\n').trim();
+    return result.isEmpty ? null : result;
   }
 }
 

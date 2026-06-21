@@ -10,7 +10,6 @@ class PeopleFilterState {
     required this.religiousLevels,
     required this.profileStatuses,
     required this.city,
-    required this.favoritesOnly,
   });
 
   final Gender? gender;
@@ -18,11 +17,10 @@ class PeopleFilterState {
   final List<ReligiousLevel> religiousLevels;
   final List<ProfileStatus> profileStatuses;
   final String city;
-  final bool favoritesOnly;
 }
 
 /// Shared bottom sheet used to filter a list of people by gender, age range,
-/// religious level, profile status and favorites. Used by both the people
+/// religious level, profile status and city. Used by both the people
 /// screen and the home screen so the filtering experience stays identical.
 class PeopleFiltersSheet extends StatefulWidget {
   const PeopleFiltersSheet({
@@ -33,7 +31,6 @@ class PeopleFiltersSheet extends StatefulWidget {
     required this.initialReligiousLevels,
     required this.initialProfileStatuses,
     required this.initialCity,
-    required this.initialFavoritesOnly,
   });
 
   final Gender? initialGender;
@@ -42,7 +39,6 @@ class PeopleFiltersSheet extends StatefulWidget {
   final List<ReligiousLevel> initialReligiousLevels;
   final List<ProfileStatus> initialProfileStatuses;
   final String initialCity;
-  final bool initialFavoritesOnly;
 
   @override
   State<PeopleFiltersSheet> createState() => _PeopleFiltersSheetState();
@@ -53,7 +49,6 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
   RangeValues? tempAgeRange;
   late List<ReligiousLevel> tempReligiousLevels;
   late List<ProfileStatus> tempProfileStatuses;
-  late bool tempFavoritesOnly;
   late final TextEditingController cityController;
 
   @override
@@ -67,7 +62,6 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
     tempProfileStatuses = List<ProfileStatus>.from(
       widget.initialProfileStatuses,
     );
-    tempFavoritesOnly = widget.initialFavoritesOnly;
     cityController = TextEditingController(text: widget.initialCity);
   }
 
@@ -240,17 +234,6 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                       );
                     }).toList(),
               ),
-              const SizedBox(height: 12),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('מועדפים בלבד'),
-                value: tempFavoritesOnly,
-                onChanged: (bool value) {
-                  setState(() {
-                    tempFavoritesOnly = value;
-                  });
-                },
-              ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -263,7 +246,6 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                         religiousLevels: tempReligiousLevels,
                         profileStatuses: tempProfileStatuses,
                         city: cityController.text,
-                        favoritesOnly: tempFavoritesOnly,
                       ),
                     );
                   },
@@ -279,7 +261,6 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                       tempAgeRange = null;
                       tempReligiousLevels = <ReligiousLevel>[];
                       tempProfileStatuses = <ProfileStatus>[];
-                      tempFavoritesOnly = false;
                       cityController.clear();
                     });
                   },

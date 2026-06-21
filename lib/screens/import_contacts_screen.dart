@@ -3,9 +3,14 @@ import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/sort_direction_toggle.dart';
+
+/// Sort options for the import contacts list.
+enum _ImportSortOption { alphabetical, recentCalls, nameLength, wordCount }
 
 class ImportContactsScreen extends StatefulWidget {
   const ImportContactsScreen({super.key, this.embedded = false});
@@ -33,6 +38,17 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
   bool _isLoading = true;
   bool _isRefreshing = false;
   bool _filterSuggestedNames = true;
+
+  _ImportSortOption _sortOption = _ImportSortOption.alphabetical;
+  bool _sortAscending = true;
+
+  /// Multi-select mode for removing several contacts at once.
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = <String>{};
+
+  /// Normalized phone -> recency index (0 = most recent) from the device call
+  /// log, loaded the first time the user picks the "recent calls" sort.
+  Map<String, int> _recentCallOrder = const <String, int>{};
   double? _loadingProgress;
   String _loadingMessage = 'טוענים אנשי קשר...';
   ContactsPermissionState? _permissionState;
@@ -66,6 +82,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     final List<ContactImportCandidate> visibleCandidates = _visibleCandidatesFor(
       existingPhones,
     );
+    _sortCandidates(visibleCandidates);
 
     if (widget.embedded) {
       return GestureDetector(
@@ -119,6 +136,13 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     return Column(
       children: <Widget>[
         if (_isRefreshing) const LinearProgressIndicator(minHeight: 3),
+        if (_selectionMode)
+          _SelectionBar(
+            count: _selectedIds.length,
+            onCancel: _exitSelection,
+            onSelectAll: () => _selectAllVisible(visibleCandidates),
+            onRemove: _selectedIds.isEmpty ? null : _removeSelected,
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Column(
@@ -157,6 +181,14 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                   });
                 },
               ),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _openSortSheet,
+                  icon: const Icon(Icons.sort, size: 18),
+                  label: Text('מיון: ${_sortOptionLabel(_sortOption)}'),
+                ),
+              ),
               const SizedBox(height: 4),
               _Hint(searching: searching),
             ],
@@ -180,8 +212,14 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                       key: ValueKey<String>(candidate.deviceContactId),
                       candidate: candidate,
                       busy: _importingIds.contains(candidate.deviceContactId),
+                      selectionMode: _selectionMode,
+                      selected: _selectedIds.contains(
+                        candidate.deviceContactId,
+                      ),
                       onHeart: () => _onHeart(candidate),
                       onRemove: () => _onSkip(candidate),
+                      onLongPress: () => _enterSelection(candidate),
+                      onSelectToggle: () => _toggleSelection(candidate),
                     );
                   },
                 ),
@@ -197,7 +235,13 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     final bool searching = query.isNotEmpty;
 
     return _allCandidates.where((ContactImportCandidate candidate) {
-      if (_handledIds.contains(candidate.deviceContactId)) {
+      final bool skipped = _skippedPhones.contains(candidate.normalizedPhone);
+
+      // Contacts acted on this session drop out of the list (for the dismiss
+      // animation). Exception: while searching, a ✕-removed contact stays
+      // findable so it can be re-added.
+      if (_handledIds.contains(candidate.deviceContactId) &&
+          !(searching && skipped)) {
         return false;
       }
 
@@ -211,13 +255,13 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
         return false;
       }
 
-      // When searching, surface everyone — including ✕-skipped and the
-      // automatically filtered names.
+      // When searching, surface everyone — including ✕-removed (skipped) and
+      // the automatically filtered names — so removed contacts can be re-added.
       if (searching) {
         return true;
       }
 
-      if (_skippedPhones.contains(candidate.normalizedPhone)) {
+      if (skipped) {
         return false;
       }
 
@@ -233,6 +277,162 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     return _allCandidates
         .where((ContactImportCandidate candidate) => candidate.isFilteredByName)
         .length;
+  }
+
+  bool _recentCallLoaded = false;
+
+  void _sortCandidates(List<ContactImportCandidate> candidates) {
+    final int dir = _sortAscending ? 1 : -1;
+    switch (_sortOption) {
+      case _ImportSortOption.alphabetical:
+        candidates.sort((a, b) => dir * _compareName(a, b));
+      case _ImportSortOption.nameLength:
+        candidates.sort((a, b) {
+          final int c = a.displayName.trim().length.compareTo(
+            b.displayName.trim().length,
+          );
+          return dir * (c != 0 ? c : _compareName(a, b));
+        });
+      case _ImportSortOption.wordCount:
+        candidates.sort((a, b) {
+          final int c = _wordCount(a.displayName).compareTo(
+            _wordCount(b.displayName),
+          );
+          return dir * (c != 0 ? c : _compareName(a, b));
+        });
+      case _ImportSortOption.recentCalls:
+        // Recency has a natural order (most recent first); the direction
+        // toggle doesn't apply here.
+        candidates.sort(_compareRecentCalls);
+    }
+  }
+
+  int _compareName(ContactImportCandidate a, ContactImportCandidate b) =>
+      a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+
+  int _wordCount(String name) {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return 0;
+    }
+    return trimmed.split(RegExp(r'\s+')).length;
+  }
+
+  int _compareRecentCalls(
+    ContactImportCandidate a,
+    ContactImportCandidate b,
+  ) {
+    final int? rankA = _recentCallOrder[a.normalizedPhone];
+    final int? rankB = _recentCallOrder[b.normalizedPhone];
+    if (rankA != null && rankB != null && rankA != rankB) {
+      return rankA.compareTo(rankB);
+    }
+    if (rankA != null && rankB == null) {
+      return -1;
+    }
+    if (rankA == null && rankB != null) {
+      return 1;
+    }
+    return _compareName(a, b);
+  }
+
+  String _sortOptionLabel(_ImportSortOption option) {
+    switch (option) {
+      case _ImportSortOption.alphabetical:
+        return 'א-ת';
+      case _ImportSortOption.recentCalls:
+        return 'שיחות אחרונות';
+      case _ImportSortOption.nameLength:
+        return 'אורך שם';
+      case _ImportSortOption.wordCount:
+        return 'מספר מילים';
+    }
+  }
+
+  Future<void> _openSortSheet() async {
+    final ({_ImportSortOption value, bool ascending})? selected =
+        await showModalBottomSheet<({_ImportSortOption value, bool ascending})>(
+          context: context,
+          showDragHandle: true,
+          builder: (BuildContext sheetContext) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        'מיון לפי',
+                        style: Theme.of(sheetContext).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: SortDirectionToggle(
+                      ascending: _sortAscending,
+                      onChanged: (bool ascending) => Navigator.of(
+                        sheetContext,
+                      ).pop((value: _sortOption, ascending: ascending)),
+                    ),
+                  ),
+                  for (final ({_ImportSortOption value, String label}) option
+                      in const <({_ImportSortOption value, String label})>[
+                        (value: _ImportSortOption.alphabetical, label: 'א-ת'),
+                        (
+                          value: _ImportSortOption.recentCalls,
+                          label: 'שיחות אחרונות',
+                        ),
+                        (
+                          value: _ImportSortOption.nameLength,
+                          label: 'אורך שם (קצר ↔ ארוך)',
+                        ),
+                        (
+                          value: _ImportSortOption.wordCount,
+                          label: 'מספר מילים בשם',
+                        ),
+                      ])
+                    ListTile(
+                      title: Text(option.label),
+                      trailing: _sortOption == option.value
+                          ? Icon(
+                              Icons.check,
+                              color: Theme.of(sheetContext).colorScheme.primary,
+                            )
+                          : null,
+                      onTap: () => Navigator.of(sheetContext).pop((
+                        value: option.value,
+                        ascending: _sortAscending,
+                      )),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+
+    if (selected == null) {
+      return;
+    }
+
+    // Loading the call log may prompt for the READ_CALL_LOG permission, which
+    // is acceptable here in the add-contacts flow.
+    if (selected.value == _ImportSortOption.recentCalls && !_recentCallLoaded) {
+      final Map<String, int> order =
+          await CallLogSortService.loadRecentCallOrderRequestingPermission();
+      if (!mounted) {
+        return;
+      }
+      _recentCallOrder = order;
+      _recentCallLoaded = true;
+    }
+
+    setState(() {
+      _sortOption = selected.value;
+      _sortAscending = selected.ascending;
+    });
   }
 
   Future<void> _onHeart(ContactImportCandidate candidate) async {
@@ -288,6 +488,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       ..showSnackBar(
         SnackBar(
           content: Text('${candidate.displayName} הוסר מהרשימה'),
+          duration: const Duration(seconds: 3),
           action: SnackBarAction(
             label: 'ביטול',
             onPressed: () => _onRestore(candidate),
@@ -300,6 +501,91 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     setState(() {
       _handledIds.remove(candidate.deviceContactId);
       _skippedPhones.remove(candidate.normalizedPhone);
+    });
+    await _saveSkippedPhones();
+  }
+
+  void _enterSelection(ContactImportCandidate candidate) {
+    setState(() {
+      _selectionMode = true;
+      _selectedIds.add(candidate.deviceContactId);
+    });
+  }
+
+  void _toggleSelection(ContactImportCandidate candidate) {
+    setState(() {
+      if (!_selectedIds.remove(candidate.deviceContactId)) {
+        _selectedIds.add(candidate.deviceContactId);
+      }
+      if (_selectedIds.isEmpty) {
+        _selectionMode = false;
+      }
+    });
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _selectAllVisible(List<ContactImportCandidate> visibleCandidates) {
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(
+          visibleCandidates.map(
+            (ContactImportCandidate candidate) => candidate.deviceContactId,
+          ),
+        );
+    });
+  }
+
+  Future<void> _removeSelected() async {
+    final List<ContactImportCandidate> selected = _allCandidates
+        .where(
+          (ContactImportCandidate candidate) =>
+              _selectedIds.contains(candidate.deviceContactId),
+        )
+        .toList();
+    if (selected.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      for (final ContactImportCandidate candidate in selected) {
+        _handledIds.add(candidate.deviceContactId);
+        _skippedPhones.add(candidate.normalizedPhone);
+      }
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+    await _saveSkippedPhones();
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('${selected.length} אנשי קשר הוסרו מהרשימה'),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'ביטול',
+            onPressed: () => _restoreMany(selected),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _restoreMany(List<ContactImportCandidate> candidates) async {
+    setState(() {
+      for (final ContactImportCandidate candidate in candidates) {
+        _handledIds.remove(candidate.deviceContactId);
+        _skippedPhones.remove(candidate.normalizedPhone);
+      }
     });
     await _saveSkippedPhones();
   }
@@ -438,14 +724,22 @@ class _ImportCandidateRow extends StatelessWidget {
     super.key,
     required this.candidate,
     required this.busy,
+    required this.selectionMode,
+    required this.selected,
     required this.onHeart,
     required this.onRemove,
+    required this.onLongPress,
+    required this.onSelectToggle,
   });
 
   final ContactImportCandidate candidate;
   final bool busy;
+  final bool selectionMode;
+  final bool selected;
   final VoidCallback onHeart;
   final VoidCallback onRemove;
+  final VoidCallback onLongPress;
+  final VoidCallback onSelectToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -453,7 +747,10 @@ class _ImportCandidateRow extends StatelessWidget {
 
     return Dismissible(
       key: ValueKey<String>(candidate.deviceContactId),
-      direction: busy ? DismissDirection.none : DismissDirection.horizontal,
+      // Swiping is disabled while multi-selecting so taps only toggle marks.
+      direction: busy || selectionMode
+          ? DismissDirection.none
+          : DismissDirection.horizontal,
       // Require a near-full swipe: a small drag snaps back instead of resting
       // half-open to reveal the action underneath.
       dismissThresholds: const <DismissDirection, double>{
@@ -489,39 +786,116 @@ class _ImportCandidateRow extends StatelessWidget {
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
+        color: selectionMode && selected
+            ? theme.colorScheme.primary.withValues(alpha: 0.12)
+            : null,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Row(
-            children: <Widget>[
-              IconButton(
-                tooltip: 'הוספה ועדכון מהיר',
-                icon: busy
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(Icons.favorite, color: theme.colorScheme.primary),
-                onPressed: busy ? null : onHeart,
-              ),
-              Expanded(
-                child: Text(
-                  candidate.displayName,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+        child: InkWell(
+          // Tap toggles selection while multi-selecting; long-press enters it.
+          onTap: selectionMode ? onSelectToggle : null,
+          onLongPress: selectionMode ? null : onLongPress,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                if (selectionMode)
+                  Checkbox(
+                    value: selected,
+                    onChanged: (_) => onSelectToggle(),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'הוספה ועדכון מהיר',
+                    icon: busy
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            Icons.favorite,
+                            color: theme.colorScheme.primary,
+                          ),
+                    onPressed: busy ? null : onHeart,
+                  ),
+                Expanded(
+                  child: Padding(
+                    // Comfortable breathing room so long, wrapped names never
+                    // crowd the heart / ✕ buttons.
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      candidate.displayName,
+                      textAlign: TextAlign.center,
+                      // Long / business names wrap onto extra lines as needed
+                      // instead of being cut off after one line.
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              IconButton(
-                tooltip: 'הסרה מהרשימה',
-                icon: const Icon(Icons.close, color: Colors.black),
-                onPressed: busy ? null : onRemove,
-              ),
-            ],
+                if (!selectionMode)
+                  IconButton(
+                    tooltip: 'הסרה מהרשימה',
+                    icon: const Icon(Icons.close, color: Colors.black),
+                    onPressed: busy ? null : onRemove,
+                  ),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The action bar shown while multiple contacts are selected for removal.
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({
+    required this.count,
+    required this.onCancel,
+    required this.onSelectAll,
+    required this.onRemove,
+  });
+
+  final int count;
+  final VoidCallback onCancel;
+  final VoidCallback onSelectAll;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+        child: Row(
+          children: <Widget>[
+            IconButton(
+              tooltip: 'ביטול בחירה',
+              icon: const Icon(Icons.close),
+              onPressed: onCancel,
+            ),
+            Expanded(
+              child: Text(
+                '$count נבחרו',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            TextButton(onPressed: onSelectAll, child: const Text('בחר הכל')),
+            const SizedBox(width: 4),
+            FilledButton.icon(
+              onPressed: onRemove,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text('הסרה'),
+            ),
+          ],
         ),
       ),
     );

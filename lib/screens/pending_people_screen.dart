@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/match_suggestion_flow.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/models/person.dart';
@@ -52,6 +53,7 @@ class PendingPeopleScreen extends StatelessWidget {
                       return PersonListCard(
                         person: person,
                         onTap: () => QuickUpdateDialog.show(context, person),
+                        onLongPress: () => _confirmAndDelete(context, person),
                         onOpenMatches: () =>
                             _openMatchSuggestions(context, person),
                         onOpenWhatsApp: () => _openWhatsApp(context, person),
@@ -62,6 +64,30 @@ class PendingPeopleScreen extends StatelessWidget {
               ],
             ),
     );
+  }
+
+  Future<void> _confirmAndDelete(BuildContext context, Person person) async {
+    final PersonRepository repository = context.read<PersonRepository>();
+    final String name = person.fullName.trim();
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'למחוק את האדם?',
+      message: name.isEmpty
+          ? 'האם למחוק את איש הקשר הזה? (נוסף בטעות)'
+          : 'האם למחוק את $name? (נוסף בטעות)',
+      confirmText: 'מחיקה',
+      isDestructive: true,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await repository.delete(person.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('איש הקשר נמחק')));
+    }
   }
 
   Future<void> _openMatchSuggestions(

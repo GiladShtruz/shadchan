@@ -103,7 +103,6 @@ class PersonRepository extends ChangeNotifier {
     List<ReligiousLevel>? religiousLevels,
     List<ProfileStatus>? profileStatuses,
     String? city,
-    bool? favoritesOnly,
     bool includePending = false,
   }) {
     final String? normalizedCity = city?.trim().toLowerCase();
@@ -154,10 +153,6 @@ class PersonRepository extends ChangeNotifier {
         if (personCity != normalizedCity) {
           return false;
         }
-      }
-
-      if (favoritesOnly == true && !person.isFavorite) {
-        return false;
       }
 
       return true;

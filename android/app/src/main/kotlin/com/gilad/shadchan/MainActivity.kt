@@ -55,6 +55,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getRecentCallNumbers" -> getRecentCallNumbers(result)
+                "getRecentCallNumbersIfGranted" -> getRecentCallNumbersIfGranted(result)
                 else -> result.notImplemented()
             }
         }
@@ -404,6 +405,21 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             arrayOf(Manifest.permission.READ_CALL_LOG),
             CALL_LOG_PERMISSION_REQUEST_CODE,
         )
+    }
+
+    /// Returns recent call numbers only when the permission is already granted;
+    /// never prompts. Used where a permission dialog would be intrusive (e.g.
+    /// the home screen). Returns an empty list when permission is missing.
+    private fun getRecentCallNumbersIfGranted(result: MethodChannel.Result) {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_CALL_LOG,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(queryRecentCallNumbers())
+        } else {
+            result.success(emptyList<String>())
+        }
     }
 
     private fun queryRecentCallNumbers(): List<String> {

@@ -4,17 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/match_suggestion_flow.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/dashboard_summary.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/match_suggestions_view.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
 enum _HomePeopleSortOption {
   random,
@@ -51,6 +54,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final TextEditingController _searchController = TextEditingController();
 
+  /// Drives the page scroll so the "חברים" summary card can reveal the
+  /// in-page "החברים שלך" list instead of opening the standalone screen.
+  final ScrollController _scrollController = ScrollController();
+
+  /// Marks the "החברים שלך" section header so we can scroll it into view.
+  final GlobalKey _peopleSectionKey = GlobalKey();
+
   /// Seed for the per-launch shuffle. Generated once so the order stays stable
   /// while this screen is alive, but differs on the next app launch.
   late final int _seed = widget.initialSeed ?? Random().nextInt(0x7fffffff);
@@ -63,13 +73,22 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _searchVisible = false;
   late _HomePeopleSortOption _sortOption = _sortFromName(widget.initialSort);
 
+  /// Sort direction applied on top of [_sortOption]. `true` keeps each option's
+  /// natural order; `false` reverses it ("עולה" / "יורד").
+  bool _sortAscending = true;
+
   /// Filters applied to the "החברים שלך" list. Mirrors the people screen.
   Gender? _selectedGender;
   RangeValues? _selectedAgeRange;
   List<ReligiousLevel> _selectedReligiousLevels = <ReligiousLevel>[];
   List<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>[];
   String _cityFilter = '';
-  bool _favoritesOnly = false;
+
+  /// Normalized phone -> recency index (0 = most recently called) from the
+  /// device call log. Empty until loaded, and stays empty when unavailable
+  /// (iOS, or permission denied). Used to surface recently-called contacts
+  /// first in the random ordering.
+  Map<String, int> _recentCallOrder = const <String, int>{};
 
   @override
   void initState() {
@@ -77,6 +96,15 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.text = widget.initialSearch;
     _searchVisible = widget.initialSearch.trim().isNotEmpty;
     _searchController.addListener(_handleSearchChanged);
+    _loadRecentCallOrder();
+  }
+
+  Future<void> _loadRecentCallOrder() async {
+    final Map<String, int> order = await CallLogSortService.loadRecentCallOrder();
+    if (!mounted || order.isEmpty) {
+      return;
+    }
+    setState(() => _recentCallOrder = order);
   }
 
   @override
@@ -84,6 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -150,6 +179,19 @@ class _HomeScreenState extends State<HomeScreen> {
     final List<Person> featuredCandidates = eligiblePeople
         .where((Person p) => !p.profileStatus.pausesMatches)
         .toList();
+    // "אקראי" keeps the per-launch shuffle. Recently-called contacts surface
+    // first (by recency), the rest stay fully random, and finally the very
+    // first card shown is forced to be one with a photo. Any other sort lets
+    // the user step through the featured contacts in a fixed order via the
+    // "הבא" button.
+    if (_sortOption != _HomePeopleSortOption.random) {
+      final Comparator<Person> base = _baseComparator();
+      final int direction = _sortAscending ? 1 : -1;
+      featuredCandidates.sort((Person a, Person b) => direction * base(a, b));
+    } else {
+      featuredCandidates.sort(_compareRandomWithRecentCalls);
+      _movePhotoContactFirst(featuredCandidates);
+    }
     final Person? featured = featuredCandidates.isEmpty
         ? null
         : featuredCandidates[_skips % featuredCandidates.length];
@@ -160,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
         visiblePeople.length > pagedPeople.length;
 
     return CustomScrollView(
+      controller: _scrollController,
       slivers: <Widget>[
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
@@ -170,6 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
           showSectionTitle: true,
           compact: true,
           bottomPadding: 8,
+          onPeopleTap: eligiblePeople.isEmpty ? null : _scrollToPeopleSection,
         ),
         if (eligiblePeople.isEmpty && pendingCount == 0)
           SliverFillRemaining(
@@ -188,8 +232,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _FeaturedCard(
                   key: ValueKey<String>('featured-${featured.id}-$_skips'),
                   person: featured,
+                  orderLabel: _sortOptionLabel(_sortOption),
                   onOpenDetail: () => context.push('/people/${featured.id}'),
                   onSkip: _skip,
+                  onSort: _openSortSheet,
                   onMatch: () => _openMatches(featured),
                 ),
               ),
@@ -210,6 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
             sliver: SliverToBoxAdapter(
               child: Row(
+                key: _peopleSectionKey,
                 children: <Widget>[
                   Text('החברים שלך', style: theme.textTheme.titleLarge),
                   const SizedBox(width: 8),
@@ -333,62 +380,97 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openSortSheet() async {
-    final _HomePeopleSortOption?
-    selected = await showModalBottomSheet<_HomePeopleSortOption>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Text(
-                    'מיין לפי',
-                    style: Theme.of(sheetContext).textTheme.titleMedium,
+    final ({_HomePeopleSortOption value, bool ascending})? selected =
+        await showModalBottomSheet<
+          ({_HomePeopleSortOption value, bool ascending})
+        >(
+          context: context,
+          showDragHandle: true,
+          builder: (BuildContext sheetContext) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        'מיין לפי',
+                        style: Theme.of(sheetContext).textTheme.titleMedium,
+                      ),
+                    ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: SortDirectionToggle(
+                      ascending: _sortAscending,
+                      onChanged: (bool ascending) => Navigator.of(
+                        sheetContext,
+                      ).pop((value: _sortOption, ascending: ascending)),
+                    ),
+                  ),
+                  for (final ({_HomePeopleSortOption value, String label}) option
+                      in const <({_HomePeopleSortOption value, String label})>[
+                        (value: _HomePeopleSortOption.random, label: 'אקראי'),
+                        (
+                          value: _HomePeopleSortOption.alphabetical,
+                          label: 'א-ב',
+                        ),
+                        (
+                          value: _HomePeopleSortOption.ageAscending,
+                          label: 'לפי גיל',
+                        ),
+                        (value: _HomePeopleSortOption.newest, label: 'חדשים'),
+                        (
+                          value: _HomePeopleSortOption.recentlyUpdated,
+                          label: 'עודכנו לאחרונה',
+                        ),
+                      ])
+                    ListTile(
+                      title: Text(option.label),
+                      trailing: _sortOption == option.value
+                          ? Icon(
+                              Icons.check,
+                              color: Theme.of(sheetContext).colorScheme.primary,
+                            )
+                          : null,
+                      onTap: () => Navigator.of(sheetContext).pop((
+                        value: option.value,
+                        ascending: _sortAscending,
+                      )),
+                    ),
+                ],
               ),
-              for (final ({_HomePeopleSortOption value, String label}) option
-                  in const <({_HomePeopleSortOption value, String label})>[
-                    (value: _HomePeopleSortOption.random, label: 'אקראי'),
-                    (value: _HomePeopleSortOption.alphabetical, label: 'א-ב'),
-                    (
-                      value: _HomePeopleSortOption.ageAscending,
-                      label: 'לפי גיל',
-                    ),
-                    (value: _HomePeopleSortOption.newest, label: 'חדשים'),
-                    (
-                      value: _HomePeopleSortOption.recentlyUpdated,
-                      label: 'עודכנו לאחרונה',
-                    ),
-                  ])
-                ListTile(
-                  title: Text(option.label),
-                  trailing: _sortOption == option.value
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(sheetContext).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () => Navigator.of(sheetContext).pop(option.value),
-                ),
-            ],
-          ),
+            );
+          },
         );
-      },
-    );
 
     if (selected == null) {
       return;
     }
     setState(() {
-      _sortOption = selected;
+      _sortOption = selected.value;
+      _sortAscending = selected.ascending;
       _visiblePages = 1;
+      // Restart the featured stepping from the top of the chosen order.
+      _skips = 0;
     });
+  }
+
+  String _sortOptionLabel(_HomePeopleSortOption option) {
+    switch (option) {
+      case _HomePeopleSortOption.random:
+        return 'אקראי';
+      case _HomePeopleSortOption.alphabetical:
+        return 'א-ב';
+      case _HomePeopleSortOption.ageAscending:
+        return 'לפי גיל';
+      case _HomePeopleSortOption.newest:
+        return 'חדשים';
+      case _HomePeopleSortOption.recentlyUpdated:
+        return 'עודכנו לאחרונה';
+    }
   }
 
   Future<void> _openFiltersSheet() async {
@@ -411,7 +493,6 @@ class _HomeScreenState extends State<HomeScreen> {
               initialReligiousLevels: _selectedReligiousLevels,
               initialProfileStatuses: _selectedProfileStatuses,
               initialCity: _cityFilter,
-              initialFavoritesOnly: _favoritesOnly,
             );
           },
         );
@@ -426,7 +507,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedReligiousLevels = result.religiousLevels;
       _selectedProfileStatuses = result.profileStatuses;
       _cityFilter = result.city.trim();
-      _favoritesOnly = result.favoritesOnly;
       _visiblePages = 1;
     });
   }
@@ -436,8 +516,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedAgeRange != null ||
         _selectedReligiousLevels.isNotEmpty ||
         _selectedProfileStatuses.isNotEmpty ||
-        _cityFilter.trim().isNotEmpty ||
-        _favoritesOnly;
+        _cityFilter.trim().isNotEmpty;
   }
 
   List<Widget> _buildActiveFilterChips() {
@@ -518,20 +597,6 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_favoritesOnly) {
-      chips.add(
-        InputChip(
-          label: const Text('מועדפים'),
-          onDeleted: () {
-            setState(() {
-              _favoritesOnly = false;
-              _visiblePages = 1;
-            });
-          },
-        ),
-      );
-    }
-
     chips.add(
       ActionChip(
         avatar: const Icon(Icons.close, size: 18),
@@ -554,7 +619,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _selectedReligiousLevels = <ReligiousLevel>[];
     _selectedProfileStatuses = <ProfileStatus>[];
     _cityFilter = '';
-    _favoritesOnly = false;
   }
 
   void _showNextPeoplePage() {
@@ -569,7 +633,6 @@ class _HomeScreenState extends State<HomeScreen> {
       maxAge: ageRange?.end.round(),
       religiousLevels: _selectedReligiousLevels,
       profileStatuses: _selectedProfileStatuses,
-      favoritesOnly: _favoritesOnly ? true : null,
     );
 
     final String normalizedSearch = _searchController.text.trim().toLowerCase();
@@ -597,17 +660,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _sortPeople(List<Person> people) {
+    final Comparator<Person> base = _baseComparator();
+    final int direction = _sortAscending ? 1 : -1;
+    people.sort((Person a, Person b) => direction * base(a, b));
+  }
+
+  Comparator<Person> _baseComparator() {
     switch (_sortOption) {
       case _HomePeopleSortOption.random:
-        people.sort(
-          (Person a, Person b) => _shuffleKey(a).compareTo(_shuffleKey(b)),
-        );
-        return;
+        return _compareRandomWithRecentCalls;
       case _HomePeopleSortOption.alphabetical:
-        people.sort(_sortByName);
-        return;
+        return _sortByName;
       case _HomePeopleSortOption.ageAscending:
-        people.sort((Person a, Person b) {
+        return (Person a, Person b) {
           final int? ageA = a.age;
           final int? ageB = b.age;
 
@@ -623,20 +688,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
           final int ageComparison = ageA.compareTo(ageB);
           return ageComparison != 0 ? ageComparison : _sortByName(a, b);
-        });
-        return;
+        };
       case _HomePeopleSortOption.newest:
-        people.sort((Person a, Person b) {
+        return (Person a, Person b) {
           final int comparison = b.createdAt.compareTo(a.createdAt);
           return comparison != 0 ? comparison : _sortByName(a, b);
-        });
-        return;
+        };
       case _HomePeopleSortOption.recentlyUpdated:
-        people.sort((Person a, Person b) {
+        return (Person a, Person b) {
           final int comparison = b.updatedAt.compareTo(a.updatedAt);
           return comparison != 0 ? comparison : _sortByName(a, b);
-        });
-        return;
+        };
     }
   }
 
@@ -723,8 +785,23 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _skips++);
   }
 
+  /// Scrolls the page down to the "החברים שלך" list instead of opening the
+  /// standalone people screen.
+  void _scrollToPeopleSection() {
+    final BuildContext? sectionContext = _peopleSectionKey.currentContext;
+    if (sectionContext == null) {
+      return;
+    }
+    Scrollable.ensureVisible(
+      sectionContext,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+      alignment: 0.0,
+    );
+  }
+
   Future<void> _openMatches(Person person) async {
-    await MatchSuggestionFlow.open(context, sourcePerson: person);
+    await MatchSuggestionsSheet.show(context, sourcePerson: person);
   }
 
   Future<void> _openWhatsApp(Person person) async {
@@ -746,30 +823,70 @@ class _HomeScreenState extends State<HomeScreen> {
               !p.needsReview && !p.hidden && !p.profileStatus.isArchived,
         )
         .toList();
-    // Surface contacts that already have a photo and a shareable card first so
-    // the randomly-featured contact on each launch is a "ready" one; contacts
-    // without a card follow, shuffled among themselves.
-    people.sort((Person a, Person b) {
-      final bool aReady = _hasShareableCard(a);
-      final bool bReady = _hasShareableCard(b);
-      if (aReady != bReady) {
-        return aReady ? -1 : 1;
-      }
-      return _shuffleKey(a).compareTo(_shuffleKey(b));
-    });
+    // Fully shuffle everyone for this launch (no photo/details priority).
+    // The "show a contact with a photo first" rule is applied only to the
+    // featured card's starting position via [_movePhotoContactFirst].
+    people.sort(
+      (Person a, Person b) => _shuffleKey(a).compareTo(_shuffleKey(b)),
+    );
     return people;
   }
 
-  /// Whether a contact has both a photo and a description, i.e. a card that's
-  /// ready to be shared.
-  bool _hasShareableCard(Person person) =>
-      person.photosPaths.isNotEmpty &&
-      (person.description ?? '').trim().isNotEmpty;
+  /// Whether a contact has at least one photo.
+  bool _hasPhoto(Person person) => person.photosPaths.isNotEmpty;
+
+  /// Ensures the first featured contact has a photo without otherwise changing
+  /// the (already random) order: the rest stay fully shuffled. Because the
+  /// list is shuffled, the first photo contact found is effectively a random
+  /// one. No-op when the list is empty, already starts with a photo, or has no
+  /// photo contacts at all.
+  void _movePhotoContactFirst(List<Person> people) {
+    if (people.isEmpty || _hasPhoto(people.first)) {
+      return;
+    }
+    final int index = people.indexWhere(_hasPhoto);
+    if (index > 0) {
+      final Person withPhoto = people.removeAt(index);
+      people.insert(0, withPhoto);
+    }
+  }
 
   /// Deterministic per-launch ordering key: stable for the lifetime of this
   /// screen (so the list doesn't jump around on rebuilds) yet reshuffled on the
   /// next launch via [_seed]. New contacts slot in deterministically too.
   int _shuffleKey(Person person) => (person.id.hashCode ^ _seed) & 0x7fffffff;
+
+  /// The "random" ordering used on the home screen: contacts that were called
+  /// recently come first (most recent first), and everyone else follows in the
+  /// stable per-launch shuffle. When no call-log data is available the recency
+  /// rank is null for everyone, so this degrades to a pure shuffle.
+  int _compareRandomWithRecentCalls(Person a, Person b) {
+    final int? rankA = _recentCallRank(a);
+    final int? rankB = _recentCallRank(b);
+    if (rankA != null && rankB != null && rankA != rankB) {
+      return rankA.compareTo(rankB);
+    }
+    if (rankA != null && rankB == null) {
+      return -1;
+    }
+    if (rankA == null && rankB != null) {
+      return 1;
+    }
+    return _shuffleKey(a).compareTo(_shuffleKey(b));
+  }
+
+  /// Recency index of this person's phone in the device call log (0 = most
+  /// recent), or null when they have no number or were not called recently.
+  int? _recentCallRank(Person person) {
+    if (_recentCallOrder.isEmpty) {
+      return null;
+    }
+    final String? normalized = PhoneUtils.normalizeForComparison(person.phone);
+    if (normalized == null) {
+      return null;
+    }
+    return _recentCallOrder[normalized];
+  }
 
 
   static _HomePeopleSortOption _sortFromName(String name) {
@@ -884,14 +1001,18 @@ class _FeaturedCard extends StatelessWidget {
   const _FeaturedCard({
     super.key,
     required this.person,
+    required this.orderLabel,
     required this.onOpenDetail,
     required this.onSkip,
+    required this.onSort,
     required this.onMatch,
   });
 
   final Person person;
+  final String orderLabel;
   final VoidCallback onOpenDetail;
   final VoidCallback onSkip;
+  final VoidCallback onSort;
   final VoidCallback onMatch;
 
   @override
@@ -920,6 +1041,24 @@ class _FeaturedCard extends StatelessWidget {
         ),
         child: Column(
           children: <Widget>[
+            // Sort button: lets the user step through featured contacts in a
+            // fixed order (א-ב / גיל / וכו') instead of the random shuffle.
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(8, 6, 4, 0),
+              child: Row(
+                children: <Widget>[
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: onSort,
+                    icon: const Icon(Icons.sort, size: 18),
+                    label: Text('סדר: $orderLabel'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             // Tapping the card body opens the full profile.
             InkWell(
               onTap: onOpenDetail,

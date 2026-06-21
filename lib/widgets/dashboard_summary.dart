@@ -14,6 +14,7 @@ List<Widget> buildDashboardSummarySlivers(
   bool showSectionTitle = false,
   bool compact = false,
   double bottomPadding = 96,
+  VoidCallback? onPeopleTap,
 }) {
   final ThemeData theme = Theme.of(context);
   final PersonRepository personRepository = context.watch<PersonRepository>();
@@ -65,6 +66,7 @@ List<Widget> buildDashboardSummarySlivers(
       icon: Icons.people_outline,
       color: theme.colorScheme.primary,
       route: '/people',
+      onTap: onPeopleTap,
     ),
     _StatItem(
       title: 'רעיונות',
@@ -247,6 +249,7 @@ class _StatItem {
     required this.icon,
     required this.color,
     required this.route,
+    this.onTap,
   });
 
   final String title;
@@ -255,6 +258,11 @@ class _StatItem {
   final IconData icon;
   final Color color;
   final String route;
+
+  /// Optional tap override. When set, it runs instead of navigating to
+  /// [route] (used so the "חברים" card scrolls to the in-page list rather than
+  /// opening the standalone people screen).
+  final VoidCallback? onTap;
 }
 
 class _StatCard extends StatelessWidget {
@@ -276,7 +284,7 @@ class _StatCard extends StatelessWidget {
         side: BorderSide(color: item.color.withValues(alpha: 0.18)),
       ),
       child: InkWell(
-        onTap: () => context.go(item.route),
+        onTap: item.onTap ?? () => context.go(item.route),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: Column(
@@ -346,7 +354,7 @@ class _CompactStatCard extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       child: InkWell(
-        onTap: () => context.go(item.route),
+        onTap: item.onTap ?? () => context.go(item.route),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
           child: Column(
@@ -400,7 +408,7 @@ class _WideStatCard extends StatelessWidget {
         side: BorderSide(color: item.color.withValues(alpha: 0.22)),
       ),
       child: InkWell(
-        onTap: () => context.go(item.route),
+        onTap: item.onTap ?? () => context.go(item.route),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           child: Row(
