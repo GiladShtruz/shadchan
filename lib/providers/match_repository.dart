@@ -113,13 +113,9 @@ class MatchRepository extends ChangeNotifier {
       updatedAt: now,
     );
 
+    // No automatic "opened" journal note — the journal stays a personal
+    // free-notes chat.
     await _matchBox.put(match.id, match);
-    await _createNote(
-      matchId: match.id,
-      text: 'הצעה נפתחה',
-      createdAt: now,
-      isAutomatic: true,
-    );
     notifyListeners();
     _refreshNotifications();
     return match;

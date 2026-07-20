@@ -100,64 +100,65 @@ class _MatchesScreenState extends State<MatchesScreen>
         }
       },
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(_showArchived ? 'ארכיון' : 'רעיונות'),
-        centerTitle: true,
-        actions: <Widget>[
-          IconButton(
-            icon: Icon(
-              _showArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+        appBar: AppBar(
+          title: Text(_showArchived ? 'ארכיון' : 'רעיונות'),
+          centerTitle: true,
+          actions: <Widget>[
+            IconButton(
+              icon: Icon(
+                _showArchived
+                    ? Icons.unarchive_outlined
+                    : Icons.archive_outlined,
+              ),
+              tooltip: _showArchived ? 'חזרה לרעיונות' : 'ארכיון',
+              onPressed: () => setState(() => _showArchived = !_showArchived),
             ),
-            tooltip: _showArchived ? 'חזרה לרעיונות' : 'ארכיון',
-            onPressed: () => setState(() => _showArchived = !_showArchived),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(52),
-          child: TabBar(
-            controller: tabController,
-            // Spread the tabs evenly across the full width of the app bar.
-            isScrollable: false,
-            labelColor: appBarForeground,
-            unselectedLabelColor: appBarForeground.withValues(alpha: 0.7),
-            indicatorColor: appBarForeground,
-            indicatorWeight: 3,
-            indicatorSize: TabBarIndicatorSize.tab,
-            labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-            labelStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-            tabs: visibleTabs.map((MatchProposalTab tab) {
-              return Tab(text: tab.displayName);
-            }).toList(),
-          ),
-        ),
-      ),
-      body: Column(
-        children: <Widget>[
-
-          Expanded(
-            child: TabBarView(
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(52),
+            child: TabBar(
               controller: tabController,
-              children: visibleTabs.map((MatchProposalTab tab) {
-                return _MatchesTabView(
-                  matches: groups[tab]!,
-                  tab: tab,
-                  isSearchResult: query.isNotEmpty,
-                  personRepository: personRepository,
-                  theme: theme,
-                  onCreate: () => context.push('/matches/add'),
-                );
+              // Spread the tabs evenly across the full width of the app bar.
+              isScrollable: false,
+              labelColor: appBarForeground,
+              unselectedLabelColor: appBarForeground.withValues(alpha: 0.7),
+              indicatorColor: appBarForeground,
+              indicatorWeight: 3,
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+              labelStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              tabs: visibleTabs.map((MatchProposalTab tab) {
+                return Tab(text: tab.displayName);
               }).toList(),
             ),
           ),
-        ],
-      ),
+        ),
+        body: Column(
+          children: <Widget>[
+            Expanded(
+              child: TabBarView(
+                controller: tabController,
+                children: visibleTabs.map((MatchProposalTab tab) {
+                  return _MatchesTabView(
+                    matches: groups[tab]!,
+                    tab: tab,
+                    isSearchResult: query.isNotEmpty,
+                    personRepository: personRepository,
+                    theme: theme,
+                    onCreate: () => context.push('/matches/add'),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -294,8 +295,8 @@ class _MatchesTabView extends StatelessWidget {
         final Person? personB = personRepository.getById(match.personBId);
 
         return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _MatchCard(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: MatchIdeaListCard(
             match: match,
             personA: personA,
             personB: personB,
@@ -333,9 +334,7 @@ class _WaitingTabHint extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.5,
-        ),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -360,8 +359,9 @@ class _WaitingTabHint extends StatelessWidget {
   }
 }
 
-class _MatchCard extends StatelessWidget {
-  const _MatchCard({
+class MatchIdeaListCard extends StatelessWidget {
+  const MatchIdeaListCard({
+    super.key,
     required this.match,
     required this.personA,
     required this.personB,
@@ -377,66 +377,105 @@ class _MatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color statusColor = AppColors.statusColor(match.status.name);
-    final String personAName = personA?.fullName.trim().isNotEmpty == true
-        ? personA!.fullName.trim()
-        : 'אדם נמחק';
-    final String personBName = personB?.fullName.trim().isNotEmpty == true
-        ? personB!.fullName.trim()
-        : 'אדם נמחק';
+    final bool dark = theme.brightness == Brightness.dark;
+    // Resolve which stored side is the male and which the female; the male
+    // square sits on the left and the female square on the right, with a
+    // small heart between them.
+    Person? male = personA;
+    Person? female = personB;
+    if (personA?.gender == Gender.female || personB?.gender == Gender.male) {
+      male = personB;
+      female = personA;
+    }
+    final Color maleBackground = dark
+        ? AppColors.softBlue.withValues(alpha: 0.16)
+        : AppColors.softBlue;
+    final Color femaleBackground = dark
+        ? AppColors.softPink.withValues(alpha: 0.18)
+        : AppColors.softPink;
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    return SizedBox(
+      height: 88,
       child: InkWell(
         onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border(right: BorderSide(width: 4, color: statusColor)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    _AvatarOrDeleted(person: personA),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        personAName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      ' ↔ ',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        personBName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _AvatarOrDeleted(person: personB),
-                  ],
+        borderRadius: BorderRadius.circular(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // In RTL the first child renders on the right — the female side.
+            Expanded(
+              child: _MatchSideSquare(
+                person: female,
+                backgroundColor: femaleBackground,
+                theme: theme,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Center(
+                child: Icon(
+                  Icons.favorite,
+                  size: 15,
+                  color: AppColors.statusColor(match.status.name),
                 ),
-              ],
+              ),
+            ),
+            Expanded(
+              child: _MatchSideSquare(
+                person: male,
+                backgroundColor: maleBackground,
+                theme: theme,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One compact side of an idea row: full name + age on top, a small photo
+/// below.
+class _MatchSideSquare extends StatelessWidget {
+  const _MatchSideSquare({
+    required this.person,
+    required this.backgroundColor,
+    required this.theme,
+  });
+
+  final Person? person;
+  final Color backgroundColor;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final String name = person?.fullName.trim().isNotEmpty == true
+        ? person!.fullName.trim()
+        : 'אדם נמחק';
+    final int? age = person?.age;
+    final String title = age != null ? '$name, $age' : name;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
             ),
           ),
-        ),
+          const SizedBox(height: 6),
+          _AvatarOrDeleted(person: person),
+        ],
       ),
     );
   }

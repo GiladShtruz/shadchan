@@ -3,19 +3,15 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
-import 'package:shadchan/utils/hebrew_date_utils.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -26,7 +22,6 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
-import 'package:shadchan/dialogs/photo_viewer.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
 class PersonDetailScreen extends StatefulWidget {
@@ -44,253 +39,66 @@ class PersonDetailScreen extends StatefulWidget {
 }
 
 class _PersonDetailScreenState extends State<PersonDetailScreen>
-    with WidgetsBindingObserver, TickerProviderStateMixin {
-  final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
-  final GlobalKey _editSectionKey = GlobalKey();
-  late final TabController _tabController;
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _manualAgeController = TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _inquiryContactNameController =
-      TextEditingController();
-  final TextEditingController _inquiryContactPhoneController =
-      TextEditingController();
-  final TextEditingController _sourceController = TextEditingController();
-  final TextEditingController _descriptionController = TextEditingController();
+    with TickerProviderStateMixin {
+  late final TabController _tabController = TabController(
+    length: 2,
+    vsync: this,
+  );
+  final ScrollController _scrollController = ScrollController();
 
-  bool _isSavingEdit = false;
-  late bool _showInlineEdit;
-  String? _editingPersonId;
-  Timer? _autoSaveTimer;
-  Gender _selectedGender = Gender.unknown;
-  DateTime? _birthDate;
-  int? _hebrewBirthYear;
-  int? _hebrewBirthMonth;
-  int? _hebrewBirthDay;
-  _BirthDateCalendar _birthDateCalendar = _BirthDateCalendar.gregorian;
-  ReligiousLevel? _selectedReligiousLevel;
-
-  final FocusNode _firstNameFocus = FocusNode();
-  final FocusNode _lastNameFocus = FocusNode();
-  final FocusNode _manualAgeFocus = FocusNode();
-  final FocusNode _phoneFocus = FocusNode();
-  final FocusNode _inquiryContactNameFocus = FocusNode();
-  final FocusNode _inquiryContactPhoneFocus = FocusNode();
-  final FocusNode _descriptionFocus = FocusNode();
-
-  String _origFirstName = '';
-  String _origLastName = '';
-  String _origManualAge = '';
-  String _origCity = '';
-  String _origPhone = '';
-  String _origInquiryContactName = '';
-  String _origInquiryContactPhone = '';
-  String _origSource = '';
-  String _origDescription = '';
-  Gender _origGender = Gender.unknown;
-  DateTime? _origBirthDate;
-  ReligiousLevel? _origReligiousLevel;
-  int? _origHebrewBirthYear;
-  int? _origHebrewBirthMonth;
-  int? _origHebrewBirthDay;
+  /// Whether the profile header was scrolled away, so the AppBar shows a
+  /// compact bar with the person's name only.
+  bool _showCollapsedTitle = false;
 
   @override
   void initState() {
     super.initState();
-    _showInlineEdit = widget.initiallyEditing;
-    _tabController = TabController(
-      length: 2,
-      vsync: this,
-      // Open straight on the "כרטיס" tab when entering in edit mode.
-      initialIndex: widget.initiallyEditing ? 1 : 0,
-    );
+    _scrollController.addListener(_handleScroll);
     if (widget.initiallyEditing) {
+      // The old edit route now lands on the dedicated card-edit page.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToEditSection();
+        if (mounted) {
+          _openCardEditPage(context);
+        }
       });
-    }
-    WidgetsBinding.instance.addObserver(this);
-    for (final FocusNode node in <FocusNode>[
-      _firstNameFocus,
-      _lastNameFocus,
-      _manualAgeFocus,
-      _phoneFocus,
-      _inquiryContactNameFocus,
-      _inquiryContactPhoneFocus,
-      _descriptionFocus,
-    ]) {
-      node.addListener(_handleFocusChange);
     }
   }
 
   @override
   void dispose() {
-    _autoSaveTimer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
+    _scrollController
+      ..removeListener(_handleScroll)
+      ..dispose();
     _tabController.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    _manualAgeController.dispose();
-    _cityController.dispose();
-    _phoneController.dispose();
-    _inquiryContactNameController.dispose();
-    _inquiryContactPhoneController.dispose();
-    _sourceController.dispose();
-    _descriptionController.dispose();
-    for (final FocusNode node in <FocusNode>[
-      _firstNameFocus,
-      _lastNameFocus,
-      _manualAgeFocus,
-      _phoneFocus,
-      _inquiryContactNameFocus,
-      _inquiryContactPhoneFocus,
-      _descriptionFocus,
-    ]) {
-      node
-        ..removeListener(_handleFocusChange)
-        ..dispose();
-    }
     super.dispose();
   }
 
-  /// Turns on inline editing, switches to the "כרטיס" tab and scrolls to the
-  /// edit section so the user lands directly on the fields to edit.
-  Future<void> _enterEditMode() async {
-    if (_showInlineEdit && _tabController.index == 1) {
-      _scrollToEditSection();
-      return;
+  void _handleScroll() {
+    final bool collapsed =
+        _scrollController.hasClients && _scrollController.offset > 150;
+    if (collapsed != _showCollapsedTitle) {
+      setState(() => _showCollapsedTitle = collapsed);
     }
-    final bool needsTabSwitch = _tabController.index != 1;
-    setState(() => _showInlineEdit = true);
-    if (needsTabSwitch) {
-      _tabController.animateTo(1);
-    }
-    // Let the tab change and the freshly-built edit form settle before
-    // scrolling, otherwise the target isn't in the tree yet.
-    await Future<void>.delayed(
-      Duration(milliseconds: needsTabSwitch ? 350 : 50),
-    );
-    if (!mounted) {
-      return;
-    }
-    _scrollToEditSection();
   }
 
-  void _scrollToEditSection() {
-    final BuildContext? sectionContext = _editSectionKey.currentContext;
-    if (sectionContext == null) {
-      return;
-    }
-    Scrollable.ensureVisible(
-      sectionContext,
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOut,
-      alignment: 0.05,
+  Future<void> _openCardEditPage(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) {
+          return _PersonCardEditPage(personId: widget.personId);
+        },
+      ),
     );
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached ||
-        state == AppLifecycleState.hidden) {
-      _autoSaveTimer?.cancel();
-      unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-    }
-  }
-
-  void _handleFocusChange() {
-    if (!mounted) return;
-    setState(() {});
-    if (!_hasFocusedInlineField) {
-      _autoSaveTimer?.cancel();
-      unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-    }
-  }
-
-  bool get _hasFocusedInlineField {
-    return _firstNameFocus.hasFocus ||
-        _lastNameFocus.hasFocus ||
-        _manualAgeFocus.hasFocus ||
-        _phoneFocus.hasFocus ||
-        _inquiryContactNameFocus.hasFocus ||
-        _inquiryContactPhoneFocus.hasFocus ||
-        _descriptionFocus.hasFocus;
-  }
-
-  bool get _hasChanges {
-    return _firstNameController.text != _origFirstName ||
-        _lastNameController.text != _origLastName ||
-        _manualAgeController.text != _origManualAge ||
-        _cityController.text != _origCity ||
-        _phoneController.text != _origPhone ||
-        _inquiryContactNameController.text != _origInquiryContactName ||
-        _inquiryContactPhoneController.text != _origInquiryContactPhone ||
-        _sourceController.text != _origSource ||
-        _descriptionController.text != _origDescription ||
-        _selectedGender != _origGender ||
-        _birthDate != _origBirthDate ||
-        _selectedReligiousLevel != _origReligiousLevel ||
-        _hebrewBirthYear != _origHebrewBirthYear ||
-        _hebrewBirthMonth != _origHebrewBirthMonth ||
-        _hebrewBirthDay != _origHebrewBirthDay;
-  }
-
-  void _captureOriginals() {
-    _captureOriginalValues(
-      firstName: _firstNameController.text,
-      lastName: _lastNameController.text,
-      manualAge: _manualAgeController.text,
-      city: _cityController.text,
-      phone: _phoneController.text,
-      inquiryContactName: _inquiryContactNameController.text,
-      inquiryContactPhone: _inquiryContactPhoneController.text,
-      source: _sourceController.text,
-      description: _descriptionController.text,
-      gender: _selectedGender,
-      birthDate: _birthDate,
-      religiousLevel: _selectedReligiousLevel,
-      hebrewBirthYear: _hebrewBirthYear,
-      hebrewBirthMonth: _hebrewBirthMonth,
-      hebrewBirthDay: _hebrewBirthDay,
+  Future<void> _openCardViewPage(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) {
+          return _PersonCardViewPage(personId: widget.personId);
+        },
+      ),
     );
-  }
-
-  void _captureOriginalValues({
-    required String firstName,
-    required String lastName,
-    required String manualAge,
-    required String city,
-    required String phone,
-    required String inquiryContactName,
-    required String inquiryContactPhone,
-    required String source,
-    required String description,
-    required Gender gender,
-    required DateTime? birthDate,
-    required ReligiousLevel? religiousLevel,
-    required int? hebrewBirthYear,
-    required int? hebrewBirthMonth,
-    required int? hebrewBirthDay,
-  }) {
-    _origFirstName = firstName;
-    _origLastName = lastName;
-    _origManualAge = manualAge;
-    _origCity = city;
-    _origPhone = phone;
-    _origInquiryContactName = inquiryContactName;
-    _origInquiryContactPhone = inquiryContactPhone;
-    _origSource = source;
-    _origDescription = description;
-    _origGender = gender;
-    _origBirthDate = birthDate;
-    _origReligiousLevel = religiousLevel;
-    _origHebrewBirthYear = hebrewBirthYear;
-    _origHebrewBirthMonth = hebrewBirthMonth;
-    _origHebrewBirthDay = hebrewBirthDay;
   }
 
   @override
@@ -349,12 +157,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
           ),
         )
         .toList();
-    // Order the suggestions in three tiers, preserving relative order within
-    // each: candidates that already have an open/בהמתנה proposal with this
-    // person come first, then the remaining active suggestions, and finally
-    // already-rejected candidates at the very end.
+    // Order the suggestions in tiers, preserving relative order within each:
+    // candidates that already have an open/בהמתנה proposal with this person
+    // come first, then the remaining active suggestions, then candidates the
+    // user soft-dismissed (לא מתאים — pushed to the end of the list), and
+    // finally candidates whose opened proposal was rejected.
+    final Set<String> dismissedIds = SuggestionDismissals.dismissedFor(
+      person.id,
+    );
     final List<Person> prioritizedSuggestions = <Person>[];
     final List<Person> activeSuggestions = <Person>[];
+    final List<Person> dismissedSuggestions = <Person>[];
     final List<Person> rejectedSuggestions = <Person>[];
     for (final Person candidate in matchingCandidates) {
       final MatchIdea? existingMatch = matchRepository.findExisting(
@@ -368,14 +181,23 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
           existingStatus == MatchStatus.checking ||
           existingStatus == MatchStatus.unavailable) {
         prioritizedSuggestions.add(candidate);
+      } else if (dismissedIds.contains(candidate.id)) {
+        dismissedSuggestions.add(candidate);
       } else {
         activeSuggestions.add(candidate);
       }
     }
+    // Within each tier, candidates that pause matches (תפוס/בהפסקה) drop
+    // after the available ones.
+    List<Person> availableFirst(List<Person> people) => <Person>[
+      ...people.where((Person p) => !p.profileStatus.pausesMatches),
+      ...people.where((Person p) => p.profileStatus.pausesMatches),
+    ];
     final List<Person> suggestedPeople = <Person>[
-      ...prioritizedSuggestions,
-      ...activeSuggestions,
-      ...rejectedSuggestions,
+      ...availableFirst(prioritizedSuggestions),
+      ...availableFirst(activeSuggestions),
+      ...availableFirst(dismissedSuggestions),
+      ...availableFirst(rejectedSuggestions),
     ];
     final List<MatchIdea> openMatches = relatedMatches
         .where((MatchIdea match) => !match.status.isArchived)
@@ -387,209 +209,130 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
       person.id,
     );
     final int personNotesCount = _personNotesCount(person, personNotes);
-    _ensureEditData(person);
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? result) async {
-        if (didPop || _isSavingEdit) {
-          return;
-        }
-        final NavigatorState navigator = Navigator.of(context);
-        if (!_hasChanges) {
-          navigator.pop();
-          return;
-        }
-        final bool saved = await _saveInlineEdit(person, showSnackBar: false);
-        if (!saved) return;
-        if (mounted) navigator.pop();
-      },
-      child: Scaffold(
+    return Scaffold(
+      backgroundColor: _profileCanvasColor(theme),
+      appBar: AppBar(
         backgroundColor: _profileCanvasColor(theme),
-        appBar: AppBar(
-          backgroundColor: _profileCanvasColor(theme),
-          foregroundColor: _profileTextColor(theme),
+        foregroundColor: _profileTextColor(theme),
+        centerTitle: true,
+        // Compact bar: once the big header scrolls away, only the profile
+        // name stays pinned at the top.
+        title: AnimatedOpacity(
+          opacity: _showCollapsedTitle ? 1 : 0,
+          duration: const Duration(milliseconds: 180),
+          child: Text(
+            person.fullName.trim(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        actions: <Widget>[
+          IconButton(
+            icon: const FaIcon(FontAwesomeIcons.whatsapp),
+            tooltip: 'וואטסאפ',
+            onPressed: () => _openWhatsAppMessage(context, person),
+          ),
+          IconButton(
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'שיתוף',
+            onPressed: () => _sharePerson(context, person),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'עריכת כרטיס',
+            onPressed: () => _openCardEditPage(context),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (String value) async {
+              if (value != 'delete') {
+                return;
+              }
 
-          centerTitle: true,
-          actions: <Widget>[
-            IconButton(
-              icon: const FaIcon(FontAwesomeIcons.whatsapp),
-              tooltip: 'וואטסאפ',
-              onPressed: () => _openWhatsAppMessage(context, person),
-            ),
-            IconButton(
-              icon: const Icon(Icons.share_outlined),
-              tooltip: 'שיתוף',
-              onPressed: () => _sharePerson(context, person),
-            ),
-            IconButton(
-              icon: _showInlineEdit
-                  ? _isSavingEdit
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check)
-                  : const Icon(Icons.edit_outlined),
-              tooltip: _showInlineEdit ? 'שמירה' : 'עריכה',
-              onPressed: _isSavingEdit
-                  ? null
-                  : () async {
-                      if (!_showInlineEdit) {
-                        await _enterEditMode();
-                        return;
-                      }
-                      final bool saved = await _saveInlineEdit(person);
-                      if (saved && mounted) {
-                        setState(() => _showInlineEdit = false);
-                      }
-                    },
-            ),
+              final bool shouldDelete = await _confirmDelete(context, person);
+              if (!shouldDelete) {
+                return;
+              }
 
-            PopupMenuButton<String>(
-              onSelected: (String value) async {
-                if (value != 'delete') {
-                  return;
+              await personRepository.delete(person.id);
+              if (context.mounted) {
+                // Return to the view the user came from instead of
+                // jumping to the people list.
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/home');
                 }
-
-                final bool shouldDelete = await _confirmDelete(context, person);
-                if (!shouldDelete) {
-                  return;
-                }
-
-                await personRepository.delete(person.id);
-                if (context.mounted) {
-                  context.go('/people');
-                }
-              },
-              itemBuilder: (BuildContext context) {
-                return const <PopupMenuEntry<String>>[
-                  PopupMenuItem<String>(
-                    value: 'delete',
-                    child: Text('מחיקת כרטיס'),
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return const <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Text('מחיקת כרטיס'),
+                ),
+              ];
+            },
+          ),
+        ],
+      ),
+      body: NestedScrollView(
+        controller: _scrollController,
+        headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) =>
+            <Widget>[
+              SliverToBoxAdapter(
+                child: _ProfileSummaryHeader(
+                  person: person,
+                  onAvatarTap: () => _openCardViewPage(context),
+                  onStatusChanged: (ProfileStatus status) =>
+                      personRepository.updateProfileStatus(person.id, status),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _PersonNotesButton(
+                  noteCount: personNotesCount,
+                  onPressed: () => _openPersonNotes(context, person),
+                ),
+              ),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _PinnedTabBarDelegate(
+                  backgroundColor: _profileCanvasColor(theme),
+                  tabBar: TabBar(
+                    controller: _tabController,
+                    dividerColor: Colors.transparent,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    tabs: const <Widget>[
+                      Tab(text: 'התאמות'),
+                      Tab(text: 'הצעות'),
+                    ],
                   ),
-                ];
-              },
+                ),
+              ),
+            ],
+        body: TabBarView(
+          controller: _tabController,
+          children: <Widget>[
+            _SuggestedMatchesTab(
+              sourcePerson: person,
+              suggestedPeople: suggestedPeople,
+              matchRepository: matchRepository,
+              hasCustomFilters: savedSuggestionFilters != null,
+              onFilterPressed: () => _openSuggestionFilters(context, person),
+              onAccept: (Person candidate) =>
+                  _acceptSuggestion(context, person, candidate),
+              onReject: (Person candidate) =>
+                  _rejectSuggestion(context, person, candidate),
+            ),
+            _ProposalsTab(
+              person: person,
+              openMatches: openMatches,
+              rejectedMatches: rejectedMatches,
+              personRepository: personRepository,
             ),
           ],
         ),
-        body: NestedScrollView(
-          headerSliverBuilder:
-              (BuildContext context, bool innerBoxIsScrolled) => <Widget>[
-                SliverToBoxAdapter(
-                  child: _ProfileSummaryHeader(
-                    person: person,
-                    onStatusChanged: (ProfileStatus status) =>
-                        personRepository.updateProfileStatus(person.id, status),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: _PersonNotesButton(
-                    noteCount: personNotesCount,
-                    onPressed: () => _openPersonNotes(context, person),
-                  ),
-                ),
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _PinnedTabBarDelegate(
-                    backgroundColor: _profileCanvasColor(theme),
-                    tabBar: TabBar(
-                      controller: _tabController,
-                      dividerColor: Colors.transparent,
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      tabs: const <Widget>[
-                        Tab(text: 'התאמות'),
-                        Tab(text: 'כרטיס'),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-          body: TabBarView(
-            controller: _tabController,
-            children: <Widget>[
-              _SuggestedMatchesTab(
-                sourcePerson: person,
-                suggestedPeople: suggestedPeople,
-                matchRepository: matchRepository,
-                hasCustomFilters: savedSuggestionFilters != null,
-                onFilterPressed: () => _openSuggestionFilters(context, person),
-                onAccept: (Person candidate) =>
-                    _acceptSuggestion(context, person, candidate),
-                onReject: (Person candidate) =>
-                    _rejectSuggestion(context, person, candidate),
-              ),
-              _ProfileCardTab(
-                person: person,
-                showInlineEdit: _showInlineEdit,
-                onEditPressed: _enterEditMode,
-                editSectionKey: _editSectionKey,
-                onAddPhotos: () => _pickAndSavePhoto(context, person),
-                onTapPhoto: (int index) =>
-                    _openPhotoViewer(context, person, index),
-                onSetPrimary: (int index) =>
-                    _setPrimaryPhoto(context, person, index),
-                descriptionController: _descriptionController,
-                descriptionFocus: _descriptionFocus,
-                onDescriptionChanged: _handleInlineFieldChanged,
-                onSaveDescription: () => _saveInlineEdit(person),
-                editForm: _buildInlineEditForm(person),
-
-                personRepository: personRepository,
-                openMatches: openMatches,
-                rejectedMatches: rejectedMatches,
-              ),
-            ],
-          ),
-        ),
       ),
-    );
-  }
-
-  Widget _buildInlineEditForm(Person person) {
-    return _InlinePersonEditForm(
-      formKey: _editFormKey,
-      firstNameController: _firstNameController,
-      lastNameController: _lastNameController,
-      manualAgeController: _manualAgeController,
-      phoneController: _phoneController,
-      inquiryContactNameController: _inquiryContactNameController,
-      inquiryContactPhoneController: _inquiryContactPhoneController,
-      firstNameFocus: _firstNameFocus,
-      lastNameFocus: _lastNameFocus,
-      manualAgeFocus: _manualAgeFocus,
-      phoneFocus: _phoneFocus,
-      inquiryContactNameFocus: _inquiryContactNameFocus,
-      inquiryContactPhoneFocus: _inquiryContactPhoneFocus,
-      onSavePressed: () => _saveInlineEdit(person),
-      onFieldChanged: _handleInlineFieldChanged,
-      selectedGender: _selectedGender,
-      birthDate: _birthDate,
-      birthDateCalendar: _birthDateCalendar,
-      birthDatePrimaryText: _birthDatePrimaryText(),
-      birthDateSecondaryText: _birthDateSecondaryText(),
-      selectedReligiousLevel: _selectedReligiousLevel,
-      onGenderChanged: (Gender gender) {
-        setState(() => _selectedGender = gender);
-        unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-      },
-      onBirthDateTap: _pickBirthDate,
-      onBirthDateCleared: () {
-        setState(() {
-          _birthDate = null;
-          _hebrewBirthYear = null;
-          _hebrewBirthMonth = null;
-          _hebrewBirthDay = null;
-        });
-        unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-      },
-      onBirthDateCalendarChanged: (_BirthDateCalendar calendar) {
-        setState(() => _birthDateCalendar = calendar);
-      },
-      onReligiousLevelChanged: (ReligiousLevel? level) {
-        setState(() => _selectedReligiousLevel = level);
-        unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-      },
     );
   }
 
@@ -736,7 +479,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     final bool confirmed = await ConfirmDialog.show(
       context,
       title: 'לא מתאים?',
-      message: 'בטוח שזה לא מתאים?',
+      message: 'ההתאמה תעבור לסוף הרשימה.',
       confirmText: 'לא מתאים',
       isDestructive: true,
     );
@@ -744,620 +487,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
       return;
     }
 
-    final Person male = sourcePerson.gender == Gender.male
-        ? sourcePerson
-        : candidate;
-    final Person female = sourcePerson.gender == Gender.female
-        ? sourcePerson
-        : candidate;
-
-    final MatchRepository matchRepository = context.read<MatchRepository>();
-    final MatchIdea? match =
-        matchRepository.findExisting(male.id, female.id) ??
-        await matchRepository.create(male.id, female.id);
-
-    if (match != null) {
-      await matchRepository.updateStatus(match.id, MatchStatus.rejected);
-    }
-
-    if (context.mounted) {
-      _showSnackBar(context, 'ההצעה סומנה כלא מתאימה');
-    }
-  }
-
-  void _ensureEditData(Person person) {
-    if (_editingPersonId == person.id) {
-      return;
-    }
-    _populateInlineEdit(person);
-  }
-
-  void _handleInlineFieldChanged() {
+    // Soft dismissal only: the candidate drops to the end of the suggestions
+    // list. No rejected proposal is created, so the pair never shows up under
+    // רעיונות שנשללו.
+    await SuggestionDismissals.dismiss(sourcePerson.id, candidate.id);
     if (mounted) {
       setState(() {});
     }
-    _scheduleInlineAutoSave();
-  }
-
-  void _scheduleInlineAutoSave({
-    Duration delay = const Duration(milliseconds: 700),
-  }) {
-    _autoSaveTimer?.cancel();
-    _autoSaveTimer = Timer(delay, () {
-      if (!mounted) return;
-      unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-    });
-  }
-
-  Future<bool> _saveCurrentInlineEdit({
-    bool showSnackBar = true,
-    bool unfocus = true,
-  }) async {
-    if (!mounted || !_hasChanges) {
-      return true;
-    }
-
-    if (_isSavingEdit) {
-      _scheduleInlineAutoSave(delay: const Duration(milliseconds: 300));
-      return false;
-    }
-
-    final String? personId = _editingPersonId;
-    if (personId == null) {
-      return false;
-    }
-
-    final Person? person = context.read<PersonRepository>().getById(personId);
-    if (person == null) {
-      return false;
-    }
-
-    return _saveInlineEdit(
-      person,
-      showSnackBar: showSnackBar,
-      unfocus: unfocus,
-    );
-  }
-
-  void _populateInlineEdit(Person person) {
-    _editingPersonId = person.id;
-    _firstNameController.text = person.firstName;
-    _lastNameController.text = person.lastName;
-    // Show the current (auto-advancing) manual age so re-saving re-anchors it.
-    _manualAgeController.text = person.birthDate == null
-        ? (person.age?.toString() ?? '')
-        : (person.manualAge?.toString() ?? '');
-    _cityController.text = person.city ?? '';
-    _phoneController.text = person.phone ?? '';
-    _inquiryContactNameController.text = person.inquiryContactName ?? '';
-    _inquiryContactPhoneController.text = person.inquiryContactPhone ?? '';
-    _sourceController.text = person.source ?? '';
-    _descriptionController.text = person.description ?? '';
-    _selectedGender = person.gender;
-    _birthDate = person.birthDate;
-    _selectedReligiousLevel = person.religiousLevel;
-    _hebrewBirthYear = person.hebrewBirthYear;
-    _hebrewBirthMonth = person.hebrewBirthMonth;
-    _hebrewBirthDay = person.hebrewBirthDay;
-
-    if (_birthDate == null &&
-        _hebrewBirthYear != null &&
-        _hebrewBirthMonth != null &&
-        _hebrewBirthDay != null) {
-      _birthDate = HebrewDateUtils.toGregorian(
-        year: _hebrewBirthYear!,
-        month: _hebrewBirthMonth!,
-        day: _hebrewBirthDay!,
-      );
-      _birthDateCalendar = _BirthDateCalendar.hebrew;
-    } else {
-      _birthDateCalendar = _BirthDateCalendar.gregorian;
-      if (_birthDate != null &&
-          (_hebrewBirthYear == null ||
-              _hebrewBirthMonth == null ||
-              _hebrewBirthDay == null)) {
-        final ({int year, int month, int day})? hebrew =
-            HebrewDateUtils.fromGregorian(_birthDate!);
-        _hebrewBirthYear = hebrew?.year;
-        _hebrewBirthMonth = hebrew?.month;
-        _hebrewBirthDay = hebrew?.day;
-      }
-    }
-    _captureOriginals();
-  }
-
-  Future<bool> _saveInlineEdit(
-    Person person, {
-    bool showSnackBar = true,
-    bool unfocus = true,
-  }) async {
-    _autoSaveTimer?.cancel();
-
-    if (!_hasChanges) {
-      return true;
-    }
-
-    if (unfocus) {
-      FocusScope.of(context).unfocus();
-    }
-
-    if (!_editFormKey.currentState!.validate()) {
-      return false;
-    }
-
-    setState(() {
-      _isSavingEdit = true;
-    });
-
-    try {
-      final String savedFirstName = _firstNameController.text.trim();
-      final String savedLastName = _lastNameController.text.trim();
-      final String savedManualAgeText = _manualAgeController.text.trim();
-      final String savedCityText = _cityController.text;
-      final String savedPhoneText = _phoneController.text;
-      final String savedInquiryContactNameText =
-          _inquiryContactNameController.text;
-      final String savedInquiryContactPhoneText =
-          _inquiryContactPhoneController.text;
-      final String savedSourceText = _sourceController.text;
-      final String savedDescriptionText = _descriptionController.text;
-      final Gender savedGender = _selectedGender;
-      final DateTime? savedBirthDate = _birthDate;
-      final ReligiousLevel? savedReligiousLevel = _selectedReligiousLevel;
-      final int? savedHebrewBirthYear = _hebrewBirthYear;
-      final int? savedHebrewBirthMonth = _hebrewBirthMonth;
-      final int? savedHebrewBirthDay = _hebrewBirthDay;
-      final int? manualAge = savedBirthDate == null
-          ? int.tryParse(savedManualAgeText)
-          : null;
-      person
-        ..firstName = savedFirstName
-        ..lastName = savedLastName
-        ..gender = savedGender
-        ..birthDate = savedBirthDate
-        ..setManualAge(manualAge)
-        ..religiousLevel = savedReligiousLevel
-        ..city = _normalizedText(savedCityText)
-        ..phone = _normalizedText(savedPhoneText)
-        ..inquiryContactName = _normalizedText(savedInquiryContactNameText)
-        ..inquiryContactPhone = _normalizedText(savedInquiryContactPhoneText)
-        ..source = _normalizedText(savedSourceText)
-        ..description = _normalizedText(savedDescriptionText)
-        ..hebrewBirthYear = savedHebrewBirthYear
-        ..hebrewBirthMonth = savedHebrewBirthMonth
-        ..hebrewBirthDay = savedHebrewBirthDay;
-
-      await context.read<PersonRepository>().update(person);
-
-      if (!mounted) {
-        return true;
-      }
-
-      _captureOriginalValues(
-        firstName: savedFirstName,
-        lastName: savedLastName,
-        manualAge: savedManualAgeText,
-        city: savedCityText,
-        phone: savedPhoneText,
-        inquiryContactName: savedInquiryContactNameText,
-        inquiryContactPhone: savedInquiryContactPhoneText,
-        source: savedSourceText,
-        description: savedDescriptionText,
-        gender: savedGender,
-        birthDate: savedBirthDate,
-        religiousLevel: savedReligiousLevel,
-        hebrewBirthYear: savedHebrewBirthYear,
-        hebrewBirthMonth: savedHebrewBirthMonth,
-        hebrewBirthDay: savedHebrewBirthDay,
-      );
-      setState(() {
-        _isSavingEdit = false;
-      });
-      if (showSnackBar) {
-        _showSnackBar(context, 'השינויים נשמרו');
-      }
-      return true;
-    } finally {
-      if (mounted && _isSavingEdit) {
-        setState(() {
-          _isSavingEdit = false;
-        });
-      }
-    }
-  }
-
-  String? _normalizedText(String value) {
-    final String trimmed = value.trim();
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
-  String _inquiryContactText(Person person) {
-    final String name = (person.inquiryContactName ?? '').trim();
-    final String phone = (person.inquiryContactPhone ?? '').trim();
-    if (name.isEmpty && phone.isEmpty) {
-      return '—';
-    }
-    if (name.isEmpty) {
-      return phone;
-    }
-    if (phone.isEmpty) {
-      return name;
-    }
-    return '$name · $phone';
-  }
-
-  Future<void> _pickBirthDate() async {
-    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
-      await _pickHebrewBirthDate();
-      return;
-    }
-    await _pickGregorianBirthDate();
-  }
-
-  Future<void> _pickGregorianBirthDate() async {
-    final DateTime now = DateTime.now();
-    final DateTime initialDate =
-        _birthDate ?? DateTime(now.year - 22, now.month, now.day);
-
-    final DateTime? selectedDate = await showDatePicker(
-      context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
-      firstDate: DateTime(now.year - 100, now.month, now.day),
-      lastDate: now,
-      locale: const Locale('he'),
-    );
-
-    if (selectedDate == null) {
-      return;
-    }
-
-    final ({int year, int month, int day})? hebrew =
-        HebrewDateUtils.fromGregorian(selectedDate);
-
-    setState(() {
-      _birthDate = selectedDate;
-      _hebrewBirthYear = hebrew?.year;
-      _hebrewBirthMonth = hebrew?.month;
-      _hebrewBirthDay = hebrew?.day;
-    });
-    unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-  }
-
-  Future<void> _pickHebrewBirthDate() async {
-    final DateTime now = DateTime.now();
-    final ({int year, int month, int day})? picked =
-        await _showHebrewDatePicker();
-    if (picked == null) {
-      return;
-    }
-
-    final DateTime? gregorian = HebrewDateUtils.toGregorian(
-      year: picked.year,
-      month: picked.month,
-      day: picked.day,
-    );
-    if (gregorian == null || gregorian.isAfter(now)) {
-      return;
-    }
-
-    setState(() {
-      _birthDate = gregorian;
-      _hebrewBirthYear = picked.year;
-      _hebrewBirthMonth = picked.month;
-      _hebrewBirthDay = picked.day;
-    });
-    unawaited(_saveCurrentInlineEdit(showSnackBar: false, unfocus: false));
-  }
-
-  Future<({int year, int month, int day})?> _showHebrewDatePicker() async {
-    final DateTime now = DateTime.now();
-    final ({int year, int month, int day}) todayHebrew =
-        HebrewDateUtils.fromGregorian(now) ?? (year: 5785, month: 1, day: 1);
-    final int initYear = _hebrewBirthYear ?? (todayHebrew.year - 22);
-    final int initMonth = _hebrewBirthMonth ?? todayHebrew.month;
-    final int initDay = _hebrewBirthDay ?? todayHebrew.day;
-
-    int selYear = initYear;
-    int selMonth = initMonth;
-    int selDay = initDay;
-
-    return showDialog<({int year, int month, int day})>(
-      context: context,
-      builder: (BuildContext ctx) {
-        return StatefulBuilder(
-          builder: (BuildContext ctx, StateSetter setDialogState) {
-            return AlertDialog(
-              title: const Text('בחר תאריך לידה עברי'),
-              content: SizedBox(
-                width: 320,
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: selDay,
-                        decoration: const InputDecoration(labelText: 'יום'),
-                        items: List<DropdownMenuItem<int>>.generate(
-                          30,
-                          (int i) => DropdownMenuItem<int>(
-                            value: i + 1,
-                            child: Text('${i + 1}'),
-                          ),
-                        ),
-                        onChanged: (int? v) {
-                          if (v != null) {
-                            setDialogState(() => selDay = v);
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: selMonth,
-                        decoration: const InputDecoration(labelText: 'חודש'),
-                        items: List<DropdownMenuItem<int>>.generate(
-                          13,
-                          (int i) => DropdownMenuItem<int>(
-                            value: i + 1,
-                            child: Text(_hebrewMonthName(i + 1)),
-                          ),
-                        ),
-                        onChanged: (int? v) {
-                          if (v != null) {
-                            setDialogState(() => selMonth = v);
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: selYear,
-                        decoration: const InputDecoration(labelText: 'שנה'),
-                        items: List<DropdownMenuItem<int>>.generate(101, (
-                          int i,
-                        ) {
-                          final int y = todayHebrew.year - i;
-                          return DropdownMenuItem<int>(
-                            value: y,
-                            child: Text('$y'),
-                          );
-                        }),
-                        onChanged: (int? v) {
-                          if (v != null) {
-                            setDialogState(() => selYear = v);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('ביטול'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(
-                    ctx,
-                  ).pop((year: selYear, month: selMonth, day: selDay)),
-                  child: const Text('אישור'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  static String _hebrewMonthName(int month) {
-    const List<String> names = <String>[
-      'ניסן',
-      'אייר',
-      'סיוון',
-      'תמוז',
-      'אב',
-      'אלול',
-      'תשרי',
-      'חשוון',
-      'כסלו',
-      'טבת',
-      'שבט',
-      'אדר',
-      'אדר ב׳',
-    ];
-    if (month < 1 || month > names.length) return '$month';
-    return names[month - 1];
-  }
-
-  String _birthDatePrimaryText() {
-    if (_birthDate == null) return 'לא הוזן';
-    if (_birthDateCalendar == _BirthDateCalendar.hebrew &&
-        _hebrewBirthYear != null &&
-        _hebrewBirthMonth != null &&
-        _hebrewBirthDay != null) {
-      final String formatted = HebrewDateUtils.format(
-        year: _hebrewBirthYear!,
-        month: _hebrewBirthMonth!,
-        day: _hebrewBirthDay!,
-      );
-      if (formatted.isNotEmpty) return formatted;
-    }
-    return AppDateUtils.formatDate(_birthDate!);
-  }
-
-  String? _birthDateSecondaryText() {
-    if (_birthDate == null) return null;
-    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
-      return AppDateUtils.formatDate(_birthDate!);
-    }
-    if (_hebrewBirthYear != null &&
-        _hebrewBirthMonth != null &&
-        _hebrewBirthDay != null) {
-      final String formatted = HebrewDateUtils.format(
-        year: _hebrewBirthYear!,
-        month: _hebrewBirthMonth!,
-        day: _hebrewBirthDay!,
-      );
-      if (formatted.isNotEmpty) return formatted;
-    }
-    return null;
-  }
-
-  Widget? _birthdayMessage(Person person, ThemeData theme) {
-    final int? hebrewMonth = person.hebrewBirthMonth;
-    final int? hebrewDay = person.hebrewBirthDay;
-    if (hebrewMonth != null &&
-        hebrewDay != null &&
-        HebrewDateUtils.isBirthdayToday(month: hebrewMonth, day: hebrewDay)) {
-      return Text(
-        '🎉 היום יום ההולדת העברי!',
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: theme.colorScheme.secondary,
-          fontWeight: FontWeight.bold,
-        ),
-      );
-    }
-
-    final DateTime? birthDate = person.birthDate;
-    if (birthDate == null) {
-      return null;
-    }
-
-    if (AppDateUtils.isBirthdayToday(birthDate)) {
-      return Text(
-        '🎉 היום יום ההולדת!',
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: theme.colorScheme.secondary,
-          fontWeight: FontWeight.bold,
-        ),
-      );
-    }
-
-    final int? daysUntil = AppDateUtils.daysUntilBirthday(birthDate);
-    if (daysUntil != null && daysUntil > 0 && daysUntil <= 7) {
-      return Text(
-        '🎂 יום הולדת בעוד $daysUntil ימים',
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: theme.colorScheme.secondary,
-          fontWeight: FontWeight.bold,
-        ),
-      );
-    }
-
-    return null;
-  }
-
-  Future<void> _pickAndSavePhoto(BuildContext context, Person person) async {
-    final PersonRepository repository = context.read<PersonRepository>();
-
-    if (!context.mounted) {
-      return;
-    }
-
-    final bool hasPermission = await _ensureMediaPermission(context);
-    if (!hasPermission || !context.mounted) {
-      return;
-    }
-
-    try {
-      final List<XFile> pickedFiles = await ImagePicker().pickMultiImage();
-      if (pickedFiles.isEmpty || !context.mounted) {
-        return;
-      }
-
-      final Directory documentsDirectory =
-          await getApplicationDocumentsDirectory();
-      final Directory photosDirectory = Directory(
-        '${documentsDirectory.path}${Platform.pathSeparator}photos',
-      );
-
-      if (!photosDirectory.existsSync()) {
-        photosDirectory.createSync(recursive: true);
-      }
-
-      final List<String> copiedPhotoPaths = <String>[];
-      final int timestamp = DateTime.now().millisecondsSinceEpoch;
-
-      for (int index = 0; index < pickedFiles.length; index++) {
-        final XFile pickedFile = pickedFiles[index];
-        final String targetPath =
-            '${photosDirectory.path}${Platform.pathSeparator}${person.id}_${timestamp}_$index.jpg';
-        await File(pickedFile.path).copy(targetPath);
-        copiedPhotoPaths.add(targetPath);
-      }
-
-      person.photosPaths = List<String>.from(person.photosPaths)
-        ..addAll(copiedPhotoPaths);
-      await repository.update(person);
-
-      if (context.mounted) {
-        _showSnackBar(
-          context,
-          copiedPhotoPaths.length == 1
-              ? 'התמונה נוספה בהצלחה'
-              : '${copiedPhotoPaths.length} תמונות נוספו בהצלחה',
-        );
-      }
-    } on PlatformException catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-
-      if (_looksLikePermissionError(error)) {
-        await _showPermissionExplanationDialog(context);
-        return;
-      }
-
-      _showSnackBar(context, 'לא הצלחנו לבחור תמונה כרגע');
-    } catch (_) {
-      if (context.mounted) {
-        _showSnackBar(context, 'לא הצלחנו לשמור את התמונה');
-      }
-    }
-  }
-
-  Future<void> _setPrimaryPhoto(
-    BuildContext context,
-    Person person,
-    int index,
-  ) async {
-    if (index <= 0 || index >= person.photosPaths.length) {
-      return;
-    }
-
-    final List<String> reorderedPhotoPaths = List<String>.from(
-      person.photosPaths,
-    );
-    final String selectedPhotoPath = reorderedPhotoPaths.removeAt(index);
-    reorderedPhotoPaths.insert(0, selectedPhotoPath);
-
-    person.photosPaths = reorderedPhotoPaths;
-    await context.read<PersonRepository>().update(person);
 
     if (context.mounted) {
-      _showSnackBar(context, 'התמונה הראשית עודכנה');
+      _showSnackBar(context, 'ההתאמה הועברה לסוף הרשימה');
     }
-  }
-
-  Future<void> _openPhotoViewer(
-    BuildContext context,
-    Person person,
-    int initialIndex,
-  ) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) {
-          return PhotoViewer(
-            personId: person.id,
-            photoPaths: person.photosPaths,
-            initialIndex: initialIndex,
-          );
-        },
-      ),
-    );
   }
 
   Future<void> _openPersonNotes(BuildContext context, Person person) async {
@@ -1416,74 +556,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
   }
-
-  Future<bool> _ensureMediaPermission(BuildContext context) async {
-    if (Platform.isAndroid) {
-      // `image_picker` uses the system photo picker / intents on Android,
-      // so pre-requesting gallery permissions here can incorrectly block
-      // the flow on newer Android versions.
-      return true;
-    }
-
-    final PermissionStatus status = await _requestGalleryPermission();
-
-    if (status.isGranted || status.isLimited) {
-      return true;
-    }
-
-    if (context.mounted) {
-      await _showPermissionExplanationDialog(
-        context,
-        openSettingsAction: status.isPermanentlyDenied || status.isRestricted,
-      );
-    }
-
-    return false;
-  }
-
-  Future<PermissionStatus> _requestGalleryPermission() async {
-    return Permission.photos.request();
-  }
-
-  bool _looksLikePermissionError(PlatformException error) {
-    final String combined = '${error.code} ${error.message ?? ''}'
-        .toLowerCase();
-    return combined.contains('denied') || combined.contains('permission');
-  }
-
-  Future<void> _showPermissionExplanationDialog(
-    BuildContext context, {
-    bool openSettingsAction = false,
-  }) async {
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('נדרשת הרשאה'),
-          content: const Text(
-            'כדי להוסיף תמונה צריך לאשר גישה לגלריה בהגדרות המכשיר.',
-          ),
-          actions: <Widget>[
-            if (openSettingsAction)
-              TextButton(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  await openAppSettings();
-                },
-                child: const Text('פתיחת הגדרות'),
-              ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('הבנתי'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
-
-enum _BirthDateCalendar { gregorian, hebrew }
 
 class _PinnedTabBarDelegate extends SliverPersistentHeaderDelegate {
   _PinnedTabBarDelegate({required this.tabBar, required this.backgroundColor});
@@ -1513,14 +586,14 @@ class _PinnedTabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-const Color _profileCanvasLight = Color(0xFFFBF7EE);
-const Color _profileSurfaceLight = Color(0xFFFFFFFF);
-const Color _profileSurfaceWarmLight = Color(0xFFF6F2E9);
-const Color _profileBlushLight = Color(0xFFF3DBDD);
-const Color _profileGoldLight = Color(0xFFF2E5C2);
-const Color _profileTextLight = Color(0xFF1B1916);
-const Color _profileMutedLight = Color(0xFF7B746A);
-const Color _profileGoldTextLight = Color(0xFF79571B);
+const Color _profileCanvasLight = AppColors.background;
+const Color _profileSurfaceLight = AppColors.surface;
+const Color _profileSurfaceWarmLight = AppColors.secondaryLight;
+const Color _profileBlushLight = AppColors.softPink;
+const Color _profileGoldLight = AppColors.primaryLight;
+const Color _profileTextLight = AppColors.onSurface;
+const Color _profileMutedLight = AppColors.onSurfaceVariant;
+const Color _profileGoldTextLight = AppColors.primaryDark;
 
 Color _profileCanvasColor(ThemeData theme) {
   return theme.brightness == Brightness.dark
@@ -1585,14 +658,8 @@ class _InlinePersonEditForm extends StatelessWidget {
     required this.onFieldChanged,
     required this.selectedGender,
     required this.birthDate,
-    required this.birthDateCalendar,
-    required this.birthDatePrimaryText,
-    required this.birthDateSecondaryText,
     required this.selectedReligiousLevel,
     required this.onGenderChanged,
-    required this.onBirthDateTap,
-    required this.onBirthDateCleared,
-    required this.onBirthDateCalendarChanged,
     required this.onReligiousLevelChanged,
   });
 
@@ -1613,14 +680,8 @@ class _InlinePersonEditForm extends StatelessWidget {
   final VoidCallback onFieldChanged;
   final Gender selectedGender;
   final DateTime? birthDate;
-  final _BirthDateCalendar birthDateCalendar;
-  final String birthDatePrimaryText;
-  final String? birthDateSecondaryText;
   final ReligiousLevel? selectedReligiousLevel;
   final ValueChanged<Gender> onGenderChanged;
-  final VoidCallback onBirthDateTap;
-  final VoidCallback onBirthDateCleared;
-  final ValueChanged<_BirthDateCalendar> onBirthDateCalendarChanged;
   final ValueChanged<ReligiousLevel?> onReligiousLevelChanged;
 
   Widget? _saveSuffix(FocusNode node) {
@@ -1725,94 +786,6 @@ class _InlinePersonEditForm extends StatelessWidget {
                 },
               ),
             ],
-            const SizedBox(height: 20),
-            Text('תאריך לידה', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: onBirthDateTap,
-              borderRadius: BorderRadius.circular(12),
-              child: Ink(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color:
-                      theme.inputDecorationTheme.fillColor ??
-                      theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: theme.colorScheme.outline),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            birthDateCalendar == _BirthDateCalendar.hebrew
-                                ? 'תאריך לידה (עברי)'
-                                : 'תאריך לידה (לועזי)',
-                            style: theme.textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            birthDatePrimaryText,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: birthDate != null
-                                  ? theme.colorScheme.onSurface
-                                  : theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          if (birthDateSecondaryText
-                              case final String text) ...<Widget>[
-                            const SizedBox(height: 2),
-                            Text(
-                              text,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (birthDate != null)
-                      IconButton(
-                        icon: const Icon(Icons.clear),
-                        tooltip: 'ניקוי תאריך',
-                        onPressed: onBirthDateCleared,
-                      )
-                    else
-                      const Icon(Icons.calendar_today_outlined),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: <Widget>[
-                ChoiceChip(
-                  label: const Text('לוח לועזי'),
-                  selected: birthDateCalendar == _BirthDateCalendar.gregorian,
-                  onSelected: (bool selected) {
-                    if (selected) {
-                      onBirthDateCalendarChanged(_BirthDateCalendar.gregorian);
-                    }
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('לוח עברי'),
-                  selected: birthDateCalendar == _BirthDateCalendar.hebrew,
-                  onSelected: (bool selected) {
-                    if (selected) {
-                      onBirthDateCalendarChanged(_BirthDateCalendar.hebrew);
-                    }
-                  },
-                ),
-              ],
-            ),
             if (birthDate != null) ...<Widget>[
               const SizedBox(height: 8),
               Text(
@@ -1888,10 +861,12 @@ class _InlinePersonEditForm extends StatelessWidget {
 class _ProfileSummaryHeader extends StatelessWidget {
   const _ProfileSummaryHeader({
     required this.person,
+    required this.onAvatarTap,
     required this.onStatusChanged,
   });
 
   final Person person;
+  final VoidCallback onAvatarTap;
   final ValueChanged<ProfileStatus> onStatusChanged;
 
   @override
@@ -1914,15 +889,18 @@ class _ProfileSummaryHeader extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Hero(
-                tag: 'person-${person.id}',
-                child: Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: _profileWarmSurfaceColor(theme),
-                    shape: BoxShape.circle,
+              GestureDetector(
+                onTap: onAvatarTap,
+                child: Hero(
+                  tag: 'person-${person.id}',
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: _profileWarmSurfaceColor(theme),
+                      shape: BoxShape.circle,
+                    ),
+                    child: PersonAvatar(person: person, radius: 54),
                   ),
-                  child: PersonAvatar(person: person, radius: 54),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1954,39 +932,6 @@ class _ProfileSummaryHeader extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileSecondaryButton extends StatelessWidget {
-  const _ProfileSecondaryButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color muted = _profileMutedColor(theme);
-
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 17),
-      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: muted,
-        side: BorderSide(color: muted.withValues(alpha: 0.22)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        textStyle: theme.textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -2045,7 +990,7 @@ class _PersonNotesButton extends StatelessWidget {
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.brightness == Brightness.dark
                         ? theme.colorScheme.onSurfaceVariant
-                        : Color(0xFF6E2B30),
+                        : AppColors.primaryDark,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -2157,86 +1102,35 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
   }
 }
 
-class _ProfileCardTab extends StatelessWidget {
-  const _ProfileCardTab({
+/// The הצעות tab: proposals that were actually opened for this person —
+/// open ideas first, and separately ideas that were opened and rejected.
+/// Suggestions dismissed before a proposal was opened do not appear here.
+class _ProposalsTab extends StatelessWidget {
+  const _ProposalsTab({
     required this.person,
-    required this.showInlineEdit,
-    required this.onEditPressed,
-    required this.editSectionKey,
-    required this.onAddPhotos,
-    required this.onTapPhoto,
-    required this.onSetPrimary,
-    required this.descriptionController,
-    required this.descriptionFocus,
-    required this.onDescriptionChanged,
-    required this.onSaveDescription,
-    required this.editForm,
-
-    required this.personRepository,
     required this.openMatches,
     required this.rejectedMatches,
+    required this.personRepository,
   });
 
   final Person person;
-  final bool showInlineEdit;
-  final VoidCallback onEditPressed;
-  final GlobalKey editSectionKey;
-  final VoidCallback onAddPhotos;
-  final ValueChanged<int> onTapPhoto;
-  final ValueChanged<int> onSetPrimary;
-  final TextEditingController descriptionController;
-  final FocusNode descriptionFocus;
-  final VoidCallback onDescriptionChanged;
-  final VoidCallback onSaveDescription;
-  final Widget editForm;
-
-  final PersonRepository personRepository;
   final List<MatchIdea> openMatches;
   final List<MatchIdea> rejectedMatches;
+  final PersonRepository personRepository;
 
   @override
   Widget build(BuildContext context) {
+    if (openMatches.isEmpty && rejectedMatches.isEmpty) {
+      return const _TabEmptyState(
+        icon: Icons.lightbulb_outline,
+        title: 'אין הצעות עדיין',
+        subtitle: 'הצעות שנפתחות מתוך ההתאמות יופיעו כאן',
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 32),
       children: <Widget>[
-        _ShareCardPreview(
-          person: person,
-          onTapPhoto: onTapPhoto,
-          onAddPhotos: onAddPhotos,
-          onSetPrimary: onSetPrimary,
-          onEditPressed: onEditPressed,
-        ),
-        if (showInlineEdit)
-          Column(
-            key: editSectionKey,
-            children: <Widget>[
-              const SizedBox(height: 16),
-              _Section(
-                title: 'עריכת כרטיסייה',
-                child: TextFormField(
-                  controller: descriptionController,
-                  focusNode: descriptionFocus,
-                  textInputAction: TextInputAction.newline,
-                  maxLines: 10,
-                  minLines: 5,
-                  onChanged: (_) => onDescriptionChanged(),
-                  decoration: InputDecoration(
-                    hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
-                    alignLabelWithHint: true,
-                    suffixIcon: descriptionFocus.hasFocus
-                        ? IconButton(
-                            icon: const Icon(Icons.check),
-                            tooltip: 'שמירה',
-                            onPressed: onSaveDescription,
-                          )
-                        : null,
-                  ),
-                ),
-              ),
-              editForm,
-            ],
-          ),
-
         if (openMatches.isNotEmpty)
           _MatchesGroup(
             title: 'רעיונות פתוחים',
@@ -2291,115 +1185,6 @@ class _MatchesGroup extends StatelessWidget {
           personRepository: personRepository,
         ),
       ],
-    );
-  }
-}
-
-class _ShareCardPreview extends StatelessWidget {
-  const _ShareCardPreview({
-    required this.person,
-    required this.onTapPhoto,
-    required this.onAddPhotos,
-    required this.onSetPrimary,
-    required this.onEditPressed,
-  });
-
-  final Person person;
-  final ValueChanged<int> onTapPhoto;
-  final VoidCallback onAddPhotos;
-  final ValueChanged<int> onSetPrimary;
-  final VoidCallback onEditPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String description = (person.description ?? '').trim();
-    final Color muted = _profileMutedColor(theme);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: _profileSurfaceColor(theme),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: muted.withValues(alpha: 0.14)),
-        boxShadow: _profileSoftShadow(theme),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    'כרטיס לשליחה',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: _profileTextColor(theme),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                if (person.photosPaths.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsetsDirectional.only(end: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _profileWarmSurfaceColor(theme),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '${person.photosPaths.length} תמונות',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: muted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                TextButton(
-                  onPressed: onEditPressed,
-                  child: const Text('עריכה'),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: _PhotosSection(
-              person: person,
-              onTapPhoto: onTapPhoto,
-              onSetPrimary: onSetPrimary,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
-            child: _ProfileSecondaryButton(
-              label: 'הוספת תמונות',
-              icon: Icons.add_photo_alternate_outlined,
-              onPressed: onAddPhotos,
-            ),
-          ),
-          Divider(height: 1, color: muted.withValues(alpha: 0.16)),
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: description.isEmpty
-                ? Text(
-                    'עדיין אין כרטיסייה לשליחה',
-                    style: theme.textTheme.bodyLarge?.copyWith(color: muted),
-                  )
-                : Text(
-                    description,
-                    textAlign: TextAlign.start,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: _profileTextColor(theme),
-                      height: 1.58,
-                    ),
-                  ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -2478,7 +1263,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
   }
 }
 
-class _SuggestedMatchesList extends StatelessWidget {
+class _SuggestedMatchesList extends StatefulWidget {
   const _SuggestedMatchesList({
     required this.sourcePerson,
     required this.suggestedPeople,
@@ -2494,89 +1279,185 @@ class _SuggestedMatchesList extends StatelessWidget {
   final ValueChanged<Person> onReject;
 
   @override
+  State<_SuggestedMatchesList> createState() => _SuggestedMatchesListState();
+}
+
+class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
+  /// Candidates whose quick-view card is currently expanded inline.
+  final Set<String> _expandedIds = <String>{};
+
+  @override
   Widget build(BuildContext context) {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 32),
-      itemCount: suggestedPeople.length,
+      itemCount: widget.suggestedPeople.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final ThemeData theme = Theme.of(context);
-        final Person candidate = suggestedPeople[index];
-        final MatchIdea? existingMatch = matchRepository.findExisting(
-          sourcePerson.id,
+        final Person candidate = widget.suggestedPeople[index];
+        final MatchIdea? existingMatch = widget.matchRepository.findExisting(
+          widget.sourcePerson.id,
           candidate.id,
         );
+        final bool hasCard = (candidate.description ?? '').trim().isNotEmpty;
+        final bool expanded = _expandedIds.contains(candidate.id);
 
         return Material(
           color: _profileSurfaceColor(theme),
           borderRadius: BorderRadius.circular(20),
-          child: InkWell(
-            onTap: () => existingMatch != null
-                ? context.push('/matches/${existingMatch.id}')
-                : context.push('/people/${candidate.id}'),
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: <Widget>[
-                  PersonAvatar(person: candidate, radius: 25),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          candidate.fullName.trim(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: _profileTextColor(theme),
-                            fontWeight: FontWeight.w800,
-                          ),
+          child: Column(
+            children: <Widget>[
+              InkWell(
+                onTap: () => existingMatch != null
+                    ? context.push('/matches/${existingMatch.id}')
+                    : context.push('/people/${candidate.id}'),
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: <Widget>[
+                      GestureDetector(
+                        onTap: () => context.push('/people/${candidate.id}'),
+                        child: PersonAvatar(person: candidate, radius: 25),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              candidate.fullName.trim(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                color: _profileTextColor(theme),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _personSummary(candidate),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: _profileMutedColor(theme),
+                              ),
+                            ),
+                            if (existingMatch != null) ...<Widget>[
+                              const SizedBox(height: 6),
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: _StatusChip(
+                                  status: existingMatch.status,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _personSummary(candidate),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: _profileMutedColor(theme),
-                          ),
+                      ),
+                      const SizedBox(width: 4),
+                      _SuggestionIconButton(
+                        icon: Icons.close,
+                        tooltip: 'לא מתאים',
+                        backgroundColor: theme.colorScheme.error.withValues(
+                          alpha: 0.12,
                         ),
-                        if (existingMatch != null) ...<Widget>[
-                          const SizedBox(height: 6),
-                          Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: _StatusChip(status: existingMatch.status),
+                        foregroundColor: theme.colorScheme.error,
+                        onPressed: () => widget.onReject(candidate),
+                      ),
+                      const SizedBox(width: 8),
+                      _SuggestionIconButton(
+                        icon: Icons.add,
+                        tooltip: 'פתיחת הצעה',
+                        backgroundColor: _profileGoldLight,
+                        foregroundColor: _profileGoldTextLight,
+                        onPressed: () => widget.onAccept(candidate),
+                      ),
+                      if (hasCard) ...<Widget>[
+                        const SizedBox(width: 4),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: expanded ? 'סגירת כרטיס' : 'הצגת כרטיס',
+                          icon: AnimatedRotation(
+                            turns: expanded ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            child: Icon(
+                              Icons.keyboard_arrow_down,
+                              color: _profileMutedColor(theme),
+                            ),
                           ),
-                        ],
+                          onPressed: () {
+                            setState(() {
+                              if (!_expandedIds.remove(candidate.id)) {
+                                _expandedIds.add(candidate.id);
+                              }
+                            });
+                          },
+                        ),
                       ],
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  _SuggestionIconButton(
-                    icon: Icons.close,
-                    tooltip: 'לא מתאים',
-                    backgroundColor: theme.colorScheme.error.withValues(
-                      alpha: 0.12,
-                    ),
-                    foregroundColor: theme.colorScheme.error,
-                    onPressed: () => onReject(candidate),
-                  ),
-                  const SizedBox(width: 8),
-                  _SuggestionIconButton(
-                    icon: Icons.add,
-                    tooltip: 'פתיחת הצעה',
-                    backgroundColor: _profileGoldLight,
-                    foregroundColor: _profileGoldTextLight,
-                    onPressed: () => onAccept(candidate),
-                  ),
-                ],
+                ),
               ),
-            ),
+              if (expanded)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: _CandidateQuickCard(candidate: candidate),
+                ),
+            ],
           ),
         );
       },
+    );
+  }
+}
+
+/// Inline quick view of a candidate's send-card: primary photo + card text,
+/// shown under the suggestion row without leaving the profile.
+class _CandidateQuickCard extends StatelessWidget {
+  const _CandidateQuickCard({required this.candidate});
+
+  final Person candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String description = (candidate.description ?? '').trim();
+    final String? photoPath = candidate.photosPaths.isEmpty
+        ? null
+        : candidate.photosPaths.first;
+    final File? photoFile = photoPath == null ? null : File(photoPath);
+    final bool hasPhoto = photoFile != null && photoFile.existsSync();
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _profileWarmSurfaceColor(theme),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (hasPhoto)
+            Image.file(
+              photoFile,
+              height: 220,
+              cacheWidth: 720,
+              fit: BoxFit.cover,
+            ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Text(
+              description,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: _profileTextColor(theme),
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2761,6 +1642,500 @@ int _personNotesCount(Person person, List<PersonNote> notes) {
   return notes.length + (hasLegacyNote ? 1 : 0);
 }
 
+/// A dedicated full page for editing the person's card: the send-card text
+/// and the personal details. Saves automatically when leaving the page.
+class _PersonCardEditPage extends StatefulWidget {
+  const _PersonCardEditPage({required this.personId});
+
+  final String personId;
+
+  @override
+  State<_PersonCardEditPage> createState() => _PersonCardEditPageState();
+}
+
+class _PersonCardEditPageState extends State<_PersonCardEditPage> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _manualAgeController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _inquiryContactNameController =
+      TextEditingController();
+  final TextEditingController _inquiryContactPhoneController =
+      TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+
+  final FocusNode _firstNameFocus = FocusNode();
+  final FocusNode _lastNameFocus = FocusNode();
+  final FocusNode _manualAgeFocus = FocusNode();
+  final FocusNode _phoneFocus = FocusNode();
+  final FocusNode _inquiryContactNameFocus = FocusNode();
+  final FocusNode _inquiryContactPhoneFocus = FocusNode();
+  final FocusNode _descriptionFocus = FocusNode();
+
+  Gender _gender = Gender.unknown;
+  ReligiousLevel? _religiousLevel;
+  DateTime? _birthDate;
+  bool _isSaving = false;
+
+  List<FocusNode> get _focusNodes => <FocusNode>[
+    _firstNameFocus,
+    _lastNameFocus,
+    _manualAgeFocus,
+    _phoneFocus,
+    _inquiryContactNameFocus,
+    _inquiryContactPhoneFocus,
+    _descriptionFocus,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final Person? person = context.read<PersonRepository>().getById(
+      widget.personId,
+    );
+    if (person != null) {
+      _firstNameController.text = person.firstName;
+      _lastNameController.text = person.lastName;
+      // Show the current (auto-advancing) manual age so re-saving re-anchors
+      // it.
+      _manualAgeController.text = person.birthDate == null
+          ? (person.age?.toString() ?? '')
+          : (person.manualAge?.toString() ?? '');
+      _phoneController.text = person.phone ?? '';
+      _inquiryContactNameController.text = person.inquiryContactName ?? '';
+      _inquiryContactPhoneController.text = person.inquiryContactPhone ?? '';
+      _descriptionController.text = person.description ?? '';
+      _gender = person.gender;
+      _religiousLevel = person.religiousLevel;
+      _birthDate = person.birthDate;
+    }
+    for (final FocusNode node in _focusNodes) {
+      node.addListener(_handleFocusChange);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final FocusNode node in _focusNodes) {
+      node
+        ..removeListener(_handleFocusChange)
+        ..dispose();
+    }
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _manualAgeController.dispose();
+    _phoneController.dispose();
+    _inquiryContactNameController.dispose();
+    _inquiryContactPhoneController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  String? _normalizedText(String value) {
+    final String trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  Future<bool> _save({bool showSnackBar = true}) async {
+    final PersonRepository repository = context.read<PersonRepository>();
+    final Person? person = repository.getById(widget.personId);
+    if (person == null) {
+      return true;
+    }
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return false;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final int? manualAge = _birthDate == null
+          ? int.tryParse(_manualAgeController.text.trim())
+          : null;
+      person
+        ..firstName = _firstNameController.text.trim()
+        ..lastName = _lastNameController.text.trim()
+        ..gender = _gender
+        ..setManualAge(manualAge)
+        ..religiousLevel = _religiousLevel
+        ..phone = _normalizedText(_phoneController.text)
+        ..inquiryContactName = _normalizedText(
+          _inquiryContactNameController.text,
+        )
+        ..inquiryContactPhone = _normalizedText(
+          _inquiryContactPhoneController.text,
+        )
+        ..description = _normalizedText(_descriptionController.text);
+      await repository.update(person);
+
+      if (showSnackBar && mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('השינויים נשמרו')));
+      }
+      return true;
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Future<void> _saveAndPop() async {
+    final NavigatorState navigator = Navigator.of(context);
+    final bool saved = await _save(showSnackBar: false);
+    if (saved && mounted) {
+      navigator.pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop || _isSaving) {
+          return;
+        }
+        await _saveAndPop();
+      },
+      child: Scaffold(
+        backgroundColor: _profileCanvasColor(theme),
+        appBar: AppBar(
+          backgroundColor: _profileCanvasColor(theme),
+          foregroundColor: _profileTextColor(theme),
+          title: const Text('עריכת כרטיס'),
+          centerTitle: true,
+          actions: <Widget>[
+            IconButton(
+              icon: _isSaving
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check),
+              tooltip: 'שמירה',
+              onPressed: _isSaving ? null : _saveAndPop,
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
+            children: <Widget>[
+              _Section(
+                title: 'עריכת כרטיסייה',
+                child: TextFormField(
+                  controller: _descriptionController,
+                  focusNode: _descriptionFocus,
+                  textInputAction: TextInputAction.newline,
+                  maxLines: 10,
+                  minLines: 5,
+                  decoration: const InputDecoration(
+                    hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ),
+              _InlinePersonEditForm(
+                formKey: _formKey,
+                firstNameController: _firstNameController,
+                lastNameController: _lastNameController,
+                manualAgeController: _manualAgeController,
+                phoneController: _phoneController,
+                inquiryContactNameController: _inquiryContactNameController,
+                inquiryContactPhoneController: _inquiryContactPhoneController,
+                firstNameFocus: _firstNameFocus,
+                lastNameFocus: _lastNameFocus,
+                manualAgeFocus: _manualAgeFocus,
+                phoneFocus: _phoneFocus,
+                inquiryContactNameFocus: _inquiryContactNameFocus,
+                inquiryContactPhoneFocus: _inquiryContactPhoneFocus,
+                onSavePressed: () => _save(),
+                onFieldChanged: () {},
+                selectedGender: _gender,
+                birthDate: _birthDate,
+                selectedReligiousLevel: _religiousLevel,
+                onGenderChanged: (Gender gender) {
+                  setState(() => _gender = gender);
+                },
+                onReligiousLevelChanged: (ReligiousLevel? level) {
+                  setState(() => _religiousLevel = level);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The enlarged card page opened by tapping the profile square: a full-screen
+/// photo pager with arrows, the send-card below, and share/WhatsApp/edit
+/// actions on top.
+class _PersonCardViewPage extends StatefulWidget {
+  const _PersonCardViewPage({required this.personId});
+
+  final String personId;
+
+  @override
+  State<_PersonCardViewPage> createState() => _PersonCardViewPageState();
+}
+
+class _PersonCardViewPageState extends State<_PersonCardViewPage> {
+  final PageController _pageController = PageController();
+  int _photoIndex = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _goToPhoto(int index, int count) {
+    if (index < 0 || index >= count) {
+      return;
+    }
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  Future<void> _openWhatsApp(Person person) async {
+    final bool launched = await WhatsAppUtils.openChat(person);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('לא הצלחנו לפתוח את וואטסאפ')),
+        );
+    }
+  }
+
+  Future<void> _share(Person person) async {
+    try {
+      await ShareUtils.sharePerson(person);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('לא ניתן לשתף כרגע')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final PersonRepository repository = context.watch<PersonRepository>();
+    final Person? person = repository.getById(widget.personId);
+
+    if (person == null) {
+      return Scaffold(
+        appBar: AppBar(centerTitle: true),
+        body: const Center(child: Text('האדם לא נמצא')),
+      );
+    }
+
+    final List<String> photos = person.photosPaths
+        .where((String path) => File(path).existsSync())
+        .toList();
+    final String description = (person.description ?? '').trim();
+    final double photoHeight = MediaQuery.of(context).size.height * 0.78;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.black38,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        title: Text(
+          person.fullName.trim(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'שיתוף',
+            onPressed: () => _share(person),
+          ),
+          IconButton(
+            icon: const FaIcon(FontAwesomeIcons.whatsapp),
+            tooltip: 'וואטסאפ',
+            onPressed: () => _openWhatsApp(person),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'עריכת כרטיס',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) {
+                    return _PersonCardEditPage(personId: person.id);
+                  },
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: <Widget>[
+          SizedBox(
+            height: photoHeight,
+            child: photos.isEmpty
+                ? Center(child: PersonAvatar(person: person, radius: 80))
+                : Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      PageView.builder(
+                        controller: _pageController,
+                        itemCount: photos.length,
+                        onPageChanged: (int index) =>
+                            setState(() => _photoIndex = index),
+                        itemBuilder: (BuildContext context, int index) {
+                          return Image.file(
+                            File(photos[index]),
+                            fit: BoxFit.contain,
+                          );
+                        },
+                      ),
+                      if (photos.length > 1) ...<Widget>[
+                        // In RTL the pager advances leftwards, so the left
+                        // arrow goes forward and the right arrow goes back.
+                        if (_photoIndex + 1 < photos.length)
+                          Positioned(
+                            left: 8,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: _PhotoArrowButton(
+                                icon: Icons.chevron_left,
+                                onPressed: () =>
+                                    _goToPhoto(_photoIndex + 1, photos.length),
+                              ),
+                            ),
+                          ),
+                        if (_photoIndex > 0)
+                          Positioned(
+                            right: 8,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: _PhotoArrowButton(
+                                icon: Icons.chevron_right,
+                                onPressed: () =>
+                                    _goToPhoto(_photoIndex - 1, photos.length),
+                              ),
+                            ),
+                          ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 14,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List<Widget>.generate(photos.length, (
+                              int index,
+                            ) {
+                              return Container(
+                                width: index == _photoIndex ? 9 : 7,
+                                height: index == _photoIndex ? 9 : 7,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: index == _photoIndex
+                                      ? Colors.white
+                                      : Colors.white54,
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: _profileSurfaceColor(theme),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'כרטיס לשליחה',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  description.isEmpty
+                      ? 'עדיין אין כרטיסייה לשליחה'
+                      : description,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: description.isEmpty
+                        ? _profileMutedColor(theme)
+                        : _profileTextColor(theme),
+                    height: 1.58,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PhotoArrowButton extends StatelessWidget {
+  const _PhotoArrowButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black45,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, color: Colors.white, size: 30),
+        ),
+      ),
+    );
+  }
+}
+
 class _PersonNotesPage extends StatelessWidget {
   const _PersonNotesPage({required this.personId});
 
@@ -2882,7 +2257,12 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
       ),
       child: Column(
         children: <Widget>[
-          _PersonNotesTimeline(entries: entries, dateFormat: _dateFormat),
+          _PersonNotesTimeline(
+            entries: entries,
+            dateFormat: _dateFormat,
+            onEdit: _editNote,
+            onDelete: _deleteNote,
+          ),
           const SizedBox(height: 16),
           Row(
             children: <Widget>[
@@ -2915,6 +2295,7 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
   List<_PersonNoteEntry> _buildEntries() {
     final List<_PersonNoteEntry> entries = widget.notes.map((PersonNote note) {
       return _PersonNoteEntry(
+        noteId: note.id,
         text: note.text,
         createdAt: note.createdAt,
         isAutomatic: note.isAutomatic,
@@ -2925,6 +2306,7 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
     if (legacyNotes.isNotEmpty) {
       entries.add(
         _PersonNoteEntry(
+          noteId: null,
           text: legacyNotes,
           createdAt: widget.person.createdAt,
           isAutomatic: false,
@@ -2949,6 +2331,71 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
     _controller.clear();
   }
 
+  Future<void> _editNote(_PersonNoteEntry entry) async {
+    final TextEditingController editController = TextEditingController(
+      text: entry.text,
+    );
+    final String? newText = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          title: const Text('עריכת הערה'),
+          content: TextField(
+            controller: editController,
+            autofocus: true,
+            minLines: 2,
+            maxLines: 6,
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(editController.text),
+              child: const Text('שמירה'),
+            ),
+          ],
+        );
+      },
+    );
+    editController.dispose();
+
+    final String trimmed = (newText ?? '').trim();
+    if (trimmed.isEmpty || trimmed == entry.text || !mounted) {
+      return;
+    }
+
+    final PersonRepository repository = context.read<PersonRepository>();
+    if (entry.noteId != null) {
+      await repository.updateNote(entry.noteId!, trimmed);
+    } else {
+      widget.person.notes = trimmed;
+      await repository.update(widget.person);
+    }
+  }
+
+  Future<void> _deleteNote(_PersonNoteEntry entry) async {
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'מחיקת הערה',
+      message: 'למחוק את ההערה?',
+      confirmText: 'מחיקה',
+      isDestructive: true,
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
+
+    final PersonRepository repository = context.read<PersonRepository>();
+    if (entry.noteId != null) {
+      await repository.deleteNote(entry.noteId!);
+    } else {
+      widget.person.notes = null;
+      await repository.update(widget.person);
+    }
+  }
+
   bool get _canSend => _controller.text.trim().isNotEmpty;
 
   void _handleChanged() {
@@ -2960,21 +2407,31 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
 
 class _PersonNoteEntry {
   const _PersonNoteEntry({
+    required this.noteId,
     required this.text,
     required this.createdAt,
     required this.isAutomatic,
   });
 
+  /// Null for the legacy note stored directly on the person.
+  final String? noteId;
   final String text;
   final DateTime createdAt;
   final bool isAutomatic;
 }
 
 class _PersonNotesTimeline extends StatelessWidget {
-  const _PersonNotesTimeline({required this.entries, required this.dateFormat});
+  const _PersonNotesTimeline({
+    required this.entries,
+    required this.dateFormat,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final List<_PersonNoteEntry> entries;
   final DateFormat dateFormat;
+  final ValueChanged<_PersonNoteEntry> onEdit;
+  final ValueChanged<_PersonNoteEntry> onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -3063,14 +2520,57 @@ class _PersonNotesTimeline extends StatelessWidget {
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             const SizedBox(height: 8),
-                            Text(
-                              dateFormat.format(entry.createdAt),
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: Text(
+                                    dateFormat.format(entry.createdAt),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
                                   ),
+                                ),
+                                SizedBox(
+                                  height: 24,
+                                  width: 32,
+                                  child: PopupMenuButton<String>(
+                                    padding: EdgeInsets.zero,
+                                    tooltip: 'פעולות הערה',
+                                    icon: Icon(
+                                      Icons.more_horiz,
+                                      size: 18,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                    onSelected: (String value) {
+                                      if (value == 'edit') {
+                                        onEdit(entry);
+                                      } else if (value == 'delete') {
+                                        onDelete(entry);
+                                      }
+                                    },
+                                    itemBuilder: (BuildContext context) {
+                                      return <PopupMenuEntry<String>>[
+                                        if (!entry.isAutomatic)
+                                          const PopupMenuItem<String>(
+                                            value: 'edit',
+                                            child: Text('עריכת הערה'),
+                                          ),
+                                        const PopupMenuItem<String>(
+                                          value: 'delete',
+                                          child: Text('מחיקת הערה'),
+                                        ),
+                                      ];
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -3083,109 +2583,6 @@ class _PersonNotesTimeline extends StatelessWidget {
           }).toList(),
         ),
       ],
-    );
-  }
-}
-
-class _PhotosSection extends StatelessWidget {
-  const _PhotosSection({
-    required this.person,
-    required this.onTapPhoto,
-    required this.onSetPrimary,
-  });
-
-  final Person person;
-  final ValueChanged<int> onTapPhoto;
-  final ValueChanged<int> onSetPrimary;
-
-  @override
-  Widget build(BuildContext context) {
-    if (person.photosPaths.isEmpty) {
-      return Text('אין תמונות', style: Theme.of(context).textTheme.bodyMedium);
-    }
-
-    return SizedBox(
-      height: 200,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: person.photosPaths.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: (BuildContext context, int index) {
-          final String path = person.photosPaths[index];
-          final File file = File(path);
-          return GestureDetector(
-            onTap: () => onTapPhoto(index),
-            child: Stack(
-              children: <Widget>[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: file.existsSync()
-                      ? Image.file(
-                          file,
-                          width: 165,
-                          height: 200,
-                          cacheWidth: 330,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          width: 165,
-                          height: 200,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                ),
-                PositionedDirectional(
-                  top: 6,
-                  end: 6,
-                  child: Material(
-                    color: Colors.black54,
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      visualDensity: VisualDensity.compact,
-                      iconSize: 18,
-                      tooltip: index == 0
-                          ? 'זו התמונה הראשית'
-                          : 'בחר כתמונה ראשית',
-                      onPressed: index == 0 ? null : () => onSetPrimary(index),
-                      icon: Icon(
-                        index == 0 ? Icons.star : Icons.star_border,
-                        color: index == 0 ? Colors.amber : Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                if (index == 0)
-                  PositionedDirectional(
-                    bottom: 6,
-                    start: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        'ראשית',
-                        style: TextStyle(color: Colors.white, fontSize: 11),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
     );
   }
 }
@@ -3314,63 +2711,6 @@ class _Section extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.label,
-    required this.value,
-    this.isLast = false,
-  });
-
-  final String label;
-  final String value;
-  final bool isLast;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Widget row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SizedBox(
-            width: 110,
-            child: Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: _profileMutedColor(theme),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: _profileTextColor(theme),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (isLast) {
-      return row;
-    }
-
-    return Column(
-      children: <Widget>[
-        row,
-        Divider(
-          height: 1,
-          color: _profileMutedColor(theme).withValues(alpha: 0.14),
-        ),
-      ],
     );
   }
 }

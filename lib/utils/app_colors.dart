@@ -2,39 +2,47 @@ import 'package:flutter/material.dart';
 import 'package:shadchan/utils/enums.dart';
 
 abstract final class AppColors {
-  static const Color primary = Color(0xFF7B1FA2);
-  static const Color primaryLight = Color(0xFFE1BEE7);
-  static const Color primaryDark = Color(0xFF4A148C);
-  static const Color secondary = Color(0xFFF48FB1);
-  static const Color secondaryLight = Color(0xFFFCE4EC);
+  static const Color primary = Color(0xFF7F9EAA);
+  static const Color primaryLight = Color(0xFFD7E4EA);
+  static const Color primaryDark = Color(0xFF5F7F8C);
+  static const Color secondary = Color(0xFFC1845B);
+  static const Color secondaryLight = Color(0xFFEFE4D4);
 
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color background = Color(0xFFFFF8FA);
-  static const Color onPrimary = Color(0xFFFFFFFF);
-  static const Color onSecondary = Color(0xFFFFFFFF);
-  static const Color onSurface = Color(0xFF1C1B1F);
-  static const Color onSurfaceVariant = Color(0xFF6B6B6B);
-  static const Color outline = Color(0xFFE0E0E0);
+  static const Color surface = Color(0xFFFFFDF8);
+  static const Color background = Color(0xFFF7F0E4);
+  static const Color onPrimary = Color(0xFFFFFDF8);
+  static const Color onSecondary = Color(0xFF211D17);
+  static const Color onSurface = Color(0xFF211D17);
+  static const Color onSurfaceVariant = Color(0xFF7C7468);
+  static const Color outline = Color(0xFFE2D7C8);
   static const Color error = Color(0xFFD32F2F);
-  static const Color divider = Color(0xFFF0F0F0);
+  static const Color divider = Color(0xFFE2D7C8);
 
-  static const Color statusIdea = Color(0xFF42A5F5);
-  static const Color statusChecking = Color(0xFFFFB74D);
-  static const Color statusUnavailable = Color(0xFFBDBDBD);
-  static const Color statusRejected = Color(0xFFEF5350);
-  static const Color statusDating = Color(0xFF66BB6A);
-  static const Color statusDated = Color(0xFF9575CD);
-  static const Color statusMarried = Color(0xFFEC407A);
+  static const Color statusIdea = primary;
+  static const Color statusChecking = Color(0xFFB99A55);
+  static const Color statusUnavailable = Color(0xFF948577);
+  static const Color statusRejected = Color(0xFFA96B49);
+  static const Color statusDating = Color(0xFF6F7A55);
+  static const Color statusDated = Color(0xFF948577);
+  static const Color statusMarried = Color(0xFF6F7A55);
 
-  static const Color primaryDarkDm = Color(0xFFCE93D8);
-  static const Color primaryLightDarkDm = Color(0xFF2C0A3E);
-  static const Color secondaryDarkDm = Color(0xFFF48FB1);
-  static const Color backgroundDm = Color(0xFF1A1A2E);
-  static const Color surfaceDm = Color(0xFF252540);
-  static const Color onSurfaceDm = Color(0xFFF5F5F5);
-  static const Color onSurfaceVariantDm = Color(0xFFAAAAAA);
-  static const Color outlineDm = Color(0xFF3A3A5C);
-  static const Color dividerDm = Color(0xFF2A2A45);
+  static const Color softBlue = Color(0xFFD7E4EA);
+  static const Color softPink = Color(0xFFE6D4C0);
+  static const Color softGreen = Color(0xFFDDE3CF);
+  static const Color softPurple = Color(0xFFDDD7E7);
+  static const Color softSand = Color(0xFFE6D4C0);
+  static const Color softYellow = Color(0xFFEFE0B8);
+
+  static const Color primaryDarkDm = Color(0xFFAFC7D0);
+  static const Color primaryLightDarkDm = Color(0xFF28444F);
+  static const Color secondaryDarkDm = Color(0xFFD6A17A);
+  static const Color secondaryLightDarkDm = Color(0xFF3A3128);
+  static const Color backgroundDm = Color(0xFF211D17);
+  static const Color surfaceDm = Color(0xFF2A251F);
+  static const Color onSurfaceDm = Color(0xFFF7F0E4);
+  static const Color onSurfaceVariantDm = Color(0xFFC9BDAE);
+  static const Color outlineDm = Color(0xFF5C5045);
+  static const Color dividerDm = Color(0xFF3A3128);
 
   static Color statusColor(String status) {
     switch (status) {

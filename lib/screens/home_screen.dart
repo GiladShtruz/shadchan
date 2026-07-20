@@ -67,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// How many times the user pressed "skip" — advances the featured contact.
   int _skips = 0;
+
   /// How many pages of the "החברים שלך" list are currently revealed. Pressing
   /// "הצג עוד" reveals one more page in place instead of opening a new screen.
   late int _visiblePages = widget.initialPageIndex + 1;
@@ -100,7 +101,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadRecentCallOrder() async {
-    final Map<String, int> order = await CallLogSortService.loadRecentCallOrder();
+    final Map<String, int> order =
+        await CallLogSortService.loadRecentCallOrder();
     if (!mounted || order.isEmpty) {
       return;
     }
@@ -189,8 +191,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final int direction = _sortAscending ? 1 : -1;
       featuredCandidates.sort((Person a, Person b) => direction * base(a, b));
     } else {
-      featuredCandidates.sort(_compareRandomWithRecentCalls);
-      _movePhotoContactFirst(featuredCandidates);
+      // Pure per-launch shuffle (no call-log priority) so a different contact
+      // is featured every launch, starting from one with a photo and a card.
+      featuredCandidates.sort(
+        (Person a, Person b) => _shuffleKey(a).compareTo(_shuffleKey(b)),
+      );
+      _moveCompleteProfileFirst(featuredCandidates);
     }
     final Person? featured = featuredCandidates.isEmpty
         ? null
@@ -198,8 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final List<Person> pagedPeople = visiblePeople
         .take(_visiblePages * _peoplePageSize)
         .toList();
-    final bool hasNextPeoplePage =
-        visiblePeople.length > pagedPeople.length;
+    final bool hasNextPeoplePage = visiblePeople.length > pagedPeople.length;
 
     return CustomScrollView(
       controller: _scrollController,
@@ -271,9 +276,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   IconButton(
                     tooltip: 'סינון',
                     icon: Icon(
-                      _hasActiveFilters
-                          ? Icons.filter_list_alt
-                          : Icons.tune,
+                      _hasActiveFilters ? Icons.filter_list_alt : Icons.tune,
                       color: _hasActiveFilters
                           ? theme.colorScheme.primary
                           : null,
@@ -410,7 +413,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ).pop((value: _sortOption, ascending: ascending)),
                     ),
                   ),
-                  for (final ({_HomePeopleSortOption value, String label}) option
+                  for (final ({_HomePeopleSortOption value, String label})
+                      option
                       in const <({_HomePeopleSortOption value, String label})>[
                         (value: _HomePeopleSortOption.random, label: 'אקראי'),
                         (
@@ -435,10 +439,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: Theme.of(sheetContext).colorScheme.primary,
                             )
                           : null,
-                      onTap: () => Navigator.of(sheetContext).pop((
-                        value: option.value,
-                        ascending: _sortAscending,
-                      )),
+                      onTap: () => Navigator.of(
+                        sheetContext,
+                      ).pop((value: option.value, ascending: _sortAscending)),
                     ),
                 ],
               ),
@@ -662,7 +665,29 @@ class _HomeScreenState extends State<HomeScreen> {
   void _sortPeople(List<Person> people) {
     final Comparator<Person> base = _baseComparator();
     final int direction = _sortAscending ? 1 : -1;
-    people.sort((Person a, Person b) => direction * base(a, b));
+    // Availability always groups the list first: פנויים, בהפסקה, תפוסים.
+    people.sort((Person a, Person b) {
+      final int availability = _availabilityRank(
+        a,
+      ).compareTo(_availabilityRank(b));
+      if (availability != 0) {
+        return availability;
+      }
+      return direction * base(a, b);
+    });
+  }
+
+  int _availabilityRank(Person person) {
+    switch (person.profileStatus) {
+      case ProfileStatus.available:
+        return 0;
+      case ProfileStatus.onBreak:
+        return 1;
+      case ProfileStatus.busy:
+        return 2;
+      case ProfileStatus.mazelTov:
+        return 3;
+    }
   }
 
   Comparator<Person> _baseComparator() {
@@ -835,19 +860,33 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Whether a contact has at least one photo.
   bool _hasPhoto(Person person) => person.photosPaths.isNotEmpty;
 
-  /// Ensures the first featured contact has a photo without otherwise changing
-  /// the (already random) order: the rest stay fully shuffled. Because the
-  /// list is shuffled, the first photo contact found is effectively a random
-  /// one. No-op when the list is empty, already starts with a photo, or has no
-  /// photo contacts at all.
-  void _movePhotoContactFirst(List<Person> people) {
-    if (people.isEmpty || _hasPhoto(people.first)) {
+  /// Whether a contact has a send-card (כרטיסייה לשליחה).
+  bool _hasCard(Person person) => (person.description ?? '').trim().isNotEmpty;
+
+  /// Ensures the first featured contact has both a photo and a send-card,
+  /// without otherwise changing the (already random) order. Because the list
+  /// is shuffled per launch, the first complete profile found is effectively a
+  /// random one, so a different contact is featured each launch. Falls back to
+  /// a photo-only contact when nobody has both, and is a no-op when there is
+  /// nothing better than the current first.
+  void _moveCompleteProfileFirst(List<Person> people) {
+    if (people.isEmpty) {
       return;
     }
-    final int index = people.indexWhere(_hasPhoto);
+    bool isComplete(Person person) => _hasPhoto(person) && _hasCard(person);
+    if (isComplete(people.first)) {
+      return;
+    }
+    int index = people.indexWhere(isComplete);
+    if (index < 0) {
+      if (_hasPhoto(people.first)) {
+        return;
+      }
+      index = people.indexWhere(_hasPhoto);
+    }
     if (index > 0) {
-      final Person withPhoto = people.removeAt(index);
-      people.insert(0, withPhoto);
+      final Person person = people.removeAt(index);
+      people.insert(0, person);
     }
   }
 
@@ -887,7 +926,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return _recentCallOrder[normalized];
   }
-
 
   static _HomePeopleSortOption _sortFromName(String name) {
     for (final _HomePeopleSortOption option in _HomePeopleSortOption.values) {
@@ -1093,7 +1131,6 @@ class _FeaturedCard extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 10),
-
                   ],
                 ),
               ),

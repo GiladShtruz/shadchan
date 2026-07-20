@@ -10,6 +10,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
+import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 /// A popup that shows the full automatic-matches view for [sourcePerson] — the
@@ -66,8 +67,7 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
     final MatchRepository matchRepository = context.watch<MatchRepository>();
 
     final Person person =
-        personRepository.getById(widget.sourcePerson.id) ??
-        widget.sourcePerson;
+        personRepository.getById(widget.sourcePerson.id) ?? widget.sourcePerson;
 
     final MatchProposalFilters? savedFilters =
         MatchProposalFilterSheet.savedFiltersFor(person.id);
@@ -145,6 +145,7 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
           candidate: candidate,
           existingMatch: existingMatch,
           onTap: () => _openCandidate(context, candidate, existingMatch),
+          onAvatarTap: () => _openCandidateProfile(context, candidate),
           onAccept: () => _acceptSuggestion(context, person, candidate),
           onReject: () => _rejectSuggestion(context, person, candidate),
         );
@@ -154,7 +155,9 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
 
   /// Mirrors the person-card suggestions ordering: candidates already in an
   /// open/בהמתנה proposal first, then the remaining active suggestions, then
-  /// already-rejected candidates last.
+  /// soft-dismissed candidates, then already-rejected candidates last. Within
+  /// each tier, candidates that pause matches (תפוס/בהפסקה) drop after the
+  /// available ones.
   List<Person> _orderedSuggestions({
     required Person source,
     required PersonRepository personRepository,
@@ -172,8 +175,12 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
         )
         .toList();
 
+    final Set<String> dismissedIds = SuggestionDismissals.dismissedFor(
+      source.id,
+    );
     final List<Person> prioritized = <Person>[];
     final List<Person> active = <Person>[];
+    final List<Person> dismissed = <Person>[];
     final List<Person> rejected = <Person>[];
     for (final Person candidate in matching) {
       final MatchStatus? status = matchRepository
@@ -185,12 +192,23 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
           status == MatchStatus.checking ||
           status == MatchStatus.unavailable) {
         prioritized.add(candidate);
+      } else if (dismissedIds.contains(candidate.id)) {
+        dismissed.add(candidate);
       } else {
         active.add(candidate);
       }
     }
 
-    return <Person>[...prioritized, ...active, ...rejected];
+    List<Person> availableFirst(List<Person> people) => <Person>[
+      ...people.where((Person p) => !p.profileStatus.pausesMatches),
+      ...people.where((Person p) => p.profileStatus.pausesMatches),
+    ];
+    return <Person>[
+      ...availableFirst(prioritized),
+      ...availableFirst(active),
+      ...availableFirst(dismissed),
+      ...availableFirst(rejected),
+    ];
   }
 
   bool _matchesFilters({
@@ -272,6 +290,11 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
     }
   }
 
+  void _openCandidateProfile(BuildContext context, Person candidate) {
+    Navigator.of(context).pop();
+    context.push('/people/${candidate.id}');
+  }
+
   Future<void> _acceptSuggestion(
     BuildContext context,
     Person source,
@@ -317,7 +340,7 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
     final bool confirmed = await ConfirmDialog.show(
       context,
       title: 'לא מתאים?',
-      message: 'בטוח שזה לא מתאים?',
+      message: 'ההתאמה תעבור לסוף הרשימה.',
       confirmText: 'לא מתאים',
       isDestructive: true,
     );
@@ -325,19 +348,19 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
       return;
     }
 
-    final MatchRepository matchRepository = context.read<MatchRepository>();
-    final (Person, Person) pair = _maleFemale(source, candidate);
-    final MatchIdea? match =
-        matchRepository.findExisting(pair.$1.id, pair.$2.id) ??
-        await matchRepository.create(pair.$1.id, pair.$2.id);
-    if (match != null) {
-      await matchRepository.updateStatus(match.id, MatchStatus.rejected);
+    // Soft dismissal only: the candidate drops to the end of the suggestions
+    // list without creating a rejected proposal.
+    await SuggestionDismissals.dismiss(source.id, candidate.id);
+    if (mounted) {
+      setState(() {});
     }
 
     if (context.mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('ההצעה סומנה כלא מתאימה')));
+        ..showSnackBar(
+          const SnackBar(content: Text('ההתאמה הועברה לסוף הרשימה')),
+        );
     }
   }
 
@@ -395,6 +418,7 @@ class _SuggestionCard extends StatelessWidget {
     required this.candidate,
     required this.existingMatch,
     required this.onTap,
+    required this.onAvatarTap,
     required this.onAccept,
     required this.onReject,
   });
@@ -402,6 +426,7 @@ class _SuggestionCard extends StatelessWidget {
   final Person candidate;
   final MatchIdea? existingMatch;
   final VoidCallback onTap;
+  final VoidCallback onAvatarTap;
   final VoidCallback onAccept;
   final VoidCallback onReject;
 
@@ -418,7 +443,10 @@ class _SuggestionCard extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: <Widget>[
-              PersonAvatar(person: candidate, radius: 25),
+              GestureDetector(
+                onTap: onAvatarTap,
+                child: PersonAvatar(person: candidate, radius: 25),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

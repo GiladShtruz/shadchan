@@ -1,7 +1,7 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.17+18
+version: 1.0.18+20
 
 environment:
   sdk: ^3.11.0
@@ -49,15 +49,26 @@ flutter_launcher_icons:
   image_path: "assets/icon3.png"
 
 flutter_native_splash:
-  color: "#FFF8FA"
+  color: "#F7F0E4"
   image: "assets/icon3.png"
-  color_dark: "#1A1A2E"
+  color_dark: "#211D17"
   image_dark: "assets/icon3.png"
   android_12:
-    color: "#FFF8FA"
-    color_dark: "#1A1A2E"
+    color: "#F7F0E4"
+    color_dark: "#211D17"
 
 flutter:
   uses-material-design: true
   assets:
     - assets/icon3.png
+  fonts:
+    - family: Google Sans
+      fonts:
+        - asset: assets/fonts/GoogleSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/GoogleSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/GoogleSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/GoogleSans-Bold.ttf
+          weight: 700

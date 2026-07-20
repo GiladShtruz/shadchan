@@ -312,8 +312,9 @@ class PersonRepository extends ChangeNotifier {
     if (person == null) {
       return;
     }
-    final String? normalized =
-        (newCity == null || newCity.trim().isEmpty) ? null : newCity.trim();
+    final String? normalized = (newCity == null || newCity.trim().isEmpty)
+        ? null
+        : newCity.trim();
     if (person.city == normalized) {
       return;
     }
@@ -416,6 +417,28 @@ class PersonRepository extends ChangeNotifier {
       await person.save();
     }
 
+    notifyListeners();
+  }
+
+  Future<void> updateNote(String noteId, String text) async {
+    final Box<PersonNote>? noteBox = _noteBox;
+    final PersonNote? note = noteBox?.get(noteId);
+    if (note == null) {
+      return;
+    }
+
+    note.text = text;
+    await noteBox!.put(note.id, note);
+    notifyListeners();
+  }
+
+  Future<void> deleteNote(String noteId) async {
+    final Box<PersonNote>? noteBox = _noteBox;
+    if (noteBox == null || !noteBox.containsKey(noteId)) {
+      return;
+    }
+
+    await noteBox.delete(noteId);
     notifyListeners();
   }
 

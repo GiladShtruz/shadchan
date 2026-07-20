@@ -6,6 +6,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
@@ -76,12 +77,10 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     final ThemeData theme = Theme.of(context);
     // Watch the repository so contacts added elsewhere (e.g. the swipe view)
     // drop out of this list automatically and can't be imported twice.
-    final PersonRepository personRepository = context
-        .watch<PersonRepository>();
+    final PersonRepository personRepository = context.watch<PersonRepository>();
     final Set<String> existingPhones = personRepository.getNormalizedPhones();
-    final List<ContactImportCandidate> visibleCandidates = _visibleCandidatesFor(
-      existingPhones,
-    );
+    final List<ContactImportCandidate> visibleCandidates =
+        _visibleCandidatesFor(existingPhones);
     _sortCandidates(visibleCandidates);
 
     if (widget.embedded) {
@@ -295,9 +294,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
         });
       case _ImportSortOption.wordCount:
         candidates.sort((a, b) {
-          final int c = _wordCount(a.displayName).compareTo(
-            _wordCount(b.displayName),
-          );
+          final int c = _wordCount(
+            a.displayName,
+          ).compareTo(_wordCount(b.displayName));
           return dir * (c != 0 ? c : _compareName(a, b));
         });
       case _ImportSortOption.recentCalls:
@@ -318,10 +317,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     return trimmed.split(RegExp(r'\s+')).length;
   }
 
-  int _compareRecentCalls(
-    ContactImportCandidate a,
-    ContactImportCandidate b,
-  ) {
+  int _compareRecentCalls(ContactImportCandidate a, ContactImportCandidate b) {
     final int? rankA = _recentCallOrder[a.normalizedPhone];
     final int? rankB = _recentCallOrder[b.normalizedPhone];
     if (rankA != null && rankB != null && rankA != rankB) {
@@ -402,10 +398,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                               color: Theme.of(sheetContext).colorScheme.primary,
                             )
                           : null,
-                      onTap: () => Navigator.of(sheetContext).pop((
-                        value: option.value,
-                        ascending: _sortAscending,
-                      )),
+                      onTap: () => Navigator.of(
+                        sheetContext,
+                      ).pop((value: option.value, ascending: _sortAscending)),
                     ),
                 ],
               ),
@@ -761,8 +756,8 @@ class _ImportCandidateRow extends StatelessWidget {
       // Swiping from the start side (right, in RTL) reveals and triggers the
       // remove action with a black ✕.
       background: const _SwipeActionBackground(
-        backgroundColor: Color(0xFFE0E0E0),
-        foregroundColor: Colors.black,
+        backgroundColor: AppColors.statusUnavailable,
+        foregroundColor: AppColors.onPrimary,
         icon: Icons.close,
         label: 'הסרה',
         alignment: AlignmentDirectional.centerStart,
@@ -800,10 +795,7 @@ class _ImportCandidateRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
                 if (selectionMode)
-                  Checkbox(
-                    value: selected,
-                    onChanged: (_) => onSelectToggle(),
-                  )
+                  Checkbox(value: selected, onChanged: (_) => onSelectToggle())
                 else
                   IconButton(
                     tooltip: 'הוספה ועדכון מהיר',

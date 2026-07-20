@@ -6,12 +6,16 @@ abstract final class AppTheme {
     const ColorScheme colorScheme = ColorScheme.light(
       primary: AppColors.primary,
       onPrimary: AppColors.onPrimary,
+      primaryContainer: AppColors.primaryLight,
+      onPrimaryContainer: AppColors.primaryDark,
       secondary: AppColors.secondary,
       onSecondary: AppColors.onSecondary,
+      secondaryContainer: AppColors.secondaryLight,
+      onSecondaryContainer: AppColors.onSurface,
       surface: AppColors.surface,
       onSurface: AppColors.onSurface,
       error: AppColors.error,
-      onError: AppColors.onPrimary,
+      onError: AppColors.surface,
       outline: AppColors.outline,
     );
 
@@ -28,7 +32,7 @@ abstract final class AppTheme {
       cardColor: AppColors.surface,
       chipBackgroundColor: AppColors.primaryLight,
       chipLabelColor: AppColors.primary,
-      inputFillColor: AppColors.background,
+      inputFillColor: AppColors.surface,
       dividerColor: AppColors.divider,
       bottomNavigationBackgroundColor: AppColors.surface,
       bottomNavigationSelectedColor: AppColors.primary,
@@ -42,19 +46,23 @@ abstract final class AppTheme {
     const ColorScheme colorScheme = ColorScheme.dark(
       primary: AppColors.primaryDarkDm,
       onPrimary: AppColors.onSurface,
+      primaryContainer: AppColors.primaryLightDarkDm,
+      onPrimaryContainer: AppColors.onSurfaceDm,
       secondary: AppColors.secondaryDarkDm,
       onSecondary: AppColors.onSecondary,
+      secondaryContainer: AppColors.secondaryLightDarkDm,
+      onSecondaryContainer: AppColors.onSurfaceDm,
       surface: AppColors.surfaceDm,
       onSurface: AppColors.onSurfaceDm,
       error: AppColors.error,
-      onError: AppColors.onPrimary,
+      onError: AppColors.surface,
       outline: AppColors.outlineDm,
     );
 
     return _buildTheme(
       colorScheme: colorScheme.copyWith(
         surfaceContainerHighest: AppColors.primaryLightDarkDm,
-        surfaceContainerLow: AppColors.surfaceDm,
+        surfaceContainerLow: AppColors.secondaryLightDarkDm,
         onSurfaceVariant: AppColors.onSurfaceVariantDm,
         outlineVariant: AppColors.dividerDm,
       ),
@@ -90,9 +98,11 @@ abstract final class AppTheme {
     required Color textColor,
     required Color secondaryTextColor,
   }) {
+    const String fontFamily = 'Google Sans';
     final TextTheme baseTextTheme = Typography.material2021().black.apply(
       bodyColor: textColor,
       displayColor: textColor,
+      fontFamily: fontFamily,
     );
 
     final TextTheme textTheme = baseTextTheme.copyWith(
@@ -131,6 +141,7 @@ abstract final class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: fontFamily,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: scaffoldBackgroundColor,
       textTheme: textTheme,
@@ -167,15 +178,15 @@ abstract final class AppTheme {
         ),
         brightness: colorScheme.brightness,
       ),
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
-        shape: CircleBorder(),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        shape: const CircleBorder(),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
+          backgroundColor: colorScheme.secondary,
+          foregroundColor: colorScheme.onSecondary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -185,8 +196,8 @@ abstract final class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
+          backgroundColor: colorScheme.secondary,
+          foregroundColor: colorScheme.onSecondary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),

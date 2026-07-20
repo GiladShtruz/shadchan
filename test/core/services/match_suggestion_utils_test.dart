@@ -11,6 +11,7 @@ void main() {
         <ReligiousLevel>[
           ReligiousLevel.datiLeumiTorani,
           ReligiousLevel.datiLeumi,
+          ReligiousLevel.chardal,
         ],
       );
       expect(
