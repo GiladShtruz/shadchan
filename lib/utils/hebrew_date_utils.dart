@@ -141,6 +141,55 @@ abstract final class HebrewDateUtils {
     return occurrences;
   }
 
+  /// Gregorian date (at midnight) of the first day — Rosh Chodesh — of the
+  /// Hebrew month that contains [date]. The monthly stats reset on this day.
+  static DateTime hebrewMonthStart(DateTime date) {
+    try {
+      final JewishDate jd = JewishDate.fromDateTime(date);
+      final JewishDate first = JewishDate.initDate(
+        jewishYear: jd.getJewishYear(),
+        jewishMonth: jd.getJewishMonth(),
+        jewishDayOfMonth: 1,
+      );
+      return DateTime(
+        first.getGregorianYear(),
+        first.getGregorianMonth(),
+        first.getGregorianDayOfMonth(),
+      );
+    } catch (_) {
+      // Fall back to the Gregorian month start if the conversion ever fails.
+      return DateTime(date.year, date.month);
+    }
+  }
+
+  /// Just the Hebrew month name, e.g. "כסלו" (or "אדר א׳" in a leap year).
+  static String monthName({required int year, required int month}) {
+    try {
+      final JewishDate jd = JewishDate.initDate(
+        jewishYear: year,
+        jewishMonth: month,
+        jewishDayOfMonth: 1,
+      );
+      return _formatter.formatMonth(jd);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// "כסלו תשפ״ו" — Hebrew month name and year, used to label a stats period.
+  static String monthYearLabel({required int year, required int month}) {
+    try {
+      final JewishDate jd = JewishDate.initDate(
+        jewishYear: year,
+        jewishMonth: month,
+        jewishDayOfMonth: 1,
+      );
+      return '${_formatter.formatMonth(jd)} ${_formatter.formatHebrewNumber(year)}';
+    } catch (_) {
+      return '';
+    }
+  }
+
   static ({int year, int month, int day})? today({DateTime? from}) {
     try {
       final JewishDate current = JewishDate.fromDateTime(

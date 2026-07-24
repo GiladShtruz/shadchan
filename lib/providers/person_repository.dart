@@ -5,7 +5,6 @@ import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/services/notification_service.dart';
-import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:uuid/uuid.dart';
@@ -17,11 +16,12 @@ class PersonRepository extends ChangeNotifier {
   final Box<PersonNote>? _noteBox;
   final Uuid _uuid = const Uuid();
 
-  /// Invoked with a person id whenever that person becomes unavailable (busy /
-  /// on a break) so related open proposals can be moved to "בהמתנה". Wired to
+  /// Invoked with a person id whenever that person's availability changes, so
+  /// their proposals can move to "בהמתנה" (when someone is busy / on a break)
+  /// or back to "רעיון" (once both sides are free again). Wired to
   /// [MatchRepository] in `main.dart` to avoid a hard dependency between the
   /// two repositories.
-  Future<void> Function(String personId)? onPersonStatusPaused;
+  Future<void> Function(String personId)? onPersonStatusChanged;
 
   int get count => _box.length;
 
@@ -255,9 +255,7 @@ class PersonRepository extends ChangeNotifier {
     person.needsReview = false;
     await person.save();
     notifyListeners();
-    if (person.profileStatus.pausesMatches) {
-      await onPersonStatusPaused?.call(person.id);
-    }
+    await onPersonStatusChanged?.call(person.id);
     _refreshBirthdayNotificationsInBackground();
   }
 
@@ -358,16 +356,10 @@ class PersonRepository extends ChangeNotifier {
     person.profileStatus = newStatus;
     person.updatedAt = DateTime.now();
     await person.save();
-    await _createNote(
-      personId: id,
-      text: 'סטטוס שונה ל-${newStatus.displayName}',
-      createdAt: person.updatedAt,
-      isAutomatic: true,
-    );
+    // Status changes are visible on the card itself, so they are deliberately
+    // not written into the personal notes timeline.
     notifyListeners();
-    if (newStatus.pausesMatches) {
-      await onPersonStatusPaused?.call(id);
-    }
+    await onPersonStatusChanged?.call(id);
   }
 
   List<PersonNote> getNotesForPerson(String personId) {
@@ -402,13 +394,17 @@ class PersonRepository extends ChangeNotifier {
     return _noteBox?.containsKey(id) ?? false;
   }
 
-  Future<void> addNote(String personId, String text) async {
+  Future<void> addNote(
+    String personId,
+    String text, {
+    bool isAutomatic = false,
+  }) async {
     final DateTime now = DateTime.now();
     await _createNote(
       personId: personId,
       text: text,
       createdAt: now,
-      isAutomatic: false,
+      isAutomatic: isAutomatic,
     );
 
     final Person? person = getById(personId);
@@ -446,43 +442,12 @@ class PersonRepository extends ChangeNotifier {
     await _noteBox?.put(note.id, note);
   }
 
-  List<Person> getBirthdaysToday() {
-    final List<Person> people = _box.values.where((Person person) {
-      final DateTime? birthDate = person.birthDate;
-      return birthDate != null && AppDateUtils.isBirthdayToday(birthDate);
-    }).toList();
-
-    people.sort(_sortByFirstName);
-    return people;
-  }
-
-  List<Person> getUpcomingBirthdays({int daysAhead = 7}) {
-    final List<Person> people = _box.values.where((Person person) {
-      final DateTime? birthDate = person.birthDate;
-      return birthDate != null &&
-          AppDateUtils.isBirthdaySoon(birthDate, daysAhead: daysAhead);
-    }).toList();
-
-    people.sort((Person a, Person b) {
-      final int daysA = AppDateUtils.daysUntilBirthday(a.birthDate!) ?? 0;
-      final int daysB = AppDateUtils.daysUntilBirthday(b.birthDate!) ?? 0;
-      final int dayComparison = daysA.compareTo(daysB);
-      if (dayComparison != 0) {
-        return dayComparison;
-      }
-
-      return _sortByFirstName(a, b);
-    });
-
-    return people;
-  }
-
   int _sortByFirstName(Person a, Person b) {
     return a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase());
   }
 
   Future<void> _refreshBirthdayNotifications() async {
-    await NotificationService.scheduleBirthdayNotifications(getAll());
+    await NotificationService.cancelBirthdayNotifications();
   }
 
   void _refreshBirthdayNotificationsInBackground() {

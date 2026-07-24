@@ -5,35 +5,31 @@ import 'package:shadchan/utils/match_suggestion_utils.dart';
 
 void main() {
   group('MatchSuggestionUtils', () {
-    test('maps religious levels to the requested automatic filters', () {
+    test('defaults religious filter to the candidate\'s own level only', () {
       expect(
         MatchSuggestionUtils.religiousLevelsFor(ReligiousLevel.datiLeumiTorani),
-        <ReligiousLevel>[
-          ReligiousLevel.datiLeumiTorani,
-          ReligiousLevel.datiLeumi,
-          ReligiousLevel.chardal,
-        ],
+        <ReligiousLevel>[ReligiousLevel.datiLeumiTorani],
       );
       expect(
         MatchSuggestionUtils.religiousLevelsFor(ReligiousLevel.datiLeumi),
-        <ReligiousLevel>[
-          ReligiousLevel.datiLeumiTorani,
-          ReligiousLevel.datiLeumi,
-          ReligiousLevel.datiOpen,
-        ],
+        <ReligiousLevel>[ReligiousLevel.datiLeumi],
       );
       expect(
-        MatchSuggestionUtils.religiousLevelsFor(ReligiousLevel.masorti),
-        <ReligiousLevel>[
-          ReligiousLevel.datiOpen,
-          ReligiousLevel.masorti,
-          ReligiousLevel.hiloni,
-          ReligiousLevel.datlashi,
-        ],
+        MatchSuggestionUtils.religiousLevelsFor(ReligiousLevel.datiOpen),
+        <ReligiousLevel>[ReligiousLevel.datiOpen],
       );
       expect(
         MatchSuggestionUtils.religiousLevelsFor(ReligiousLevel.haredi),
         <ReligiousLevel>[ReligiousLevel.haredi],
+      );
+      // A custom style has no built-in level, so no religious filter applies.
+      expect(
+        MatchSuggestionUtils.religiousLevelsFor(ReligiousLevel.other),
+        <ReligiousLevel>[],
+      );
+      expect(
+        MatchSuggestionUtils.religiousLevelsFor(null),
+        <ReligiousLevel>[],
       );
     });
 
@@ -117,7 +113,7 @@ void main() {
             id: 'ok',
             gender: Gender.female,
             age: 27,
-            religiousLevel: ReligiousLevel.datiOpen,
+            religiousLevel: ReligiousLevel.datiLeumi,
           ),
         ),
         isTrue,
@@ -141,7 +137,7 @@ void main() {
             id: 'archived',
             gender: Gender.female,
             age: 27,
-            religiousLevel: ReligiousLevel.datiOpen,
+            religiousLevel: ReligiousLevel.datiLeumi,
             profileStatus: ProfileStatus.mazelTov,
           ),
         ),

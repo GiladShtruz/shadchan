@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person.dart';
 
 class PersonAvatar extends StatelessWidget {
@@ -18,6 +19,22 @@ class PersonAvatar extends StatelessWidget {
       return CircleAvatar(
         radius: radius,
         backgroundImage: FileImage(File(firstPhotoPath)),
+      );
+    }
+
+    // No photo: fall back to a gender icon inside a gender-tinted circle — a
+    // man in blue, a woman in pink. Unknown gender keeps the neutral initials.
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Gender gender = person.gender;
+    if (gender == Gender.male || gender == Gender.female) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: AppColors.genderSurface(gender, dark: dark),
+        child: Icon(
+          gender == Gender.female ? Icons.woman : Icons.man,
+          color: AppColors.genderAccent(gender, dark: dark),
+          size: radius * 1.2,
+        ),
       );
     }
 

@@ -69,6 +69,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       const SizedBox(height: 24),
+      const SectionHeader(title: 'המאגר שלי'),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.style_outlined),
+          title: const Text('סגנונות דתיים'),
+          subtitle: const Text('אילו סגנונות יופיעו באפליקציה'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push('/settings/religious-levels'),
+        ),
+      ),
+      const SizedBox(height: 24),
       const SectionHeader(title: 'הודעות'),
       Card(
         child: ListTile(

@@ -13,10 +13,8 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/utils/hebrew_date_utils.dart';
 
 class ExcelExportService {
-  static final DateFormat _dateFormat = DateFormat('dd.MM.yyyy');
   static final DateFormat _dateTimeFormat = DateFormat('dd.MM.yyyy HH:mm');
 
   static Future<File> exportData(
@@ -96,8 +94,8 @@ class ExcelExportService {
         'שם מלא',
         'מגדר',
         'גיל',
-        'תאריך לידה לועזי',
-        'תאריך לידה עברי',
+        'גובה (ס״מ)',
+        'מצב משפחתי',
         'גיל ידני',
         'סגנון דתי',
         'עיר',
@@ -308,10 +306,10 @@ class ExcelExportService {
       person.fullName,
       person.gender.displayName,
       person.age?.toString() ?? '',
-      _formatNullableDate(person.birthDate),
-      _hebrewBirthDate(person),
+      person.heightCm?.toString() ?? '',
+      person.maritalStatus?.displayNameFor(person.gender) ?? '',
       person.manualAge?.toString() ?? '',
-      person.religiousLevel?.displayName ?? '',
+      person.religiousLevelLabel,
       person.city ?? '',
       person.phone ?? '',
       person.inquiryContactName ?? '',
@@ -325,35 +323,6 @@ class ExcelExportService {
       _formatDateTime(person.createdAt),
       _formatDateTime(person.updatedAt),
     ];
-  }
-
-  static String _hebrewBirthDate(Person person) {
-    if (person.hebrewBirthYear != null &&
-        person.hebrewBirthMonth != null &&
-        person.hebrewBirthDay != null) {
-      return HebrewDateUtils.format(
-        year: person.hebrewBirthYear!,
-        month: person.hebrewBirthMonth!,
-        day: person.hebrewBirthDay!,
-      );
-    }
-
-    final DateTime? birthDate = person.birthDate;
-    if (birthDate == null) {
-      return '';
-    }
-
-    final ({int year, int month, int day})? hebrew =
-        HebrewDateUtils.fromGregorian(birthDate);
-    if (hebrew == null) {
-      return '';
-    }
-
-    return HebrewDateUtils.format(
-      year: hebrew.year,
-      month: hebrew.month,
-      day: hebrew.day,
-    );
   }
 
   static MatchIdea? _findMatch(List<MatchIdea> matches, String matchId) {
@@ -370,13 +339,6 @@ class ExcelExportService {
       return '';
     }
     return peopleById[personId]?.fullName ?? '';
-  }
-
-  static String _formatNullableDate(DateTime? date) {
-    if (date == null) {
-      return '';
-    }
-    return _dateFormat.format(date);
   }
 
   static String _formatDateTime(DateTime date) {

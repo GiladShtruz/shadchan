@@ -24,6 +24,6 @@ class MatchNote extends HiveObject {
   @HiveField(3)
   DateTime createdAt;
 
-  @HiveField(4)
+  @HiveField(4, defaultValue: false)
   bool isAutomatic;
 }

@@ -1,8 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:shadchan/utils/hebrew_date_utils.dart';
-import 'package:shadchan/models/person.dart' as model;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:shadchan/models/match_idea.dart';
@@ -13,28 +11,6 @@ class NotificationService {
   static bool _isInitialized = false;
   static Future<void> _scheduleQueue = Future<void>.value();
   static int _latestScheduleRequestId = 0;
-
-  static const AndroidNotificationDetails _androidBirthdayDetails =
-      AndroidNotificationDetails(
-        'birthday_reminders',
-        'תזכורות ימי הולדת',
-        channelDescription: 'התראות על ימי הולדת קרובים של אנשי קשר',
-        importance: Importance.high,
-        priority: Priority.high,
-      );
-
-  static const DarwinNotificationDetails _iosBirthdayDetails =
-      DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      );
-
-  static const NotificationDetails _birthdayNotificationDetails =
-      NotificationDetails(
-        android: _androidBirthdayDetails,
-        iOS: _iosBirthdayDetails,
-      );
 
   static const AndroidNotificationDetails _androidMatchDetails =
       AndroidNotificationDetails(
@@ -53,10 +29,7 @@ class NotificationService {
       );
 
   static const NotificationDetails _matchNotificationDetails =
-      NotificationDetails(
-        android: _androidMatchDetails,
-        iOS: _iosMatchDetails,
-      );
+      NotificationDetails(android: _androidMatchDetails, iOS: _iosMatchDetails);
 
   static Future<void> initialize() async {
     tz_data.initializeTimeZones();
@@ -96,30 +69,27 @@ class NotificationService {
     }
   }
 
-  static Future<void> scheduleBirthdayNotifications(
-    List<model.Person> people,
-  ) async {
+  /// Birth dates were removed from the app, so no birthday notifications are
+  /// scheduled any more. This clears the ones older versions already put on the
+  /// device (ids 10000-19999) so users stop receiving them.
+  static Future<void> cancelBirthdayNotifications() async {
     if (!_isInitialized) {
       return;
     }
 
-    final int requestId = ++_latestScheduleRequestId;
-    final List<model.Person> peopleSnapshot = List<model.Person>.from(people);
-
     _scheduleQueue = _scheduleQueue
         .then((_) async {
-          if (requestId != _latestScheduleRequestId) {
-            return;
+          final List<PendingNotificationRequest> pending = await _plugin
+              .pendingNotificationRequests();
+          for (final PendingNotificationRequest request in pending) {
+            if (request.id >= 10000 && request.id < 20000) {
+              await _plugin.cancel(request.id);
+            }
           }
-
-          await _scheduleBirthdayNotificationsInternal(
-            peopleSnapshot,
-            requestId: requestId,
-          );
         })
         .catchError((Object error, StackTrace stackTrace) {
           debugPrint(
-            'NotificationService.scheduleBirthdayNotifications failed: '
+            'NotificationService.cancelBirthdayNotifications failed: '
             '$error\n$stackTrace',
           );
         });
@@ -127,9 +97,7 @@ class NotificationService {
     await _scheduleQueue;
   }
 
-  static Future<void> scheduleMatchReminders(
-    List<MatchIdea> matches,
-  ) async {
+  static Future<void> scheduleMatchReminders(List<MatchIdea> matches) async {
     if (!_isInitialized) {
       return;
     }
@@ -170,145 +138,13 @@ class NotificationService {
     }
   }
 
-  static Future<void> _scheduleBirthdayNotificationsInternal(
-    List<model.Person> people, {
-    required int requestId,
-  }) async {
-    try {
-      final List<PendingNotificationRequest> pending =
-          await _plugin.pendingNotificationRequests();
-      for (final PendingNotificationRequest req in pending) {
-        if (req.id >= 10000 && req.id < 20000) {
-          await _plugin.cancel(req.id);
-        }
-      }
-
-      int notifId = 10000;
-
-      for (final model.Person person in people) {
-        if (requestId != _latestScheduleRequestId) {
-          return;
-        }
-
-        final DateTime? birthDate = person.birthDate;
-        if (birthDate != null) {
-          final tz.TZDateTime birthdayMorning = _nextBirthdayOccurrence(
-            birthDate: birthDate,
-            hour: 9,
-          );
-          final tz.TZDateTime birthdayEve = _nextBirthdayOccurrence(
-            birthDate: birthDate,
-            hour: 20,
-            daysOffset: -1,
-          );
-
-          await _plugin.zonedSchedule(
-            notifId,
-            'יום הולדת היום',
-            '🎂 היום יום ההולדת של ${person.fullName.trim()}!',
-            birthdayMorning,
-            _birthdayNotificationDetails,
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.absoluteTime,
-            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-            matchDateTimeComponents: DateTimeComponents.dateAndTime,
-          );
-
-          await _plugin.zonedSchedule(
-            notifId + 1,
-            'תזכורת ליום הולדת',
-            '🎂 מחר יום ההולדת של ${person.fullName.trim()}',
-            birthdayEve,
-            _birthdayNotificationDetails,
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.absoluteTime,
-            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-            matchDateTimeComponents: DateTimeComponents.dateAndTime,
-          );
-
-          notifId += 2;
-        }
-
-        final ({int year, int month, int day})? convertedHebrew =
-            birthDate == null ? null : HebrewDateUtils.fromGregorian(birthDate);
-        final int? hebrewMonth =
-            person.hebrewBirthMonth ?? convertedHebrew?.month;
-        final int? hebrewDay = person.hebrewBirthDay ?? convertedHebrew?.day;
-        if (hebrewMonth != null && hebrewDay != null) {
-          final List<DateTime> hebrewOccurrences =
-              HebrewDateUtils.upcomingGregorianOccurrences(
-                month: hebrewMonth,
-                day: hebrewDay,
-                count: 3,
-              );
-          for (final DateTime nextHebrew in hebrewOccurrences) {
-            final tz.TZDateTime hebrewMorning = tz.TZDateTime(
-              tz.local,
-              nextHebrew.year,
-              nextHebrew.month,
-              nextHebrew.day,
-              9,
-            );
-            final tz.TZDateTime hebrewEve = tz.TZDateTime(
-              tz.local,
-              nextHebrew.year,
-              nextHebrew.month,
-              nextHebrew.day,
-              20,
-            ).subtract(const Duration(days: 1));
-            final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
-            if (hebrewEve.isAfter(now)) {
-              await _plugin.zonedSchedule(
-                notifId,
-                'תזכורת ליום הולדת עברי',
-                '🎂 מחר יום ההולדת העברי של ${person.fullName.trim()}',
-                hebrewEve,
-                _birthdayNotificationDetails,
-                uiLocalNotificationDateInterpretation:
-                    UILocalNotificationDateInterpretation.absoluteTime,
-                androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-              );
-              notifId += 1;
-            }
-            if (hebrewMorning.isAfter(tz.TZDateTime.now(tz.local))) {
-              await _plugin.zonedSchedule(
-                notifId,
-                'יום הולדת עברי היום',
-                '🎂 היום יום ההולדת העברי של ${person.fullName.trim()}!',
-                hebrewMorning,
-                _birthdayNotificationDetails,
-                uiLocalNotificationDateInterpretation:
-                    UILocalNotificationDateInterpretation.absoluteTime,
-                androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-              );
-              notifId += 1;
-            }
-
-            if (notifId >= 20000) {
-              break;
-            }
-          }
-        }
-
-        if (notifId >= 20000) {
-          break;
-        }
-      }
-    } catch (error, stackTrace) {
-      debugPrint(
-        'NotificationService.scheduleBirthdayNotifications failed: '
-        '$error\n$stackTrace',
-      );
-    }
-  }
-
   static Future<void> _scheduleMatchRemindersInternal(
     List<MatchIdea> matches, {
     required int requestId,
   }) async {
     try {
-      final List<PendingNotificationRequest> pending =
-          await _plugin.pendingNotificationRequests();
+      final List<PendingNotificationRequest> pending = await _plugin
+          .pendingNotificationRequests();
       for (final PendingNotificationRequest req in pending) {
         if (req.id >= 20000 && req.id < 30000) {
           await _plugin.cancel(req.id);
@@ -352,60 +188,5 @@ class NotificationService {
         '$error\n$stackTrace',
       );
     }
-  }
-
-  static tz.TZDateTime _nextBirthdayOccurrence({
-    required DateTime birthDate,
-    required int hour,
-    int minute = 0,
-    int daysOffset = 0,
-  }) {
-    final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
-    tz.TZDateTime scheduledDate = _birthdayForYear(
-      birthDate: birthDate,
-      year: now.year,
-      hour: hour,
-      minute: minute,
-      daysOffset: daysOffset,
-    );
-
-    if (!scheduledDate.isAfter(now)) {
-      scheduledDate = _birthdayForYear(
-        birthDate: birthDate,
-        year: now.year + 1,
-        hour: hour,
-        minute: minute,
-        daysOffset: daysOffset,
-      );
-    }
-
-    return scheduledDate;
-  }
-
-  static tz.TZDateTime _birthdayForYear({
-    required DateTime birthDate,
-    required int year,
-    required int hour,
-    required int minute,
-    required int daysOffset,
-  }) {
-    final int safeDay = _safeDay(year, birthDate.month, birthDate.day);
-    final tz.TZDateTime birthday = tz.TZDateTime(
-      tz.local,
-      year,
-      birthDate.month,
-      safeDay,
-      hour,
-      minute,
-    );
-
-    return birthday.add(Duration(days: daysOffset));
-  }
-
-  static int _safeDay(int year, int month, int day) {
-    final DateTime lastDayOfMonth = month == 12
-        ? DateTime(year + 1, 1, 0)
-        : DateTime(year, month + 1, 0);
-    return day > lastDayOfMonth.day ? lastDayOfMonth.day : day;
   }
 }

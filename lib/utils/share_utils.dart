@@ -26,22 +26,25 @@ abstract final class ShareUtils {
         .toList();
   }
 
+  /// Shares only the card text: the contact's own details are shared
+  /// separately, on purpose, through [shareInquiryContact].
   static String _shareText(Person person) {
-    final String description = (person.description ?? '').trim();
-    final String inquiryContact = _inquiryContactText(person);
-    if (inquiryContact.isEmpty) {
-      return description;
-    }
-
-    final String inquiryLine = 'לבירורים: $inquiryContact';
-    if (description.isEmpty) {
-      return inquiryLine;
-    }
-
-    return '$description\n\n$inquiryLine';
+    return (person.description ?? '').trim();
   }
 
-  static String _inquiryContactText(Person person) {
+  /// Shares the person's contact ("איש קשר") as plain text. Returns false when
+  /// there is no contact recorded.
+  static Future<bool> shareInquiryContact(Person person) async {
+    final String contact = inquiryContactText(person);
+    if (contact.isEmpty) {
+      return false;
+    }
+
+    await Share.share('${person.fullName.trim()} — איש קשר: $contact'.trim());
+    return true;
+  }
+
+  static String inquiryContactText(Person person) {
     final String name = (person.inquiryContactName ?? '').trim();
     final String phone = (person.inquiryContactPhone ?? '').trim();
     if (name.isEmpty && phone.isEmpty) {

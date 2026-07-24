@@ -8,11 +8,13 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
+import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/widgets/person_photo_editor.dart';
+import 'package:shadchan/widgets/religious_level_picker.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
@@ -21,6 +23,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
+import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
@@ -245,29 +248,49 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
           ),
           PopupMenuButton<String>(
             onSelected: (String value) async {
-              if (value != 'delete') {
-                return;
-              }
+              switch (value) {
+                case 'shareContact':
+                  await _shareInquiryContact(context, person);
+                case 'whatsappContact':
+                  await _openInquiryContactWhatsApp(context, person);
+                case 'delete':
+                  final bool shouldDelete = await _confirmDelete(
+                    context,
+                    person,
+                  );
+                  if (!shouldDelete) {
+                    return;
+                  }
 
-              final bool shouldDelete = await _confirmDelete(context, person);
-              if (!shouldDelete) {
-                return;
-              }
-
-              await personRepository.delete(person.id);
-              if (context.mounted) {
-                // Return to the view the user came from instead of
-                // jumping to the people list.
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go('/home');
-                }
+                  await personRepository.delete(person.id);
+                  if (context.mounted) {
+                    // Return to the view the user came from instead of
+                    // jumping to the people list.
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/home');
+                    }
+                  }
               }
             },
             itemBuilder: (BuildContext context) {
-              return const <PopupMenuEntry<String>>[
-                PopupMenuItem<String>(
+              final bool hasContact = ShareUtils.inquiryContactText(
+                person,
+              ).isNotEmpty;
+              return <PopupMenuEntry<String>>[
+                if (hasContact) ...<PopupMenuEntry<String>>[
+                  const PopupMenuItem<String>(
+                    value: 'shareContact',
+                    child: Text('שיתוף פרטי איש הקשר'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'whatsappContact',
+                    child: Text('וואטסאפ לאיש הקשר'),
+                  ),
+                  const PopupMenuDivider(),
+                ],
+                const PopupMenuItem<String>(
                   value: 'delete',
                   child: Text('מחיקת כרטיס'),
                 ),
@@ -292,6 +315,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                 child: _PersonNotesButton(
                   noteCount: personNotesCount,
                   onPressed: () => _openPersonNotes(context, person),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _AddProposalButton(
+                  onPressed: () => _openAddProposal(context, person),
                 ),
               ),
               SliverPersistentHeader(
@@ -520,6 +548,74 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     }
   }
 
+  /// Opens a new idea for this person, either against someone already in the
+  /// database or against a name that is not.
+  Future<void> _openAddProposal(BuildContext context, Person person) async {
+    final String? pick = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('הוספת הצעה'),
+          contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.group_outlined),
+                title: const Text('התאמה עם מועמד מתוך המאגר'),
+                onTap: () => Navigator.of(dialogContext).pop('database'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_add_alt_1),
+                title: const Text('התאמה עם אדם שאינו נמצא במאגר'),
+                onTap: () => Navigator.of(dialogContext).pop('outside'),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('ביטול'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (pick == null || !context.mounted) {
+      return;
+    }
+
+    context.push('/matches/add?preSelectedPersonId=${person.id}&pick=$pick');
+  }
+
+  /// Shares the contact's name and phone on their own, separately from the
+  /// candidate's card.
+  Future<void> _shareInquiryContact(BuildContext context, Person person) async {
+    try {
+      final bool shared = await ShareUtils.shareInquiryContact(person);
+      if (!shared && context.mounted) {
+        _showSnackBar(context, 'אין איש קשר לשיתוף');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        _showSnackBar(context, 'לא ניתן לשתף כרגע');
+      }
+    }
+  }
+
+  Future<void> _openInquiryContactWhatsApp(
+    BuildContext context,
+    Person person,
+  ) async {
+    final bool launched = await WhatsAppUtils.openChatWithPhone(
+      person.inquiryContactPhone,
+    );
+    if (!launched && context.mounted) {
+      _showSnackBar(context, 'אין מספר טלפון תקין לאיש הקשר');
+    }
+  }
+
   Future<void> _openWhatsAppMessage(BuildContext context, Person person) async {
     if (PhoneUtils.toWhatsAppNumber(person.phone) == null) {
       _showSnackBar(context, 'אין מספר טלפון תקין לאיש הקשר');
@@ -657,8 +753,8 @@ class _InlinePersonEditForm extends StatelessWidget {
     required this.onSavePressed,
     required this.onFieldChanged,
     required this.selectedGender,
-    required this.birthDate,
     required this.selectedReligiousLevel,
+    required this.selectedReligiousLevelOther,
     required this.onGenderChanged,
     required this.onReligiousLevelChanged,
   });
@@ -679,10 +775,10 @@ class _InlinePersonEditForm extends StatelessWidget {
   final VoidCallback onSavePressed;
   final VoidCallback onFieldChanged;
   final Gender selectedGender;
-  final DateTime? birthDate;
   final ReligiousLevel? selectedReligiousLevel;
+  final String? selectedReligiousLevelOther;
   final ValueChanged<Gender> onGenderChanged;
-  final ValueChanged<ReligiousLevel?> onReligiousLevelChanged;
+  final ValueChanged<ReligiousLevelChoice> onReligiousLevelChanged;
 
   Widget? _saveSuffix(FocusNode node) {
     if (!node.hasFocus) return null;
@@ -746,55 +842,35 @@ class _InlinePersonEditForm extends StatelessWidget {
               }).toList(),
             ),
             const SizedBox(height: 20),
-            Text('סגנון דתי', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ReligiousLevel.values.map((ReligiousLevel level) {
-                final bool selected = selectedReligiousLevel == level;
-                return FilterChip(
-                  label: Text(level.displayName),
-                  selected: selected,
-                  onSelected: (bool value) {
-                    onReligiousLevelChanged(value && !selected ? level : null);
-                  },
-                );
-              }).toList(),
+            ReligiousLevelPicker(
+              selected: ReligiousLevelChoice(
+                selectedReligiousLevel,
+                selectedReligiousLevelOther,
+              ),
+              onChanged: onReligiousLevelChanged,
             ),
-            if (birthDate == null) ...<Widget>[
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: manualAgeController,
-                focusNode: manualAgeFocus,
-                keyboardType: TextInputType.number,
-                onChanged: (_) => onFieldChanged(),
-                decoration: InputDecoration(
-                  labelText: 'גיל (הערכה)',
-                  suffixIcon: _saveSuffix(manualAgeFocus),
-                ),
-                validator: (String? value) {
-                  final String trimmed = value?.trim() ?? '';
-                  if (trimmed.isEmpty) {
-                    return null;
-                  }
-                  final int? parsed = int.tryParse(trimmed);
-                  if (parsed == null || parsed < 10 || parsed > 120) {
-                    return 'יש להזין גיל בין 10 ל-120';
-                  }
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: manualAgeController,
+              focusNode: manualAgeFocus,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => onFieldChanged(),
+              decoration: InputDecoration(
+                labelText: 'גיל',
+                suffixIcon: _saveSuffix(manualAgeFocus),
+              ),
+              validator: (String? value) {
+                final String trimmed = value?.trim() ?? '';
+                if (trimmed.isEmpty) {
                   return null;
-                },
-              ),
-            ],
-            if (birthDate != null) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                'גיל: ${AppDateUtils.calculateAge(birthDate!)}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+                }
+                final int? parsed = int.tryParse(trimmed);
+                if (parsed == null || parsed < 10 || parsed > 120) {
+                  return 'יש להזין גיל בין 10 ל-120';
+                }
+                return null;
+              },
+            ),
             const SizedBox(height: 20),
             TextFormField(
               controller: phoneController,
@@ -808,7 +884,30 @@ class _InlinePersonEditForm extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text('איש קשר לבירורים', style: theme.textTheme.titleMedium),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'איש קשר לבירורים',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    final DeviceContactChoice? choice =
+                        await DeviceContactPickerSheet.show(context);
+                    if (choice == null) {
+                      return;
+                    }
+                    inquiryContactNameController.text = choice.name;
+                    inquiryContactPhoneController.text = choice.phone;
+                    onFieldChanged();
+                  },
+                  icon: const Icon(Icons.contacts_outlined, size: 18),
+                  label: const Text('ייבוא מאנשי הקשר'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
@@ -930,6 +1029,51 @@ class _ProfileSummaryHeader extends StatelessWidget {
                 status: person.profileStatus,
                 onStatusChanged: onStatusChanged,
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "הוסף הצעה" — the shortcut from a profile straight into a new idea.
+class _AddProposalButton extends StatelessWidget {
+  const _AddProposalButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            color: _profileSurfaceColor(theme),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: muted.withValues(alpha: 0.16)),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.favorite_border, color: muted, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'הוסף הצעה',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_left, color: muted, size: 20),
             ],
           ),
         ),
@@ -1597,33 +1741,49 @@ class _TabEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 56, color: theme.colorScheme.primary),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: _profileTextColor(theme),
-                fontWeight: FontWeight.w800,
+    // Stays centered when there is room, but scrolls instead of overflowing
+    // when the tab viewport is short (it lives inside a NestedScrollView body,
+    // which can hand it very little height at some scroll positions).
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(icon, size: 56, color: theme.colorScheme.primary),
+                    const SizedBox(height: 14),
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: _profileTextColor(theme),
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: _profileMutedColor(theme),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
-              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: _profileMutedColor(theme),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1631,7 +1791,7 @@ class _TabEmptyState extends StatelessWidget {
 String _personSummary(Person person) {
   final List<String> parts = <String>[
     if (person.age != null) 'גיל ${person.age}',
-    if (person.religiousLevel != null) person.religiousLevel!.displayName,
+    if (person.religiousLevelLabel.isNotEmpty) person.religiousLevelLabel,
     if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
   ];
   return parts.isEmpty ? 'פרטים חסרים' : parts.join(' · ');
@@ -1675,8 +1835,14 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
 
   Gender _gender = Gender.unknown;
   ReligiousLevel? _religiousLevel;
-  DateTime? _birthDate;
+  String? _religiousLevelOther;
   bool _isSaving = false;
+
+  List<String> _photoPaths = <String>[];
+
+  /// Photos copied in during this edit. They are deleted again if the edit is
+  /// abandoned, so the app's photo folder does not collect orphans.
+  final Set<String> _newPhotoPaths = <String>{};
 
   List<FocusNode> get _focusNodes => <FocusNode>[
     _firstNameFocus,
@@ -1699,16 +1865,15 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
       _lastNameController.text = person.lastName;
       // Show the current (auto-advancing) manual age so re-saving re-anchors
       // it.
-      _manualAgeController.text = person.birthDate == null
-          ? (person.age?.toString() ?? '')
-          : (person.manualAge?.toString() ?? '');
+      _manualAgeController.text = person.age?.toString() ?? '';
       _phoneController.text = person.phone ?? '';
       _inquiryContactNameController.text = person.inquiryContactName ?? '';
       _inquiryContactPhoneController.text = person.inquiryContactPhone ?? '';
       _descriptionController.text = person.description ?? '';
       _gender = person.gender;
       _religiousLevel = person.religiousLevel;
-      _birthDate = person.birthDate;
+      _religiousLevelOther = person.religiousLevelOther;
+      _photoPaths = List<String>.from(person.photosPaths);
     }
     for (final FocusNode node in _focusNodes) {
       node.addListener(_handleFocusChange);
@@ -1755,15 +1920,14 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
 
     setState(() => _isSaving = true);
     try {
-      final int? manualAge = _birthDate == null
-          ? int.tryParse(_manualAgeController.text.trim())
-          : null;
+      final int? manualAge = int.tryParse(_manualAgeController.text.trim());
       person
         ..firstName = _firstNameController.text.trim()
         ..lastName = _lastNameController.text.trim()
         ..gender = _gender
         ..setManualAge(manualAge)
         ..religiousLevel = _religiousLevel
+        ..religiousLevelOther = _religiousLevelOther
         ..phone = _normalizedText(_phoneController.text)
         ..inquiryContactName = _normalizedText(
           _inquiryContactNameController.text,
@@ -1771,8 +1935,10 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
         ..inquiryContactPhone = _normalizedText(
           _inquiryContactPhoneController.text,
         )
-        ..description = _normalizedText(_descriptionController.text);
+        ..description = _normalizedText(_descriptionController.text)
+        ..photosPaths = List<String>.from(_photoPaths);
       await repository.update(person);
+      _newPhotoPaths.clear();
 
       if (showSnackBar && mounted) {
         ScaffoldMessenger.of(context)
@@ -1785,6 +1951,50 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  Future<void> _pickPhotos() async {
+    final List<String> copiedPhotoPaths = await PhotoPickerService.pickPhotos(
+      context,
+      personId: widget.personId,
+    );
+    if (copiedPhotoPaths.isEmpty || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _photoPaths = List<String>.from(_photoPaths)..addAll(copiedPhotoPaths);
+      _newPhotoPaths.addAll(copiedPhotoPaths);
+    });
+  }
+
+  void _setPrimaryPhoto(int index) {
+    if (index <= 0 || index >= _photoPaths.length) {
+      return;
+    }
+
+    setState(() {
+      final List<String> reordered = List<String>.from(_photoPaths);
+      reordered.insert(0, reordered.removeAt(index));
+      _photoPaths = reordered;
+    });
+  }
+
+  void _removePhoto(int index) {
+    if (index < 0 || index >= _photoPaths.length) {
+      return;
+    }
+
+    setState(() {
+      final List<String> remaining = List<String>.from(_photoPaths);
+      final String removed = remaining.removeAt(index);
+      _photoPaths = remaining;
+      // Only files added during this edit are deleted from disk; an existing
+      // photo is just detached from the card.
+      if (_newPhotoPaths.remove(removed)) {
+        PhotoPickerService.deletePhotoFiles(<String>[removed]);
+      }
+    });
   }
 
   Future<void> _saveAndPop() async {
@@ -1832,6 +2042,15 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
             padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
             children: <Widget>[
               _Section(
+                title: 'תמונות',
+                child: PersonPhotoEditor(
+                  photoPaths: _photoPaths,
+                  onAddPhoto: _pickPhotos,
+                  onSetPrimary: _setPrimaryPhoto,
+                  onRemove: _removePhoto,
+                ),
+              ),
+              _Section(
                 title: 'עריכת כרטיסייה',
                 child: TextFormField(
                   controller: _descriptionController,
@@ -1862,13 +2081,16 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
                 onSavePressed: () => _save(),
                 onFieldChanged: () {},
                 selectedGender: _gender,
-                birthDate: _birthDate,
                 selectedReligiousLevel: _religiousLevel,
+                selectedReligiousLevelOther: _religiousLevelOther,
                 onGenderChanged: (Gender gender) {
                   setState(() => _gender = gender);
                 },
-                onReligiousLevelChanged: (ReligiousLevel? level) {
-                  setState(() => _religiousLevel = level);
+                onReligiousLevelChanged: (ReligiousLevelChoice choice) {
+                  setState(() {
+                    _religiousLevel = choice.level;
+                    _religiousLevelOther = choice.customLabel;
+                  });
                 },
               ),
             ],

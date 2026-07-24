@@ -23,32 +23,38 @@ class PersonAdapter extends TypeAdapter<Person> {
       gender: fields[3] as Gender,
       createdAt: fields[13] as DateTime,
       updatedAt: fields[14] as DateTime,
-      birthDate: fields[4] as DateTime?,
+      legacyBirthDate: fields[4] as DateTime?,
       manualAge: fields[5] as int?,
+      manualAgeUpdatedAt: fields[24] as DateTime?,
       religiousLevel: fields[6] as ReligiousLevel?,
+      religiousLevelOther: fields[27] as String?,
       city: fields[7] as String?,
       phone: fields[8] as String?,
       source: fields[9] as String?,
       notes: fields[10] as String?,
       description: fields[15] as String?,
-      profileStatus: fields[16] as ProfileStatus,
-      hebrewBirthYear: fields[17] as int?,
-      hebrewBirthMonth: fields[18] as int?,
-      hebrewBirthDay: fields[19] as int?,
-      photosPaths: (fields[11] as List).cast<String>(),
-      isFavorite: fields[12] as bool,
-      needsReview: fields[20] as bool? ?? false,
       inquiryContactName: fields[21] as String?,
       inquiryContactPhone: fields[22] as String?,
-      hidden: fields[23] as bool? ?? false,
-      manualAgeUpdatedAt: fields[24] as DateTime?,
+      heightCm: fields[25] as int?,
+      maritalStatus: fields[26] as MaritalStatus?,
+      profileStatus: fields[16] == null
+          ? ProfileStatus.available
+          : fields[16] as ProfileStatus,
+      legacyHebrewBirthYear: fields[17] as int?,
+      legacyHebrewBirthMonth: fields[18] as int?,
+      legacyHebrewBirthDay: fields[19] as int?,
+      photosPaths:
+          fields[11] == null ? [] : (fields[11] as List).cast<String>(),
+      isFavorite: fields[12] == null ? false : fields[12] as bool,
+      needsReview: fields[20] == null ? false : fields[20] as bool,
+      hidden: fields[23] == null ? false : fields[23] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(25)
+      ..writeByte(28)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -58,11 +64,13 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..writeByte(3)
       ..write(obj.gender)
       ..writeByte(4)
-      ..write(obj.birthDate)
+      ..write(obj.legacyBirthDate)
       ..writeByte(5)
       ..write(obj.manualAge)
       ..writeByte(6)
       ..write(obj.religiousLevel)
+      ..writeByte(27)
+      ..write(obj.religiousLevelOther)
       ..writeByte(7)
       ..write(obj.city)
       ..writeByte(8)
@@ -84,11 +92,11 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..writeByte(16)
       ..write(obj.profileStatus)
       ..writeByte(17)
-      ..write(obj.hebrewBirthYear)
+      ..write(obj.legacyHebrewBirthYear)
       ..writeByte(18)
-      ..write(obj.hebrewBirthMonth)
+      ..write(obj.legacyHebrewBirthMonth)
       ..writeByte(19)
-      ..write(obj.hebrewBirthDay)
+      ..write(obj.legacyHebrewBirthDay)
       ..writeByte(20)
       ..write(obj.needsReview)
       ..writeByte(21)
@@ -98,7 +106,11 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..writeByte(23)
       ..write(obj.hidden)
       ..writeByte(24)
-      ..write(obj.manualAgeUpdatedAt);
+      ..write(obj.manualAgeUpdatedAt)
+      ..writeByte(25)
+      ..write(obj.heightCm)
+      ..writeByte(26)
+      ..write(obj.maritalStatus);
   }
 
   @override

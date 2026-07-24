@@ -38,6 +38,21 @@ abstract final class WhatsAppUtils {
     return launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  /// Opens a chat with an arbitrary number (used for a candidate's contact
+  /// person, who is not a [Person] in the database). Returns false when the
+  /// number is missing or not a valid phone number.
+  static Future<bool> openChatWithPhone(String? rawPhone) async {
+    final String? phone = PhoneUtils.toWhatsAppNumber(rawPhone);
+    if (phone == null) {
+      return false;
+    }
+
+    return launchUrl(
+      Uri.https('wa.me', '/$phone'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   static String currentOnboardingMessage() {
     if (!Hive.isBoxOpen('settings')) {
       return defaultOnboardingMessage;

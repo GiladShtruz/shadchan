@@ -8,13 +8,15 @@ import 'package:shadchan/screens/create_match_screen.dart';
 import 'package:shadchan/screens/incoming_shared_profile_screen.dart';
 import 'package:shadchan/screens/match_detail_screen.dart';
 import 'package:shadchan/screens/matches_screen.dart';
-import 'package:shadchan/screens/pending_people_screen.dart';
 import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
 import 'package:shadchan/screens/dashboard_screen.dart';
 import 'package:shadchan/screens/home_screen.dart';
+import 'package:shadchan/screens/monthly_stats_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
+import 'package:shadchan/screens/reminders_screen.dart';
+import 'package:shadchan/screens/religious_levels_settings_screen.dart';
 import 'package:shadchan/screens/settings_screen.dart';
 import 'package:shadchan/screens/whatsapp_message_settings_screen.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
@@ -40,14 +42,6 @@ PeopleSortOption _parsePeopleSort(String? raw) {
     default:
       return PeopleSortOption.alphabetical;
   }
-}
-
-int _parsePositiveInt(String? raw, {int defaultValue = 1}) {
-  final int? value = int.tryParse(raw ?? '');
-  if (value == null || value < 1) {
-    return defaultValue;
-  }
-  return value;
 }
 
 abstract final class AppRouter {
@@ -93,14 +87,9 @@ abstract final class AppRouter {
                 path: '/home',
                 builder: (BuildContext context, GoRouterState state) {
                   final Map<String, String> q = state.uri.queryParameters;
-                  final int page = _parsePositiveInt(q['page']);
-                  final int? seed = int.tryParse(q['seed'] ?? '');
                   return HomeScreen(
                     key: ValueKey<String>('home:${state.uri}'),
-                    initialPageIndex: page - 1,
-                    initialSeed: seed,
                     initialSearch: q['q'] ?? '',
-                    initialSort: q['sort'] ?? 'random',
                   );
                 },
               ),
@@ -118,13 +107,11 @@ abstract final class AppRouter {
                         q['statuses'],
                         ProfileStatus.values,
                       );
-                  final bool tableView = q['view'] == 'table';
                   final PeopleSortOption sort = _parsePeopleSort(q['sort']);
                   return PeopleScreen(
                     key: ValueKey<String>('people:${state.uri}'),
                     initialShowArchived: archived,
                     initialProfileStatuses: statuses,
-                    initialTableView: tableView,
                     initialSort: sort,
                   );
                 },
@@ -163,11 +150,12 @@ abstract final class AppRouter {
                       return IncomingSharedProfileScreen(draft: draft);
                     },
                   ),
+                  // "בהמתנה לעדכון" no longer has its own screen — those
+                  // contacts simply live in the main list.
                   GoRoute(
                     path: 'pending',
-                    builder: (BuildContext context, GoRouterState state) {
-                      return const PendingPeopleScreen();
-                    },
+                    redirect: (BuildContext context, GoRouterState state) =>
+                        '/people',
                   ),
                   GoRoute(
                     path: ':id',
@@ -228,10 +216,14 @@ abstract final class AppRouter {
                   GoRoute(
                     path: 'add',
                     builder: (BuildContext context, GoRouterState state) {
-                      final String? preSelectedPersonId =
-                          state.uri.queryParameters['preSelectedPersonId'];
+                      final Map<String, String> q = state.uri.queryParameters;
                       return CreateMatchScreen(
-                        preSelectedPersonId: preSelectedPersonId,
+                        preSelectedPersonId: q['preSelectedPersonId'],
+                        initialPick: switch (q['pick']) {
+                          'database' => CreateMatchPick.database,
+                          'outside' => CreateMatchPick.outsideDatabase,
+                          _ => null,
+                        },
                       );
                     },
                   ),
@@ -272,12 +264,30 @@ abstract final class AppRouter {
         },
         routes: <RouteBase>[
           GoRoute(
+            path: 'religious-levels',
+            builder: (BuildContext context, GoRouterState state) {
+              return const ReligiousLevelsSettingsScreen();
+            },
+          ),
+          GoRoute(
             path: 'whatsapp-message',
             builder: (BuildContext context, GoRouterState state) {
               return const WhatsAppMessageSettingsScreen();
             },
           ),
         ],
+      ),
+      GoRoute(
+        path: '/stats/month',
+        builder: (BuildContext context, GoRouterState state) {
+          return const MonthlyStatsScreen();
+        },
+      ),
+      GoRoute(
+        path: '/reminders',
+        builder: (BuildContext context, GoRouterState state) {
+          return const RemindersScreen();
+        },
       ),
       GoRoute(
         path: '/privacy-policy',
@@ -309,22 +319,12 @@ class _AppShell extends StatelessWidget {
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: selectedIndex,
-        onTap: (int index) {
-          switch (index) {
-            case 0:
-              navigationShell.goBranch(
-                0,
-                initialLocation: navigationShell.currentIndex == 0,
-              );
-            case 1:
-              context.go('/people/import');
-            case 2:
-              navigationShell.goBranch(
-                2,
-                initialLocation: navigationShell.currentIndex == 2,
-              );
-          }
-        },
+        // Always `initialLocation: true` — tapping a tab returns to that area's
+        // main screen rather than to whatever inner screen was open there last.
+        onTap: (int index) => navigationShell.goBranch(
+          index,
+          initialLocation: true,
+        ),
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
@@ -332,9 +332,9 @@ class _AppShell extends StatelessWidget {
             label: 'בית',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person_add_outlined),
-            activeIcon: Icon(Icons.person_add),
-            label: 'הוספה',
+            icon: Icon(Icons.group_outlined),
+            activeIcon: Icon(Icons.group),
+            label: 'המאגר שלי',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.favorite_border),

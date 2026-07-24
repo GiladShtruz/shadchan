@@ -48,6 +48,9 @@ void main() {
     if (!Hive.isAdapterRegistered(7)) {
       Hive.registerAdapter(ProfileStatusAdapter());
     }
+    if (!Hive.isAdapterRegistered(9)) {
+      Hive.registerAdapter(MaritalStatusAdapter());
+    }
   });
 
   tearDownAll(() async {
@@ -181,6 +184,182 @@ void main() {
     expect(matchRepo.getAllNotes(), hasLength(1));
     expect(matchRepo.getById('match_valid'), isNotNull);
     expect(matchRepo.getById('match_missing_person'), isNull);
+
+    await peopleBox.deleteFromDisk();
+    await matchesBox.deleteFromDisk();
+    await notesBox.deleteFromDisk();
+    if (await tempDirectory.exists()) {
+      await tempDirectory.delete(recursive: true);
+    }
+  });
+
+  test(
+    'importData restores hidden/needsReview/height/marital and reminders',
+    () async {
+      final String suffix =
+          '${DateTime.now().microsecondsSinceEpoch}_${boxCounter++}';
+      final Box<Person> peopleBox = await Hive.openBox<Person>(
+        'people_$suffix',
+      );
+      final Box<MatchIdea> matchesBox = await Hive.openBox<MatchIdea>(
+        'matches_$suffix',
+      );
+      final Box<MatchNote> notesBox = await Hive.openBox<MatchNote>(
+        'match_notes_$suffix',
+      );
+
+      final PersonRepository personRepo = PersonRepository(peopleBox);
+      final MatchRepository matchRepo = MatchRepository(matchesBox, notesBox);
+      final Directory tempDirectory = await Directory.systemTemp.createTemp(
+        'shadchan_backup_json_',
+      );
+      final File jsonFile = File(
+        '${tempDirectory.path}${Platform.pathSeparator}import.json',
+      );
+
+      const String timestamp = '2026-04-14T12:00:00.000Z';
+      const String reminder = '2026-08-01T09:00:00.000Z';
+      await jsonFile.writeAsString(
+        jsonEncode(<String, Object?>{
+          'version': 2,
+          'exportDate': timestamp,
+          'people': <Map<String, Object?>>[
+            <String, Object?>{
+              'id': 'person_a',
+              'firstName': 'דוד',
+              'lastName': 'כהן',
+              'gender': 'male',
+              'manualAge': 30,
+              'heightCm': 178,
+              'maritalStatus': 'divorced',
+              'profileStatus': 'available',
+              'needsReview': true,
+              'hidden': false,
+              'photos': <String>[],
+              'isFavorite': false,
+              'createdAt': timestamp,
+              'updatedAt': timestamp,
+            },
+            <String, Object?>{
+              'id': 'person_b',
+              'firstName': 'שרה',
+              'lastName': 'לוי',
+              'gender': 'female',
+              'manualAge': 27,
+              'profileStatus': 'available',
+              'needsReview': false,
+              'hidden': true,
+              'photos': <String>[],
+              'isFavorite': false,
+              'createdAt': timestamp,
+              'updatedAt': timestamp,
+            },
+          ],
+          'matches': <Map<String, Object?>>[
+            <String, Object?>{
+              'id': 'match_1',
+              'personAId': 'person_a',
+              'personBId': 'person_b',
+              'status': 'idea',
+              'currentHandler': 'me',
+              'reminderDate': reminder,
+              'reminderNote': 'להתקשר לצד הבחורה',
+              'createdAt': timestamp,
+              'updatedAt': timestamp,
+            },
+          ],
+        }),
+      );
+
+      final ImportResult result = await BackupService.importData(
+        jsonFile,
+        personRepo,
+        matchRepo,
+      );
+
+      expect(result.peopleAdded, 2);
+      expect(result.matchesAdded, 1);
+
+      final Person personA = personRepo.getById('person_a')!;
+      expect(personA.needsReview, isTrue);
+      expect(personA.hidden, isFalse);
+      expect(personA.heightCm, 178);
+      expect(personA.maritalStatus, MaritalStatus.divorced);
+
+      final Person personB = personRepo.getById('person_b')!;
+      expect(personB.hidden, isTrue);
+
+      final MatchIdea match = matchRepo.getById('match_1')!;
+      expect(match.reminderDate, DateTime.parse(reminder));
+      expect(match.reminderNote, 'להתקשר לצד הבחורה');
+
+      await peopleBox.deleteFromDisk();
+      await matchesBox.deleteFromDisk();
+      await notesBox.deleteFromDisk();
+      if (await tempDirectory.exists()) {
+        await tempDirectory.delete(recursive: true);
+      }
+    },
+  );
+
+  test('importData skips malformed records without aborting the rest', () async {
+    final String suffix =
+        '${DateTime.now().microsecondsSinceEpoch}_${boxCounter++}';
+    final Box<Person> peopleBox = await Hive.openBox<Person>('people_$suffix');
+    final Box<MatchIdea> matchesBox = await Hive.openBox<MatchIdea>(
+      'matches_$suffix',
+    );
+    final Box<MatchNote> notesBox = await Hive.openBox<MatchNote>(
+      'match_notes_$suffix',
+    );
+
+    final PersonRepository personRepo = PersonRepository(peopleBox);
+    final MatchRepository matchRepo = MatchRepository(matchesBox, notesBox);
+    final Directory tempDirectory = await Directory.systemTemp.createTemp(
+      'shadchan_backup_json_',
+    );
+    final File jsonFile = File(
+      '${tempDirectory.path}${Platform.pathSeparator}import.json',
+    );
+
+    const String timestamp = '2026-04-14T12:00:00.000Z';
+    await jsonFile.writeAsString(
+      jsonEncode(<String, Object?>{
+        'version': 2,
+        'people': <Object?>[
+          // Valid, but with an unknown gender and a garbage date — both should
+          // degrade to defaults rather than dropping the record.
+          <String, Object?>{
+            'id': 'good',
+            'firstName': 'טוב',
+            'lastName': 'תקין',
+            'gender': 'alien',
+            'profileStatus': 'available',
+            'photos': <String>[],
+            'createdAt': 'not-a-date',
+            'updatedAt': timestamp,
+          },
+          // No id — unrecoverable, skipped.
+          <String, Object?>{'firstName': 'בלי', 'lastName': 'מזהה'},
+          // Not even a map.
+          'garbage',
+        ],
+      }),
+    );
+
+    final ImportResult result = await BackupService.importData(
+      jsonFile,
+      personRepo,
+      matchRepo,
+    );
+
+    expect(result.peopleAdded, 1);
+    expect(result.skipped, greaterThanOrEqualTo(1));
+
+    final Person good = personRepo.getById('good')!;
+    expect(good.gender, Gender.unknown);
+    // A garbage createdAt falls back to "now", so it must still be a real date.
+    expect(good.createdAt, isNotNull);
 
     await peopleBox.deleteFromDisk();
     await matchesBox.deleteFromDisk();

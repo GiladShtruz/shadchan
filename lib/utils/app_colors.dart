@@ -33,16 +33,65 @@ abstract final class AppColors {
   static const Color softSand = Color(0xFFE6D4C0);
   static const Color softYellow = Color(0xFFEFE0B8);
 
+  // Dark mode uses a clean, cool near-neutral slate rather than the old warm
+  // brown, which read as muddy. The blue-grey primary and copper secondary keep
+  // the brand accents; only the neutrals (background/surface/lines) are cooled.
   static const Color primaryDarkDm = Color(0xFFAFC7D0);
-  static const Color primaryLightDarkDm = Color(0xFF28444F);
+  static const Color primaryLightDarkDm = Color(0xFF294C57);
   static const Color secondaryDarkDm = Color(0xFFD6A17A);
-  static const Color secondaryLightDarkDm = Color(0xFF3A3128);
-  static const Color backgroundDm = Color(0xFF211D17);
-  static const Color surfaceDm = Color(0xFF2A251F);
-  static const Color onSurfaceDm = Color(0xFFF7F0E4);
-  static const Color onSurfaceVariantDm = Color(0xFFC9BDAE);
-  static const Color outlineDm = Color(0xFF5C5045);
-  static const Color dividerDm = Color(0xFF3A3128);
+  static const Color secondaryLightDarkDm = Color(0xFF2A2F36);
+  static const Color backgroundDm = Color(0xFF121418);
+  static const Color surfaceDm = Color(0xFF1B1E24);
+  static const Color onSurfaceDm = Color(0xFFE7E9ED);
+  static const Color onSurfaceVariantDm = Color(0xFF9BA1AB);
+  static const Color outlineDm = Color(0xFF3A3F48);
+  static const Color dividerDm = Color(0xFF272B32);
+
+  /// Per-gender accents. Men keep the app's stone blue; women get a muted
+  /// rose-mauve picked to sit next to the copper/cream palette rather than a
+  /// saturated pink.
+  static const Color maleAccent = primaryDark;
+  static const Color maleSurface = softBlue;
+  static const Color femaleAccent = Color(0xFFA9748A);
+  static const Color femaleSurface = Color(0xFFEFDDE4);
+  static const Color femaleAccentDm = Color(0xFFCFA3B5);
+
+  static Color genderAccent(Gender gender, {bool dark = false}) {
+    if (gender != Gender.female) {
+      return dark ? primaryDarkDm : maleAccent;
+    }
+    return dark ? femaleAccentDm : femaleAccent;
+  }
+
+  /// Soft background tint for a person's row/card. Dark mode uses a low-alpha
+  /// wash of the accent so the tint reads without lighting up the surface.
+  static Color genderSurface(Gender gender, {bool dark = false}) {
+    if (dark) {
+      return genderAccent(gender, dark: true).withValues(alpha: 0.16);
+    }
+    return gender == Gender.female ? femaleSurface : maleSurface;
+  }
+
+  /// Marks a person as a favorite in the people list.
+  static const Color favorite = Color(0xFFC2185B);
+
+  static const Color profileAvailable = Color(0xFF3E8E5A);
+  static const Color profileBusy = Color(0xFFC0392B);
+  static const Color profileOnBreak = Color(0xFFB07D18);
+
+  /// Colour for a person's availability tag: green / red / amber.
+  static Color profileStatusColor(ProfileStatus status) {
+    switch (status) {
+      case ProfileStatus.available:
+        return profileAvailable;
+      case ProfileStatus.busy:
+        return profileBusy;
+      case ProfileStatus.onBreak:
+        return profileOnBreak;
+      case ProfileStatus.mazelTov:
+        return secondary;
+    }
+  }
 
   static Color statusColor(String status) {
     switch (status) {

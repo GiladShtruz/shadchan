@@ -1,120 +1,54 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/add_people_dialog.dart';
+import 'package:shadchan/dialogs/reminders_panel.dart';
+import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/services/call_log_sort_service.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/couple_card.dart';
 import 'package:shadchan/widgets/dashboard_summary.dart';
-import 'package:shadchan/widgets/empty_state.dart';
-import 'package:shadchan/widgets/match_suggestions_view.dart';
-import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
-import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
-enum _HomePeopleSortOption {
-  random,
-  alphabetical,
-  ageAscending,
-  newest,
-  recentlyUpdated,
-}
-
-/// The landing screen shown on every non-first launch (and after the user
-/// finishes the initial contact import). It greets the matchmaker, features a
-/// random contact to "think about", and lists everyone else in a shuffled
-/// order that changes each time the app is opened.
+/// The landing screen: greeting, database stats, the two ways to grow the
+/// database, and horizontal rows of what is currently moving — couples who are
+/// dating, open ideas and recently updated friends. Search runs over the whole
+/// database and shows its results in a panel above the page.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({
-    super.key,
-    this.initialPageIndex = 0,
-    this.initialSeed,
-    this.initialSearch = '',
-    this.initialSort = 'random',
-  });
+  const HomeScreen({super.key, this.initialSearch = ''});
 
-  final int initialPageIndex;
-  final int? initialSeed;
   final String initialSearch;
-  final String initialSort;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const int _peoplePageSize = 20;
-
   final TextEditingController _searchController = TextEditingController();
-
-  /// Drives the page scroll so the "חברים" summary card can reveal the
-  /// in-page "החברים שלך" list instead of opening the standalone screen.
-  final ScrollController _scrollController = ScrollController();
-
-  /// Marks the "החברים שלך" section header so we can scroll it into view.
-  final GlobalKey _peopleSectionKey = GlobalKey();
-
-  /// Seed for the per-launch shuffle. Generated once so the order stays stable
-  /// while this screen is alive, but differs on the next app launch.
-  late final int _seed = widget.initialSeed ?? Random().nextInt(0x7fffffff);
-
-  /// How many times the user pressed "skip" — advances the featured contact.
-  int _skips = 0;
-
-  /// How many pages of the "החברים שלך" list are currently revealed. Pressing
-  /// "הצג עוד" reveals one more page in place instead of opening a new screen.
-  late int _visiblePages = widget.initialPageIndex + 1;
   bool _searchVisible = false;
-  late _HomePeopleSortOption _sortOption = _sortFromName(widget.initialSort);
 
-  /// Sort direction applied on top of [_sortOption]. `true` keeps each option's
-  /// natural order; `false` reverses it ("עולה" / "יורד").
-  bool _sortAscending = true;
-
-  /// Filters applied to the "החברים שלך" list. Mirrors the people screen.
-  Gender? _selectedGender;
-  RangeValues? _selectedAgeRange;
-  List<ReligiousLevel> _selectedReligiousLevels = <ReligiousLevel>[];
-  List<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>[];
-  String _cityFilter = '';
-
-  /// Normalized phone -> recency index (0 = most recently called) from the
-  /// device call log. Empty until loaded, and stays empty when unavailable
-  /// (iOS, or permission denied). Used to surface recently-called contacts
-  /// first in the random ordering.
-  Map<String, int> _recentCallOrder = const <String, int>{};
+  /// Picked once per visit to the screen, so every entry shows a different tip.
+  late String _tip;
 
   @override
   void initState() {
     super.initState();
+    _tip = MatchmakerTips.next();
     _searchController.text = widget.initialSearch;
     _searchVisible = widget.initialSearch.trim().isNotEmpty;
-    _searchController.addListener(_handleSearchChanged);
-    _loadRecentCallOrder();
-  }
-
-  Future<void> _loadRecentCallOrder() async {
-    final Map<String, int> order =
-        await CallLogSortService.loadRecentCallOrder();
-    if (!mounted || order.isEmpty) {
-      return;
-    }
-    setState(() => _recentCallOrder = order);
+    _searchController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
-    _searchController
-      ..removeListener(_handleSearchChanged)
-      ..dispose();
-    _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -124,709 +58,300 @@ class _HomeScreenState extends State<HomeScreen> {
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
 
-    final List<Person> eligiblePeople = _orderedEligiblePeople(
-      personRepository,
-    );
-    final List<Person> visiblePeople = _getVisiblePeople(personRepository);
-    final int pendingCount = personRepository.getPending().length;
-
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 16,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Text('שדכן'),
-            const SizedBox(width: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/icon3.png',
-                width: 32,
-                height: 32,
-                fit: BoxFit.cover,
-              ),
-            ),
-          ],
-        ),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'הגדרות',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => context.push('/settings'),
-          ),
-        ],
-      ),
+      appBar: _searchVisible
+          ? _buildSearchAppBar(theme)
+          : _buildGreetingAppBar(theme, profile),
       body: SafeArea(
-        child: _buildContent(
-          theme,
-          profile,
-          eligiblePeople,
-          visiblePeople,
-          pendingCount,
+        child: Stack(
+          children: <Widget>[
+            _buildHome(theme, profile),
+            if (_searchVisible) _buildSearchPanel(theme, personRepository),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildContent(
-    ThemeData theme,
-    UserProfileProvider profile,
-    List<Person> eligiblePeople,
-    List<Person> visiblePeople,
-    int pendingCount,
-  ) {
-    // The auto-featured contact skips anyone marked busy ("תפוס") or on a
-    // break ("הפסקה"); they still appear in the full list below.
-    final List<Person> featuredCandidates = eligiblePeople
-        .where((Person p) => !p.profileStatus.pausesMatches)
-        .toList();
-    // "אקראי" keeps the per-launch shuffle. Recently-called contacts surface
-    // first (by recency), the rest stay fully random, and finally the very
-    // first card shown is forced to be one with a photo. Any other sort lets
-    // the user step through the featured contacts in a fixed order via the
-    // "הבא" button.
-    if (_sortOption != _HomePeopleSortOption.random) {
-      final Comparator<Person> base = _baseComparator();
-      final int direction = _sortAscending ? 1 : -1;
-      featuredCandidates.sort((Person a, Person b) => direction * base(a, b));
-    } else {
-      // Pure per-launch shuffle (no call-log priority) so a different contact
-      // is featured every launch, starting from one with a photo and a card.
-      featuredCandidates.sort(
-        (Person a, Person b) => _shuffleKey(a).compareTo(_shuffleKey(b)),
-      );
-      _moveCompleteProfileFirst(featuredCandidates);
-    }
-    final Person? featured = featuredCandidates.isEmpty
-        ? null
-        : featuredCandidates[_skips % featuredCandidates.length];
-    final List<Person> pagedPeople = visiblePeople
-        .take(_visiblePages * _peoplePageSize)
-        .toList();
-    final bool hasNextPeoplePage = visiblePeople.length > pagedPeople.length;
+  // --- AppBars ------------------------------------------------------------
+
+  AppBar _buildGreetingAppBar(ThemeData theme, UserProfileProvider profile) {
+    final String name = profile.name ?? 'שדכן';
+    final TimeOfDay now = TimeOfDay.fromDateTime(DateTime.now());
+
+    return AppBar(
+      titleSpacing: 16,
+      centerTitle: false,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // First child sits at the start edge, which in RTL is the right.
+          Icon(_timeOfDayIcon(now), size: 22),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              '${_timeOfDayGreeting(now)}, $name',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        IconButton(
+          tooltip: 'תזכורות',
+          icon: const Icon(Icons.notifications_outlined),
+          onPressed: () => RemindersPanel.show(context),
+        ),
+        IconButton(
+          tooltip: 'חיפוש',
+          icon: const Icon(Icons.search),
+          onPressed: () => setState(() => _searchVisible = true),
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'עוד',
+          onSelected: (String value) {
+            if (value == 'settings') {
+              context.push('/settings');
+            }
+          },
+          itemBuilder: (BuildContext context) {
+            return const <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'settings',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('הגדרות'),
+                ),
+              ),
+            ];
+          },
+        ),
+      ],
+    );
+  }
+
+  AppBar _buildSearchAppBar(ThemeData theme) {
+    final bool hasText = _searchController.text.trim().isNotEmpty;
+
+    return AppBar(
+      automaticallyImplyLeading: false,
+      titleSpacing: 8,
+      // Centered inside the banner, capped in width so it never sits under the
+      // search icon that stays visible in the actions.
+      title: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              textAlignVertical: TextAlignVertical.center,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: theme.colorScheme.surface,
+                hintText: 'חפש במאגר שלך',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  borderSide: BorderSide.none,
+                ),
+                suffixIcon: hasText
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        tooltip: 'ניקוי',
+                        onPressed: _searchController.clear,
+                      )
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        IconButton(
+          tooltip: 'סגירת חיפוש',
+          icon: const Icon(Icons.search),
+          onPressed: () {
+            _searchController.clear();
+            setState(() => _searchVisible = false);
+          },
+        ),
+      ],
+    );
+  }
+
+  // --- Home body ----------------------------------------------------------
+
+  Widget _buildHome(ThemeData theme, UserProfileProvider profile) {
+    final MatchRepository matchRepository = context.watch<MatchRepository>();
+    final PersonRepository personRepository = context.watch<PersonRepository>();
+
+    final List<MatchIdea> allMatches = matchRepository.getAll();
+    final List<MatchIdea> datingMatches =
+        allMatches
+            .where((MatchIdea m) => m.status == MatchStatus.dating)
+            .toList()
+          ..sort(
+            (MatchIdea a, MatchIdea b) => b.updatedAt.compareTo(a.updatedAt),
+          );
+    // "Open" is everything still in play that has not become a couple yet, with
+    // the newest ideas leading the row.
+    final List<MatchIdea> openMatches =
+        allMatches
+            .where(
+              (MatchIdea m) =>
+                  !m.status.isArchived && m.status != MatchStatus.dating,
+            )
+            .toList()
+          ..sort(
+            (MatchIdea a, MatchIdea b) => b.createdAt.compareTo(a.createdAt),
+          );
+    final List<Person> recentPeople =
+        personRepository.getAll().where((Person p) => !p.hidden).toList()
+          ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
 
     return CustomScrollView(
-      controller: _scrollController,
       slivers: <Widget>[
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-          sliver: SliverToBoxAdapter(child: _Greeting(profile: profile)),
+          padding: const EdgeInsets.fromLTRB(14, 20, 14, 8),
+          sliver: SliverToBoxAdapter(child: _Subtitle(profile: profile)),
         ),
         ...buildDashboardSummarySlivers(
           context,
           showSectionTitle: true,
           compact: true,
           bottomPadding: 8,
-          onPeopleTap: eligiblePeople.isEmpty ? null : _scrollToPeopleSection,
         ),
-        if (eligiblePeople.isEmpty && pendingCount == 0)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _buildEmptyState(theme),
+        const SliverPadding(
+          padding: EdgeInsets.fromLTRB(14, 12, 14, 8),
+          sliver: SliverToBoxAdapter(child: _QuickActions()),
+        ),
+        SliverToBoxAdapter(
+          child: _CoupleRow(
+            title: 'זוגות שיוצאים',
+            icon: Icons.favorite_outline,
+            subtitle: 'שומרים על קשר! כל זוג צריך חבר אחד שיאמין בו',
+            emptyText: 'עוד אין זוגות שיוצאים — הראשון בדרך.',
+            matches: datingMatches,
+            repository: personRepository,
+            centered: true,
+            hideWhenEmpty: true,
           ),
-        if (featured != null)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-            sliver: SliverToBoxAdapter(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 420),
-                switchInCurve: Curves.easeOutBack,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: _skipTransition,
-                child: _FeaturedCard(
-                  key: ValueKey<String>('featured-${featured.id}-$_skips'),
-                  person: featured,
-                  orderLabel: _sortOptionLabel(_sortOption),
-                  onOpenDetail: () => context.push('/people/${featured.id}'),
-                  onSkip: _skip,
-                  onSort: _openSortSheet,
-                  onMatch: () => _openMatches(featured),
-                ),
-              ),
-            ),
+        ),
+        SliverToBoxAdapter(
+          child: _CoupleRow(
+            title: 'רעיונות פתוחים',
+            icon: Icons.lightbulb_outline,
+            emptyText: 'אין רעיונות פתוחים כרגע.',
+            matches: openMatches,
+            repository: personRepository,
           ),
-        if (pendingCount > 0)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-            sliver: SliverToBoxAdapter(
-              child: _PendingUpdateCard(
-                count: pendingCount,
-                onTap: () => context.push('/people/pending'),
-              ),
-            ),
-          ),
-        if (eligiblePeople.isNotEmpty) ...<Widget>[
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-            sliver: SliverToBoxAdapter(
-              child: Row(
-                key: _peopleSectionKey,
-                children: <Widget>[
-                  Text('החברים שלך', style: theme.textTheme.titleLarge),
-                  const SizedBox(width: 8),
-                  const Spacer(),
-
-                  IconButton(
-                    tooltip: 'מיין לפי',
-                    icon: const Icon(Icons.sort),
-                    onPressed: _openSortSheet,
-                  ),
-
-                  IconButton(
-                    tooltip: 'סינון',
-                    icon: Icon(
-                      _hasActiveFilters ? Icons.filter_list_alt : Icons.tune,
-                      color: _hasActiveFilters
-                          ? theme.colorScheme.primary
-                          : null,
-                    ),
-                    onPressed: _openFiltersSheet,
-                  ),
-                  IconButton(
-                    tooltip: _searchVisible ? 'סגור חיפוש' : 'חיפוש',
-                    icon: Icon(_searchVisible ? Icons.close : Icons.search),
-                    onPressed: _toggleSearch,
-                  ),
-                ],
-              ),
+        ),
+        SliverToBoxAdapter(
+          child: _RecentPeopleRow(people: recentPeople.take(15).toList()),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          sliver: SliverToBoxAdapter(
+            child: _TipCard(
+              tip: _tip,
+              onAnother: () {
+                setState(() {
+                  _tip = MatchmakerTips.next(previous: _tip);
+                });
+              },
             ),
           ),
-          if (_hasActiveFilters)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              sliver: SliverToBoxAdapter(
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _buildActiveFilterChips(),
-                  ),
-                ),
-              ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 32),
+          sliver: SliverToBoxAdapter(
+            child: _MonthlyStatsCard(
+              onTap: () => context.push('/stats/month'),
             ),
-          if (_searchVisible)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              sliver: SliverToBoxAdapter(child: _buildSearchField()),
-            ),
-          if (visiblePeople.isEmpty)
-            const SliverToBoxAdapter(
-              child: SizedBox(
-                height: 260,
-                child: EmptyState(
-                  icon: Icons.search,
-                  title: 'לא נמצאו תוצאות',
-                  subtitle: 'נסו לשנות את החיפוש',
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-              sliver: SliverList.builder(
-                itemCount: pagedPeople.length + (hasNextPeoplePage ? 1 : 0),
-                itemBuilder: (BuildContext context, int index) {
-                  if (index == pagedPeople.length) {
-                    return _NextPageButton(onPressed: _showNextPeoplePage);
-                  }
-
-                  final Person person = pagedPeople[index];
-                  return PersonListCard(
-                    person: person,
-                    heroEnabled: false,
-                    onTap: () => context.push('/people/${person.id}'),
-                    onOpenMatches: () => _openMatches(person),
-                    onOpenWhatsApp: () => _openWhatsApp(person),
-                  );
-                },
-              ),
-            ),
-        ],
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildSearchField() {
-    return TextField(
-      controller: _searchController,
-      autofocus: true,
-      textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
-        hintText: 'חיפוש לפי שם...',
-        prefixIcon: const Icon(Icons.search),
-        suffixIcon: _searchController.text.trim().isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.clear),
-                tooltip: 'ניקוי חיפוש',
-                onPressed: _searchController.clear,
-              ),
-      ),
-    );
-  }
+  // --- Search -------------------------------------------------------------
 
-  void _toggleSearch() {
-    if (_searchVisible) {
-      _searchController.clear();
+  /// Live results over the home page, capped at half the screen height so the
+  /// page underneath stays visible.
+  Widget _buildSearchPanel(ThemeData theme, PersonRepository repository) {
+    final String query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return const SizedBox.shrink();
     }
-    setState(() {
-      _searchVisible = !_searchVisible;
-    });
-  }
 
-  void _handleSearchChanged() {
-    setState(() {
-      _visiblePages = 1;
-    });
-  }
+    final List<Person> people =
+        repository
+            .getAll()
+            .where((Person p) => !p.hidden)
+            .where((Person p) {
+              return p.fullName.toLowerCase().contains(query) ||
+                  (p.phone ?? '').contains(query);
+            })
+            .toList()
+          ..sort(
+            (Person a, Person b) =>
+                a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+          );
 
-  Future<void> _openSortSheet() async {
-    final ({_HomePeopleSortOption value, bool ascending})? selected =
-        await showModalBottomSheet<
-          ({_HomePeopleSortOption value, bool ascending})
-        >(
-          context: context,
-          showDragHandle: true,
-          builder: (BuildContext sheetContext) {
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                    child: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: Text(
-                        'מיין לפי',
-                        style: Theme.of(sheetContext).textTheme.titleMedium,
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Material(
+          elevation: 6,
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.5,
+            ),
+            child: people.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 24,
+                    ),
+                    child: Text(
+                      'לא נמצאו תוצאות',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    shrinkWrap: true,
+                    itemCount: people.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final Person person = people[index];
+                      return PersonListCard(
+                        person: person,
+                        heroEnabled: false,
+                        onTap: () => context.push('/people/${person.id}'),
+                        onToggleFavorite: () =>
+                            repository.toggleFavorite(person.id),
+                        onOpenWhatsApp: () => _openWhatsApp(person),
+                      );
+                    },
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                    child: SortDirectionToggle(
-                      ascending: _sortAscending,
-                      onChanged: (bool ascending) => Navigator.of(
-                        sheetContext,
-                      ).pop((value: _sortOption, ascending: ascending)),
-                    ),
-                  ),
-                  for (final ({_HomePeopleSortOption value, String label})
-                      option
-                      in const <({_HomePeopleSortOption value, String label})>[
-                        (value: _HomePeopleSortOption.random, label: 'אקראי'),
-                        (
-                          value: _HomePeopleSortOption.alphabetical,
-                          label: 'א-ב',
-                        ),
-                        (
-                          value: _HomePeopleSortOption.ageAscending,
-                          label: 'לפי גיל',
-                        ),
-                        (value: _HomePeopleSortOption.newest, label: 'חדשים'),
-                        (
-                          value: _HomePeopleSortOption.recentlyUpdated,
-                          label: 'עודכנו לאחרונה',
-                        ),
-                      ])
-                    ListTile(
-                      title: Text(option.label),
-                      trailing: _sortOption == option.value
-                          ? Icon(
-                              Icons.check,
-                              color: Theme.of(sheetContext).colorScheme.primary,
-                            )
-                          : null,
-                      onTap: () => Navigator.of(
-                        sheetContext,
-                      ).pop((value: option.value, ascending: _sortAscending)),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-
-    if (selected == null) {
-      return;
-    }
-    setState(() {
-      _sortOption = selected.value;
-      _sortAscending = selected.ascending;
-      _visiblePages = 1;
-      // Restart the featured stepping from the top of the chosen order.
-      _skips = 0;
-    });
-  }
-
-  String _sortOptionLabel(_HomePeopleSortOption option) {
-    switch (option) {
-      case _HomePeopleSortOption.random:
-        return 'אקראי';
-      case _HomePeopleSortOption.alphabetical:
-        return 'א-ב';
-      case _HomePeopleSortOption.ageAscending:
-        return 'לפי גיל';
-      case _HomePeopleSortOption.newest:
-        return 'חדשים';
-      case _HomePeopleSortOption.recentlyUpdated:
-        return 'עודכנו לאחרונה';
-    }
-  }
-
-  Future<void> _openFiltersSheet() async {
-    final ({int min, int max})? bounds = context
-        .read<PersonRepository>()
-        .activeAgeBounds;
-    final PeopleFilterState? result =
-        await showModalBottomSheet<PeopleFilterState>(
-          context: context,
-          isScrollControlled: true,
-          showDragHandle: true,
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.75,
           ),
-          builder: (BuildContext context) {
-            return PeopleFiltersSheet(
-              initialGender: _selectedGender,
-              initialAgeRange: _selectedAgeRange,
-              ageBounds: bounds,
-              initialReligiousLevels: _selectedReligiousLevels,
-              initialProfileStatuses: _selectedProfileStatuses,
-              initialCity: _cityFilter,
-            );
-          },
-        );
-
-    if (result == null) {
-      return;
-    }
-
-    setState(() {
-      _selectedGender = result.gender;
-      _selectedAgeRange = result.ageRange;
-      _selectedReligiousLevels = result.religiousLevels;
-      _selectedProfileStatuses = result.profileStatuses;
-      _cityFilter = result.city.trim();
-      _visiblePages = 1;
-    });
-  }
-
-  bool get _hasActiveFilters {
-    return _selectedGender != null ||
-        _selectedAgeRange != null ||
-        _selectedReligiousLevels.isNotEmpty ||
-        _selectedProfileStatuses.isNotEmpty ||
-        _cityFilter.trim().isNotEmpty;
-  }
-
-  List<Widget> _buildActiveFilterChips() {
-    final List<Widget> chips = <Widget>[];
-
-    if (_selectedGender != null) {
-      chips.add(
-        InputChip(
-          label: Text(_selectedGender!.displayName),
-          onDeleted: () {
-            setState(() {
-              _selectedGender = null;
-              _visiblePages = 1;
-            });
-          },
-        ),
-      );
-    }
-
-    final RangeValues? ageRange = _selectedAgeRange;
-    if (ageRange != null) {
-      chips.add(
-        InputChip(
-          label: Text('גיל ${ageRange.start.round()}-${ageRange.end.round()}'),
-          onDeleted: () {
-            setState(() {
-              _selectedAgeRange = null;
-              _visiblePages = 1;
-            });
-          },
-        ),
-      );
-    }
-
-    for (final ReligiousLevel level in _selectedReligiousLevels) {
-      chips.add(
-        InputChip(
-          label: Text(level.displayName),
-          onDeleted: () {
-            setState(() {
-              _selectedReligiousLevels = _selectedReligiousLevels
-                  .where((ReligiousLevel item) => item != level)
-                  .toList();
-              _visiblePages = 1;
-            });
-          },
-        ),
-      );
-    }
-
-    for (final ProfileStatus status in _selectedProfileStatuses) {
-      chips.add(
-        InputChip(
-          label: Text(status.displayName),
-          onDeleted: () {
-            setState(() {
-              _selectedProfileStatuses = _selectedProfileStatuses
-                  .where((ProfileStatus item) => item != status)
-                  .toList();
-              _visiblePages = 1;
-            });
-          },
-        ),
-      );
-    }
-
-    if (_cityFilter.trim().isNotEmpty) {
-      chips.add(
-        InputChip(
-          label: Text(_cityFilter.trim()),
-          onDeleted: () {
-            setState(() {
-              _cityFilter = '';
-              _visiblePages = 1;
-            });
-          },
-        ),
-      );
-    }
-
-    chips.add(
-      ActionChip(
-        avatar: const Icon(Icons.close, size: 18),
-        label: const Text('נקה הכל'),
-        onPressed: () {
-          setState(() {
-            _resetFilters();
-            _visiblePages = 1;
-          });
-        },
-      ),
-    );
-
-    return chips;
-  }
-
-  void _resetFilters() {
-    _selectedGender = null;
-    _selectedAgeRange = null;
-    _selectedReligiousLevels = <ReligiousLevel>[];
-    _selectedProfileStatuses = <ProfileStatus>[];
-    _cityFilter = '';
-  }
-
-  void _showNextPeoplePage() {
-    setState(() => _visiblePages++);
-  }
-
-  List<Person> _getVisiblePeople(PersonRepository repository) {
-    final RangeValues? ageRange = _selectedAgeRange;
-    final List<Person> filteredPeople = repository.filter(
-      gender: _selectedGender,
-      minAge: ageRange?.start.round(),
-      maxAge: ageRange?.end.round(),
-      religiousLevels: _selectedReligiousLevels,
-      profileStatuses: _selectedProfileStatuses,
-    );
-
-    final String normalizedSearch = _searchController.text.trim().toLowerCase();
-    final String normalizedCity = _cityFilter.trim().toLowerCase();
-
-    final List<Person> people = filteredPeople.where((Person person) {
-      final bool matchesSearch =
-          normalizedSearch.isEmpty ||
-          person.firstName.toLowerCase().contains(normalizedSearch) ||
-          person.lastName.toLowerCase().contains(normalizedSearch) ||
-          person.fullName.toLowerCase().contains(normalizedSearch);
-
-      final bool matchesCity =
-          normalizedCity.isEmpty ||
-          (person.city ?? '').trim().toLowerCase().contains(normalizedCity);
-
-      // The home list never shows archived profiles.
-      final bool matchesArchive = !person.profileStatus.isArchived;
-
-      return matchesSearch && matchesCity && matchesArchive;
-    }).toList();
-
-    _sortPeople(people);
-    return people;
-  }
-
-  void _sortPeople(List<Person> people) {
-    final Comparator<Person> base = _baseComparator();
-    final int direction = _sortAscending ? 1 : -1;
-    // Availability always groups the list first: פנויים, בהפסקה, תפוסים.
-    people.sort((Person a, Person b) {
-      final int availability = _availabilityRank(
-        a,
-      ).compareTo(_availabilityRank(b));
-      if (availability != 0) {
-        return availability;
-      }
-      return direction * base(a, b);
-    });
-  }
-
-  int _availabilityRank(Person person) {
-    switch (person.profileStatus) {
-      case ProfileStatus.available:
-        return 0;
-      case ProfileStatus.onBreak:
-        return 1;
-      case ProfileStatus.busy:
-        return 2;
-      case ProfileStatus.mazelTov:
-        return 3;
-    }
-  }
-
-  Comparator<Person> _baseComparator() {
-    switch (_sortOption) {
-      case _HomePeopleSortOption.random:
-        return _compareRandomWithRecentCalls;
-      case _HomePeopleSortOption.alphabetical:
-        return _sortByName;
-      case _HomePeopleSortOption.ageAscending:
-        return (Person a, Person b) {
-          final int? ageA = a.age;
-          final int? ageB = b.age;
-
-          if (ageA == null && ageB == null) {
-            return _sortByName(a, b);
-          }
-          if (ageA == null) {
-            return 1;
-          }
-          if (ageB == null) {
-            return -1;
-          }
-
-          final int ageComparison = ageA.compareTo(ageB);
-          return ageComparison != 0 ? ageComparison : _sortByName(a, b);
-        };
-      case _HomePeopleSortOption.newest:
-        return (Person a, Person b) {
-          final int comparison = b.createdAt.compareTo(a.createdAt);
-          return comparison != 0 ? comparison : _sortByName(a, b);
-        };
-      case _HomePeopleSortOption.recentlyUpdated:
-        return (Person a, Person b) {
-          final int comparison = b.updatedAt.compareTo(a.updatedAt);
-          return comparison != 0 ? comparison : _sortByName(a, b);
-        };
-    }
-  }
-
-  int _sortByName(Person a, Person b) {
-    final int firstNameComparison = a.firstName.toLowerCase().compareTo(
-      b.firstName.toLowerCase(),
-    );
-    if (firstNameComparison != 0) {
-      return firstNameComparison;
-    }
-
-    return a.lastName.toLowerCase().compareTo(b.lastName.toLowerCase());
-  }
-
-  Widget _buildEmptyState(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.groups_outlined,
-              size: 80,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'עוד אין חברים במאגר',
-              style: theme.textTheme.titleLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'בוא נוסיף כמה חברים כדי שנוכל להתחיל לחשוב על שידוכים',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () => context.push('/people/import'),
-                icon: const Icon(Icons.person_add_alt),
-                label: const Text('הוספת חברים'),
-              ),
-            ),
-          ],
         ),
       ),
     );
-  }
-
-  Widget _skipTransition(Widget child, Animation<double> animation) {
-    final Animation<Offset> offset = Tween<Offset>(
-      begin: const Offset(0.35, 0.18),
-      end: Offset.zero,
-    ).animate(animation);
-    final Animation<double> scale = Tween<double>(
-      begin: 0.82,
-      end: 1.0,
-    ).animate(animation);
-    final Animation<double> rotation = Tween<double>(
-      begin: 0.06,
-      end: 0.0,
-    ).animate(animation);
-
-    return FadeTransition(
-      opacity: animation,
-      child: SlideTransition(
-        position: offset,
-        child: RotationTransition(
-          turns: rotation,
-          child: ScaleTransition(scale: scale, child: child),
-        ),
-      ),
-    );
-  }
-
-  void _skip() {
-    HapticFeedback.selectionClick();
-    setState(() => _skips++);
-  }
-
-  /// Scrolls the page down to the "החברים שלך" list instead of opening the
-  /// standalone people screen.
-  void _scrollToPeopleSection() {
-    final BuildContext? sectionContext = _peopleSectionKey.currentContext;
-    if (sectionContext == null) {
-      return;
-    }
-    Scrollable.ensureVisible(
-      sectionContext,
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOut,
-      alignment: 0.0,
-    );
-  }
-
-  Future<void> _openMatches(Person person) async {
-    await MatchSuggestionsSheet.show(context, sourcePerson: person);
   }
 
   Future<void> _openWhatsApp(Person person) async {
@@ -840,380 +365,597 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  List<Person> _orderedEligiblePeople(PersonRepository repository) {
-    final List<Person> people = repository
-        .getAll()
-        .where(
-          (Person p) =>
-              !p.needsReview && !p.hidden && !p.profileStatus.isArchived,
-        )
-        .toList();
-    // Fully shuffle everyone for this launch (no photo/details priority).
-    // The "show a contact with a photo first" rule is applied only to the
-    // featured card's starting position via [_movePhotoContactFirst].
-    people.sort(
-      (Person a, Person b) => _shuffleKey(a).compareTo(_shuffleKey(b)),
-    );
-    return people;
+  /// Hebrew greeting for the current part of the day: morning until noon,
+  /// afternoon until 17:00, evening until 21:00, night from then until 05:00.
+  static String _timeOfDayGreeting(TimeOfDay now) {
+    final int hour = now.hour;
+    if (hour >= 5 && hour < 12) {
+      return 'בוקר טוב';
+    }
+    if (hour >= 12 && hour < 17) {
+      return 'צהריים טובים';
+    }
+    if (hour >= 17 && hour < 21) {
+      return 'ערב טוב';
+    }
+    return 'לילה טוב';
   }
 
-  /// Whether a contact has at least one photo.
-  bool _hasPhoto(Person person) => person.photosPaths.isNotEmpty;
-
-  /// Whether a contact has a send-card (כרטיסייה לשליחה).
-  bool _hasCard(Person person) => (person.description ?? '').trim().isNotEmpty;
-
-  /// Ensures the first featured contact has both a photo and a send-card,
-  /// without otherwise changing the (already random) order. Because the list
-  /// is shuffled per launch, the first complete profile found is effectively a
-  /// random one, so a different contact is featured each launch. Falls back to
-  /// a photo-only contact when nobody has both, and is a no-op when there is
-  /// nothing better than the current first.
-  void _moveCompleteProfileFirst(List<Person> people) {
-    if (people.isEmpty) {
-      return;
+  static IconData _timeOfDayIcon(TimeOfDay now) {
+    final int hour = now.hour;
+    if (hour >= 5 && hour < 17) {
+      return Icons.wb_sunny_outlined;
     }
-    bool isComplete(Person person) => _hasPhoto(person) && _hasCard(person);
-    if (isComplete(people.first)) {
-      return;
+    if (hour >= 17 && hour < 21) {
+      return Icons.wb_twilight;
     }
-    int index = people.indexWhere(isComplete);
-    if (index < 0) {
-      if (_hasPhoto(people.first)) {
-        return;
-      }
-      index = people.indexWhere(_hasPhoto);
-    }
-    if (index > 0) {
-      final Person person = people.removeAt(index);
-      people.insert(0, person);
-    }
-  }
-
-  /// Deterministic per-launch ordering key: stable for the lifetime of this
-  /// screen (so the list doesn't jump around on rebuilds) yet reshuffled on the
-  /// next launch via [_seed]. New contacts slot in deterministically too.
-  int _shuffleKey(Person person) => (person.id.hashCode ^ _seed) & 0x7fffffff;
-
-  /// The "random" ordering used on the home screen: contacts that were called
-  /// recently come first (most recent first), and everyone else follows in the
-  /// stable per-launch shuffle. When no call-log data is available the recency
-  /// rank is null for everyone, so this degrades to a pure shuffle.
-  int _compareRandomWithRecentCalls(Person a, Person b) {
-    final int? rankA = _recentCallRank(a);
-    final int? rankB = _recentCallRank(b);
-    if (rankA != null && rankB != null && rankA != rankB) {
-      return rankA.compareTo(rankB);
-    }
-    if (rankA != null && rankB == null) {
-      return -1;
-    }
-    if (rankA == null && rankB != null) {
-      return 1;
-    }
-    return _shuffleKey(a).compareTo(_shuffleKey(b));
-  }
-
-  /// Recency index of this person's phone in the device call log (0 = most
-  /// recent), or null when they have no number or were not called recently.
-  int? _recentCallRank(Person person) {
-    if (_recentCallOrder.isEmpty) {
-      return null;
-    }
-    final String? normalized = PhoneUtils.normalizeForComparison(person.phone);
-    if (normalized == null) {
-      return null;
-    }
-    return _recentCallOrder[normalized];
-  }
-
-  static _HomePeopleSortOption _sortFromName(String name) {
-    for (final _HomePeopleSortOption option in _HomePeopleSortOption.values) {
-      if (option.name == name) {
-        return option;
-      }
-    }
-    return _HomePeopleSortOption.random;
+    return Icons.nightlight_outlined;
   }
 }
 
-class _Greeting extends StatelessWidget {
-  const _Greeting({required this.profile});
+/// The "בוא/י נחשוב על החברים שלך" line under the greeting.
+class _Subtitle extends StatelessWidget {
+  const _Subtitle({required this.profile});
 
   final UserProfileProvider profile;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String name = profile.name ?? 'שדכן';
     final bool isFemale = profile.gender == Gender.female;
-    // final String dear = isFemale ? 'היקרה' : 'היקר';
     final String letsGo = isFemale ? 'בואי נחשוב' : 'בוא נחשוב';
 
+    return Text(
+      '$letsGo על החברים שלך!',
+      style: theme.textTheme.titleMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+/// The two matching shortcuts: add a friend (which asks how) and open an idea.
+class _QuickActions extends StatelessWidget {
+  const _QuickActions();
+
+  @override
+  Widget build(BuildContext context) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: _QuickActionCard(
+              icon: Icons.person_add_alt,
+              title: 'הוסף חברים',
+              subtitle: 'לא משאירים אף חבר/ה רווק/ה מאחור',
+              highlighted: true,
+              onTap: () => AddPeopleDialog.show(context),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _QuickActionCard(
+              icon: Icons.auto_awesome_outlined,
+              title: 'הוסף רעיון',
+              subtitle: 'שמור את כל הרעיונות שלך במקום אחד',
+              onTap: () => context.push('/matches/add'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickActionCard extends StatelessWidget {
+  const _QuickActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.highlighted = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  /// Makes this the filled, primary call to action. The other card uses a
+  /// clearly-tinted "tonal" style so it still reads as an enabled button rather
+  /// than a washed-out, disabled-looking outline.
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
+    // The light theme's `primary` is a pale blue-grey — too washed out to carry
+    // a filled button, so the deeper tone is used there.
+    final Color fill = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+    final Color onFill = theme.colorScheme.onPrimary;
+    final Color accent = dark
+        ? theme.colorScheme.secondary
+        : AppColors.secondary;
+
+    // Secondary card: a solid-enough copper tint with a defined border and full
+    // accent-coloured text/icon, so it stands out as tappable next to the
+    // primary card without competing with it.
+    final Color tonalFill = accent.withValues(alpha: dark ? 0.22 : 0.14);
+    final Color tonalBorder = accent.withValues(alpha: dark ? 0.55 : 0.5);
+
+    final Color background = highlighted ? fill : tonalFill;
+    final Color titleColor = highlighted ? onFill : accent;
+    final Color subtitleColor = highlighted
+        ? onFill.withValues(alpha: 0.85)
+        : theme.colorScheme.onSurfaceVariant;
+
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(18),
+      elevation: highlighted ? 3 : 0,
+      shadowColor: fill.withValues(alpha: 0.4),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: highlighted
+                ? null
+                : Border.all(color: tonalBorder, width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: titleColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: subtitleColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(icon, size: 30, color: titleColor),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The shortcut into "הנתונים שלך החודש".
+class _MonthlyStatsCard extends StatelessWidget {
+  const _MonthlyStatsCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.insights_outlined, color: theme.colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'הנתונים שלך החודש',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A horizontal, side-scrolling row of couple cards.
+class _CoupleRow extends StatelessWidget {
+  const _CoupleRow({
+    required this.title,
+    required this.icon,
+    required this.emptyText,
+    required this.matches,
+    required this.repository,
+    this.subtitle,
+    this.centered = false,
+    this.hideWhenEmpty = false,
+  });
+
+  final String title;
+  final IconData icon;
+  final String? subtitle;
+  final String emptyText;
+  final List<MatchIdea> matches;
+  final PersonRepository repository;
+
+  /// Centers the header and the couple cards, and — when there are more cards
+  /// than fit — keeps them centered while allowing a horizontal scroll.
+  final bool centered;
+
+  /// Drops the whole section (header included) when there is nothing to show,
+  /// instead of rendering an "empty" hint.
+  final bool hideWhenEmpty;
+
+  static const double _gap = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    if (matches.isEmpty && hideWhenEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: centered
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
+      children: <Widget>[
+        _SectionHeader(
+          title: title,
+          icon: icon,
+          subtitle: subtitle,
+          centered: centered,
+        ),
+        if (matches.isEmpty)
+          _EmptyRowHint(text: emptyText)
+        else if (centered)
+          _centeredCards(context)
+        else
+          SizedBox(
+            height: 106,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              itemCount: matches.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (BuildContext context, int index) {
+                final MatchIdea match = matches[index];
+                return CoupleCard(
+                  personA: repository.getById(match.personAId),
+                  personB: repository.getById(match.personBId),
+                  onTap: () => context.push('/matches/${match.id}'),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCard(BuildContext context, MatchIdea match) {
+    return CoupleCard(
+      personA: repository.getById(match.personAId),
+      personB: repository.getById(match.personBId),
+      onTap: () => context.push('/matches/${match.id}'),
+    );
+  }
+
+  /// Centers the couple cards when they fit within the available width; once
+  /// they overflow it falls back to a horizontally-scrolling row.
+  Widget _centeredCards(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int count = matches.length;
+        final double contentWidth =
+            count * CoupleCard.width + (count - 1) * _gap;
+        // Leave a little side padding before deciding it no longer fits.
+        final bool fits = contentWidth <= constraints.maxWidth - 40;
+
+        final List<Widget> cards = <Widget>[
+          for (int i = 0; i < count; i++) ...<Widget>[
+            if (i > 0) const SizedBox(width: _gap),
+            _buildCard(context, matches[i]),
+          ],
+        ];
+
+        if (fits) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: cards,
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: cards,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A horizontal, side-scrolling row of the friends updated most recently.
+class _RecentPeopleRow extends StatelessWidget {
+  const _RecentPeopleRow({required this.people});
+
+  final List<Person> people;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          'היי $name,',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+        const _SectionHeader(
+          title: 'חברים שעודכנו לאחרונה',
+          icon: Icons.schedule,
         ),
-        const SizedBox(height: 4),
-        Text(
-          '$letsGo על החברים שלך!',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        if (people.isEmpty)
+          const _EmptyRowHint(text: 'עוד לא עודכנו חברים.')
+        else
+          SizedBox(
+            height: 104,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              itemCount: people.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (BuildContext context, int index) {
+                final Person person = people[index];
+                return _PersonMiniCard(
+                  person: person,
+                  onTap: () => context.push('/people/${person.id}'),
+                );
+              },
+            ),
           ),
-        ),
       ],
     );
   }
 }
 
-class _PendingUpdateCard extends StatelessWidget {
-  const _PendingUpdateCard({required this.count, required this.onTap});
+class _PersonMiniCard extends StatelessWidget {
+  const _PersonMiniCard({required this.person, required this.onTap});
 
-  final int count;
+  final Person person;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color accent = Colors.amber.shade800;
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: accent.withValues(alpha: 0.4)),
+    return SizedBox(
+      width: 108,
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        clipBehavior: Clip.antiAlias,
+        color: theme.colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                PersonAvatar(person: person, radius: 24),
+                const SizedBox(height: 10),
+                Text(
+                  _shortName(person),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      color: accent.withValues(alpha: 0.10),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
+    );
+  }
+
+  /// "יעל ג." — the full name rarely fits on a card this small.
+  static String _shortName(Person person) {
+    final String first = person.firstName.trim();
+    final String last = person.lastName.trim();
+    if (first.isEmpty) {
+      return last.isEmpty ? '—' : last;
+    }
+    return last.isEmpty ? first : '$first ${last.characters.first}.';
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    required this.icon,
+    this.subtitle,
+    this.centered = false,
+  });
+
+  final String title;
+  final IconData icon;
+  final String? subtitle;
+  final bool centered;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String? sub = subtitle;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 20, 14, 10),
+      child: Column(
+        crossAxisAlignment: centered
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: centered
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: <Widget>[
-              Icon(Icons.edit_note, color: accent, size: 30),
-              const SizedBox(width: 14),
+              if (centered) ...<Widget>[
+                Icon(icon, size: 20, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ] else ...<Widget>[
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Icon(icon, size: 20, color: theme.colorScheme.primary),
+              ],
+            ],
+          ),
+          if (sub != null) ...<Widget>[
+            const SizedBox(height: 2),
+            Text(
+              sub,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: centered ? TextAlign.center : TextAlign.start,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyRowHint extends StatelessWidget {
+  const _EmptyRowHint({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+      child: Text(
+        text,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// The rotating piece of advice at the bottom of the page.
+class _TipCard extends StatelessWidget {
+  const _TipCard({required this.tip, required this.onAnother});
+
+  final String tip;
+  final VoidCallback onAnother;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
               Expanded(
                 child: Text(
-                  'נותרו עוד $count אנשים לעדכן במאגר שלך!',
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  'טיפ לשדכן',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: accent),
+              Icon(
+                Icons.lightbulb_outline,
+                size: 20,
+                color: theme.colorScheme.primary,
+              ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NextPageButton extends StatelessWidget {
-  const _NextPageButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 8),
-      child: SizedBox(
-        width: double.infinity,
-        child: OutlinedButton(
-          onPressed: onPressed,
-          child: const Text('הצג עוד'),
-        ),
-      ),
-    );
-  }
-}
-
-class _FeaturedCard extends StatelessWidget {
-  const _FeaturedCard({
-    super.key,
-    required this.person,
-    required this.orderLabel,
-    required this.onOpenDetail,
-    required this.onSkip,
-    required this.onSort,
-    required this.onMatch,
-  });
-
-  final Person person;
-  final String orderLabel;
-  final VoidCallback onOpenDetail;
-  final VoidCallback onSkip;
-  final VoidCallback onSort;
-  final VoidCallback onMatch;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String subtitle = <String>[
-      if (person.age != null) '${person.age}',
-      if (person.religiousLevel != null) person.religiousLevel!.displayName,
-      if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
-    ].join(' · ');
-
-    return Card(
-      elevation: 6,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: <Color>[
-              theme.colorScheme.primaryContainer,
-              theme.colorScheme.secondaryContainer,
-            ],
+          const SizedBox(height: 6),
+          Text(tip, style: theme.textTheme.bodyMedium),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              onPressed: onAnother,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('טיפ אחר'),
+            ),
           ),
-        ),
-        child: Column(
-          children: <Widget>[
-            // Sort button: lets the user step through featured contacts in a
-            // fixed order (א-ב / גיל / וכו') instead of the random shuffle.
-            Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(8, 6, 4, 0),
-              child: Row(
-                children: <Widget>[
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: onSort,
-                    icon: const Icon(Icons.sort, size: 18),
-                    label: Text('סדר: $orderLabel'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Tapping the card body opens the full profile.
-            InkWell(
-              onTap: onOpenDetail,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 18),
-                child: Column(
-                  children: <Widget>[
-                    Hero(
-                      tag: 'person-${person.id}',
-                      child: PersonAvatar(person: person, radius: 52),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      person.fullName.trim(),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    if (subtitle.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 6),
-                      Text(
-                        subtitle,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer
-                              .withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                  ],
-                ),
-              ),
-            ),
-            // Actions that act on this card: the prominent matches button and
-            // a small "הבא" button to advance to the next featured contact.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: _CardActionButton(
-                      label: 'להתאמות עבור ${person.firstName.trim()}',
-                      background: theme.colorScheme.primary,
-                      foreground: theme.colorScheme.onPrimary,
-                      onTap: onMatch,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  _CardActionButton(
-                    label: 'הבא',
-                    background: theme.colorScheme.surface.withValues(
-                      alpha: 0.85,
-                    ),
-                    foreground: theme.colorScheme.onSurface,
-                    onTap: onSkip,
-                    compact: true,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CardActionButton extends StatelessWidget {
-  const _CardActionButton({
-    required this.label,
-    required this.background,
-    required this.foreground,
-    required this.onTap,
-    this.compact = false,
-  });
-
-  final String label;
-  final Color background;
-  final Color foreground;
-  final VoidCallback onTap;
-
-  /// A smaller, secondary button (e.g. "הבא") that sits next to the main one.
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final BorderRadius radius = BorderRadius.circular(18);
-
-    return Material(
-      color: background,
-      borderRadius: radius,
-      elevation: compact ? 1 : 2,
-      child: InkWell(
-        borderRadius: radius,
-        onTap: onTap,
-        child: Padding(
-          padding: compact
-              ? const EdgeInsets.symmetric(vertical: 12, horizontal: 18)
-              : const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style:
-                (compact
-                        ? theme.textTheme.bodyMedium
-                        : theme.textTheme.titleMedium)
-                    ?.copyWith(color: foreground, fontWeight: FontWeight.bold),
-          ),
-        ),
+        ],
       ),
     );
   }

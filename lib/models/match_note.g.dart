@@ -21,7 +21,7 @@ class MatchNoteAdapter extends TypeAdapter<MatchNote> {
       matchId: fields[1] as String,
       text: fields[2] as String,
       createdAt: fields[3] as DateTime,
-      isAutomatic: fields[4] as bool,
+      isAutomatic: fields[4] == null ? false : fields[4] as bool,
     );
   }
 

@@ -47,11 +47,28 @@ enum ReligiousLevel {
   @HiveField(7)
   chardal,
 
+  @HiveField(11)
+  datiLite,
+
+  @HiveField(8)
+  chabad,
+
+  @HiveField(9)
+  harediModern,
+
+  @HiveField(10)
+  hasid,
+
   @HiveField(5)
   haredi,
 
   @HiveField(6)
-  hiloni;
+  hiloni,
+
+  /// A style the matchmaker defined themselves. The label lives on the person
+  /// (`religiousLevelOther`) rather than in this enum.
+  @HiveField(12)
+  other;
 
   String get displayName {
     switch (this) {
@@ -67,10 +84,20 @@ enum ReligiousLevel {
         return 'דתי לאומי תורני';
       case ReligiousLevel.chardal:
         return 'חרד״ל';
+      case ReligiousLevel.datiLite:
+        return 'דתי לייט';
+      case ReligiousLevel.chabad:
+        return 'חב״דניק';
+      case ReligiousLevel.harediModern:
+        return 'חרדי מודרני';
+      case ReligiousLevel.hasid:
+        return 'חסיד';
       case ReligiousLevel.haredi:
         return 'חרדי';
       case ReligiousLevel.hiloni:
         return 'חילוני';
+      case ReligiousLevel.other:
+        return 'אחר';
     }
   }
 }
@@ -241,7 +268,7 @@ enum ProfileStatus {
       case ProfileStatus.busy:
         return 'תפוס';
       case ProfileStatus.onBreak:
-        return 'הפסקה';
+        return 'בהפסקה';
       case ProfileStatus.mazelTov:
         return 'מזל טוב';
     }
@@ -266,6 +293,98 @@ enum ProfileStatus {
   /// open proposals should move to the "בהמתנה" tab.
   bool get pausesMatches =>
       this == ProfileStatus.busy || this == ProfileStatus.onBreak;
+}
+
+/// Personal marital status of a person in the database. Display labels are
+/// gender-aware so a woman reads "גרושה" and a man reads "גרוש".
+@HiveType(typeId: 9)
+enum MaritalStatus {
+  @HiveField(0)
+  single,
+
+  @HiveField(1)
+  divorced,
+
+  @HiveField(2)
+  widowed;
+
+  String displayNameFor(Gender gender) {
+    final bool isFemale = gender == Gender.female;
+    switch (this) {
+      case MaritalStatus.single:
+        return isFemale ? 'רווקה' : 'רווק';
+      case MaritalStatus.divorced:
+        return isFemale ? 'גרושה' : 'גרוש';
+      case MaritalStatus.widowed:
+        return isFemale ? 'אלמנה' : 'אלמן';
+    }
+  }
+
+  /// Neutral label used where the gender is unknown or irrelevant.
+  String get displayName => displayNameFor(Gender.male);
+
+  /// Label for filters, which cover both genders at once.
+  String get filterLabel {
+    switch (this) {
+      case MaritalStatus.single:
+        return 'רווק/ה';
+      case MaritalStatus.divorced:
+        return 'גרוש/ה';
+      case MaritalStatus.widowed:
+        return 'אלמן/ה';
+    }
+  }
+}
+
+/// Where the proposal stands in the outreach process ("איפה זה עומד?"). This is
+/// a soft, optional annotation separate from [MatchStatus] — it tracks who has
+/// been approached and whether they answered, up to both sides agreeing.
+@HiveType(typeId: 10)
+enum MatchProgress {
+  @HiveField(0)
+  notStarted,
+
+  @HiveField(1)
+  contactedHim,
+
+  @HiveField(2)
+  contactedHer,
+
+  @HiveField(3)
+  waitingHim,
+
+  @HiveField(4)
+  waitingHer,
+
+  @HiveField(5)
+  waitingBoth,
+
+  @HiveField(6)
+  bothInterested,
+
+  @HiveField(7)
+  other;
+
+  String get displayName {
+    switch (this) {
+      case MatchProgress.notStarted:
+        return 'טרם פניתי';
+      case MatchProgress.contactedHim:
+        return 'פניתי אליו';
+      case MatchProgress.contactedHer:
+        return 'פניתי אליה';
+      case MatchProgress.waitingHim:
+        return 'מחכה לתשובה ממנו';
+      case MatchProgress.waitingHer:
+        return 'מחכה לתשובה ממנה';
+      case MatchProgress.waitingBoth:
+        return 'מחכה לתשובה משניהם';
+      case MatchProgress.bothInterested:
+        return 'שניהם מעוניינים';
+      case MatchProgress.other:
+        return 'אחר';
+    }
+  }
 }
 
 @HiveType(typeId: 6)

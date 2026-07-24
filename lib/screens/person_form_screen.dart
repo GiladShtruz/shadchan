@@ -3,19 +3,19 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/card_parser.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/date_utils.dart';
-import 'package:shadchan/utils/hebrew_date_utils.dart';
+import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
+import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/widgets/person_photo_editor.dart';
+import 'package:shadchan/widgets/religious_level_picker.dart';
 import 'package:uuid/uuid.dart';
 
 class PersonFormScreen extends StatefulWidget {
@@ -33,6 +33,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _manualAgeController = TextEditingController();
+  final TextEditingController _heightController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _inquiryContactNameController =
@@ -44,19 +45,22 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   // A free-text personal note added on save straight to the person's notes
   // timeline ("אזור ההערות בכרטיס"). Starts empty even when editing, since it
   // appends a new note rather than showing the existing ones.
-  final TextEditingController _personalNotesController = TextEditingController();
+  final TextEditingController _personalNotesController =
+      TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final Uuid _uuid = const Uuid();
   late final String _draftPersonId = _uuid.v4();
 
   Gender _selectedGender = Gender.male;
-  DateTime? _birthDate;
-  int? _hebrewBirthYear;
-  int? _hebrewBirthMonth;
-  int? _hebrewBirthDay;
-  _BirthDateCalendar _birthDateCalendar = _BirthDateCalendar.gregorian;
   ReligiousLevel? _selectedReligiousLevel;
+  String? _religiousLevelOther;
   ProfileStatus _selectedProfileStatus = ProfileStatus.available;
+  MaritalStatus? _selectedMaritalStatus;
+
+  /// Fields last written by the card parser rather than by the user. They may
+  /// be overwritten by a later parse; anything the user typed themselves is
+  /// never touched.
+  final Set<String> _autoFilledFields = <String>{};
   Person? _person;
   _PersonFormSnapshot? _initialSnapshot;
   final Set<String> _newPhotoPaths = <String>{};
@@ -92,6 +96,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _manualAgeController.dispose();
+    _heightController.dispose();
     _cityController.dispose();
     _phoneController.dispose();
     _inquiryContactNameController.dispose();
@@ -201,9 +206,50 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            PersonPhotoEditor(
+              photoPaths: _photoPaths,
+              onAddPhoto: _pickPhotos,
+              onSetPrimary: _setPrimaryPhoto,
+            ),
+            const SizedBox(height: 24),
+            // Pasting the card here fills the fields below through
+            // [CardParser], so the common case is paste-then-review.
+            TextFormField(
+              controller: _descriptionController,
+              textInputAction: TextInputAction.newline,
+              maxLines: 10,
+              minLines: 5,
+              onChanged: _handleCardTextChanged,
+              decoration: const InputDecoration(
+                labelText: 'כרטיסייה לשליחה',
+                hintText: 'הדבק כרטיסייה כאן',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Icon(
+                  Icons.auto_fix_high_outlined,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'הפרטים שלמטה יתמלאו אוטומטית מהכרטיסייה. אפשר לתקן הכל ידנית.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
             TextFormField(
               controller: _firstNameController,
               textInputAction: TextInputAction.next,
+              onChanged: (_) => _autoFilledFields.remove('firstName'),
               decoration: const InputDecoration(labelText: 'שם פרטי'),
               validator: (String? value) {
                 if (value == null || value.trim().isEmpty) {
@@ -216,6 +262,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
             TextFormField(
               controller: _lastNameController,
               textInputAction: TextInputAction.next,
+              onChanged: (_) => _autoFilledFields.remove('lastName'),
               decoration: const InputDecoration(labelText: 'שם משפחה'),
               validator: (String? value) {
                 if (value == null || value.trim().isEmpty) {
@@ -225,207 +272,17 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               },
             ),
             const SizedBox(height: 20),
-            _PhotoEditor(
-              photoPaths: _photoPaths,
-              onAddPhoto: _pickPhotos,
-              onSetPrimary: _setPrimaryPhoto,
-            ),
-            const SizedBox(height: 20),
-            Text('מגדר', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: Gender.values.map((Gender gender) {
-                return ChoiceChip(
-                  label: Text(gender.displayName),
-                  selected: _selectedGender == gender,
-                  onSelected: (bool selected) {
-                    if (!selected) {
-                      return;
-                    }
-
-                    setState(() {
-                      _selectedGender = gender;
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            Text('סגנון דתי', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ReligiousLevel.values.map((ReligiousLevel level) {
-                final bool selected = _selectedReligiousLevel == level;
-                return ChoiceChip(
-                  label: Text(level.displayName),
-                  selected: selected,
-                  onSelected: (bool value) {
-                    setState(() {
-                      _selectedReligiousLevel = value && !selected
-                          ? level
-                          : null;
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            if (_birthDate == null) ...<Widget>[
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _manualAgeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'גיל (הערכה)'),
-                validator: (String? value) {
-                  final String trimmed = value?.trim() ?? '';
-                  if (trimmed.isEmpty) {
-                    return null;
-                  }
-
-                  final int? parsed = int.tryParse(trimmed);
-                  if (parsed == null || parsed < 10 || parsed > 120) {
-                    return 'יש להזין גיל בין 10 ל-120';
-                  }
-                  return null;
-                },
+            ReligiousLevelPicker(
+              selected: ReligiousLevelChoice(
+                _selectedReligiousLevel,
+                _religiousLevelOther,
               ),
-            ],
-            const SizedBox(height: 20),
-            Text('תאריך לידה', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: _pickBirthDate,
-              borderRadius: BorderRadius.circular(12),
-              child: Ink(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color:
-                      theme.inputDecorationTheme.fillColor ??
-                      theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: theme.colorScheme.outline),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            _birthDateCalendar == _BirthDateCalendar.hebrew
-                                ? 'תאריך לידה (עברי)'
-                                : 'תאריך לידה (לועזי)',
-                            style: theme.textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _birthDatePrimaryText(),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: _birthDate != null
-                                  ? theme.colorScheme.onSurface
-                                  : theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          if (_birthDateSecondaryText()
-                              case final String txt) ...<Widget>[
-                            const SizedBox(height: 2),
-                            Text(
-                              txt,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (_birthDate != null)
-                      IconButton(
-                        icon: const Icon(Icons.clear),
-                        tooltip: 'ניקוי תאריך',
-                        onPressed: () {
-                          setState(() {
-                            _birthDate = null;
-                            _hebrewBirthYear = null;
-                            _hebrewBirthMonth = null;
-                            _hebrewBirthDay = null;
-                          });
-                        },
-                      )
-                    else
-                      const Icon(Icons.calendar_today_outlined),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: <Widget>[
-                ChoiceChip(
-                  label: const Text('לוח לועזי'),
-                  selected: _birthDateCalendar == _BirthDateCalendar.gregorian,
-                  onSelected: (bool v) {
-                    if (!v) return;
-                    setState(() {
-                      _birthDateCalendar = _BirthDateCalendar.gregorian;
-                    });
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('לוח עברי'),
-                  selected: _birthDateCalendar == _BirthDateCalendar.hebrew,
-                  onSelected: (bool v) {
-                    if (!v) return;
-                    setState(() {
-                      _birthDateCalendar = _BirthDateCalendar.hebrew;
-                    });
-                  },
-                ),
-              ],
-            ),
-            if (_birthDate != null) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                'גיל: ${AppDateUtils.calculateAge(_birthDate!)}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            const SizedBox(height: 20),
-            Text('איש קשר לבירורים', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: TextFormField(
-                    controller: _inquiryContactNameController,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'שם',
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    controller: _inquiryContactPhoneController,
-                    textInputAction: TextInputAction.next,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'טלפון',
-                      isDense: true,
-                    ),
-                  ),
-                ),
-              ],
+              onChanged: (ReligiousLevelChoice choice) {
+                setState(() {
+                  _selectedReligiousLevel = choice.level;
+                  _religiousLevelOther = choice.customLabel;
+                });
+              },
             ),
             const SizedBox(height: 20),
             Text('סטטוס', style: theme.textTheme.titleMedium),
@@ -449,17 +306,161 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
+            Text('מגדר', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: Gender.values.map((Gender gender) {
+                return ChoiceChip(
+                  label: Text(gender.displayName),
+                  selected: _selectedGender == gender,
+                  onSelected: (bool selected) {
+                    if (!selected) {
+                      return;
+                    }
+
+                    setState(() {
+                      _selectedGender = gender;
+                      _autoFilledFields.remove('gender');
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
             TextFormField(
-              controller: _descriptionController,
-              textInputAction: TextInputAction.newline,
-              maxLines: 10,
-              minLines: 5,
+              controller: _manualAgeController,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => _autoFilledFields.remove('age'),
               decoration: const InputDecoration(
-                labelText: 'כרטיסייה לשליחה',
-                hintText: 'טקסט לשיתוף בוואטסאפ (5-10 משפטים)',
-                alignLabelWithHint: true,
+                labelText: 'גיל',
+                helperText: 'הגיל מתעדכן אוטומטית פעם בשנה',
               ),
+              validator: (String? value) {
+                final String trimmed = value?.trim() ?? '';
+                if (trimmed.isEmpty) {
+                  return null;
+                }
+
+                final int? parsed = int.tryParse(trimmed);
+                if (parsed == null || parsed < 10 || parsed > 120) {
+                  return 'יש להזין גיל בין 10 ל-120';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 20),
+            TextFormField(
+              controller: _heightController,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => _autoFilledFields.remove('height'),
+              decoration: const InputDecoration(
+                labelText: 'גובה',
+                suffixText: 'ס״מ',
+                hintText: 'לדוגמה: 170',
+              ),
+              validator: (String? value) {
+                final String trimmed = value?.trim() ?? '';
+                if (trimmed.isEmpty) {
+                  return null;
+                }
+
+                final int? parsed = int.tryParse(trimmed);
+                if (parsed == null || parsed < 120 || parsed > 220) {
+                  return 'יש להזין גובה בסנטימטרים (120-220)';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 20),
+            Text('מצב משפחתי', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: MaritalStatus.values.map((MaritalStatus status) {
+                final bool selected = _selectedMaritalStatus == status;
+                return ChoiceChip(
+                  label: Text(status.displayNameFor(_selectedGender)),
+                  selected: selected,
+                  onSelected: (bool value) {
+                    setState(() {
+                      _selectedMaritalStatus = value && !selected
+                          ? status
+                          : null;
+                      _autoFilledFields.remove('maritalStatus');
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+            TextFormField(
+              controller: _cityController,
+              textInputAction: TextInputAction.next,
+              onChanged: (_) => _autoFilledFields.remove('city'),
+              decoration: const InputDecoration(labelText: 'מיקום'),
+            ),
+            const SizedBox(height: 20),
+            TextFormField(
+              controller: _phoneController,
+              textInputAction: TextInputAction.next,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: 'טלפון',
+                hintText: 'לדוגמה: 050-1234567',
+                suffixIcon: IconButton(
+                  tooltip: 'בחירה מאנשי הקשר',
+                  icon: const Icon(Icons.contacts_outlined),
+                  onPressed: _pickPhoneFromDevice,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'איש קשר לבירורים',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _pickInquiryContactFromDevice,
+                  icon: const Icon(Icons.contacts_outlined, size: 18),
+                  label: const Text('בחירה מאנשי הקשר'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextFormField(
+                    controller: _inquiryContactNameController,
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) => _autoFilledFields.remove('contactName'),
+                    decoration: const InputDecoration(
+                      labelText: 'שם',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: _inquiryContactPhoneController,
+                    textInputAction: TextInputAction.next,
+                    keyboardType: TextInputType.phone,
+                    onChanged: (_) => _autoFilledFields.remove('contactPhone'),
+                    decoration: const InputDecoration(
+                      labelText: 'טלפון',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
             TextFormField(
@@ -479,222 +480,111 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     );
   }
 
-  Future<void> _pickBirthDate() async {
-    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
-      await _pickHebrewBirthDate();
-      return;
-    }
-    await _pickGregorianBirthDate();
-  }
-
-  Future<void> _pickGregorianBirthDate() async {
-    final DateTime now = DateTime.now();
-    final DateTime initialDate =
-        _birthDate ?? DateTime(now.year - 22, now.month, now.day);
-
-    final DateTime? selectedDate = await showDatePicker(
-      context: context,
-      initialDate: initialDate.isAfter(now) ? now : initialDate,
-      firstDate: DateTime(now.year - 100, now.month, now.day),
-      lastDate: now,
-      locale: const Locale('he'),
-    );
-
-    if (selectedDate == null) {
-      return;
-    }
-
-    final ({int year, int month, int day})? hebrew =
-        HebrewDateUtils.fromGregorian(selectedDate);
-
-    setState(() {
-      _birthDate = selectedDate;
-      _hebrewBirthYear = hebrew?.year;
-      _hebrewBirthMonth = hebrew?.month;
-      _hebrewBirthDay = hebrew?.day;
-    });
-  }
-
-  Future<void> _pickHebrewBirthDate() async {
-    final DateTime now = DateTime.now();
-    final ({int year, int month, int day})? picked =
-        await _showHebrewDatePicker();
-    if (picked == null) {
-      return;
-    }
-
-    final DateTime? gregorian = HebrewDateUtils.toGregorian(
-      year: picked.year,
-      month: picked.month,
-      day: picked.day,
-    );
-    if (gregorian == null || gregorian.isAfter(now)) {
+  /// Re-reads the pasted card and fills any field the user has not typed into
+  /// themselves. Fields the parser filled earlier are refreshed, so correcting
+  /// the pasted text corrects the form with it.
+  void _handleCardTextChanged(String value) {
+    final ParsedCard parsed = CardParser.parse(value);
+    if (parsed.isEmpty) {
       return;
     }
 
     setState(() {
-      _birthDate = gregorian;
-      _hebrewBirthYear = picked.year;
-      _hebrewBirthMonth = picked.month;
-      _hebrewBirthDay = picked.day;
+      _applyParsedText('firstName', _firstNameController, parsed.firstName);
+      _applyParsedText('lastName', _lastNameController, parsed.lastName);
+      _applyParsedText('age', _manualAgeController, parsed.age?.toString());
+      _applyParsedText(
+        'height',
+        _heightController,
+        parsed.heightCm?.toString(),
+      );
+      _applyParsedText('city', _cityController, parsed.city);
+      // The "איש קשר לבירורים" line inside a pasted card belongs to whoever
+      // sent the card, so it is deliberately not copied into the contact
+      // fields — those are filled by hand or from the device contacts.
+
+      if (parsed.gender != null && _canAutoFillChoice('gender')) {
+        _selectedGender = parsed.gender!;
+        _autoFilledFields.add('gender');
+      }
+      if (parsed.maritalStatus != null &&
+          (_selectedMaritalStatus == null ||
+              _autoFilledFields.contains('maritalStatus'))) {
+        _selectedMaritalStatus = parsed.maritalStatus;
+        _autoFilledFields.add('maritalStatus');
+      }
     });
   }
 
-  Future<({int year, int month, int day})?> _showHebrewDatePicker() async {
-    final DateTime now = DateTime.now();
-    final ({int year, int month, int day}) todayHebrew =
-        HebrewDateUtils.fromGregorian(now) ?? (year: 5785, month: 1, day: 1);
-    final int initYear = _hebrewBirthYear ?? (todayHebrew.year - 22);
-    final int initMonth = _hebrewBirthMonth ?? todayHebrew.month;
-    final int initDay = _hebrewBirthDay ?? todayHebrew.day;
+  void _applyParsedText(
+    String key,
+    TextEditingController controller,
+    String? value,
+  ) {
+    if (value == null || value.isEmpty) {
+      return;
+    }
+    if (controller.text.trim().isNotEmpty && !_autoFilledFields.contains(key)) {
+      return;
+    }
+    if (controller.text == value) {
+      return;
+    }
+    controller.text = value;
+    _autoFilledFields.add(key);
+  }
 
-    int selYear = initYear;
-    int selMonth = initMonth;
-    int selDay = initDay;
+  /// A choice chip counts as "free to fill" while it still holds the default
+  /// the form opened with, or while the parser owns it.
+  bool _canAutoFillChoice(String key) =>
+      _autoFilledFields.contains(key) || !_userTouchedGender;
 
-    return showDialog<({int year, int month, int day})>(
-      context: context,
-      builder: (BuildContext ctx) {
-        return StatefulBuilder(
-          builder: (BuildContext ctx, StateSetter setDialogState) {
-            return AlertDialog(
-              title: const Text('בחר תאריך לידה עברי'),
-              content: SizedBox(
-                width: 320,
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: selDay,
-                        decoration: const InputDecoration(labelText: 'יום'),
-                        items: List<DropdownMenuItem<int>>.generate(
-                          30,
-                          (int i) => DropdownMenuItem<int>(
-                            value: i + 1,
-                            child: Text('${i + 1}'),
-                          ),
-                        ),
-                        onChanged: (int? v) {
-                          if (v != null) {
-                            setDialogState(() => selDay = v);
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: selMonth,
-                        decoration: const InputDecoration(labelText: 'חודש'),
-                        items: List<DropdownMenuItem<int>>.generate(
-                          13,
-                          (int i) => DropdownMenuItem<int>(
-                            value: i + 1,
-                            child: Text(_hebrewMonthName(i + 1)),
-                          ),
-                        ),
-                        onChanged: (int? v) {
-                          if (v != null) {
-                            setDialogState(() => selMonth = v);
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: selYear,
-                        decoration: const InputDecoration(labelText: 'שנה'),
-                        items: List<DropdownMenuItem<int>>.generate(101, (
-                          int i,
-                        ) {
-                          final int y = todayHebrew.year - i;
-                          return DropdownMenuItem<int>(
-                            value: y,
-                            child: Text('$y'),
-                          );
-                        }),
-                        onChanged: (int? v) {
-                          if (v != null) {
-                            setDialogState(() => selYear = v);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('ביטול'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(
-                    ctx,
-                  ).pop((year: selYear, month: selMonth, day: selDay)),
-                  child: const Text('אישור'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  bool get _userTouchedGender =>
+      !_autoFilledFields.contains('gender') &&
+      _selectedGender != Gender.male &&
+      _selectedGender != Gender.unknown;
+
+  Future<void> _pickInquiryContactFromDevice() async {
+    FocusScope.of(context).unfocus();
+    final DeviceContactChoice? choice = await DeviceContactPickerSheet.show(
+      context,
     );
+    if (choice == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _inquiryContactNameController.text = choice.name;
+      _inquiryContactPhoneController.text = choice.phone;
+      _autoFilledFields.removeAll(<String>['contactName', 'contactPhone']);
+    });
   }
 
-  static String _hebrewMonthName(int month) {
-    const List<String> names = <String>[
-      'ניסן',
-      'אייר',
-      'סיוון',
-      'תמוז',
-      'אב',
-      'אלול',
-      'תשרי',
-      'חשוון',
-      'כסלו',
-      'טבת',
-      'שבט',
-      'אדר',
-      'אדר ב׳',
-    ];
-    if (month < 1 || month > names.length) return '$month';
-    return names[month - 1];
-  }
+  /// Fills the person's own phone number from the device contacts.
+  Future<void> _pickPhoneFromDevice() async {
+    FocusScope.of(context).unfocus();
+    final DeviceContactChoice? choice = await DeviceContactPickerSheet.show(
+      context,
+    );
+    if (choice == null || !mounted) {
+      return;
+    }
 
-  String _birthDatePrimaryText() {
-    if (_birthDate == null) return 'לא הוזן';
-    if (_birthDateCalendar == _BirthDateCalendar.hebrew &&
-        _hebrewBirthYear != null &&
-        _hebrewBirthMonth != null &&
-        _hebrewBirthDay != null) {
-      final String f = HebrewDateUtils.format(
-        year: _hebrewBirthYear!,
-        month: _hebrewBirthMonth!,
-        day: _hebrewBirthDay!,
-      );
-      if (f.isNotEmpty) return f;
-    }
-    return AppDateUtils.formatDate(_birthDate!);
-  }
-
-  String? _birthDateSecondaryText() {
-    if (_birthDate == null) return null;
-    if (_birthDateCalendar == _BirthDateCalendar.hebrew) {
-      return AppDateUtils.formatDate(_birthDate!);
-    }
-    if (_hebrewBirthYear != null &&
-        _hebrewBirthMonth != null &&
-        _hebrewBirthDay != null) {
-      final String f = HebrewDateUtils.format(
-        year: _hebrewBirthYear!,
-        month: _hebrewBirthMonth!,
-        day: _hebrewBirthDay!,
-      );
-      if (f.isNotEmpty) return f;
-    }
-    return null;
+    setState(() {
+      _phoneController.text = choice.phone;
+      // An empty name field is a good sign this contact is the person, so fill
+      // it in too rather than making the user type it twice.
+      if (_firstNameController.text.trim().isEmpty &&
+          _lastNameController.text.trim().isEmpty &&
+          choice.name.trim().isNotEmpty) {
+        final List<String> words = choice.name.trim().split(RegExp(r'\s+'));
+        _firstNameController.text = words.first;
+        _lastNameController.text = words.length > 1
+            ? words.sublist(1).join(' ')
+            : '';
+        _autoFilledFields.removeAll(<String>['firstName', 'lastName']);
+      }
+    });
   }
 
   Future<void> _handleBackPressed() async {
@@ -743,9 +633,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     final PersonRepository repository = context.read<PersonRepository>();
     final String firstName = _firstNameController.text.trim();
     final String lastName = _lastNameController.text.trim();
-    final int? manualAge = _birthDate == null
-        ? int.tryParse(_manualAgeController.text.trim())
-        : null;
+    final int? manualAge = int.tryParse(_manualAgeController.text.trim());
+    final int? heightCm = int.tryParse(_heightController.text.trim());
 
     try {
       if (_isEditMode && _person != null) {
@@ -753,9 +642,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           ..firstName = firstName
           ..lastName = lastName
           ..gender = _selectedGender
-          ..birthDate = _birthDate
           ..setManualAge(manualAge)
           ..religiousLevel = _selectedReligiousLevel
+          ..religiousLevelOther = _religiousLevelOther
           ..city = _normalizedText(_cityController.text)
           ..phone = _normalizedText(_phoneController.text)
           ..source = _normalizedText(_sourceController.text)
@@ -767,10 +656,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           ..inquiryContactPhone = _normalizedText(
             _inquiryContactPhoneController.text,
           )
+          ..heightCm = heightCm
+          ..maritalStatus = _selectedMaritalStatus
           ..profileStatus = _selectedProfileStatus
-          ..hebrewBirthYear = _hebrewBirthYear
-          ..hebrewBirthMonth = _hebrewBirthMonth
-          ..hebrewBirthDay = _hebrewBirthDay
           ..photosPaths = List<String>.from(_photoPaths);
 
         await repository.update(_person!);
@@ -781,10 +669,10 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           firstName: firstName,
           lastName: lastName,
           gender: _selectedGender,
-          birthDate: _birthDate,
           manualAge: manualAge,
           manualAgeUpdatedAt: manualAge != null ? now : null,
           religiousLevel: _selectedReligiousLevel,
+          religiousLevelOther: _religiousLevelOther,
           city: _normalizedText(_cityController.text),
           phone: _normalizedText(_phoneController.text),
           source: _normalizedText(_sourceController.text),
@@ -796,10 +684,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           inquiryContactPhone: _normalizedText(
             _inquiryContactPhoneController.text,
           ),
+          heightCm: heightCm,
+          maritalStatus: _selectedMaritalStatus,
           profileStatus: _selectedProfileStatus,
-          hebrewBirthYear: _hebrewBirthYear,
-          hebrewBirthMonth: _hebrewBirthMonth,
-          hebrewBirthDay: _hebrewBirthDay,
           photosPaths: List<String>.from(_photoPaths),
           createdAt: now,
           updatedAt: now,
@@ -823,7 +710,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       _personalNotesController.clear();
       _initialSnapshot = _currentSnapshot();
       _newPhotoPaths.clear();
-      context.pop();
+
+      // Saving always lands on the person's own profile, so the details (and
+      // any photo just added) can be seen straight away.
+      final String savedPersonId = _person?.id ?? _draftPersonId;
+      context.pushReplacement('/people/$savedPersonId');
     } finally {
       if (mounted) {
         setState(() {
@@ -837,10 +728,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _firstNameController.text = person.firstName;
     _lastNameController.text = person.lastName;
     // Show the up-to-date age (manual age advances over time) so editing it
-    // re-anchors from the value the user actually sees.
-    _manualAgeController.text = person.birthDate == null
-        ? (person.age?.toString() ?? '')
-        : (person.manualAge?.toString() ?? '');
+    // re-anchors from the value the user actually sees. Legacy records whose
+    // age came from a birth date show that computed age instead, and saving
+    // converts it into a plain stored age.
+    _manualAgeController.text = person.age?.toString() ?? '';
+    _heightController.text = person.heightCm?.toString() ?? '';
     _cityController.text = person.city ?? '';
     _phoneController.text = person.phone ?? '';
     _inquiryContactNameController.text = person.inquiryContactName ?? '';
@@ -851,35 +743,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _selectedGender = person.gender == Gender.unknown
         ? Gender.male
         : person.gender;
-    _birthDate = person.birthDate;
     _selectedReligiousLevel = person.religiousLevel;
+    _religiousLevelOther = person.religiousLevelOther;
     _selectedProfileStatus = person.profileStatus;
+    _selectedMaritalStatus = person.maritalStatus;
     _photoPaths = List<String>.from(person.photosPaths);
-    _hebrewBirthYear = person.hebrewBirthYear;
-    _hebrewBirthMonth = person.hebrewBirthMonth;
-    _hebrewBirthDay = person.hebrewBirthDay;
-
-    if (_birthDate == null &&
-        _hebrewBirthYear != null &&
-        _hebrewBirthMonth != null &&
-        _hebrewBirthDay != null) {
-      _birthDate = HebrewDateUtils.toGregorian(
-        year: _hebrewBirthYear!,
-        month: _hebrewBirthMonth!,
-        day: _hebrewBirthDay!,
-      );
-      _birthDateCalendar = _BirthDateCalendar.hebrew;
-    } else if (_birthDate != null &&
-        (_hebrewBirthYear == null ||
-            _hebrewBirthMonth == null ||
-            _hebrewBirthDay == null)) {
-      final ({int year, int month, int day})? h = HebrewDateUtils.fromGregorian(
-        _birthDate!,
-      );
-      _hebrewBirthYear = h?.year;
-      _hebrewBirthMonth = h?.month;
-      _hebrewBirthDay = h?.day;
-    }
   }
 
   void _applyIncomingDraft(IncomingSharedProfileDraft? draft) {
@@ -891,7 +759,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       _selectedGender = Gender.unknown;
     }
 
-    final String? sharedText = draft.text?.trim();
+    // A share that carries photos never fills the card text: what rides along
+    // with an image is the sender's attribution, not profile information.
+    final String? sharedText = draft.filePaths.isEmpty
+        ? draft.text?.trim()
+        : null;
     if (sharedText != null && sharedText.isNotEmpty) {
       final String existingDescription = _descriptionController.text.trim();
       if (existingDescription.isEmpty) {
@@ -911,12 +783,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       firstName: _firstNameController.text.trim(),
       lastName: _lastNameController.text.trim(),
       gender: _selectedGender,
-      birthDate: _birthDate == null
-          ? null
-          : DateTime(_birthDate!.year, _birthDate!.month, _birthDate!.day),
-      manualAge: _birthDate == null
-          ? int.tryParse(_manualAgeController.text.trim())
-          : null,
+      manualAge: int.tryParse(_manualAgeController.text.trim()),
+      heightCm: int.tryParse(_heightController.text.trim()),
+      maritalStatus: _selectedMaritalStatus,
       religiousLevel: _selectedReligiousLevel,
       city: _normalizedText(_cityController.text),
       phone: _normalizedText(_phoneController.text),
@@ -927,74 +796,25 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       personalNote: _normalizedText(_personalNotesController.text),
       description: _normalizedText(_descriptionController.text),
       profileStatus: _selectedProfileStatus,
-      hebrewBirthYear: _hebrewBirthYear,
-      hebrewBirthMonth: _hebrewBirthMonth,
-      hebrewBirthDay: _hebrewBirthDay,
       photoPaths: _photoPaths,
     );
   }
 
   Future<void> _pickPhotos() async {
-    final bool hasPermission = await _ensureMediaPermission();
-    if (!hasPermission || !mounted) {
+    final List<String> copiedPhotoPaths = await PhotoPickerService.pickPhotos(
+      context,
+      personId: _person?.id ?? _draftPersonId,
+    );
+    if (copiedPhotoPaths.isEmpty || !mounted) {
       return;
     }
 
-    try {
-      final List<XFile> pickedFiles = await ImagePicker().pickMultiImage();
-      if (pickedFiles.isEmpty || !mounted) {
-        return;
-      }
-
-      final Directory documentsDirectory =
-          await getApplicationDocumentsDirectory();
-      final Directory photosDirectory = Directory(
-        '${documentsDirectory.path}${Platform.pathSeparator}photos',
-      );
-
-      if (!photosDirectory.existsSync()) {
-        photosDirectory.createSync(recursive: true);
-      }
-
-      final List<String> copiedPhotoPaths = <String>[];
-      final int timestamp = DateTime.now().millisecondsSinceEpoch;
-      final String personId = _person?.id ?? _draftPersonId;
-
-      for (int index = 0; index < pickedFiles.length; index++) {
-        final XFile pickedFile = pickedFiles[index];
-        final String targetPath =
-            '${photosDirectory.path}${Platform.pathSeparator}${personId}_${timestamp}_$index.jpg';
-        await File(pickedFile.path).copy(targetPath);
-        copiedPhotoPaths.add(targetPath);
-      }
-
-      setState(() {
-        _photoPaths = List<String>.from(_photoPaths)..addAll(copiedPhotoPaths);
-        _newPhotoPaths.addAll(copiedPhotoPaths);
-      });
-
-      final String saveActionText = _isEditMode ? 'לעדכן' : 'ליצור';
-      _showSnackBar(
-        copiedPhotoPaths.length == 1
-            ? 'התמונה נוספה לטופס. יש לשמור כדי $saveActionText את איש הקשר'
-            : '${copiedPhotoPaths.length} תמונות נוספו לטופס. יש לשמור כדי $saveActionText את איש הקשר',
-      );
-    } on PlatformException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      if (_looksLikePermissionError(error)) {
-        await _showPermissionExplanationDialog();
-        return;
-      }
-
-      _showSnackBar('לא הצלחנו לבחור תמונה כרגע');
-    } catch (_) {
-      if (mounted) {
-        _showSnackBar('לא הצלחנו לשמור את התמונה');
-      }
-    }
+    // No "remember to save" banner here — it covered the save button, and the
+    // new photos are already visible in the editor above.
+    setState(() {
+      _photoPaths = List<String>.from(_photoPaths)..addAll(copiedPhotoPaths);
+      _newPhotoPaths.addAll(copiedPhotoPaths);
+    });
   }
 
   Future<void> _copyIncomingPhotos(List<String> sourcePaths) async {
@@ -1036,12 +856,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         _newPhotoPaths.addAll(copiedPhotoPaths);
       });
 
-      final String saveActionText = _isEditMode ? 'לעדכן' : 'ליצור';
-      _showSnackBar(
-        copiedPhotoPaths.length == 1
-            ? 'התמונה ששותפה נוספה לטופס. יש לשמור כדי $saveActionText את איש הקשר'
-            : '${copiedPhotoPaths.length} תמונות ששותפו נוספו לטופס. יש לשמור כדי $saveActionText את איש הקשר',
-      );
     } catch (_) {
       if (mounted) {
         _showSnackBar('לא הצלחנו להוסיף את התמונה ששותפה');
@@ -1083,62 +897,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     });
   }
 
-  Future<bool> _ensureMediaPermission() async {
-    if (Platform.isAndroid) {
-      return true;
-    }
-
-    final PermissionStatus status = await Permission.photos.request();
-
-    if (status.isGranted || status.isLimited) {
-      return true;
-    }
-
-    if (mounted) {
-      await _showPermissionExplanationDialog(
-        openSettingsAction: status.isPermanentlyDenied || status.isRestricted,
-      );
-    }
-
-    return false;
-  }
-
-  bool _looksLikePermissionError(PlatformException error) {
-    final String combined = '${error.code} ${error.message ?? ''}'
-        .toLowerCase();
-    return combined.contains('denied') || combined.contains('permission');
-  }
-
-  Future<void> _showPermissionExplanationDialog({
-    bool openSettingsAction = false,
-  }) async {
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('נדרשת הרשאה'),
-          content: const Text(
-            'כדי להוסיף תמונה צריך לאשר גישה לגלריה בהגדרות המכשיר.',
-          ),
-          actions: <Widget>[
-            if (openSettingsAction)
-              TextButton(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  await openAppSettings();
-                },
-                child: const Text('פתיחת הגדרות'),
-              ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('הבנתי'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -1146,16 +904,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   }
 
   void _deleteNewPhotos() {
-    for (final String path in _newPhotoPaths) {
-      final File file = File(path);
-      if (file.existsSync()) {
-        try {
-          file.deleteSync();
-        } catch (_) {
-          // Best-effort cleanup for photos copied during an abandoned edit.
-        }
-      }
-    }
+    PhotoPickerService.deletePhotoFiles(_newPhotoPaths);
     _newPhotoPaths.clear();
   }
 
@@ -1179,8 +928,9 @@ class _PersonFormSnapshot {
     required this.firstName,
     required this.lastName,
     required this.gender,
-    required this.birthDate,
     required this.manualAge,
+    required this.heightCm,
+    required this.maritalStatus,
     required this.religiousLevel,
     required this.city,
     required this.phone,
@@ -1191,17 +941,15 @@ class _PersonFormSnapshot {
     required this.personalNote,
     required this.description,
     required this.profileStatus,
-    required this.hebrewBirthYear,
-    required this.hebrewBirthMonth,
-    required this.hebrewBirthDay,
     required List<String> photoPaths,
   }) : photoPaths = List<String>.unmodifiable(photoPaths);
 
   final String firstName;
   final String lastName;
   final Gender gender;
-  final DateTime? birthDate;
   final int? manualAge;
+  final int? heightCm;
+  final MaritalStatus? maritalStatus;
   final ReligiousLevel? religiousLevel;
   final String? city;
   final String? phone;
@@ -1212,9 +960,6 @@ class _PersonFormSnapshot {
   final String? personalNote;
   final String? description;
   final ProfileStatus profileStatus;
-  final int? hebrewBirthYear;
-  final int? hebrewBirthMonth;
-  final int? hebrewBirthDay;
   final List<String> photoPaths;
 
   @override
@@ -1227,8 +972,9 @@ class _PersonFormSnapshot {
         other.firstName == firstName &&
         other.lastName == lastName &&
         other.gender == gender &&
-        other.birthDate == birthDate &&
         other.manualAge == manualAge &&
+        other.heightCm == heightCm &&
+        other.maritalStatus == maritalStatus &&
         other.religiousLevel == religiousLevel &&
         other.city == city &&
         other.phone == phone &&
@@ -1239,9 +985,6 @@ class _PersonFormSnapshot {
         other.personalNote == personalNote &&
         other.description == description &&
         other.profileStatus == profileStatus &&
-        other.hebrewBirthYear == hebrewBirthYear &&
-        other.hebrewBirthMonth == hebrewBirthMonth &&
-        other.hebrewBirthDay == hebrewBirthDay &&
         listEquals(other.photoPaths, photoPaths);
   }
 
@@ -1251,8 +994,9 @@ class _PersonFormSnapshot {
       firstName,
       lastName,
       gender,
-      birthDate,
       manualAge,
+      heightCm,
+      maritalStatus,
       religiousLevel,
       city,
       phone,
@@ -1263,131 +1007,7 @@ class _PersonFormSnapshot {
       personalNote,
       description,
       profileStatus,
-      hebrewBirthYear,
-      hebrewBirthMonth,
-      hebrewBirthDay,
       Object.hashAll(photoPaths),
-    );
-  }
-}
-
-enum _BirthDateCalendar { gregorian, hebrew }
-
-class _PhotoEditor extends StatelessWidget {
-  const _PhotoEditor({
-    required this.photoPaths,
-    required this.onAddPhoto,
-    required this.onSetPrimary,
-  });
-
-  final List<String> photoPaths;
-  final VoidCallback onAddPhoto;
-  final ValueChanged<int> onSetPrimary;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(child: Text('תמונות', style: theme.textTheme.titleMedium)),
-            TextButton.icon(
-              onPressed: onAddPhoto,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: const Text('הוספת תמונות'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (photoPaths.isEmpty)
-          Text(
-            'אין תמונות',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          )
-        else
-          SizedBox(
-            height: 96,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: photoPaths.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (BuildContext context, int index) {
-                final File file = File(photoPaths[index]);
-                return Stack(
-                  children: <Widget>[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: file.existsSync()
-                          ? Image.file(
-                              file,
-                              width: 80,
-                              height: 96,
-                              cacheWidth: 160,
-                              fit: BoxFit.cover,
-                            )
-                          : Container(
-                              width: 80,
-                              height: 96,
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              alignment: Alignment.center,
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                    ),
-                    PositionedDirectional(
-                      top: 4,
-                      end: 4,
-                      child: Material(
-                        color: Colors.black54,
-                        shape: const CircleBorder(),
-                        child: IconButton(
-                          visualDensity: VisualDensity.compact,
-                          iconSize: 16,
-                          tooltip: index == 0
-                              ? 'זו התמונה הראשית'
-                              : 'בחר כתמונה ראשית',
-                          onPressed: index == 0
-                              ? null
-                              : () => onSetPrimary(index),
-                          icon: Icon(
-                            index == 0 ? Icons.star : Icons.star_border,
-                            color: index == 0 ? Colors.amber : Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (index == 0)
-                      PositionedDirectional(
-                        bottom: 4,
-                        start: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: const Text(
-                            'ראשית',
-                            style: TextStyle(color: Colors.white, fontSize: 10),
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-      ],
     );
   }
 }

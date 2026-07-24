@@ -505,7 +505,7 @@ class _SuggestionCard extends StatelessWidget {
   static String _summary(Person person) {
     final List<String> parts = <String>[
       if (person.age != null) 'גיל ${person.age}',
-      if (person.religiousLevel != null) person.religiousLevel!.displayName,
+      if (person.religiousLevelLabel.isNotEmpty) person.religiousLevelLabel,
       if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
     ];
     return parts.isEmpty ? 'פרטים חסרים' : parts.join(' · ');

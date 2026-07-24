@@ -1,14 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/empty_state.dart';
-import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/widgets/match_idea_card.dart';
+
+/// The four buckets a proposal can be looked at through. Order is the reading
+/// order of the chips: open, waiting, dating, archive.
+enum MatchCategory { open, waiting, dating, archive }
+
+extension on MatchCategory {
+  String get displayName {
+    switch (this) {
+      case MatchCategory.open:
+        return 'פתוחים';
+      case MatchCategory.waiting:
+        return 'בהמתנה';
+      case MatchCategory.dating:
+        return 'יוצאים';
+      case MatchCategory.archive:
+        return 'ארכיון';
+    }
+  }
+}
+
+/// Which half of the archive is showing.
+enum _ArchiveTab { rejected, dated }
 
 class MatchesScreen extends StatefulWidget {
   const MatchesScreen({
@@ -24,20 +47,24 @@ class MatchesScreen extends StatefulWidget {
   State<MatchesScreen> createState() => _MatchesScreenState();
 }
 
-class _MatchesScreenState extends State<MatchesScreen>
-    with TickerProviderStateMixin {
+class _MatchesScreenState extends State<MatchesScreen> {
   final TextEditingController _searchController = TextEditingController();
 
-  TabController? _tabController;
-  List<MatchProposalTab> _visibleTabs = const <MatchProposalTab>[];
-  bool _appliedInitialTab = false;
-  bool _showArchived = false;
+  MatchCategory _category = MatchCategory.open;
+  _ArchiveTab _archiveTab = _ArchiveTab.rejected;
+  bool _searchVisible = false;
 
   @override
   void initState() {
     super.initState();
-    _showArchived = widget.initialShowArchived;
     _searchController.addListener(_handleSearchChanged);
+    _category = widget.initialShowArchived
+        ? MatchCategory.archive
+        : _categoryFor(widget.initialStatuses);
+    if (widget.initialStatuses.contains(MatchStatus.dated) ||
+        widget.initialStatuses.contains(MatchStatus.married)) {
+      _archiveTab = _ArchiveTab.dated;
+    }
   }
 
   @override
@@ -45,212 +72,395 @@ class _MatchesScreenState extends State<MatchesScreen>
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
-    _tabController?.dispose();
     super.dispose();
+  }
+
+  static MatchCategory _categoryFor(List<MatchStatus> statuses) {
+    if (statuses.isEmpty) {
+      return MatchCategory.open;
+    }
+    switch (statuses.first) {
+      case MatchStatus.dating:
+        return MatchCategory.dating;
+      case MatchStatus.unavailable:
+        return MatchCategory.waiting;
+      case MatchStatus.rejected:
+      case MatchStatus.dated:
+      case MatchStatus.married:
+        return MatchCategory.archive;
+      case MatchStatus.idea:
+      case MatchStatus.checking:
+        return MatchCategory.open;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final MatchRepository matchRepository = context.watch<MatchRepository>();
-    // Watch (not read) so that changing a person's status to תפוס / הפסקה
-    // rebuilds the grouping and moves their open proposals into "בהמתנה".
+    // Watched so a change to a person's availability re-groups the lists.
     final PersonRepository personRepository = context.watch<PersonRepository>();
 
-    final String query = _searchController.text.trim();
-    final List<MatchIdea> matches = query.isNotEmpty
-        ? matchRepository.search(query, personRepository)
-        : matchRepository.getAll();
-
-    final Map<MatchProposalTab, List<MatchIdea>> groups = _groupMatches(
-      matches: matches,
-      personRepository: personRepository,
+    final List<MatchIdea> allMatches = matchRepository.getAll();
+    final Map<MatchCategory, List<MatchIdea>> groups = _groupMatches(
+      allMatches,
     );
+    final List<MatchIdea> dueReminders = _dueReminders(allMatches);
+    final String query = _searchController.text.trim();
 
-    final List<MatchProposalTab> visibleTabs = _showArchived
-        ? <MatchProposalTab>[
-            MatchProposalTab.dated,
-            MatchProposalTab.rejected,
-            if (groups[MatchProposalTab.weddings]!.isNotEmpty)
-              MatchProposalTab.weddings,
-          ]
-        : <MatchProposalTab>[
-            MatchProposalTab.open,
-            MatchProposalTab.waiting,
-            MatchProposalTab.dating,
-          ];
-
-    final TabController tabController = _syncTabController(visibleTabs);
-
-    // The tab bar lives on the app bar, so its labels must use the app bar's
-    // foreground colour (white on the purple bar) instead of purple-on-purple.
-    final Color appBarForeground =
-        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onPrimary;
-
-    return PopScope(
-      // In the archive view, back returns to the main ideas list instead of
-      // popping the whole screen (e.g. out to home).
-      canPop: !_showArchived,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (didPop) {
-          return;
-        }
-        if (_showArchived) {
-          setState(() => _showArchived = false);
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(_showArchived ? 'ארכיון' : 'רעיונות'),
-          centerTitle: true,
-          actions: <Widget>[
-            IconButton(
-              icon: Icon(
-                _showArchived
-                    ? Icons.unarchive_outlined
-                    : Icons.archive_outlined,
-              ),
-              tooltip: _showArchived ? 'חזרה לרעיונות' : 'ארכיון',
-              onPressed: () => setState(() => _showArchived = !_showArchived),
-            ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(52),
-            child: TabBar(
-              controller: tabController,
-              // Spread the tabs evenly across the full width of the app bar.
-              isScrollable: false,
-              labelColor: appBarForeground,
-              unselectedLabelColor: appBarForeground.withValues(alpha: 0.7),
-              indicatorColor: appBarForeground,
-              indicatorWeight: 3,
-              indicatorSize: TabBarIndicatorSize.tab,
-              labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-              labelStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
-              unselectedLabelStyle: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-              tabs: visibleTabs.map((MatchProposalTab tab) {
-                return Tab(text: tab.displayName);
-              }).toList(),
-            ),
-          ),
-        ),
-        body: Column(
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Expanded(
-              child: TabBarView(
-                controller: tabController,
-                children: visibleTabs.map((MatchProposalTab tab) {
-                  return _MatchesTabView(
-                    matches: groups[tab]!,
-                    tab: tab,
-                    isSearchResult: query.isNotEmpty,
-                    personRepository: personRepository,
-                    theme: theme,
-                    onCreate: () => context.push('/matches/add'),
-                  );
-                }).toList(),
-              ),
-            ),
+            Text('רעיונות'),
+            SizedBox(width: 8),
+            Icon(Icons.favorite, size: 18),
           ],
         ),
+        leading: IconButton(
+          tooltip: _searchVisible ? 'סגירת חיפוש' : 'חיפוש',
+          icon: Icon(_searchVisible ? Icons.close : Icons.search),
+          onPressed: () {
+            setState(() {
+              _searchVisible = !_searchVisible;
+              if (!_searchVisible) {
+                _searchController.clear();
+              }
+            });
+          },
+        ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'תזכורות',
+            icon: Badge.count(
+              count: dueReminders.length,
+              isLabelVisible: dueReminders.isNotEmpty,
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            onPressed: () => RemindersPanel.show(context),
+          ),
+          IconButton(
+            tooltip: 'רעיון חדש',
+            icon: const Icon(Icons.add),
+            onPressed: () => context.push('/matches/add'),
+          ),
+        ],
+      ),
+      body: Column(
+        children: <Widget>[
+          if (_searchVisible)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'חיפוש לפי שם',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: _searchController.clear,
+                        ),
+                ),
+              ),
+            ),
+          if (query.isEmpty)
+            _CategoryChips(
+              selected: _category,
+              counts: <MatchCategory, int>{
+                for (final MatchCategory category in MatchCategory.values)
+                  category: groups[category]!.length,
+              },
+              onSelected: (MatchCategory category) =>
+                  setState(() => _category = category),
+            ),
+          Expanded(
+            child: query.isNotEmpty
+                ? _buildSearchResults(
+                    matchRepository.search(query, personRepository),
+                    personRepository,
+                  )
+                : _buildCategory(theme, groups, dueReminders, personRepository),
+          ),
+        ],
       ),
     );
   }
 
-  Map<MatchProposalTab, List<MatchIdea>> _groupMatches({
-    required List<MatchIdea> matches,
-    required PersonRepository personRepository,
-  }) {
-    final Map<MatchProposalTab, List<MatchIdea>> groups =
-        <MatchProposalTab, List<MatchIdea>>{
-          for (final MatchProposalTab tab in MatchProposalTab.values)
-            tab: <MatchIdea>[],
+  // --- Grouping -----------------------------------------------------------
+
+  /// Newest first inside every category.
+  Map<MatchCategory, List<MatchIdea>> _groupMatches(List<MatchIdea> matches) {
+    final Map<MatchCategory, List<MatchIdea>> groups =
+        <MatchCategory, List<MatchIdea>>{
+          for (final MatchCategory category in MatchCategory.values)
+            category: <MatchIdea>[],
         };
 
     for (final MatchIdea match in matches) {
-      final Person? personA = personRepository.getById(match.personAId);
-      final Person? personB = personRepository.getById(match.personBId);
-      final bool anyArchived =
-          (personA?.profileStatus.isArchived ?? false) ||
-          (personB?.profileStatus.isArchived ?? false);
-      final bool anyPaused =
-          (personA?.profileStatus.pausesMatches ?? false) ||
-          (personB?.profileStatus.pausesMatches ?? false);
-
-      final MatchProposalTab? tab = matchProposalTabFor(
-        status: match.status,
-        anyPersonArchived: anyArchived,
-        anyPersonPaused: anyPaused,
-      );
-      if (tab != null) {
-        groups[tab]!.add(match);
+      switch (match.status) {
+        case MatchStatus.idea:
+        case MatchStatus.checking:
+          groups[MatchCategory.open]!.add(match);
+        case MatchStatus.unavailable:
+          groups[MatchCategory.waiting]!.add(match);
+        case MatchStatus.dating:
+          groups[MatchCategory.dating]!.add(match);
+        case MatchStatus.rejected:
+        case MatchStatus.dated:
+        case MatchStatus.married:
+          groups[MatchCategory.archive]!.add(match);
       }
     }
 
+    for (final List<MatchIdea> group in groups.values) {
+      group.sort(
+        (MatchIdea a, MatchIdea b) => b.createdAt.compareTo(a.createdAt),
+      );
+    }
     return groups;
   }
 
-  TabController _syncTabController(List<MatchProposalTab> visibleTabs) {
-    final TabController? current = _tabController;
-    if (current != null && current.length == visibleTabs.length) {
-      _visibleTabs = visibleTabs;
-      return current;
-    }
-
-    int initialIndex = 0;
-    if (!_appliedInitialTab) {
-      final MatchProposalTab? initialTab = _initialTab();
-      if (initialTab != null) {
-        final int index = visibleTabs.indexOf(initialTab);
-        if (index >= 0) {
-          initialIndex = index;
-        }
-      }
-    } else if (current != null && _visibleTabs.isNotEmpty) {
-      final MatchProposalTab previous =
-          _visibleTabs[current.index.clamp(0, _visibleTabs.length - 1)];
-      final int index = visibleTabs.indexOf(previous);
-      initialIndex = index >= 0
-          ? index
-          : current.index.clamp(0, visibleTabs.length - 1);
-    }
-
-    current?.dispose();
-    final TabController controller = TabController(
-      length: visibleTabs.length,
-      vsync: this,
-      initialIndex: initialIndex.clamp(0, visibleTabs.length - 1),
+  /// Proposals whose reminder date has arrived. A reminder set for the future
+  /// is not one of them.
+  List<MatchIdea> _dueReminders(List<MatchIdea> matches) {
+    final DateTime today = DateTime.now();
+    final DateTime endOfToday = DateTime(
+      today.year,
+      today.month,
+      today.day,
+      23,
+      59,
+      59,
     );
-    _tabController = controller;
-    _visibleTabs = visibleTabs;
-    _appliedInitialTab = true;
-    return controller;
+
+    final List<MatchIdea> due = matches.where((MatchIdea match) {
+      final DateTime? date = match.reminderDate;
+      return date != null &&
+          !date.isAfter(endOfToday) &&
+          !match.status.isArchived;
+    }).toList();
+    due.sort(
+      (MatchIdea a, MatchIdea b) => a.reminderDate!.compareTo(b.reminderDate!),
+    );
+    return due;
   }
 
-  MatchProposalTab? _initialTab() {
-    if (widget.initialStatuses.isEmpty) {
-      return null;
+  // --- Lists --------------------------------------------------------------
+
+  Widget _buildCategory(
+    ThemeData theme,
+    Map<MatchCategory, List<MatchIdea>> groups,
+    List<MatchIdea> dueReminders,
+    PersonRepository personRepository,
+  ) {
+    if (_category == MatchCategory.archive) {
+      return _buildArchive(groups[MatchCategory.archive]!, personRepository);
     }
-    switch (widget.initialStatuses.first) {
-      case MatchStatus.dating:
-        return MatchProposalTab.dating;
-      case MatchStatus.dated:
-        return MatchProposalTab.dated;
-      case MatchStatus.rejected:
-        return MatchProposalTab.rejected;
-      case MatchStatus.married:
-        return MatchProposalTab.weddings;
-      case MatchStatus.unavailable:
-        return MatchProposalTab.waiting;
-      case MatchStatus.idea:
-      case MatchStatus.checking:
-        return MatchProposalTab.open;
+
+    final List<MatchIdea> matches = groups[_category]!;
+    // The due-reminder list sits at the top of "פתוחים" whatever the proposals'
+    // own status is; they keep their place in their own category too.
+    final bool showReminders =
+        _category == MatchCategory.open && dueReminders.isNotEmpty;
+
+    if (matches.isEmpty && !showReminders) {
+      return _emptyState(_category);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      children: <Widget>[
+        if (showReminders) ...<Widget>[
+          _RemindersHeader(count: dueReminders.length),
+          for (final MatchIdea match in dueReminders)
+            _card(match, personRepository, isDueReminder: true),
+          const SizedBox(height: 8),
+          Text(
+            'כל הרעיונות הפתוחים (${matches.length})',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        for (final MatchIdea match in matches)
+          _card(match, personRepository),
+      ],
+    );
+  }
+
+  Widget _buildArchive(
+    List<MatchIdea> archived,
+    PersonRepository personRepository,
+  ) {
+    final List<MatchIdea> rejected = archived
+        .where((MatchIdea m) => m.status == MatchStatus.rejected)
+        .toList();
+    final List<MatchIdea> dated = archived
+        .where(
+          (MatchIdea m) =>
+              m.status == MatchStatus.dated || m.status == MatchStatus.married,
+        )
+        .toList();
+    final List<MatchIdea> shown = _archiveTab == _ArchiveTab.rejected
+        ? rejected
+        : dated;
+
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: SegmentedButton<_ArchiveTab>(
+            showSelectedIcon: false,
+            segments: <ButtonSegment<_ArchiveTab>>[
+              ButtonSegment<_ArchiveTab>(
+                value: _ArchiveTab.rejected,
+                label: Text('הצעות שנדחו (${rejected.length})'),
+              ),
+              ButtonSegment<_ArchiveTab>(
+                value: _ArchiveTab.dated,
+                label: Text('זוגות שיצאו (${dated.length})'),
+              ),
+            ],
+            selected: <_ArchiveTab>{_archiveTab},
+            onSelectionChanged: (Set<_ArchiveTab> selection) =>
+                setState(() => _archiveTab = selection.first),
+          ),
+        ),
+        Expanded(
+          child: shown.isEmpty
+              ? EmptyState(
+                  icon: _archiveTab == _ArchiveTab.rejected
+                      ? Icons.cancel_outlined
+                      : Icons.history,
+                  title: _archiveTab == _ArchiveTab.rejected
+                      ? 'אין הצעות שנדחו'
+                      : 'אין זוגות שיצאו',
+                  subtitle: 'מה שיסתיים יופיע כאן',
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                  children: <Widget>[
+                    for (final MatchIdea match in shown)
+                      _card(
+                        match,
+                        personRepository,
+                        showStatusTag: true,
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchResults(
+    List<MatchIdea> results,
+    PersonRepository personRepository,
+  ) {
+    if (results.isEmpty) {
+      return const EmptyState(
+        icon: Icons.search,
+        title: 'לא נמצאו תוצאות',
+        subtitle: 'נסו לחפש בשם אחר',
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      children: <Widget>[
+        for (final MatchIdea match in results)
+          _card(
+            match,
+            personRepository,
+            showStatusTag: true,
+            compact: true,
+          ),
+      ],
+    );
+  }
+
+  Widget _card(
+    MatchIdea match,
+    PersonRepository personRepository, {
+    bool isDueReminder = false,
+    bool showStatusTag = false,
+    bool compact = false,
+  }) {
+    final Person? personA = personRepository.getById(match.personAId);
+    final Person? personB = personRepository.getById(match.personBId);
+
+    Person? male = personA;
+    Person? female = personB;
+    if (personA?.gender == Gender.female || personB?.gender == Gender.male) {
+      male = personB;
+      female = personA;
+    }
+
+    // The card is now a quiet summary: no last-updated line, no reminder or
+    // status-update buttons — those all live on the proposal-detail screen.
+    // The only card action kept is "טופל" while a reminder is actually due.
+    return MatchIdeaCard(
+      match: match,
+      male: male,
+      female: female,
+      compact: compact,
+      showStatusTag: showStatusTag || isDueReminder,
+      onTap: () => context.push('/matches/${match.id}'),
+      onOpenWhatsApp: _openWhatsApp,
+      onMarkReminderHandled: isDueReminder
+          ? () => context.read<MatchRepository>().setReminder(match.id, null)
+          : null,
+    );
+  }
+
+  Widget _emptyState(MatchCategory category) {
+    switch (category) {
+      case MatchCategory.open:
+        return EmptyState(
+          icon: Icons.favorite_border,
+          title: 'אין רעיונות פתוחים',
+          subtitle: 'צרו רעיון חדש בין שני חברים',
+          buttonText: 'רעיון חדש',
+          onButtonPressed: () => context.push('/matches/add'),
+        );
+      case MatchCategory.waiting:
+        return const EmptyState(
+          icon: Icons.pause_circle_outline,
+          title: 'אין רעיונות בהמתנה',
+          subtitle: 'רעיון שאחד הצדדים בו לא פנוי יופיע כאן',
+        );
+      case MatchCategory.dating:
+        return const EmptyState(
+          icon: Icons.volunteer_activism_outlined,
+          title: 'אין זוגות שיוצאים',
+          subtitle: 'זוגות בתהליך יופיעו כאן',
+        );
+      case MatchCategory.archive:
+        return const EmptyState(
+          icon: Icons.archive_outlined,
+          title: 'הארכיון ריק',
+          subtitle: 'מה שיסתיים יופיע כאן',
+        );
+    }
+  }
+
+  // --- Actions ------------------------------------------------------------
+
+  Future<void> _openWhatsApp(Person person) async {
+    final bool launched = await WhatsAppUtils.openChat(person);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('לא הצלחנו לפתוח את וואטסאפ')),
+        );
     }
   }
 
@@ -259,312 +469,162 @@ class _MatchesScreenState extends State<MatchesScreen>
   }
 }
 
-class _MatchesTabView extends StatelessWidget {
-  const _MatchesTabView({
-    required this.matches,
-    required this.tab,
-    required this.isSearchResult,
-    required this.personRepository,
-    required this.theme,
-    required this.onCreate,
+/// The four category chips, each carrying its own count.
+class _CategoryChips extends StatelessWidget {
+  const _CategoryChips({
+    required this.selected,
+    required this.counts,
+    required this.onSelected,
   });
 
-  final List<MatchIdea> matches;
-  final MatchProposalTab tab;
-  final bool isSearchResult;
-  final PersonRepository personRepository;
-  final ThemeData theme;
-  final VoidCallback onCreate;
+  final MatchCategory selected;
+  final Map<MatchCategory, int> counts;
+  final ValueChanged<MatchCategory> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    if (matches.isEmpty) {
-      return _EmptyMatchesState(
-        tab: tab,
-        isSearchResult: isSearchResult,
-        onCreate: onCreate,
-      );
-    }
+    final ThemeData theme = Theme.of(context);
 
-    final Widget list = ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-      itemCount: matches.length,
-      itemBuilder: (BuildContext context, int index) {
-        final MatchIdea match = matches[index];
-        final Person? personA = personRepository.getById(match.personAId);
-        final Person? personB = personRepository.getById(match.personBId);
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: MatchIdeaListCard(
-            match: match,
-            personA: personA,
-            personB: personB,
-            onTap: () => context.push('/matches/${match.id}'),
-            theme: theme,
-          ),
-        );
-      },
-    );
-
-    if (tab != MatchProposalTab.waiting) {
-      return list;
-    }
-
-    // Explain why proposals land in the "בהמתנה" tab.
-    return Column(
-      children: <Widget>[
-        _WaitingTabHint(theme: theme),
-        Expanded(child: list),
-      ],
-    );
-  }
-}
-
-/// Short banner shown at the top of the "בהמתנה" tab explaining that a side is
-/// currently unavailable.
-class _WaitingTabHint extends StatelessWidget {
-  const _WaitingTabHint({required this.theme});
-
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Row(
         children: <Widget>[
-          Icon(
-            Icons.info_outline,
-            size: 18,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'אחד הצדדים תפוס או בהפסקה',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+          for (final MatchCategory category in MatchCategory.values) ...<Widget>[
+            _CategoryChip(
+              label: category.displayName,
+              count: counts[category] ?? 0,
+              isSelected: selected == category,
+              // The archive is deliberately quieter than the live categories.
+              isMuted: category == MatchCategory.archive,
+              theme: theme,
+              onTap: () => onSelected(category),
             ),
-          ),
+            const SizedBox(width: 8),
+          ],
         ],
       ),
     );
   }
 }
 
-class MatchIdeaListCard extends StatelessWidget {
-  const MatchIdeaListCard({
-    super.key,
-    required this.match,
-    required this.personA,
-    required this.personB,
-    required this.onTap,
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
+    required this.label,
+    required this.count,
+    required this.isSelected,
+    required this.isMuted,
     required this.theme,
+    required this.onTap,
   });
 
-  final MatchIdea match;
-  final Person? personA;
-  final Person? personB;
-  final VoidCallback onTap;
+  final String label;
+  final int count;
+  final bool isSelected;
+  final bool isMuted;
   final ThemeData theme;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bool dark = theme.brightness == Brightness.dark;
-    // Resolve which stored side is the male and which the female; the male
-    // square sits on the left and the female square on the right, with a
-    // small heart between them.
-    Person? male = personA;
-    Person? female = personB;
-    if (personA?.gender == Gender.female || personB?.gender == Gender.male) {
-      male = personB;
-      female = personA;
-    }
-    final Color maleBackground = dark
-        ? AppColors.softBlue.withValues(alpha: 0.16)
-        : AppColors.softBlue;
-    final Color femaleBackground = dark
-        ? AppColors.softPink.withValues(alpha: 0.18)
-        : AppColors.softPink;
+    final Color accent = isMuted
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.primary;
 
-    return SizedBox(
-      height: 88,
+    return Material(
+      color: isSelected
+          ? accent.withValues(alpha: 0.14)
+          : theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            // In RTL the first child renders on the right — the female side.
-            Expanded(
-              child: _MatchSideSquare(
-                person: female,
-                backgroundColor: femaleBackground,
-                theme: theme,
-              ),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected
+                  ? accent.withValues(alpha: 0.5)
+                  : theme.colorScheme.outlineVariant,
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Center(
-                child: Icon(
-                  Icons.favorite,
-                  size: 15,
-                  color: AppColors.statusColor(match.status.name),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? accent : theme.colorScheme.onSurface,
                 ),
               ),
+              const SizedBox(width: 6),
+              Text(
+                '$count',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "ביקשת שנזכיר לך" — the heading over the due-reminder cards.
+class _RemindersHeader extends StatelessWidget {
+  const _RemindersHeader({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.secondary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: theme.colorScheme.secondary.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(
+                  Icons.notifications_active_outlined,
+                  size: 18,
+                  color: theme.colorScheme.secondary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ביקשת שנזכיר לך ($count)',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              child: _MatchSideSquare(
-                person: male,
-                backgroundColor: maleBackground,
-                theme: theme,
+            const SizedBox(height: 2),
+            Text(
+              'הגיע הזמן לבדוק מה קורה עם הרעיונות האלה',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
       ),
     );
-  }
-}
-
-/// One compact side of an idea row: full name + age on top, a small photo
-/// below.
-class _MatchSideSquare extends StatelessWidget {
-  const _MatchSideSquare({
-    required this.person,
-    required this.backgroundColor,
-    required this.theme,
-  });
-
-  final Person? person;
-  final Color backgroundColor;
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    final String name = person?.fullName.trim().isNotEmpty == true
-        ? person!.fullName.trim()
-        : 'אדם נמחק';
-    final int? age = person?.age;
-    final String title = age != null ? '$name, $age' : name;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          _AvatarOrDeleted(person: person),
-        ],
-      ),
-    );
-  }
-}
-
-class _AvatarOrDeleted extends StatelessWidget {
-  const _AvatarOrDeleted({required this.person});
-
-  final Person? person;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    if (person == null) {
-      return CircleAvatar(
-        radius: 18,
-        backgroundColor: theme.colorScheme.surfaceContainerHighest,
-        child: Icon(
-          Icons.person_off_outlined,
-          size: 18,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      );
-    }
-
-    return PersonAvatar(person: person!, radius: 18);
-  }
-}
-
-class _EmptyMatchesState extends StatelessWidget {
-  const _EmptyMatchesState({
-    required this.tab,
-    required this.isSearchResult,
-    required this.onCreate,
-  });
-
-  final MatchProposalTab tab;
-  final bool isSearchResult;
-  final VoidCallback onCreate;
-
-  @override
-  Widget build(BuildContext context) {
-    if (isSearchResult) {
-      return const EmptyState(
-        icon: Icons.search,
-        title: 'לא נמצאו תוצאות',
-        subtitle: 'נסו לחפש בשם אחר',
-      );
-    }
-
-    switch (tab) {
-      case MatchProposalTab.open:
-        return EmptyState(
-          icon: Icons.favorite_border,
-          title: 'אין הצעות פתוחות',
-          subtitle: 'צרו הצעה חדשה בין שני אנשים',
-          buttonText: 'הצעה חדשה',
-          onButtonPressed: onCreate,
-        );
-      case MatchProposalTab.waiting:
-        return const EmptyState(
-          icon: Icons.pause_circle_outline,
-          title: 'אין הצעות בהמתנה',
-          subtitle: 'הצעות שאחד הצדדים בהן אינו פנוי יופיעו כאן',
-        );
-      case MatchProposalTab.dating:
-        return const EmptyState(
-          icon: Icons.volunteer_activism_outlined,
-          title: 'אין זוגות שיוצאים',
-          subtitle: 'זוגות בתהליך יציאה יופיעו כאן',
-        );
-      case MatchProposalTab.dated:
-        return const EmptyState(
-          icon: Icons.history,
-          title: 'אין הצעות שיצאו',
-          subtitle: 'זוגות שיצאו ונפרדו יופיעו כאן',
-        );
-      case MatchProposalTab.rejected:
-        return const EmptyState(
-          icon: Icons.cancel_outlined,
-          title: 'אין הצעות שנדחו',
-          subtitle: 'הצעות שנדחו יופיעו כאן',
-        );
-      case MatchProposalTab.weddings:
-        return const EmptyState(
-          icon: Icons.celebration_outlined,
-          title: 'אין חתונות עדיין',
-          subtitle: 'שידוכים שהגיעו לחופה יופיעו כאן',
-        );
-    }
   }
 }

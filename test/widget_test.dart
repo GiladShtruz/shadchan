@@ -5,13 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
-import 'package:shadchan/screens/matches_screen.dart';
+import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 
@@ -80,7 +81,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('בית'), findsWidgets);
-    expect(find.text('הוספה'), findsWidgets);
+    expect(find.text('המאגר שלי'), findsWidgets);
     expect(find.text('רעיונות'), findsWidgets);
   });
 
@@ -131,30 +132,30 @@ void main() {
             body: ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
-                MatchIdeaListCard(
+                MatchIdeaCard(
                   match: _testMatch(
                     id: 'match1',
                     personAId: male1.id,
                     personBId: female1.id,
                     now: now,
                   ),
-                  personA: male1,
-                  personB: female1,
+                  male: male1,
+                  female: female1,
                   onTap: () {},
-                  theme: theme,
+                  onOpenWhatsApp: (_) {},
                 ),
                 const SizedBox(height: 8),
-                MatchIdeaListCard(
+                MatchIdeaCard(
                   match: _testMatch(
                     id: 'match2',
                     personAId: male2.id,
                     personBId: female2.id,
                     now: now,
                   ),
-                  personA: male2,
-                  personB: female2,
+                  male: male2,
+                  female: female2,
                   onTap: () {},
-                  theme: theme,
+                  onOpenWhatsApp: (_) {},
                 ),
               ],
             ),
@@ -222,6 +223,9 @@ Widget _buildTestApp() {
       ),
       ChangeNotifierProvider<ThemeModeProvider>(
         create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<ReligiousLevelsProvider>(
+        create: (_) => ReligiousLevelsProvider(Hive.box<dynamic>('settings')),
       ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),

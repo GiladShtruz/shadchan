@@ -20,20 +20,26 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       id: fields[0] as String,
       personAId: fields[1] as String,
       personBId: fields[2] as String,
-      status: fields[3] as MatchStatus,
-      currentHandler: fields[4] as CurrentHandler,
+      status: fields[3] == null ? MatchStatus.idea : fields[3] as MatchStatus,
+      currentHandler:
+          fields[4] == null ? CurrentHandler.me : fields[4] as CurrentHandler,
       createdAt: fields[6] as DateTime,
       updatedAt: fields[7] as DateTime,
       handlerName: fields[5] as String?,
       reminderDate: fields[8] as DateTime?,
       reminderNote: fields[9] as String?,
+      waitingReason: fields[10] as String?,
+      progress: fields[11] as MatchProgress?,
+      progressOther: fields[12] as String?,
+      relatedContacts:
+          fields[13] == null ? [] : (fields[13] as List).cast<MatchContact>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, MatchIdea obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(14)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +59,15 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       ..writeByte(8)
       ..write(obj.reminderDate)
       ..writeByte(9)
-      ..write(obj.reminderNote);
+      ..write(obj.reminderNote)
+      ..writeByte(10)
+      ..write(obj.waitingReason)
+      ..writeByte(11)
+      ..write(obj.progress)
+      ..writeByte(12)
+      ..write(obj.progressOther)
+      ..writeByte(13)
+      ..write(obj.relatedContacts);
   }
 
   @override

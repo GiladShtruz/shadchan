@@ -67,12 +67,22 @@ class ReligiousLevelAdapter extends TypeAdapter<ReligiousLevel> {
         return ReligiousLevel.datiLeumi;
       case 4:
         return ReligiousLevel.datiLeumiTorani;
+      case 7:
+        return ReligiousLevel.chardal;
+      case 11:
+        return ReligiousLevel.datiLite;
+      case 8:
+        return ReligiousLevel.chabad;
+      case 9:
+        return ReligiousLevel.harediModern;
+      case 10:
+        return ReligiousLevel.hasid;
       case 5:
         return ReligiousLevel.haredi;
       case 6:
         return ReligiousLevel.hiloni;
-      case 7:
-        return ReligiousLevel.chardal;
+      case 12:
+        return ReligiousLevel.other;
       default:
         return ReligiousLevel.datlashi;
     }
@@ -96,14 +106,29 @@ class ReligiousLevelAdapter extends TypeAdapter<ReligiousLevel> {
       case ReligiousLevel.datiLeumiTorani:
         writer.writeByte(4);
         break;
+      case ReligiousLevel.chardal:
+        writer.writeByte(7);
+        break;
+      case ReligiousLevel.datiLite:
+        writer.writeByte(11);
+        break;
+      case ReligiousLevel.chabad:
+        writer.writeByte(8);
+        break;
+      case ReligiousLevel.harediModern:
+        writer.writeByte(9);
+        break;
+      case ReligiousLevel.hasid:
+        writer.writeByte(10);
+        break;
       case ReligiousLevel.haredi:
         writer.writeByte(5);
         break;
       case ReligiousLevel.hiloni:
         writer.writeByte(6);
         break;
-      case ReligiousLevel.chardal:
-        writer.writeByte(7);
+      case ReligiousLevel.other:
+        writer.writeByte(12);
         break;
     }
   }
@@ -228,6 +253,119 @@ class ProfileStatusAdapter extends TypeAdapter<ProfileStatus> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is ProfileStatusAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class MaritalStatusAdapter extends TypeAdapter<MaritalStatus> {
+  @override
+  final int typeId = 9;
+
+  @override
+  MaritalStatus read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return MaritalStatus.single;
+      case 1:
+        return MaritalStatus.divorced;
+      case 2:
+        return MaritalStatus.widowed;
+      default:
+        return MaritalStatus.single;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, MaritalStatus obj) {
+    switch (obj) {
+      case MaritalStatus.single:
+        writer.writeByte(0);
+        break;
+      case MaritalStatus.divorced:
+        writer.writeByte(1);
+        break;
+      case MaritalStatus.widowed:
+        writer.writeByte(2);
+        break;
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MaritalStatusAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class MatchProgressAdapter extends TypeAdapter<MatchProgress> {
+  @override
+  final int typeId = 10;
+
+  @override
+  MatchProgress read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return MatchProgress.notStarted;
+      case 1:
+        return MatchProgress.contactedHim;
+      case 2:
+        return MatchProgress.contactedHer;
+      case 3:
+        return MatchProgress.waitingHim;
+      case 4:
+        return MatchProgress.waitingHer;
+      case 5:
+        return MatchProgress.waitingBoth;
+      case 6:
+        return MatchProgress.bothInterested;
+      case 7:
+        return MatchProgress.other;
+      default:
+        return MatchProgress.notStarted;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, MatchProgress obj) {
+    switch (obj) {
+      case MatchProgress.notStarted:
+        writer.writeByte(0);
+        break;
+      case MatchProgress.contactedHim:
+        writer.writeByte(1);
+        break;
+      case MatchProgress.contactedHer:
+        writer.writeByte(2);
+        break;
+      case MatchProgress.waitingHim:
+        writer.writeByte(3);
+        break;
+      case MatchProgress.waitingHer:
+        writer.writeByte(4);
+        break;
+      case MatchProgress.waitingBoth:
+        writer.writeByte(5);
+        break;
+      case MatchProgress.bothInterested:
+        writer.writeByte(6);
+        break;
+      case MatchProgress.other:
+        writer.writeByte(7);
+        break;
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MatchProgressAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

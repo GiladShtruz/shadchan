@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -21,6 +23,7 @@ class PersonPickerSheet extends StatefulWidget {
     this.profileStatuses = const <ProfileStatus>[],
     this.candidatePredicate,
     this.emptySubtitle = 'נסו לחפש בשם אחר',
+    this.allowCreateOutsideDatabase = false,
   });
 
   final Gender? filterGender;
@@ -33,6 +36,10 @@ class PersonPickerSheet extends StatefulWidget {
   final PersonFilter? candidatePredicate;
   final String emptySubtitle;
 
+  /// When true, the sheet shows an "add someone not in the database" action so
+  /// a match can be opened with a person who has not been added yet.
+  final bool allowCreateOutsideDatabase;
+
   static Future<Person?> show(
     BuildContext context, {
     required String title,
@@ -44,6 +51,7 @@ class PersonPickerSheet extends StatefulWidget {
     List<ProfileStatus> profileStatuses = const <ProfileStatus>[],
     PersonFilter? candidatePredicate,
     String emptySubtitle = 'נסו לחפש בשם אחר',
+    bool allowCreateOutsideDatabase = false,
   }) {
     return showModalBottomSheet<Person>(
       context: context,
@@ -62,14 +70,74 @@ class PersonPickerSheet extends StatefulWidget {
             profileStatuses: profileStatuses,
             candidatePredicate: candidatePredicate,
             emptySubtitle: emptySubtitle,
+            allowCreateOutsideDatabase: allowCreateOutsideDatabase,
           ),
         );
       },
     );
   }
 
+  /// Adds someone who is not in the database without going through the picker
+  /// list first — used by the "התאמה עם אדם שאינו נמצא במאגר" shortcut. Returns
+  /// the created person, or null when the flow was cancelled.
+  static Future<Person?> addOutsideDatabase(
+    BuildContext context, {
+    required Gender gender,
+  }) async {
+    final _NewPersonChoice? choice = await showDialog<_NewPersonChoice>(
+      context: context,
+      builder: (BuildContext dialogContext) => _NewPersonDialog(gender: gender),
+    );
+    if (choice == null || !context.mounted) {
+      return null;
+    }
+
+    final Person? person = await _persistNewPerson(context, choice, gender);
+    if (person != null && choice.addToDatabase && context.mounted) {
+      GoRouter.of(context).push('/people/${person.id}/edit');
+    }
+    return person;
+  }
+
   @override
   State<PersonPickerSheet> createState() => _PersonPickerSheetState();
+}
+
+/// Creates and stores the person behind a "not in the database" choice. Adding
+/// them to the database makes them visible in the lists; either way details are
+/// missing, so they are flagged for review.
+Future<Person?> _persistNewPerson(
+  BuildContext context,
+  _NewPersonChoice choice,
+  Gender gender,
+) async {
+  final ({String first, String last}) name = _splitName(choice.name);
+  final DateTime now = DateTime.now();
+  final Person person = Person(
+    id: const Uuid().v4(),
+    firstName: name.first,
+    lastName: name.last,
+    gender: gender,
+    hidden: !choice.addToDatabase,
+    needsReview: true,
+    createdAt: now,
+    updatedAt: now,
+  );
+
+  await context.read<PersonRepository>().add(person);
+  return person;
+}
+
+({String first, String last}) _splitName(String value) {
+  final List<String> words = value.trim().split(RegExp(r'\s+'))
+    ..removeWhere((String w) => w.isEmpty);
+  if (words.isEmpty) {
+    return (first: '', last: '');
+  }
+  if (words.length == 1) {
+    return (first: words.first, last: '');
+  }
+  return (first: words.first, last: words.sublist(1).join(' '));
 }
 
 class _PersonPickerSheetState extends State<PersonPickerSheet> {
@@ -143,6 +211,8 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
           person.fullName.toLowerCase().contains(query);
     }).toList();
 
+    final List<_PickerEntry> entries = _buildEntries(people, query);
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -173,9 +243,13 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                       subtitle: widget.emptySubtitle,
                     )
                   : ListView.builder(
-                      itemCount: people.length,
+                      itemCount: entries.length,
                       itemBuilder: (BuildContext context, int index) {
-                        final Person person = people[index];
+                        final _PickerEntry entry = entries[index];
+                        final Person? person = entry.person;
+                        if (person == null) {
+                          return _PickerSectionLabel(label: entry.sectionLabel!);
+                        }
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: PersonAvatar(person: person, radius: 22),
@@ -194,16 +268,76 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                       },
                     ),
             ),
+            if (widget.allowCreateOutsideDatabase)
+              _NotFoundFooter(onTap: _createOutsideDatabase),
           ],
         ),
       ),
     );
   }
 
+  /// Recently updated people lead the list so the ones being worked on right
+  /// now are a tap away; the rest follow alphabetically. While searching the
+  /// split is dropped and everything is listed alphabetically.
+  List<_PickerEntry> _buildEntries(List<Person> people, String query) {
+    int byName(Person a, Person b) =>
+        a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase());
+
+    if (query.isNotEmpty || people.length <= _recentCount) {
+      return (people.toList()..sort(byName))
+          .map(_PickerEntry.person)
+          .toList();
+    }
+
+    final List<Person> byRecency = people.toList()
+      ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
+    final List<Person> recent = byRecency.take(_recentCount).toList();
+    final Set<String> recentIds = recent.map((Person p) => p.id).toSet();
+    final List<Person> rest =
+        people.where((Person p) => !recentIds.contains(p.id)).toList()
+          ..sort(byName);
+
+    return <_PickerEntry>[
+      _PickerEntry.section('עודכנו לאחרונה'),
+      ...recent.map(_PickerEntry.person),
+      _PickerEntry.section('כל המאגר'),
+      ...rest.map(_PickerEntry.person),
+    ];
+  }
+
+  static const int _recentCount = 5;
+
+  /// Prompts for a name, then whether to also add the new person to the
+  /// database. In both cases a [Person] is created so the match can reference
+  /// them, and the created person is returned to the caller; choosing to add
+  /// them opens their form so the details can be completed right away.
+  Future<void> _createOutsideDatabase() async {
+    final Gender gender = widget.filterGender ?? Gender.unknown;
+    final _NewPersonChoice? choice = await showDialog<_NewPersonChoice>(
+      context: context,
+      builder: (BuildContext dialogContext) => _NewPersonDialog(gender: gender),
+    );
+    if (choice == null || !mounted) {
+      return;
+    }
+
+    final Person? person = await _persistNewPerson(context, choice, gender);
+    if (person == null || !mounted) {
+      return;
+    }
+
+    // The router outlives this sheet, so grab it before popping.
+    final GoRouter router = GoRouter.of(context);
+    Navigator.of(context).pop(person);
+    if (choice.addToDatabase) {
+      router.push('/people/${person.id}/edit');
+    }
+  }
+
   String _personSubtitle(Person person) {
     final List<String> parts = <String>[
       if (person.age != null) person.age!.toString(),
-      if (person.religiousLevel != null) person.religiousLevel!.displayName,
+      if (person.religiousLevelLabel.isNotEmpty) person.religiousLevelLabel,
       if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
     ];
 
@@ -212,6 +346,75 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
 
   void _handleSearchChanged() {
     setState(() {});
+  }
+}
+
+/// One row of the picker list: either a person or a section label.
+class _PickerEntry {
+  const _PickerEntry.person(this.person) : sectionLabel = null;
+  const _PickerEntry.section(this.sectionLabel) : person = null;
+
+  final Person? person;
+  final String? sectionLabel;
+}
+
+class _PickerSectionLabel extends StatelessWidget {
+  const _PickerSectionLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// The way out when the person being looked for is not in the database yet.
+class _NotFoundFooter extends StatelessWidget {
+  const _NotFoundFooter({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Divider(color: theme.colorScheme.outlineVariant),
+          const SizedBox(height: 4),
+          Text(
+            'לא מצאת את מי שחיפשת?',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onTap,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('הוסף שם מחוץ למאגר'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -598,6 +801,107 @@ class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
     return RangeValues(
       range.start.clamp(bounds.min.toDouble(), bounds.max.toDouble()),
       range.end.clamp(bounds.min.toDouble(), bounds.max.toDouble()),
+    );
+  }
+}
+
+/// Result of [_NewPersonDialog]: the entered name and whether to add the person
+/// to the database (with details to fill later) or keep them out of it.
+class _NewPersonChoice {
+  const _NewPersonChoice({required this.name, required this.addToDatabase});
+
+  final String name;
+  final bool addToDatabase;
+}
+
+/// Collects a name for a person who is not in the database, then offers to add
+/// them (for later completion) or use them for this match only.
+class _NewPersonDialog extends StatefulWidget {
+  const _NewPersonDialog({required this.gender});
+
+  final Gender gender;
+
+  @override
+  State<_NewPersonDialog> createState() => _NewPersonDialogState();
+}
+
+class _NewPersonDialogState extends State<_NewPersonDialog> {
+  final TextEditingController _nameController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  /// The dialog is two steps: type a name, then decide whether this person also
+  /// joins the database.
+  bool _askedForName = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String name = _nameController.text.trim();
+    final bool hasName = name.isNotEmpty;
+    final String who = widget.gender == Gender.female ? 'הבחורה' : 'הבחור';
+    final String pronoun = widget.gender == Gender.female ? 'עליה' : 'עליו';
+    final String alsoAdd = widget.gender == Gender.female ? 'אותה' : 'אותו';
+
+    if (!_askedForName) {
+      return AlertDialog(
+        title: Text('הוספת $who'),
+        content: TextField(
+          controller: _nameController,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            if (hasName) {
+              setState(() => _askedForName = true);
+            }
+          },
+          decoration: const InputDecoration(labelText: 'שם'),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('ביטול'),
+          ),
+          FilledButton(
+            onPressed: hasName
+                ? () => setState(() => _askedForName = true)
+                : null,
+            child: const Text('המשך'),
+          ),
+        ],
+      );
+    }
+
+    return AlertDialog(
+      title: Text(name),
+      content: Text(
+        'רוצה להשלים $pronoun פרטים ולהוסיף $alsoAdd גם למאגר?',
+        style: theme.textTheme.bodyMedium,
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(
+            context,
+          ).pop(_NewPersonChoice(name: name, addToDatabase: false)),
+          child: const Text('לא עכשיו'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(
+            context,
+          ).pop(_NewPersonChoice(name: name, addToDatabase: true)),
+          child: const Text('הוספה למאגר'),
+        ),
+      ],
     );
   }
 }

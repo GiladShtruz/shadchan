@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 
 class SwipeImportScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class SwipeImportScreen extends StatefulWidget {
   State<SwipeImportScreen> createState() => _SwipeImportScreenState();
 }
 
-enum _SwipeAction { accept, reject }
+enum _SwipeAction { accept, reject, defer }
 
 class _SwipeHistoryEntry {
   _SwipeHistoryEntry({
@@ -58,6 +59,16 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
   bool _isFinished = false;
   final List<_SwipeHistoryEntry> _history = <_SwipeHistoryEntry>[];
   Set<String> _skippedPhones = <String>{};
+
+  /// Contacts the user chose to come back to later this session ("דלג"). They
+  /// are neither imported nor permanently skipped; once the main deck is done
+  /// they can be reviewed again.
+  final List<ContactImportCandidate> _deferredCandidates =
+      <ContactImportCandidate>[];
+
+  /// Bumped whenever the deck contents change (e.g. reviewing deferred cards) so
+  /// the [CardSwiper] is rebuilt from scratch instead of reusing a stale index.
+  int _deckGeneration = 0;
 
   @override
   void initState() {
@@ -197,6 +208,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       _handleAccept(candidate);
     } else if (direction == CardSwiperDirection.left) {
       _handleReject(candidate);
+    } else if (direction == CardSwiperDirection.top) {
+      _handleDefer(candidate);
     } else {
       return false;
     }
@@ -213,10 +226,13 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     }
 
     final _SwipeHistoryEntry entry = _history.removeLast();
-    if (entry.action == _SwipeAction.accept) {
-      _undoAccept(entry);
-    } else {
-      _undoReject(entry);
+    switch (entry.action) {
+      case _SwipeAction.accept:
+        _undoAccept(entry);
+      case _SwipeAction.reject:
+        _undoReject(entry);
+      case _SwipeAction.defer:
+        _undoDefer(entry);
     }
     return true;
   }
@@ -260,6 +276,13 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       entry.importedPersonId = person.id;
       if (entry.wasUndone) {
         await repo.delete(person.id);
+        return;
+      }
+
+      // Offer to fill in details right away, matching the list-import flow.
+      // Skipped when the card was undone while the import was still running.
+      if (mounted) {
+        await QuickUpdateDialog.show(context, person);
       }
     } catch (_) {
       _revertPendingAddedCount(entry);
@@ -294,6 +317,44 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       _isFinished = false;
     });
     _notifyAddedCount();
+  }
+
+  void _handleDefer(ContactImportCandidate candidate) {
+    // Not persisted anywhere: the candidate simply moves to a "review later"
+    // pile that is offered again once the main deck is finished.
+    _deferredCandidates.add(candidate);
+    _history.add(
+      _SwipeHistoryEntry(action: _SwipeAction.defer, candidate: candidate),
+    );
+    setState(() {
+      _remaining = (_remaining - 1).clamp(0, _candidates.length);
+    });
+  }
+
+  void _undoDefer(_SwipeHistoryEntry entry) {
+    _deferredCandidates.removeWhere(
+      (ContactImportCandidate c) =>
+          c.normalizedPhone == entry.candidate.normalizedPhone,
+    );
+    setState(() {
+      _remaining = (_remaining + 1).clamp(0, _candidates.length);
+      _isFinished = false;
+    });
+  }
+
+  /// Reloads the deck with the deferred contacts so the user can decide on them.
+  void _reviewDeferred() {
+    if (_deferredCandidates.isEmpty) {
+      return;
+    }
+    setState(() {
+      _candidates = List<ContactImportCandidate>.from(_deferredCandidates);
+      _deferredCandidates.clear();
+      _history.clear();
+      _remaining = _candidates.length;
+      _isFinished = false;
+      _deckGeneration++;
+    });
   }
 
   void _handleReject(ContactImportCandidate candidate) {
@@ -421,13 +482,17 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: CardSwiper(
+              key: ValueKey<int>(_deckGeneration),
               controller: _controller,
               cardsCount: _candidates.length,
               numberOfCardsDisplayed: _candidates.length >= 3
                   ? 3
                   : _candidates.length,
-              allowedSwipeDirection: const AllowedSwipeDirection.symmetric(
-                horizontal: true,
+              // Right = add, left = not relevant, up = review later ("דלג").
+              allowedSwipeDirection: const AllowedSwipeDirection.only(
+                left: true,
+                right: true,
+                up: true,
               ),
               onSwipe: _onSwipe,
               onUndo: _onUndo,
@@ -461,7 +526,9 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       children: <Widget>[
         Text('${done + 1} / $total', style: theme.textTheme.titleMedium),
         Text(
-          'נוספו $_addedCount · דולגו $_skippedCount',
+          _deferredCandidates.isEmpty
+              ? 'נוספו $_addedCount · דולגו $_skippedCount'
+              : 'נוספו $_addedCount · דולגו $_skippedCount · לעיון: ${_deferredCandidates.length}',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -481,18 +548,27 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           tooltip: 'הוסף',
           onPressed: () => _controller.swipe(CardSwiperDirection.right),
         ),
+        // Skip for now — the contact returns after the main deck is finished.
+        _CircleActionButton(
+          icon: Icons.schedule,
+          color: theme.colorScheme.tertiary,
+          tooltip: 'דלג (חזרה בהמשך)',
+          iconSize: 24,
+          padding: 14,
+          onPressed: () => _controller.swipe(CardSwiperDirection.top),
+        ),
         _CircleActionButton(
           icon: Icons.replay,
           color: theme.colorScheme.onSurfaceVariant,
           tooltip: 'ביטול',
-          iconSize: 24,
-          padding: 14,
+          iconSize: 22,
+          padding: 12,
           onPressed: _history.isEmpty ? null : () => _controller.undo(),
         ),
         _CircleActionButton(
           icon: Icons.close,
           color: theme.colorScheme.error,
-          tooltip: 'דלג',
+          tooltip: 'לא רלוונטי',
           onPressed: () => _controller.swipe(CardSwiperDirection.left),
         ),
       ],
@@ -521,7 +597,15 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            FilledButton(
+            if (_deferredCandidates.isNotEmpty) ...<Widget>[
+              FilledButton.icon(
+                onPressed: _reviewDeferred,
+                icon: const Icon(Icons.schedule),
+                label: Text('חזרה לדילוגים (${_deferredCandidates.length})'),
+              ),
+              const SizedBox(height: 8),
+            ],
+            FilledButton.tonal(
               onPressed: () => Navigator.of(context).maybePop(),
               child: const Text('חזרה'),
             ),

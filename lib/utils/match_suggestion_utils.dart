@@ -2,50 +2,17 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
 
 abstract final class MatchSuggestionUtils {
+  /// The religious levels shown by default (before the matchmaker sets a
+  /// personal filter). The default is now the candidate's *own* level only —
+  /// a "דתי לאומי" sees only "דתי לאומי", a "דתי פתוח" sees only "דתי פתוח",
+  /// and so on. The matchmaker can widen this from the filter sheet. A custom
+  /// ("אחר") style has no built-in level to match on, so no religious filter is
+  /// applied to its suggestions.
   static List<ReligiousLevel> religiousLevelsFor(ReligiousLevel? sourceLevel) {
-    switch (sourceLevel) {
-      case ReligiousLevel.datiLeumiTorani:
-        return const <ReligiousLevel>[
-          ReligiousLevel.datiLeumiTorani,
-          ReligiousLevel.datiLeumi,
-          ReligiousLevel.chardal,
-        ];
-      case ReligiousLevel.chardal:
-        return const <ReligiousLevel>[
-          ReligiousLevel.chardal,
-          ReligiousLevel.datiLeumiTorani,
-        ];
-      case ReligiousLevel.datiLeumi:
-        return const <ReligiousLevel>[
-          ReligiousLevel.datiLeumiTorani,
-          ReligiousLevel.datiLeumi,
-          ReligiousLevel.datiOpen,
-        ];
-      case ReligiousLevel.datiOpen:
-        return const <ReligiousLevel>[
-          ReligiousLevel.datiLeumi,
-          ReligiousLevel.datiOpen,
-          ReligiousLevel.masorti,
-        ];
-      case ReligiousLevel.masorti:
-        return const <ReligiousLevel>[
-          ReligiousLevel.datiOpen,
-          ReligiousLevel.masorti,
-          ReligiousLevel.hiloni,
-          ReligiousLevel.datlashi,
-        ];
-      case ReligiousLevel.hiloni:
-      case ReligiousLevel.datlashi:
-        return const <ReligiousLevel>[
-          ReligiousLevel.hiloni,
-          ReligiousLevel.masorti,
-          ReligiousLevel.datlashi,
-        ];
-      case ReligiousLevel.haredi:
-        return const <ReligiousLevel>[ReligiousLevel.haredi];
-      case null:
-        return const <ReligiousLevel>[];
+    if (sourceLevel == null || sourceLevel == ReligiousLevel.other) {
+      return const <ReligiousLevel>[];
     }
+    return <ReligiousLevel>[sourceLevel];
   }
 
   static ({int minAge, int maxAge})? femaleAgeRangeForMale(int? maleAge) {

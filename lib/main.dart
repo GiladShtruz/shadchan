@@ -1,22 +1,50 @@
-import 'package:flutter/widgets.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/services/match_migrations.dart';
+import 'package:shadchan/services/person_migrations.dart';
+import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Hive.initFlutter();
+  // A crash during startup used to leave a silent black screen (main threw
+  // before runApp was ever called). Now any startup failure is caught and shown
+  // on screen so it can be read and reported instead of just going black.
+  runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
+      try {
+        await _bootstrap();
+        runApp(_buildApp());
+      } catch (error, stackTrace) {
+        runApp(_StartupErrorApp(error: error, stackTrace: stackTrace));
+      }
+    },
+    (Object error, StackTrace stackTrace) {
+      debugPrint('Uncaught zone error: $error\n$stackTrace');
+    },
+  );
+}
+
+/// Opens storage and runs one-time startup work. Notification and migration
+/// failures are non-fatal — they must never keep the app from starting — so
+/// they are handled inside their own services / swallowed here.
+Future<void> _bootstrap() async {
+  await Hive.initFlutter();
   _registerAdapters();
 
   await Hive.openBox<Person>('people');
@@ -24,43 +52,108 @@ Future<void> main() async {
   await Hive.openBox<MatchIdea>('matches');
   await Hive.openBox<MatchNote>('match_notes');
   await Hive.openBox<dynamic>('settings');
-  await NotificationService.initialize();
-  await NotificationService.scheduleBirthdayNotifications(
-    Hive.box<Person>('people').values.toList(),
-  );
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider<PersonRepository>(
-          create: (_) => PersonRepository(
-            Hive.box<Person>('people'),
-            Hive.box<PersonNote>('person_notes'),
+  await NotificationService.initialize();
+  await PersonMigrations.convertBirthDatesToAges(
+    people: Hive.box<Person>('people'),
+    settings: Hive.box<dynamic>('settings'),
+  );
+  await MatchMigrations.reconcileStatusesWithAvailability(
+    matches: Hive.box<MatchIdea>('matches'),
+    people: Hive.box<Person>('people'),
+    settings: Hive.box<dynamic>('settings'),
+  );
+  await NotificationService.cancelBirthdayNotifications();
+}
+
+Widget _buildApp() {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<PersonRepository>(
+        create: (_) => PersonRepository(
+          Hive.box<Person>('people'),
+          Hive.box<PersonNote>('person_notes'),
+        ),
+      ),
+      ChangeNotifierProvider<MatchRepository>(
+        create: (BuildContext context) {
+          final MatchRepository matchRepository = MatchRepository(
+            Hive.box<MatchIdea>('matches'),
+            Hive.box<MatchNote>('match_notes'),
+          );
+          final PersonRepository personRepository = context
+              .read<PersonRepository>();
+          // Availability flows both ways: a person going busy / on a break
+          // moves their open proposals to "בהמתנה" and back to "רעיון" once
+          // both sides are free, while a couple that starts dating is marked
+          // "תפוס" on both cards.
+          personRepository.onPersonStatusChanged =
+              matchRepository.syncMatchesForPerson;
+          matchRepository
+            ..resolvePerson = personRepository.getById
+            ..markPersonBusy = ((String personId) => personRepository
+                .updateProfileStatus(personId, ProfileStatus.busy))
+            ..addPersonHistoryNote = ((String personId, String text) =>
+                personRepository.addNote(personId, text, isAutomatic: true));
+          return matchRepository;
+        },
+      ),
+      ChangeNotifierProvider<ThemeModeProvider>(
+        create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<ReligiousLevelsProvider>(
+        create: (_) => ReligiousLevelsProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<UserProfileProvider>(
+        create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+    ],
+    child: const _DismissKeyboardOnTap(child: App()),
+  );
+}
+
+/// Shown when startup fails, instead of a black screen. Keeps the error visible
+/// so it can be screenshotted and reported.
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp({required this.error, required this.stackTrace});
+
+  final Object error;
+  final StackTrace stackTrace;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    'אירעה תקלה בהפעלת האפליקציה',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Text(
+                        '$error\n\n$stackTrace',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
-        ChangeNotifierProvider<MatchRepository>(
-          create: (BuildContext context) {
-            final MatchRepository matchRepository = MatchRepository(
-              Hive.box<MatchIdea>('matches'),
-              Hive.box<MatchNote>('match_notes'),
-            );
-            // When a person is marked busy / on a break, move their open
-            // proposals to "בהמתנה" automatically.
-            context.read<PersonRepository>().onPersonStatusPaused =
-                matchRepository.pauseOpenMatchesForPerson;
-            return matchRepository;
-          },
-        ),
-        ChangeNotifierProvider<ThemeModeProvider>(
-          create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
-        ),
-        ChangeNotifierProvider<UserProfileProvider>(
-          create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
-        ),
-      ],
-      child: const _DismissKeyboardOnTap(child: App()),
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class _DismissKeyboardOnTap extends StatelessWidget {
@@ -105,5 +198,14 @@ void _registerAdapters() {
   }
   if (!Hive.isAdapterRegistered(8)) {
     Hive.registerAdapter(PersonNoteAdapter());
+  }
+  if (!Hive.isAdapterRegistered(9)) {
+    Hive.registerAdapter(MaritalStatusAdapter());
+  }
+  if (!Hive.isAdapterRegistered(10)) {
+    Hive.registerAdapter(MatchProgressAdapter());
+  }
+  if (!Hive.isAdapterRegistered(11)) {
+    Hive.registerAdapter(MatchContactAdapter());
   }
 }

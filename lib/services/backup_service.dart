@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -12,13 +14,33 @@ import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 
+/// Local JSON backup/restore of the whole database.
+///
+/// Design goals, after the backup format fell behind the data model:
+/// - **Complete**: every persisted field is written, including flags that were
+///   previously dropped (`hidden`, `needsReview`, reminders), so a restore
+///   reproduces the original state instead of quietly changing it.
+/// - **Crash-safe on import**: one malformed record can never abort the whole
+///   restore. Records are parsed leniently and, if unrecoverable, skipped and
+///   counted rather than thrown.
+/// - **Forward/backward tolerant**: unknown enum values and unparseable dates
+///   degrade to sensible defaults instead of failing, and older backups
+///   (which stored a `birthDate` before ages replaced it) still import.
+///
+/// Note: photos are stored as file paths, not embedded bytes, so the images
+/// themselves are not part of the backup — a restore on a different device (or
+/// after an uninstall) keeps the people/matches/notes but not the photo files.
 class BackupService {
+  /// Bumped whenever the export shape changes. The importer stays lenient and
+  /// accepts older versions too, so raising this never orphans old backups.
+  static const int _currentVersion = 2;
+
   static Future<File> exportData(
     PersonRepository personRepo,
     MatchRepository matchRepo,
   ) async {
     final Map<String, Object?> payload = <String, Object?>{
-      'version': 1,
+      'version': _currentVersion,
       'exportDate': DateTime.now().toIso8601String(),
       'people': personRepo.getAll().map(_personToJson).toList(),
       'personNotes': personRepo.getAllNotes().map(_personNoteToJson).toList(),
@@ -52,13 +74,26 @@ class BackupService {
     PersonRepository personRepo,
     MatchRepository matchRepo,
   ) async {
-    final Object? decoded = jsonDecode(await jsonFile.readAsString());
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await jsonFile.readAsString());
+    } catch (_) {
+      throw const FormatException('קובץ הגיבוי אינו קריא');
+    }
+
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('קובץ הגיבוי אינו תקין');
     }
 
-    if (decoded['version'] != 1) {
-      throw const FormatException('גרסת הגיבוי אינה נתמכת');
+    // Only refuse a file that has none of the sections we know how to read;
+    // any recognizable backup is imported regardless of its version number.
+    final bool looksLikeBackup =
+        decoded.containsKey('people') ||
+        decoded.containsKey('matches') ||
+        decoded.containsKey('personNotes') ||
+        decoded.containsKey('matchNotes');
+    if (!looksLikeBackup) {
+      throw const FormatException('קובץ הגיבוי אינו תקין');
     }
 
     int peopleAdded = 0;
@@ -66,90 +101,49 @@ class BackupService {
     int notesAdded = 0;
     int skipped = 0;
 
-    final List<dynamic> peopleJson =
-        decoded['people'] as List<dynamic>? ?? <dynamic>[];
-    for (final Object? item in peopleJson) {
-      if (item is! Map<String, dynamic>) {
+    for (final Map<String, dynamic> item in _records(decoded['people'])) {
+      final Person? person = _tryParse(() => _personFromJson(item));
+      if (person == null || personRepo.containsId(person.id)) {
         skipped++;
         continue;
       }
-
-      final Person person = _personFromJson(item);
-      if (personRepo.containsId(person.id)) {
-        skipped++;
-        continue;
-      }
-
       await personRepo.addImported(person);
       peopleAdded++;
     }
 
-    final List<dynamic> matchesJson =
-        decoded['matches'] as List<dynamic>? ?? <dynamic>[];
-    for (final Object? item in matchesJson) {
-      if (item is! Map<String, dynamic>) {
+    for (final Map<String, dynamic> item in _records(decoded['matches'])) {
+      final MatchIdea? match = _tryParse(() => _matchFromJson(item));
+      if (match == null ||
+          !personRepo.containsId(match.personAId) ||
+          !personRepo.containsId(match.personBId) ||
+          matchRepo.containsMatchId(match.id)) {
         skipped++;
         continue;
       }
-
-      final MatchIdea match = _matchFromJson(item);
-      if (!personRepo.containsId(match.personAId) ||
-          !personRepo.containsId(match.personBId)) {
-        skipped++;
-        continue;
-      }
-
-      if (matchRepo.containsMatchId(match.id)) {
-        skipped++;
-        continue;
-      }
-
       await matchRepo.addImportedMatch(match);
       matchesAdded++;
     }
 
-    final List<dynamic> personNotesJson =
-        decoded['personNotes'] as List<dynamic>? ?? <dynamic>[];
-    for (final Object? item in personNotesJson) {
-      if (item is! Map<String, dynamic>) {
+    for (final Map<String, dynamic> item in _records(decoded['personNotes'])) {
+      final PersonNote? note = _tryParse(() => _personNoteFromJson(item));
+      if (note == null ||
+          !personRepo.containsId(note.personId) ||
+          personRepo.containsNoteId(note.id)) {
         skipped++;
         continue;
       }
-
-      final PersonNote note = _personNoteFromJson(item);
-      if (!personRepo.containsId(note.personId)) {
-        skipped++;
-        continue;
-      }
-
-      if (personRepo.containsNoteId(note.id)) {
-        skipped++;
-        continue;
-      }
-
       await personRepo.addImportedNote(note);
       notesAdded++;
     }
 
-    final List<dynamic> notesJson =
-        decoded['matchNotes'] as List<dynamic>? ?? <dynamic>[];
-    for (final Object? item in notesJson) {
-      if (item is! Map<String, dynamic>) {
+    for (final Map<String, dynamic> item in _records(decoded['matchNotes'])) {
+      final MatchNote? note = _tryParse(() => _matchNoteFromJson(item));
+      if (note == null ||
+          !matchRepo.containsMatchId(note.matchId) ||
+          matchRepo.containsNoteId(note.id)) {
         skipped++;
         continue;
       }
-
-      final MatchNote note = _matchNoteFromJson(item);
-      if (!matchRepo.containsMatchId(note.matchId)) {
-        skipped++;
-        continue;
-      }
-
-      if (matchRepo.containsNoteId(note.id)) {
-        skipped++;
-        continue;
-      }
-
       await matchRepo.addImportedNote(note);
       notesAdded++;
     }
@@ -165,16 +159,18 @@ class BackupService {
     );
   }
 
+  // --- Serialization ------------------------------------------------------
+
   static Map<String, Object?> _personToJson(Person person) {
     return <String, Object?>{
       'id': person.id,
       'firstName': person.firstName,
       'lastName': person.lastName,
       'gender': person.gender.name,
-      'birthDate': person.birthDate?.toIso8601String(),
       'manualAge': person.manualAge,
       'manualAgeUpdatedAt': person.manualAgeUpdatedAt?.toIso8601String(),
       'religiousLevel': person.religiousLevel?.name,
+      'religiousLevelOther': person.religiousLevelOther,
       'city': person.city,
       'phone': person.phone,
       'source': person.source,
@@ -182,12 +178,13 @@ class BackupService {
       'description': person.description,
       'inquiryContactName': person.inquiryContactName,
       'inquiryContactPhone': person.inquiryContactPhone,
+      'heightCm': person.heightCm,
+      'maritalStatus': person.maritalStatus?.name,
       'profileStatus': person.profileStatus.name,
-      'hebrewBirthYear': person.hebrewBirthYear,
-      'hebrewBirthMonth': person.hebrewBirthMonth,
-      'hebrewBirthDay': person.hebrewBirthDay,
       'photos': List<String>.from(person.photosPaths),
       'isFavorite': person.isFavorite,
+      'needsReview': person.needsReview,
+      'hidden': person.hidden,
       'createdAt': person.createdAt.toIso8601String(),
       'updatedAt': person.updatedAt.toIso8601String(),
     };
@@ -201,6 +198,8 @@ class BackupService {
       'status': match.status.name,
       'currentHandler': match.currentHandler.name,
       'handlerName': match.handlerName,
+      'reminderDate': match.reminderDate?.toIso8601String(),
+      'reminderNote': match.reminderNote,
       'createdAt': match.createdAt.toIso8601String(),
       'updatedAt': match.updatedAt.toIso8601String(),
     };
@@ -226,100 +225,195 @@ class BackupService {
     };
   }
 
-  static Person _personFromJson(Map<String, dynamic> json) {
+  // --- Deserialization ----------------------------------------------------
+
+  /// Returns null (skip) when the record has no id — nothing can reference or
+  /// de-duplicate it. Every other field degrades to a default rather than
+  /// throwing, so a slightly-off record still restores.
+  static Person? _personFromJson(Map<String, dynamic> json) {
+    final String? id = _string(json['id']);
+    if (id == null) {
+      return null;
+    }
+
+    final DateTime now = DateTime.now();
     return Person(
-      id: json['id'] as String,
-      firstName: json['firstName'] as String,
-      lastName: json['lastName'] as String,
-      gender: Gender.values.byName(json['gender'] as String),
-      birthDate: _parseNullableDate(json['birthDate']),
-      manualAge: json['manualAge'] as int?,
-      manualAgeUpdatedAt: _parseNullableDate(json['manualAgeUpdatedAt']),
-      religiousLevel: _parseNullableReligiousLevel(json['religiousLevel']),
-      city: json['city'] as String?,
-      phone: json['phone'] as String?,
-      source: json['source'] as String?,
-      notes: json['notes'] as String?,
-      description: json['description'] as String?,
-      inquiryContactName: json['inquiryContactName'] as String?,
-      inquiryContactPhone: json['inquiryContactPhone'] as String?,
-      profileStatus: _parseProfileStatus(json['profileStatus']),
-      hebrewBirthYear: json['hebrewBirthYear'] as int?,
-      hebrewBirthMonth: json['hebrewBirthMonth'] as int?,
-      hebrewBirthDay: json['hebrewBirthDay'] as int?,
-      photosPaths: _parsePhotos(json),
-      isFavorite: json['isFavorite'] as bool? ?? false,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
-    );
-  }
-
-  static MatchIdea _matchFromJson(Map<String, dynamic> json) {
-    return MatchIdea(
-      id: json['id'] as String,
-      personAId: json['personAId'] as String,
-      personBId: json['personBId'] as String,
-      status: MatchStatus.values.byName(json['status'] as String),
-      currentHandler: CurrentHandler.values.byName(
-        json['currentHandler'] as String,
+      id: id,
+      firstName: _string(json['firstName']) ?? '',
+      lastName: _string(json['lastName']) ?? '',
+      gender: _enumByName(Gender.values, json['gender']) ?? Gender.unknown,
+      // Backups written before birth dates were removed carry one instead of an
+      // age, so it is converted here rather than dropped.
+      manualAge:
+          _int(json['manualAge']) ?? _ageFromLegacyBirthDate(json['birthDate']),
+      manualAgeUpdatedAt:
+          _date(json['manualAgeUpdatedAt']) ??
+          (json['manualAge'] == null && json['birthDate'] != null ? now : null),
+      religiousLevel: _enumByName(
+        ReligiousLevel.values,
+        json['religiousLevel'],
       ),
-      handlerName: json['handlerName'] as String?,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      religiousLevelOther: _string(json['religiousLevelOther']),
+      city: _string(json['city']),
+      phone: _string(json['phone']),
+      source: _string(json['source']),
+      notes: _string(json['notes']),
+      description: _string(json['description']),
+      inquiryContactName: _string(json['inquiryContactName']),
+      inquiryContactPhone: _string(json['inquiryContactPhone']),
+      heightCm: _int(json['heightCm']),
+      maritalStatus: _enumByName(MaritalStatus.values, json['maritalStatus']),
+      profileStatus:
+          _enumByName(ProfileStatus.values, json['profileStatus']) ??
+          ProfileStatus.available,
+      photosPaths: _parsePhotos(json),
+      isFavorite: _bool(json['isFavorite']),
+      needsReview: _bool(json['needsReview']),
+      hidden: _bool(json['hidden']),
+      createdAt: _date(json['createdAt']) ?? now,
+      updatedAt: _date(json['updatedAt']) ?? now,
     );
   }
 
-  static PersonNote _personNoteFromJson(Map<String, dynamic> json) {
+  static MatchIdea? _matchFromJson(Map<String, dynamic> json) {
+    final String? id = _string(json['id']);
+    final String? personAId = _string(json['personAId']);
+    final String? personBId = _string(json['personBId']);
+    if (id == null || personAId == null || personBId == null) {
+      return null;
+    }
+
+    final DateTime now = DateTime.now();
+    return MatchIdea(
+      id: id,
+      personAId: personAId,
+      personBId: personBId,
+      status:
+          _enumByName(MatchStatus.values, json['status']) ?? MatchStatus.idea,
+      currentHandler:
+          _enumByName(CurrentHandler.values, json['currentHandler']) ??
+          CurrentHandler.me,
+      handlerName: _string(json['handlerName']),
+      reminderDate: _date(json['reminderDate']),
+      reminderNote: _string(json['reminderNote']),
+      createdAt: _date(json['createdAt']) ?? now,
+      updatedAt: _date(json['updatedAt']) ?? now,
+    );
+  }
+
+  static PersonNote? _personNoteFromJson(Map<String, dynamic> json) {
+    final String? id = _string(json['id']);
+    final String? personId = _string(json['personId']);
+    if (id == null || personId == null) {
+      return null;
+    }
+
     return PersonNote(
-      id: json['id'] as String,
-      personId: json['personId'] as String,
-      text: json['text'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      isAutomatic: json['isAutomatic'] as bool? ?? false,
+      id: id,
+      personId: personId,
+      text: _string(json['text']) ?? '',
+      createdAt: _date(json['createdAt']) ?? DateTime.now(),
+      isAutomatic: _bool(json['isAutomatic']),
     );
   }
 
-  static MatchNote _matchNoteFromJson(Map<String, dynamic> json) {
+  static MatchNote? _matchNoteFromJson(Map<String, dynamic> json) {
+    final String? id = _string(json['id']);
+    final String? matchId = _string(json['matchId']);
+    if (id == null || matchId == null) {
+      return null;
+    }
+
     return MatchNote(
-      id: json['id'] as String,
-      matchId: json['matchId'] as String,
-      text: json['text'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      isAutomatic: json['isAutomatic'] as bool? ?? false,
+      id: id,
+      matchId: matchId,
+      text: _string(json['text']) ?? '',
+      createdAt: _date(json['createdAt']) ?? DateTime.now(),
+      isAutomatic: _bool(json['isAutomatic']),
     );
   }
 
-  static DateTime? _parseNullableDate(Object? value) {
-    final String? rawValue = value as String?;
-    if (rawValue == null || rawValue.isEmpty) {
+  // --- Lenient parsing helpers -------------------------------------------
+
+  /// Runs a record parser, turning any unexpected failure into a skipped
+  /// record (null) instead of aborting the whole import.
+  static T? _tryParse<T>(T? Function() parse) {
+    try {
+      return parse();
+    } catch (error, stackTrace) {
+      debugPrint('BackupService: skipped a record: $error\n$stackTrace');
       return null;
     }
-
-    return DateTime.parse(rawValue);
   }
 
-  static ReligiousLevel? _parseNullableReligiousLevel(Object? value) {
-    final String? rawValue = value as String?;
-    if (rawValue == null || rawValue.isEmpty) {
+  /// Coerces a decoded JSON list into a list of string-keyed maps, ignoring any
+  /// non-map entries. Missing/!list values yield an empty list.
+  static Iterable<Map<String, dynamic>> _records(Object? value) {
+    if (value is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+    return value.whereType<Map<String, dynamic>>();
+  }
+
+  static String? _string(Object? value) {
+    if (value is String) {
+      return value.isEmpty ? null : value;
+    }
+    return null;
+  }
+
+  static int? _int(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
+  }
+
+  static bool _bool(Object? value, {bool fallback = false}) {
+    if (value is bool) {
+      return value;
+    }
+    return fallback;
+  }
+
+  static DateTime? _date(Object? value) {
+    if (value is! String || value.isEmpty) {
       return null;
     }
-
-    return ReligiousLevel.values.byName(rawValue);
+    return DateTime.tryParse(value);
   }
 
-  static ProfileStatus _parseProfileStatus(Object? value) {
-    final String? rawValue = value as String?;
-    if (rawValue == null || rawValue.isEmpty) {
-      return ProfileStatus.available;
+  /// Matches an enum by its [Enum.name]; unknown values return null instead of
+  /// throwing (which is what `values.byName` does).
+  static T? _enumByName<T extends Enum>(List<T> values, Object? raw) {
+    if (raw is! String || raw.isEmpty) {
+      return null;
     }
-    return ProfileStatus.values.byName(rawValue);
+    for (final T value in values) {
+      if (value.name == raw) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  static int? _ageFromLegacyBirthDate(Object? value) {
+    final DateTime? birthDate = _date(value);
+    return birthDate == null ? null : AppDateUtils.calculateAge(birthDate);
   }
 
   static List<String> _parsePhotos(Map<String, dynamic> json) {
-    final List<dynamic> rawPhotos =
-        (json['photos'] ?? json['photosPaths']) as List<dynamic>? ??
-        <dynamic>[];
-    return rawPhotos.map((dynamic item) => item as String).toList();
+    final Object? raw = json['photos'] ?? json['photosPaths'];
+    if (raw is! List) {
+      return <String>[];
+    }
+    return raw.whereType<String>().toList();
   }
 }
 
