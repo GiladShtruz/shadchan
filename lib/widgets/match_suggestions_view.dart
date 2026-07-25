@@ -239,8 +239,15 @@ class _MatchSuggestionsViewState extends State<MatchSuggestionsView> {
         (candidateAge == null || candidateAge > filters.maxAge!)) {
       return false;
     }
-    if (filters.religiousLevels.isNotEmpty &&
-        !filters.religiousLevels.contains(candidate.religiousLevel)) {
+    final bool hasReligiousFilter =
+        filters.religiousLevels.isNotEmpty ||
+        filters.religiousLevelOtherLabels.isNotEmpty;
+    if (hasReligiousFilter &&
+        !filters.religiousLevels.contains(candidate.religiousLevel) &&
+        !(candidate.religiousLevel == ReligiousLevel.other &&
+            filters.religiousLevelOtherLabels.contains(
+              candidate.religiousLevelOther?.trim(),
+            ))) {
       return false;
     }
     if (filters.profileStatuses.isNotEmpty &&
@@ -489,7 +496,7 @@ class _SuggestionCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _RoundIconButton(
-                icon: Icons.add,
+                icon: Icons.favorite_outline,
                 tooltip: 'פתיחת הצעה',
                 background: theme.colorScheme.primary,
                 foreground: theme.colorScheme.onPrimary,

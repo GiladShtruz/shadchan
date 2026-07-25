@@ -147,8 +147,8 @@ abstract final class ContactsImportService {
     }
 
     final Set<String> existingPhones = personRepository.getNormalizedPhones();
-    final Set<String> hiddenPhones =
-        personRepository.getHiddenNormalizedPhones();
+    final Set<String> hiddenPhones = personRepository
+        .getHiddenNormalizedPhones();
     final List<ContactImportCandidate> candidates = rawCandidates
         .map(
           (Object? rawCandidate) =>
@@ -166,8 +166,8 @@ abstract final class ContactsImportService {
     void Function(ContactImportLoadProgress progress)? onProgress,
   }) async {
     final Set<String> existingPhones = personRepository.getNormalizedPhones();
-    final Set<String> hiddenPhones =
-        personRepository.getHiddenNormalizedPhones();
+    final Set<String> hiddenPhones = personRepository
+        .getHiddenNormalizedPhones();
     final List<Contact> contacts = await FlutterContacts.getAll(
       properties: <ContactProperty>{
         ContactProperty.name,
@@ -343,6 +343,47 @@ abstract final class ContactsImportService {
 
     await personRepository.addImported(person);
     await personRepository.finishImport();
+    return person;
+  }
+
+  /// Creates or reuses a hidden draft. The contact only becomes part of the
+  /// visible database after [PersonRepository.activatePendingContactDraft].
+  static Future<Person?> stageSingleCandidate(
+    ContactImportCandidate candidate,
+    PersonRepository personRepository, {
+    Gender gender = Gender.unknown,
+    String source = 'סריקה',
+  }) async {
+    final Person? existing = personRepository.findByPhone(candidate.phone);
+    if (existing != null) {
+      if (!existing.hidden) {
+        return null;
+      }
+      existing
+        ..needsReview = true
+        ..source = source;
+      await personRepository.savePendingContactDraft(existing);
+      return existing;
+    }
+
+    final ({String firstName, String lastName}) parsedName = splitDisplayName(
+      candidate.displayName,
+    );
+    final DateTime now = DateTime.now();
+    final Person person = Person(
+      id: _uuid.v4(),
+      firstName: parsedName.firstName,
+      lastName: parsedName.lastName,
+      gender: gender,
+      phone: candidate.phone.trim(),
+      source: source,
+      createdAt: now,
+      updatedAt: now,
+      needsReview: true,
+      hidden: true,
+    );
+
+    await personRepository.savePendingContactDraft(person);
     return person;
   }
 

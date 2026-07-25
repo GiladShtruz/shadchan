@@ -12,6 +12,7 @@ import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -49,6 +50,7 @@ Future<void> _bootstrap() async {
 
   await Hive.openBox<Person>('people');
   await Hive.openBox<PersonNote>('person_notes');
+  await Hive.openBox<PersonEvent>('person_events');
   await Hive.openBox<MatchIdea>('matches');
   await Hive.openBox<MatchNote>('match_notes');
   await Hive.openBox<dynamic>('settings');
@@ -73,6 +75,7 @@ Widget _buildApp() {
         create: (_) => PersonRepository(
           Hive.box<Person>('people'),
           Hive.box<PersonNote>('person_notes'),
+          Hive.box<PersonEvent>('person_events'),
         ),
       ),
       ChangeNotifierProvider<MatchRepository>(
@@ -93,8 +96,7 @@ Widget _buildApp() {
             ..resolvePerson = personRepository.getById
             ..markPersonBusy = ((String personId) => personRepository
                 .updateProfileStatus(personId, ProfileStatus.busy))
-            ..addPersonHistoryNote = ((String personId, String text) =>
-                personRepository.addNote(personId, text, isAutomatic: true));
+            ..logPersonEvent = personRepository.logEvent;
           return matchRepository;
         },
       ),
@@ -204,6 +206,12 @@ void _registerAdapters() {
   }
   if (!Hive.isAdapterRegistered(10)) {
     Hive.registerAdapter(MatchProgressAdapter());
+  }
+  if (!Hive.isAdapterRegistered(12)) {
+    Hive.registerAdapter(PersonEventAdapter());
+  }
+  if (!Hive.isAdapterRegistered(13)) {
+    Hive.registerAdapter(PersonEventTypeAdapter());
   }
   if (!Hive.isAdapterRegistered(11)) {
     Hive.registerAdapter(MatchContactAdapter());

@@ -48,13 +48,14 @@ class PersonAdapter extends TypeAdapter<Person> {
       isFavorite: fields[12] == null ? false : fields[12] as bool,
       needsReview: fields[20] == null ? false : fields[20] as bool,
       hidden: fields[23] == null ? false : fields[23] as bool,
+      avatarIndex: fields[28] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(28)
+      ..writeByte(29)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -110,7 +111,9 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..writeByte(25)
       ..write(obj.heightCm)
       ..writeByte(26)
-      ..write(obj.maritalStatus);
+      ..write(obj.maritalStatus)
+      ..writeByte(28)
+      ..write(obj.avatarIndex);
   }
 
   @override

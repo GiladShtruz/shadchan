@@ -1,7 +1,7 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.18+28
+version: 1.0.18+29
 
 environment:
   sdk: ^3.11.0
@@ -62,6 +62,8 @@ flutter:
   assets:
     - assets/icon3.png
     - assets/match_icon.png
+    - assets/male_pic/
+    - assets/female_pic/
   fonts:
     - family: Google Sans
       fonts:

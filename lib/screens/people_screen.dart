@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
+import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -40,6 +41,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   Gender? _selectedGender;
   RangeValues? _selectedAgeRange;
   List<ReligiousLevel> _selectedReligiousLevels = <ReligiousLevel>[];
+  List<String> _selectedReligiousLevelOtherLabels = <String>[];
   List<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>[];
   RangeValues? _selectedHeightRange;
   List<MaritalStatus> _selectedMaritalStatuses = <MaritalStatus>[];
@@ -74,7 +76,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final ThemeData theme = Theme.of(context);
     final PersonRepository personRepository = context.watch<PersonRepository>();
 
-    final int totalCount = personRepository.count;
+    final int totalCount = personRepository.databaseCount;
+    final List<Person> pendingContactDrafts = personRepository
+        .getPendingContactDrafts();
     final List<Person> visiblePeople = _getVisiblePeople(personRepository);
 
     return Scaffold(
@@ -102,6 +106,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
               context: context,
               theme: theme,
               totalCount: totalCount,
+              pendingContactDrafts: pendingContactDrafts,
               visiblePeople: visiblePeople,
             ),
           ),
@@ -153,14 +158,26 @@ class _PeopleScreenState extends State<PeopleScreen> {
     required BuildContext context,
     required ThemeData theme,
     required int totalCount,
+    required List<Person> pendingContactDrafts,
     required List<Person> visiblePeople,
   }) {
-    if (totalCount == 0) {
+    if (totalCount == 0 && pendingContactDrafts.isEmpty) {
       return _buildEmptyPeopleState(context, theme);
     }
 
     return CustomScrollView(
       slivers: <Widget>[
+        if (pendingContactDrafts.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: _PendingContactDraftsBanner(
+                count: pendingContactDrafts.length,
+                onTap: () =>
+                    _completePendingContactDrafts(pendingContactDrafts),
+              ),
+            ),
+          ),
         if (_hasActiveFilters)
           SliverToBoxAdapter(
             child: Padding(
@@ -175,12 +192,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
           ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: _MembersBanner(count: totalCount),
+        if (totalCount > 0)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: _MembersBanner(count: totalCount),
+            ),
           ),
-        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -214,8 +232,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   person: person,
                   onTap: () => context.push('/people/${person.id}'),
                   onLongPress: () => _showPersonActions(context, person),
-                  onToggleFavorite: () =>
-                      context.read<PersonRepository>().toggleFavorite(person.id),
+                  onToggleFavorite: () => context
+                      .read<PersonRepository>()
+                      .toggleFavorite(person.id),
                   onOpenMatches: () => _openMatchSuggestions(context, person),
                   onOpenWhatsApp: () => _openWhatsApp(context, person),
                 );
@@ -231,6 +250,41 @@ class _PeopleScreenState extends State<PeopleScreen> {
     Person person,
   ) async {
     await MatchSuggestionFlow.open(context, sourcePerson: person);
+  }
+
+  Future<void> _completePendingContactDrafts(
+    List<Person> pendingContactDrafts,
+  ) async {
+    final PersonRepository repository = context.read<PersonRepository>();
+    final List<Person> drafts = List<Person>.from(pendingContactDrafts);
+
+    for (int index = 0; index < drafts.length; index++) {
+      if (!mounted) {
+        return;
+      }
+      final Person person = drafts[index];
+      final bool confirmed = await QuickUpdateDialog.show(
+        context,
+        person,
+        stepIndex: index + 1,
+        stepCount: drafts.length,
+      );
+      if (!mounted || !confirmed) {
+        return;
+      }
+      try {
+        await repository.activatePendingContactDraft(person);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(content: Text('לא הצלחנו לשמור את הפרטים')),
+            );
+        }
+        return;
+      }
+    }
   }
 
   Future<void> _openWhatsApp(BuildContext context, Person person) async {
@@ -322,6 +376,22 @@ class _PeopleScreenState extends State<PeopleScreen> {
       );
     }
 
+    for (final String label in _selectedReligiousLevelOtherLabels) {
+      chips.add(
+        InputChip(
+          label: Text(label),
+          onDeleted: () {
+            setState(() {
+              _selectedReligiousLevelOtherLabels =
+                  _selectedReligiousLevelOtherLabels
+                      .where((String item) => item != label)
+                      .toList();
+            });
+          },
+        ),
+      );
+    }
+
     for (final ProfileStatus status in _selectedProfileStatuses) {
       chips.add(
         InputChip(
@@ -388,6 +458,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
       minAge: ageRange?.start.round(),
       maxAge: ageRange?.end.round(),
       religiousLevels: _selectedReligiousLevels,
+      religiousLevelOtherLabels: _selectedReligiousLevelOtherLabels,
       profileStatuses: _selectedProfileStatuses,
       // Contacts still waiting for an update are part of the general list too.
       includePending: true,
@@ -554,7 +625,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   Future<void> _openFiltersSheet() async {
     final PersonRepository repository = context.read<PersonRepository>();
     final ({int min, int max})? bounds = repository.activeAgeBounds;
-    final ({int min, int max})? heightBounds = _heightBounds(repository);
+    const ({int min, int max}) heightBounds = (min: 120, max: 200);
     final PeopleFilterState? result =
         await showModalBottomSheet<PeopleFilterState>(
           context: context,
@@ -569,6 +640,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
               initialAgeRange: _selectedAgeRange,
               ageBounds: bounds,
               initialReligiousLevels: _selectedReligiousLevels,
+              initialReligiousLevelOtherLabels:
+                  _selectedReligiousLevelOtherLabels,
               initialProfileStatuses: _selectedProfileStatuses,
               initialHeightRange: _selectedHeightRange,
               heightBounds: heightBounds,
@@ -585,27 +658,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
       _selectedGender = result.gender;
       _selectedAgeRange = result.ageRange;
       _selectedReligiousLevels = result.religiousLevels;
+      _selectedReligiousLevelOtherLabels = result.religiousLevelOtherLabels;
       _selectedProfileStatuses = result.profileStatuses;
       _selectedHeightRange = result.heightRange;
       _selectedMaritalStatuses = result.maritalStatuses;
     });
-  }
-
-  /// Min/max recorded height, used to size the filter slider. Null when nobody
-  /// has a height yet, which hides the slider.
-  ({int min, int max})? _heightBounds(PersonRepository repository) {
-    final List<int> heights = repository
-        .getAll()
-        .where((Person person) => !person.hidden && person.heightCm != null)
-        .map((Person person) => person.heightCm!)
-        .toList();
-    if (heights.isEmpty) {
-      return null;
-    }
-    return (
-      min: heights.reduce((int a, int b) => a < b ? a : b),
-      max: heights.reduce((int a, int b) => a > b ? a : b),
-    );
   }
 
   Future<void> _showPersonActions(BuildContext context, Person person) async {
@@ -686,6 +743,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   bool get _hasActiveFilters {
     return _selectedAgeRange != null ||
         _selectedReligiousLevels.isNotEmpty ||
+        _selectedReligiousLevelOtherLabels.isNotEmpty ||
         _selectedProfileStatuses.isNotEmpty ||
         _selectedHeightRange != null ||
         _selectedMaritalStatuses.isNotEmpty;
@@ -698,9 +756,66 @@ class _PeopleScreenState extends State<PeopleScreen> {
   void _resetFilters() {
     _selectedAgeRange = null;
     _selectedReligiousLevels = <ReligiousLevel>[];
+    _selectedReligiousLevelOtherLabels = <String>[];
     _selectedProfileStatuses = <ProfileStatus>[];
     _selectedHeightRange = null;
     _selectedMaritalStatuses = <MaritalStatus>[];
+  }
+}
+
+class _PendingContactDraftsBanner extends StatelessWidget {
+  const _PendingContactDraftsBanner({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.pending_actions_outlined,
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'מחכה למילוי פרטים שלך',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$count אנשי קשר ייכנסו למאגר רק לאחר השלמת הפרטים',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(onPressed: onTap, child: const Text('מילוי פרטים')),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

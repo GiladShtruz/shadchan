@@ -18,11 +18,14 @@ import 'package:shadchan/widgets/religious_level_picker.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
+import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/section_header.dart';
@@ -41,12 +44,7 @@ class PersonDetailScreen extends StatefulWidget {
   State<PersonDetailScreen> createState() => _PersonDetailScreenState();
 }
 
-class _PersonDetailScreenState extends State<PersonDetailScreen>
-    with TickerProviderStateMixin {
-  late final TabController _tabController = TabController(
-    length: 2,
-    vsync: this,
-  );
+class _PersonDetailScreenState extends State<PersonDetailScreen> {
   final ScrollController _scrollController = ScrollController();
 
   /// Whether the profile header was scrolled away, so the AppBar shows a
@@ -72,7 +70,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -148,70 +145,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     final List<MatchIdea> relatedMatches = matchRepository.getByPersonId(
       widget.personId,
     );
-    final MatchProposalFilters? savedSuggestionFilters =
-        MatchProposalFilterSheet.savedFiltersFor(person.id);
-    final List<Person> matchingCandidates = personRepository
-        .getAll()
-        .where(
-          (Person candidate) => _matchesSuggestionFilters(
-            source: person,
-            candidate: candidate,
-            filters: savedSuggestionFilters,
-          ),
-        )
-        .toList();
-    // Order the suggestions in tiers, preserving relative order within each:
-    // candidates that already have an open/בהמתנה proposal with this person
-    // come first, then the remaining active suggestions, then candidates the
-    // user soft-dismissed (לא מתאים — pushed to the end of the list), and
-    // finally candidates whose opened proposal was rejected.
-    final Set<String> dismissedIds = SuggestionDismissals.dismissedFor(
-      person.id,
-    );
-    final List<Person> prioritizedSuggestions = <Person>[];
-    final List<Person> activeSuggestions = <Person>[];
-    final List<Person> dismissedSuggestions = <Person>[];
-    final List<Person> rejectedSuggestions = <Person>[];
-    for (final Person candidate in matchingCandidates) {
-      final MatchIdea? existingMatch = matchRepository.findExisting(
-        person.id,
-        candidate.id,
-      );
-      final MatchStatus? existingStatus = existingMatch?.status;
-      if (existingStatus == MatchStatus.rejected) {
-        rejectedSuggestions.add(candidate);
-      } else if (existingStatus == MatchStatus.idea ||
-          existingStatus == MatchStatus.checking ||
-          existingStatus == MatchStatus.unavailable) {
-        prioritizedSuggestions.add(candidate);
-      } else if (dismissedIds.contains(candidate.id)) {
-        dismissedSuggestions.add(candidate);
-      } else {
-        activeSuggestions.add(candidate);
-      }
-    }
-    // Within each tier, candidates that pause matches (תפוס/בהפסקה) drop
-    // after the available ones.
-    List<Person> availableFirst(List<Person> people) => <Person>[
-      ...people.where((Person p) => !p.profileStatus.pausesMatches),
-      ...people.where((Person p) => p.profileStatus.pausesMatches),
-    ];
-    final List<Person> suggestedPeople = <Person>[
-      ...availableFirst(prioritizedSuggestions),
-      ...availableFirst(activeSuggestions),
-      ...availableFirst(dismissedSuggestions),
-      ...availableFirst(rejectedSuggestions),
-    ];
     final List<MatchIdea> openMatches = relatedMatches
         .where((MatchIdea match) => !match.status.isArchived)
-        .toList();
-    final List<MatchIdea> rejectedMatches = relatedMatches
-        .where((MatchIdea match) => match.status == MatchStatus.rejected)
         .toList();
     final List<PersonNote> personNotes = personRepository.getNotesForPerson(
       person.id,
     );
-    final int personNotesCount = _personNotesCount(person, personNotes);
+    final List<PersonEvent> personEvents = personRepository.getEventsForPerson(
+      person.id,
+    );
 
     return Scaffold(
       backgroundColor: _profileCanvasColor(theme),
@@ -231,24 +173,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
           ),
         ),
         actions: <Widget>[
-          IconButton(
-            icon: const FaIcon(FontAwesomeIcons.whatsapp),
-            tooltip: 'וואטסאפ',
-            onPressed: () => _openWhatsAppMessage(context, person),
-          ),
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            tooltip: 'שיתוף',
-            onPressed: () => _sharePerson(context, person),
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'עריכת כרטיס',
-            onPressed: () => _openCardEditPage(context),
-          ),
           PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
             onSelected: (String value) async {
               switch (value) {
+                case 'edit':
+                  await _openCardEditPage(context);
+                case 'share':
+                  await _sharePerson(context, person);
                 case 'shareContact':
                   await _shareInquiryContact(context, person);
                 case 'whatsappContact':
@@ -279,7 +211,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                 person,
               ).isNotEmpty;
               return <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'edit',
+                  child: Text('עריכת כרטיס'),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'share',
+                  child: Text('שיתוף כרטיס'),
+                ),
                 if (hasContact) ...<PopupMenuEntry<String>>[
+                  const PopupMenuDivider(),
                   const PopupMenuItem<String>(
                     value: 'shareContact',
                     child: Text('שיתוף פרטי איש הקשר'),
@@ -288,8 +229,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
                     value: 'whatsappContact',
                     child: Text('וואטסאפ לאיש הקשר'),
                   ),
-                  const PopupMenuDivider(),
                 ],
+                const PopupMenuDivider(),
                 const PopupMenuItem<String>(
                   value: 'delete',
                   child: Text('מחיקת כרטיס'),
@@ -299,64 +240,44 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
           ),
         ],
       ),
-      body: NestedScrollView(
-        controller: _scrollController,
-        headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) =>
-            <Widget>[
-              SliverToBoxAdapter(
-                child: _ProfileSummaryHeader(
-                  person: person,
-                  onAvatarTap: () => _openCardViewPage(context),
-                  onStatusChanged: (ProfileStatus status) =>
-                      personRepository.updateProfileStatus(person.id, status),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _PersonNotesButton(
-                  noteCount: personNotesCount,
-                  onPressed: () => _openPersonNotes(context, person),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _AddProposalButton(
-                  onPressed: () => _openAddProposal(context, person),
-                ),
-              ),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _PinnedTabBarDelegate(
-                  backgroundColor: _profileCanvasColor(theme),
-                  tabBar: TabBar(
-                    controller: _tabController,
-                    dividerColor: Colors.transparent,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    tabs: const <Widget>[
-                      Tab(text: 'התאמות'),
-                      Tab(text: 'הצעות'),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-        body: TabBarView(
-          controller: _tabController,
+      // This profile-only action bar is not the app's primary navigation;
+      // WhatsApp / +הצעה / התאמות remain available on the card itself.
+      bottomNavigationBar: _ProfileActionBar(
+        onWhatsApp: () => _openWhatsAppMessage(context, person),
+        onAddProposal: () => _openAddProposal(context, person),
+        onMatches: () => _openSuggestions(context, person),
+      ),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          controller: _scrollController,
+          padding: const EdgeInsets.only(bottom: 20),
           children: <Widget>[
-            _SuggestedMatchesTab(
-              sourcePerson: person,
-              suggestedPeople: suggestedPeople,
-              matchRepository: matchRepository,
-              hasCustomFilters: savedSuggestionFilters != null,
-              onFilterPressed: () => _openSuggestionFilters(context, person),
-              onAccept: (Person candidate) =>
-                  _acceptSuggestion(context, person, candidate),
-              onReject: (Person candidate) =>
-                  _rejectSuggestion(context, person, candidate),
+            _ProfileSummaryHeader(
+              person: person,
+              onAvatarTap: () => _openCardViewPage(context),
+              onStatusChanged: (ProfileStatus status) =>
+                  _changeProfileStatus(context, person, status),
             ),
-            _ProposalsTab(
+            _WhatsAppCardSection(
+              person: person,
+              onOpenFull: () => _openCardViewPage(context),
+              onRequestDetails: () => _requestDetails(context, person),
+              onEditMessage: () => _editDetailsMessage(context, person),
+            ),
+            _PersonalNotesCard(
+              person: person,
+              notes: personNotes,
+              onShowAll: () => _openPersonNotes(context, person),
+            ),
+            _OpenProposalsSection(
               person: person,
               openMatches: openMatches,
-              rejectedMatches: rejectedMatches,
               personRepository: personRepository,
+            ),
+            _HistorySection(
+              events: personEvents,
+              onShowAll: () => _openPersonHistory(context, person),
             ),
           ],
         ),
@@ -364,167 +285,102 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     );
   }
 
-  bool _matchesSuggestionFilters({
-    required Person source,
-    required Person candidate,
-    required MatchProposalFilters? filters,
-  }) {
-    if (filters == null) {
-      return MatchSuggestionUtils.isSuggestedCandidate(
-        source: source,
-        candidate: candidate,
-      );
-    }
-
-    if (!MatchSuggestionUtils.isEligibleCandidate(
-      source: source,
-      candidate: candidate,
-    )) {
-      return false;
-    }
-
-    final int? candidateAge = candidate.age;
-    if (filters.minAge != null &&
-        (candidateAge == null || candidateAge < filters.minAge!)) {
-      return false;
-    }
-    if (filters.maxAge != null &&
-        (candidateAge == null || candidateAge > filters.maxAge!)) {
-      return false;
-    }
-
-    if (filters.religiousLevels.isNotEmpty &&
-        !filters.religiousLevels.contains(candidate.religiousLevel)) {
-      return false;
-    }
-
-    if (filters.profileStatuses.isNotEmpty &&
-        !filters.profileStatuses.contains(candidate.profileStatus)) {
-      return false;
-    }
-
-    return true;
-  }
-
-  Future<void> _openSuggestionFilters(
-    BuildContext context,
-    Person sourcePerson,
-  ) async {
-    if (sourcePerson.gender == Gender.unknown) {
-      _showSnackBar(context, 'יש לבחור מגדר לפני סינון התאמות');
-      return;
-    }
-
-    final Gender targetGender = sourcePerson.gender == Gender.male
-        ? Gender.female
-        : Gender.male;
-
-    final MatchProposalFilters? filters = await MatchProposalFilterSheet.show(
-      context,
-      targetGender: targetGender,
-      sourcePersonId: sourcePerson.id,
-      initialFilters: _defaultSuggestionFilters(sourcePerson),
-    );
-
-    if (filters != null && mounted) {
-      setState(() {});
-    }
-  }
-
-  MatchProposalFilters _defaultSuggestionFilters(Person sourcePerson) {
-    final ({int minAge, int maxAge})? femaleAgeRange =
-        sourcePerson.gender == Gender.male
-        ? MatchSuggestionUtils.femaleAgeRangeForMale(sourcePerson.age)
-        : null;
-
-    return MatchProposalFilters(
-      minAge: femaleAgeRange?.minAge,
-      maxAge: femaleAgeRange?.maxAge,
-      religiousLevels: MatchSuggestionUtils.religiousLevelsFor(
-        sourcePerson.religiousLevel,
+  Future<void> _openPersonHistory(BuildContext context, Person person) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            _PersonHistoryPage(personId: person.id),
       ),
-      profileStatuses: const <ProfileStatus>[],
     );
   }
 
-  Future<void> _openSuggestedCandidate(
-    BuildContext context,
-    Person sourcePerson,
-    Person selectedPerson,
-  ) async {
-    final Person male = sourcePerson.gender == Gender.male
-        ? sourcePerson
-        : selectedPerson;
-    final Person female = sourcePerson.gender == Gender.female
-        ? sourcePerson
-        : selectedPerson;
-
-    final MatchRepository matchRepository = context.read<MatchRepository>();
-    final MatchIdea? existingMatch = matchRepository.findExisting(
-      male.id,
-      female.id,
+  Future<void> _openSuggestions(BuildContext context, Person person) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            _SuggestionsPage(personId: person.id),
+      ),
     );
+  }
 
-    if (existingMatch != null) {
-      context.push('/matches/${existingMatch.id}');
+  /// Changes the profile status. Putting someone on a break offers to set a
+  /// "check on them again" reminder; leaving a break clears any such reminder.
+  Future<void> _changeProfileStatus(
+    BuildContext context,
+    Person person,
+    ProfileStatus status,
+  ) async {
+    final PersonRepository personRepository = context.read<PersonRepository>();
+    await personRepository.updateProfileStatus(person.id, status);
+
+    if (status != ProfileStatus.onBreak) {
+      await personRepository.clearPersonReminder(person.id);
       return;
     }
 
-    final MatchIdea? newMatch = await matchRepository.create(
-      male.id,
-      female.id,
-    );
-    if (newMatch != null && context.mounted) {
-      context.push('/matches/${newMatch.id}?justCreated=true');
+    if (!context.mounted) {
+      return;
     }
-  }
 
-  Future<void> _acceptSuggestion(
-    BuildContext context,
-    Person sourcePerson,
-    Person candidate,
-  ) async {
-    final bool confirmed = await ConfirmDialog.show(
+    final String pronoun = person.gender == Gender.female ? 'איתה' : 'איתו';
+    final ReminderChoice? choice = await ReminderPickerSheet.show(
       context,
-      title: 'פתיחת הצעה',
-      message:
-          'האם לפתוח הצעה בין ${sourcePerson.fullName.trim()} '
-          'ל${candidate.fullName.trim()}?',
-      confirmText: 'פתיחה',
+      title: 'תרצה לבדוק מה $pronoun שוב בעוד?',
+      allowSkip: true,
+      intervalsBuilder: ReminderPickerSheet.breakIntervals,
     );
-    if (!confirmed || !context.mounted) {
-      return;
-    }
 
-    await _openSuggestedCandidate(context, sourcePerson, candidate);
+    final DateTime? date = choice?.date;
+    if (date != null) {
+      await personRepository.setPersonReminder(person.id, date);
+    }
   }
 
-  Future<void> _rejectSuggestion(
-    BuildContext context,
-    Person sourcePerson,
-    Person candidate,
-  ) async {
-    final bool confirmed = await ConfirmDialog.show(
-      context,
-      title: 'לא מתאים?',
-      message: 'ההתאמה תעבור לסוף הרשימה.',
-      confirmText: 'לא מתאים',
-      isDestructive: true,
-    );
-    if (!confirmed || !context.mounted) {
+  /// Opens WhatsApp with the request-details message pre-filled, and records
+  /// the outreach on the person's "last updated" stamp.
+  Future<void> _requestDetails(BuildContext context, Person person) async {
+    if (PhoneUtils.toWhatsAppNumber(person.phone) == null) {
+      _showSnackBar(context, 'אין מספר טלפון תקין לאיש הקשר');
       return;
     }
 
-    // Soft dismissal only: the candidate drops to the end of the suggestions
-    // list. No rejected proposal is created, so the pair never shows up under
-    // רעיונות שנשללו.
-    await SuggestionDismissals.dismiss(sourcePerson.id, candidate.id);
-    if (mounted) {
-      setState(() {});
+    final PersonRepository personRepository = context.read<PersonRepository>();
+    // Persist while the Flutter route is still fully active. Updating the
+    // provider after returning from an external-app transition could rebuild
+    // the root Navigator while its overlay was being deactivated.
+    await personRepository.touch(person.id);
+    if (!context.mounted) {
+      return;
     }
 
-    if (context.mounted) {
-      _showSnackBar(context, 'ההתאמה הועברה לסוף הרשימה');
+    final bool launched = await WhatsAppUtils.openDetailsRequest(person);
+    if (!launched && context.mounted) {
+      _showSnackBar(context, 'לא הצלחנו לפתוח את WhatsApp');
+    }
+  }
+
+  /// A small editor for the fixed request-details wording. Saving overrides the
+  /// gendered default for everyone; clearing restores the default.
+  Future<void> _editDetailsMessage(BuildContext context, Person person) async {
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => DetailsMessageDialog(
+        initialMessage: WhatsAppUtils.currentDetailsRequestMessage(
+          person.gender,
+        ),
+        showReset: WhatsAppUtils.hasCustomDetailsRequestMessage(),
+      ),
+    );
+
+    if (result == null) {
+      return;
+    }
+    if (result == '__reset__') {
+      await WhatsAppUtils.resetDetailsRequestMessage();
+      return;
+    }
+    if (result.isNotEmpty) {
+      await WhatsAppUtils.saveDetailsRequestMessage(result);
     }
   }
 
@@ -622,8 +478,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
       return;
     }
 
+    final PersonRepository personRepository = context.read<PersonRepository>();
     final bool launched = await WhatsAppUtils.openChat(person);
-    if (!launched && context.mounted) {
+    if (launched) {
+      await personRepository.touch(person.id);
+    } else if (context.mounted) {
       _showSnackBar(context, 'לא הצלחנו לפתוח את וואטסאפ');
     }
   }
@@ -651,34 +510,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen>
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-}
-
-class _PinnedTabBarDelegate extends SliverPersistentHeaderDelegate {
-  _PinnedTabBarDelegate({required this.tabBar, required this.backgroundColor});
-
-  final TabBar tabBar;
-  final Color backgroundColor;
-
-  @override
-  double get minExtent => tabBar.preferredSize.height;
-
-  @override
-  double get maxExtent => tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Material(color: backgroundColor, child: tabBar);
-  }
-
-  @override
-  bool shouldRebuild(_PinnedTabBarDelegate oldDelegate) {
-    return tabBar != oldDelegate.tabBar ||
-        backgroundColor != oldDelegate.backgroundColor;
   }
 }
 
@@ -1029,6 +860,14 @@ class _ProfileSummaryHeader extends StatelessWidget {
                 status: person.profileStatus,
                 onStatusChanged: onStatusChanged,
               ),
+              const SizedBox(height: 10),
+              Text(
+                _relativeUpdatedLabel(person.updatedAt),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: _profileMutedColor(theme),
+                ),
+              ),
             ],
           ),
         ),
@@ -1037,43 +876,63 @@ class _ProfileSummaryHeader extends StatelessWidget {
   }
 }
 
-/// "הוסף הצעה" — the shortcut from a profile straight into a new idea.
-class _AddProposalButton extends StatelessWidget {
-  const _AddProposalButton({required this.onPressed});
+/// The persistent floating action bar over the app's bottom navigation:
+/// WhatsApp · +הצעה · התאמות. It renders as a rounded, slightly raised pill so
+/// it reads as floating rather than as a second navigation bar.
+class _ProfileActionBar extends StatelessWidget {
+  const _ProfileActionBar({
+    required this.onWhatsApp,
+    required this.onAddProposal,
+    required this.onMatches,
+  });
 
-  final VoidCallback onPressed;
+  final VoidCallback onWhatsApp;
+  final VoidCallback onAddProposal;
+  final VoidCallback onMatches;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color muted = _profileMutedColor(theme);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(22),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+    return Material(
+      color: _profileCanvasColor(theme),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           decoration: BoxDecoration(
             color: _profileSurfaceColor(theme),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: muted.withValues(alpha: 0.16)),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: _profileSoftShadow(theme),
+            border: Border.all(
+              color: _profileMutedColor(theme).withValues(alpha: 0.14),
+            ),
           ),
           child: Row(
             children: <Widget>[
-              Icon(Icons.favorite_border, color: muted, size: 20),
-              const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  'הוסף הצעה',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: _profileTextColor(theme),
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: _ProfileActionButton(
+                  icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 20),
+                  label: 'WhatsApp',
+                  onPressed: onWhatsApp,
                 ),
               ),
-              Icon(Icons.chevron_left, color: muted, size: 20),
+              _ActionBarDivider(theme: theme),
+              Expanded(
+                child: _ProfileActionButton(
+                  icon: const Icon(Icons.favorite_border, size: 20),
+                  label: 'הצעה',
+                  onPressed: onAddProposal,
+                ),
+              ),
+              _ActionBarDivider(theme: theme),
+              Expanded(
+                child: _ProfileActionButton(
+                  icon: const Icon(Icons.group_outlined, size: 20),
+                  label: 'התאמות',
+                  onPressed: onMatches,
+                ),
+              ),
             ],
           ),
         ),
@@ -1082,67 +941,380 @@ class _AddProposalButton extends StatelessWidget {
   }
 }
 
-class _PersonNotesButton extends StatelessWidget {
-  const _PersonNotesButton({required this.noteCount, required this.onPressed});
+class _ActionBarDivider extends StatelessWidget {
+  const _ActionBarDivider({required this.theme});
 
-  final int noteCount;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 26,
+      color: _profileMutedColor(theme).withValues(alpha: 0.14),
+    );
+  }
+}
+
+class _ProfileActionButton extends StatelessWidget {
+  const _ProfileActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final Widget icon;
+  final String label;
   final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = _profileTextColor(theme);
+
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            IconTheme(
+              data: IconThemeData(color: color),
+              child: icon,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The prominent, inline "הערות אישיות" card on the profile page. Each note is
+/// its own item; the matchmaker can add one inline, tap an item to edit or
+/// delete it, and open the full journal with "הצג הכל". A short preview keeps
+/// the section from taking over the page.
+class _PersonalNotesCard extends StatelessWidget {
+  const _PersonalNotesCard({
+    required this.person,
+    required this.notes,
+    required this.onShowAll,
+  });
+
+  final Person person;
+  final List<PersonNote> notes;
+  final VoidCallback onShowAll;
+
+  static const int _previewCount = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
+    final List<_PersonNoteEntry> entries = _entries();
+    final List<_PersonNoteEntry> preview = entries.take(_previewCount).toList();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+          color: _profileSurfaceColor(theme),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: muted.withValues(alpha: 0.14)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(Icons.notes_outlined, color: muted, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'הערות אישיות',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: _profileTextColor(theme),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (entries.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.brightness == Brightness.dark
+                          ? theme.colorScheme.surfaceContainerHighest
+                          : _profileBlushLight,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      entries.length.toString(),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.brightness == Brightness.dark
+                            ? theme.colorScheme.onSurfaceVariant
+                            : AppColors.primaryDark,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'הוספת הערה',
+                  visualDensity: VisualDensity.compact,
+                  color: muted,
+                  onPressed: () => _addNote(context),
+                ),
+              ],
+            ),
+            if (entries.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
+                child: Text(
+                  'רק לעיניך — עדיין אין הערות. הוסיפו משהו שתרצו לזכור.',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+                ),
+              )
+            else
+              for (final _PersonNoteEntry entry in preview)
+                _NotePreviewRow(
+                  entry: entry,
+                  onTap: () => _editNote(context, entry),
+                ),
+            if (entries.length > _previewCount)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: onShowAll,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text('הצג הכל (${entries.length})'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<_PersonNoteEntry> _entries() {
+    final List<_PersonNoteEntry> entries = notes.map((PersonNote note) {
+      return _PersonNoteEntry(
+        noteId: note.id,
+        text: note.text,
+        createdAt: note.createdAt,
+        isAutomatic: note.isAutomatic,
+      );
+    }).toList();
+
+    final String legacyNotes = (person.notes ?? '').trim();
+    if (legacyNotes.isNotEmpty) {
+      entries.add(
+        _PersonNoteEntry(
+          noteId: null,
+          text: legacyNotes,
+          createdAt: person.createdAt,
+          isAutomatic: false,
+        ),
+      );
+    }
+
+    // Newest first for the preview.
+    entries.sort(
+      (_PersonNoteEntry a, _PersonNoteEntry b) =>
+          b.createdAt.compareTo(a.createdAt),
+    );
+    return entries;
+  }
+
+  Future<void> _addNote(BuildContext context) async {
+    final PersonRepository repository = context.read<PersonRepository>();
+    final String? text = await _promptNoteText(context, title: 'הוספת הערה');
+    final String trimmed = (text ?? '').trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    await repository.addNote(person.id, trimmed);
+  }
+
+  Future<void> _editNote(BuildContext context, _PersonNoteEntry entry) async {
+    if (entry.isAutomatic) {
+      // Automatic notes are a log line, not something the user hand-edits.
+      return;
+    }
+    final PersonRepository repository = context.read<PersonRepository>();
+    final _NoteEditResult? result = await showDialog<_NoteEditResult>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final TextEditingController controller = TextEditingController(
+          text: entry.text,
+        );
+        return AlertDialog(
+          title: const Text('עריכת הערה'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 2,
+            maxLines: 6,
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(const _NoteEditResult.delete()),
+              child: Text(
+                'מחיקה',
+                style: TextStyle(
+                  color: Theme.of(dialogContext).colorScheme.error,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(_NoteEditResult.save(controller.text.trim())),
+              child: const Text('שמירה'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    if (result.delete) {
+      if (entry.noteId != null) {
+        await repository.deleteNote(entry.noteId!);
+      } else {
+        person.notes = null;
+        await repository.update(person);
+      }
+      return;
+    }
+
+    final String trimmed = result.text.trim();
+    if (trimmed.isEmpty || trimmed == entry.text) {
+      return;
+    }
+    if (entry.noteId != null) {
+      await repository.updateNote(entry.noteId!, trimmed);
+    } else {
+      person.notes = trimmed;
+      await repository.update(person);
+    }
+  }
+
+  Future<String?> _promptNoteText(
+    BuildContext context, {
+    required String title,
+  }) {
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final TextEditingController controller = TextEditingController();
+        return AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 2,
+            maxLines: 6,
+            decoration: const InputDecoration(hintText: 'משהו שתרצו לזכור...'),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('הוספה'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Result of the inline note editor: either a saved text or a delete request.
+class _NoteEditResult {
+  const _NoteEditResult.save(this.text) : delete = false;
+  const _NoteEditResult.delete() : text = '', delete = true;
+
+  final String text;
+  final bool delete;
+}
+
+/// A single compact note item in the inline preview.
+class _NotePreviewRow extends StatelessWidget {
+  const _NotePreviewRow({required this.entry, required this.onTap});
+
+  final _PersonNoteEntry entry;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color muted = _profileMutedColor(theme);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(22),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-          decoration: BoxDecoration(
-            color: _profileSurfaceColor(theme),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: muted.withValues(alpha: 0.16)),
-          ),
-          child: Row(
-            children: <Widget>[
-              Icon(Icons.notes_outlined, color: muted, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'הערות אישיות',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: _profileTextColor(theme),
-                    fontWeight: FontWeight.w800,
-                  ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Icon(
+                entry.isAutomatic ? Icons.auto_awesome_outlined : Icons.circle,
+                size: entry.isAutomatic ? 14 : 7,
+                color: muted,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                entry.text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: entry.isAutomatic ? muted : _profileTextColor(theme),
+                  fontStyle: entry.isAutomatic
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                  height: 1.4,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.brightness == Brightness.dark
-                      ? theme.colorScheme.surfaceContainerHighest
-                      : _profileBlushLight,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  noteCount > 0 ? noteCount.toString() : 'רק לעיניך',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.brightness == Brightness.dark
-                        ? theme.colorScheme.onSurfaceVariant
-                        : AppColors.primaryDark,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_left, color: muted),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1246,89 +1418,976 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
   }
 }
 
-/// The הצעות tab: proposals that were actually opened for this person —
-/// open ideas first, and separately ideas that were opened and rejected.
-/// Suggestions dismissed before a proposal was opened do not appear here.
-class _ProposalsTab extends StatelessWidget {
-  const _ProposalsTab({
+/// Inline preview of the person's WhatsApp send-card: the first few lines of
+/// the card text with "הצג כרטיס מלא", or a "חסר כרטיס" prompt when there is no
+/// card yet. Editing the card text itself happens only on the edit page.
+class _WhatsAppCardSection extends StatelessWidget {
+  const _WhatsAppCardSection({
+    required this.person,
+    required this.onOpenFull,
+    required this.onRequestDetails,
+    required this.onEditMessage,
+  });
+
+  final Person person;
+  final VoidCallback onOpenFull;
+  final VoidCallback onRequestDetails;
+  final VoidCallback onEditMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String description = (person.description ?? '').trim();
+    final bool hasCard = description.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: _profileSurfaceColor(theme),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: _profileMutedColor(theme).withValues(alpha: 0.14),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FaIcon(
+                  FontAwesomeIcons.whatsapp,
+                  size: 18,
+                  color: _profileMutedColor(theme),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'הכרטיס שלו',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: _profileTextColor(theme),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (hasCard) ...<Widget>[
+              Text(
+                description,
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: _profileTextColor(theme),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: onOpenFull,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('הצג כרטיס מלא'),
+                ),
+              ),
+            ] else ...<Widget>[
+              Text(
+                'אין עדיין כרטיס מלא או תמונה — רק פרטים בסיסיים.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: _profileMutedColor(theme),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    onPressed: onRequestDetails,
+                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
+                    label: const Text('בקש פרטים ב-WhatsApp'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _profileTextColor(theme),
+                      side: BorderSide(
+                        color: _profileMutedColor(theme).withValues(alpha: 0.2),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: onEditMessage,
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('עריכת נוסח'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: _profileMutedColor(theme),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The inline "הצעות פתוחות" section on the profile page: every open proposal
+/// for this person, newest first, tapping a row opens the proposal.
+class _OpenProposalsSection extends StatelessWidget {
+  const _OpenProposalsSection({
     required this.person,
     required this.openMatches,
-    required this.rejectedMatches,
     required this.personRepository,
   });
 
   final Person person;
   final List<MatchIdea> openMatches;
-  final List<MatchIdea> rejectedMatches;
   final PersonRepository personRepository;
 
   @override
   Widget build(BuildContext context) {
-    if (openMatches.isEmpty && rejectedMatches.isEmpty) {
-      return const _TabEmptyState(
-        icon: Icons.lightbulb_outline,
-        title: 'אין הצעות עדיין',
-        subtitle: 'הצעות שנפתחות מתוך ההתאמות יופיעו כאן',
-      );
+    if (openMatches.isEmpty) {
+      return const SizedBox.shrink();
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 32),
-      children: <Widget>[
-        if (openMatches.isNotEmpty)
-          _MatchesGroup(
-            title: 'רעיונות פתוחים',
-            person: person,
-            matches: openMatches,
-            personRepository: personRepository,
+    final ThemeData theme = Theme.of(context);
+    final List<MatchIdea> ordered = List<MatchIdea>.from(openMatches)
+      ..sort((MatchIdea a, MatchIdea b) => b.updatedAt.compareTo(a.updatedAt));
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+            child: Text(
+              'הצעות פתוחות (${ordered.length})',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: _profileTextColor(theme),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
-        if (rejectedMatches.isNotEmpty)
-          _MatchesGroup(
-            title: 'רעיונות שנשללו',
-            person: person,
-            matches: rejectedMatches,
-            personRepository: personRepository,
-          ),
-      ],
+          for (final MatchIdea match in ordered)
+            _OpenProposalRow(
+              match: match,
+              person: person,
+              otherPerson: personRepository.getById(
+                match.personAId == person.id
+                    ? match.personBId
+                    : match.personAId,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
 
-class _MatchesGroup extends StatelessWidget {
-  const _MatchesGroup({
-    required this.title,
+/// One row in "הצעות פתוחות": the other side's name, the proposal status, how
+/// long it has gone without an update, and a WhatsApp shortcut for each side.
+/// Tapping the row (anywhere but the WhatsApp chips) opens the proposal.
+class _OpenProposalRow extends StatelessWidget {
+  const _OpenProposalRow({
+    required this.match,
     required this.person,
-    required this.matches,
-    required this.personRepository,
+    required this.otherPerson,
   });
 
-  final String title;
+  final MatchIdea match;
   final Person person;
-  final List<MatchIdea> matches;
-  final PersonRepository personRepository;
+  final Person? otherPerson;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
-          child: Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: _profileTextColor(theme),
-              fontWeight: FontWeight.w800,
+    final String otherName = otherPerson?.fullName.trim().isNotEmpty == true
+        ? otherPerson!.fullName.trim()
+        : 'אדם נמחק';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: _profileSurfaceColor(theme),
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: () => context.push('/matches/${match.id}'),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  otherName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: <Widget>[
+                    _StatusChip(status: match.status),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '· ${_shortRelative(match.updatedAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: _profileMutedColor(theme),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _WhatsAppChip(
+                        label: _firstNameOr(person, 'צד א'),
+                        onTap: () => _openWhatsApp(context, person),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _WhatsAppChip(
+                        label: _firstNameOr(otherPerson, 'צד ב'),
+                        onTap: otherPerson == null
+                            ? null
+                            : () => _openWhatsApp(context, otherPerson!),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
-        _RelatedMatchesSection(
-          person: person,
-          matches: matches,
-          personRepository: personRepository,
+      ),
+    );
+  }
+
+  Future<void> _openWhatsApp(BuildContext context, Person target) async {
+    final bool launched = await WhatsAppUtils.openChat(target);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('אין מספר טלפון תקין לפתיחת וואטסאפ')),
+        );
+    }
+  }
+}
+
+/// Small green "WhatsApp + name" pill used per-side on a proposal row.
+class _WhatsAppChip extends StatelessWidget {
+  const _WhatsAppChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool enabled = onTap != null;
+    final Color green = enabled
+        ? _whatsappGreen
+        : _profileMutedColor(theme).withValues(alpha: 0.5);
+
+    return Material(
+      color: green.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              FaIcon(FontAwesomeIcons.whatsapp, size: 16, color: green),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: enabled
+                        ? _profileTextColor(theme)
+                        : _profileMutedColor(theme),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+/// The large "match preview" overlay opened by tapping a candidate: the person
+/// we are matching for on top, the candidate below, each with its own scrolling
+/// card, and a single "פתח רעיון" action. It floats over the matches list, so
+/// closing returns to exactly the same scroll position. Returns true when the
+/// user chose to open an idea.
+abstract final class _MatchPreviewSheet {
+  static Future<bool?> show(
+    BuildContext context, {
+    required Person source,
+    required Person candidate,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final ThemeData theme = Theme.of(dialogContext);
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 24,
+          ),
+          clipBehavior: Clip.antiAlias,
+          backgroundColor: _profileSurfaceColor(theme),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(dialogContext).size.height * 0.86,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 4, 0),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          'רעיון להצעה',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: _profileTextColor(theme),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'סגירה',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: _MatchPreviewHalf(person: source)),
+                Divider(
+                  height: 1,
+                  color: _profileMutedColor(theme).withValues(alpha: 0.2),
+                ),
+                Expanded(child: _MatchPreviewHalf(person: candidate)),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                        icon: const Icon(Icons.favorite_border),
+                        label: const Text('פתח רעיון'),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One half of the match preview: a person's photo, name, summary and their
+/// full send-card text, scrolling on its own.
+class _MatchPreviewHalf extends StatelessWidget {
+  const _MatchPreviewHalf({required this.person});
+
+  final Person person;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String description = (person.description ?? '').trim();
+    final String? photoPath = person.photosPaths.isEmpty
+        ? null
+        : person.photosPaths.first;
+    final File? photoFile = photoPath == null ? null : File(photoPath);
+    final bool hasPhoto = photoFile != null && photoFile.existsSync();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              PersonAvatar(person: person, radius: 26),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      person.fullName.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: _profileTextColor(theme),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _personSummary(person),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: _profileMutedColor(theme),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (hasPhoto) ...<Widget>[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.file(
+                photoFile,
+                width: double.infinity,
+                height: 180,
+                cacheWidth: 720,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            description.isEmpty ? 'אין עדיין כרטיס לשליחה' : description,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: description.isEmpty
+                  ? _profileMutedColor(theme)
+                  : _profileTextColor(theme),
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The full-screen "התאמות" view, opened from the profile's floating action
+/// bar. It owns the suggestion filtering, ordering and accept/reject flow that
+/// used to live inside the person page's tab.
+class _SuggestionsPage extends StatefulWidget {
+  const _SuggestionsPage({required this.personId});
+
+  final String personId;
+
+  @override
+  State<_SuggestionsPage> createState() => _SuggestionsPageState();
+}
+
+class _SuggestionsPageState extends State<_SuggestionsPage> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final PersonRepository personRepository = context.watch<PersonRepository>();
+    final MatchRepository matchRepository = context.watch<MatchRepository>();
+    final Person? person = personRepository.getById(widget.personId);
+
+    if (person == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('התאמות'), centerTitle: true),
+        body: const Center(child: Text('האדם לא נמצא')),
+      );
+    }
+
+    final MatchProposalFilters? savedSuggestionFilters =
+        MatchProposalFilterSheet.savedFiltersFor(person.id);
+    final List<Person> matchingCandidates = personRepository
+        .getAll()
+        .where(
+          (Person candidate) => _matchesSuggestionFilters(
+            source: person,
+            candidate: candidate,
+            filters: savedSuggestionFilters,
+          ),
+        )
+        .toList();
+    // Order the suggestions in tiers, preserving relative order within each:
+    // candidates that already have an open/בהמתנה proposal with this person
+    // come first, then the remaining active suggestions, then candidates the
+    // user soft-dismissed (לא מתאים — pushed to the end of the list), and
+    // finally candidates whose opened proposal was rejected.
+    final Set<String> dismissedIds = SuggestionDismissals.dismissedFor(
+      person.id,
+    );
+    final List<Person> prioritizedSuggestions = <Person>[];
+    final List<Person> activeSuggestions = <Person>[];
+    final List<Person> dismissedSuggestions = <Person>[];
+    final List<Person> rejectedSuggestions = <Person>[];
+    for (final Person candidate in matchingCandidates) {
+      final MatchIdea? existingMatch = matchRepository.findExisting(
+        person.id,
+        candidate.id,
+      );
+      final MatchStatus? existingStatus = existingMatch?.status;
+      if (existingStatus == MatchStatus.rejected) {
+        rejectedSuggestions.add(candidate);
+      } else if (existingStatus == MatchStatus.idea ||
+          existingStatus == MatchStatus.checking ||
+          existingStatus == MatchStatus.unavailable) {
+        prioritizedSuggestions.add(candidate);
+      } else if (dismissedIds.contains(candidate.id)) {
+        dismissedSuggestions.add(candidate);
+      } else {
+        activeSuggestions.add(candidate);
+      }
+    }
+    // Within each tier, candidates that pause matches (תפוס/בהפסקה) drop
+    // after the available ones.
+    List<Person> availableFirst(List<Person> people) => <Person>[
+      ...people.where((Person p) => !p.profileStatus.pausesMatches),
+      ...people.where((Person p) => p.profileStatus.pausesMatches),
+    ];
+    final List<Person> suggestedPeople = <Person>[
+      ...availableFirst(prioritizedSuggestions),
+      ...availableFirst(activeSuggestions),
+      ...availableFirst(dismissedSuggestions),
+      ...availableFirst(rejectedSuggestions),
+    ];
+
+    final String query = _query.trim().toLowerCase();
+    final bool searching = query.isNotEmpty;
+    // Manual search covers the whole database — including people the automatic
+    // filter left out — restricted to the opposite gender so the pairing stays
+    // valid.
+    final Gender? targetGender = switch (person.gender) {
+      Gender.male => Gender.female,
+      Gender.female => Gender.male,
+      Gender.unknown => null,
+    };
+    final List<Person> searchResults = searching
+        ? (personRepository.getAll()..removeWhere(
+            (Person p) =>
+                p.id == person.id ||
+                p.hidden ||
+                (targetGender != null && p.gender != targetGender) ||
+                !p.fullName.toLowerCase().contains(query),
+          ))
+        : const <Person>[];
+
+    return Scaffold(
+      backgroundColor: _profileCanvasColor(theme),
+      appBar: AppBar(
+        backgroundColor: _profileCanvasColor(theme),
+        foregroundColor: _profileTextColor(theme),
+        centerTitle: true,
+        title: Text('התאמות · ${person.firstName.trim()}'),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: <Widget>[
+            _SuggestionSearchField(
+              controller: _searchController,
+              onChanged: (String value) => setState(() => _query = value),
+            ),
+            Expanded(
+              child: searching
+                  ? _SearchResultsList(
+                      results: searchResults,
+                      onOpenPreview: (Person candidate) =>
+                          _openMatchPreview(context, person, candidate),
+                    )
+                  : _SuggestedMatchesTab(
+                      sourcePerson: person,
+                      suggestedPeople: suggestedPeople,
+                      matchRepository: matchRepository,
+                      hasCustomFilters: savedSuggestionFilters != null,
+                      onFilterPressed: () =>
+                          _openSuggestionFilters(context, person),
+                      onOpenPreview: (Person candidate) =>
+                          _openMatchPreview(context, person, candidate),
+                      onAccept: (Person candidate) =>
+                          _acceptSuggestion(context, person, candidate),
+                      onReject: (Person candidate) =>
+                          _rejectSuggestion(context, person, candidate),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens the large preview overlay for a candidate; if the user taps
+  /// "פתח רעיון" there, opens (or jumps to) the proposal. An existing proposal
+  /// skips the preview and goes straight to it.
+  Future<void> _openMatchPreview(
+    BuildContext context,
+    Person source,
+    Person candidate,
+  ) async {
+    final MatchRepository matchRepository = context.read<MatchRepository>();
+    final MatchIdea? existing = matchRepository.findExisting(
+      source.id,
+      candidate.id,
+    );
+    if (existing != null) {
+      context.push('/matches/${existing.id}');
+      return;
+    }
+
+    final bool? opened = await _MatchPreviewSheet.show(
+      context,
+      source: source,
+      candidate: candidate,
+    );
+    if (opened == true && context.mounted) {
+      await _openSuggestedCandidate(context, source, candidate);
+    }
+  }
+
+  bool _matchesSuggestionFilters({
+    required Person source,
+    required Person candidate,
+    required MatchProposalFilters? filters,
+  }) {
+    if (filters == null) {
+      return MatchSuggestionUtils.isSuggestedCandidate(
+        source: source,
+        candidate: candidate,
+      );
+    }
+
+    if (!MatchSuggestionUtils.isEligibleCandidate(
+      source: source,
+      candidate: candidate,
+    )) {
+      return false;
+    }
+
+    final int? candidateAge = candidate.age;
+    if (filters.minAge != null &&
+        (candidateAge == null || candidateAge < filters.minAge!)) {
+      return false;
+    }
+    if (filters.maxAge != null &&
+        (candidateAge == null || candidateAge > filters.maxAge!)) {
+      return false;
+    }
+
+    final bool hasReligiousFilter =
+        filters.religiousLevels.isNotEmpty ||
+        filters.religiousLevelOtherLabels.isNotEmpty;
+    if (hasReligiousFilter &&
+        !filters.religiousLevels.contains(candidate.religiousLevel) &&
+        !(candidate.religiousLevel == ReligiousLevel.other &&
+            filters.religiousLevelOtherLabels.contains(
+              candidate.religiousLevelOther?.trim(),
+            ))) {
+      return false;
+    }
+
+    if (filters.profileStatuses.isNotEmpty &&
+        !filters.profileStatuses.contains(candidate.profileStatus)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _openSuggestionFilters(
+    BuildContext context,
+    Person sourcePerson,
+  ) async {
+    if (sourcePerson.gender == Gender.unknown) {
+      _showSnackBar(context, 'יש לבחור מגדר לפני סינון התאמות');
+      return;
+    }
+
+    final Gender targetGender = sourcePerson.gender == Gender.male
+        ? Gender.female
+        : Gender.male;
+
+    final MatchProposalFilters? filters = await MatchProposalFilterSheet.show(
+      context,
+      targetGender: targetGender,
+      sourcePersonId: sourcePerson.id,
+      initialFilters: _defaultSuggestionFilters(sourcePerson),
+    );
+
+    if (filters != null && mounted) {
+      setState(() {});
+    }
+  }
+
+  MatchProposalFilters _defaultSuggestionFilters(Person sourcePerson) {
+    final ({int minAge, int maxAge})? femaleAgeRange =
+        sourcePerson.gender == Gender.male
+        ? MatchSuggestionUtils.femaleAgeRangeForMale(sourcePerson.age)
+        : null;
+
+    return MatchProposalFilters(
+      minAge: femaleAgeRange?.minAge,
+      maxAge: femaleAgeRange?.maxAge,
+      religiousLevels: MatchSuggestionUtils.religiousLevelsFor(
+        sourcePerson.religiousLevel,
+      ),
+      profileStatuses: const <ProfileStatus>[],
+    );
+  }
+
+  Future<void> _openSuggestedCandidate(
+    BuildContext context,
+    Person sourcePerson,
+    Person selectedPerson,
+  ) async {
+    final Person male = sourcePerson.gender == Gender.male
+        ? sourcePerson
+        : selectedPerson;
+    final Person female = sourcePerson.gender == Gender.female
+        ? sourcePerson
+        : selectedPerson;
+
+    final MatchRepository matchRepository = context.read<MatchRepository>();
+    final MatchIdea? existingMatch = matchRepository.findExisting(
+      male.id,
+      female.id,
+    );
+
+    if (existingMatch != null) {
+      context.push('/matches/${existingMatch.id}');
+      return;
+    }
+
+    final MatchIdea? newMatch = await matchRepository.create(
+      male.id,
+      female.id,
+    );
+    if (newMatch != null && context.mounted) {
+      context.push('/matches/${newMatch.id}?justCreated=true');
+    }
+  }
+
+  Future<void> _acceptSuggestion(
+    BuildContext context,
+    Person sourcePerson,
+    Person candidate,
+  ) async {
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'פתיחת הצעה',
+      message:
+          'האם לפתוח הצעה בין ${sourcePerson.fullName.trim()} '
+          'ל${candidate.fullName.trim()}?',
+      confirmText: 'פתיחה',
+    );
+    if (!confirmed || !context.mounted) {
+      return;
+    }
+
+    await _openSuggestedCandidate(context, sourcePerson, candidate);
+  }
+
+  Future<void> _rejectSuggestion(
+    BuildContext context,
+    Person sourcePerson,
+    Person candidate,
+  ) async {
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'לא מתאים?',
+      message: 'ההתאמה תעבור לסוף הרשימה.',
+      confirmText: 'לא מתאים',
+      isDestructive: true,
+    );
+    if (!confirmed || !context.mounted) {
+      return;
+    }
+
+    // Soft dismissal only: the candidate drops to the end of the suggestions
+    // list. No rejected proposal is created, so the pair never shows up under
+    // רעיונות שנשללו.
+    await SuggestionDismissals.dismiss(sourcePerson.id, candidate.id);
+    if (mounted) {
+      setState(() {});
+    }
+
+    if (context.mounted) {
+      _showSnackBar(context, 'ההתאמה הועברה לסוף הרשימה');
+    }
+  }
+
+  void _showSnackBar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+/// The whole-database search box atop the התאמות view.
+class _SuggestionSearchField extends StatelessWidget {
+  const _SuggestionSearchField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'חיפוש בכל המאגר…',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: controller.text.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear),
+                  tooltip: 'ניקוי',
+                  onPressed: () {
+                    controller.clear();
+                    onChanged('');
+                  },
+                ),
+          filled: true,
+          fillColor: _profileSurfaceColor(theme),
+          isDense: true,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Results of the whole-database manual search — people who may not pass the
+/// automatic filter. Tapping one opens the match preview overlay.
+class _SearchResultsList extends StatelessWidget {
+  const _SearchResultsList({
+    required this.results,
+    required this.onOpenPreview,
+  });
+
+  final List<Person> results;
+  final ValueChanged<Person> onOpenPreview;
+
+  @override
+  Widget build(BuildContext context) {
+    if (results.isEmpty) {
+      return const _TabEmptyState(
+        icon: Icons.search_off,
+        title: 'לא נמצאו תוצאות',
+        subtitle: 'אפשר לנסות שם אחר',
+      );
+    }
+
+    final ThemeData theme = Theme.of(context);
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 32),
+      itemCount: results.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (BuildContext context, int index) {
+        final Person candidate = results[index];
+        return Material(
+          color: _profileSurfaceColor(theme),
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            onTap: () => onOpenPreview(candidate),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: <Widget>[
+                  PersonAvatar(person: candidate, radius: 24),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          candidate.fullName.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: _profileTextColor(theme),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _personSummary(candidate),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: _profileMutedColor(theme),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_left, color: _profileMutedColor(theme)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1340,6 +2399,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
     required this.matchRepository,
     required this.hasCustomFilters,
     required this.onFilterPressed,
+    required this.onOpenPreview,
     required this.onAccept,
     required this.onReject,
   });
@@ -1349,6 +2409,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
   final MatchRepository matchRepository;
   final bool hasCustomFilters;
   final VoidCallback onFilterPressed;
+  final ValueChanged<Person> onOpenPreview;
   final ValueChanged<Person> onAccept;
   final ValueChanged<Person> onReject;
 
@@ -1398,6 +2459,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
             sourcePerson: sourcePerson,
             suggestedPeople: suggestedPeople,
             matchRepository: matchRepository,
+            onOpenPreview: onOpenPreview,
             onAccept: onAccept,
             onReject: onReject,
           ),
@@ -1412,6 +2474,7 @@ class _SuggestedMatchesList extends StatefulWidget {
     required this.sourcePerson,
     required this.suggestedPeople,
     required this.matchRepository,
+    required this.onOpenPreview,
     required this.onAccept,
     required this.onReject,
   });
@@ -1419,6 +2482,7 @@ class _SuggestedMatchesList extends StatefulWidget {
   final Person sourcePerson;
   final List<Person> suggestedPeople;
   final MatchRepository matchRepository;
+  final ValueChanged<Person> onOpenPreview;
   final ValueChanged<Person> onAccept;
   final ValueChanged<Person> onReject;
 
@@ -1454,7 +2518,7 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
               InkWell(
                 onTap: () => existingMatch != null
                     ? context.push('/matches/${existingMatch.id}')
-                    : context.push('/people/${candidate.id}'),
+                    : widget.onOpenPreview(candidate),
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -1511,7 +2575,7 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                       ),
                       const SizedBox(width: 8),
                       _SuggestionIconButton(
-                        icon: Icons.add,
+                        icon: Icons.favorite_outline,
                         tooltip: 'פתיחת הצעה',
                         backgroundColor: _profileGoldLight,
                         foregroundColor: _profileGoldTextLight,
@@ -1788,6 +2852,80 @@ class _TabEmptyState extends StatelessWidget {
   }
 }
 
+/// "עודכן לאחרונה לפני X ימים" — a small relative-time line under the profile
+/// status. Only meaningful actions (edit, note, status change, opening/updating
+/// a proposal, a WhatsApp action) bump [Person.updatedAt]; merely viewing the
+/// card does not.
+String _relativeUpdatedLabel(DateTime updatedAt) {
+  final DateTime now = DateTime.now();
+  final DateTime updatedDay = DateTime(
+    updatedAt.year,
+    updatedAt.month,
+    updatedAt.day,
+  );
+  final DateTime today = DateTime(now.year, now.month, now.day);
+  final int days = today.difference(updatedDay).inDays;
+  if (days <= 0) {
+    return 'עודכן היום';
+  }
+  if (days == 1) {
+    return 'עודכן אתמול';
+  }
+  if (days < 7) {
+    return 'עודכן לפני $days ימים';
+  }
+  if (days < 30) {
+    final int weeks = days ~/ 7;
+    return weeks == 1 ? 'עודכן לפני שבוע' : 'עודכן לפני $weeks שבועות';
+  }
+  if (days < 365) {
+    final int months = days ~/ 30;
+    return months == 1 ? 'עודכן לפני חודש' : 'עודכן לפני $months חודשים';
+  }
+  final int years = days ~/ 365;
+  return years == 1 ? 'עודכן לפני שנה' : 'עודכן לפני $years שנים';
+}
+
+/// Compact relative time ("היום", "לפני 4 ימים") used on proposal rows to show
+/// how long a proposal has gone without an update.
+String _shortRelative(DateTime dt) {
+  final DateTime now = DateTime.now();
+  final DateTime day = DateTime(dt.year, dt.month, dt.day);
+  final DateTime today = DateTime(now.year, now.month, now.day);
+  final int days = today.difference(day).inDays;
+  if (days <= 0) {
+    return 'היום';
+  }
+  if (days == 1) {
+    return 'אתמול';
+  }
+  if (days < 7) {
+    return 'לפני $days ימים';
+  }
+  if (days < 30) {
+    final int weeks = days ~/ 7;
+    return weeks == 1 ? 'לפני שבוע' : 'לפני $weeks שבועות';
+  }
+  if (days < 365) {
+    final int months = days ~/ 30;
+    return months == 1 ? 'לפני חודש' : 'לפני $months חודשים';
+  }
+  final int years = days ~/ 365;
+  return years == 1 ? 'לפני שנה' : 'לפני $years שנים';
+}
+
+/// A muted green that reads as "WhatsApp" without breaking the cream palette.
+const Color _whatsappGreen = AppColors.profileAvailable;
+
+String _firstNameOr(Person? person, String fallback) {
+  final String first = person?.firstName.trim() ?? '';
+  if (first.isNotEmpty) {
+    return first;
+  }
+  final String full = person?.fullName.trim() ?? '';
+  return full.isEmpty ? fallback : full;
+}
+
 String _personSummary(Person person) {
   final List<String> parts = <String>[
     if (person.age != null) 'גיל ${person.age}',
@@ -1795,11 +2933,6 @@ String _personSummary(Person person) {
     if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
   ];
   return parts.isEmpty ? 'פרטים חסרים' : parts.join(' · ');
-}
-
-int _personNotesCount(Person person, List<PersonNote> notes) {
-  final bool hasLegacyNote = (person.notes ?? '').trim().isNotEmpty;
-  return notes.length + (hasLegacyNote ? 1 : 0);
 }
 
 /// A dedicated full page for editing the person's card: the send-card text
@@ -1836,6 +2969,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
   Gender _gender = Gender.unknown;
   ReligiousLevel? _religiousLevel;
   String? _religiousLevelOther;
+  int _avatarIndex = 0;
   bool _isSaving = false;
 
   List<String> _photoPaths = <String>[];
@@ -1873,6 +3007,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
       _gender = person.gender;
       _religiousLevel = person.religiousLevel;
       _religiousLevelOther = person.religiousLevelOther;
+      _avatarIndex = person.avatarIndex;
       _photoPaths = List<String>.from(person.photosPaths);
     }
     for (final FocusNode node in _focusNodes) {
@@ -1936,6 +3071,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
           _inquiryContactPhoneController.text,
         )
         ..description = _normalizedText(_descriptionController.text)
+        ..avatarIndex = _avatarIndex
         ..photosPaths = List<String>.from(_photoPaths);
       await repository.update(person);
       _newPhotoPaths.clear();
@@ -2048,6 +3184,11 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
                   onAddPhoto: _pickPhotos,
                   onSetPrimary: _setPrimaryPhoto,
                   onRemove: _removePhoto,
+                  gender: _gender,
+                  avatarIndex: _avatarIndex,
+                  onAvatarChanged: (int index) {
+                    setState(() => _avatarIndex = index);
+                  },
                 ),
               ),
               _Section(
@@ -2809,70 +3950,240 @@ class _PersonNotesTimeline extends StatelessWidget {
   }
 }
 
-class _RelatedMatchesSection extends StatelessWidget {
-  const _RelatedMatchesSection({
-    required this.person,
-    required this.matches,
-    required this.personRepository,
-  });
+String _eventDateShort(DateTime date) => '${date.day}.${date.month}';
 
-  final Person person;
-  final List<MatchIdea> matches;
-  final PersonRepository personRepository;
+/// A small colour per event type, so the timeline reads at a glance.
+Color _eventColor(PersonEventType type) {
+  switch (type) {
+    case PersonEventType.proposalOpened:
+      return AppColors.statusIdea;
+    case PersonEventType.dated:
+      return AppColors.statusDating;
+    case PersonEventType.rejected:
+      return AppColors.statusRejected;
+    case PersonEventType.statusChanged:
+      return AppColors.statusUnavailable;
+    case PersonEventType.note:
+      return AppColors.statusChecking;
+    case PersonEventType.cardChanged:
+      return AppColors.onSurfaceVariant;
+    case PersonEventType.reminderSet:
+      return AppColors.profileOnBreak;
+  }
+}
+
+/// The inline "היסטוריה אחרונה" feed: the last handful of meaningful events in
+/// dense rows, with a link to the full history screen.
+class _HistorySection extends StatelessWidget {
+  const _HistorySection({required this.events, required this.onShowAll});
+
+  final List<PersonEvent> events;
+  final VoidCallback onShowAll;
 
   @override
   Widget build(BuildContext context) {
-    if (matches.isEmpty) {
-      return Text(
-        'אין הצעות עדיין',
-        style: Theme.of(context).textTheme.bodyMedium,
-      );
+    if (events.isEmpty) {
+      return const SizedBox.shrink();
     }
 
-    return Column(
-      children: matches.map((MatchIdea match) {
-        final String otherPersonId = match.personAId == person.id
-            ? match.personBId
-            : match.personAId;
-        final Person? otherPerson = personRepository.getById(otherPersonId);
-        final String otherName = otherPerson?.fullName.trim().isNotEmpty == true
-            ? otherPerson!.fullName.trim()
-            : 'אדם נמחק';
+    final ThemeData theme = Theme.of(context);
+    final List<PersonEvent> preview = events.take(6).toList();
 
-        final ThemeData theme = Theme.of(context);
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: _profileSurfaceColor(theme),
-            borderRadius: BorderRadius.circular(20),
-            child: InkWell(
-              onTap: () => context.push('/matches/${match.id}'),
-              borderRadius: BorderRadius.circular(20),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        otherName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: _profileTextColor(theme),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _StatusChip(status: match.status),
-                  ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        decoration: BoxDecoration(
+          color: _profileSurfaceColor(theme),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: _profileMutedColor(theme).withValues(alpha: 0.14),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'היסטוריה אחרונה',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: _profileTextColor(theme),
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
+            for (final PersonEvent event in preview) _HistoryRow(event: event),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: onShowAll,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('לכל ההיסטוריה'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One dense line in the history timeline: small date, a type-coloured dot, and
+/// the event text.
+class _HistoryRow extends StatelessWidget {
+  const _HistoryRow({required this.event});
+
+  final PersonEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = _eventColor(event.type);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 34,
+            child: Text(
+              _eventDateShort(event.createdAt),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: _profileMutedColor(theme),
+              ),
+            ),
           ),
-        );
-      }).toList(),
+          Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              event.text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _profileTextColor(theme),
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The filters on the full history screen.
+enum _HistoryFilter {
+  all('הכל'),
+  proposals('הצעות'),
+  dated('יצאו'),
+  rejected('שלילות'),
+  notes('הערות');
+
+  const _HistoryFilter(this.label);
+
+  final String label;
+
+  bool matches(PersonEvent event) {
+    switch (this) {
+      case _HistoryFilter.all:
+        return true;
+      case _HistoryFilter.proposals:
+        return event.type == PersonEventType.proposalOpened;
+      case _HistoryFilter.dated:
+        return event.type == PersonEventType.dated;
+      case _HistoryFilter.rejected:
+        return event.type == PersonEventType.rejected;
+      case _HistoryFilter.notes:
+        return event.type == PersonEventType.note;
+    }
+  }
+}
+
+/// The full history screen for a person, with the filter row from the spec
+/// (הכל / הצעות / יצאו / שלילות / הערות).
+class _PersonHistoryPage extends StatefulWidget {
+  const _PersonHistoryPage({required this.personId});
+
+  final String personId;
+
+  @override
+  State<_PersonHistoryPage> createState() => _PersonHistoryPageState();
+}
+
+class _PersonHistoryPageState extends State<_PersonHistoryPage> {
+  _HistoryFilter _filter = _HistoryFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final PersonRepository personRepository = context.watch<PersonRepository>();
+    final Person? person = personRepository.getById(widget.personId);
+    final List<PersonEvent> events = person == null
+        ? const <PersonEvent>[]
+        : personRepository.getEventsForPerson(person.id);
+    final List<PersonEvent> filtered = events.where(_filter.matches).toList();
+
+    return Scaffold(
+      backgroundColor: _profileCanvasColor(theme),
+      appBar: AppBar(
+        backgroundColor: _profileCanvasColor(theme),
+        foregroundColor: _profileTextColor(theme),
+        centerTitle: true,
+        title: const Text('היסטוריה'),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: <Widget>[
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+              child: Row(
+                children: <Widget>[
+                  for (final _HistoryFilter filter in _HistoryFilter.values)
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: ChoiceChip(
+                        label: Text(filter.label),
+                        selected: _filter == filter,
+                        onSelected: (_) => setState(() => _filter = filter),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const _TabEmptyState(
+                      icon: Icons.history,
+                      title: 'אין אירועים',
+                      subtitle: 'כאן תופיע ההיסטוריה של המועמד',
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 2),
+                      itemBuilder: (BuildContext context, int index) =>
+                          _HistoryRow(event: filtered[index]),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

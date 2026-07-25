@@ -38,6 +38,8 @@ abstract final class MatchSuggestionFlow {
       religiousLevels:
           savedFilters?.religiousLevels ??
           MatchSuggestionUtils.religiousLevelsFor(person.religiousLevel),
+      religiousLevelOtherLabels:
+          savedFilters?.religiousLevelOtherLabels ?? const <String>[],
       profileStatuses: savedFilters?.profileStatuses ?? const [],
       candidatePredicate: (Person candidate) {
         if (savedFilters != null) {

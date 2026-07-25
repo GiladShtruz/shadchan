@@ -231,6 +231,7 @@ void main() {
               'gender': 'male',
               'manualAge': 30,
               'heightCm': 178,
+              'avatarIndex': 3,
               'maritalStatus': 'divorced',
               'profileStatus': 'available',
               'needsReview': true,
@@ -284,6 +285,7 @@ void main() {
       expect(personA.needsReview, isTrue);
       expect(personA.hidden, isFalse);
       expect(personA.heightCm, 178);
+      expect(personA.avatarIndex, 3);
       expect(personA.maritalStatus, MaritalStatus.divorced);
 
       final Person personB = personRepo.getById('person_b')!;

@@ -214,4 +214,48 @@ void main() {
 
     await peopleBox.deleteFromDisk();
   });
+
+  test(
+    'staged contact stays outside database until details are confirmed',
+    () async {
+      final String suffix =
+          '${DateTime.now().microsecondsSinceEpoch}_${boxCounter++}';
+      final Box<Person> peopleBox = await Hive.openBox<Person>(
+        'people_$suffix',
+      );
+      final PersonRepository personRepository = PersonRepository(peopleBox);
+
+      final Person? draft = await ContactsImportService.stageSingleCandidate(
+        const ContactImportCandidate(
+          deviceContactId: 'contact_pending',
+          displayName: 'רחל כהן',
+          phone: '054-2222222',
+          normalizedPhone: '0542222222',
+          alreadyExists: false,
+          hasAdditionalPhones: false,
+          isFilteredByName: false,
+        ),
+        personRepository,
+      );
+
+      expect(draft, isNotNull);
+      expect(draft!.hidden, isTrue);
+      expect(draft.needsReview, isTrue);
+      expect(personRepository.databaseCount, 0);
+      expect(personRepository.getPendingContactDrafts(), <Person>[draft]);
+
+      draft
+        ..gender = Gender.female
+        ..religiousLevel = ReligiousLevel.datiLeumi
+        ..setManualAge(27);
+      await personRepository.activatePendingContactDraft(draft);
+
+      expect(draft.hidden, isFalse);
+      expect(draft.needsReview, isFalse);
+      expect(personRepository.databaseCount, 1);
+      expect(personRepository.getPendingContactDrafts(), isEmpty);
+
+      await peopleBox.deleteFromDisk();
+    },
+  );
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
@@ -8,7 +9,10 @@ import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
+import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/add_contacts_common.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/initials_avatar.dart';
 
 class SwipeImportScreen extends StatefulWidget {
   const SwipeImportScreen({
@@ -45,6 +49,12 @@ class _SwipeHistoryEntry {
 class _SwipeImportScreenState extends State<SwipeImportScreen> {
   static const String _skippedBoxName = 'swipe_skipped_phones';
   static const String _skippedSetKey = 'skipped_phones';
+  static const String _revealedFilteredSetKey = 'revealed_filtered_phones';
+
+  /// Remembers that the swipe hint was already shown, so it only ever greets a
+  /// first-time user.
+  static const String _settingsBoxName = 'settings';
+  static const String _hintSeenKey = 'swipeImportHintSeen';
 
   final CardSwiperController _controller = CardSwiperController();
 
@@ -57,10 +67,12 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
   int _skippedCount = 0;
   int _remaining = 0;
   bool _isFinished = false;
+  bool _hintSeen = true;
   final List<_SwipeHistoryEntry> _history = <_SwipeHistoryEntry>[];
   Set<String> _skippedPhones = <String>{};
+  Set<String> _revealedFilteredPhones = <String>{};
 
-  /// Contacts the user chose to come back to later this session ("דלג"). They
+  /// Contacts the user chose to come back to later this session ("דילוג"). They
   /// are neither imported nor permanently skipped; once the main deck is done
   /// they can be reviewed again.
   final List<ContactImportCandidate> _deferredCandidates =
@@ -73,6 +85,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
   @override
   void initState() {
     super.initState();
+    _loadHintSeen();
     _loadContacts();
   }
 
@@ -80,6 +93,27 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  void _loadHintSeen() {
+    if (!Hive.isBoxOpen(_settingsBoxName)) {
+      return;
+    }
+    final bool seen =
+        Hive.box<dynamic>(_settingsBoxName).get(_hintSeenKey) == true;
+    _hintSeen = seen;
+  }
+
+  /// Called the first time the user acts on a card — by swipe or by button —
+  /// after which the hint never comes back.
+  void _markHintSeen() {
+    if (_hintSeen) {
+      return;
+    }
+    setState(() => _hintSeen = true);
+    if (Hive.isBoxOpen(_settingsBoxName)) {
+      unawaited(Hive.box<dynamic>(_settingsBoxName).put(_hintSeenKey, true));
+    }
   }
 
   Future<void> _loadContacts() async {
@@ -102,6 +136,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     }
 
     _skippedPhones = await _loadSkippedPhones();
+    if (!mounted) return;
+    _revealedFilteredPhones = await _loadRevealedFilteredPhones();
     if (!mounted) return;
 
     final PersonRepository personRepository = context.read<PersonRepository>();
@@ -167,7 +203,10 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       candidates
           .where(
             (ContactImportCandidate candidate) =>
-                !candidate.isFilteredByName &&
+                (!candidate.isFilteredByName ||
+                    _revealedFilteredPhones.contains(
+                      candidate.normalizedPhone,
+                    )) &&
                 !_skippedPhones.contains(candidate.normalizedPhone),
           )
           .toList(),
@@ -213,6 +252,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     } else {
       return false;
     }
+    _markHintSeen();
     return true;
   }
 
@@ -263,7 +303,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     _SwipeHistoryEntry entry,
   ) async {
     try {
-      final person = await ContactsImportService.importSingleCandidate(
+      final person = await ContactsImportService.stageSingleCandidate(
         candidate,
         repo,
       );
@@ -273,16 +313,27 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         return;
       }
 
-      entry.importedPersonId = person.id;
       if (entry.wasUndone) {
-        await repo.delete(person.id);
         return;
       }
 
-      // Offer to fill in details right away, matching the list-import flow.
-      // Skipped when the card was undone while the import was still running.
       if (mounted) {
-        await QuickUpdateDialog.show(context, person);
+        final bool confirmed = await QuickUpdateDialog.show(context, person);
+        if (!mounted || entry.wasUndone) {
+          return;
+        }
+        if (confirmed) {
+          await repo.activatePendingContactDraft(person);
+          entry.importedPersonId = person.id;
+        } else {
+          _revertPendingAddedCount(entry);
+          if (!_deferredCandidates.any(
+            (ContactImportCandidate deferred) =>
+                deferred.normalizedPhone == candidate.normalizedPhone,
+          )) {
+            setState(() => _deferredCandidates.add(candidate));
+          }
+        }
       }
     } catch (_) {
       _revertPendingAddedCount(entry);
@@ -388,6 +439,15 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     return <String>{};
   }
 
+  Future<Set<String>> _loadRevealedFilteredPhones() async {
+    final Box<dynamic> box = await _openSkippedBox();
+    final Object? raw = box.get(_revealedFilteredSetKey);
+    if (raw is List) {
+      return raw.whereType<String>().toSet();
+    }
+    return <String>{};
+  }
+
   Future<void> _saveSkippedPhones() async {
     final Box<dynamic> box = await _openSkippedBox();
     await box.put(_skippedSetKey, _skippedPhones.toList());
@@ -472,15 +532,86 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       return _buildSummary(context);
     }
 
+    final int databaseCount = context.watch<PersonRepository>().databaseCount;
+
     return Column(
       children: <Widget>[
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: _buildCounter(context),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: AddContactsProgressHeader(
+            addedToDatabase: databaseCount,
+            remaining: _remaining,
+            total: _candidates.length,
+          ),
         ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: _buildStats(context),
+        ),
+        Expanded(child: _buildDeck(context)),
+        if (!_hintSeen)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: const _SwipeHint(),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+          child: _buildActionButtons(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStats(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return AddContactsStatsRow(
+      stats: <AddContactsStat>[
+        AddContactsStat(
+          icon: Icons.favorite,
+          label: 'הוספתי',
+          value: _addedCount,
+          color: theme.brightness == Brightness.dark
+              ? AppColors.femaleAccentDm
+              : AppColors.femaleAccent,
+        ),
+        AddContactsStat(
+          icon: Icons.schedule,
+          label: 'דילגתי',
+          value: _deferredCandidates.length,
+          color: theme.colorScheme.secondary,
+        ),
+        AddContactsStat(
+          icon: Icons.close,
+          label: 'לא רלוונטיים',
+          value: _skippedCount,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ],
+    );
+  }
+
+  /// The card stack, deliberately kept small so the screen doesn't turn into a
+  /// large empty white rectangle.
+  Widget _buildDeck(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double deckWidth = math.min(constraints.maxWidth * 0.8, 300);
+        // The swiper draws inside its own padding and lets the cards behind
+        // peek out below, so the box it lives in is taller than the card.
+        final double deckHeight = math.min(
+          constraints.maxHeight,
+          deckWidth * 1.15 + 54,
+        );
+        // Keep the circle proportional to whichever dimension is tighter, so a
+        // short screen doesn't push the name off the card.
+        final double avatarDiameter = math
+            .min(deckWidth * 0.38, (deckHeight - 150) * 0.55)
+            .clamp(56.0, 108.0);
+
+        return Center(
+          child: SizedBox(
+            width: deckWidth,
+            height: deckHeight,
             child: CardSwiper(
               key: ValueKey<int>(_deckGeneration),
               controller: _controller,
@@ -488,7 +619,10 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
               numberOfCardsDisplayed: _candidates.length >= 3
                   ? 3
                   : _candidates.length,
-              // Right = add, left = not relevant, up = review later ("דלג").
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 30),
+              scale: 0.94,
+              backCardOffset: const Offset(0, 18),
+              // Right = add, left = not relevant, up = review later ("דילוג").
               allowedSwipeDirection: const AllowedSwipeDirection.only(
                 left: true,
                 right: true,
@@ -504,71 +638,61 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
                     int percentThresholdX,
                     int percentThresholdY,
                   ) {
-                    return _NameCard(candidate: _candidates[index]);
+                    return _NameCard(
+                      candidate: _candidates[index],
+                      avatarDiameter: avatarDiameter,
+                    );
                   },
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: _buildActionButtons(context),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCounter(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final int total = _candidates.length;
-    final int done = total - _remaining;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: <Widget>[
-        Text('${done + 1} / $total', style: theme.textTheme.titleMedium),
-        Text(
-          _deferredCandidates.isEmpty
-              ? 'נוספו $_addedCount · דולגו $_skippedCount'
-              : 'נוספו $_addedCount · דולגו $_skippedCount · לעיון: ${_deferredCandidates.length}',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 
   Widget _buildActionButtons(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[
-        _CircleActionButton(
+        // The primary action: filled, largest, and first in reading order.
+        _SwipeActionButton(
           icon: Icons.favorite,
-          color: theme.colorScheme.primary,
-          tooltip: 'הוסף',
+          label: 'הוספה',
+          diameter: 62,
+          iconSize: 28,
+          filled: true,
+          color: dark ? theme.colorScheme.primary : AppColors.primaryDark,
+          foregroundColor: dark ? AppColors.onSurface : AppColors.onPrimary,
           onPressed: () => _controller.swipe(CardSwiperDirection.right),
         ),
-        // Skip for now — the contact returns after the main deck is finished.
-        _CircleActionButton(
+        // Come back to this contact once the deck is done.
+        _SwipeActionButton(
           icon: Icons.schedule,
-          color: theme.colorScheme.tertiary,
-          tooltip: 'דלג (חזרה בהמשך)',
-          iconSize: 24,
-          padding: 14,
+          label: 'דילוג',
+          diameter: 48,
+          iconSize: 21,
+          color: theme.colorScheme.secondary,
           onPressed: () => _controller.swipe(CardSwiperDirection.top),
         ),
-        _CircleActionButton(
+        // The quietest control — it only ever repairs a mistake.
+        _SwipeActionButton(
           icon: Icons.replay,
+          label: 'חזרה',
+          diameter: 42,
+          iconSize: 18,
           color: theme.colorScheme.onSurfaceVariant,
-          tooltip: 'ביטול',
-          iconSize: 22,
-          padding: 12,
           onPressed: _history.isEmpty ? null : () => _controller.undo(),
         ),
-        _CircleActionButton(
+        _SwipeActionButton(
           icon: Icons.close,
+          label: 'לא רלוונטי',
+          diameter: 58,
+          iconSize: 26,
           color: theme.colorScheme.error,
-          tooltip: 'לא רלוונטי',
           onPressed: () => _controller.swipe(CardSwiperDirection.left),
         ),
       ],
@@ -585,15 +709,19 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           children: <Widget>[
             Icon(
               Icons.check_circle,
-              size: 80,
-              color: theme.colorScheme.primary,
+              size: 72,
+              color: theme.brightness == Brightness.dark
+                  ? theme.colorScheme.primary
+                  : AppColors.primaryDark,
             ),
             const SizedBox(height: 16),
             Text('סיימנו!', style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              'נוספו $_addedCount אנשי קשר · דולגו $_skippedCount',
-              style: theme.textTheme.bodyMedium,
+              'הוספת $_addedCount חברים למאגר · $_skippedCount סומנו כלא רלוונטיים',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -633,7 +761,10 @@ class _LoadingContactsView extends StatelessWidget {
           children: <Widget>[
             SizedBox(
               width: double.infinity,
-              child: LinearProgressIndicator(value: progress),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(value: progress, minHeight: 6),
+              ),
             ),
             const SizedBox(height: 16),
             Text(
@@ -648,73 +779,138 @@ class _LoadingContactsView extends StatelessWidget {
   }
 }
 
-class _NameCard extends StatelessWidget {
-  const _NameCard({required this.candidate});
-
-  final ContactImportCandidate candidate;
+/// Shown once, to a first-time user, so the buttons and the swipes are both
+/// discoverable.
+class _SwipeHint extends StatelessWidget {
+  const _SwipeHint();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        Icon(
+          Icons.swipe_outlined,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
           child: Text(
-            candidate.displayName,
-            style: theme.textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            'החליקו או השתמשו בכפתורים למטה',
             textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// A single deck card: a pastel initials circle with the contact's name below.
+class _NameCard extends StatelessWidget {
+  const _NameCard({required this.candidate, required this.avatarDiameter});
+
+  final ContactImportCandidate candidate;
+  final double avatarDiameter;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      decoration: softCardDecoration(context, radius: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          InitialsAvatar(name: candidate.displayName, diameter: avatarDiameter),
+          const SizedBox(height: 20),
+          Flexible(
+            child: Text(
+              candidate.displayName,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontSize: 21,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _CircleActionButton extends StatelessWidget {
-  const _CircleActionButton({
+/// One of the four deck actions: a circular button with its name underneath, so
+/// none of them relies on the icon alone.
+class _SwipeActionButton extends StatelessWidget {
+  const _SwipeActionButton({
     required this.icon,
+    required this.label,
     required this.color,
-    required this.tooltip,
     required this.onPressed,
-    this.iconSize = 32,
-    this.padding = 18,
+    required this.diameter,
+    required this.iconSize,
+    this.filled = false,
+    this.foregroundColor,
   });
 
   final IconData icon;
+  final String label;
   final Color color;
-  final String tooltip;
   final VoidCallback? onPressed;
+  final double diameter;
   final double iconSize;
-  final double padding;
+
+  /// The primary action is a solid disc; the rest are soft tints of [color].
+  final bool filled;
+  final Color? foregroundColor;
 
   @override
   Widget build(BuildContext context) {
-    final bool isDisabled = onPressed == null;
-    final double effectiveAlpha = isDisabled ? 0.06 : 0.12;
-    final Color effectiveColor = isDisabled
-        ? color.withValues(alpha: 0.3)
-        : color;
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: color.withValues(alpha: effectiveAlpha),
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onPressed,
-          child: Padding(
-            padding: EdgeInsets.all(padding),
-            child: Icon(icon, color: effectiveColor, size: iconSize),
+    final ThemeData theme = Theme.of(context);
+    final bool disabled = onPressed == null;
+    final Color background = filled
+        ? (disabled ? color.withValues(alpha: 0.4) : color)
+        : color.withValues(alpha: disabled ? 0.05 : 0.12);
+    final Color foreground = filled
+        ? (foregroundColor ?? theme.colorScheme.onPrimary)
+        : (disabled ? color.withValues(alpha: 0.35) : color);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Material(
+          color: background,
+          shape: const CircleBorder(),
+          elevation: filled && !disabled ? 2 : 0,
+          shadowColor: AppColors.onSurface.withValues(alpha: 0.25),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: SizedBox.square(
+              dimension: diameter,
+              child: Icon(icon, color: foreground, size: iconSize),
+            ),
           ),
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: disabled
+                ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
+                : theme.colorScheme.onSurfaceVariant,
+            fontWeight: filled ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }

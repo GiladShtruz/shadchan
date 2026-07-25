@@ -3,17 +3,20 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:uuid/uuid.dart';
 
 class PersonRepository extends ChangeNotifier {
-  PersonRepository(this._box, [this._noteBox]);
+  PersonRepository(this._box, [this._noteBox, this._eventBox]);
 
   final Box<Person> _box;
   final Box<PersonNote>? _noteBox;
+  final Box<PersonEvent>? _eventBox;
   final Uuid _uuid = const Uuid();
 
   /// Invoked with a person id whenever that person's availability changes, so
@@ -34,6 +37,16 @@ class PersonRepository extends ChangeNotifier {
   }
 
   int get activeCount => count - pendingCount;
+
+  /// People actually in the matchmaker's database, ignoring the soft-deleted
+  /// ones. This is the number the add-contacts screens count up.
+  int get databaseCount {
+    int total = 0;
+    for (final Person person in _box.values) {
+      if (!person.hidden) total++;
+    }
+    return total;
+  }
 
   ({int min, int max})? get activeAgeBounds {
     int? min;
@@ -73,6 +86,20 @@ class PersonRepository extends ChangeNotifier {
     return people;
   }
 
+  /// Contact-import drafts that are not part of the visible database yet.
+  List<Person> getPendingContactDrafts() {
+    final List<Person> people = _box.values
+        .where(
+          (Person person) =>
+              person.needsReview &&
+              person.hidden &&
+              (person.source == 'סריקה' || person.source == 'אנשי קשר'),
+        )
+        .toList();
+    people.sort(_sortByFirstName);
+    return people;
+  }
+
   Person? getById(String id) {
     return _box.get(id);
   }
@@ -101,6 +128,7 @@ class PersonRepository extends ChangeNotifier {
     int? minAge,
     int? maxAge,
     List<ReligiousLevel>? religiousLevels,
+    List<String>? religiousLevelOtherLabels,
     List<ProfileStatus>? profileStatuses,
     String? city,
     bool includePending = false,
@@ -108,10 +136,13 @@ class PersonRepository extends ChangeNotifier {
     final String? normalizedCity = city?.trim().toLowerCase();
     final bool shouldFilterByCity =
         normalizedCity != null && normalizedCity.isNotEmpty;
-    final bool shouldFilterByReligiousLevel =
-        religiousLevels != null && religiousLevels.isNotEmpty;
+    final List<String> selectedReligiousLevelOtherLabels =
+        religiousLevelOtherLabels ?? const <String>[];
     final List<ReligiousLevel> selectedReligiousLevels =
         religiousLevels ?? const <ReligiousLevel>[];
+    final bool shouldFilterByReligiousLevel =
+        selectedReligiousLevels.isNotEmpty ||
+        selectedReligiousLevelOtherLabels.isNotEmpty;
     final bool shouldFilterByProfileStatus =
         profileStatuses != null && profileStatuses.isNotEmpty;
     final List<ProfileStatus> selectedProfileStatuses =
@@ -139,7 +170,11 @@ class PersonRepository extends ChangeNotifier {
       }
 
       if (shouldFilterByReligiousLevel &&
-          !selectedReligiousLevels.contains(person.religiousLevel)) {
+          !selectedReligiousLevels.contains(person.religiousLevel) &&
+          !(person.religiousLevel == ReligiousLevel.other &&
+              selectedReligiousLevelOtherLabels.contains(
+                person.religiousLevelOther?.trim(),
+              ))) {
         return false;
       }
 
@@ -250,6 +285,20 @@ class PersonRepository extends ChangeNotifier {
     await _box.put(person.id, person);
   }
 
+  Future<void> savePendingContactDraft(Person person) async {
+    person
+      ..hidden = true
+      ..needsReview = true
+      ..updatedAt = DateTime.now();
+    await _box.put(person.id, person);
+    notifyListeners();
+  }
+
+  Future<void> activatePendingContactDraft(Person person) async {
+    person.hidden = false;
+    await update(person);
+  }
+
   Future<void> update(Person person) async {
     person.updatedAt = DateTime.now();
     person.needsReview = false;
@@ -268,6 +317,16 @@ class PersonRepository extends ChangeNotifier {
       }).toList();
       if (noteKeys.isNotEmpty) {
         await noteBox.deleteAll(noteKeys);
+      }
+    }
+
+    final Box<PersonEvent>? eventBox = _eventBox;
+    if (eventBox != null) {
+      final List<dynamic> eventKeys = eventBox.keys.where((dynamic key) {
+        return eventBox.get(key)?.personId == id;
+      }).toList();
+      if (eventKeys.isNotEmpty) {
+        await eventBox.deleteAll(eventKeys);
       }
     }
 
@@ -356,10 +415,91 @@ class PersonRepository extends ChangeNotifier {
     person.profileStatus = newStatus;
     person.updatedAt = DateTime.now();
     await person.save();
-    // Status changes are visible on the card itself, so they are deliberately
-    // not written into the personal notes timeline.
+    // Status changes stay out of the personal-notes timeline (which is for the
+    // matchmaker's own notes), but they are meaningful history, so they are
+    // recorded in the dedicated event log.
+    await logEvent(
+      id,
+      PersonEventType.statusChanged,
+      'הסטטוס שונה ל־${newStatus.displayName}',
+    );
     notifyListeners();
     await onPersonStatusChanged?.call(id);
+  }
+
+  /// The history events for a person, newest first. Backs the profile's
+  /// "היסטוריה אחרונה" feed and the full history screen.
+  List<PersonEvent> getEventsForPerson(String personId) {
+    final Box<PersonEvent>? eventBox = _eventBox;
+    if (eventBox == null) {
+      return const <PersonEvent>[];
+    }
+    final List<PersonEvent> events = eventBox.values
+        .where((PersonEvent event) => event.personId == personId)
+        .toList();
+    events.sort(
+      (PersonEvent a, PersonEvent b) => b.createdAt.compareTo(a.createdAt),
+    );
+    return events;
+  }
+
+  /// Records a meaningful history event for a person. Wired to
+  /// [MatchRepository.logPersonEvent] in `main.dart` so proposal-driven events
+  /// land here without that repository depending on the person store.
+  Future<void> logEvent(
+    String personId,
+    PersonEventType type,
+    String text, {
+    String? relatedPersonId,
+    String? relatedMatchId,
+  }) async {
+    final Box<PersonEvent>? eventBox = _eventBox;
+    if (eventBox == null) {
+      return;
+    }
+    final PersonEvent event = PersonEvent(
+      id: _uuid.v4(),
+      personId: personId,
+      type: type,
+      text: text,
+      createdAt: DateTime.now(),
+      relatedPersonId: relatedPersonId,
+      relatedMatchId: relatedMatchId,
+    );
+    await eventBox.put(event.id, event);
+    notifyListeners();
+  }
+
+  /// The "check on them again" reminder date for a person, or null when none.
+  DateTime? personReminderFor(String id) => PersonReminders.forPerson(id);
+
+  /// Sets a per-person reminder (used when someone goes on a break) and bumps
+  /// [Person.updatedAt] since setting it is a meaningful action.
+  Future<void> setPersonReminder(String id, DateTime date) async {
+    await PersonReminders.set(id, date);
+    final Person? person = getById(id);
+    if (person != null) {
+      person.updatedAt = DateTime.now();
+      await person.save();
+    }
+    notifyListeners();
+  }
+
+  Future<void> clearPersonReminder(String id) async {
+    await PersonReminders.clear(id);
+    notifyListeners();
+  }
+
+  /// Bumps [Person.updatedAt] for a meaningful action that doesn't otherwise
+  /// change the record — e.g. reaching out over WhatsApp from the profile.
+  Future<void> touch(String id) async {
+    final Person? person = getById(id);
+    if (person == null) {
+      return;
+    }
+    person.updatedAt = DateTime.now();
+    await person.save();
+    notifyListeners();
   }
 
   List<PersonNote> getNotesForPerson(String personId) {
@@ -413,6 +553,12 @@ class PersonRepository extends ChangeNotifier {
       await person.save();
     }
 
+    // A note the matchmaker wrote is history worth surfacing; the automatic
+    // history lines that other flows create are logged as events directly.
+    if (!isAutomatic) {
+      await logEvent(personId, PersonEventType.note, text);
+    }
+
     notifyListeners();
   }
 
@@ -425,6 +571,7 @@ class PersonRepository extends ChangeNotifier {
 
     note.text = text;
     await noteBox!.put(note.id, note);
+    await _touchPerson(note.personId);
     notifyListeners();
   }
 
@@ -434,8 +581,20 @@ class PersonRepository extends ChangeNotifier {
       return;
     }
 
+    final String? personId = noteBox.get(noteId)?.personId;
     await noteBox.delete(noteId);
+    if (personId != null) {
+      await _touchPerson(personId);
+    }
     notifyListeners();
+  }
+
+  Future<void> _touchPerson(String personId) async {
+    final Person? person = getById(personId);
+    if (person != null) {
+      person.updatedAt = DateTime.now();
+      await person.save();
+    }
   }
 
   Future<void> addImportedNote(PersonNote note) async {

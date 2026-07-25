@@ -185,6 +185,7 @@ class BackupService {
       'isFavorite': person.isFavorite,
       'needsReview': person.needsReview,
       'hidden': person.hidden,
+      'avatarIndex': person.avatarIndex,
       'createdAt': person.createdAt.toIso8601String(),
       'updatedAt': person.updatedAt.toIso8601String(),
     };
@@ -270,6 +271,7 @@ class BackupService {
       isFavorite: _bool(json['isFavorite']),
       needsReview: _bool(json['needsReview']),
       hidden: _bool(json['hidden']),
+      avatarIndex: _int(json['avatarIndex']),
       createdAt: _date(json['createdAt']) ?? now,
       updatedAt: _date(json['updatedAt']) ?? now,
     );

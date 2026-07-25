@@ -32,6 +32,29 @@ abstract final class AppColors {
   static const Color softPurple = Color(0xFFDDD7E7);
   static const Color softSand = Color(0xFFE6D4C0);
   static const Color softYellow = Color(0xFFEFE0B8);
+  static const Color softRose = Color(0xFFEFDDE4);
+
+  /// Gentle pastel pairs used for the initials circles next to a contact's
+  /// name. Each entry is a soft surface plus the ink that stays readable on it.
+  static const List<({Color surface, Color ink})> initialsPastels =
+      <({Color surface, Color ink})>[
+        (surface: softRose, ink: femaleAccent),
+        (surface: softBlue, ink: primaryDark),
+        (surface: softGreen, ink: statusDating),
+        (surface: softPurple, ink: Color(0xFF7A6E93)),
+        (surface: softSand, ink: statusRejected),
+        (surface: softYellow, ink: Color(0xFF8A7333)),
+      ];
+
+  /// Picks a stable pastel for [seed] so the same contact always keeps the same
+  /// shade, however the list happens to be sorted.
+  static ({Color surface, Color ink}) initialsPastel(String seed) {
+    int hash = 0;
+    for (final int unit in seed.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    return initialsPastels[hash % initialsPastels.length];
+  }
 
   // Dark mode uses a clean, cool near-neutral slate rather than the old warm
   // brown, which read as muddy. The blue-grey primary and copper secondary keep

@@ -17,10 +17,11 @@ class ReligiousLevelsProvider extends ChangeNotifier {
 
   /// What a new matchmaker starts with; everything else is opt-in.
   static const List<ReligiousLevel> defaultLevels = <ReligiousLevel>[
+    ReligiousLevel.haredi,
     ReligiousLevel.datiLeumiTorani,
     ReligiousLevel.datiLeumi,
     ReligiousLevel.datiOpen,
-    ReligiousLevel.datlashi,
+    ReligiousLevel.hiloni,
   ];
 
   /// The styles that can be switched on, in display order. [ReligiousLevel.other]

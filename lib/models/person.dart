@@ -1,5 +1,6 @@
 import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/person_avatar_assets.dart';
 
 part 'person.g.dart';
 
@@ -34,7 +35,9 @@ class Person extends HiveObject {
     this.isFavorite = false,
     this.needsReview = false,
     this.hidden = false,
-  }) : photosPaths = List<String>.from(photosPaths);
+    int? avatarIndex,
+  }) : photosPaths = List<String>.from(photosPaths),
+       avatarIndex = avatarIndex ?? PersonAvatarAssets.defaultIndex(id, gender);
 
   @HiveField(0)
   final String id;
@@ -138,6 +141,11 @@ class Person extends HiveObject {
   @HiveField(26)
   MaritalStatus? maritalStatus;
 
+  /// Which bundled illustration is shown when there is no profile photo.
+  /// Older records get a stable pseudo-random choice from their id.
+  @HiveField(28)
+  int avatarIndex;
+
   /// Height formatted for display, e.g. `170 ס״מ`. Empty when unknown.
   String get displayHeight => heightCm == null ? '' : '$heightCm ס״מ';
 
@@ -225,6 +233,7 @@ class Person extends HiveObject {
     bool? isFavorite,
     bool? needsReview,
     bool? hidden,
+    int? avatarIndex,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -269,6 +278,7 @@ class Person extends HiveObject {
       isFavorite: isFavorite ?? this.isFavorite,
       needsReview: needsReview ?? this.needsReview,
       hidden: hidden ?? this.hidden,
+      avatarIndex: avatarIndex ?? this.avatarIndex,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

@@ -37,13 +37,7 @@ class ReligiousLevelPicker extends StatelessWidget {
     final List<ReligiousLevel> levels = provider.enabledLevels;
     final List<String> customLabels = provider.customLabels;
 
-    // A style that was set before it was switched off in settings still shows,
-    // so opening an old card never silently drops its value.
     final ReligiousLevel? current = selected.level;
-    final bool currentIsMissing =
-        current != null &&
-        current != ReligiousLevel.other &&
-        !levels.contains(current);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,10 +60,7 @@ class ReligiousLevelPicker extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: <Widget>[
-            for (final ReligiousLevel level in <ReligiousLevel>[
-              ...levels,
-              if (currentIsMissing) current,
-            ])
+            for (final ReligiousLevel level in levels)
               ChoiceChip(
                 label: Text(level.displayName),
                 selected: current == level,
@@ -79,7 +70,7 @@ class ReligiousLevelPicker extends StatelessWidget {
                       : const ReligiousLevelChoice(null),
                 ),
               ),
-            for (final String label in _customOptions(customLabels))
+            for (final String label in customLabels)
               ChoiceChip(
                 label: Text(label),
                 selected:
@@ -97,17 +88,5 @@ class ReligiousLevelPicker extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  /// The configured custom labels, plus the one already on this person even if
-  /// it was since removed from settings.
-  List<String> _customOptions(List<String> configured) {
-    final String? current = selected.level == ReligiousLevel.other
-        ? selected.customLabel?.trim()
-        : null;
-    if (current == null || current.isEmpty || configured.contains(current)) {
-      return configured;
-    }
-    return <String>[...configured, current];
   }
 }

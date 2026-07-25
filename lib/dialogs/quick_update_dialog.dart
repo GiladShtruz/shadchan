@@ -1,24 +1,40 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/religious_level_picker.dart';
 
-/// Quick editor for the fields most often missing on imported contacts:
-/// name, gender, religious level and age. Offers a shortcut to the full card.
+/// Collects the minimum details required before an imported contact may enter
+/// the database. The passed [person] is only mutated after a valid confirmation;
+/// cancelling leaves the draft untouched.
 class QuickUpdateDialog extends StatefulWidget {
-  const QuickUpdateDialog({super.key, required this.person});
+  const QuickUpdateDialog({
+    super.key,
+    required this.person,
+    this.stepIndex,
+    this.stepCount,
+  });
 
   final Person person;
+  final int? stepIndex;
+  final int? stepCount;
 
-  static Future<void> show(BuildContext context, Person person) {
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext _) => QuickUpdateDialog(person: person),
-    );
+  static Future<bool> show(
+    BuildContext context,
+    Person person, {
+    int? stepIndex,
+    int? stepCount,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => QuickUpdateDialog(
+            person: person,
+            stepIndex: stepIndex,
+            stepCount: stepCount,
+          ),
+        ) ??
+        false;
   }
 
   @override
@@ -28,52 +44,32 @@ class QuickUpdateDialog extends StatefulWidget {
 class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
   late Gender _gender;
   late ReligiousLevel? _religiousLevel;
+  String? _religiousLevelOther;
   late final TextEditingController _nameController;
   late final TextEditingController _ageController;
+
+  String? _nameError;
+  String? _genderError;
+  String? _religiousLevelError;
   String? _ageError;
-  Timer? _autoSaveTimer;
-  late final PersonRepository _repository;
 
   @override
   void initState() {
     super.initState();
-    _repository = context.read<PersonRepository>();
     _gender = widget.person.gender;
     _religiousLevel = widget.person.religiousLevel;
+    _religiousLevelOther = widget.person.religiousLevelOther;
     _nameController = TextEditingController(text: widget.person.fullName);
     _ageController = TextEditingController(
-      text: widget.person.manualAge?.toString() ?? '',
+      text: widget.person.age?.toString() ?? '',
     );
-    // Basic details save automatically while typing.
-    _nameController.addListener(_scheduleAutoSave);
-    _ageController.addListener(_scheduleAutoSave);
   }
 
   @override
   void dispose() {
-    _autoSaveTimer?.cancel();
-    // Flush any pending edits the debounce hadn't written yet (e.g. when the
-    // dialog is dismissed by tapping outside).
-    if (_pendingAutoSave) {
-      unawaited(_persist(updateUi: false));
-    }
-    _nameController
-      ..removeListener(_scheduleAutoSave)
-      ..dispose();
-    _ageController
-      ..removeListener(_scheduleAutoSave)
-      ..dispose();
+    _nameController.dispose();
+    _ageController.dispose();
     super.dispose();
-  }
-
-  bool _pendingAutoSave = false;
-
-  void _scheduleAutoSave() {
-    _pendingAutoSave = true;
-    _autoSaveTimer?.cancel();
-    _autoSaveTimer = Timer(const Duration(milliseconds: 600), () {
-      unawaited(_persist());
-    });
   }
 
   @override
@@ -81,11 +77,9 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
     final ThemeData theme = Theme.of(context);
 
     return AlertDialog(
-      // Keep the dialog from running into the screen edges and let the whole
-      // thing scroll, so nothing gets clipped when the keyboard is open.
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       scrollable: true,
-      title: const Text('עדכון פרטים'),
+      title: _buildTitle(theme),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -96,7 +90,15 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
               controller: _nameController,
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'שם'),
+              onChanged: (_) {
+                if (_nameError != null) {
+                  setState(() => _nameError = null);
+                }
+              },
+              decoration: InputDecoration(
+                labelText: 'שם',
+                errorText: _nameError,
+              ),
             ),
             const SizedBox(height: 16),
             Text('מגדר', style: theme.textTheme.titleSmall),
@@ -110,124 +112,154 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                   selected: _gender == gender,
                   onSelected: (bool selected) {
                     if (selected) {
-                      setState(() => _gender = gender);
-                      unawaited(_persist());
+                      setState(() {
+                        _gender = gender;
+                        _genderError = null;
+                      });
                     }
                   },
                 );
               }).toList(),
             ),
+            if (_genderError != null) ...<Widget>[
+              const SizedBox(height: 6),
+              _ErrorText(_genderError!),
+            ],
             const SizedBox(height: 16),
-            Text('סגנון דתי', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ReligiousLevel.values.map((ReligiousLevel level) {
-                final bool selected = _religiousLevel == level;
-                return ChoiceChip(
-                  label: Text(level.displayName),
-                  selected: selected,
-                  onSelected: (bool value) {
-                    setState(() => _religiousLevel = value ? level : null);
-                    unawaited(_persist());
-                  },
-                );
-              }).toList(),
+            ReligiousLevelPicker(
+              selected: ReligiousLevelChoice(
+                _religiousLevel,
+                _religiousLevelOther,
+              ),
+              showSettingsShortcut: false,
+              onChanged: (ReligiousLevelChoice choice) {
+                setState(() {
+                  _religiousLevel = choice.level;
+                  _religiousLevelOther = choice.customLabel;
+                  _religiousLevelError = null;
+                });
+              },
             ),
+            if (_religiousLevelError != null) ...<Widget>[
+              const SizedBox(height: 6),
+              _ErrorText(_religiousLevelError!),
+            ],
             const SizedBox(height: 16),
             TextField(
               controller: _ageController,
               keyboardType: TextInputType.number,
+              onChanged: (_) {
+                if (_ageError != null) {
+                  setState(() => _ageError = null);
+                }
+              },
               decoration: InputDecoration(
                 labelText: 'גיל (הערכה)',
                 errorText: _ageError,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                onPressed: _openFullCard,
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text('עריכת פרטים נוספים'),
               ),
             ),
           ],
         ),
       ),
       actions: <Widget>[
-        FilledButton(onPressed: _finish, child: const Text('סיום')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('ביטול'),
+        ),
+        FilledButton(onPressed: _confirm, child: Text(_finishLabel)),
       ],
     );
   }
 
-  Future<void> _openFullCard() async {
-    _autoSaveTimer?.cancel();
-    // Carry over everything already typed in the basic fields so the full card
-    // doesn't ask for it again.
-    final bool ageValid = await _persist();
-    if (!ageValid || !mounted) {
-      return;
+  Widget _buildTitle(ThemeData theme) {
+    final int? stepIndex = widget.stepIndex;
+    final int? stepCount = widget.stepCount;
+    if (stepIndex == null || stepCount == null || stepCount < 2) {
+      return const Text('עדכון פרטים');
     }
-    Navigator.of(context).pop();
-    context.push('/people/${widget.person.id}/edit');
+
+    return Row(
+      children: <Widget>[
+        const Expanded(child: Text('עדכון פרטים')),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$stepIndex מתוך $stepCount',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: theme.brightness == Brightness.dark
+                  ? theme.colorScheme.onSurface
+                  : AppColors.primaryDark,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
-  Future<void> _finish() async {
-    _autoSaveTimer?.cancel();
-    final bool ageValid = await _persist();
-    if (!ageValid || !mounted) {
-      return;
+  String get _finishLabel {
+    final int? stepIndex = widget.stepIndex;
+    final int? stepCount = widget.stepCount;
+    if (stepIndex != null && stepCount != null && stepIndex < stepCount) {
+      return 'אישור והבא';
     }
-    Navigator.of(context).pop();
+    return 'אישור';
   }
 
-  /// Writes the current basic fields to the person. Saving is automatic, so
-  /// this runs on every change (debounced), on chip selection, and before
-  /// leaving the dialog. Returns whether the age field was valid; name, gender
-  /// and religious level are always saved, and the age only when valid.
-  Future<bool> _persist({bool updateUi = true}) async {
-    _pendingAutoSave = false;
-
-    final String ageText = _ageController.text.trim();
-    int? manualAge;
-    bool ageValid = true;
-    if (ageText.isNotEmpty) {
-      final int? parsed = int.tryParse(ageText);
-      if (parsed == null || parsed < 10 || parsed > 120) {
-        ageValid = false;
-      } else {
-        manualAge = parsed;
-      }
-    }
-    if (updateUi && mounted) {
-      setState(
-        () => _ageError = ageValid ? null : 'יש להזין גיל בין 10 ל-120',
-      );
-    }
-
-    // The dialog exposes a single "name" field; split it back into the
-    // first / last name pair the model stores (everything after the first
-    // space becomes the last name).
+  void _confirm() {
     final String fullName = _nameController.text.trim();
-    final int spaceIndex = fullName.indexOf(' ');
-    final String firstName = spaceIndex == -1
-        ? fullName
-        : fullName.substring(0, spaceIndex).trim();
-    final String lastName = spaceIndex == -1
-        ? ''
-        : fullName.substring(spaceIndex + 1).trim();
+    final int? age = int.tryParse(_ageController.text.trim());
+    final bool validName = fullName.isNotEmpty;
+    final bool validGender = _gender != Gender.unknown;
+    final bool validReligiousLevel = _religiousLevel != null;
+    final bool validAge = age != null && age >= 10 && age <= 120;
 
-    final Person person = widget.person
-      ..firstName = firstName
-      ..lastName = lastName
-      ..gender = _gender
-      ..religiousLevel = _religiousLevel;
-    if (ageValid) {
-      person.manualAge = manualAge;
+    if (!validName || !validGender || !validReligiousLevel || !validAge) {
+      setState(() {
+        _nameError = validName ? null : 'יש להזין שם';
+        _genderError = validGender ? null : 'יש לבחור מגדר';
+        _religiousLevelError = validReligiousLevel
+            ? null
+            : 'יש לבחור סגנון דתי';
+        _ageError = validAge ? null : 'יש להזין גיל בין 10 ל-120';
+      });
+      return;
     }
-    await _repository.update(person);
-    return ageValid;
+
+    final int spaceIndex = fullName.indexOf(' ');
+    widget.person
+      ..firstName = spaceIndex == -1
+          ? fullName
+          : fullName.substring(0, spaceIndex).trim()
+      ..lastName = spaceIndex == -1
+          ? ''
+          : fullName.substring(spaceIndex + 1).trim()
+      ..gender = _gender
+      ..religiousLevel = _religiousLevel
+      ..religiousLevelOther = _religiousLevelOther
+      ..setManualAge(age);
+
+    Navigator.of(context).pop(true);
+  }
+}
+
+class _ErrorText extends StatelessWidget {
+  const _ErrorText(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      message,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: Theme.of(context).colorScheme.error,
+      ),
+    );
   }
 }

@@ -44,6 +44,10 @@ PeopleSortOption _parsePeopleSort(String? raw) {
   }
 }
 
+bool shouldShowBottomNavigationBar(String path) {
+  return const <String>{'/home', '/people', '/matches'}.contains(path);
+}
+
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/home',
@@ -78,7 +82,12 @@ abstract final class AppRouter {
               GoRouterState state,
               StatefulNavigationShell navigationShell,
             ) {
-              return _AppShell(navigationShell: navigationShell);
+              return _AppShell(
+                navigationShell: navigationShell,
+                showBottomNavigationBar: shouldShowBottomNavigationBar(
+                  state.uri.path,
+                ),
+              );
             },
         branches: <StatefulShellBranch>[
           StatefulShellBranch(
@@ -300,49 +309,50 @@ abstract final class AppRouter {
 }
 
 class _AppShell extends StatelessWidget {
-  const _AppShell({required this.navigationShell});
+  const _AppShell({
+    required this.navigationShell,
+    required this.showBottomNavigationBar,
+  });
 
   final StatefulNavigationShell navigationShell;
+  final bool showBottomNavigationBar;
 
   @override
   Widget build(BuildContext context) {
-    // The bar is always visible inside the shell so navigation never gets
-    // "stuck" on an inner screen. The highlighted item follows the active
-    // branch (which is always in sync), rather than an exact path match that
-    // breaks after an imperative push/pop. The dashboard branch (index 3) has
-    // no bar item, so it falls back to the home item.
+    // Only the three primary destinations own the app navigation. Nested
+    // routes remain inside their branch so back navigation is preserved, but
+    // they intentionally render without the bar.
     final int branchIndex = navigationShell.currentIndex;
     final int selectedIndex = branchIndex <= 2 ? branchIndex : 0;
 
     return Scaffold(
       body: navigationShell,
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: selectedIndex,
-        // Always `initialLocation: true` — tapping a tab returns to that area's
-        // main screen rather than to whatever inner screen was open there last.
-        onTap: (int index) => navigationShell.goBranch(
-          index,
-          initialLocation: true,
-        ),
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'בית',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.group_outlined),
-            activeIcon: Icon(Icons.group),
-            label: 'המאגר שלי',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_border),
-            activeIcon: Icon(Icons.favorite),
-            label: 'רעיונות',
-          ),
-        ],
-      ),
+      bottomNavigationBar: showBottomNavigationBar
+          ? BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              currentIndex: selectedIndex,
+              // Tapping a tab always returns to that area's primary screen.
+              onTap: (int index) =>
+                  navigationShell.goBranch(index, initialLocation: true),
+              items: const <BottomNavigationBarItem>[
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home_outlined),
+                  activeIcon: Icon(Icons.home),
+                  label: 'בית',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.group_outlined),
+                  activeIcon: Icon(Icons.group),
+                  label: 'המאגר שלי',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.favorite_border),
+                  activeIcon: Icon(Icons.favorite),
+                  label: 'רעיונות',
+                ),
+              ],
+            )
+          : null,
     );
   }
 }

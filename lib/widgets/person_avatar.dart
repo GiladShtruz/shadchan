@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/models/person.dart';
 
 class PersonAvatar extends StatelessWidget {
@@ -22,32 +22,34 @@ class PersonAvatar extends StatelessWidget {
       );
     }
 
-    // No photo: fall back to a gender icon inside a gender-tinted circle — a
-    // man in blue, a woman in pink. Unknown gender keeps the neutral initials.
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Gender gender = person.gender;
-    if (gender == Gender.male || gender == Gender.female) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: AppColors.genderSurface(gender, dark: dark),
-        child: Icon(
-          gender == Gender.female ? Icons.woman : Icons.man,
-          color: AppColors.genderAccent(gender, dark: dark),
-          size: radius * 1.2,
+    final String? avatarAsset = PersonAvatarAssets.pathFor(
+      person.gender,
+      person.avatarIndex,
+    );
+    if (avatarAsset != null) {
+      final double diameter = radius * 2;
+      final double pixelRatio = MediaQuery.devicePixelRatioOf(context);
+      final int cacheSize = (diameter * pixelRatio).ceil();
+      return ClipOval(
+        child: Image.asset(
+          avatarAsset,
+          width: diameter,
+          height: diameter,
+          cacheWidth: cacheSize,
+          cacheHeight: cacheSize,
+          fit: BoxFit.cover,
         ),
       );
     }
 
+    // Unknown gender keeps a simple, neutral standard person icon.
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.primaryLight,
-      child: Text(
-        person.initials.isEmpty ? '?' : person.initials,
-        style: TextStyle(
-          color: AppColors.primary,
-          fontWeight: FontWeight.bold,
-          fontSize: radius * 0.75,
-        ),
+      child: Icon(
+        Icons.person_outline,
+        color: AppColors.primary,
+        size: radius * 1.15,
       ),
     );
   }

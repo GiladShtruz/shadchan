@@ -10,6 +10,7 @@ class PeopleFilterState {
     required this.gender,
     required this.ageRange,
     required this.religiousLevels,
+    this.religiousLevelOtherLabels = const <String>[],
     required this.profileStatuses,
     this.heightRange,
     this.maritalStatuses = const <MaritalStatus>[],
@@ -18,6 +19,7 @@ class PeopleFilterState {
   final Gender? gender;
   final RangeValues? ageRange;
   final List<ReligiousLevel> religiousLevels;
+  final List<String> religiousLevelOtherLabels;
   final List<ProfileStatus> profileStatuses;
   final RangeValues? heightRange;
   final List<MaritalStatus> maritalStatuses;
@@ -34,6 +36,7 @@ class PeopleFiltersSheet extends StatefulWidget {
     required this.initialAgeRange,
     required this.ageBounds,
     required this.initialReligiousLevels,
+    this.initialReligiousLevelOtherLabels = const <String>[],
     required this.initialProfileStatuses,
     this.initialHeightRange,
     this.heightBounds,
@@ -44,11 +47,11 @@ class PeopleFiltersSheet extends StatefulWidget {
   final RangeValues? initialAgeRange;
   final ({int min, int max})? ageBounds;
   final List<ReligiousLevel> initialReligiousLevels;
+  final List<String> initialReligiousLevelOtherLabels;
   final List<ProfileStatus> initialProfileStatuses;
   final RangeValues? initialHeightRange;
 
-  /// Min/max height across the people being filtered. Null when nobody has a
-  /// height yet, which hides the slider instead of showing an empty one.
+  /// Fixed product range for height filtering: 120–200 cm.
   final ({int min, int max})? heightBounds;
   final List<MaritalStatus> initialMaritalStatuses;
 
@@ -61,6 +64,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
   RangeValues? tempAgeRange;
   RangeValues? tempHeightRange;
   late List<ReligiousLevel> tempReligiousLevels;
+  late List<String> tempReligiousLevelOtherLabels;
   late List<ProfileStatus> tempProfileStatuses;
   late List<MaritalStatus> tempMaritalStatuses;
 
@@ -80,6 +84,9 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
     tempReligiousLevels = List<ReligiousLevel>.from(
       widget.initialReligiousLevels,
     );
+    tempReligiousLevelOtherLabels = List<String>.from(
+      widget.initialReligiousLevelOtherLabels,
+    );
     tempProfileStatuses = List<ProfileStatus>.from(
       widget.initialProfileStatuses,
     );
@@ -88,16 +95,13 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
         widget.initialMaritalStatuses.isNotEmpty;
   }
 
-  /// Only the styles enabled in settings are worth filtering by, plus any that
-  /// people in the database already carry from before they were switched off.
+  /// Only styles enabled in settings are offered.
   List<ReligiousLevel> _filterableLevels(BuildContext context) {
-    final List<ReligiousLevel> enabled = context
-        .watch<ReligiousLevelsProvider>()
-        .enabledLevels;
-    final List<ReligiousLevel> missing = tempReligiousLevels
-        .where((ReligiousLevel level) => !enabled.contains(level))
-        .toList();
-    return <ReligiousLevel>[...enabled, ...missing];
+    return context.watch<ReligiousLevelsProvider>().enabledLevels;
+  }
+
+  List<String> _filterableCustomLabels(BuildContext context) {
+    return context.watch<ReligiousLevelsProvider>().customLabels;
   }
 
   RangeValues? _normalizedAgeRange() =>
@@ -175,27 +179,47 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _filterableLevels(context).map((ReligiousLevel level) {
-                  final bool isSelected = tempReligiousLevels.contains(level);
-                  return FilterChip(
-                    label: Text(level.displayName),
-                    selected: isSelected,
-                    onSelected: (bool selected) {
-                      setState(() {
-                        if (selected) {
-                          tempReligiousLevels = <ReligiousLevel>[
-                            ...tempReligiousLevels,
-                            level,
-                          ];
-                        } else {
-                          tempReligiousLevels = tempReligiousLevels
-                              .where((ReligiousLevel item) => item != level)
-                              .toList();
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
+                children: <Widget>[
+                  for (final ReligiousLevel level in _filterableLevels(context))
+                    FilterChip(
+                      label: Text(level.displayName),
+                      selected: tempReligiousLevels.contains(level),
+                      onSelected: (bool selected) {
+                        setState(() {
+                          if (selected) {
+                            tempReligiousLevels = <ReligiousLevel>[
+                              ...tempReligiousLevels,
+                              level,
+                            ];
+                          } else {
+                            tempReligiousLevels = tempReligiousLevels
+                                .where((ReligiousLevel item) => item != level)
+                                .toList();
+                          }
+                        });
+                      },
+                    ),
+                  for (final String label in _filterableCustomLabels(context))
+                    FilterChip(
+                      label: Text(label),
+                      selected: tempReligiousLevelOtherLabels.contains(label),
+                      onSelected: (bool selected) {
+                        setState(() {
+                          if (selected) {
+                            tempReligiousLevelOtherLabels = <String>[
+                              ...tempReligiousLevelOtherLabels,
+                              label,
+                            ];
+                          } else {
+                            tempReligiousLevelOtherLabels =
+                                tempReligiousLevelOtherLabels
+                                    .where((String item) => item != label)
+                                    .toList();
+                          }
+                        });
+                      },
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               Text('סטטוס', style: theme.textTheme.titleMedium),
@@ -255,20 +279,18 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                if (widget.heightBounds != null) ...<Widget>[
-                  _RangeFilter(
-                    bounds: widget.heightBounds!,
-                    value: tempHeightRange,
-                    labelBuilder: (RangeValues range) =>
-                        'טווח גובה: ${range.start.round()}-${range.end.round()} ס״מ',
-                    onChanged: (RangeValues value) {
-                      setState(() {
-                        tempHeightRange = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                ],
+                _RangeFilter(
+                  bounds: widget.heightBounds ?? (min: 120, max: 200),
+                  value: tempHeightRange,
+                  labelBuilder: (RangeValues range) =>
+                      'טווח גובה: ${range.start.round()}-${range.end.round()} ס״מ',
+                  onChanged: (RangeValues value) {
+                    setState(() {
+                      tempHeightRange = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
                 Text('מצב משפחתי', style: theme.textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Wrap(
@@ -309,7 +331,12 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                       PeopleFilterState(
                         gender: tempGender,
                         ageRange: _normalizedAgeRange(),
-                        religiousLevels: tempReligiousLevels,
+                        religiousLevels: tempReligiousLevels
+                            .where(_filterableLevels(context).contains)
+                            .toList(),
+                        religiousLevelOtherLabels: tempReligiousLevelOtherLabels
+                            .where(_filterableCustomLabels(context).contains)
+                            .toList(),
                         profileStatuses: tempProfileStatuses,
                         heightRange: _normalizedHeightRange(),
                         maritalStatuses: tempMaritalStatuses,
@@ -328,6 +355,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                       tempAgeRange = null;
                       tempHeightRange = null;
                       tempReligiousLevels = <ReligiousLevel>[];
+                      tempReligiousLevelOtherLabels = <String>[];
                       tempProfileStatuses = <ProfileStatus>[];
                       tempMaritalStatuses = <MaritalStatus>[];
                     });
@@ -361,8 +389,7 @@ class _RangeFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final RangeValues effective =
-        value ??
-        RangeValues(bounds.min.toDouble(), bounds.max.toDouble());
+        value ?? RangeValues(bounds.min.toDouble(), bounds.max.toDouble());
     final bool sliderDisabled = bounds.min == bounds.max;
 
     return Column(

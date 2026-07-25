@@ -289,8 +289,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
           ),
           const SizedBox(height: 8),
         ],
-        for (final MatchIdea match in matches)
-          _card(match, personRepository),
+        for (final MatchIdea match in matches) _card(match, personRepository),
       ],
     );
   }
@@ -348,11 +347,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
                   children: <Widget>[
                     for (final MatchIdea match in shown)
-                      _card(
-                        match,
-                        personRepository,
-                        showStatusTag: true,
-                      ),
+                      _card(match, personRepository, showStatusTag: true),
                   ],
                 ),
         ),
@@ -376,12 +371,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       children: <Widget>[
         for (final MatchIdea match in results)
-          _card(
-            match,
-            personRepository,
-            showStatusTag: true,
-            compact: true,
-          ),
+          _card(match, personRepository, showStatusTag: true, compact: true),
       ],
     );
   }
@@ -490,7 +480,8 @@ class _CategoryChips extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Row(
         children: <Widget>[
-          for (final MatchCategory category in MatchCategory.values) ...<Widget>[
+          for (final MatchCategory category
+              in MatchCategory.values) ...<Widget>[
             _CategoryChip(
               label: category.displayName,
               count: counts[category] ?? 0,

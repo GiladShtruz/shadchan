@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -20,6 +21,7 @@ class PersonPickerSheet extends StatefulWidget {
     this.minAge,
     this.maxAge,
     this.religiousLevels = const <ReligiousLevel>[],
+    this.religiousLevelOtherLabels = const <String>[],
     this.profileStatuses = const <ProfileStatus>[],
     this.candidatePredicate,
     this.emptySubtitle = 'נסו לחפש בשם אחר',
@@ -32,6 +34,7 @@ class PersonPickerSheet extends StatefulWidget {
   final int? minAge;
   final int? maxAge;
   final List<ReligiousLevel> religiousLevels;
+  final List<String> religiousLevelOtherLabels;
   final List<ProfileStatus> profileStatuses;
   final PersonFilter? candidatePredicate;
   final String emptySubtitle;
@@ -48,6 +51,7 @@ class PersonPickerSheet extends StatefulWidget {
     int? minAge,
     int? maxAge,
     List<ReligiousLevel> religiousLevels = const <ReligiousLevel>[],
+    List<String> religiousLevelOtherLabels = const <String>[],
     List<ProfileStatus> profileStatuses = const <ProfileStatus>[],
     PersonFilter? candidatePredicate,
     String emptySubtitle = 'נסו לחפש בשם אחר',
@@ -67,6 +71,7 @@ class PersonPickerSheet extends StatefulWidget {
             minAge: minAge,
             maxAge: maxAge,
             religiousLevels: religiousLevels,
+            religiousLevelOtherLabels: religiousLevelOtherLabels,
             profileStatuses: profileStatuses,
             candidatePredicate: candidatePredicate,
             emptySubtitle: emptySubtitle,
@@ -187,8 +192,15 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
         return false;
       }
 
-      if (widget.religiousLevels.isNotEmpty &&
-          !widget.religiousLevels.contains(person.religiousLevel)) {
+      final bool hasReligiousFilter =
+          widget.religiousLevels.isNotEmpty ||
+          widget.religiousLevelOtherLabels.isNotEmpty;
+      if (hasReligiousFilter &&
+          !widget.religiousLevels.contains(person.religiousLevel) &&
+          !(person.religiousLevel == ReligiousLevel.other &&
+              widget.religiousLevelOtherLabels.contains(
+                person.religiousLevelOther?.trim(),
+              ))) {
         return false;
       }
 
@@ -248,7 +260,9 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                         final _PickerEntry entry = entries[index];
                         final Person? person = entry.person;
                         if (person == null) {
-                          return _PickerSectionLabel(label: entry.sectionLabel!);
+                          return _PickerSectionLabel(
+                            label: entry.sectionLabel!,
+                          );
                         }
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
@@ -284,9 +298,7 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
         a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase());
 
     if (query.isNotEmpty || people.length <= _recentCount) {
-      return (people.toList()..sort(byName))
-          .map(_PickerEntry.person)
-          .toList();
+      return (people.toList()..sort(byName)).map(_PickerEntry.person).toList();
     }
 
     final List<Person> byRecency = people.toList()
@@ -423,12 +435,14 @@ class MatchProposalFilters {
     this.minAge,
     this.maxAge,
     this.religiousLevels = const <ReligiousLevel>[],
+    this.religiousLevelOtherLabels = const <String>[],
     this.profileStatuses = const <ProfileStatus>[],
   });
 
   final int? minAge;
   final int? maxAge;
   final List<ReligiousLevel> religiousLevels;
+  final List<String> religiousLevelOtherLabels;
   final List<ProfileStatus> profileStatuses;
 }
 
@@ -485,6 +499,9 @@ class MatchProposalFilterSheet extends StatefulWidget {
         rawFilters['religiousLevels'],
         ReligiousLevel.values,
       ),
+      religiousLevelOtherLabels: _stringList(
+        rawFilters['religiousLevelOtherLabels'],
+      ),
       profileStatuses: _enumValuesFromNames<ProfileStatus>(
         rawFilters['profileStatuses'],
         <ProfileStatus>[
@@ -512,6 +529,7 @@ class MatchProposalFilterSheet extends StatefulWidget {
       'religiousLevels': filters.religiousLevels
           .map((ReligiousLevel level) => level.name)
           .toList(),
+      'religiousLevelOtherLabels': filters.religiousLevelOtherLabels,
       'profileStatuses': filters.profileStatuses
           .map((ProfileStatus status) => status.name)
           .toList(),
@@ -542,6 +560,17 @@ class MatchProposalFilterSheet extends StatefulWidget {
         .toList();
   }
 
+  static List<String> _stringList(Object? values) {
+    if (values is! Iterable) {
+      return <String>[];
+    }
+    return values
+        .whereType<String>()
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toList();
+  }
+
   @override
   State<MatchProposalFilterSheet> createState() =>
       _MatchProposalFilterSheetState();
@@ -550,6 +579,7 @@ class MatchProposalFilterSheet extends StatefulWidget {
 class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
   RangeValues? _ageRange;
   final List<ReligiousLevel> _religiousLevels = <ReligiousLevel>[];
+  final List<String> _religiousLevelOtherLabels = <String>[];
   final List<ProfileStatus> _profileStatuses = <ProfileStatus>[
     ProfileStatus.available,
   ];
@@ -566,6 +596,12 @@ class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final List<ReligiousLevel> enabledReligiousLevels = context
+        .watch<ReligiousLevelsProvider>()
+        .enabledLevels;
+    final List<String> enabledReligiousLevelOtherLabels = context
+        .watch<ReligiousLevelsProvider>()
+        .customLabels;
     final ({int min, int max})? ageBounds = _ageBounds(
       context.watch<PersonRepository>().getAll(),
     );
@@ -631,22 +667,36 @@ class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: ReligiousLevel.values.map((ReligiousLevel level) {
-                  final bool selected = _religiousLevels.contains(level);
-                  return FilterChip(
-                    label: Text(level.displayName),
-                    selected: selected,
-                    onSelected: (bool value) {
-                      setState(() {
-                        if (value) {
-                          _religiousLevels.add(level);
-                        } else {
-                          _religiousLevels.remove(level);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
+                children: <Widget>[
+                  for (final ReligiousLevel level in enabledReligiousLevels)
+                    FilterChip(
+                      label: Text(level.displayName),
+                      selected: _religiousLevels.contains(level),
+                      onSelected: (bool value) {
+                        setState(() {
+                          if (value) {
+                            _religiousLevels.add(level);
+                          } else {
+                            _religiousLevels.remove(level);
+                          }
+                        });
+                      },
+                    ),
+                  for (final String label in enabledReligiousLevelOtherLabels)
+                    FilterChip(
+                      label: Text(label),
+                      selected: _religiousLevelOtherLabels.contains(label),
+                      onSelected: (bool value) {
+                        setState(() {
+                          if (value) {
+                            _religiousLevelOtherLabels.add(label);
+                          } else {
+                            _religiousLevelOtherLabels.remove(label);
+                          }
+                        });
+                      },
+                    ),
+                ],
               ),
               const SizedBox(height: 16),
               Text('סטטוס', style: theme.textTheme.titleMedium),
@@ -688,9 +738,12 @@ class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
                       maxAge: hasAgeFilter
                           ? effectiveAgeRange.end.round()
                           : null,
-                      religiousLevels: List<ReligiousLevel>.from(
-                        _religiousLevels,
-                      ),
+                      religiousLevels: _religiousLevels
+                          .where(enabledReligiousLevels.contains)
+                          .toList(),
+                      religiousLevelOtherLabels: _religiousLevelOtherLabels
+                          .where(enabledReligiousLevelOtherLabels.contains)
+                          .toList(),
                       profileStatuses: List<ProfileStatus>.from(
                         _profileStatuses,
                       ),
@@ -715,6 +768,7 @@ class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
                     setState(() {
                       _ageRange = null;
                       _religiousLevels.clear();
+                      _religiousLevelOtherLabels.clear();
                       _profileStatuses.clear();
                       _loadedSavedFilters = false;
                     });
@@ -753,6 +807,9 @@ class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
     _religiousLevels
       ..clear()
       ..addAll(filters.religiousLevels);
+    _religiousLevelOtherLabels
+      ..clear()
+      ..addAll(filters.religiousLevelOtherLabels);
 
     _profileStatuses
       ..clear()

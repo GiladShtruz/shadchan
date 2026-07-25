@@ -5,6 +5,7 @@ import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:uuid/uuid.dart';
@@ -119,8 +120,28 @@ class MatchRepository extends ChangeNotifier {
     );
 
     // No automatic "opened" journal note — the journal stays a personal
-    // free-notes chat.
+    // free-notes chat. The opening is still recorded on each candidate's
+    // history timeline.
     await _matchBox.put(match.id, match);
+
+    final Person? Function(String)? resolve = resolvePerson;
+    final String nameA = _shortName(resolve?.call(personAId), 'מועמד/ת');
+    final String nameB = _shortName(resolve?.call(personBId), 'מועמד/ת');
+    await logPersonEvent?.call(
+      personAId,
+      PersonEventType.proposalOpened,
+      'נפתחה הצעה עם $nameB',
+      relatedPersonId: personBId,
+      relatedMatchId: match.id,
+    );
+    await logPersonEvent?.call(
+      personBId,
+      PersonEventType.proposalOpened,
+      'נפתחה הצעה עם $nameA',
+      relatedPersonId: personAId,
+      relatedMatchId: match.id,
+    );
+
     notifyListeners();
     _refreshNotifications();
     return match;
@@ -168,10 +189,17 @@ class MatchRepository extends ChangeNotifier {
   /// Marks a person as "תפוס". Wired to [PersonRepository] in `main.dart`.
   Future<void> Function(String personId)? markPersonBusy;
 
-  /// Writes a line into a person's personal history. Wired to
-  /// [PersonRepository.addNote] in `main.dart` so proposal outcomes are recorded
-  /// on both candidates without this repository depending on the person store.
-  Future<void> Function(String personId, String text)? addPersonHistoryNote;
+  /// Records a history event on a person. Wired to
+  /// [PersonRepository.logEvent] in `main.dart` so proposal outcomes are logged
+  /// on both candidates without this repository owning the person store.
+  Future<void> Function(
+    String personId,
+    PersonEventType type,
+    String text, {
+    String? relatedPersonId,
+    String? relatedMatchId,
+  })?
+  logPersonEvent;
 
   /// Sets (or clears, with a null [date]) the reminder on a proposal. Clearing
   /// is also how a due reminder is marked as handled, which takes the proposal
@@ -309,32 +337,38 @@ class MatchRepository extends ChangeNotifier {
     );
 
     // Each candidate's own history, phrased from their perspective.
-    final Future<void> Function(String, String)? history = addPersonHistoryNote;
-    if (history != null) {
-      if (male != null) {
-        await history(
-          male.id,
-          _historyLine(
-            selfIsMale: true,
-            otherName: femaleName,
-            party: party,
-            dated: dated,
-            note: trimmedNote,
-          ),
-        );
-      }
-      if (female != null) {
-        await history(
-          female.id,
-          _historyLine(
-            selfIsMale: false,
-            otherName: maleName,
-            party: party,
-            dated: dated,
-            note: trimmedNote,
-          ),
-        );
-      }
+    final PersonEventType eventType = dated
+        ? PersonEventType.dated
+        : PersonEventType.rejected;
+    if (male != null) {
+      await logPersonEvent?.call(
+        male.id,
+        eventType,
+        _historyLine(
+          selfIsMale: true,
+          otherName: femaleName,
+          party: party,
+          dated: dated,
+          note: trimmedNote,
+        ),
+        relatedPersonId: female?.id,
+        relatedMatchId: match.id,
+      );
+    }
+    if (female != null) {
+      await logPersonEvent?.call(
+        female.id,
+        eventType,
+        _historyLine(
+          selfIsMale: false,
+          otherName: maleName,
+          party: party,
+          dated: dated,
+          note: trimmedNote,
+        ),
+        relatedPersonId: male?.id,
+        relatedMatchId: match.id,
+      );
     }
   }
 
