@@ -108,25 +108,10 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: const Icon(Icons.search),
           onPressed: () => setState(() => _searchVisible = true),
         ),
-        PopupMenuButton<String>(
-          tooltip: 'עוד',
-          onSelected: (String value) {
-            if (value == 'settings') {
-              context.push('/settings');
-            }
-          },
-          itemBuilder: (BuildContext context) {
-            return const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                value: 'settings',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('הגדרות'),
-                ),
-              ),
-            ];
-          },
+        IconButton(
+          tooltip: 'הגדרות',
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: () => context.push('/settings'),
         ),
       ],
     );
@@ -272,9 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 32),
           sliver: SliverToBoxAdapter(
-            child: _MonthlyStatsCard(
-              onTap: () => context.push('/stats/month'),
-            ),
+            child: _MonthlyStatsCard(onTap: () => context.push('/stats/month')),
           ),
         ),
       ],
@@ -292,18 +275,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final List<Person> people =
-        repository
-            .getAll()
-            .where((Person p) => !p.hidden)
-            .where((Person p) {
-              return p.fullName.toLowerCase().contains(query) ||
-                  (p.phone ?? '').contains(query);
-            })
-            .toList()
-          ..sort(
-            (Person a, Person b) =>
-                a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
-          );
+        repository.getAll().where((Person p) => !p.hidden).where((Person p) {
+          return p.fullName.toLowerCase().contains(query) ||
+              (p.phone ?? '').contains(query);
+        }).toList()..sort(
+          (Person a, Person b) =>
+              a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+        );
 
     return Align(
       alignment: Alignment.topCenter,

@@ -39,24 +39,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('ערכת נושא', style: Theme.of(context).textTheme.titleMedium),
+              // The mode icons ride along with the title instead of inside the
+              // segments, which had no room for them; the active one lights up
+              // so the row still says which mode is on.
+              Row(
+                children: <Widget>[
+                  Text(
+                    'ערכת נושא',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const Spacer(),
+                  for (final (ThemeMode mode, IconData icon) entry
+                      in <(ThemeMode, IconData)>[
+                        (ThemeMode.system, Icons.brightness_auto_outlined),
+                        (ThemeMode.light, Icons.light_mode_outlined),
+                        (ThemeMode.dark, Icons.dark_mode_outlined),
+                      ])
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(start: 10),
+                      child: Icon(
+                        entry.$2,
+                        size: 20,
+                        color: themeModeProvider.themeMode == entry.$1
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.45),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 12),
               SegmentedButton<ThemeMode>(
+                // A third of the card is not enough for an icon, a checkmark
+                // and 'אוטומטי' side by side - that is what pushed the last
+                // letter onto a second line. Labels only, and a scale-down
+                // guard so a large system font shrinks the text instead of
+                // wrapping or clipping it.
+                showSelectedIcon: false,
+                style: SegmentedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 segments: const <ButtonSegment<ThemeMode>>[
                   ButtonSegment<ThemeMode>(
                     value: ThemeMode.system,
-                    icon: Icon(Icons.brightness_auto_outlined),
-                    label: Text('אוטומטי'),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('אוטומטי', maxLines: 1, softWrap: false),
+                    ),
                   ),
                   ButtonSegment<ThemeMode>(
                     value: ThemeMode.light,
-                    icon: Icon(Icons.light_mode_outlined),
-                    label: Text('בהיר'),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('בהיר', maxLines: 1, softWrap: false),
+                    ),
                   ),
                   ButtonSegment<ThemeMode>(
                     value: ThemeMode.dark,
-                    icon: Icon(Icons.dark_mode_outlined),
-                    label: Text('כהה'),
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('כהה', maxLines: 1, softWrap: false),
+                    ),
                   ),
                 ],
                 selected: <ThemeMode>{themeModeProvider.themeMode},
@@ -174,10 +217,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('הגדרות'), centerTitle: true),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: sections.length,
-        itemBuilder: (BuildContext context, int index) => sections[index],
+      body: SafeArea(
+        child: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: sections.length,
+          itemBuilder: (BuildContext context, int index) => sections[index],
+        ),
       ),
     );
   }

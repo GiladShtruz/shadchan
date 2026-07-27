@@ -132,7 +132,10 @@ String _formatReminderDate(DateTime date) {
   return (daysDiff: daysDiff, overdue: overdue, dueToday: dueToday, when: when);
 }
 
-Color _reminderAccent(ThemeData theme, ({int daysDiff, bool overdue, bool dueToday, String when}) timing) {
+Color _reminderAccent(
+  ThemeData theme,
+  ({int daysDiff, bool overdue, bool dueToday, String when}) timing,
+) {
   if (timing.overdue) {
     return theme.colorScheme.error;
   }
@@ -249,9 +252,7 @@ class ReminderCard extends StatelessWidget {
   }
 }
 
-/// A per-person "check on them again" reminder (set when someone goes on a
-/// break). Offers a WhatsApp shortcut and a reschedule action, and opens the
-/// person's page when tapped.
+/// A per-person "check on them again" reminder (busy or on a break).
 class PersonReminderCard extends StatelessWidget {
   const PersonReminderCard({
     super.key,
@@ -307,7 +308,7 @@ class PersonReminderCard extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'בהפסקה — לבדוק שוב · ${_formatReminderDate(date)}',
+                '${person.profileStatus.displayName} — לבדוק שוב · ${_formatReminderDate(date)}',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -356,7 +357,8 @@ class PersonReminderCard extends StatelessWidget {
       context,
       title: 'מתי לבדוק שוב?',
       allowClear: true,
-      intervalsBuilder: ReminderPickerSheet.breakIntervals,
+      recommendedLabel: 'עוד חודש',
+      intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
     );
     if (choice == null) {
       return;

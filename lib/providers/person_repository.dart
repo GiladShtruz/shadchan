@@ -303,6 +303,9 @@ class PersonRepository extends ChangeNotifier {
     person.updatedAt = DateTime.now();
     person.needsReview = false;
     await person.save();
+    if (!person.profileStatus.pausesMatches) {
+      await PersonReminders.clear(person.id);
+    }
     notifyListeners();
     await onPersonStatusChanged?.call(person.id);
     _refreshBirthdayNotificationsInBackground();
@@ -408,13 +411,23 @@ class PersonRepository extends ChangeNotifier {
 
   Future<void> updateProfileStatus(String id, ProfileStatus newStatus) async {
     final Person? person = getById(id);
-    if (person == null || person.profileStatus == newStatus) {
+    if (person == null) {
+      return;
+    }
+    if (person.profileStatus == newStatus) {
+      if (!newStatus.pausesMatches) {
+        await PersonReminders.clear(id);
+        notifyListeners();
+      }
       return;
     }
 
     person.profileStatus = newStatus;
     person.updatedAt = DateTime.now();
     await person.save();
+    if (!newStatus.pausesMatches) {
+      await PersonReminders.clear(id);
+    }
     // Status changes stay out of the personal-notes timeline (which is for the
     // matchmaker's own notes), but they are meaningful history, so they are
     // recorded in the dedicated event log.

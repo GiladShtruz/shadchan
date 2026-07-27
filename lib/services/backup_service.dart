@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
@@ -201,6 +202,18 @@ class BackupService {
       'handlerName': match.handlerName,
       'reminderDate': match.reminderDate?.toIso8601String(),
       'reminderNote': match.reminderNote,
+      'waitingReason': match.waitingReason,
+      'progress': match.progress?.name,
+      'progressOther': match.progressOther,
+      'relatedContacts': match.relatedContacts
+          .map(
+            (MatchContact contact) => <String, Object?>{
+              'name': contact.name,
+              'phone': contact.phone,
+              'description': contact.description,
+            },
+          )
+          .toList(),
       'createdAt': match.createdAt.toIso8601String(),
       'updatedAt': match.updatedAt.toIso8601String(),
     };
@@ -298,9 +311,28 @@ class BackupService {
       handlerName: _string(json['handlerName']),
       reminderDate: _date(json['reminderDate']),
       reminderNote: _string(json['reminderNote']),
+      waitingReason: _string(json['waitingReason']),
+      progress: _enumByName(MatchProgress.values, json['progress']),
+      progressOther: _string(json['progressOther']),
+      relatedContacts: _matchContacts(json['relatedContacts']),
       createdAt: _date(json['createdAt']) ?? now,
       updatedAt: _date(json['updatedAt']) ?? now,
     );
+  }
+
+  static List<MatchContact> _matchContacts(Object? raw) {
+    if (raw is! List<dynamic>) {
+      return const <MatchContact>[];
+    }
+    return raw.whereType<Map<dynamic, dynamic>>().map((
+      Map<dynamic, dynamic> item,
+    ) {
+      return MatchContact(
+        name: _string(item['name']) ?? '',
+        phone: _string(item['phone']) ?? '',
+        description: _string(item['description']),
+      );
+    }).toList();
   }
 
   static PersonNote? _personNoteFromJson(Map<String, dynamic> json) {

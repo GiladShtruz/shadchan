@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/services/backup_service.dart';
+import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
@@ -50,6 +51,12 @@ void main() {
     }
     if (!Hive.isAdapterRegistered(9)) {
       Hive.registerAdapter(MaritalStatusAdapter());
+    }
+    if (!Hive.isAdapterRegistered(10)) {
+      Hive.registerAdapter(MatchProgressAdapter());
+    }
+    if (!Hive.isAdapterRegistered(11)) {
+      Hive.registerAdapter(MatchContactAdapter());
     }
   });
 
@@ -265,6 +272,16 @@ void main() {
               'currentHandler': 'me',
               'reminderDate': reminder,
               'reminderNote': 'להתקשר לצד הבחורה',
+              'waitingReason': 'מחכים לתשובה ממנה',
+              'progress': 'waitingHer',
+              'progressOther': null,
+              'relatedContacts': <Map<String, Object?>>[
+                <String, Object?>{
+                  'name': 'רותי כהן',
+                  'phone': '0501234567',
+                  'description': 'אמא של כרמל',
+                },
+              ],
               'createdAt': timestamp,
               'updatedAt': timestamp,
             },
@@ -294,6 +311,11 @@ void main() {
       final MatchIdea match = matchRepo.getById('match_1')!;
       expect(match.reminderDate, DateTime.parse(reminder));
       expect(match.reminderNote, 'להתקשר לצד הבחורה');
+      expect(match.waitingReason, 'מחכים לתשובה ממנה');
+      expect(match.progress, MatchProgress.waitingHer);
+      expect(match.relatedContacts, hasLength(1));
+      expect(match.relatedContacts.single.name, 'רותי כהן');
+      expect(match.relatedContacts.single.description, 'אמא של כרמל');
 
       await peopleBox.deleteFromDisk();
       await matchesBox.deleteFromDisk();

@@ -13,6 +13,7 @@ import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/widgets/person_photo_editor.dart';
@@ -651,6 +652,10 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     final String lastName = _lastNameController.text.trim();
     final int? manualAge = int.tryParse(_manualAgeController.text.trim());
     final int? heightCm = int.tryParse(_heightController.text.trim());
+    final bool shouldOfferStatusReminder =
+        _selectedProfileStatus.pausesMatches &&
+        (!_isEditMode ||
+            _initialSnapshot?.profileStatus != _selectedProfileStatus);
 
     try {
       if (_isEditMode && _person != null) {
@@ -732,6 +737,21 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       // Saving always lands on the person's own profile, so the details (and
       // any photo just added) can be seen straight away.
       final String savedPersonId = _person?.id ?? _draftPersonId;
+      if (shouldOfferStatusReminder) {
+        final ReminderChoice? reminder = await ReminderPickerSheet.show(
+          context,
+          title: 'מתי להזכיר לך לבדוק שוב?',
+          allowSkip: true,
+          recommendedLabel: 'עוד חודש',
+          intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
+        );
+        if (reminder?.date != null) {
+          await repository.setPersonReminder(savedPersonId, reminder!.date!);
+        }
+        if (!mounted) {
+          return;
+        }
+      }
       context.pushReplacement('/people/$savedPersonId');
     } finally {
       if (mounted) {

@@ -96,6 +96,8 @@ Widget _buildApp() {
             ..resolvePerson = personRepository.getById
             ..markPersonBusy = ((String personId) => personRepository
                 .updateProfileStatus(personId, ProfileStatus.busy))
+            ..markPersonMazelTov = ((String personId) => personRepository
+                .updateProfileStatus(personId, ProfileStatus.mazelTov))
             ..logPersonEvent = personRepository.logEvent;
           return matchRepository;
         },

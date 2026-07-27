@@ -15,7 +15,8 @@ abstract final class WhatsAppUtils {
   /// The "בקש פרטים" message opened from a profile that is missing a card. The
   /// wording is gendered by the recipient. Once the matchmaker saves a custom
   /// version it is used as-is for everyone.
-  static const String detailsRequestMessageKey = 'whatsappDetailsRequestMessage';
+  static const String detailsRequestMessageKey =
+      'whatsappDetailsRequestMessage';
 
   static const String _detailsRequestMale = '''
 היי! אני חושב על חברים לשידוכים ואשמח לחשוב גם עליך 😊
@@ -29,7 +30,9 @@ abstract final class WhatsAppUtils {
 
   /// The gendered default request-details text (no custom override applied).
   static String defaultDetailsRequestMessage(Gender gender) {
-    return gender == Gender.female ? _detailsRequestFemale : _detailsRequestMale;
+    return gender == Gender.female
+        ? _detailsRequestFemale
+        : _detailsRequestMale;
   }
 
   /// The request-details text to actually use: the matchmaker's saved custom
@@ -118,6 +121,21 @@ abstract final class WhatsAppUtils {
 
     return launchUrl(
       Uri.https('wa.me', '/$phone'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
+  /// Opens WhatsApp's recipient picker with the person's complete saved
+  /// send-card text. Unlike [openChat], this is not addressed to the person
+  /// whose profile is open; it is meant for sharing their card onward.
+  static Future<bool> sharePersonCard(Person person) async {
+    final String text = (person.description ?? '').trim();
+    if (text.isEmpty) {
+      return false;
+    }
+
+    return launchUrl(
+      Uri.https('wa.me', '/', <String, String>{'text': text}),
       mode: LaunchMode.externalApplication,
     );
   }

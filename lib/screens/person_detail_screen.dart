@@ -28,6 +28,7 @@ import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
 class PersonDetailScreen extends StatefulWidget {
@@ -46,10 +47,12 @@ class PersonDetailScreen extends StatefulWidget {
 
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey _cardSectionKey = GlobalKey();
 
   /// Whether the profile header was scrolled away, so the AppBar shows a
   /// compact bar with the person's name only.
   bool _showCollapsedTitle = false;
+  bool _showFullCard = false;
 
   @override
   void initState() {
@@ -91,14 +94,22 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 
-  Future<void> _openCardViewPage(BuildContext context) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) {
-          return _PersonCardViewPage(personId: widget.personId);
-        },
-      ),
-    );
+  void _showCardInline() {
+    if (!_showFullCard) {
+      setState(() => _showFullCard = true);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? cardContext = _cardSectionKey.currentContext;
+      if (!mounted || cardContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        cardContext,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+        alignment: 0.08,
+      );
+    });
   }
 
   @override
@@ -240,13 +251,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           ),
         ],
       ),
-      // This profile-only action bar is not the app's primary navigation;
-      // WhatsApp / +הצעה / התאמות remain available on the card itself.
-      bottomNavigationBar: _ProfileActionBar(
-        onWhatsApp: () => _openWhatsAppMessage(context, person),
-        onAddProposal: () => _openAddProposal(context, person),
-        onMatches: () => _openSuggestions(context, person),
-      ),
       body: SafeArea(
         top: false,
         child: ListView(
@@ -255,13 +259,24 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           children: <Widget>[
             _ProfileSummaryHeader(
               person: person,
-              onAvatarTap: () => _openCardViewPage(context),
+              onAvatarTap: _showCardInline,
               onStatusChanged: (ProfileStatus status) =>
                   _changeProfileStatus(context, person, status),
             ),
+            _ProfileInlineActions(
+              whatsappLabel: _firstNameOr(person, 'WhatsApp'),
+              onWhatsApp: () => _openWhatsAppMessage(context, person),
+              onMatches: () => _openSuggestions(context, person),
+              onAddProposal: () => _openAddProposal(context, person),
+            ),
             _WhatsAppCardSection(
+              key: _cardSectionKey,
               person: person,
-              onOpenFull: () => _openCardViewPage(context),
+              expanded: _showFullCard,
+              onToggleFull: () {
+                setState(() => _showFullCard = !_showFullCard);
+              },
+              onShare: () => _showCardShareSheet(context, person),
               onRequestDetails: () => _requestDetails(context, person),
               onEditMessage: () => _editDetailsMessage(context, person),
             ),
@@ -303,8 +318,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 
-  /// Changes the profile status. Putting someone on a break offers to set a
-  /// "check on them again" reminder; leaving a break clears any such reminder.
+  /// Changes the global profile status. Busy and break statuses immediately
+  /// offer a compact "check again" reminder; returning to an active status
+  /// clears the person's reminder in the repository.
   Future<void> _changeProfileStatus(
     BuildContext context,
     Person person,
@@ -313,8 +329,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final PersonRepository personRepository = context.read<PersonRepository>();
     await personRepository.updateProfileStatus(person.id, status);
 
-    if (status != ProfileStatus.onBreak) {
-      await personRepository.clearPersonReminder(person.id);
+    if (!status.pausesMatches) {
       return;
     }
 
@@ -322,12 +337,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       return;
     }
 
-    final String pronoun = person.gender == Gender.female ? 'איתה' : 'איתו';
     final ReminderChoice? choice = await ReminderPickerSheet.show(
       context,
-      title: 'תרצה לבדוק מה $pronoun שוב בעוד?',
+      title: 'מתי להזכיר לך לבדוק שוב?',
       allowSkip: true,
-      intervalsBuilder: ReminderPickerSheet.breakIntervals,
+      recommendedLabel: 'עוד חודש',
+      intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
     );
 
     final DateTime? date = choice?.date;
@@ -402,6 +417,56 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         _showSnackBar(context, 'לא ניתן לשתף כרגע');
       }
     }
+  }
+
+  Future<void> _showCardShareSheet(BuildContext context, Person person) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        final ThemeData theme = Theme.of(sheetContext);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'שיתוף הכרטיס המלא',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'בחירת הנמען תיפתח ב-WhatsApp',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      final bool launched = await WhatsAppUtils.sharePersonCard(
+                        person,
+                      );
+                      if (!launched && context.mounted) {
+                        _showSnackBar(context, 'לא הצלחנו לפתוח את WhatsApp');
+                      }
+                    },
+                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 20),
+                    label: const Text('שיתוף דרך WhatsApp'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// Opens a new idea for this person, either against someone already in the
@@ -876,82 +941,55 @@ class _ProfileSummaryHeader extends StatelessWidget {
   }
 }
 
-/// The persistent floating action bar over the app's bottom navigation:
-/// WhatsApp · +הצעה · התאמות. It renders as a rounded, slightly raised pill so
-/// it reads as floating rather than as a second navigation bar.
-class _ProfileActionBar extends StatelessWidget {
-  const _ProfileActionBar({
+/// The profile's three primary actions, placed in the scrolling content so the
+/// app-level bottom navigation remains the only persistent bottom bar.
+class _ProfileInlineActions extends StatelessWidget {
+  const _ProfileInlineActions({
+    required this.whatsappLabel,
     required this.onWhatsApp,
-    required this.onAddProposal,
     required this.onMatches,
+    required this.onAddProposal,
   });
 
+  final String whatsappLabel;
   final VoidCallback onWhatsApp;
-  final VoidCallback onAddProposal;
   final VoidCallback onMatches;
+  final VoidCallback onAddProposal;
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Material(
-      color: _profileCanvasColor(theme),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          decoration: BoxDecoration(
-            color: _profileSurfaceColor(theme),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: _profileSoftShadow(theme),
-            border: Border.all(
-              color: _profileMutedColor(theme).withValues(alpha: 0.14),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _ProfileActionButton(
+              icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 21),
+              label: whatsappLabel,
+              onPressed: onWhatsApp,
+              foregroundColor: _whatsappGreen,
             ),
           ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: _ProfileActionButton(
-                  icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 20),
-                  label: 'WhatsApp',
-                  onPressed: onWhatsApp,
-                ),
-              ),
-              _ActionBarDivider(theme: theme),
-              Expanded(
-                child: _ProfileActionButton(
-                  icon: const Icon(Icons.favorite_border, size: 20),
-                  label: 'הצעה',
-                  onPressed: onAddProposal,
-                ),
-              ),
-              _ActionBarDivider(theme: theme),
-              Expanded(
-                child: _ProfileActionButton(
-                  icon: const Icon(Icons.group_outlined, size: 20),
-                  label: 'התאמות',
-                  onPressed: onMatches,
-                ),
-              ),
-            ],
+          const SizedBox(width: 8),
+          Expanded(
+            child: _ProfileActionButton(
+              icon: const Icon(Icons.group_outlined, size: 22),
+              label: 'התאמות',
+              onPressed: onMatches,
+              emphasized: true,
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _ProfileActionButton(
+              icon: const Icon(Icons.favorite_border, size: 20),
+              label: 'לפתיחת הצעה',
+              onPressed: onAddProposal,
+              subtle: true,
+            ),
+          ),
+        ],
       ),
-    );
-  }
-}
-
-class _ActionBarDivider extends StatelessWidget {
-  const _ActionBarDivider({required this.theme});
-
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 26,
-      color: _profileMutedColor(theme).withValues(alpha: 0.14),
     );
   }
 }
@@ -961,40 +999,71 @@ class _ProfileActionButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
+    this.foregroundColor,
+    this.emphasized = false,
+    this.subtle = false,
   });
 
   final Widget icon;
   final String label;
   final VoidCallback onPressed;
+  final Color? foregroundColor;
+  final bool emphasized;
+  final bool subtle;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color color = _profileTextColor(theme);
+    final Color color = emphasized
+        ? theme.colorScheme.onPrimaryContainer
+        : foregroundColor ?? _profileTextColor(theme);
 
-    return InkWell(
-      onTap: onPressed,
+    return Material(
+      color: emphasized
+          ? theme.colorScheme.primaryContainer
+          : subtle
+          ? Colors.transparent
+          : _profileSurfaceColor(theme),
       borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            IconTheme(
-              data: IconThemeData(color: color),
-              child: icon,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 74),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: emphasized
+                  ? theme.colorScheme.primary.withValues(alpha: 0.18)
+                  : _profileMutedColor(
+                      theme,
+                    ).withValues(alpha: subtle ? 0.18 : 0.12),
             ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w700,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              IconTheme(
+                data: IconThemeData(color: color),
+                child: icon,
               ),
-            ),
-          ],
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: emphasized || foregroundColor == null
+                      ? color
+                      : _profileTextColor(theme),
+                  fontWeight: emphasized ? FontWeight.w800 : FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1040,8 +1109,6 @@ class _PersonalNotesCard extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(Icons.notes_outlined, color: muted, size: 20),
-                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'הערות אישיות',
@@ -1347,7 +1414,7 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final Color statusColor = AppColors.profileStatusColor(widget.status);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1355,34 +1422,17 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
         InkWell(
           borderRadius: BorderRadius.circular(999),
           onTap: () => setState(() => _expanded = !_expanded),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: theme.brightness == Brightness.dark
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : _profileWarmSurfaceColor(theme),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: _profileMutedColor(theme).withValues(alpha: 0.14),
-              ),
-            ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(widget.status.emoji),
-                const SizedBox(width: 6),
-                Text(
-                  widget.status.displayName,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: _profileTextColor(theme),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: 4),
+                ProfileStatusTag(status: widget.status),
+                const SizedBox(width: 3),
                 Icon(
                   _expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                  color: _profileMutedColor(theme),
+                  size: 17,
+                  color: statusColor,
                 ),
               ],
             ),
@@ -1399,10 +1449,16 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
               children: ProfileStatus.values
                   .where((ProfileStatus status) => status != widget.status)
                   .map((ProfileStatus status) {
-                    return ActionChip(
-                      avatar: Text(status.emoji),
-                      label: Text(status.displayName),
-                      onPressed: () => widget.onStatusChanged(status),
+                    return InkWell(
+                      onTap: () => widget.onStatusChanged(status),
+                      borderRadius: BorderRadius.circular(999),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 2,
+                          vertical: 2,
+                        ),
+                        child: ProfileStatusTag(status: status),
+                      ),
                     );
                   })
                   .toList(),
@@ -1418,19 +1474,23 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
   }
 }
 
-/// Inline preview of the person's WhatsApp send-card: the first few lines of
-/// the card text with "הצג כרטיס מלא", or a "חסר כרטיס" prompt when there is no
-/// card yet. Editing the card text itself happens only on the edit page.
+/// Inline preview of the person's send-card. Expanding keeps the complete card
+/// inside the profile and exposes its WhatsApp share action above the text.
 class _WhatsAppCardSection extends StatelessWidget {
   const _WhatsAppCardSection({
+    super.key,
     required this.person,
-    required this.onOpenFull,
+    required this.expanded,
+    required this.onToggleFull,
+    required this.onShare,
     required this.onRequestDetails,
     required this.onEditMessage,
   });
 
   final Person person;
-  final VoidCallback onOpenFull;
+  final bool expanded;
+  final VoidCallback onToggleFull;
+  final VoidCallback onShare;
   final VoidCallback onRequestDetails;
   final VoidCallback onEditMessage;
 
@@ -1455,47 +1515,56 @@ class _WhatsAppCardSection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                FaIcon(
-                  FontAwesomeIcons.whatsapp,
-                  size: 18,
-                  color: _profileMutedColor(theme),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'הכרטיס שלו',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: _profileTextColor(theme),
-                      fontWeight: FontWeight.w800,
-                    ),
+            if (hasCard) ...<Widget>[
+              AnimatedCrossFade(
+                firstChild: Text(
+                  description,
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: _profileTextColor(theme),
+                    height: 1.5,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (hasCard) ...<Widget>[
-              Text(
-                description,
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: _profileTextColor(theme),
-                  height: 1.5,
+                secondChild: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: IconButton(
+                        onPressed: onShare,
+                        icon: const Icon(Icons.share_outlined),
+                        tooltip: 'שיתוף הכרטיס המלא',
+                        color: theme.colorScheme.primary,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    Text(
+                      description,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: _profileTextColor(theme),
+                        height: 1.55,
+                      ),
+                    ),
+                  ],
                 ),
+                crossFadeState: expanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 180),
+                sizeCurve: Curves.easeOut,
               ),
               const SizedBox(height: 6),
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: TextButton(
-                  onPressed: onOpenFull,
+                  onPressed: onToggleFull,
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('הצג כרטיס מלא'),
+                  child: Text(expanded ? 'סגירת הכרטיס המלא' : 'הצג כרטיס מלא'),
                 ),
               ),
             ] else ...<Widget>[
@@ -1582,34 +1651,53 @@ class _OpenProposalsSection extends StatelessWidget {
               ),
             ),
           ),
-          for (final MatchIdea match in ordered)
-            _OpenProposalRow(
-              match: match,
-              person: person,
-              otherPerson: personRepository.getById(
-                match.personAId == person.id
-                    ? match.personBId
-                    : match.personAId,
+          Container(
+            decoration: BoxDecoration(
+              color: _profileSurfaceColor(theme),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: _profileMutedColor(theme).withValues(alpha: 0.12),
               ),
             ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: <Widget>[
+                for (
+                  int index = 0;
+                  index < ordered.length;
+                  index++
+                ) ...<Widget>[
+                  _OpenProposalRow(
+                    match: ordered[index],
+                    otherPerson: personRepository.getById(
+                      ordered[index].personAId == person.id
+                          ? ordered[index].personBId
+                          : ordered[index].personAId,
+                    ),
+                  ),
+                  if (index + 1 < ordered.length)
+                    Divider(
+                      height: 1,
+                      indent: 14,
+                      endIndent: 14,
+                      color: _profileMutedColor(theme).withValues(alpha: 0.12),
+                    ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// One row in "הצעות פתוחות": the other side's name, the proposal status, how
-/// long it has gone without an update, and a WhatsApp shortcut for each side.
-/// Tapping the row (anywhere but the WhatsApp chips) opens the proposal.
+/// One compact proposal row: the other side, the proposal status, and a single
+/// WhatsApp shortcut for that other side.
 class _OpenProposalRow extends StatelessWidget {
-  const _OpenProposalRow({
-    required this.match,
-    required this.person,
-    required this.otherPerson,
-  });
+  const _OpenProposalRow({required this.match, required this.otherPerson});
 
   final MatchIdea match;
-  final Person person;
   final Person? otherPerson;
 
   @override
@@ -1618,21 +1706,19 @@ class _OpenProposalRow extends StatelessWidget {
     final String otherName = otherPerson?.fullName.trim().isNotEmpty == true
         ? otherPerson!.fullName.trim()
         : 'אדם נמחק';
+    final bool hasWhatsApp =
+        PhoneUtils.toWhatsAppNumber(otherPerson?.phone) != null;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: _profileSurfaceColor(theme),
-        borderRadius: BorderRadius.circular(20),
-        child: InkWell(
-          onTap: () => context.push('/matches/${match.id}'),
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push('/matches/${match.id}'),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(14, 8, 8, 8),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
                   otherName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1641,45 +1727,24 @@ class _OpenProposalRow extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: <Widget>[
-                    _StatusChip(status: match.status),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        '· ${_shortRelative(match.updatedAt)}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: _profileMutedColor(theme),
-                        ),
-                      ),
-                    ),
-                  ],
+              ),
+              const SizedBox(width: 8),
+              _StatusChip(status: match.status),
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: hasWhatsApp && otherPerson != null
+                    ? () => _openWhatsApp(context, otherPerson!)
+                    : null,
+                icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
+                tooltip: 'WhatsApp עם $otherName',
+                color: _whatsappGreen,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 38,
+                  height: 38,
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _WhatsAppChip(
-                        label: _firstNameOr(person, 'צד א'),
-                        onTap: () => _openWhatsApp(context, person),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _WhatsAppChip(
-                        label: _firstNameOr(otherPerson, 'צד ב'),
-                        onTap: otherPerson == null
-                            ? null
-                            : () => _openWhatsApp(context, otherPerson!),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1695,55 +1760,6 @@ class _OpenProposalRow extends StatelessWidget {
           const SnackBar(content: Text('אין מספר טלפון תקין לפתיחת וואטסאפ')),
         );
     }
-  }
-}
-
-/// Small green "WhatsApp + name" pill used per-side on a proposal row.
-class _WhatsAppChip extends StatelessWidget {
-  const _WhatsAppChip({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool enabled = onTap != null;
-    final Color green = enabled
-        ? _whatsappGreen
-        : _profileMutedColor(theme).withValues(alpha: 0.5);
-
-    return Material(
-      color: green.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              FaIcon(FontAwesomeIcons.whatsapp, size: 16, color: green),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: enabled
-                        ? _profileTextColor(theme)
-                        : _profileMutedColor(theme),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -2886,34 +2902,6 @@ String _relativeUpdatedLabel(DateTime updatedAt) {
   return years == 1 ? 'עודכן לפני שנה' : 'עודכן לפני $years שנים';
 }
 
-/// Compact relative time ("היום", "לפני 4 ימים") used on proposal rows to show
-/// how long a proposal has gone without an update.
-String _shortRelative(DateTime dt) {
-  final DateTime now = DateTime.now();
-  final DateTime day = DateTime(dt.year, dt.month, dt.day);
-  final DateTime today = DateTime(now.year, now.month, now.day);
-  final int days = today.difference(day).inDays;
-  if (days <= 0) {
-    return 'היום';
-  }
-  if (days == 1) {
-    return 'אתמול';
-  }
-  if (days < 7) {
-    return 'לפני $days ימים';
-  }
-  if (days < 30) {
-    final int weeks = days ~/ 7;
-    return weeks == 1 ? 'לפני שבוע' : 'לפני $weeks שבועות';
-  }
-  if (days < 365) {
-    final int months = days ~/ 30;
-    return months == 1 ? 'לפני חודש' : 'לפני $months חודשים';
-  }
-  final int years = days ~/ 365;
-  return years == 1 ? 'לפני שנה' : 'לפני $years שנים';
-}
-
 /// A muted green that reads as "WhatsApp" without breaking the cream palette.
 const Color _whatsappGreen = AppColors.profileAvailable;
 
@@ -3236,263 +3224,6 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The enlarged card page opened by tapping the profile square: a full-screen
-/// photo pager with arrows, the send-card below, and share/WhatsApp/edit
-/// actions on top.
-class _PersonCardViewPage extends StatefulWidget {
-  const _PersonCardViewPage({required this.personId});
-
-  final String personId;
-
-  @override
-  State<_PersonCardViewPage> createState() => _PersonCardViewPageState();
-}
-
-class _PersonCardViewPageState extends State<_PersonCardViewPage> {
-  final PageController _pageController = PageController();
-  int _photoIndex = 0;
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  void _goToPhoto(int index, int count) {
-    if (index < 0 || index >= count) {
-      return;
-    }
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  Future<void> _openWhatsApp(Person person) async {
-    final bool launched = await WhatsAppUtils.openChat(person);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('לא הצלחנו לפתוח את וואטסאפ')),
-        );
-    }
-  }
-
-  Future<void> _share(Person person) async {
-    try {
-      await ShareUtils.sharePerson(person);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('לא ניתן לשתף כרגע')));
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final PersonRepository repository = context.watch<PersonRepository>();
-    final Person? person = repository.getById(widget.personId);
-
-    if (person == null) {
-      return Scaffold(
-        appBar: AppBar(centerTitle: true),
-        body: const Center(child: Text('האדם לא נמצא')),
-      );
-    }
-
-    final List<String> photos = person.photosPaths
-        .where((String path) => File(path).existsSync())
-        .toList();
-    final String description = (person.description ?? '').trim();
-    final double photoHeight = MediaQuery.of(context).size.height * 0.78;
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.black38,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        title: Text(
-          person.fullName.trim(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: <Widget>[
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            tooltip: 'שיתוף',
-            onPressed: () => _share(person),
-          ),
-          IconButton(
-            icon: const FaIcon(FontAwesomeIcons.whatsapp),
-            tooltip: 'וואטסאפ',
-            onPressed: () => _openWhatsApp(person),
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'עריכת כרטיס',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (BuildContext context) {
-                    return _PersonCardEditPage(personId: person.id);
-                  },
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: EdgeInsets.zero,
-        children: <Widget>[
-          SizedBox(
-            height: photoHeight,
-            child: photos.isEmpty
-                ? Center(child: PersonAvatar(person: person, radius: 80))
-                : Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      PageView.builder(
-                        controller: _pageController,
-                        itemCount: photos.length,
-                        onPageChanged: (int index) =>
-                            setState(() => _photoIndex = index),
-                        itemBuilder: (BuildContext context, int index) {
-                          return Image.file(
-                            File(photos[index]),
-                            fit: BoxFit.contain,
-                          );
-                        },
-                      ),
-                      if (photos.length > 1) ...<Widget>[
-                        // In RTL the pager advances leftwards, so the left
-                        // arrow goes forward and the right arrow goes back.
-                        if (_photoIndex + 1 < photos.length)
-                          Positioned(
-                            left: 8,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: _PhotoArrowButton(
-                                icon: Icons.chevron_left,
-                                onPressed: () =>
-                                    _goToPhoto(_photoIndex + 1, photos.length),
-                              ),
-                            ),
-                          ),
-                        if (_photoIndex > 0)
-                          Positioned(
-                            right: 8,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: _PhotoArrowButton(
-                                icon: Icons.chevron_right,
-                                onPressed: () =>
-                                    _goToPhoto(_photoIndex - 1, photos.length),
-                              ),
-                            ),
-                          ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 14,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List<Widget>.generate(photos.length, (
-                              int index,
-                            ) {
-                              return Container(
-                                width: index == _photoIndex ? 9 : 7,
-                                height: index == _photoIndex ? 9 : 7,
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: index == _photoIndex
-                                      ? Colors.white
-                                      : Colors.white54,
-                                ),
-                              );
-                            }),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              color: _profileSurfaceColor(theme),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-            ),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'כרטיס לשליחה',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: _profileTextColor(theme),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  description.isEmpty
-                      ? 'עדיין אין כרטיסייה לשליחה'
-                      : description,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: description.isEmpty
-                        ? _profileMutedColor(theme)
-                        : _profileTextColor(theme),
-                    height: 1.58,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PhotoArrowButton extends StatelessWidget {
-  const _PhotoArrowButton({required this.icon, required this.onPressed});
-
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black45,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onPressed,
-        child: SizedBox(
-          width: 42,
-          height: 42,
-          child: Icon(icon, color: Colors.white, size: 30),
         ),
       ),
     );

@@ -631,8 +631,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
           context: context,
           isScrollControlled: true,
           showDragHandle: true,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          clipBehavior: Clip.antiAlias,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          ),
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.75,
+            maxHeight: MediaQuery.of(context).size.height * 0.84,
           ),
           builder: (BuildContext context) {
             return PeopleFiltersSheet(

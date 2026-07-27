@@ -45,7 +45,24 @@ PeopleSortOption _parsePeopleSort(String? raw) {
 }
 
 bool shouldShowBottomNavigationBar(String path) {
-  return const <String>{'/home', '/people', '/matches'}.contains(path);
+  if (const <String>{'/home', '/people', '/matches'}.contains(path)) {
+    return true;
+  }
+
+  final List<String> segments = Uri(path: path).pathSegments;
+  if (segments.length != 2 || segments.first != 'people') {
+    return false;
+  }
+
+  // A person's profile keeps the app-level navigation visible. The other
+  // two-segment people routes are task flows, not profile destinations.
+  return !const <String>{
+    'add',
+    'import',
+    'swipe',
+    'pending',
+    'shared-import',
+  }.contains(segments.last);
 }
 
 abstract final class AppRouter {

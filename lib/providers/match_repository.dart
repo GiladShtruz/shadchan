@@ -169,17 +169,25 @@ class MatchRepository extends ChangeNotifier {
       match.waitingReason = null;
     }
     await match.save();
-    await _createNote(
-      matchId: matchId,
-      text: 'סטטוס שונה ל-${newStatus.displayName}',
-      createdAt: now,
-      isAutomatic: true,
-    );
-
     // A couple that starts dating is no longer available to anyone else.
     if (newStatus == MatchStatus.dating) {
       await markPersonBusy?.call(match.personAId);
       await markPersonBusy?.call(match.personBId);
+      await _createNote(
+        matchId: matchId,
+        text: 'התחילו לצאת',
+        createdAt: now,
+        isAutomatic: true,
+      );
+    } else if (newStatus == MatchStatus.married) {
+      await markPersonMazelTov?.call(match.personAId);
+      await markPersonMazelTov?.call(match.personBId);
+      await _createNote(
+        matchId: matchId,
+        text: 'מזל טוב — התחתנו',
+        createdAt: now,
+        isAutomatic: true,
+      );
     }
 
     notifyListeners();
@@ -188,6 +196,9 @@ class MatchRepository extends ChangeNotifier {
 
   /// Marks a person as "תפוס". Wired to [PersonRepository] in `main.dart`.
   Future<void> Function(String personId)? markPersonBusy;
+
+  /// Marks both people as "מזל טוב" when the proposal becomes a wedding.
+  Future<void> Function(String personId)? markPersonMazelTov;
 
   /// Records a history event on a person. Wired to
   /// [PersonRepository.logEvent] in `main.dart` so proposal outcomes are logged
@@ -245,7 +256,7 @@ class MatchRepository extends ChangeNotifier {
     await match.save();
     await _createNote(
       matchId: matchId,
-      text: 'סטטוס שונה ל-${MatchStatus.unavailable.displayName} ($reason)',
+      text: 'ההצעה בהמתנה — $reason',
       createdAt: now,
       isAutomatic: true,
     );
@@ -253,9 +264,9 @@ class MatchRepository extends ChangeNotifier {
     _refreshNotifications();
   }
 
-  /// Records where the outreach stands ("איפה זה עומד?"). Saved immediately and
-  /// journaled. Choosing [MatchProgress.bothInterested] promotes the proposal to
-  /// [MatchStatus.dating] (which marks both sides busy) — no extra middle steps.
+  /// Legacy progress storage retained for older data/imports. The detail screen
+  /// no longer exposes this duplicate state and technical changes are not
+  /// written into the proposal journal.
   Future<void> setProgress(
     String matchId,
     MatchProgress progress, {
@@ -272,16 +283,6 @@ class MatchRepository extends ChangeNotifier {
       ..progressOther = progress == MatchProgress.other ? other?.trim() : null
       ..updatedAt = now;
     await match.save();
-
-    final String label = progress == MatchProgress.other
-        ? (other?.trim().isNotEmpty ?? false ? other!.trim() : progress.displayName)
-        : progress.displayName;
-    await _createNote(
-      matchId: matchId,
-      text: 'איפה זה עומד: $label',
-      createdAt: now,
-      isAutomatic: true,
-    );
 
     notifyListeners();
     _refreshNotifications();
@@ -470,14 +471,6 @@ class MatchRepository extends ChangeNotifier {
       match.status = target;
       match.updatedAt = now;
       await match.save();
-      await _createNote(
-        matchId: match.id,
-        text: target == MatchStatus.unavailable
-            ? 'סטטוס שונה ל-${MatchStatus.unavailable.displayName} (אחד הצדדים לא פנוי)'
-            : 'סטטוס שונה ל-${MatchStatus.idea.displayName} (שני הצדדים פנויים)',
-        createdAt: now,
-        isAutomatic: true,
-      );
       changed = true;
     }
 
@@ -597,6 +590,22 @@ class MatchRepository extends ChangeNotifier {
 
   Future<void> deleteNote(String noteId) async {
     await _noteBox.delete(noteId);
+    notifyListeners();
+  }
+
+  /// Writes a deleted note back exactly as it was, so a delete can be undone
+  /// straight from the snackbar instead of asking to confirm beforehand.
+  Future<void> restoreNote(MatchNote note) async {
+    await _noteBox.put(
+      note.id,
+      MatchNote(
+        id: note.id,
+        matchId: note.matchId,
+        text: note.text,
+        createdAt: note.createdAt,
+        isAutomatic: note.isAutomatic,
+      ),
+    );
     notifyListeners();
   }
 

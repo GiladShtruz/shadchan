@@ -17,72 +17,74 @@ class ReligiousLevelsSettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('הגדרות דתיות'), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        children: <Widget>[
-          Text(
-            'בחרו אילו סגנונות דתיים יופיעו באפליקציה בעת עריכת כרטיס וסינון המאגר.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          for (final ReligiousLevel level
-              in ReligiousLevelsProvider.selectableLevels)
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(level.displayName),
-              value: provider.isEnabled(level),
-              onChanged: (bool? value) =>
-                  provider.setEnabled(level, value ?? false),
-            ),
-          const Divider(height: 32),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text('אחר', style: theme.textTheme.titleMedium),
-              ),
-              TextButton.icon(
-                onPressed: () => _addCustomLabel(context, provider),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('הוספה'),
-              ),
-            ],
-          ),
-          Text(
-            'הגדרה אישית משלכם, שתופיע לצד שאר הסגנונות.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (customLabels.isEmpty)
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: <Widget>[
             Text(
-              'עוד לא הוספתם הגדרה אישית.',
+              'בחרו אילו סגנונות דתיים יופיעו באפליקציה בעת עריכת כרטיס וסינון המאגר.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
-            )
-          else
-            for (final String label in customLabels)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(label),
-                trailing: IconButton(
-                  tooltip: 'הסרה',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => provider.removeCustomLabel(label),
-                ),
-              ),
-          const Divider(height: 32),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton(
-              onPressed: provider.resetToDefaults,
-              child: const Text('חזרה לברירת המחדל'),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            for (final ReligiousLevel level
+                in ReligiousLevelsProvider.selectableLevels)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(level.displayName),
+                value: provider.isEnabled(level),
+                onChanged: (bool? value) =>
+                    provider.setEnabled(level, value ?? false),
+              ),
+            const Divider(height: 32),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text('אחר', style: theme.textTheme.titleMedium),
+                ),
+                TextButton.icon(
+                  onPressed: () => _addCustomLabel(context, provider),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('הוספה'),
+                ),
+              ],
+            ),
+            Text(
+              'הגדרה אישית משלכם, שתופיע לצד שאר הסגנונות.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (customLabels.isEmpty)
+              Text(
+                'עוד לא הוספתם הגדרה אישית.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              for (final String label in customLabels)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(label),
+                  trailing: IconButton(
+                    tooltip: 'הסרה',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => provider.removeCustomLabel(label),
+                  ),
+                ),
+            const Divider(height: 32),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: provider.resetToDefaults,
+                child: const Text('חזרה לברירת המחדל'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -111,8 +113,7 @@ class ReligiousLevelsSettingsScreen extends StatelessWidget {
               child: const Text('ביטול'),
             ),
             FilledButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text),
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
               child: const Text('הוספה'),
             ),
           ],

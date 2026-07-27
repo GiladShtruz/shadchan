@@ -111,14 +111,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text('רעיונות'),
-            SizedBox(width: 8),
-            Icon(Icons.favorite, size: 18),
-          ],
-        ),
+        title: const Text('רעיונות'),
         leading: IconButton(
           tooltip: _searchVisible ? 'סגירת חיפוש' : 'חיפוש',
           icon: Icon(_searchVisible ? Icons.close : Icons.search),

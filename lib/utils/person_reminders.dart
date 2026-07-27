@@ -12,9 +12,11 @@ abstract final class PersonReminders {
   static const String _keyPrefix = 'personReminder.';
 
   static Box<dynamic> get _box => Hive.box<dynamic>('settings');
+  static bool get _isReady => Hive.isBoxOpen('settings');
 
   /// The reminder date set for [personId], or null when none is set.
   static DateTime? forPerson(String personId) {
+    if (!_isReady) return null;
     final Object? stored = _box.get('$_keyPrefix$personId');
     if (stored is int) {
       return DateTime.fromMillisecondsSinceEpoch(stored);
@@ -25,6 +27,7 @@ abstract final class PersonReminders {
   /// Every person id that currently has a reminder, mapped to its date.
   static Map<String, DateTime> all() {
     final Map<String, DateTime> result = <String, DateTime>{};
+    if (!_isReady) return result;
     for (final dynamic key in _box.keys) {
       if (key is String && key.startsWith(_keyPrefix)) {
         final Object? value = _box.get(key);
@@ -42,6 +45,7 @@ abstract final class PersonReminders {
   }
 
   static Future<void> clear(String personId) async {
+    if (!_isReady) return;
     await _box.delete('$_keyPrefix$personId');
   }
 }

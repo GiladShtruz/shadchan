@@ -7,11 +7,19 @@ part 'match_contact.g.dart';
 /// so it holds just a display name and a phone number.
 @HiveType(typeId: 11)
 class MatchContact {
-  const MatchContact({required this.name, required this.phone});
+  const MatchContact({
+    required this.name,
+    required this.phone,
+    this.description,
+  });
 
   @HiveField(0)
   final String name;
 
   @HiveField(1)
   final String phone;
+
+  /// Optional context for the matchmaker, for example "אמא של כרמל".
+  @HiveField(2)
+  final String? description;
 }
