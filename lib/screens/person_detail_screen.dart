@@ -24,11 +24,15 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/details_message_dialog.dart';
+import 'package:shadchan/dialogs/home_board_actions.dart';
+import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/person_photo_carousel.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
 class PersonDetailScreen extends StatefulWidget {
@@ -58,6 +62,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
+    // Feeds the home screen's "חזרה מהירה" strip. Deferred past this frame:
+    // the home screen is still alive behind this route, and notifying it from
+    // inside initState would rebuild it mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      RecentActivityStore.instance.record(
+        kind: HomeItemKind.person,
+        targetId: widget.personId,
+        action: HomeActivityAction.openedPerson,
+      );
+    });
     if (widget.initiallyEditing) {
       // The old edit route now lands on the dedicated card-edit page.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -188,6 +202,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             icon: const Icon(Icons.more_vert),
             onSelected: (String value) async {
               switch (value) {
+                case 'board':
+                  HomeBoardActions.toggle(
+                    context,
+                    HomeItemKind.person,
+                    person.id,
+                  );
                 case 'edit':
                   await _openCardEditPage(context);
                 case 'share':
@@ -222,6 +242,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 person,
               ).isNotEmpty;
               return <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'board',
+                  child: Text(
+                    HomeBoardActions.menuLabel(HomeItemKind.person, person.id),
+                  ),
+                ),
+                const PopupMenuDivider(),
                 const PopupMenuItem<String>(
                   value: 'edit',
                   child: Text('עריכת כרטיס'),
@@ -1845,7 +1872,7 @@ abstract final class _MatchPreviewSheet {
   }
 }
 
-/// One half of the match preview: a person's photo, name, summary and their
+/// One half of the match preview: a person's photos, name, summary and their
 /// full send-card text, scrolling on its own.
 class _MatchPreviewHalf extends StatelessWidget {
   const _MatchPreviewHalf({required this.person});
@@ -1856,11 +1883,9 @@ class _MatchPreviewHalf extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String description = (person.description ?? '').trim();
-    final String? photoPath = person.photosPaths.isEmpty
-        ? null
-        : person.photosPaths.first;
-    final File? photoFile = photoPath == null ? null : File(photoPath);
-    final bool hasPhoto = photoFile != null && photoFile.existsSync();
+    final List<String> photos = person.photosPaths
+        .where((String path) => File(path).existsSync())
+        .toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -1898,17 +1923,18 @@ class _MatchPreviewHalf extends StatelessWidget {
               ),
             ],
           ),
-          if (hasPhoto) ...<Widget>[
+          if (photos.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
-            ClipRRect(
+            // Whole photo, never cropped or stretched — this is the view where
+            // the two candidates are weighed against each other, so what the
+            // photo actually shows matters more than a tidy rectangle. All of
+            // the person's photos are swipeable here.
+            PersonPhotoCarousel(
+              photosPaths: photos,
+              height: 220,
+              fit: BoxFit.contain,
               borderRadius: BorderRadius.circular(16),
-              child: Image.file(
-                photoFile,
-                width: double.infinity,
-                height: 180,
-                cacheWidth: 720,
-                fit: BoxFit.cover,
-              ),
+              backgroundColor: _profileWarmSurfaceColor(theme),
             ),
           ],
           const SizedBox(height: 12),

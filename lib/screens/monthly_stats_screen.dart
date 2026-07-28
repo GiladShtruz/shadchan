@@ -4,8 +4,7 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/hebrew_date_utils.dart';
+import 'package:shadchan/utils/monthly_stats.dart';
 
 /// "הנתונים שלך החודש" — a calm dashboard of what happened this Hebrew month
 /// (since Rosh Chodesh) together with a running comparison to previous months.
@@ -18,11 +17,12 @@ class MonthlyStatsScreen extends StatelessWidget {
   /// How many Hebrew months back the comparison trend reaches.
   static const int _monthsBack = 6;
 
-  // The calm pastel accents that carry each metric across cards and chart.
-  static const Color _amber = Color(0xFFE0A33C);
-  static const Color _blue = Color(0xFF5E86A6);
-  static const Color _green = Color(0xFF6FA07E);
-  static const Color _pink = Color(0xFFCF87A9);
+  // The calm pastel accents that carry each metric across cards and chart —
+  // and, through [MonthlyStats], the home screen's summary card too.
+  static const Color _amber = MonthlyStats.ideasColor;
+  static const Color _blue = MonthlyStats.peopleColor;
+  static const Color _green = MonthlyStats.datingColor;
+  static const Color _pink = MonthlyStats.weddingsColor;
 
   @override
   Widget build(BuildContext context) {
@@ -32,17 +32,17 @@ class MonthlyStatsScreen extends StatelessWidget {
     final List<MatchIdea> matches = matchRepository.getAll();
     final List<Person> people = personRepository.getAll();
 
-    final List<_MonthPeriod> periods = _buildPeriods(
+    final List<MonthPeriod> periods = MonthlyStats.buildPeriods(
       DateTime.now(),
       _monthsBack,
     );
-    final List<_MonthStats> stats = <_MonthStats>[
-      for (final _MonthPeriod period in periods)
-        _statsFor(period, matches, people),
+    final List<MonthStats> stats = <MonthStats>[
+      for (final MonthPeriod period in periods)
+        MonthlyStats.statsFor(period, matches, people),
     ];
 
-    final _MonthStats current = stats.first;
-    final _MonthStats? previous = stats.length > 1 ? stats[1] : null;
+    final MonthStats current = stats.first;
+    final MonthStats? previous = stats.length > 1 ? stats[1] : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -114,120 +114,6 @@ class MonthlyStatsScreen extends StatelessWidget {
       ),
     );
   }
-
-  // --- Data ---------------------------------------------------------------
-
-  /// The last [count] Hebrew months, newest first. Each period is a Gregorian
-  /// half-open range `[start, end)` running from one Rosh Chodesh to the next.
-  static List<_MonthPeriod> _buildPeriods(DateTime now, int count) {
-    final List<_MonthPeriod> periods = <_MonthPeriod>[];
-    DateTime start = HebrewDateUtils.hebrewMonthStart(now);
-    // The current month ends at the next Rosh Chodesh (a few days ahead).
-    DateTime end = HebrewDateUtils.hebrewMonthStart(
-      start.add(const Duration(days: 32)),
-    );
-
-    for (int i = 0; i < count; i++) {
-      final ({int year, int month, int day})? hebrew = HebrewDateUtils.today(
-        from: start,
-      );
-      periods.add(
-        _MonthPeriod(
-          start: start,
-          end: end,
-          label: hebrew == null
-              ? ''
-              : HebrewDateUtils.monthYearLabel(
-                  year: hebrew.year,
-                  month: hebrew.month,
-                ),
-          shortLabel: hebrew == null
-              ? ''
-              : HebrewDateUtils.monthName(
-                  year: hebrew.year,
-                  month: hebrew.month,
-                ),
-        ),
-      );
-
-      // Step back one Hebrew month: the day before this month's start belongs
-      // to the previous month, whichever length or leap month that may be.
-      end = start;
-      start = HebrewDateUtils.hebrewMonthStart(
-        start.subtract(const Duration(days: 1)),
-      );
-    }
-
-    return periods;
-  }
-
-  static _MonthStats _statsFor(
-    _MonthPeriod period,
-    List<MatchIdea> matches,
-    List<Person> people,
-  ) {
-    bool within(DateTime date) =>
-        !date.isBefore(period.start) && date.isBefore(period.end);
-
-    final int ideas = matches
-        .where((MatchIdea m) => within(m.createdAt))
-        .length;
-    final int newPeople = people
-        .where((Person p) => !p.hidden && within(p.createdAt))
-        .length;
-    // A couple's move into "יוצאים"/"חתונה" is not stamped separately, so the
-    // proposal's last update stands in for when it happened.
-    final int dating = matches
-        .where(
-          (MatchIdea m) =>
-              m.status == MatchStatus.dating && within(m.updatedAt),
-        )
-        .length;
-    final int weddings = matches
-        .where(
-          (MatchIdea m) =>
-              m.status == MatchStatus.married && within(m.updatedAt),
-        )
-        .length;
-
-    return _MonthStats(
-      ideas: ideas,
-      people: newPeople,
-      dating: dating,
-      weddings: weddings,
-    );
-  }
-}
-
-/// One Hebrew month as a Gregorian half-open range with its display labels.
-class _MonthPeriod {
-  const _MonthPeriod({
-    required this.start,
-    required this.end,
-    required this.label,
-    required this.shortLabel,
-  });
-
-  final DateTime start;
-  final DateTime end;
-  final String label;
-  final String shortLabel;
-}
-
-class _MonthStats {
-  const _MonthStats({
-    required this.ideas,
-    required this.people,
-    required this.dating,
-    required this.weddings,
-  });
-
-  final int ideas;
-  final int people;
-  final int dating;
-  final int weddings;
-
-  int get total => ideas + people + dating + weddings;
 }
 
 // --- Widgets --------------------------------------------------------------
@@ -442,14 +328,14 @@ class _TrendSection extends StatelessWidget {
   const _TrendSection({required this.periods, required this.stats});
 
   /// Oldest first, so the bars read right-to-left up to the current month.
-  final List<_MonthPeriod> periods;
-  final List<_MonthStats> stats;
+  final List<MonthPeriod> periods;
+  final List<MonthStats> stats;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final int maxTotal = stats
-        .map((_MonthStats s) => s.total)
+        .map((MonthStats s) => s.total)
         .fold<int>(0, (int a, int b) => a > b ? a : b);
 
     return Container(

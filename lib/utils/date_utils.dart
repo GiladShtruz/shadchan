@@ -51,6 +51,42 @@ abstract final class AppDateUtils {
     return formatDate(date);
   }
 
+  /// A shorter, more spoken relative time for the compact home cards, where
+  /// "לפני 24 שעות" would both overflow and read like a machine.
+  static String timeAgoShort(DateTime date) {
+    final Duration difference = DateTime.now().difference(date);
+
+    if (difference.isNegative || difference.inMinutes < 1) {
+      return 'עכשיו';
+    }
+    if (difference.inMinutes < 60) {
+      final int minutes = difference.inMinutes;
+      return minutes == 1 ? 'לפני דקה' : 'לפני $minutes דק׳';
+    }
+    if (difference.inHours < 24) {
+      final int hours = difference.inHours;
+      return hours == 1 ? 'לפני שעה' : 'לפני $hours שעות';
+    }
+    if (difference.inDays == 1) {
+      return 'אתמול';
+    }
+    if (difference.inDays == 2) {
+      return 'לפני יומיים';
+    }
+    if (difference.inDays < 7) {
+      return 'לפני ${difference.inDays} ימים';
+    }
+    if (difference.inDays < 30) {
+      final int weeks = (difference.inDays / 7).floor();
+      return weeks == 1 ? 'לפני שבוע' : 'לפני $weeks שבועות';
+    }
+    if (difference.inDays < 365) {
+      final int months = (difference.inDays / 30).floor();
+      return months == 1 ? 'לפני חודש' : 'לפני $months חודשים';
+    }
+    return formatDateShort(date);
+  }
+
   static bool isBirthdayToday(DateTime birthDate) {
     return daysUntilBirthday(birthDate) == 0;
   }

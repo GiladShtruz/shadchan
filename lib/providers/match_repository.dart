@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -7,7 +9,9 @@ import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:uuid/uuid.dart';
 
 /// Which side (if any) ended a proposal, used to phrase the journal and both
@@ -15,7 +19,11 @@ import 'package:uuid/uuid.dart';
 enum MatchOutcomeParty { him, her, mutual, unknown }
 
 class MatchRepository extends ChangeNotifier {
-  MatchRepository(this._matchBox, this._noteBox);
+  MatchRepository(this._matchBox, this._noteBox) {
+    // Pending notifications do not survive a reinstall or a device restart on
+    // every Android build, so the whole set is re-scheduled on startup.
+    _refreshNotifications();
+  }
 
   final Box<MatchIdea> _matchBox;
   final Box<MatchNote> _noteBox;
@@ -142,6 +150,7 @@ class MatchRepository extends ChangeNotifier {
       relatedMatchId: match.id,
     );
 
+    _recordActivity(match.id, HomeActivityAction.createdIdea);
     notifyListeners();
     _refreshNotifications();
     return match;
@@ -190,6 +199,7 @@ class MatchRepository extends ChangeNotifier {
       );
     }
 
+    _recordActivity(matchId, HomeActivityAction.changedStatus);
     notifyListeners();
     _refreshNotifications();
   }
@@ -538,6 +548,8 @@ class MatchRepository extends ChangeNotifier {
     }
 
     await _matchBox.delete(matchId);
+    HomeBoardStore.instance.forget(HomeItemKind.idea, matchId);
+    RecentActivityStore.instance.forget(HomeItemKind.idea, matchId);
     notifyListeners();
     _refreshNotifications();
   }
@@ -573,6 +585,9 @@ class MatchRepository extends ChangeNotifier {
       isAutomatic: isAutomatic,
     );
     await _touchMatch(matchId, now);
+    if (!isAutomatic) {
+      _recordActivity(matchId, HomeActivityAction.addedNote);
+    }
     notifyListeners();
   }
 
@@ -664,5 +679,16 @@ class MatchRepository extends ChangeNotifier {
   void _refreshNotifications() {
     final List<MatchIdea> allMatches = _matchBox.values.toList();
     NotificationService.scheduleMatchReminders(allMatches);
+  }
+
+  /// Feeds the home screen's "חזרה מהירה" strip. Recorded here rather than at
+  /// the call sites so every path that really changes a proposal shows up, with
+  /// no extra bookkeeping asked of the matchmaker.
+  void _recordActivity(String matchId, HomeActivityAction action) {
+    RecentActivityStore.instance.record(
+      kind: HomeItemKind.idea,
+      targetId: matchId,
+      action: action,
+    );
   }
 }

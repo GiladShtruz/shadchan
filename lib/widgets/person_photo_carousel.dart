@@ -16,6 +16,7 @@ class PersonPhotoCarousel extends StatefulWidget {
     this.fit = BoxFit.cover,
     this.borderRadius = BorderRadius.zero,
     this.placeholder,
+    this.backgroundColor,
   });
 
   final List<String> photosPaths;
@@ -23,6 +24,10 @@ class PersonPhotoCarousel extends StatefulWidget {
   final BoxFit fit;
   final BorderRadius borderRadius;
   final Widget? placeholder;
+
+  /// Fills the space around the photo. Worth setting with [BoxFit.contain],
+  /// where a portrait and a landscape shot leave very different margins.
+  final Color? backgroundColor;
 
   @override
   State<PersonPhotoCarousel> createState() => _PersonPhotoCarouselState();
@@ -97,19 +102,35 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
               left: 0,
               right: 0,
               bottom: 12,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List<Widget>.generate(photos.length, (int index) {
-                  return Container(
-                    width: index == _index ? 9 : 7,
-                    height: index == _index ? 9 : 7,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: index == _index ? Colors.white : Colors.white54,
-                    ),
-                  );
-                }),
+              // The dots sit on their own dark pill so they stay readable over
+              // a pale photo or the empty margins left by BoxFit.contain.
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List<Widget>.generate(photos.length, (int index) {
+                      return Container(
+                        width: index == _index ? 9 : 7,
+                        height: index == _index ? 9 : 7,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: index == _index
+                              ? Colors.white
+                              : Colors.white54,
+                        ),
+                      );
+                    }),
+                  ),
+                ),
               ),
             ),
           ],
@@ -119,7 +140,11 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
 
     return ClipRRect(
       borderRadius: widget.borderRadius,
-      child: SizedBox(height: widget.height, child: content),
+      child: Container(
+        height: widget.height,
+        color: widget.backgroundColor,
+        child: content,
+      ),
     );
   }
 }

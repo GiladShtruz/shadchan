@@ -94,9 +94,17 @@ class PersonListCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
+                        // The status leads the row at a fixed width, so every
+                        // row's name starts at the same place however long the
+                        // name before it happens to be.
                         Row(
                           children: <Widget>[
-                            Flexible(
+                            ProfileStatusTag(
+                              status: person.profileStatus,
+                              compact: true,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
                               child: Text(
                                 person.fullName.trim(),
                                 maxLines: 1,
@@ -106,18 +114,22 @@ class PersonListCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            ProfileStatusTag(status: person.profileStatus),
                           ],
                         ),
                         if (details.isNotEmpty) ...<Widget>[
                           const SizedBox(height: 2),
-                          Text(
-                            details.join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                          Padding(
+                            // Lines up with the name rather than with the pill.
+                            padding: const EdgeInsetsDirectional.only(
+                              start: ProfileStatusTag.compactWidth + 8,
+                            ),
+                            child: Text(
+                              details.join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
                         ],
@@ -171,12 +183,51 @@ class PersonListCard extends StatelessWidget {
 /// The availability status shown as a small coloured pill: green when
 /// available, red when taken, amber while on a break.
 class ProfileStatusTag extends StatelessWidget {
-  const ProfileStatusTag({super.key, required this.status});
+  const ProfileStatusTag({
+    super.key,
+    required this.status,
+    this.compact = false,
+  });
 
   final ProfileStatus status;
 
+  /// The quiet variant used in the people list: a fixed-width pill in the
+  /// palette's muted tones, borderless and a size smaller. The fixed width is
+  /// what keeps a column of them lined up whatever the names next to them are.
+  final bool compact;
+
+  /// Width of the [compact] pill. Wide enough for "בהפסקה" and "מזל טוב".
+  static const double compactWidth = 52;
+
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (compact) {
+      final Color color = AppColors.profileStatusSoftColor(status);
+      return Container(
+        width: compactWidth,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.13),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            status.displayName,
+            maxLines: 1,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 10,
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+
     final Color color = AppColors.profileStatusColor(status);
 
     return Container(
@@ -188,7 +239,7 @@ class ProfileStatusTag extends StatelessWidget {
       ),
       child: Text(
         status.displayName,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        style: theme.textTheme.labelSmall?.copyWith(
           color: color,
           fontWeight: FontWeight.w700,
         ),

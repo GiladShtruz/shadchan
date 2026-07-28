@@ -10,7 +10,6 @@ import 'package:shadchan/utils/enums.dart';
 List<Widget> buildDashboardSummarySlivers(
   BuildContext context, {
   bool showSectionTitle = false,
-  bool compact = false,
   double bottomPadding = 96,
   VoidCallback? onPeopleTap,
 }) {
@@ -109,29 +108,6 @@ List<Widget> buildDashboardSummarySlivers(
     color: Colors.pink.shade400,
     route: '/matches?archived=true&statuses=married',
   );
-  final List<_StatItem> allStats = <_StatItem>[...stats, marriedStat];
-
-  if (compact) {
-    return <Widget>[
-      if (showSectionTitle)
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-          sliver: SliverGrid.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 1.12,
-            ),
-            itemCount: allStats.length,
-            itemBuilder: (BuildContext context, int index) {
-              return _CompactStatCard(item: allStats[index]);
-            },
-          ),
-        ),
-    ];
-  }
-
   return <Widget>[
     if (showSectionTitle)
       SliverToBoxAdapter(
@@ -272,59 +248,6 @@ class _StatCard extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CompactStatCard extends StatelessWidget {
-  const _CompactStatCard({required this.item});
-
-  final _StatItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color accent = theme.colorScheme.primary;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      color: theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      child: InkWell(
-        onTap: item.onTap ?? () => context.go(item.route),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  item.value,
-                  maxLines: 1,
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: accent,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                item.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: accent,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
             ],
           ),
         ),

@@ -8,6 +8,12 @@ abstract final class AppColors {
   static const Color secondary = Color(0xFFC1845B);
   static const Color secondaryLight = Color(0xFFEFE4D4);
 
+  /// Deeper members of the two brand hues, for text and icons sitting on a
+  /// light wash of their own colour — the brand tone itself is too pale there
+  /// to stay readable.
+  static const Color primaryInk = Color(0xFF3F5A66);
+  static const Color secondaryInk = Color(0xFF8F5F3D);
+
   static const Color surface = Color(0xFFFFFDF8);
   static const Color background = Color(0xFFF7F0E4);
   static const Color onPrimary = Color(0xFFFFFDF8);
@@ -101,6 +107,22 @@ abstract final class AppColors {
   static const Color profileAvailable = Color(0xFF3E8E5A);
   static const Color profileBusy = Color(0xFFC0392B);
   static const Color profileOnBreak = Color(0xFFB07D18);
+
+  /// Quieter versions of the availability colours, drawn from the app's own
+  /// warm palette instead of the traffic-light primaries. Used where the tag
+  /// repeats down a long list and should read as a hint, not an alarm.
+  static Color profileStatusSoftColor(ProfileStatus status) {
+    switch (status) {
+      case ProfileStatus.available:
+        return statusDating;
+      case ProfileStatus.busy:
+        return statusRejected;
+      case ProfileStatus.onBreak:
+        return statusChecking;
+      case ProfileStatus.mazelTov:
+        return secondary;
+    }
+  }
 
   /// Colour for a person's availability tag: green / red / amber.
   static Color profileStatusColor(ProfileStatus status) {

@@ -10,7 +10,11 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   static bool _isInitialized = false;
   static Future<void> _scheduleQueue = Future<void>.value();
-  static int _latestScheduleRequestId = 0;
+
+  // One counter per reminder kind: a queued match refresh must not be dropped
+  // because a person reminder was saved after it (and the other way round).
+  static int _latestMatchRequestId = 0;
+  static int _latestPersonRequestId = 0;
 
   static const AndroidNotificationDetails _androidMatchDetails =
       AndroidNotificationDetails(
@@ -30,6 +34,22 @@ class NotificationService {
 
   static const NotificationDetails _matchNotificationDetails =
       NotificationDetails(android: _androidMatchDetails, iOS: _iosMatchDetails);
+
+  static const AndroidNotificationDetails _androidPersonDetails =
+      AndroidNotificationDetails(
+        'person_reminders',
+        'תזכורות לחברים',
+        channelDescription: 'התראות לבדוק שוב עם חבר/ה במאגר',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+
+  static const NotificationDetails _personNotificationDetails =
+      NotificationDetails(android: _androidPersonDetails, iOS: _iosMatchDetails);
+
+  /// Reminders are picked as a plain date, which would otherwise fire at
+  /// midnight. They go out at this hour of the reminder day instead.
+  static const int _reminderHour = 9;
 
   static Future<void> initialize() async {
     tz_data.initializeTimeZones();
@@ -102,12 +122,12 @@ class NotificationService {
       return;
     }
 
-    final int requestId = ++_latestScheduleRequestId;
+    final int requestId = ++_latestMatchRequestId;
     final List<MatchIdea> matchesSnapshot = List<MatchIdea>.from(matches);
 
     _scheduleQueue = _scheduleQueue
         .then((_) async {
-          if (requestId != _latestScheduleRequestId) {
+          if (requestId != _latestMatchRequestId) {
             return;
           }
 
@@ -119,6 +139,43 @@ class NotificationService {
         .catchError((Object error, StackTrace stackTrace) {
           debugPrint(
             'NotificationService.scheduleMatchReminders failed: '
+            '$error\n$stackTrace',
+          );
+        });
+
+    await _scheduleQueue;
+  }
+
+  /// Schedules the per-person "check on them again" reminders — the ones set
+  /// when someone goes busy or on a break. Same contract as
+  /// [scheduleMatchReminders]: the full list is passed in every time and
+  /// replaces whatever was pending, so clearing a reminder cancels its
+  /// notification.
+  static Future<void> schedulePersonReminders(
+    List<PersonReminderNotification> reminders,
+  ) async {
+    if (!_isInitialized) {
+      return;
+    }
+
+    final int requestId = ++_latestPersonRequestId;
+    final List<PersonReminderNotification> snapshot =
+        List<PersonReminderNotification>.from(reminders);
+
+    _scheduleQueue = _scheduleQueue
+        .then((_) async {
+          if (requestId != _latestPersonRequestId) {
+            return;
+          }
+
+          await _schedulePersonRemindersInternal(
+            snapshot,
+            requestId: requestId,
+          );
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint(
+            'NotificationService.schedulePersonReminders failed: '
             '$error\n$stackTrace',
           );
         });
@@ -154,17 +211,13 @@ class NotificationService {
       int notifId = 20000;
 
       for (final MatchIdea match in matches) {
-        if (requestId != _latestScheduleRequestId) {
+        if (requestId != _latestMatchRequestId) {
           return;
         }
 
         final DateTime? reminderDate = match.reminderDate;
-        if (reminderDate != null && reminderDate.isAfter(DateTime.now())) {
-          final tz.TZDateTime scheduledTime = tz.TZDateTime.from(
-            reminderDate,
-            tz.local,
-          );
-
+        final tz.TZDateTime? scheduledTime = _notificationTime(reminderDate);
+        if (scheduledTime != null) {
           await _plugin.zonedSchedule(
             notifId,
             'תזכורת להצעה',
@@ -189,4 +242,74 @@ class NotificationService {
       );
     }
   }
+
+  static Future<void> _schedulePersonRemindersInternal(
+    List<PersonReminderNotification> reminders, {
+    required int requestId,
+  }) async {
+    try {
+      final List<PendingNotificationRequest> pending = await _plugin
+          .pendingNotificationRequests();
+      for (final PendingNotificationRequest req in pending) {
+        if (req.id >= 30000 && req.id < 40000) {
+          await _plugin.cancel(req.id);
+        }
+      }
+
+      int notifId = 30000;
+
+      for (final PersonReminderNotification reminder in reminders) {
+        if (requestId != _latestPersonRequestId) {
+          return;
+        }
+
+        final tz.TZDateTime? scheduledTime = _notificationTime(reminder.date);
+        if (scheduledTime != null) {
+          await _plugin.zonedSchedule(
+            notifId,
+            'תזכורת לבדוק שוב',
+            'הגיע הזמן לבדוק שוב עם ${reminder.name}',
+            scheduledTime,
+            _personNotificationDetails,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          );
+          notifId++;
+        }
+
+        if (notifId >= 40000) {
+          break;
+        }
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'NotificationService.schedulePersonReminders failed: '
+        '$error\n$stackTrace',
+      );
+    }
+  }
+
+  /// When to actually fire a reminder that was picked as a bare date: at
+  /// [_reminderHour] on that day rather than at midnight. Returns null when the
+  /// moment has already passed, or when there is no reminder at all.
+  static tz.TZDateTime? _notificationTime(DateTime? date) {
+    if (date == null) {
+      return null;
+    }
+
+    final DateTime target = date.hour == 0 && date.minute == 0
+        ? DateTime(date.year, date.month, date.day, _reminderHour)
+        : date;
+    final tz.TZDateTime scheduled = tz.TZDateTime.from(target, tz.local);
+    return scheduled.isAfter(tz.TZDateTime.now(tz.local)) ? scheduled : null;
+  }
+}
+
+/// One per-person reminder ready to be scheduled: who it is about and when.
+class PersonReminderNotification {
+  const PersonReminderNotification({required this.name, required this.date});
+
+  final String name;
+  final DateTime date;
 }

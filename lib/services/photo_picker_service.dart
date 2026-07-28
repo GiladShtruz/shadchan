@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shadchan/services/face_crop_service.dart';
 
 /// Picks photos from the gallery and copies them into the app's own `photos`
 /// directory, so a person's card keeps working even if the original is later
@@ -74,6 +76,10 @@ abstract final class PhotoPickerService {
   /// Best-effort cleanup of photos copied during an edit that was abandoned.
   static void deletePhotoFiles(Iterable<String> paths) {
     for (final String path in paths) {
+      // The face position was cached against this path; drop it with the file
+      // so the settings box does not collect entries for photos that are gone.
+      unawaited(FaceCropService.forget(path));
+
       final File file = File(path);
       if (file.existsSync()) {
         try {

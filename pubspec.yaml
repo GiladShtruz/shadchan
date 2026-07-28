@@ -1,7 +1,7 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.18+29
+version: 1.0.18+31
 
 environment:
   sdk: ^3.11.0
@@ -35,6 +35,19 @@ dependencies:
   excel: ^4.0.6
   archive: ^3.6.1
 
+  # On-device face detection, used only to work out where the face sits in a
+  # photo so avatars can centre on it instead of cropping it off. Runs locally;
+  # no photo ever leaves the device.
+  google_mlkit_face_detection: ^0.14.0
+
+  # Firebase. The app stays local-first (Hive): Firebase is only the secure
+  # channel to Gemini for the AI import flows — App Check + anonymous auth gate
+  # the calls, and no personal data is written to any Firebase product.
+  firebase_core: ^4.9.0
+  firebase_auth: ^6.5.1
+  firebase_app_check: ^0.4.4+1
+  firebase_ai: ^3.12.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -46,13 +59,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icon3.png"
+  image_path: "assets/icon4.png"
 
 flutter_native_splash:
   color: "#F7F0E4"
-  image: "assets/icon3.png"
+  image: "assets/icon4.png"
   color_dark: "#211D17"
-  image_dark: "assets/icon3.png"
+  image_dark: "assets/icon4.png"
   android_12:
     color: "#F7F0E4"
     color_dark: "#211D17"
@@ -60,7 +73,7 @@ flutter_native_splash:
 flutter:
   uses-material-design: true
   assets:
-    - assets/icon3.png
+    - assets/icon4.png
     - assets/match_icon.png
     - assets/male_pic/
     - assets/female_pic/

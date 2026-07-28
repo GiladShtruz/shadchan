@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "769854167286",
+    "project_id": "shadchan-gilad",
+    "storage_bucket": "shadchan-gilad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769854167286:android:be45a9a44db099127334d7",
+        "android_client_info": {
+          "package_name": "com.gilad.shadchan"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGRJvzhDpPXGgxTmimz1g7Zyk91D5eAPc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

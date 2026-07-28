@@ -4,7 +4,10 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
+import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -50,6 +53,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   void initState() {
     super.initState();
     _noteController.addListener(_handleNoteChanged);
+    // Feeds the home screen's "חזרה מהירה" strip. Deferred past this frame:
+    // the home screen is still alive behind this route, and notifying it from
+    // inside initState would rebuild it mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      RecentActivityStore.instance.record(
+        kind: HomeItemKind.idea,
+        targetId: widget.matchId,
+        action: HomeActivityAction.openedIdea,
+      );
+    });
   }
 
   @override
@@ -138,11 +151,34 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
               tooltip: 'עוד',
               icon: const Icon(Icons.more_vert),
               onSelected: (String value) {
-                if (value == 'delete') {
-                  _deleteMatch(context, matchRepository, match.id);
+                switch (value) {
+                  case 'board':
+                    HomeBoardActions.toggle(
+                      context,
+                      HomeItemKind.idea,
+                      match.id,
+                    );
+                  case 'delete':
+                    _deleteMatch(context, matchRepository, match.id);
                 }
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'board',
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(Icons.push_pin_outlined),
+                      const SizedBox(width: 10),
+                      Text(
+                        HomeBoardActions.menuLabel(
+                          HomeItemKind.idea,
+                          match.id,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
                 PopupMenuItem<String>(
                   value: 'delete',
                   child: Row(

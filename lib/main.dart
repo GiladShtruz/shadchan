@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/match_migrations.dart';
 import 'package:shadchan/services/person_migrations.dart';
@@ -45,6 +46,11 @@ Future<void> main() async {
 /// failures are non-fatal — they must never keep the app from starting — so
 /// they are handled inside their own services / swallowed here.
 Future<void> _bootstrap() async {
+  // Firebase first, but never fatal: FirebaseBootstrap swallows its own
+  // failures so a bad network or an unconfigured project can't stop the app
+  // from opening. Local data and every non-AI feature work regardless.
+  await FirebaseBootstrap.initialize();
+
   await Hive.initFlutter();
   _registerAdapters();
 

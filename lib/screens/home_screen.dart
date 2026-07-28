@@ -2,25 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
+import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/home_config.dart';
+import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
+import 'package:shadchan/utils/monthly_stats.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
-import 'package:shadchan/widgets/couple_card.dart';
-import 'package:shadchan/widgets/dashboard_summary.dart';
-import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 
-/// The landing screen: greeting, database stats, the two ways to grow the
-/// database, and horizontal rows of what is currently moving — couples who are
-/// dating, open ideas and recently updated friends. Search runs over the whole
-/// database and shows its results in a panel above the page.
+/// The landing screen: a calm workspace rather than a dashboard.
+///
+/// Everything below the banner is a row of identically sized cards, in a fixed
+/// order — the two ways to grow the database, what the matchmaker parked on
+/// their board, what they just worked on, the open ideas, who quietly slipped
+/// out of view, the couples who are dating, and only then the numbers and a
+/// tip. Nothing on the resting screen is open, expanded or asking to be
+/// dismissed; every deeper option waits behind a tap.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.initialSearch = ''});
 
@@ -65,7 +74,16 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Stack(
           children: <Widget>[
-            _buildHome(theme, profile),
+            // The board and the activity trail are app-wide singletons rather
+            // than injected providers — the repositories write to them when a
+            // record is deleted — so the page listens to them directly.
+            ListenableBuilder(
+              listenable: Listenable.merge(<Listenable>[
+                HomeBoardStore.instance,
+                RecentActivityStore.instance,
+              ]),
+              builder: (BuildContext context, _) => _buildHome(),
+            ),
             if (_searchVisible) _buildSearchPanel(theme, personRepository),
           ],
         ),
@@ -173,11 +191,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- Home body ----------------------------------------------------------
 
-  Widget _buildHome(ThemeData theme, UserProfileProvider profile) {
+  Widget _buildHome() {
     final MatchRepository matchRepository = context.watch<MatchRepository>();
     final PersonRepository personRepository = context.watch<PersonRepository>();
+    final HomeBoardStore board = HomeBoardStore.instance;
+    final RecentActivityStore activity = RecentActivityStore.instance;
 
     final List<MatchIdea> allMatches = matchRepository.getAll();
+    final List<Person> allPeople = personRepository.getAll();
+    final List<Person> visiblePeople = allPeople
+        .where((Person p) => !p.hidden)
+        .toList();
+
     final List<MatchIdea> datingMatches =
         allMatches
             .where((MatchIdea m) => m.status == MatchStatus.dating)
@@ -197,52 +222,53 @@ class _HomeScreenState extends State<HomeScreen> {
           ..sort(
             (MatchIdea a, MatchIdea b) => b.createdAt.compareTo(a.createdAt),
           );
-    final List<Person> recentPeople =
-        personRepository.getAll().where((Person p) => !p.hidden).toList()
-          ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
+
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: visiblePeople,
+      matches: allMatches,
+    );
+
+    final bool compactActions =
+        visiblePeople.length >= HomeConfig.compactActionsFromPeopleCount;
 
     return CustomScrollView(
       slivers: <Widget>[
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 20, 14, 8),
-          sliver: SliverToBoxAdapter(child: _Subtitle(profile: profile)),
-        ),
-        ...buildDashboardSummarySlivers(
-          context,
-          showSectionTitle: true,
-          compact: true,
-          bottomPadding: 8,
-        ),
-        const SliverPadding(
-          padding: EdgeInsets.fromLTRB(14, 12, 14, 8),
-          sliver: SliverToBoxAdapter(child: _QuickActions()),
-        ),
-        SliverToBoxAdapter(
-          child: _CoupleRow(
-            title: 'זוגות שיוצאים',
-            icon: Icons.favorite_outline,
-            subtitle: 'שומרים על קשר! כל זוג צריך חבר אחד שיאמין בו',
-            emptyText: 'עוד אין זוגות שיוצאים — הראשון בדרך.',
-            matches: datingMatches,
-            repository: personRepository,
-            centered: true,
-            hideWhenEmpty: true,
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 4),
+          sliver: SliverToBoxAdapter(
+            child: _QuickActions(compact: compactActions),
           ),
         ),
-        SliverToBoxAdapter(
-          child: _CoupleRow(
-            title: 'רעיונות פתוחים',
-            icon: Icons.lightbulb_outline,
-            emptyText: 'אין רעיונות פתוחים כרגע.',
-            matches: openMatches,
-            repository: personRepository,
-          ),
+        _BoardSection(
+          entries: board.entries,
+          personRepository: personRepository,
+          matchRepository: matchRepository,
         ),
-        SliverToBoxAdapter(
-          child: _RecentPeopleRow(people: recentPeople.take(15).toList()),
+        _QuickReturnSection(
+          entries: activity.entries,
+          personRepository: personRepository,
+          matchRepository: matchRepository,
+        ),
+        _OpenIdeasSection(
+          matches: openMatches.take(HomeConfig.openIdeasInRow).toList(),
+          personRepository: personRepository,
+        ),
+        _WorthThinkingSection(suggestions: suggestions),
+        _DatingSection(
+          matches: datingMatches.take(HomeConfig.datingCouplesInRow).toList(),
+          personRepository: personRepository,
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          padding: const EdgeInsets.fromLTRB(14, 20, 14, 0),
+          sliver: SliverToBoxAdapter(
+            child: _MonthlyStatsCard(
+              stats: MonthlyStats.current(allMatches, allPeople),
+              onTap: () => context.push('/stats/month'),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
           sliver: SliverToBoxAdapter(
             child: _TipCard(
               tip: _tip,
@@ -252,12 +278,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 });
               },
             ),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 32),
-          sliver: SliverToBoxAdapter(
-            child: _MonthlyStatsCard(onTap: () => context.push('/stats/month')),
           ),
         ),
       ],
@@ -371,57 +391,65 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// The "בוא/י נחשוב על החברים שלך" line under the greeting.
-class _Subtitle extends StatelessWidget {
-  const _Subtitle({required this.profile});
+// --- The two main actions ---------------------------------------------------
 
-  final UserProfileProvider profile;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool isFemale = profile.gender == Gender.female;
-    final String letsGo = isFemale ? 'בואי נחשוב' : 'בוא נחשוב';
-
-    return Text(
-      '$letsGo על החברים שלך!',
-      style: theme.textTheme.titleMedium?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-    );
-  }
-}
-
-/// The two matching shortcuts: add a friend (which asks how) and open an idea.
+/// "הוסף חברים" and "הוסף רעיון". Building the database is the one thing that
+/// matters at the start, so until it is going the first action gets a card of
+/// its own; from [HomeConfig.compactActionsFromPeopleCount] people up, the two
+/// collapse into a single compact row.
 class _QuickActions extends StatelessWidget {
-  const _QuickActions();
+  const _QuickActions({required this.compact});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            child: _QuickActionCard(
-              icon: Icons.person_add_alt,
-              title: 'הוסף חברים',
-              subtitle: 'לא משאירים אף חבר/ה רווק/ה מאחור',
-              highlighted: true,
-              onTap: () => AddPeopleDialog.show(context),
+    if (compact) {
+      return IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              child: _QuickActionCard(
+                icon: Icons.person_add_alt,
+                title: 'הוסף חברים',
+                subtitle: 'לא משאירים אף חבר/ה רווק/ה מאחור',
+                highlighted: true,
+                onTap: () => AddPeopleDialog.show(context),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _QuickActionCard(
-              icon: Icons.auto_awesome_outlined,
-              title: 'הוסף רעיון',
-              subtitle: 'שמור את כל הרעיונות שלך במקום אחד',
-              onTap: () => context.push('/matches/add'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _QuickActionCard(
+                icon: Icons.auto_awesome_outlined,
+                title: 'הוסף רעיון',
+                subtitle: 'שמור את הרעיונות במקום אחד',
+                onTap: () => context.push('/matches/add'),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: <Widget>[
+        _QuickActionCard(
+          icon: Icons.person_add_alt,
+          title: 'הוסף חברים',
+          subtitle: 'המאגר שלך מתחיל מהאנשים שלך',
+          highlighted: true,
+          large: true,
+          onTap: () => AddPeopleDialog.show(context),
+        ),
+        const SizedBox(height: 10),
+        _QuickActionCard(
+          icon: Icons.auto_awesome_outlined,
+          title: 'הוסף רעיון',
+          subtitle: 'שמור את הרעיונות במקום אחד',
+          onTap: () => context.push('/matches/add'),
+        ),
+      ],
     );
   }
 }
@@ -433,6 +461,7 @@ class _QuickActionCard extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.highlighted = false,
+    this.large = false,
   });
 
   final IconData icon;
@@ -440,10 +469,13 @@ class _QuickActionCard extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
 
-  /// Makes this the filled, primary call to action. The other card uses a
-  /// clearly-tinted "tonal" style so it still reads as an enabled button rather
-  /// than a washed-out, disabled-looking outline.
+  /// Makes this the filled, primary call to action. The other card is the same
+  /// design in the same hue, only lighter: a soft wash of the primary colour
+  /// with no border, so the pair reads as one family with a clear lead.
   final bool highlighted;
+
+  /// The roomier variant used while the database is still small.
+  final bool large;
 
   @override
   Widget build(BuildContext context) {
@@ -454,18 +486,13 @@ class _QuickActionCard extends StatelessWidget {
     // a filled button, so the deeper tone is used there.
     final Color fill = dark ? theme.colorScheme.primary : AppColors.primaryDark;
     final Color onFill = theme.colorScheme.onPrimary;
-    final Color accent = dark
-        ? theme.colorScheme.secondary
-        : AppColors.secondary;
 
-    // Secondary card: a solid-enough copper tint with a defined border and full
-    // accent-coloured text/icon, so it stands out as tappable next to the
-    // primary card without competing with it.
-    final Color tonalFill = accent.withValues(alpha: dark ? 0.22 : 0.14);
-    final Color tonalBorder = accent.withValues(alpha: dark ? 0.55 : 0.5);
-
-    final Color background = highlighted ? fill : tonalFill;
-    final Color titleColor = highlighted ? onFill : accent;
+    final Color background = highlighted
+        ? fill
+        : fill.withValues(alpha: dark ? 0.20 : 0.12);
+    final Color titleColor = highlighted
+        ? onFill
+        : (dark ? fill : AppColors.primaryInk);
     final Color subtitleColor = highlighted
         ? onFill.withValues(alpha: 0.85)
         : theme.colorScheme.onSurfaceVariant;
@@ -478,43 +505,42 @@ class _QuickActionCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: highlighted
-                ? null
-                : Border.all(color: tonalBorder, width: 1.5),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: large ? 20 : 14,
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      Text(
-                        title,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: titleColor,
-                        ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style:
+                          (large
+                                  ? theme.textTheme.titleLarge
+                                  : theme.textTheme.titleMedium)
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: titleColor,
+                              ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: subtitleColor,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: subtitleColor,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Icon(icon, size: 30, color: titleColor),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              Icon(icon, size: large ? 38 : 28, color: titleColor),
+            ],
           ),
         ),
       ),
@@ -522,10 +548,485 @@ class _QuickActionCard extends StatelessWidget {
   }
 }
 
-/// The shortcut into "הנתונים שלך החודש".
-class _MonthlyStatsCard extends StatelessWidget {
-  const _MonthlyStatsCard({required this.onTap});
+// --- הלוח שלי ---------------------------------------------------------------
 
+/// The people and proposals the matchmaker parked to come back to. Hidden
+/// entirely until something is pinned.
+class _BoardSection extends StatelessWidget {
+  const _BoardSection({
+    required this.entries,
+    required this.personRepository,
+    required this.matchRepository,
+  });
+
+  final List<HomeBoardEntry> entries;
+  final PersonRepository personRepository;
+  final MatchRepository matchRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    // A pinned record that has since been deleted simply drops out.
+    final List<HomeBoardEntry> live = entries.where((HomeBoardEntry entry) {
+      return entry.kind == HomeItemKind.person
+          ? personRepository.getById(entry.targetId) != null
+          : matchRepository.getById(entry.targetId) != null;
+    }).toList();
+
+    if (live.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const HomeSectionHeader(
+            title: 'הלוח שלי',
+            icon: Icons.push_pin_outlined,
+            subtitle: 'אנשים ורעיונות ששמרת לחזור אליהם',
+          ),
+          HomeCarousel(
+            itemCount: live.length,
+            itemBuilder: (BuildContext context, int index) {
+              return _BoardCard(
+                entry: live[index],
+                personRepository: personRepository,
+                matchRepository: matchRepository,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BoardCard extends StatelessWidget {
+  const _BoardCard({
+    required this.entry,
+    required this.personRepository,
+    required this.matchRepository,
+  });
+
+  final HomeBoardEntry entry;
+  final PersonRepository personRepository;
+  final MatchRepository matchRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entry.kind == HomeItemKind.person) {
+      final Person person = personRepository.getById(entry.targetId)!;
+      return _card(
+        context,
+        leading: HomeCardAvatar(person: person),
+        title: person.fullName.trim(),
+        reminder: personRepository.personReminderFor(person.id),
+        onTap: () => context.push('/people/${person.id}'),
+      );
+    }
+
+    final MatchIdea match = matchRepository.getById(entry.targetId)!;
+    final Person? personA = personRepository.getById(match.personAId);
+    final Person? personB = personRepository.getById(match.personBId);
+    return _card(
+      context,
+      leading: HomeCardCoupleAvatars(personA: personA, personB: personB),
+      title: '${_firstName(personA)} & ${_firstName(personB)}',
+      reminder: match.reminderDate,
+      onTap: () => context.push('/matches/${match.id}'),
+    );
+  }
+
+  Widget _card(
+    BuildContext context, {
+    required Widget leading,
+    required String title,
+    required DateTime? reminder,
+    required VoidCallback onTap,
+  }) {
+    return HomeMiniCard(
+      leading: leading,
+      title: title,
+      subtitle: entry.note,
+      onTap: onTap,
+      footer: reminder == null
+          ? null
+          : HomeCardFooter(
+              label: AppDateUtils.formatDateShort(reminder),
+              icon: Icons.event_outlined,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+      menu: _BoardCardMenu(kind: entry.kind, targetId: entry.targetId),
+    );
+  }
+}
+
+/// The small per-card menu. It is only ever a single icon at rest — the options
+/// open on tap, so the home screen itself stays free of open menus.
+class _BoardCardMenu extends StatelessWidget {
+  const _BoardCardMenu({required this.kind, required this.targetId});
+
+  final HomeItemKind kind;
+  final String targetId;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return PopupMenuButton<String>(
+      tooltip: 'אפשרויות',
+      position: PopupMenuPosition.under,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 190),
+      // A `child` rather than an `icon`: the icon form is an IconButton, whose
+      // 48px tap target would reach across the card and swallow taps meant for
+      // the card itself.
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(
+          Icons.more_vert,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      onSelected: (String value) async {
+        switch (value) {
+          case 'note':
+            await HomeBoardActions.editNote(context, kind, targetId);
+          case 'reminder':
+            await HomeBoardActions.editReminder(context, kind, targetId);
+          case 'remove':
+            HomeBoardActions.remove(context, kind, targetId);
+        }
+      },
+      itemBuilder: (BuildContext context) {
+        final bool hasNote =
+            (HomeBoardStore.instance.entryFor(kind, targetId)?.note ?? '')
+                .isNotEmpty;
+        return <PopupMenuEntry<String>>[
+          PopupMenuItem<String>(
+            value: 'note',
+            child: Text(hasNote ? 'ערוך הערה' : 'הוסף הערה'),
+          ),
+          PopupMenuItem<String>(
+            value: 'reminder',
+            child: Text(
+              _hasReminder(context) ? 'ערוך תזכורת' : 'הוסף תזכורת',
+            ),
+          ),
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(
+            value: 'remove',
+            child: Text('הסר מהלוח'),
+          ),
+        ];
+      },
+    );
+  }
+
+  bool _hasReminder(BuildContext context) {
+    if (kind == HomeItemKind.person) {
+      return context.read<PersonRepository>().personReminderFor(targetId) !=
+          null;
+    }
+    return context.read<MatchRepository>().getById(targetId)?.reminderDate !=
+        null;
+  }
+}
+
+// --- חזרה מהירה -------------------------------------------------------------
+
+/// The trail back to whatever was just worked on. One card per person or
+/// proposal, newest first.
+class _QuickReturnSection extends StatelessWidget {
+  const _QuickReturnSection({
+    required this.entries,
+    required this.personRepository,
+    required this.matchRepository,
+  });
+
+  final List<HomeActivityEntry> entries;
+  final PersonRepository personRepository;
+  final MatchRepository matchRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<HomeActivityEntry> live = entries.where((
+      HomeActivityEntry entry,
+    ) {
+      return entry.kind == HomeItemKind.person
+          ? personRepository.getById(entry.targetId) != null
+          : matchRepository.getById(entry.targetId) != null;
+    }).toList();
+
+    if (live.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const HomeSectionHeader(
+            title: 'חזרה מהירה',
+            icon: Icons.history,
+            subtitle: 'הפעולות האחרונות שלך',
+          ),
+          HomeCarousel(
+            itemCount: live.length,
+            itemBuilder: (BuildContext context, int index) {
+              return _QuickReturnCard(
+                entry: live[index],
+                personRepository: personRepository,
+                matchRepository: matchRepository,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickReturnCard extends StatelessWidget {
+  const _QuickReturnCard({
+    required this.entry,
+    required this.personRepository,
+    required this.matchRepository,
+  });
+
+  final HomeActivityEntry entry;
+  final PersonRepository personRepository;
+  final MatchRepository matchRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget footer = HomeCardFooter(
+      label: AppDateUtils.timeAgoShort(entry.at),
+      icon: Icons.schedule,
+    );
+
+    if (entry.kind == HomeItemKind.person) {
+      final Person person = personRepository.getById(entry.targetId)!;
+      return HomeMiniCard(
+        leading: HomeCardAvatar(person: person),
+        title: person.fullName.trim(),
+        subtitle: entry.action.label,
+        footer: footer,
+        onTap: () => context.push('/people/${person.id}'),
+      );
+    }
+
+    final MatchIdea match = matchRepository.getById(entry.targetId)!;
+    final Person? personA = personRepository.getById(match.personAId);
+    final Person? personB = personRepository.getById(match.personBId);
+    return HomeMiniCard(
+      leading: HomeCardCoupleAvatars(personA: personA, personB: personB),
+      title: '${_firstName(personA)} & ${_firstName(personB)}',
+      subtitle: entry.action.label,
+      footer: footer,
+      onTap: () => context.push('/matches/${match.id}'),
+    );
+  }
+}
+
+// --- רעיונות פתוחים ---------------------------------------------------------
+
+class _OpenIdeasSection extends StatelessWidget {
+  const _OpenIdeasSection({
+    required this.matches,
+    required this.personRepository,
+  });
+
+  final List<MatchIdea> matches;
+  final PersonRepository personRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    if (matches.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          HomeSectionHeader(
+            title: 'רעיונות פתוחים',
+            icon: Icons.lightbulb_outline,
+            onSeeAll: () => context.go('/matches'),
+          ),
+          HomeCarousel(
+            itemCount: matches.length,
+            itemBuilder: (BuildContext context, int index) {
+              final MatchIdea match = matches[index];
+              return _OpenIdeaCard(
+                match: match,
+                personA: personRepository.getById(match.personAId),
+                personB: personRepository.getById(match.personBId),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OpenIdeaCard extends StatelessWidget {
+  const _OpenIdeaCard({
+    required this.match,
+    required this.personA,
+    required this.personB,
+  });
+
+  final MatchIdea match;
+  final Person? personA;
+  final Person? personB;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final DateTime? reminder = match.reminderDate;
+    final bool reminderDue =
+        reminder != null && !reminder.isAfter(DateTime.now());
+
+    return HomeMiniCard(
+      leading: HomeCardCoupleAvatars(personA: personA, personB: personB),
+      title: '${_firstName(personA)} & ${_firstName(personB)}',
+      subtitle: 'עודכן ${AppDateUtils.timeAgoShort(match.updatedAt)}',
+      footer: HomeCardFooter(
+        label: match.status.displayName,
+        color: AppColors.statusColor(match.status.name),
+        tinted: true,
+      ),
+      onTap: () => context.push('/matches/${match.id}'),
+      // A reminder that came due is a small mark in the corner, nothing more.
+      menu: reminderDue
+          ? Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(
+                Icons.notifications_active,
+                size: 14,
+                color: theme.colorScheme.primary,
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+// --- אולי שווה לחשוב עליהם --------------------------------------------------
+
+class _WorthThinkingSection extends StatelessWidget {
+  const _WorthThinkingSection({required this.suggestions});
+
+  final List<HomeSuggestion> suggestions;
+
+  @override
+  Widget build(BuildContext context) {
+    if (suggestions.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          HomeSectionHeader(
+            title: 'אולי שווה לחשוב עליהם',
+            icon: Icons.auto_awesome_outlined,
+            onSeeAll: () => context.go('/people'),
+          ),
+          HomeCarousel(
+            itemCount: suggestions.length,
+            itemBuilder: (BuildContext context, int index) {
+              final HomeSuggestion suggestion = suggestions[index];
+              return HomeMiniCard(
+                leading: HomeCardAvatar(person: suggestion.person),
+                title: suggestion.person.fullName.trim(),
+                subtitle: suggestion.reason,
+                onTap: () => context.push('/people/${suggestion.person.id}'),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- זוגות שיוצאים ----------------------------------------------------------
+
+/// Pure encouragement, not a work queue: it exists only while there is someone
+/// to celebrate, and it is the one row that wears colour.
+class _DatingSection extends StatelessWidget {
+  const _DatingSection({
+    required this.matches,
+    required this.personRepository,
+  });
+
+  final List<MatchIdea> matches;
+  final PersonRepository personRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    if (matches.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    final ThemeData theme = Theme.of(context);
+    final Color accent = AppColors.statusDating;
+
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const HomeSectionHeader(
+            title: 'זוגות שיוצאים',
+            icon: Icons.favorite,
+            subtitle: 'בזכותך הם נפגשו — שיהיה במזל טוב!',
+          ),
+          HomeCarousel(
+            itemCount: matches.length,
+            itemBuilder: (BuildContext context, int index) {
+              final MatchIdea match = matches[index];
+              return HomeMiniCard(
+                leading: HomeCardCoupleAvatars(
+                  personA: personRepository.getById(match.personAId),
+                  personB: personRepository.getById(match.personBId),
+                ),
+                title:
+                    '${_firstName(personRepository.getById(match.personAId))} '
+                    '& ${_firstName(personRepository.getById(match.personBId))}',
+                subtitle: 'יוצאים ${AppDateUtils.timeAgoShort(match.updatedAt)}',
+                footer: HomeCardFooter(
+                  label: 'שיהיה במזל טוב',
+                  icon: Icons.favorite,
+                  color: accent,
+                ),
+                background: accent.withValues(
+                  alpha: theme.brightness == Brightness.dark ? 0.18 : 0.10,
+                ),
+                borderColor: accent.withValues(alpha: 0.35),
+                onTap: () => context.push('/matches/${match.id}'),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- Bottom of the page -----------------------------------------------------
+
+/// The month's numbers, moved below the work so opening the app lands on
+/// actions rather than on a scoreboard. Tapping opens the full stats screen.
+class _MonthlyStatsCard extends StatelessWidget {
+  const _MonthlyStatsCard({required this.stats, required this.onTap});
+
+  final MonthStats stats;
   final VoidCallback onTap;
 
   @override
@@ -535,30 +1036,64 @@ class _MonthlyStatsCard extends StatelessWidget {
     return Material(
       color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
         onTap: onTap,
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
-          child: Row(
+          child: Column(
             children: <Widget>[
-              Icon(Icons.insights_outlined, color: theme.colorScheme.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'הנתונים שלך החודש',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+              Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.insights_outlined,
+                    size: 18,
+                    color: theme.colorScheme.primary,
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'הנתונים שלך החודש',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_left,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
               ),
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
+              const SizedBox(height: 10),
+              Row(
+                children: <Widget>[
+                  _StatCell(
+                    value: stats.ideas,
+                    label: 'רעיונות',
+                    color: MonthlyStats.ideasColor,
+                  ),
+                  _StatCell(
+                    value: stats.people,
+                    label: 'חברים',
+                    color: MonthlyStats.peopleColor,
+                  ),
+                  _StatCell(
+                    value: stats.dating,
+                    label: 'יוצאים',
+                    color: MonthlyStats.datingColor,
+                  ),
+                  _StatCell(
+                    value: stats.weddings,
+                    label: 'חתונות',
+                    color: MonthlyStats.weddingsColor,
+                  ),
+                ],
               ),
             ],
           ),
@@ -568,321 +1103,49 @@ class _MonthlyStatsCard extends StatelessWidget {
   }
 }
 
-/// A horizontal, side-scrolling row of couple cards.
-class _CoupleRow extends StatelessWidget {
-  const _CoupleRow({
-    required this.title,
-    required this.icon,
-    required this.emptyText,
-    required this.matches,
-    required this.repository,
-    this.subtitle,
-    this.centered = false,
-    this.hideWhenEmpty = false,
+class _StatCell extends StatelessWidget {
+  const _StatCell({
+    required this.value,
+    required this.label,
+    required this.color,
   });
 
-  final String title;
-  final IconData icon;
-  final String? subtitle;
-  final String emptyText;
-  final List<MatchIdea> matches;
-  final PersonRepository repository;
-
-  /// Centers the header and the couple cards, and — when there are more cards
-  /// than fit — keeps them centered while allowing a horizontal scroll.
-  final bool centered;
-
-  /// Drops the whole section (header included) when there is nothing to show,
-  /// instead of rendering an "empty" hint.
-  final bool hideWhenEmpty;
-
-  static const double _gap = 10;
-
-  @override
-  Widget build(BuildContext context) {
-    if (matches.isEmpty && hideWhenEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: centered
-          ? CrossAxisAlignment.center
-          : CrossAxisAlignment.start,
-      children: <Widget>[
-        _SectionHeader(
-          title: title,
-          icon: icon,
-          subtitle: subtitle,
-          centered: centered,
-        ),
-        if (matches.isEmpty)
-          _EmptyRowHint(text: emptyText)
-        else if (centered)
-          _centeredCards(context)
-        else
-          SizedBox(
-            height: 106,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              itemCount: matches.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (BuildContext context, int index) {
-                final MatchIdea match = matches[index];
-                return CoupleCard(
-                  personA: repository.getById(match.personAId),
-                  personB: repository.getById(match.personBId),
-                  onTap: () => context.push('/matches/${match.id}'),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildCard(BuildContext context, MatchIdea match) {
-    return CoupleCard(
-      personA: repository.getById(match.personAId),
-      personB: repository.getById(match.personBId),
-      onTap: () => context.push('/matches/${match.id}'),
-    );
-  }
-
-  /// Centers the couple cards when they fit within the available width; once
-  /// they overflow it falls back to a horizontally-scrolling row.
-  Widget _centeredCards(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final int count = matches.length;
-        final double contentWidth =
-            count * CoupleCard.width + (count - 1) * _gap;
-        // Leave a little side padding before deciding it no longer fits.
-        final bool fits = contentWidth <= constraints.maxWidth - 40;
-
-        final List<Widget> cards = <Widget>[
-          for (int i = 0; i < count; i++) ...<Widget>[
-            if (i > 0) const SizedBox(width: _gap),
-            _buildCard(context, matches[i]),
-          ],
-        ];
-
-        if (fits) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: cards,
-            ),
-          );
-        }
-
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: cards,
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// A horizontal, side-scrolling row of the friends updated most recently.
-class _RecentPeopleRow extends StatelessWidget {
-  const _RecentPeopleRow({required this.people});
-
-  final List<Person> people;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const _SectionHeader(
-          title: 'חברים שעודכנו לאחרונה',
-          icon: Icons.schedule,
-        ),
-        if (people.isEmpty)
-          const _EmptyRowHint(text: 'עוד לא עודכנו חברים.')
-        else
-          SizedBox(
-            height: 104,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              itemCount: people.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (BuildContext context, int index) {
-                final Person person = people[index];
-                return _PersonMiniCard(
-                  person: person,
-                  onTap: () => context.push('/people/${person.id}'),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _PersonMiniCard extends StatelessWidget {
-  const _PersonMiniCard({required this.person, required this.onTap});
-
-  final Person person;
-  final VoidCallback onTap;
+  final int value;
+  final String label;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return SizedBox(
-      width: 108,
-      child: Card(
-        margin: EdgeInsets.zero,
-        elevation: 0,
-        clipBehavior: Clip.antiAlias,
-        color: theme.colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                PersonAvatar(person: person, radius: 24),
-                const SizedBox(height: 10),
-                Text(
-                  _shortName(person),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// "יעל ג." — the full name rarely fits on a card this small.
-  static String _shortName(Person person) {
-    final String first = person.firstName.trim();
-    final String last = person.lastName.trim();
-    if (first.isEmpty) {
-      return last.isEmpty ? '—' : last;
-    }
-    return last.isEmpty ? first : '$first ${last.characters.first}.';
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.title,
-    required this.icon,
-    this.subtitle,
-    this.centered = false,
-  });
-
-  final String title;
-  final IconData icon;
-  final String? subtitle;
-  final bool centered;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String? sub = subtitle;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 20, 14, 10),
+    return Expanded(
       child: Column(
-        crossAxisAlignment: centered
-            ? CrossAxisAlignment.center
-            : CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            mainAxisAlignment: centered
-                ? MainAxisAlignment.center
-                : MainAxisAlignment.start,
-            children: <Widget>[
-              if (centered) ...<Widget>[
-                Icon(icon, size: 20, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ] else ...<Widget>[
-                Expanded(
-                  child: Text(
-                    title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Icon(icon, size: 20, color: theme.colorScheme.primary),
-              ],
-            ],
-          ),
-          if (sub != null) ...<Widget>[
-            const SizedBox(height: 2),
-            Text(
-              sub,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: centered ? TextAlign.center : TextAlign.start,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+          Text(
+            '$value',
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
             ),
-          ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _EmptyRowHint extends StatelessWidget {
-  const _EmptyRowHint({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
-      child: Text(
-        text,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-/// The rotating piece of advice at the bottom of the page.
+/// One line of advice, and a way to ask for another. Deliberately the quietest
+/// card on the page.
 class _TipCard extends StatelessWidget {
   const _TipCard({required this.tip, required this.onAnother});
 
@@ -894,47 +1157,48 @@ class _TipCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+      padding: const EdgeInsetsDirectional.fromSTEB(14, 10, 6, 10),
       decoration: BoxDecoration(
         color: theme.colorScheme.primary.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.18),
+          color: theme.colorScheme.primary.withValues(alpha: 0.16),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'טיפ לשדכן',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.lightbulb_outline,
-                size: 20,
-                color: theme.colorScheme.primary,
-              ),
-            ],
+          Icon(
+            Icons.lightbulb_outline,
+            size: 18,
+            color: theme.colorScheme.primary,
           ),
-          const SizedBox(height: 6),
-          Text(tip, style: theme.textTheme.bodyMedium),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              onPressed: onAnother,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('טיפ אחר'),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              tip,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
             ),
+          ),
+          IconButton(
+            tooltip: 'טיפ אחר',
+            visualDensity: VisualDensity.compact,
+            iconSize: 18,
+            color: theme.colorScheme.primary,
+            onPressed: onAnother,
+            icon: const Icon(Icons.refresh),
           ),
         ],
       ),
     );
   }
+}
+
+String _firstName(Person? person) {
+  if (person == null) {
+    return '—';
+  }
+  final String first = person.firstName.trim();
+  return first.isNotEmpty ? first : person.fullName.trim();
 }

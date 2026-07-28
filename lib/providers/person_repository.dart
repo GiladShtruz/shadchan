@@ -5,14 +5,20 @@ import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:uuid/uuid.dart';
 
 class PersonRepository extends ChangeNotifier {
-  PersonRepository(this._box, [this._noteBox, this._eventBox]);
+  PersonRepository(this._box, [this._noteBox, this._eventBox]) {
+    // Pending notifications do not survive a reinstall or a device restart on
+    // every Android build, so the whole set is re-scheduled on startup.
+    _refreshPersonRemindersInBackground();
+  }
 
   final Box<Person> _box;
   final Box<PersonNote>? _noteBox;
@@ -303,12 +309,14 @@ class PersonRepository extends ChangeNotifier {
     person.updatedAt = DateTime.now();
     person.needsReview = false;
     await person.save();
+    _recordActivity(person.id, HomeActivityAction.editedDetails);
     if (!person.profileStatus.pausesMatches) {
       await PersonReminders.clear(person.id);
     }
     notifyListeners();
     await onPersonStatusChanged?.call(person.id);
     _refreshBirthdayNotificationsInBackground();
+    _refreshPersonRemindersInBackground();
   }
 
   Future<void> delete(String id) async {
@@ -334,8 +342,11 @@ class PersonRepository extends ChangeNotifier {
     }
 
     await _box.delete(id);
+    HomeBoardStore.instance.forget(HomeItemKind.person, id);
+    RecentActivityStore.instance.forget(HomeItemKind.person, id);
     notifyListeners();
     _refreshBirthdayNotificationsInBackground();
+    _refreshPersonRemindersInBackground();
   }
 
   Future<void> finishImport() async {
@@ -418,6 +429,7 @@ class PersonRepository extends ChangeNotifier {
       if (!newStatus.pausesMatches) {
         await PersonReminders.clear(id);
         notifyListeners();
+        _refreshPersonRemindersInBackground();
       }
       return;
     }
@@ -436,8 +448,10 @@ class PersonRepository extends ChangeNotifier {
       PersonEventType.statusChanged,
       'הסטטוס שונה ל־${newStatus.displayName}',
     );
+    _recordActivity(id, HomeActivityAction.changedStatus);
     notifyListeners();
     await onPersonStatusChanged?.call(id);
+    _refreshPersonRemindersInBackground();
   }
 
   /// The history events for a person, newest first. Backs the profile's
@@ -496,11 +510,13 @@ class PersonRepository extends ChangeNotifier {
       await person.save();
     }
     notifyListeners();
+    _refreshPersonRemindersInBackground();
   }
 
   Future<void> clearPersonReminder(String id) async {
     await PersonReminders.clear(id);
     notifyListeners();
+    _refreshPersonRemindersInBackground();
   }
 
   /// Bumps [Person.updatedAt] for a meaningful action that doesn't otherwise
@@ -570,6 +586,7 @@ class PersonRepository extends ChangeNotifier {
     // history lines that other flows create are logged as events directly.
     if (!isAutomatic) {
       await logEvent(personId, PersonEventType.note, text);
+      _recordActivity(personId, HomeActivityAction.addedNote);
     }
 
     notifyListeners();
@@ -624,6 +641,46 @@ class PersonRepository extends ChangeNotifier {
 
   void _refreshBirthdayNotificationsInBackground() {
     unawaited(_refreshBirthdayNotifications());
+  }
+
+  /// Hands the current set of "check on them again" reminders to the
+  /// notification service, so the matchmaker gets a push on the day instead of
+  /// having to remember to open the reminders panel. Reminders for people who
+  /// no longer exist are skipped.
+  Future<void> _refreshPersonReminders() async {
+    final List<PersonReminderNotification> reminders =
+        <PersonReminderNotification>[];
+    for (final MapEntry<String, DateTime> entry
+        in PersonReminders.all().entries) {
+      final Person? person = getById(entry.key);
+      if (person == null) {
+        continue;
+      }
+      final String name = person.fullName.trim();
+      reminders.add(
+        PersonReminderNotification(
+          name: name.isEmpty ? 'חבר/ה מהמאגר' : name,
+          date: entry.value,
+        ),
+      );
+    }
+
+    await NotificationService.schedulePersonReminders(reminders);
+  }
+
+  void _refreshPersonRemindersInBackground() {
+    unawaited(_refreshPersonReminders());
+  }
+
+  /// Feeds the home screen's "חזרה מהירה" strip. Recorded here rather than at
+  /// the call sites so every path that really changes a person shows up, with
+  /// no extra bookkeeping asked of the matchmaker.
+  void _recordActivity(String personId, HomeActivityAction action) {
+    RecentActivityStore.instance.record(
+      kind: HomeItemKind.person,
+      targetId: personId,
+      action: action,
+    );
   }
 
   Future<void> _createNote({

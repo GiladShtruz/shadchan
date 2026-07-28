@@ -244,12 +244,75 @@ class ReminderCard extends StatelessWidget {
                   style: theme.textTheme.bodyMedium,
                 ),
               ],
+              const SizedBox(height: 6),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: _HandledButton(onPressed: () => _markHandled(context)),
+              ),
             ],
           ),
         ),
       ),
     );
   }
+
+  /// Marks the reminder as done by clearing it, which is what takes the
+  /// proposal off the active reminders list. Undoable from the snack bar in
+  /// case of a mis-tap.
+  Future<void> _markHandled(BuildContext context) async {
+    final DateTime? previousDate = match.reminderDate;
+    if (previousDate == null) {
+      return;
+    }
+
+    // Grabbed before the await: clearing the reminder removes this very card
+    // from the list, so its own context is gone by the time we come back.
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final MatchRepository repository = context.read<MatchRepository>();
+    final String? previousNote = match.reminderNote;
+
+    await repository.setReminder(match.id, null);
+
+    _showHandledSnackBar(
+      messenger,
+      onUndo: () =>
+          repository.setReminder(match.id, previousDate, note: previousNote),
+    );
+  }
+}
+
+/// The "טופל" action shared by both kinds of reminder card.
+class _HandledButton extends StatelessWidget {
+  const _HandledButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonalIcon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.check_circle_outline, size: 18),
+      label: const Text('טופל'),
+      style: FilledButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+      ),
+    );
+  }
+}
+
+void _showHandledSnackBar(
+  ScaffoldMessengerState messenger, {
+  required VoidCallback onUndo,
+}) {
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: const Text('התזכורת סומנה כטופלה'),
+        action: SnackBarAction(label: 'ביטול', onPressed: onUndo),
+      ),
+    );
 }
 
 /// A per-person "check on them again" reminder (busy or on a break).
@@ -313,23 +376,24 @@ class PersonReminderCard extends StatelessWidget {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(height: 10),
-              Row(
+              const SizedBox(height: 6),
+              // A Wrap rather than a Row: three actions do not fit side by side
+              // on a narrow phone, and wrapping beats squashing the labels.
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openWhatsApp(context),
-                      icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
-                      label: const Text('WhatsApp'),
-                    ),
+                  _HandledButton(onPressed: () => _markHandled(context)),
+                  TextButton.icon(
+                    onPressed: () => _openWhatsApp(context),
+                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
+                    label: const Text('WhatsApp'),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: () => _reschedule(context),
-                      icon: const Icon(Icons.schedule, size: 16),
-                      label: const Text('תזכורת חדשה'),
-                    ),
+                  TextButton.icon(
+                    onPressed: () => _reschedule(context),
+                    icon: const Icon(Icons.schedule, size: 16),
+                    label: const Text('תזכורת חדשה'),
                   ),
                 ],
               ),
@@ -337,6 +401,23 @@ class PersonReminderCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// Clears the "check on them again" reminder, which drops this person off the
+  /// active reminders list. The availability status itself is left alone.
+  Future<void> _markHandled(BuildContext context) async {
+    // Grabbed before the await: clearing the reminder removes this very card
+    // from the list, so its own context is gone by the time we come back.
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final PersonRepository repository = context.read<PersonRepository>();
+    final DateTime previousDate = date;
+
+    await repository.clearPersonReminder(person.id);
+
+    _showHandledSnackBar(
+      messenger,
+      onUndo: () => repository.setPersonReminder(person.id, previousDate),
     );
   }
 
