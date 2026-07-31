@@ -21,11 +21,7 @@ abstract final class HomeBoardActions {
   }
 
   /// Pins or unpins, and says so. Returns whether it is pinned afterwards.
-  static bool toggle(
-    BuildContext context,
-    HomeItemKind kind,
-    String targetId,
-  ) {
+  static bool toggle(BuildContext context, HomeItemKind kind, String targetId) {
     final bool pinned = HomeBoardStore.instance.toggle(kind, targetId);
 
     ScaffoldMessenger.of(context)
@@ -40,11 +36,7 @@ abstract final class HomeBoardActions {
     return pinned;
   }
 
-  static void remove(
-    BuildContext context,
-    HomeItemKind kind,
-    String targetId,
-  ) {
+  static void remove(BuildContext context, HomeItemKind kind, String targetId) {
     HomeBoardStore.instance.remove(kind, targetId);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -133,9 +125,7 @@ class _BoardNoteDialogState extends State<_BoardNoteDialog> {
         autofocus: true,
         maxLength: 60,
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          hintText: 'למשל: לחזור אחרי החג',
-        ),
+        decoration: const InputDecoration(hintText: 'למשל: לחזור אחרי החג'),
         onSubmitted: (String value) => Navigator.of(context).pop(value),
       ),
       actions: <Widget>[

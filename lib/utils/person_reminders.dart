@@ -10,6 +10,7 @@ import 'package:hive/hive.dart';
 /// needed.
 abstract final class PersonReminders {
   static const String _keyPrefix = 'personReminder.';
+  static const String _notePrefix = 'personReminderNote.';
 
   static Box<dynamic> get _box => Hive.box<dynamic>('settings');
   static bool get _isReady => Hive.isBoxOpen('settings');
@@ -40,12 +41,35 @@ abstract final class PersonReminders {
     return result;
   }
 
-  static Future<void> set(String personId, DateTime date) async {
+  /// The matchmaker's own note on the reminder ("לבדוק אם חזרה מהפסקה"), or
+  /// null when none was written. The note belongs to the person, so it shows
+  /// wherever the reminder does.
+  static String? noteFor(String personId) {
+    if (!_isReady) return null;
+    final Object? stored = _box.get('$_notePrefix$personId');
+    if (stored is String && stored.trim().isNotEmpty) {
+      return stored.trim();
+    }
+    return null;
+  }
+
+  static Future<void> set(
+    String personId,
+    DateTime date, {
+    String? note,
+  }) async {
     await _box.put('$_keyPrefix$personId', date.millisecondsSinceEpoch);
+    final String text = (note ?? '').trim();
+    if (text.isEmpty) {
+      await _box.delete('$_notePrefix$personId');
+    } else {
+      await _box.put('$_notePrefix$personId', text);
+    }
   }
 
   static Future<void> clear(String personId) async {
     if (!_isReady) return;
     await _box.delete('$_keyPrefix$personId');
+    await _box.delete('$_notePrefix$personId');
   }
 }

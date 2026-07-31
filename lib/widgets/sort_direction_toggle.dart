@@ -32,8 +32,7 @@ class SortDirectionToggle extends StatelessWidget {
         ],
         selected: <bool>{ascending},
         showSelectedIcon: false,
-        onSelectionChanged: (Set<bool> selection) =>
-            onChanged(selection.first),
+        onSelectionChanged: (Set<bool> selection) => onChanged(selection.first),
       ),
     );
   }

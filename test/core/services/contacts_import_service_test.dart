@@ -136,85 +136,6 @@ void main() {
     expect(candidate.matchesQuery('משה'), isFalse);
   });
 
-  test('importSelections skips existing and repeated phone numbers', () async {
-    final String suffix =
-        '${DateTime.now().microsecondsSinceEpoch}_${boxCounter++}';
-    final Box<Person> peopleBox = await Hive.openBox<Person>('people_$suffix');
-    final PersonRepository personRepository = PersonRepository(peopleBox);
-
-    final DateTime now = DateTime.now();
-    await personRepository.addImported(
-      Person(
-        id: 'existing_person',
-        firstName: 'דני',
-        lastName: 'לוי',
-        gender: Gender.male,
-        phone: '0521234567',
-        createdAt: now,
-        updatedAt: now,
-      ),
-    );
-
-    final ContactImportResult result =
-        await ContactsImportService.importSelections(
-          const <ContactImportSelection>[
-            ContactImportSelection(
-              candidate: ContactImportCandidate(
-                deviceContactId: 'contact_1',
-                displayName: 'שרה כהן',
-                phone: '054-1111111',
-                normalizedPhone: '0541111111',
-                alreadyExists: false,
-                hasAdditionalPhones: false,
-                isFilteredByName: false,
-              ),
-            ),
-            ContactImportSelection(
-              candidate: ContactImportCandidate(
-                deviceContactId: 'contact_2',
-                displayName: 'משה ישראלי',
-                phone: '+972521234567',
-                normalizedPhone: '0521234567',
-                alreadyExists: true,
-                hasAdditionalPhones: false,
-                isFilteredByName: false,
-              ),
-              gender: Gender.male,
-            ),
-            ContactImportSelection(
-              candidate: ContactImportCandidate(
-                deviceContactId: 'contact_3',
-                displayName: 'שרה נוספת',
-                phone: '0541111111',
-                normalizedPhone: '0541111111',
-                alreadyExists: false,
-                hasAdditionalPhones: false,
-                isFilteredByName: false,
-              ),
-              gender: Gender.female,
-            ),
-          ],
-          personRepository,
-        );
-
-    final List<Person> people = personRepository.getAll();
-
-    expect(result.addedCount, 1);
-    expect(result.skippedExistingCount, 2);
-    expect(people, hasLength(2));
-    expect(
-      people.any(
-        (Person person) =>
-            person.phone == '054-1111111' &&
-            person.source == 'אנשי קשר' &&
-            person.gender == Gender.unknown,
-      ),
-      isTrue,
-    );
-
-    await peopleBox.deleteFromDisk();
-  });
-
   test(
     'staged contact stays outside database until details are confirmed',
     () async {
@@ -225,21 +146,16 @@ void main() {
       );
       final PersonRepository personRepository = PersonRepository(peopleBox);
 
-      final Person? draft = await ContactsImportService.stageSingleCandidate(
-        const ContactImportCandidate(
-          deviceContactId: 'contact_pending',
-          displayName: 'רחל כהן',
-          phone: '054-2222222',
-          normalizedPhone: '0542222222',
-          alreadyExists: false,
-          hasAdditionalPhones: false,
-          isFilteredByName: false,
-        ),
-        personRepository,
-      );
+      final StagedContact? staged =
+          await ContactsImportService.stageSingleCandidate(
+            _candidate(),
+            personRepository,
+          );
 
-      expect(draft, isNotNull);
-      expect(draft!.hidden, isTrue);
+      expect(staged, isNotNull);
+      final Person draft = staged!.person;
+      expect(staged.isNewRecord, isTrue);
+      expect(draft.hidden, isTrue);
       expect(draft.needsReview, isTrue);
       expect(personRepository.databaseCount, 0);
       expect(personRepository.getPendingContactDrafts(), <Person>[draft]);
@@ -257,5 +173,90 @@ void main() {
 
       await peopleBox.deleteFromDisk();
     },
+  );
+
+  test('a cancelled new draft leaves nothing behind', () async {
+    final String suffix =
+        '${DateTime.now().microsecondsSinceEpoch}_${boxCounter++}';
+    final Box<Person> peopleBox = await Hive.openBox<Person>('people_$suffix');
+    final PersonRepository personRepository = PersonRepository(peopleBox);
+
+    final StagedContact staged =
+        (await ContactsImportService.stageSingleCandidate(
+          _candidate(),
+          personRepository,
+        ))!;
+
+    await ContactsImportService.discardStagedCandidate(
+      staged,
+      personRepository,
+    );
+
+    expect(personRepository.getById(staged.person.id), isNull);
+    expect(personRepository.getPendingContactDrafts(), isEmpty);
+    expect(personRepository.getAll(), isEmpty);
+
+    await peopleBox.deleteFromDisk();
+  });
+
+  test(
+    'a cancelled draft over an existing contact keeps that record',
+    () async {
+      final String suffix =
+          '${DateTime.now().microsecondsSinceEpoch}_${boxCounter++}';
+      final Box<Person> peopleBox = await Hive.openBox<Person>(
+        'people_$suffix',
+      );
+      final PersonRepository personRepository = PersonRepository(peopleBox);
+
+      final DateTime now = DateTime.now();
+      await personRepository.addImported(
+        Person(
+          id: 'soft_deleted',
+          firstName: 'רחל',
+          lastName: 'כהן',
+          gender: Gender.female,
+          phone: '0542222222',
+          notes: 'הערה ששווה לשמור',
+          hidden: true,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      final StagedContact staged =
+          (await ContactsImportService.stageSingleCandidate(
+            _candidate(),
+            personRepository,
+          ))!;
+      expect(staged.isNewRecord, isFalse);
+      expect(staged.person.id, 'soft_deleted');
+
+      await ContactsImportService.discardStagedCandidate(
+        staged,
+        personRepository,
+      );
+
+      final Person? kept = personRepository.getById('soft_deleted');
+      expect(kept, isNotNull);
+      expect(kept!.notes, 'הערה ששווה לשמור');
+      expect(kept.hidden, isTrue);
+      expect(kept.needsReview, isFalse);
+      expect(personRepository.getPendingContactDrafts(), isEmpty);
+
+      await peopleBox.deleteFromDisk();
+    },
+  );
+}
+
+ContactImportCandidate _candidate() {
+  return const ContactImportCandidate(
+    deviceContactId: 'contact_pending',
+    displayName: 'רחל כהן',
+    phone: '054-2222222',
+    normalizedPhone: '0542222222',
+    alreadyExists: false,
+    hasAdditionalPhones: false,
+    isFilteredByName: false,
   );
 }

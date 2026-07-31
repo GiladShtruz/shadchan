@@ -15,7 +15,7 @@ void main() {
     ]);
   });
 
-  test('a no-photo avatar is stable and belongs to the person gender', () {
+  test('there is exactly one fixed no-photo avatar per gender', () {
     final DateTime now = DateTime(2026, 7, 26);
     final Person person = Person(
       id: 'stable-person',
@@ -26,23 +26,24 @@ void main() {
       updatedAt: now,
     );
 
-    expect(
-      person.avatarIndex,
-      inInclusiveRange(0, PersonAvatarAssets.male.length - 1),
-    );
+    expect(PersonAvatarAssets.male, <String>[
+      'assets/male_pic/default_male_avatar.png',
+    ]);
+    expect(PersonAvatarAssets.female, <String>[
+      'assets/female_pic/default_female_avatar.png',
+    ]);
+    expect(person.avatarIndex, 0);
     expect(
       PersonAvatarAssets.pathFor(person.gender, person.avatarIndex),
-      PersonAvatarAssets.male[person.avatarIndex],
+      PersonAvatarAssets.male.single,
     );
-
-    final Person samePerson = Person(
-      id: 'stable-person',
-      firstName: 'דוד',
-      lastName: 'כהן',
-      gender: Gender.male,
-      createdAt: now,
-      updatedAt: now,
+    expect(
+      PersonAvatarAssets.pathFor(Gender.male, 999),
+      PersonAvatarAssets.male.single,
     );
-    expect(samePerson.avatarIndex, person.avatarIndex);
+    expect(
+      PersonAvatarAssets.pathFor(Gender.female, 999),
+      PersonAvatarAssets.female.single,
+    );
   });
 }

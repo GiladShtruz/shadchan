@@ -43,8 +43,9 @@ class PersonAdapter extends TypeAdapter<Person> {
       legacyHebrewBirthYear: fields[17] as int?,
       legacyHebrewBirthMonth: fields[18] as int?,
       legacyHebrewBirthDay: fields[19] as int?,
-      photosPaths:
-          fields[11] == null ? [] : (fields[11] as List).cast<String>(),
+      photosPaths: fields[11] == null
+          ? []
+          : (fields[11] as List).cast<String>(),
       isFavorite: fields[12] == null ? false : fields[12] as bool,
       needsReview: fields[20] == null ? false : fields[20] as bool,
       hidden: fields[23] == null ? false : fields[23] as bool,

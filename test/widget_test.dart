@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
@@ -197,6 +198,7 @@ void main() {
       gender: Gender.male,
       age: 27,
       now: now,
+      city: 'ירושלים',
     );
     final Person female = _testPerson(
       id: 'detail-female',
@@ -227,17 +229,111 @@ void main() {
     expect(find.text('פרטי הצעה'), findsOneWidget);
     expect(find.text('הלל אבולעפיה'), findsOneWidget);
     expect(find.text('כרמל לוי'), findsOneWidget);
-    expect(find.text('פתוחה'), findsOneWidget);
-    expect(find.text('אפשר לקדם את ההצעה'), findsOneWidget);
-    expect(find.text('התחילו לצאת'), findsOneWidget);
+    // One derived line, and the three ways on in a single area.
+    expect(find.text('פתוחה · יאללה לקדם'), findsOneWidget);
+    expect(find.text('עדכון הצעה'), findsOneWidget);
+    expect(find.text('יוצאים'), findsOneWidget);
+    expect(find.text('העברה להמתנה'), findsOneWidget);
+    expect(find.text('סגירת הצעה'), findsOneWidget);
     expect(find.text('סטטוס הצעה'), findsNothing);
     expect(find.text('איפה זה עומד?'), findsNothing);
     expect(find.textContaining('עודכן'), findsNothing);
+    // The action tiles carry their label and nothing else.
+    expect(find.text('נחזור אליה בהמשך'), findsNothing);
+    expect(find.text('הם התחילו לצאת'), findsNothing);
+    expect(find.text('הצעה לא מתאימה'), findsNothing);
+    // A candidate's city is not part of the proposal card.
+    expect(find.textContaining('ירושלים'), findsNothing);
 
     await tester.tap(find.text('פנוי').first);
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('תפוס'), findsOneWidget);
     expect(find.text('בהפסקה'), findsOneWidget);
+  });
+
+  testWidgets('Profile-canvas app bars keep a dark title, not cream on cream', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2026, 7, 27);
+    final Person person = _testPerson(
+      id: 'title-person',
+      firstName: 'הלל',
+      lastName: 'אבולעפיה',
+      gender: Gender.male,
+      age: 27,
+      now: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(person.id, person);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/people/${person.id}');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.text('התאמות'));
+    await tester.pumpAndSettle();
+
+    final RenderParagraph title = tester.renderObject<RenderParagraph>(
+      find.text('התאמות · הלל'),
+    );
+    final Color? color = title.text.style?.color;
+    expect(color, isNotNull);
+    // Dark ink on the cream bar — the banner's cream text would be invisible.
+    expect(color!.computeLuminance(), lessThan(0.3));
+  });
+
+  testWidgets('The pair card WhatsApp button offers chat or the other card', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2026, 7, 27);
+    final Person male = _testPerson(
+      id: 'wa-male',
+      firstName: 'נדיב',
+      lastName: 'אלמליח',
+      gender: Gender.male,
+      age: 25,
+      now: now,
+      phone: '0501234567',
+      description: 'הכרטיס של נדיב',
+    );
+    final Person female = _testPerson(
+      id: 'wa-female',
+      firstName: 'נהרה',
+      lastName: 'בלטמן',
+      gender: Gender.female,
+      age: 23,
+      now: now,
+      phone: '0507654321',
+      description: 'הכרטיס של נהרה',
+    );
+    final MatchIdea match = _testMatch(
+      id: 'wa-match',
+      personAId: male.id,
+      personBId: female.id,
+      now: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(male.id, male);
+      await Hive.box<Person>('people').put(female.id, female);
+      await Hive.box<MatchIdea>('matches').put(match.id, match);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches/${match.id}');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The first WhatsApp button in RTL belongs to the woman's side.
+    expect(find.byType(FaIcon), findsNWidgets(2));
+    await tester.tap(find.byType(FaIcon).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('פתיחת שיחה עם נהרה'), findsOneWidget);
+    expect(find.text('שליחת הכרטיס של נדיב אל נהרה'), findsOneWidget);
   });
 
   testWidgets('Match detail keeps full names and visible proposal actions', (
@@ -289,9 +385,11 @@ void main() {
       expect(paragraph.didExceedMaxLines, isFalse, reason: name);
     }
 
-    // The reminder and the related-contact action are real, visible rows.
+    // The reminder is its own clear area; the related contact stays a quiet
+    // line until one is actually added.
     expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('הוספת איש קשר שקשור להצעה'), findsOneWidget);
+    expect(find.text('נזכיר לך לחזור אליה בזמן הנכון'), findsOneWidget);
+    expect(find.text('איש קשר שקשור להצעה'), findsOneWidget);
 
     // The journal no longer has a button that only focuses the note field.
     await tester.dragUntilVisible(
@@ -690,6 +788,9 @@ Person _testPerson({
   required Gender gender,
   required int age,
   required DateTime now,
+  String? phone,
+  String? description,
+  String? city,
 }) {
   return Person(
     id: id,
@@ -697,6 +798,9 @@ Person _testPerson({
     lastName: lastName,
     gender: gender,
     manualAge: age,
+    phone: phone,
+    description: description,
+    city: city,
     createdAt: now,
     updatedAt: now,
   );
@@ -707,6 +811,7 @@ MatchIdea _testMatch({
   required String personAId,
   required String personBId,
   required DateTime now,
+  DateTime? reminderDate,
 }) {
   return MatchIdea(
     id: id,
@@ -716,6 +821,7 @@ MatchIdea _testMatch({
     currentHandler: CurrentHandler.me,
     createdAt: now,
     updatedAt: now,
+    reminderDate: reminderDate,
   );
 }
 

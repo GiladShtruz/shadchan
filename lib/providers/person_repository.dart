@@ -264,21 +264,27 @@ class PersonRepository extends ChangeNotifier {
     _refreshBirthdayNotificationsInBackground();
   }
 
-  /// Restores a previously hidden person back into the import queue so the user
-  /// can fill in their details again. Returns the restored person.
-  Future<Person?> restoreHidden(String id) async {
-    final Person? person = getById(id);
-    if (person == null) {
-      return null;
+  /// Drops a contact draft whose details the matchmaker did not fill in.
+  ///
+  /// Nothing in the app is allowed to sit in a "waiting for details" state, so
+  /// every staging flow ends here when it is cancelled. A draft written for
+  /// that run is deleted outright; a contact that already existed and was only
+  /// reused keeps all of its data and simply goes back to being soft-deleted.
+  Future<void> discardContactDraft(
+    Person person, {
+    required bool deleteRecord,
+  }) async {
+    if (deleteRecord) {
+      await delete(person.id);
+      return;
     }
 
-    person.hidden = false;
-    person.needsReview = true;
-    person.updatedAt = DateTime.now();
+    person
+      ..needsReview = false
+      ..hidden = true
+      ..updatedAt = DateTime.now();
     await person.save();
     notifyListeners();
-    _refreshBirthdayNotificationsInBackground();
-    return person;
   }
 
   Future<void> add(Person person) async {
@@ -470,6 +476,13 @@ class PersonRepository extends ChangeNotifier {
     return events;
   }
 
+  /// Every history event in the database, in no particular order. The home
+  /// screen reads these to explain *why* someone is worth a thought — e.g. a
+  /// logged status change back to "פנוי".
+  List<PersonEvent> getAllEvents() {
+    return _eventBox?.values.toList() ?? const <PersonEvent>[];
+  }
+
   /// Records a meaningful history event for a person. Wired to
   /// [MatchRepository.logPersonEvent] in `main.dart` so proposal-driven events
   /// land here without that repository depending on the person store.
@@ -500,10 +513,18 @@ class PersonRepository extends ChangeNotifier {
   /// The "check on them again" reminder date for a person, or null when none.
   DateTime? personReminderFor(String id) => PersonReminders.forPerson(id);
 
+  /// The optional note written on that reminder.
+  String? personReminderNoteFor(String id) => PersonReminders.noteFor(id);
+
   /// Sets a per-person reminder (used when someone goes on a break) and bumps
-  /// [Person.updatedAt] since setting it is a meaningful action.
-  Future<void> setPersonReminder(String id, DateTime date) async {
-    await PersonReminders.set(id, date);
+  /// [Person.updatedAt] since setting it is a meaningful action. The reminder
+  /// belongs to the person, so it shows on every proposal they are part of.
+  Future<void> setPersonReminder(
+    String id,
+    DateTime date, {
+    String? note,
+  }) async {
+    await PersonReminders.set(id, date, note: note);
     final Person? person = getById(id);
     if (person != null) {
       person.updatedAt = DateTime.now();
@@ -672,9 +693,9 @@ class PersonRepository extends ChangeNotifier {
     unawaited(_refreshPersonReminders());
   }
 
-  /// Feeds the home screen's "חזרה מהירה" strip. Recorded here rather than at
-  /// the call sites so every path that really changes a person shows up, with
-  /// no extra bookkeeping asked of the matchmaker.
+  /// Feeds the home screen's "הפעולות האחרונות שלך" strip. Recorded here
+  /// rather than at the call sites so every path that really changes a person
+  /// shows up, with no extra bookkeeping asked of the matchmaker.
   void _recordActivity(String personId, HomeActivityAction action) {
     RecentActivityStore.instance.record(
       kind: HomeItemKind.person,

@@ -45,7 +45,10 @@ class NotificationService {
       );
 
   static const NotificationDetails _personNotificationDetails =
-      NotificationDetails(android: _androidPersonDetails, iOS: _iosMatchDetails);
+      NotificationDetails(
+        android: _androidPersonDetails,
+        iOS: _iosMatchDetails,
+      );
 
   /// Reminders are picked as a plain date, which would otherwise fire at
   /// midnight. They go out at this hour of the reminder day instead.

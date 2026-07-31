@@ -27,10 +27,7 @@ void main() {
         MatchSuggestionUtils.religiousLevelsFor(ReligiousLevel.other),
         <ReligiousLevel>[],
       );
-      expect(
-        MatchSuggestionUtils.religiousLevelsFor(null),
-        <ReligiousLevel>[],
-      );
+      expect(MatchSuggestionUtils.religiousLevelsFor(null), <ReligiousLevel>[]);
     });
 
     test('uses male age rules when the source person is male', () {

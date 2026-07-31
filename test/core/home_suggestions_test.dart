@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_event.dart';
+import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/home_suggestions.dart';
@@ -35,6 +38,7 @@ MatchIdea idea({
   required String personBId,
   MatchStatus status = MatchStatus.idea,
   int createdDaysAgo = 1,
+  int? updatedDaysAgo,
 }) {
   final DateTime now = DateTime.now();
   return MatchIdea(
@@ -44,28 +48,33 @@ MatchIdea idea({
     status: status,
     currentHandler: CurrentHandler.me,
     createdAt: now.subtract(Duration(days: createdDaysAgo)),
-    updatedAt: now.subtract(Duration(days: createdDaysAgo)),
+    updatedAt: now.subtract(Duration(days: updatedDaysAgo ?? createdDaysAgo)),
+  );
+}
+
+PersonEvent statusEvent({
+  required String personId,
+  required ProfileStatus to,
+  required int daysAgo,
+}) {
+  return PersonEvent(
+    id: '$personId-${to.name}-$daysAgo',
+    personId: personId,
+    type: PersonEventType.statusChanged,
+    text: 'הסטטוס שונה ל־${to.displayName}',
+    createdAt: DateTime.now().subtract(Duration(days: daysAgo)),
   );
 }
 
 void main() {
-  test('someone with no idea for a long time leads the row', () {
-    final Person forgotten = person(id: 'a', firstName: 'אבי');
-    final Person busyLately = person(
-      id: 'b',
-      firstName: 'בני',
-      gender: Gender.female,
-    );
-
+  test('someone who was never proposed to is told exactly that', () {
     final List<HomeSuggestion> suggestions = HomeSuggestions.build(
-      people: <Person>[busyLately, forgotten],
-      matches: <MatchIdea>[
-        idea(id: 'm1', personAId: 'b', personBId: 'z'),
-      ],
+      people: <Person>[person(id: 'a', firstName: 'אבי')],
+      matches: const <MatchIdea>[],
     );
 
-    expect(suggestions.first.person.id, 'a');
-    expect(suggestions.first.reason, 'לא חשבת עליו לאחרונה');
+    expect(suggestions.single.kind, HomeSuggestionReason.noIdeaYet);
+    expect(suggestions.single.reason, 'עוד לא נפתח לו רעיון — אולי זה הזמן');
   });
 
   test('the reason is worded for the person’s gender', () {
@@ -76,26 +85,22 @@ void main() {
       matches: const <MatchIdea>[],
     );
 
-    expect(suggestions.single.reason, 'לא חשבת עליה לאחרונה');
+    expect(suggestions.single.reason, 'עוד לא נפתח לה רעיון — אולי זה הזמן');
   });
 
-  test('a newcomer is surfaced as newly added, not as neglected', () {
+  test('a newcomer is surfaced as new in the database', () {
     final List<HomeSuggestion> suggestions = HomeSuggestions.build(
       people: <Person>[
-        person(
-          id: 'a',
-          firstName: 'דני',
-          createdDaysAgo: 2,
-          updatedDaysAgo: 2,
-        ),
+        person(id: 'a', firstName: 'דני', createdDaysAgo: 2, updatedDaysAgo: 2),
       ],
       matches: const <MatchIdea>[],
     );
 
-    expect(suggestions.single.reason, 'נוסף למאגר לאחרונה');
+    expect(suggestions.single.kind, HomeSuggestionReason.newInDatabase);
+    expect(suggestions.single.reason, 'חדש במאגר — שווה להתחיל לחשוב עליו');
   });
 
-  test('an archived idea does not count as an open one', () {
+  test('a long silence after the last idea reads as neglect', () {
     final List<HomeSuggestion> suggestions = HomeSuggestions.build(
       people: <Person>[person(id: 'a', firstName: 'אבי')],
       matches: <MatchIdea>[
@@ -104,12 +109,138 @@ void main() {
           personAId: 'a',
           personBId: 'z',
           status: MatchStatus.rejected,
-          createdDaysAgo: HomeConfig.notThoughtAboutAfterDays + 10,
+          createdDaysAgo: 300,
+          updatedDaysAgo: 300,
         ),
       ],
     );
 
-    expect(suggestions.single.reason, 'לא חשבת עליו לאחרונה');
+    expect(suggestions.single.kind, HomeSuggestionReason.notThoughtAbout);
+    expect(
+      suggestions.single.reason,
+      'לא חשבת עליו לאחרונה — אולי הגיע הזמן לכיוון חדש',
+    );
+  });
+
+  test('a proposal that just closed is the news about that person', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[person(id: 'a', firstName: 'אבי')],
+      matches: <MatchIdea>[
+        idea(
+          id: 'm1',
+          personAId: 'a',
+          personBId: 'z',
+          status: MatchStatus.rejected,
+          createdDaysAgo: 60,
+          updatedDaysAgo: 20,
+        ),
+      ],
+    );
+
+    expect(suggestions.single.kind, HomeSuggestionReason.lastIdeaClosed);
+    expect(
+      suggestions.single.reason,
+      'הרעיון האחרון נסגר — אולי מתאים עכשיו כיוון חדש',
+    );
+  });
+
+  test('coming back from a break beats every other reason', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[
+        person(id: 'a', firstName: 'אבי', createdDaysAgo: 2, updatedDaysAgo: 1),
+      ],
+      matches: const <MatchIdea>[],
+      events: <PersonEvent>[
+        statusEvent(personId: 'a', to: ProfileStatus.onBreak, daysAgo: 30),
+        statusEvent(personId: 'a', to: ProfileStatus.available, daysAgo: 1),
+      ],
+    );
+
+    expect(suggestions.single.kind, HomeSuggestionReason.returnedToAvailable);
+    expect(suggestions.single.reason, 'חזר להיות פנוי — שווה לחשוב עליו מחדש');
+  });
+
+  test('a person who is simply available is never said to have returned', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[person(id: 'a', firstName: 'אבי')],
+      matches: const <MatchIdea>[],
+    );
+
+    expect(
+      suggestions.single.kind,
+      isNot(HomeSuggestionReason.returnedToAvailable),
+    );
+  });
+
+  test('candidates found in the database are counted, not guessed', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[
+        person(id: 'a', firstName: 'אבי'),
+        person(id: 'b', firstName: 'רותי', gender: Gender.female),
+        person(id: 'c', firstName: 'שירה', gender: Gender.female),
+        person(id: 'd', firstName: 'תמר', gender: Gender.female),
+      ],
+      matches: const <MatchIdea>[],
+    );
+
+    final HomeSuggestion first = suggestions.first;
+    expect(first.person.id, 'a');
+    expect(first.kind, HomeSuggestionReason.matchesFound);
+    expect(first.reason, 'יש במאגר 3 אנשים שעשויים להתאים לו');
+  });
+
+  test('open proposals are described with their real count', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[person(id: 'a', firstName: 'אבי', updatedDaysAgo: 30)],
+      matches: <MatchIdea>[
+        idea(id: 'm1', personAId: 'a', personBId: 'y'),
+        idea(id: 'm2', personAId: 'a', personBId: 'z'),
+      ],
+    );
+
+    expect(suggestions.single.kind, HomeSuggestionReason.severalOpenIdeas);
+    expect(
+      suggestions.single.reason,
+      'יש לו כבר 2 רעיונות פתוחים — שווה לבדוק מה מתקדם',
+    );
+  });
+
+  test('open proposals nobody touched are the ones waiting for an update', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[person(id: 'a', firstName: 'אבי', updatedDaysAgo: 30)],
+      matches: <MatchIdea>[
+        idea(id: 'm1', personAId: 'a', personBId: 'y', createdDaysAgo: 40),
+      ],
+    );
+
+    expect(suggestions.single.kind, HomeSuggestionReason.openIdeasWaiting);
+    expect(
+      suggestions.single.reason,
+      'הרעיונות שלו מחכים לעדכון — אולי הגיע הזמן לקדם',
+    );
+  });
+
+  test('a hand-edited card is reported as new details', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[person(id: 'a', firstName: 'אבי', updatedDaysAgo: 30)],
+      matches: <MatchIdea>[
+        idea(id: 'm1', personAId: 'a', personBId: 'y', createdDaysAgo: 40),
+      ],
+      activity: <HomeActivityEntry>[
+        HomeActivityEntry(
+          kind: HomeItemKind.person,
+          targetId: 'a',
+          action: HomeActivityAction.editedDetails,
+          at: DateTime.now().subtract(const Duration(days: 3)),
+        ),
+      ],
+    );
+
+    expect(suggestions.single.kind, HomeSuggestionReason.detailsAdded);
+    expect(
+      suggestions.single.reason,
+      'נוספו פרטים חדשים — אולי הם יפתחו כיוון מתאים',
+    );
   });
 
   test('hidden, pending, paused and archived people are left out', () {

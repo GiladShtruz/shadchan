@@ -8,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/card_parser.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -58,7 +57,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   String? _religiousLevelOther;
   ProfileStatus _selectedProfileStatus = ProfileStatus.available;
   MaritalStatus? _selectedMaritalStatus;
-  int _avatarIndex = 0;
 
   /// Fields last written by the card parser rather than by the user. They may
   /// be overwritten by a later parse; anything the user typed themselves is
@@ -78,10 +76,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   @override
   void initState() {
     super.initState();
-    _avatarIndex = PersonAvatarAssets.defaultIndex(
-      _draftPersonId,
-      _selectedGender,
-    );
   }
 
   @override
@@ -222,11 +216,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               photoPaths: _photoPaths,
               onAddPhoto: _pickPhotos,
               onSetPrimary: _setPrimaryPhoto,
-              gender: _selectedGender,
-              avatarIndex: _avatarIndex,
-              onAvatarChanged: (int index) {
-                setState(() => _avatarIndex = index);
-              },
             ),
             const SizedBox(height: 24),
             // Pasting the card here fills the fields below through
@@ -680,7 +669,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           ..heightCm = heightCm
           ..maritalStatus = _selectedMaritalStatus
           ..profileStatus = _selectedProfileStatus
-          ..avatarIndex = _avatarIndex
           ..photosPaths = List<String>.from(_photoPaths);
 
         await repository.update(_person!);
@@ -709,7 +697,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           heightCm: heightCm,
           maritalStatus: _selectedMaritalStatus,
           profileStatus: _selectedProfileStatus,
-          avatarIndex: _avatarIndex,
           photosPaths: List<String>.from(_photoPaths),
           createdAt: now,
           updatedAt: now,
@@ -785,7 +772,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _religiousLevelOther = person.religiousLevelOther;
     _selectedProfileStatus = person.profileStatus;
     _selectedMaritalStatus = person.maritalStatus;
-    _avatarIndex = person.avatarIndex;
     _photoPaths = List<String>.from(person.photosPaths);
   }
 
@@ -835,7 +821,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       personalNote: _normalizedText(_personalNotesController.text),
       description: _normalizedText(_descriptionController.text),
       profileStatus: _selectedProfileStatus,
-      avatarIndex: _avatarIndex,
       photoPaths: _photoPaths,
     );
   }
@@ -980,7 +965,6 @@ class _PersonFormSnapshot {
     required this.personalNote,
     required this.description,
     required this.profileStatus,
-    required this.avatarIndex,
     required List<String> photoPaths,
   }) : photoPaths = List<String>.unmodifiable(photoPaths);
 
@@ -1000,7 +984,6 @@ class _PersonFormSnapshot {
   final String? personalNote;
   final String? description;
   final ProfileStatus profileStatus;
-  final int avatarIndex;
   final List<String> photoPaths;
 
   @override
@@ -1026,7 +1009,6 @@ class _PersonFormSnapshot {
         other.personalNote == personalNote &&
         other.description == description &&
         other.profileStatus == profileStatus &&
-        other.avatarIndex == avatarIndex &&
         listEquals(other.photoPaths, photoPaths);
   }
 
@@ -1049,7 +1031,6 @@ class _PersonFormSnapshot {
       personalNote,
       description,
       profileStatus,
-      avatarIndex,
       Object.hashAll(photoPaths),
     );
   }

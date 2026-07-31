@@ -125,6 +125,22 @@ abstract final class WhatsAppUtils {
     );
   }
 
+  /// Opens a chat with [recipient] carrying [card]'s saved send-card text —
+  /// used to send one side of a proposal the other side's card. Returns false
+  /// when the recipient has no valid number or the card has nothing saved.
+  static Future<bool> sendCardTo(Person recipient, Person card) async {
+    final String? phone = PhoneUtils.toWhatsAppNumber(recipient.phone);
+    final String text = (card.description ?? '').trim();
+    if (phone == null || text.isEmpty) {
+      return false;
+    }
+
+    return launchUrl(
+      Uri.https('wa.me', '/$phone', <String, String>{'text': text}),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   /// Opens WhatsApp's recipient picker with the person's complete saved
   /// send-card text. Unlike [openChat], this is not addressed to the person
   /// whose profile is open; it is meant for sharing their card onward.

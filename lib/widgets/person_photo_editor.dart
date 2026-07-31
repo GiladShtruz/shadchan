@@ -1,8 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/widgets/person_avatar_picker.dart';
 
 /// The photo strip used while adding or editing a person: a horizontal row of
 /// thumbnails where the first one is the card's main photo, plus buttons to add
@@ -14,18 +12,12 @@ class PersonPhotoEditor extends StatelessWidget {
     required this.onAddPhoto,
     required this.onSetPrimary,
     this.onRemove,
-    this.gender,
-    this.avatarIndex,
-    this.onAvatarChanged,
   });
 
   final List<String> photoPaths;
   final VoidCallback onAddPhoto;
   final ValueChanged<int> onSetPrimary;
   final ValueChanged<int>? onRemove;
-  final Gender? gender;
-  final int? avatarIndex;
-  final ValueChanged<int>? onAvatarChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -46,19 +38,12 @@ class PersonPhotoEditor extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         if (photoPaths.isEmpty)
-          if (gender != null && avatarIndex != null && onAvatarChanged != null)
-            PersonAvatarPicker(
-              gender: gender!,
-              selectedIndex: avatarIndex!,
-              onChanged: onAvatarChanged!,
-            )
-          else
-            Text(
-              'אין תמונות',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            )
+          Text(
+            'אין תמונות — יוצג איור ברירת המחדל',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          )
         else
           SizedBox(
             height: 96,

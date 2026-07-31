@@ -104,7 +104,9 @@ abstract final class FaceCropService {
       return alignment;
     } catch (error, stackTrace) {
       // A photo we cannot analyse simply keeps the plain centred crop.
-      debugPrint('FaceCropService.detect failed for $path: $error\n$stackTrace');
+      debugPrint(
+        'FaceCropService.detect failed for $path: $error\n$stackTrace',
+      );
       return Alignment.center;
     }
   }
@@ -128,7 +130,11 @@ abstract final class FaceCropService {
     );
   }
 
-  static double _axisAlignment(double faceCenter, double total, double visible) {
+  static double _axisAlignment(
+    double faceCenter,
+    double total,
+    double visible,
+  ) {
     final double slack = total - visible;
     if (slack <= 0) {
       return 0;
@@ -202,9 +208,7 @@ abstract final class FaceCropService {
     // Kept alive between photos: creating a detector spins up the native model
     // each time, which would make a list of avatars crawl.
     return _detector ??= FaceDetector(
-      options: FaceDetectorOptions(
-        performanceMode: FaceDetectorMode.fast,
-      ),
+      options: FaceDetectorOptions(performanceMode: FaceDetectorMode.fast),
     );
   }
 }

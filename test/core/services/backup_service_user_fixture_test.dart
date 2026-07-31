@@ -15,8 +15,9 @@ void main() {
 
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
-    hiveDirectory =
-        await Directory.systemTemp.createTemp('shadchan_user_fixture_');
+    hiveDirectory = await Directory.systemTemp.createTemp(
+      'shadchan_user_fixture_',
+    );
     Hive.init(hiveDirectory.path);
     if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(PersonAdapter());
     if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(MatchIdeaAdapter());
@@ -25,7 +26,8 @@ void main() {
     if (!Hive.isAdapterRegistered(4)) {
       Hive.registerAdapter(ReligiousLevelAdapter());
     }
-    if (!Hive.isAdapterRegistered(5)) Hive.registerAdapter(MatchStatusAdapter());
+    if (!Hive.isAdapterRegistered(5))
+      Hive.registerAdapter(MatchStatusAdapter());
     if (!Hive.isAdapterRegistered(6)) {
       Hive.registerAdapter(CurrentHandlerAdapter());
     }
@@ -44,10 +46,12 @@ void main() {
   test('imports user-provided backup fixture', () async {
     final String suffix = DateTime.now().microsecondsSinceEpoch.toString();
     final Box<Person> peopleBox = await Hive.openBox<Person>('people_$suffix');
-    final Box<MatchIdea> matchesBox =
-        await Hive.openBox<MatchIdea>('matches_$suffix');
-    final Box<MatchNote> notesBox =
-        await Hive.openBox<MatchNote>('match_notes_$suffix');
+    final Box<MatchIdea> matchesBox = await Hive.openBox<MatchIdea>(
+      'matches_$suffix',
+    );
+    final Box<MatchNote> notesBox = await Hive.openBox<MatchNote>(
+      'match_notes_$suffix',
+    );
 
     final PersonRepository personRepo = PersonRepository(peopleBox);
     final MatchRepository matchRepo = MatchRepository(matchesBox, notesBox);
@@ -55,8 +59,11 @@ void main() {
     final File fixture = File('test/fixtures/user_backup.json');
     expect(await fixture.exists(), isTrue, reason: 'fixture missing');
 
-    final ImportResult result =
-        await BackupService.importData(fixture, personRepo, matchRepo);
+    final ImportResult result = await BackupService.importData(
+      fixture,
+      personRepo,
+      matchRepo,
+    );
 
     expect(result.peopleAdded, greaterThan(0));
     expect(result.matchesAdded, greaterThan(0));

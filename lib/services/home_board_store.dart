@@ -140,11 +140,7 @@ class HomeBoardStore extends ChangeNotifier {
       return;
     }
     _write(<HomeBoardEntry>[
-      HomeBoardEntry(
-        kind: kind,
-        targetId: targetId,
-        addedAt: DateTime.now(),
-      ),
+      HomeBoardEntry(kind: kind, targetId: targetId, addedAt: DateTime.now()),
       ...entries,
     ]);
   }
@@ -220,7 +216,8 @@ class HomeBoardStore extends ChangeNotifier {
   }
 
   void _write(List<HomeBoardEntry> entries) {
-    final List<HomeBoardEntry> capped = entries.length > HomeConfig.boardMaxItems
+    final List<HomeBoardEntry> capped =
+        entries.length > HomeConfig.boardMaxItems
         ? entries.sublist(0, HomeConfig.boardMaxItems)
         : entries;
     _cache = capped;

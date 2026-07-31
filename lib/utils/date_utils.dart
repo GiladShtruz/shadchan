@@ -87,6 +87,64 @@ abstract final class AppDateUtils {
     return formatDateShort(date);
   }
 
+  /// How long something has been going on, without the "לפני" — used for the
+  /// couples banner ("יוצאים כבר שלושה חודשים").
+  static String elapsedLabel(DateTime since) {
+    final Duration difference = DateTime.now().difference(since);
+
+    if (difference.isNegative || difference.inHours < 24) {
+      return 'מהיום';
+    }
+    if (difference.inDays == 1) {
+      return 'יום';
+    }
+    if (difference.inDays == 2) {
+      return 'יומיים';
+    }
+    if (difference.inDays < 7) {
+      return '${difference.inDays} ימים';
+    }
+    if (difference.inDays < 30) {
+      final int weeks = (difference.inDays / 7).floor();
+      return weeks == 1 ? 'שבוע' : '$weeks שבועות';
+    }
+    if (difference.inDays < 365) {
+      final int months = (difference.inDays / 30).floor();
+      return months == 1 ? 'חודש' : '$months חודשים';
+    }
+    final int years = (difference.inDays / 365).floor();
+    return years == 1 ? 'שנה' : '$years שנים';
+  }
+
+  /// How long a due reminder has been waiting, in the matchmaker's own terms:
+  /// "עברו 3 ימים מאז שביקשת שנזכיר לך". Used on a card that was opened after
+  /// its reminder came due.
+  static String remindedAgoLabel(DateTime date, {DateTime? now}) {
+    final DateTime today = now ?? DateTime.now();
+    final int days = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).difference(DateTime(date.year, date.month, date.day)).inDays;
+
+    if (days <= 0) {
+      return 'היום ביקשת שנזכיר לך';
+    }
+    if (days == 1) {
+      return 'עבר יום מאז שביקשת שנזכיר לך';
+    }
+    if (days == 2) {
+      return 'עברו יומיים מאז שביקשת שנזכיר לך';
+    }
+    if (days < 30) {
+      return 'עברו $days ימים מאז שביקשת שנזכיר לך';
+    }
+    final int months = days ~/ 30;
+    return months == 1
+        ? 'עבר חודש מאז שביקשת שנזכיר לך'
+        : 'עברו $months חודשים מאז שביקשת שנזכיר לך';
+  }
+
   static bool isBirthdayToday(DateTime birthDate) {
     return daysUntilBirthday(birthDate) == 0;
   }

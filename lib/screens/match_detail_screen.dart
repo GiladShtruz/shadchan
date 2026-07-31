@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
+import 'package:shadchan/dialogs/reminder_note_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -17,6 +20,8 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -53,7 +58,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   void initState() {
     super.initState();
     _noteController.addListener(_handleNoteChanged);
-    // Feeds the home screen's "חזרה מהירה" strip. Deferred past this frame:
+    // Feeds the home screen's "הפעולות האחרונות שלך" strip. Deferred past this frame:
     // the home screen is still alive behind this route, and notifying it from
     // inside initState would rebuild it mid-build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -62,6 +67,15 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         targetId: widget.matchId,
         action: HomeActivityAction.openedIdea,
       );
+      // Opening the card answers the home screen's alert badge. The reminder
+      // itself stays until it is really handled.
+      if (!mounted) {
+        return;
+      }
+      final MatchIdea? match = context.read<MatchRepository>().getById(
+        widget.matchId,
+      );
+      unawaited(ReminderAlerts.markSeen(widget.matchId, match?.reminderDate));
     });
   }
 
@@ -170,10 +184,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                       const Icon(Icons.push_pin_outlined),
                       const SizedBox(width: 10),
                       Text(
-                        HomeBoardActions.menuLabel(
-                          HomeItemKind.idea,
-                          match.id,
-                        ),
+                        HomeBoardActions.menuLabel(HomeItemKind.idea, match.id),
                       ),
                     ],
                   ),
@@ -203,9 +214,12 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
               _PairCard(
                 female: sides.female,
                 male: sides.male,
+                statusLine: situation.line,
+                statusColor: situation.color,
+                statusIcon: situation.icon,
                 onOpenProfile: (Person person) =>
                     context.push('/people/${person.id}'),
-                onWhatsApp: _openPersonWhatsApp,
+                onWhatsApp: _openWhatsAppMenu,
                 onStatusPicked: (Person person, ProfileStatus status) =>
                     _applyPersonStatus(
                       context,
@@ -214,11 +228,12 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                       status,
                     ),
               ),
-              const SizedBox(height: 14),
-              _SituationCard(
-                situation: situation,
-                reminderDate: situation.reminderDate,
-                onReminderTap:
+              const SizedBox(height: 12),
+              _ReminderCard(
+                date: situation.reminderDate,
+                note: situation.reminderNote,
+                isDue: situation.isDue,
+                onTap:
                     match.status.isArchived ||
                         match.status == MatchStatus.dating
                     ? null
@@ -230,21 +245,38 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                       )
                     : () =>
                           _changeMatchReminder(context, matchRepository, match),
-                onStillWaiting:
-                    situation.isDue && situation.reminderOwner != null
-                    ? () => _postponePersonReminder(
-                        context,
-                        personRepository,
-                        situation.reminderOwner!,
-                      )
+                onPostpone: situation.isDue
+                    ? () => situation.reminderOwner != null
+                          ? _postponePersonReminder(
+                              context,
+                              personRepository,
+                              situation.reminderOwner!,
+                            )
+                          : _postponeMatchReminder(
+                              context,
+                              matchRepository,
+                              match,
+                            )
                     : null,
-                onAvailable: situation.isDue && situation.reminderOwner != null
+                onBackToAvailable:
+                    situation.isDue && situation.reminderOwner != null
                     ? () => personRepository.updateProfileStatus(
                         situation.reminderOwner!.id,
                         ProfileStatus.available,
                       )
                     : null,
-                availableLabel: 'חזר/ה לפנוי',
+                backToAvailableLabel: situation.reminderOwner == null
+                    ? null
+                    : _returnedLabel(situation.reminderOwner!),
+                onHandled:
+                    situation.isDue &&
+                        situation.reminderOwner == null &&
+                        match.reminderDate != null
+                    ? () => matchRepository.setReminder(match.id, null)
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              _UpdateProposalCard(
                 actions: _proposalActions(
                   context,
                   matchRepository,
@@ -383,32 +415,40 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       );
   }
 
+  /// The three ways a proposal moves on, in reading order: the two quiet ones
+  /// on the sides and the one that matters — "יוצאים" — in the middle.
   List<_ProposalAction> _proposalActions(
     BuildContext context,
     MatchRepository repository,
     MatchIdea match,
     _MatchSituation situation,
   ) {
+    final _ProposalAction dating = _ProposalAction(
+      label: 'יוצאים',
+      icon: Icons.people_alt_outlined,
+      tone: _ActionTone.go,
+      emphasized: true,
+      onTap: () => repository.updateStatus(match.id, MatchStatus.dating),
+    );
+    final _ProposalAction close = _ProposalAction(
+      label: 'סגירת הצעה',
+      icon: Icons.close_rounded,
+      tone: _ActionTone.stop,
+      onTap: () => _showCloseSheet(context, repository, match),
+    );
+
     switch (match.status) {
       case MatchStatus.idea:
       case MatchStatus.checking:
         return <_ProposalAction>[
           _ProposalAction(
-            label: 'התחילו לצאת',
-            icon: Icons.favorite_rounded,
-            emphasized: true,
-            onTap: () => repository.updateStatus(match.id, MatchStatus.dating),
-          ),
-          _ProposalAction(
             label: 'העברה להמתנה',
             icon: Icons.pause_rounded,
+            tone: _ActionTone.wait,
             onTap: () => _setManualWaiting(context, repository, match),
           ),
-          _ProposalAction(
-            label: 'סגירת הצעה',
-            icon: Icons.close_rounded,
-            onTap: () => _showCloseSheet(context, repository, match),
-          ),
+          dating,
+          close,
         ];
       case MatchStatus.unavailable:
         return <_ProposalAction>[
@@ -416,32 +456,31 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
             _ProposalAction(
               label: 'חזרה לפתוחה',
               icon: Icons.play_arrow_rounded,
-              emphasized: true,
+              tone: _ActionTone.wait,
               onTap: () => repository.updateStatus(match.id, MatchStatus.idea),
             ),
-          _ProposalAction(
-            label: 'סגירת הצעה',
-            icon: Icons.close_rounded,
-            onTap: () => _showCloseSheet(context, repository, match),
-          ),
+          dating,
+          close,
         ];
       case MatchStatus.dating:
         return <_ProposalAction>[
           _ProposalAction(
-            label: 'חתונה',
-            icon: Icons.celebration_outlined,
-            emphasized: true,
-            onTap: () => _markMarried(context, repository, match),
-          ),
-          _ProposalAction(
             label: 'הפסיקו לצאת',
             icon: Icons.heart_broken_outlined,
+            tone: _ActionTone.stop,
             onTap: () => _showOutcomeDialog(
               context,
               repository,
               match,
               MatchStatus.dated,
             ),
+          ),
+          _ProposalAction(
+            label: 'חתונה',
+            icon: Icons.celebration_outlined,
+            tone: _ActionTone.go,
+            emphasized: true,
+            onTap: () => _markMarried(context, repository, match),
           ),
         ];
       case MatchStatus.rejected:
@@ -451,31 +490,37 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
           _ProposalAction(
             label: 'פתיחה מחדש',
             icon: Icons.refresh_rounded,
+            tone: _ActionTone.go,
+            emphasized: true,
             onTap: () => repository.updateStatus(match.id, MatchStatus.idea),
           ),
         ];
     }
   }
 
+  /// The one line at the bottom of the pair card. It says what the proposal's
+  /// state is and what is needed now — never a second sentence repeating what
+  /// the chips above it already show.
   _MatchSituation _deriveSituation(
     MatchIdea match, {
     required ({Person? male, Person? female}) sides,
     required PersonRepository personRepository,
   }) {
     if (match.status.isArchived) {
+      final bool married = match.status == MatchStatus.married;
       return _MatchSituation(
-        title: 'נסגרה',
-        detail: match.status.displayName,
+        line: married
+            ? 'חתונה · מזל טוב!'
+            : 'נסגרה · ${match.status.displayName}',
         color: AppColors.statusColor(match.status.name),
-        icon: match.status == MatchStatus.married
+        icon: married
             ? Icons.celebration_outlined
             : Icons.check_circle_outline_rounded,
       );
     }
     if (match.status == MatchStatus.dating) {
       return const _MatchSituation(
-        title: 'יוצאים',
-        detail: 'הזוג בתהליך יציאה',
+        line: 'יוצאים',
         color: AppColors.statusDating,
         icon: Icons.favorite_rounded,
       );
@@ -499,20 +544,20 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       final bool due = _isDue(reminder);
       final String name = _firstName(owner);
       final String status = owner.profileStatus.displayName;
-      final String detail = due
-          ? 'לבדוק אם $name ${_returnedToAvailability(owner)}'
-          : reminder == null
-          ? '$name $status'
-          : '$name $status · לבדוק שוב ב־${AppDateUtils.formatDateShort(reminder)}';
       return _MatchSituation(
-        title: due ? 'דורש טיפול' : 'בהמתנה',
-        detail: detail,
+        line: due
+            ? 'תזכורת · לבדוק אם $name ${_returnedToAvailability(owner)}'
+            : reminder == null
+            ? 'בהמתנה · $name $status'
+            : 'בהמתנה · $name $status · '
+                  'לבדוק שוב ב־${AppDateUtils.formatDateShort(reminder)}',
         color: due ? AppColors.secondary : AppColors.statusUnavailable,
         icon: due
             ? Icons.notification_important_outlined
             : Icons.pause_circle_outline_rounded,
         reminderOwner: owner,
         reminderDate: reminder,
+        reminderNote: personRepository.personReminderNoteFor(owner.id),
         isDue: due,
       );
     }
@@ -520,34 +565,35 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     if (match.status == MatchStatus.unavailable) {
       final bool due = _isDue(match.reminderDate);
       final String reason = (match.waitingReason ?? '').trim();
-      final String base = reason.isEmpty ? 'ההצעה בהמתנה' : reason;
+      final String withReason = reason.isEmpty ? '' : ' · $reason';
       return _MatchSituation(
-        title: due ? 'דורש טיפול' : 'בהמתנה',
-        detail: match.reminderDate == null || due
-            ? base
-            : '$base · לבדוק שוב ב־${AppDateUtils.formatDateShort(match.reminderDate!)}',
+        line: due
+            ? reason.isEmpty
+                  ? 'תזכורת · לבדוק מה קורה עם ההצעה'
+                  : 'תזכורת · $reason'
+            : match.reminderDate == null
+            ? 'בהמתנה$withReason'
+            : 'בהמתנה$withReason · '
+                  'לבדוק שוב ב־${AppDateUtils.formatDateShort(match.reminderDate!)}',
         color: due ? AppColors.secondary : AppColors.statusUnavailable,
         icon: due
             ? Icons.notification_important_outlined
             : Icons.pause_circle_outline_rounded,
         reminderDate: match.reminderDate,
+        reminderNote: match.reminderNote,
         isDue: due,
       );
     }
 
     final bool due = _isDue(match.reminderDate);
     return _MatchSituation(
-      title: due ? 'דורש טיפול' : 'פתוחה',
-      detail: due
-          ? 'הגיע זמן לבדוק איתם אם הם מעוניינים!'
-          : match.reminderDate == null
-          ? 'אפשר לקדם את ההצעה'
-          : 'תזכורת ל־${AppDateUtils.formatDateShort(match.reminderDate!)}',
+      line: due ? 'תזכורת · הגיע הזמן לבדוק איתם' : 'פתוחה · יאללה לקדם',
       color: due ? AppColors.secondary : AppColors.statusIdea,
       icon: due
           ? Icons.notification_important_outlined
           : Icons.lightbulb_outline_rounded,
       reminderDate: match.reminderDate,
+      reminderNote: match.reminderNote,
       isDue: due,
     );
   }
@@ -575,16 +621,15 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     if (!picked.pausesMatches || !context.mounted) {
       return;
     }
-    final ReminderChoice? choice = await ReminderPickerSheet.show(
+    // The status change already moved every relevant proposal to "בהמתנה";
+    // all that is left is when to look at this person again.
+    await _pickPersonReminder(
       context,
+      repository,
+      person,
       title: 'מתי להזכיר לך לבדוק שוב?',
       allowSkip: true,
-      recommendedLabel: 'עוד חודש',
-      intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
     );
-    if (choice?.date != null) {
-      await repository.setPersonReminder(person.id, choice!.date!);
-    }
   }
 
   Future<void> _changePersonReminder(
@@ -592,19 +637,51 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     PersonRepository repository,
     Person person,
   ) async {
-    final ReminderChoice? choice = await ReminderPickerSheet.show(
+    await _pickPersonReminder(
       context,
+      repository,
+      person,
       title: 'מתי לבדוק שוב את ${_firstName(person)}?',
       allowClear: true,
+    );
+  }
+
+  /// Picks a date for a person's own reminder and then offers to write a note
+  /// on it. The reminder belongs to the person, so it shows on every proposal
+  /// they are part of.
+  Future<void> _pickPersonReminder(
+    BuildContext context,
+    PersonRepository repository,
+    Person person, {
+    required String title,
+    bool allowSkip = false,
+    bool allowClear = false,
+  }) async {
+    final ReminderChoice? choice = await ReminderPickerSheet.show(
+      context,
+      title: title,
+      allowSkip: allowSkip,
+      allowClear: allowClear,
       recommendedLabel: 'עוד חודש',
       intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
     );
     if (choice == null) return;
     if (choice.date == null) {
       await repository.clearPersonReminder(person.id);
-    } else {
-      await repository.setPersonReminder(person.id, choice.date!);
+      return;
     }
+
+    String? note = repository.personReminderNoteFor(person.id);
+    if (context.mounted) {
+      final String? written = await ReminderNoteDialog.show(
+        context,
+        initialNote: note,
+      );
+      if (written != null) {
+        note = written;
+      }
+    }
+    await repository.setPersonReminder(person.id, choice.date!, note: note);
   }
 
   Future<void> _postponePersonReminder(
@@ -612,9 +689,22 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     PersonRepository repository,
     Person person,
   ) async {
+    final DateTime? date = await _pickPostponeDate(context);
+    if (date != null) {
+      await repository.setPersonReminder(
+        person.id,
+        date,
+        note: repository.personReminderNoteFor(person.id),
+      );
+    }
+  }
+
+  /// The two-option sheet behind "עדיין בהמתנה": push the check a week or a
+  /// month ahead without walking through the full picker.
+  Future<DateTime?> _pickPostponeDate(BuildContext context) {
     final DateTime now = DateTime.now();
     final DateTime base = DateTime(now.year, now.month, now.day);
-    final DateTime? date = await showModalBottomSheet<DateTime>(
+    return showModalBottomSheet<DateTime>(
       context: context,
       showDragHandle: true,
       builder: (BuildContext sheetContext) {
@@ -622,7 +712,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const ListTile(title: Text('לדחות את הבדיקה')),
+              const ListTile(title: Text('מתי לבדוק שוב?')),
               ListTile(
                 leading: const Icon(Icons.calendar_view_week_outlined),
                 title: const Text('עוד שבוע'),
@@ -643,9 +733,6 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         );
       },
     );
-    if (date != null) {
-      await repository.setPersonReminder(person.id, date);
-    }
   }
 
   Future<void> _changeMatchReminder(
@@ -661,11 +748,34 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
     );
     if (choice == null) return;
-    await repository.setReminder(
-      match.id,
-      choice.date,
-      note: match.reminderNote,
-    );
+    if (choice.date == null) {
+      await repository.setReminder(match.id, null);
+      return;
+    }
+
+    String? note = match.reminderNote;
+    if (context.mounted) {
+      final String? written = await ReminderNoteDialog.show(
+        context,
+        initialNote: note,
+      );
+      if (written != null) {
+        note = written;
+      }
+    }
+    await repository.setReminder(match.id, choice.date, note: note);
+  }
+
+  /// "עדיין בהמתנה" for a reminder that belongs to the proposal itself.
+  Future<void> _postponeMatchReminder(
+    BuildContext context,
+    MatchRepository repository,
+    MatchIdea match,
+  ) async {
+    final DateTime? date = await _pickPostponeDate(context);
+    if (date != null) {
+      await repository.setReminder(match.id, date, note: match.reminderNote);
+    }
   }
 
   Future<void> _setManualWaiting(
@@ -679,6 +789,10 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       'מחכים לתשובה משניהם',
       'צריך לברר עוד פרטים',
     ];
+    // The reason is optional — the sheet leads with "בלי סיבה מיוחדת" so the
+    // action never demands an explanation. The reminder that follows is the
+    // part worth encouraging: it is what keeps the proposal from getting stuck
+    // in "בהמתנה" with no date to come back to.
     final String? reason = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -687,7 +801,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const ListTile(title: Text('למה ההצעה בהמתנה?')),
+              const ListTile(
+                title: Text('למה ההצעה בהמתנה?'),
+                subtitle: Text('לא חובה'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.pause_rounded),
+                title: const Text('בלי סיבה מיוחדת'),
+                onTap: () => Navigator.of(sheetContext).pop(''),
+              ),
+              const Divider(height: 1),
               for (final String reason in reasons)
                 ListTile(
                   title: Text(reason),
@@ -705,12 +828,14 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       },
     );
     if (reason == null || !context.mounted) return;
-    final String? resolved = reason == '__other__'
-        ? await _promptText(context, title: 'סיבת ההמתנה')
-        : reason;
-    if (resolved == null || resolved.trim().isEmpty || !context.mounted) {
-      return;
+
+    String resolved = reason;
+    if (reason == '__other__') {
+      final String? written = await _promptText(context, title: 'סיבת ההמתנה');
+      if (written == null || !context.mounted) return;
+      resolved = written;
     }
+
     final ReminderChoice? reminder = await ReminderPickerSheet.show(
       context,
       title: 'מתי לחזור לבדוק?',
@@ -718,10 +843,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       recommendedLabel: 'עוד חודש',
       intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
     );
+
+    String? note;
+    if (reminder?.date != null && context.mounted) {
+      note = await ReminderNoteDialog.show(context);
+    }
     await repository.setWaiting(
       match.id,
       reason: resolved.trim(),
       checkAgainOn: reminder?.date,
+      reminderNote: note,
     );
   }
 
@@ -882,6 +1013,71 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   Future<void> _openPersonWhatsApp(Person person) async {
     final bool opened = await WhatsAppUtils.openChat(person);
     if (!opened) _showSnackBar('אין מספר טלפון תקין');
+  }
+
+  /// The small menu behind a candidate's WhatsApp button: talk to them, or send
+  /// them the other side's card. Both options name the people, so there is
+  /// never a doubt about who receives what.
+  Future<void> _openWhatsAppMenu(Person person, Person? other) async {
+    final String name = _firstName(person);
+    final String? otherName = other == null ? null : _firstName(other);
+    final bool hasCard = (other?.description ?? '').trim().isNotEmpty;
+
+    final String? choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        final ThemeData theme = Theme.of(sheetContext);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                title: Text(
+                  'WhatsApp עם $name',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const FaIcon(
+                  FontAwesomeIcons.whatsapp,
+                  color: Color(0xFF25D366),
+                ),
+                title: Text('פתיחת שיחה עם $name'),
+                onTap: () => Navigator.of(sheetContext).pop('chat'),
+              ),
+              if (otherName != null)
+                ListTile(
+                  enabled: hasCard,
+                  leading: Icon(
+                    Icons.contact_mail_outlined,
+                    color: hasCard
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text('שליחת הכרטיס של $otherName אל $name'),
+                  subtitle: hasCard
+                      ? null
+                      : Text('אין כרטיס שמור אצל $otherName'),
+                  onTap: hasCard
+                      ? () => Navigator.of(sheetContext).pop('card')
+                      : null,
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (choice == 'chat') {
+      await _openPersonWhatsApp(person);
+    } else if (choice == 'card' && other != null) {
+      final bool opened = await WhatsAppUtils.sendCardTo(person, other);
+      if (!opened) _showSnackBar('אין מספר טלפון תקין או כרטיס שמור');
+    }
   }
 
   Future<void> _openContactWhatsApp(MatchContact contact) async {
@@ -1049,6 +1245,11 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     return name.isEmpty ? 'המועמד/ת' : name;
   }
 
+  /// The button label for putting a paused person back to "פנוי".
+  String _returnedLabel(Person person) {
+    return person.gender == Gender.female ? 'חזרה לפנויה' : 'חזר לפנוי';
+  }
+
   String _returnedToAvailability(Person person) {
     if (person.profileStatus == ProfileStatus.onBreak) {
       return person.gender == Gender.female ? 'חזרה מהפסקה' : 'חזר מהפסקה';
@@ -1078,10 +1279,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   }
 }
 
+/// The couple, as one shared card in exactly the language of the רעיונות
+/// screen: a cream-white surface, a hairline border, a thin rose / blue stripe
+/// at each outer edge — and no separate frame or background per side.
 class _PairCard extends StatelessWidget {
   const _PairCard({
     required this.female,
     required this.male,
+    required this.statusLine,
+    required this.statusColor,
+    required this.statusIcon,
     required this.onOpenProfile,
     required this.onWhatsApp,
     required this.onStatusPicked,
@@ -1089,62 +1296,158 @@ class _PairCard extends StatelessWidget {
 
   final Person? female;
   final Person? male;
+
+  /// The single derived line at the bottom: state plus what is needed now.
+  final String statusLine;
+  final Color statusColor;
+  final IconData statusIcon;
+
   final ValueChanged<Person> onOpenProfile;
-  final ValueChanged<Person> onWhatsApp;
+  final void Function(Person person, Person? other) onWhatsApp;
   final void Function(Person person, ProfileStatus status) onStatusPicked;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
     return Container(
-      padding: const EdgeInsets.all(10),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.colorScheme.outlineVariant),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.045),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: 0.035),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
         children: <Widget>[
-          Expanded(
-            child: _CandidateSide(
-              person: female,
-              gender: Gender.female,
-              onOpenProfile: onOpenProfile,
-              onWhatsApp: onWhatsApp,
-              onStatusPicked: onStatusPicked,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _EdgeStripe(
+                color: AppColors.genderAccent(Gender.female, dark: dark),
+                atStart: true,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 14, 6, 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      // In RTL the first child sits on the right.
+                      Expanded(
+                        child: _CandidateSide(
+                          person: female,
+                          other: male,
+                          gender: Gender.female,
+                          onOpenProfile: onOpenProfile,
+                          onWhatsApp: onWhatsApp,
+                          onStatusPicked: onStatusPicked,
+                        ),
+                      ),
+                      const _HeartLink(),
+                      Expanded(
+                        child: _CandidateSide(
+                          person: male,
+                          other: female,
+                          gender: Gender.male,
+                          onOpenProfile: onOpenProfile,
+                          onWhatsApp: onWhatsApp,
+                          onStatusPicked: onStatusPicked,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              _EdgeStripe(
+                color: AppColors.genderAccent(Gender.male, dark: dark),
+                atStart: false,
+              ),
+            ],
           ),
+          Divider(height: 1, color: theme.colorScheme.outlineVariant),
           Padding(
-            padding: const EdgeInsets.fromLTRB(7, 48, 7, 0),
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondaryContainer,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.favorite_rounded,
-                color: theme.colorScheme.secondary,
-                size: 21,
-              ),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
+            child: Row(
+              children: <Widget>[
+                Icon(statusIcon, size: 17, color: statusColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    statusLine,
+                    maxLines: 2,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: statusColor,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          Expanded(
-            child: _CandidateSide(
-              person: male,
-              gender: Gender.male,
-              onOpenProfile: onOpenProfile,
-              onWhatsApp: onWhatsApp,
-              onStatusPicked: onStatusPicked,
+        ],
+      ),
+    );
+  }
+}
+
+/// The thin gender stripe on each outer edge of the pair card — the only place
+/// the two sides are told apart.
+class _EdgeStripe extends StatelessWidget {
+  const _EdgeStripe({required this.color, required this.atStart});
+
+  final Color color;
+  final bool atStart;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 4,
+      height: 96,
+      margin: const EdgeInsets.only(top: 14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.75),
+        borderRadius: BorderRadiusDirectional.horizontal(
+          end: atStart ? const Radius.circular(12) : Radius.zero,
+          start: atStart ? Radius.zero : const Radius.circular(12),
+        ),
+      ),
+    );
+  }
+}
+
+/// The heart between the two photos, with the dotted line the mockup uses.
+class _HeartLink extends StatelessWidget {
+  const _HeartLink();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 22, 2, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.favorite_rounded,
+            size: 22,
+            color: theme.colorScheme.secondary,
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: 22,
+            height: 2,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondary.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(999),
             ),
           ),
         ],
@@ -1161,9 +1464,12 @@ const List<ProfileStatus> selectableProfileStatuses = <ProfileStatus>[
   ProfileStatus.onBreak,
 ];
 
+/// One candidate inside the shared card: photo in a gender ring, name, the
+/// basic details, a small WhatsApp button and the global availability chip.
 class _CandidateSide extends StatelessWidget {
   const _CandidateSide({
     required this.person,
+    required this.other,
     required this.gender,
     required this.onOpenProfile,
     required this.onWhatsApp,
@@ -1171,467 +1477,466 @@ class _CandidateSide extends StatelessWidget {
   });
 
   final Person? person;
+
+  /// The candidate on the other side — the card that can be sent to this one.
+  final Person? other;
+
   final Gender gender;
   final ValueChanged<Person> onOpenProfile;
-  final ValueChanged<Person> onWhatsApp;
+  final void Function(Person person, Person? other) onWhatsApp;
   final void Function(Person person, ProfileStatus status) onStatusPicked;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = AppColors.genderAccent(gender, dark: dark);
+    final Color ring = AppColors.genderAccent(gender, dark: dark);
     final Person? current = person;
+    // Age and outlook only — the city says nothing about the proposal itself
+    // and it is one line too many on a card this narrow.
     final List<String> details = <String>[
-      if (current?.age != null) 'גיל ${current!.age}',
+      if (current?.age != null) '${current!.age}',
       if (current?.religiousLevelLabel.isNotEmpty ?? false)
         current!.religiousLevelLabel,
-      if ((current?.city ?? '').trim().isNotEmpty) current!.city!.trim(),
     ];
+    final bool hasPhone =
+        current != null && PhoneUtils.toWhatsAppNumber(current.phone) != null;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.genderSurface(gender, dark: dark),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: accent.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        children: <Widget>[
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-              onTap: current == null ? null : () => onOpenProfile(current),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 12, 8, 6),
-                child: Column(
-                  children: <Widget>[
-                    if (current != null)
-                      PersonAvatar(person: current, radius: 37)
-                    else
-                      CircleAvatar(
-                        radius: 37,
-                        backgroundColor: theme.colorScheme.surface,
-                        child: const Icon(Icons.person_off_outlined),
-                      ),
-                    const SizedBox(height: 8),
-                    Text(
-                      current?.fullName.trim().isNotEmpty == true
-                          ? current!.fullName.trim()
-                          : 'אדם נמחק',
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      details.isEmpty
-                          ? 'פרטים בסיסיים חסרים'
-                          : details.join(' · '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // Photo, name and details are one tap target: they all open the
+        // profile.
+        InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: current == null ? null : () => onOpenProfile(current),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Column(
+              children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ring, width: 2),
+                  ),
+                  child: current == null
+                      ? CircleAvatar(
+                          radius: 32,
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
+                          child: Icon(
+                            Icons.person_off_outlined,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        )
+                      : PersonAvatar(person: current, radius: 32),
                 ),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  current?.fullName.trim().isNotEmpty == true
+                      ? current!.fullName.trim()
+                      : 'אדם נמחק',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  details.isEmpty ? 'פרטים בסיסיים חסרים' : details.join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+              ],
             ),
           ),
-          if (current != null) ...<Widget>[
-            PopupMenuButton<ProfileStatus>(
-              tooltip: 'שינוי הסטטוס של ${current.firstName}',
-              position: PopupMenuPosition.under,
-              padding: EdgeInsets.zero,
-              onSelected: (ProfileStatus status) =>
-                  onStatusPicked(current, status),
-              itemBuilder: (BuildContext context) =>
-                  <PopupMenuEntry<ProfileStatus>>[
-                    for (final ProfileStatus status
-                        in selectableProfileStatuses)
-                      PopupMenuItem<ProfileStatus>(
-                        value: status,
-                        height: 44,
-                        child: Row(
-                          children: <Widget>[
-                            ProfileStatusTag(status: status),
-                            const Spacer(),
-                            if (status == current.profileStatus)
-                              Icon(
-                                Icons.check_rounded,
-                                size: 18,
-                                color: theme.colorScheme.primary,
-                              ),
-                          ],
-                        ),
-                      ),
-                  ],
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 5),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    ProfileStatusTag(status: current.profileStatus),
-                    const SizedBox(width: 2),
-                    Icon(Icons.expand_more, size: 16, color: accent),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Tooltip(
-                message: 'WhatsApp עם ${current.firstName}',
-                child: Material(
-                  color: const Color(0xFF25D366).withValues(alpha: 0.14),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => onWhatsApp(current),
-                    child: const Padding(
-                      padding: EdgeInsets.all(9),
-                      child: FaIcon(
-                        FontAwesomeIcons.whatsapp,
-                        size: 19,
-                        color: Color(0xFF25D366),
-                      ),
-                    ),
+        ),
+        if (current != null) ...<Widget>[
+          const SizedBox(height: 6),
+          Tooltip(
+            message: 'WhatsApp עם ${current.firstName}',
+            child: Material(
+              color: const Color(0xFF25D366).withValues(alpha: 0.12),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: hasPhone ? () => onWhatsApp(current, other) : null,
+                child: Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: FaIcon(
+                    FontAwesomeIcons.whatsapp,
+                    size: 17,
+                    color: hasPhone
+                        ? const Color(0xFF25D366)
+                        : theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.5,
+                          ),
                   ),
                 ),
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 7),
+          // The person's global availability — not a per-proposal state.
+          PopupMenuButton<ProfileStatus>(
+            tooltip: 'שינוי הסטטוס של ${current.firstName}',
+            position: PopupMenuPosition.under,
+            padding: EdgeInsets.zero,
+            onSelected: (ProfileStatus status) =>
+                onStatusPicked(current, status),
+            itemBuilder: (BuildContext context) =>
+                <PopupMenuEntry<ProfileStatus>>[
+                  for (final ProfileStatus status in selectableProfileStatuses)
+                    PopupMenuItem<ProfileStatus>(
+                      value: status,
+                      height: 44,
+                      child: Row(
+                        children: <Widget>[
+                          ProfileStatusTag(status: status),
+                          const Spacer(),
+                          if (status == current.profileStatus)
+                            Icon(
+                              Icons.check_rounded,
+                              size: 18,
+                              color: theme.colorScheme.primary,
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  ProfileStatusTag(status: current.profileStatus),
+                  const SizedBox(width: 1),
+                  Icon(
+                    Icons.expand_more,
+                    size: 15,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
-      ),
+      ],
     );
   }
 }
 
+/// The proposal's derived state — read from the two people's availability, the
+/// proposal status and the reminders. Nothing here is stored separately.
 class _MatchSituation {
   const _MatchSituation({
-    required this.title,
-    required this.detail,
+    required this.line,
     required this.color,
     required this.icon,
     this.reminderOwner,
     this.reminderDate,
+    this.reminderNote,
     this.isDue = false,
   });
 
-  final String title;
-  final String detail;
+  /// The single line under the pair: "פתוחה · יאללה לקדם".
+  final String line;
   final Color color;
   final IconData icon;
+
+  /// Set when the reminder in play belongs to one of the people rather than to
+  /// the proposal itself.
   final Person? reminderOwner;
+
   final DateTime? reminderDate;
+  final String? reminderNote;
   final bool isDue;
 }
+
+/// The pastel traffic light of "עדכון הצעה" — go, wait, stop.
+enum _ActionTone { go, wait, stop }
 
 class _ProposalAction {
   const _ProposalAction({
     required this.label,
     required this.icon,
+    required this.tone,
     required this.onTap,
     this.emphasized = false,
   });
 
   final String label;
+
   final IconData icon;
+  final _ActionTone tone;
   final VoidCallback onTap;
+
+  /// The one action that leads — bigger, and the only one with a frame.
   final bool emphasized;
-}
 
-class _SituationCard extends StatelessWidget {
-  const _SituationCard({
-    required this.situation,
-    required this.reminderDate,
-    required this.onReminderTap,
-    required this.onStillWaiting,
-    required this.onAvailable,
-    required this.availableLabel,
-    required this.actions,
-  });
-
-  final _MatchSituation situation;
-  final DateTime? reminderDate;
-  final VoidCallback? onReminderTap;
-  final VoidCallback? onStillWaiting;
-  final VoidCallback? onAvailable;
-  final String availableLabel;
-  final List<_ProposalAction> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final List<_ProposalAction> primary = actions
-        .where((_ProposalAction action) => action.emphasized)
-        .toList();
-    final List<_ProposalAction> secondary = actions
-        .where((_ProposalAction action) => !action.emphasized)
-        .toList();
-    final bool showDueChoice = onStillWaiting != null && onAvailable != null;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: situation.color.withValues(alpha: 0.22)),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: situation.color.withValues(alpha: 0.14),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(situation.icon, color: situation.color, size: 21),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      situation.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: situation.color,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      situation.detail,
-                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (onReminderTap != null) ...<Widget>[
-            const SizedBox(height: 12),
-            _ReminderTile(
-              date: reminderDate,
-              color: situation.color,
-              onTap: onReminderTap!,
-            ),
-          ],
-          if (showDueChoice) ...<Widget>[
-            const SizedBox(height: 12),
-            _DueChoiceBlock(
-              onStillWaiting: onStillWaiting!,
-              onAvailable: onAvailable!,
-              availableLabel: availableLabel,
-            ),
-          ],
-          if (actions.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 14),
-            Divider(height: 1, color: theme.colorScheme.outlineVariant),
-            const SizedBox(height: 12),
-            for (final _ProposalAction action in primary)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: action.onTap,
-                    icon: Icon(action.icon, size: 18),
-                    label: Text(action.label),
-                  ),
-                ),
-              ),
-            if (secondary.isNotEmpty)
-              Row(
-                children: <Widget>[
-                  for (final _ProposalAction action in secondary)
-                    Expanded(
-                      child: TextButton.icon(
-                        onPressed: action.onTap,
-                        style: TextButton.styleFrom(
-                          foregroundColor: theme.colorScheme.onSurfaceVariant,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                        ),
-                        icon: Icon(action.icon, size: 17),
-                        label: Text(
-                          action.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-          ],
-        ],
-      ),
-    );
+  Color get ink {
+    switch (tone) {
+      case _ActionTone.go:
+        return AppColors.statusDating;
+      case _ActionTone.wait:
+        return AppColors.statusChecking;
+      case _ActionTone.stop:
+        return AppColors.statusRejected;
+    }
   }
 }
 
-/// The reminder row inside the situation card: one tappable tile that shows
-/// when we plan to come back to the proposal, instead of a bare text button.
-class _ReminderTile extends StatelessWidget {
-  const _ReminderTile({
+/// The reminder area, right under the pair: the one thing that keeps a proposal
+/// from being forgotten, so it is clear and central — but never larger than the
+/// work itself.
+class _ReminderCard extends StatelessWidget {
+  const _ReminderCard({
     required this.date,
-    required this.color,
+    required this.note,
+    required this.isDue,
     required this.onTap,
+    required this.onPostpone,
+    required this.onBackToAvailable,
+    required this.backToAvailableLabel,
+    required this.onHandled,
   });
 
   final DateTime? date;
-  final Color color;
-  final VoidCallback onTap;
+  final String? note;
+  final bool isDue;
+
+  /// Null while the proposal is dating or closed — there is nothing to plan.
+  final VoidCallback? onTap;
+
+  /// Offered only once the reminder has come due.
+  final VoidCallback? onPostpone;
+  final VoidCallback? onBackToAvailable;
+  final String? backToAvailableLabel;
+  final VoidCallback? onHandled;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final DateTime? current = date;
-    return Material(
-      color: color.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(
-                  current == null
-                      ? Icons.notification_add_outlined
-                      : Icons.event_available_outlined,
-                  size: 19,
-                  color: color,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      current == null ? 'הוספת תזכורת' : 'חזרה להצעה בתאריך',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      current == null
-                          ? 'בלי תזכורת ההצעה עלולה להישכח'
-                          : '${AppDateUtils.formatDate(current)} · ${_relativeLabel(current)}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.edit_calendar_outlined,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
+    final Color accent = isDue
+        ? AppColors.secondary
+        : theme.colorScheme.primary;
+    final String? trimmedNote = note?.trim();
+    final bool showDueRow =
+        isDue &&
+        (onPostpone != null || onBackToAvailable != null || onHandled != null);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDue
+              ? accent.withValues(alpha: 0.45)
+              : theme.colorScheme.outlineVariant,
         ),
+      ),
+      child: Column(
+        children: <Widget>[
+          InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.14),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      current == null
+                          ? Icons.notifications_none_rounded
+                          : Icons.notifications_active_outlined,
+                      size: 21,
+                      color: accent,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          current == null
+                              ? 'הוספת תזכורת'
+                              : '${AppDateUtils.formatDate(current)} · '
+                                    '${_relativeLabel(current)}',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _subtitleFor(current, trimmedNote),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: isDue
+                                ? accent
+                                : theme.colorScheme.onSurfaceVariant,
+                            fontWeight: isDue
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onTap != null)
+                    Icon(
+                      Icons.chevron_left,
+                      size: 22,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (showDueRow) ...<Widget>[
+            Divider(height: 1, color: theme.colorScheme.outlineVariant),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  if (onPostpone != null)
+                    OutlinedButton.icon(
+                      onPressed: onPostpone,
+                      icon: const Icon(Icons.schedule, size: 17),
+                      label: const Text('עדיין בהמתנה'),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  if (onBackToAvailable != null)
+                    FilledButton.icon(
+                      onPressed: onBackToAvailable,
+                      icon: const Icon(Icons.check_rounded, size: 17),
+                      label: Text(backToAvailableLabel ?? 'חזר/ה לפנוי'),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: AppColors.statusDating,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                      ),
+                    ),
+                  if (onHandled != null)
+                    TextButton.icon(
+                      onPressed: onHandled,
+                      icon: const Icon(Icons.check_circle_outline, size: 17),
+                      label: const Text('טופל'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  String _relativeLabel(DateTime date) {
-    final DateTime now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
-    final int days = DateTime(
-      date.year,
-      date.month,
-      date.day,
-    ).difference(today).inDays;
+  /// The line under the date. Once the reminder is due it says how long it has
+  /// been waiting since the matchmaker asked to be reminded, with their own
+  /// note after it when there is one.
+  String _subtitleFor(DateTime? date, String? note) {
+    if (date == null) {
+      return 'נזכיר לך לחזור אליה בזמן הנכון';
+    }
+    final bool hasNote = note != null && note.isNotEmpty;
+    if (!isDue) {
+      return hasNote ? note : 'אפשר לשנות בלחיצה';
+    }
+    final String waited = AppDateUtils.remindedAgoLabel(date);
+    return hasNote ? '$waited · $note' : waited;
+  }
+
+  static String _relativeLabel(DateTime date) {
+    final int days = _daysFromToday(date);
     if (days == 0) return 'היום';
     if (days == 1) return 'מחר';
     if (days > 1) return 'בעוד $days ימים';
     if (days == -1) return 'התאריך היה אתמול';
     return 'עברו ${-days} ימים';
   }
+
+  static int _daysFromToday(DateTime date) {
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    return DateTime(date.year, date.month, date.day).difference(today).inDays;
+  }
 }
 
-/// The "time to check in" prompt shown once a reminder is due.
-class _DueChoiceBlock extends StatelessWidget {
-  const _DueChoiceBlock({
-    required this.onStillWaiting,
-    required this.onAvailable,
-    required this.availableLabel,
-  });
+/// "עדכון הצעה": one area, three ways on. The pastel traffic light is the only
+/// colour here — the middle action leads, the two beside it stay quiet.
+class _UpdateProposalCard extends StatelessWidget {
+  const _UpdateProposalCard({required this.actions});
 
-  final VoidCallback onStillWaiting;
-  final VoidCallback onAvailable;
-  final String availableLabel;
+  final List<_ProposalAction> actions;
 
   @override
   Widget build(BuildContext context) {
+    if (actions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     final ThemeData theme = Theme.of(context);
+
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
-        color: AppColors.secondary.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(16),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            'מה המצב עכשיו?',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+            child: Text(
+              'עדכון הצעה',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: onStillWaiting,
-                  child: const Text('עדיין בהמתנה'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton(
-                  onPressed: onAvailable,
-                  child: Text(availableLabel),
-                ),
-              ),
-            ],
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (int i = 0; i < actions.length; i++) ...<Widget>[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(
+                    flex: actions[i].emphasized ? 12 : 9,
+                    child: _ActionTile(action: actions[i]),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1639,9 +1944,70 @@ class _DueChoiceBlock extends StatelessWidget {
   }
 }
 
-/// Always-visible card for the people around the proposal (a mother, a friend,
-/// another matchmaker). Keeping it a real card - even when empty - makes the
-/// "add a contact" action obvious instead of hiding it in a faint text link.
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({required this.action});
+
+  final _ProposalAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color ink = action.ink;
+    final bool lead = action.emphasized;
+
+    return Material(
+      color: ink.withValues(alpha: dark ? 0.20 : (lead ? 0.16 : 0.09)),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: action.onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: lead
+                ? Border.all(color: ink.withValues(alpha: 0.55), width: 1.4)
+                : null,
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 6,
+              vertical: lead ? 14 : 11,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(action.icon, size: lead ? 24 : 20, color: ink),
+                const SizedBox(height: 7),
+                // The label is the whole tile now. A name that does not fit the
+                // tile's width wraps onto a second line instead of being cut.
+                Text(
+                  action.label,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  style:
+                      (lead
+                              ? theme.textTheme.titleSmall
+                              : theme.textTheme.labelMedium)
+                          ?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: ink,
+                            height: 1.2,
+                          ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The people around the proposal (a mother, a friend, another matchmaker).
+/// Until one is added this is only a quiet line — a full card here would
+/// compete with the pair and the reminder for no reason. Once a contact exists
+/// it becomes the card with all its details.
 class _RelatedContactsCard extends StatelessWidget {
   const _RelatedContactsCard({
     required this.contacts,
@@ -1660,6 +2026,22 @@ class _RelatedContactsCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final MatchContact? first = contacts.isEmpty ? null : contacts.first;
 
+    if (first == null) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          onPressed: onAdd,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('איש קשר שקשור להצעה'),
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.onSurfaceVariant,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
@@ -1668,68 +2050,65 @@ class _RelatedContactsCard extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
-          if (first != null) ...<Widget>[
-            ListTile(
-              onTap: onOpenList,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-              ),
-              leading: CircleAvatar(
-                backgroundColor: theme.colorScheme.primaryContainer,
-                child: const Icon(Icons.person_outline_rounded),
-              ),
-              title: Text(
-                first.name.trim().isEmpty ? 'איש קשר' : first.name.trim(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              subtitle: (first.description ?? '').trim().isEmpty
-                  ? null
-                  : Text(
-                      first.description!.trim(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+          ListTile(
+            onTap: onOpenList,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            leading: CircleAvatar(
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: const Icon(Icons.person_outline_rounded),
+            ),
+            title: Text(
+              first.name.trim().isEmpty ? 'איש קשר' : first.name.trim(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: (first.description ?? '').trim().isEmpty
+                ? null
+                : Text(
+                    first.description!.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                IconButton(
+                  tooltip: 'WhatsApp',
+                  onPressed: () => onWhatsApp(first),
+                  icon: const FaIcon(
+                    FontAwesomeIcons.whatsapp,
+                    size: 19,
+                    color: Color(0xFF25D366),
+                  ),
+                ),
+                if (contacts.length > 1)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
                     ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  IconButton(
-                    tooltip: 'WhatsApp',
-                    onPressed: () => onWhatsApp(first),
-                    icon: const FaIcon(
-                      FontAwesomeIcons.whatsapp,
-                      size: 19,
-                      color: Color(0xFF25D366),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '+${contacts.length - 1}',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                  if (contacts.length > 1)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '+${contacts.length - 1}',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              ],
             ),
-            Divider(height: 1, color: theme.colorScheme.outlineVariant),
-          ],
+          ),
+          Divider(height: 1, color: theme.colorScheme.outlineVariant),
           InkWell(
             onTap: onAdd,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(first == null ? 18 : 0),
-              bottom: const Radius.circular(18),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(18),
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -1750,28 +2129,12 @@ class _RelatedContactsCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          first == null
-                              ? 'הוספת איש קשר שקשור להצעה'
-                              : 'הוספת איש קשר נוסף',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                        if (first == null) ...<Widget>[
-                          const SizedBox(height: 2),
-                          Text(
-                            'למשל אמא, חברה או שדכן שמעורב בהצעה',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ],
+                    child: Text(
+                      'הוספת איש קשר נוסף',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
                     ),
                   ),
                 ],

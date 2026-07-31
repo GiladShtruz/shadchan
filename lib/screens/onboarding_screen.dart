@@ -42,11 +42,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Icon(
-                Icons.favorite,
-                size: 56,
-                color: theme.colorScheme.primary,
-              ),
+              Icon(Icons.favorite, size: 56, color: theme.colorScheme.primary),
               const SizedBox(height: 24),
               Text(
                 'ברוך הבא שדכן!',
@@ -64,13 +60,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
               ),
               const SizedBox(height: 32),
-              Center(child: _PhotoPicker(
-                photoPath: _photoPath,
-                onTap: _pickPhoto,
-                onRemove: _photoPath == null
-                    ? null
-                    : () => setState(() => _photoPath = null),
-              )),
+              Center(
+                child: _PhotoPicker(
+                  photoPath: _photoPath,
+                  onTap: _pickPhoto,
+                  onRemove: _photoPath == null
+                      ? null
+                      : () => setState(() => _photoPath = null),
+                ),
+              ),
               const SizedBox(height: 32),
               Text('איך קוראים לך?', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
@@ -237,8 +235,7 @@ class _PhotoPicker extends StatelessWidget {
               child: CircleAvatar(
                 radius: 52,
                 backgroundColor: theme.colorScheme.primaryContainer,
-                backgroundImage:
-                    path != null ? FileImage(File(path)) : null,
+                backgroundImage: path != null ? FileImage(File(path)) : null,
                 child: path != null
                     ? null
                     : Icon(

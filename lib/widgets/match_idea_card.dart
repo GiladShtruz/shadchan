@@ -18,11 +18,9 @@ class MatchIdeaCard extends StatelessWidget {
     required this.female,
     required this.onTap,
     required this.onOpenWhatsApp,
-    this.onReminder,
-    this.onUpdateStatus,
-    this.onMarkReminderHandled,
     this.showStatusTag = false,
     this.compact = false,
+    this.highlighted = false,
   });
 
   final MatchIdea match;
@@ -31,33 +29,43 @@ class MatchIdeaCard extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<Person> onOpenWhatsApp;
 
-  /// Quick actions. Left out in the compact form (search results, archive).
-  final VoidCallback? onReminder;
-  final VoidCallback? onUpdateStatus;
-
-  /// Offered only while a reminder is due, to take the card off the top list.
-  final VoidCallback? onMarkReminderHandled;
-
   final bool showStatusTag;
   final bool compact;
+
+  /// A proposal the matchmaker asked to be reminded about today: the card wears
+  /// the reminder accent so it cannot be mistaken for the rest of the list.
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
+    final Color accent = theme.colorScheme.secondary;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: theme.colorScheme.surface,
+        color: highlighted
+            ? Color.alphaBlend(
+                accent.withValues(alpha: dark ? 0.16 : 0.07),
+                theme.colorScheme.surface,
+              )
+            : theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
+        elevation: highlighted ? 2 : 0,
+        shadowColor: accent.withValues(alpha: 0.4),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
+              border: Border.all(
+                color: highlighted
+                    ? accent.withValues(alpha: 0.65)
+                    : theme.colorScheme.outlineVariant,
+                width: highlighted ? 1.6 : 1,
+              ),
             ),
             child: Column(
               children: <Widget>[
@@ -107,15 +115,6 @@ class MatchIdeaCard extends StatelessWidget {
                   showStatusTag: showStatusTag,
                   compact: compact,
                 ),
-                if (!compact &&
-                    (onReminder != null ||
-                        onUpdateStatus != null ||
-                        onMarkReminderHandled != null))
-                  _Actions(
-                    onReminder: onReminder,
-                    onUpdateStatus: onUpdateStatus,
-                    onMarkReminderHandled: onMarkReminderHandled,
-                  ),
               ],
             ),
           ),
@@ -328,58 +327,6 @@ class _StatusTag extends StatelessWidget {
           color: color,
           fontWeight: FontWeight.w700,
         ),
-      ),
-    );
-  }
-}
-
-/// The two quick actions at the bottom of a card, plus "טופל" while a reminder
-/// is due.
-class _Actions extends StatelessWidget {
-  const _Actions({
-    required this.onReminder,
-    required this.onUpdateStatus,
-    required this.onMarkReminderHandled,
-  });
-
-  final VoidCallback? onReminder;
-  final VoidCallback? onUpdateStatus;
-  final VoidCallback? onMarkReminderHandled;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-      child: Row(
-        children: <Widget>[
-          if (onReminder != null)
-            Expanded(
-              child: TextButton.icon(
-                onPressed: onReminder,
-                icon: const Icon(Icons.notifications_none, size: 18),
-                label: const Text('תזכורת'),
-              ),
-            ),
-          if (onUpdateStatus != null)
-            Expanded(
-              child: TextButton.icon(
-                onPressed: onUpdateStatus,
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('עדכון סטטוס'),
-              ),
-            ),
-          if (onMarkReminderHandled != null)
-            IconButton(
-              tooltip: 'התזכורת טופלה',
-              onPressed: onMarkReminderHandled,
-              icon: Icon(
-                Icons.check_circle_outline,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-        ],
       ),
     );
   }

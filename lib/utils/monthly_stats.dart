@@ -111,7 +111,8 @@ abstract final class MonthlyStats {
     // proposal's last update stands in for when it happened.
     final int dating = matches
         .where(
-          (MatchIdea m) => m.status == MatchStatus.dating && within(m.updatedAt),
+          (MatchIdea m) =>
+              m.status == MatchStatus.dating && within(m.updatedAt),
         )
         .length;
     final int weddings = matches

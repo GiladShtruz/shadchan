@@ -108,9 +108,13 @@ class PersonPickerSheet extends StatefulWidget {
   State<PersonPickerSheet> createState() => _PersonPickerSheetState();
 }
 
-/// Creates and stores the person behind a "not in the database" choice. Adding
-/// them to the database makes them visible in the lists; either way details are
-/// missing, so they are flagged for review.
+/// Creates and stores the person behind a "not in the database" choice.
+///
+/// Someone added to the database is a regular contact from that moment on, even
+/// with only a name on their card: the app never keeps a visible person in a
+/// "waiting for details" state, which would quietly leave them out of every
+/// list and suggestion. Someone left outside the database stays hidden, and
+/// keeps the review flag that asks them for their details over WhatsApp.
 Future<Person?> _persistNewPerson(
   BuildContext context,
   _NewPersonChoice choice,
@@ -124,7 +128,7 @@ Future<Person?> _persistNewPerson(
     lastName: name.last,
     gender: gender,
     hidden: !choice.addToDatabase,
-    needsReview: true,
+    needsReview: !choice.addToDatabase,
     createdAt: now,
     updatedAt: now,
   );

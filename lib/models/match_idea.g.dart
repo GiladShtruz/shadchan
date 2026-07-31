@@ -21,8 +21,9 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       personAId: fields[1] as String,
       personBId: fields[2] as String,
       status: fields[3] == null ? MatchStatus.idea : fields[3] as MatchStatus,
-      currentHandler:
-          fields[4] == null ? CurrentHandler.me : fields[4] as CurrentHandler,
+      currentHandler: fields[4] == null
+          ? CurrentHandler.me
+          : fields[4] as CurrentHandler,
       createdAt: fields[6] as DateTime,
       updatedAt: fields[7] as DateTime,
       handlerName: fields[5] as String?,
@@ -31,8 +32,9 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       waitingReason: fields[10] as String?,
       progress: fields[11] as MatchProgress?,
       progressOther: fields[12] as String?,
-      relatedContacts:
-          fields[13] == null ? [] : (fields[13] as List).cast<MatchContact>(),
+      relatedContacts: fields[13] == null
+          ? []
+          : (fields[13] as List).cast<MatchContact>(),
     );
   }
 

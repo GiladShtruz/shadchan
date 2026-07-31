@@ -14,6 +14,7 @@ import 'package:shadchan/screens/person_form_screen.dart';
 import 'package:shadchan/screens/dashboard_screen.dart';
 import 'package:shadchan/screens/home_screen.dart';
 import 'package:shadchan/screens/monthly_stats_screen.dart';
+import 'package:shadchan/screens/new_ideas_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/reminders_screen.dart';
 import 'package:shadchan/screens/religious_levels_settings_screen.dart';
@@ -302,6 +303,12 @@ abstract final class AppRouter {
             },
           ),
         ],
+      ),
+      GoRoute(
+        path: '/ideas/new',
+        builder: (BuildContext context, GoRouterState state) {
+          return const NewIdeasScreen();
+        },
       ),
       GoRoute(
         path: '/stats/month',

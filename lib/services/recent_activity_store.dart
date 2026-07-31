@@ -85,8 +85,8 @@ class HomeActivityEntry {
   }
 }
 
-/// "חזרה מהירה" — the trail of what the matchmaker just worked on, so getting
-/// back to it is one tap instead of a search.
+/// "הפעולות האחרונות שלך" — the trail of what the matchmaker just worked on,
+/// so getting back to it is one tap instead of a search.
 ///
 /// One entry per person / proposal: touching the same card again refreshes it
 /// and floats it back to the front rather than piling up duplicates. Recording

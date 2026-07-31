@@ -303,37 +303,48 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     _SwipeHistoryEntry entry,
   ) async {
     try {
-      final person = await ContactsImportService.stageSingleCandidate(
-        candidate,
-        repo,
-      );
+      final StagedContact? staged =
+          await ContactsImportService.stageSingleCandidate(candidate, repo);
 
-      if (person == null) {
+      if (staged == null) {
         _revertPendingAddedCount(entry);
         return;
       }
 
       if (entry.wasUndone) {
+        // The swipe was taken back before the details were even asked for.
+        await ContactsImportService.discardStagedCandidate(staged, repo);
         return;
       }
 
-      if (mounted) {
-        final bool confirmed = await QuickUpdateDialog.show(context, person);
-        if (!mounted || entry.wasUndone) {
-          return;
-        }
-        if (confirmed) {
-          await repo.activatePendingContactDraft(person);
-          entry.importedPersonId = person.id;
-        } else {
-          _revertPendingAddedCount(entry);
-          if (!_deferredCandidates.any(
-            (ContactImportCandidate deferred) =>
-                deferred.normalizedPhone == candidate.normalizedPhone,
-          )) {
-            setState(() => _deferredCandidates.add(candidate));
-          }
-        }
+      if (!mounted) {
+        await ContactsImportService.discardStagedCandidate(staged, repo);
+        return;
+      }
+
+      final bool confirmed = await QuickUpdateDialog.show(
+        context,
+        staged.person,
+      );
+      if (confirmed && !entry.wasUndone) {
+        await repo.activatePendingContactDraft(staged.person);
+        entry.importedPersonId = staged.person.id;
+        return;
+      }
+
+      // Cancelled (or undone meanwhile): the draft is thrown away instead of
+      // being parked as a contact waiting for details. The candidate itself
+      // goes back to the review-later pile, so the deck can offer them again.
+      await ContactsImportService.discardStagedCandidate(staged, repo);
+      if (!mounted || entry.wasUndone) {
+        return;
+      }
+      _revertPendingAddedCount(entry);
+      if (!_deferredCandidates.any(
+        (ContactImportCandidate deferred) =>
+            deferred.normalizedPhone == candidate.normalizedPhone,
+      )) {
+        setState(() => _deferredCandidates.add(candidate));
       }
     } catch (_) {
       _revertPendingAddedCount(entry);

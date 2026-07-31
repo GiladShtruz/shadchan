@@ -45,10 +45,7 @@ class MonthlyStatsScreen extends StatelessWidget {
     final MonthStats? previous = stats.length > 1 ? stats[1] : null;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('הנתונים שלך החודש'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('הנתונים שלך החודש'), centerTitle: true),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),

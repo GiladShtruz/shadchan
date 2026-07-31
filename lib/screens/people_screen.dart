@@ -9,8 +9,8 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
-import 'package:shadchan/dialogs/match_suggestion_flow.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
@@ -245,13 +245,29 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
   }
 
+  /// The heart on a row opens the same "התאמות" screen the profile does — the
+  /// suggestions list with its filter, quick card and accept/reject actions —
+  /// instead of a picker sheet of its own.
   Future<void> _openMatchSuggestions(
     BuildContext context,
     Person person,
   ) async {
-    await MatchSuggestionFlow.open(context, sourcePerson: person);
+    if (person.gender == Gender.unknown) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('יש לבחור מגדר לאיש הקשר לפני פתיחת התאמות'),
+          ),
+        );
+      return;
+    }
+    await openSuggestionsFor(context, person.id);
   }
 
+  /// Walks the drafts left over from an older version of the app, one dialog
+  /// each. Cancelling one drops it for good: a contact is either completed into
+  /// the database or discarded, never left waiting for details.
   Future<void> _completePendingContactDrafts(
     List<Person> pendingContactDrafts,
   ) async {
@@ -269,7 +285,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
         stepIndex: index + 1,
         stepCount: drafts.length,
       );
-      if (!mounted || !confirmed) {
+      if (!confirmed) {
+        // The record itself is kept (it may be a contact that was only
+        // soft-deleted) but stops waiting for anything.
+        await repository.discardContactDraft(person, deleteRecord: false);
+        return;
+      }
+      if (!mounted) {
         return;
       }
       try {

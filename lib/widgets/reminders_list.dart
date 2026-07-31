@@ -2,18 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/person_reminders.dart';
+import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 
-/// Every reminder that is due, ordered by date so the ones that are due (or
-/// overdue) sit at the top. Combines proposal reminders (on a [MatchIdea]) with
-/// per-person "check on them again" reminders set when someone goes on a break.
-/// Shared by the reminders screen and the reminders panel from the home screen.
+/// The reminders that have come due, oldest first — a reminder set for next
+/// month is not something to look at today, so it is simply not here.
+///
+/// Combines proposal reminders (on a [MatchIdea]) with per-person "check on
+/// them again" reminders set when someone goes on a break. Shared by the
+/// reminders screen and the reminders panel from the home screen.
 class RemindersList extends StatelessWidget {
   const RemindersList({
     super.key,
@@ -36,11 +38,12 @@ class RemindersList extends StatelessWidget {
 
     final List<_ReminderEntry> entries = <_ReminderEntry>[
       for (final MatchIdea match in matchRepository.getAll())
-        if (match.reminderDate != null)
+        if (ReminderAlerts.isDue(match.reminderDate))
           _ReminderEntry.match(match, match.reminderDate!),
       for (final MapEntry<String, DateTime> reminder
           in PersonReminders.all().entries)
-        if (personRepository.getById(reminder.key) != null)
+        if (ReminderAlerts.isDue(reminder.value) &&
+            personRepository.getById(reminder.key) != null)
           _ReminderEntry.person(
             personRepository.getById(reminder.key)!,
             reminder.value,
@@ -245,9 +248,9 @@ class ReminderCard extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 6),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: _HandledButton(onPressed: () => _markHandled(context)),
+              _ReminderActions(
+                onDelete: () => _markHandled(context),
+                onSnooze: () => _snooze(context),
               ),
             ],
           ),
@@ -256,9 +259,18 @@ class ReminderCard extends StatelessWidget {
     );
   }
 
-  /// Marks the reminder as done by clearing it, which is what takes the
-  /// proposal off the active reminders list. Undoable from the snack bar in
-  /// case of a mis-tap.
+  /// Pushes the reminder forward instead of dropping it — the proposal leaves
+  /// the list until the new date comes around.
+  Future<void> _snooze(BuildContext context) async {
+    final MatchRepository repository = context.read<MatchRepository>();
+    final DateTime? date = await ReminderSnoozeDialog.show(context);
+    if (date != null) {
+      await repository.setReminder(match.id, date, note: match.reminderNote);
+    }
+  }
+
+  /// Deletes the reminder, which is what takes the proposal off the list.
+  /// Undoable from the snack bar in case of a mis-tap.
   Future<void> _markHandled(BuildContext context) async {
     final DateTime? previousDate = match.reminderDate;
     if (previousDate == null) {
@@ -281,22 +293,117 @@ class ReminderCard extends StatelessWidget {
   }
 }
 
-/// The "טופל" action shared by both kinds of reminder card.
-class _HandledButton extends StatelessWidget {
-  const _HandledButton({required this.onPressed});
+/// The two answers to a due reminder, shared by both kinds of card: drop it, or
+/// push it forward to a date that suits better.
+class _ReminderActions extends StatelessWidget {
+  const _ReminderActions({
+    required this.onDelete,
+    required this.onSnooze,
+    this.extra,
+  });
 
-  final VoidCallback onPressed;
+  final VoidCallback onDelete;
+  final VoidCallback onSnooze;
+
+  /// An optional third action (WhatsApp, on a person's reminder).
+  final Widget? extra;
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.tonalIcon(
-      onPressed: onPressed,
-      icon: const Icon(Icons.check_circle_outline, size: 18),
-      label: const Text('טופל'),
-      style: FilledButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-      ),
+    final ThemeData theme = Theme.of(context);
+
+    // A Wrap rather than a Row: the labels do not fit side by side on a narrow
+    // phone, and wrapping beats squashing them.
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        FilledButton.tonalIcon(
+          onPressed: onSnooze,
+          icon: const Icon(Icons.schedule, size: 18),
+          label: const Text('הזכר להמשך'),
+          style: FilledButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: onDelete,
+          icon: const Icon(Icons.delete_outline, size: 18),
+          label: const Text('מחק'),
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.error,
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
+        ?extra,
+      ],
+    );
+  }
+}
+
+/// "מתי להזכיר שוב?" — the short list behind "הזכר להמשך".
+abstract final class ReminderSnoozeDialog {
+  static Future<DateTime?> show(BuildContext context) {
+    final DateTime now = DateTime.now();
+    final DateTime base = DateTime(now.year, now.month, now.day);
+    final List<({String label, DateTime date})> options =
+        <({String label, DateTime date})>[
+          (label: 'מחר', date: base.add(const Duration(days: 1))),
+          (label: 'בעוד שבוע', date: base.add(const Duration(days: 7))),
+          (label: 'בעוד שבועיים', date: base.add(const Duration(days: 14))),
+          (
+            label: 'בעוד חודש',
+            date: DateTime(base.year, base.month + 1, base.day),
+          ),
+          (
+            label: 'בעוד 3 חודשים',
+            date: DateTime(base.year, base.month + 3, base.day),
+          ),
+        ];
+
+    return showDialog<DateTime>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('מתי להזכיר שוב?'),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final ({String label, DateTime date}) option in options)
+                ListTile(
+                  leading: const Icon(Icons.schedule),
+                  title: Text(option.label),
+                  onTap: () => Navigator.of(dialogContext).pop(option.date),
+                ),
+              ListTile(
+                leading: const Icon(Icons.calendar_month_outlined),
+                title: const Text('בחירת תאריך'),
+                onTap: () async {
+                  final DateTime? picked = await showDatePicker(
+                    context: dialogContext,
+                    initialDate: base.add(const Duration(days: 1)),
+                    firstDate: base,
+                    lastDate: DateTime(base.year + 5),
+                    locale: const Locale('he'),
+                  );
+                  if (picked != null && dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop(picked);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('ביטול'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -376,26 +483,26 @@ class PersonReminderCard extends StatelessWidget {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              if ((PersonReminders.noteFor(person.id) ?? '')
+                  .isNotEmpty) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(
+                  PersonReminders.noteFor(person.id)!,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
               const SizedBox(height: 6),
-              // A Wrap rather than a Row: three actions do not fit side by side
-              // on a narrow phone, and wrapping beats squashing the labels.
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  _HandledButton(onPressed: () => _markHandled(context)),
-                  TextButton.icon(
-                    onPressed: () => _openWhatsApp(context),
-                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
-                    label: const Text('WhatsApp'),
+              _ReminderActions(
+                onDelete: () => _markHandled(context),
+                onSnooze: () => _snooze(context),
+                extra: TextButton.icon(
+                  onPressed: () => _openWhatsApp(context),
+                  icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
+                  label: const Text('WhatsApp'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
                   ),
-                  TextButton.icon(
-                    onPressed: () => _reschedule(context),
-                    icon: const Icon(Icons.schedule, size: 16),
-                    label: const Text('תזכורת חדשה'),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -412,12 +519,17 @@ class PersonReminderCard extends StatelessWidget {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final PersonRepository repository = context.read<PersonRepository>();
     final DateTime previousDate = date;
+    final String? previousNote = PersonReminders.noteFor(person.id);
 
     await repository.clearPersonReminder(person.id);
 
     _showHandledSnackBar(
       messenger,
-      onUndo: () => repository.setPersonReminder(person.id, previousDate),
+      onUndo: () => repository.setPersonReminder(
+        person.id,
+        previousDate,
+        note: previousNote,
+      ),
     );
   }
 
@@ -432,23 +544,18 @@ class PersonReminderCard extends StatelessWidget {
     }
   }
 
-  Future<void> _reschedule(BuildContext context) async {
+  /// Pushes the "check on them again" reminder forward.
+  Future<void> _snooze(BuildContext context) async {
     final PersonRepository repository = context.read<PersonRepository>();
-    final ReminderChoice? choice = await ReminderPickerSheet.show(
-      context,
-      title: 'מתי לבדוק שוב?',
-      allowClear: true,
-      recommendedLabel: 'עוד חודש',
-      intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
-    );
-    if (choice == null) {
+    final DateTime? date = await ReminderSnoozeDialog.show(context);
+    if (date == null) {
       return;
     }
-    if (choice.date == null) {
-      await repository.clearPersonReminder(person.id);
-    } else {
-      await repository.setPersonReminder(person.id, choice.date!);
-    }
+    await repository.setPersonReminder(
+      person.id,
+      date,
+      note: PersonReminders.noteFor(person.id),
+    );
   }
 }
 
@@ -472,13 +579,13 @@ class EmptyReminders extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'אין תזכורות',
+              'אין תזכורות להיום',
               style: theme.textTheme.titleLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'אפשר להוסיף תזכורת מתוך הצעה, והיא תופיע כאן.',
+              'תזכורת תופיע כאן ביום שקבעת לה, לא לפני כן.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

@@ -556,7 +556,12 @@ class _HeartDivider extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: <Widget>[
-          Expanded(child: CustomPaint(painter: _DottedLinePainter(color: color), size: const Size.fromHeight(1))),
+          Expanded(
+            child: CustomPaint(
+              painter: _DottedLinePainter(color: color),
+              size: const Size.fromHeight(1),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Icon(
@@ -565,7 +570,12 @@ class _HeartDivider extends StatelessWidget {
               color: theme.colorScheme.secondary,
             ),
           ),
-          Expanded(child: CustomPaint(painter: _DottedLinePainter(color: color), size: const Size.fromHeight(1))),
+          Expanded(
+            child: CustomPaint(
+              painter: _DottedLinePainter(color: color),
+              size: const Size.fromHeight(1),
+            ),
+          ),
         ],
       ),
     );

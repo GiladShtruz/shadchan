@@ -141,8 +141,10 @@ class Person extends HiveObject {
   @HiveField(26)
   MaritalStatus? maritalStatus;
 
-  /// Which bundled illustration is shown when there is no profile photo.
-  /// Older records get a stable pseudo-random choice from their id.
+  /// Legacy avatar selection index.
+  ///
+  /// The app now has exactly one bundled fallback per gender, so this remains
+  /// persisted only to keep older Hive records and backups compatible.
   @HiveField(28)
   int avatarIndex;
 

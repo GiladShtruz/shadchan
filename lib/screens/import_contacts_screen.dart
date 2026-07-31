@@ -1,10 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
-import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -494,27 +495,34 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
 
     final PersonRepository repository = context.read<PersonRepository>();
     try {
-      final Person? person = await ContactsImportService.stageSingleCandidate(
-        candidate,
-        repository,
-      );
+      final StagedContact? staged =
+          await ContactsImportService.stageSingleCandidate(
+            candidate,
+            repository,
+          );
 
       if (!mounted) {
         return;
       }
       setState(() => _importingIds.remove(candidate.deviceContactId));
 
-      if (person == null) {
+      if (staged == null) {
         return;
       }
 
-      final bool confirmed = await QuickUpdateDialog.show(context, person);
-      if (!mounted) {
+      final bool confirmed = await QuickUpdateDialog.show(
+        context,
+        staged.person,
+      );
+      if (confirmed) {
+        await repository.activatePendingContactDraft(staged.person);
         return;
       }
-      if (confirmed) {
-        await repository.activatePendingContactDraft(person);
-      } else {
+
+      // Cancelling means the contact was not added — the draft is thrown away
+      // rather than parked in a "waiting for details" list.
+      await ContactsImportService.discardStagedCandidate(staged, repository);
+      if (mounted) {
         setState(() => _handledIds.remove(candidate.deviceContactId));
       }
     } catch (_) {
@@ -569,39 +577,42 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     int addedCount = 0;
     for (int index = 0; index < selected.length; index++) {
       final ContactImportCandidate candidate = selected[index];
-      Person? person;
+      StagedContact? staged;
       try {
-        person = await ContactsImportService.stageSingleCandidate(
+        staged = await ContactsImportService.stageSingleCandidate(
           candidate,
           repository,
         );
       } catch (_) {
-        person = null;
+        staged = null;
       }
       if (!mounted) {
         return;
       }
-      // A null person means the contact was already in the database — there is
+      // A null result means the contact was already in the database — there is
       // nothing to fill in, so the run moves on.
-      if (person == null) {
+      if (staged == null) {
         continue;
       }
 
       final bool confirmed = await QuickUpdateDialog.show(
         context,
-        person,
+        staged.person,
         stepIndex: index + 1,
         stepCount: selected.length,
       );
+      if (confirmed) {
+        await repository.activatePendingContactDraft(staged.person);
+        addedCount++;
+        continue;
+      }
+
+      // Skipped: the draft is discarded, never left waiting for details.
+      await ContactsImportService.discardStagedCandidate(staged, repository);
       if (!mounted) {
         return;
       }
-      if (confirmed) {
-        await repository.activatePendingContactDraft(person);
-        addedCount++;
-      } else {
-        setState(() => _handledIds.remove(candidate.deviceContactId));
-      }
+      setState(() => _handledIds.remove(candidate.deviceContactId));
     }
 
     if (addedCount == 0 || !mounted) {
@@ -610,8 +621,14 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     await ContactsAddedCelebration.show(context, count: addedCount);
   }
 
-  /// Marks every ticked contact as not relevant. They are written to the shared
+  /// Removes every ticked contact from the list. They are written to the shared
   /// skip list, so they stay out of both the list and the swipe deck.
+  ///
+  /// The confirmation is deliberately a one-second note with no button on it: a
+  /// bar that waits for an answer sits over the selection row and makes the
+  /// screen feel stuck. A contact removed by mistake is not lost — searching
+  /// for their name brings them back into the list, and adding them clears the
+  /// removal.
   Future<void> _markSelectedIrrelevant() async {
     final List<ContactImportCandidate> selected = _allCandidates
         .where(
@@ -623,6 +640,10 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       return;
     }
 
+    // Taken before the write: after an await this State's context may already
+    // be gone, and the message must not depend on that.
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+
     setState(() {
       for (final ContactImportCandidate candidate in selected) {
         _handledIds.add(candidate.deviceContactId);
@@ -631,36 +652,13 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       _selectedIds.clear();
     });
     await _saveSkippedPhones();
-    if (!mounted) {
-      return;
-    }
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            selected.length == 1
-                ? '${selected.first.displayName} סומן כלא רלוונטי'
-                : '${selected.length} אנשי קשר סומנו כלא רלוונטיים',
-          ),
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'ביטול',
-            onPressed: () => _restoreMany(selected),
-          ),
-        ),
-      );
-  }
-
-  Future<void> _restoreMany(List<ContactImportCandidate> candidates) async {
-    setState(() {
-      for (final ContactImportCandidate candidate in candidates) {
-        _handledIds.remove(candidate.deviceContactId);
-        _skippedPhones.remove(candidate.normalizedPhone);
-      }
-    });
-    await _saveSkippedPhones();
+    _showBriefSnackBar(
+      selected.length == 1
+          ? '${selected.first.displayName} הוסר מהרשימה'
+          : '${selected.length} אנשי קשר הוסרו מהרשימה',
+      messenger: messenger,
+    );
   }
 
   Future<void> _loadContacts() async {
@@ -803,9 +801,46 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    _showBriefSnackBar(message, duration: const Duration(seconds: 2));
+  }
+
+  /// A short confirmation that always goes away on its own.
+  ///
+  /// Every previous bar is cleared first so nothing can queue up behind this
+  /// one, it floats above the bottom edge instead of covering the selection
+  /// row, and a guard timer closes it by hand in case the messenger's own timer
+  /// never fires — which is what made the message look stuck.
+  void _showBriefSnackBar(
+    String message, {
+    Duration duration = const Duration(seconds: 1),
+    ScaffoldMessengerState? messenger,
+  }) {
+    final ScaffoldMessengerState? target =
+        messenger ?? (mounted ? ScaffoldMessenger.of(context) : null);
+    if (target == null) {
+      return;
+    }
+
+    target.clearSnackBars();
+    final ScaffoldFeatureController<SnackBar, SnackBarClosedReason> controller =
+        target.showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: duration,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          ),
+        );
+
+    bool closed = false;
+    unawaited(
+      controller.closed.then((SnackBarClosedReason _) => closed = true),
+    );
+    Timer(duration + const Duration(milliseconds: 300), () {
+      if (!closed) {
+        controller.close();
+      }
+    });
   }
 }
 
@@ -1088,7 +1123,7 @@ class _SelectionActionBar extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
                       icon: const Icon(Icons.close, size: 17),
-                      label: const Text('לא רלוונטי'),
+                      label: const Text('הסר'),
                     ),
                     const SizedBox(width: 6),
                     FilledButton.icon(

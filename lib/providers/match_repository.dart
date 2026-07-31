@@ -10,6 +10,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:uuid/uuid.dart';
@@ -246,10 +247,14 @@ class MatchRepository extends ChangeNotifier {
 
   /// Moves a proposal to "בהמתנה" with the reason the matchmaker picked, and
   /// optionally when to look at it again.
+  /// The reason is optional: a matchmaker may simply want the proposal to
+  /// wait, and being forced to justify it is what makes people avoid the
+  /// action altogether.
   Future<void> setWaiting(
     String matchId, {
-    required String reason,
+    String? reason,
     DateTime? checkAgainOn,
+    String? reminderNote,
   }) async {
     final MatchIdea? match = getById(matchId);
     if (match == null) {
@@ -257,16 +262,24 @@ class MatchRepository extends ChangeNotifier {
     }
 
     final DateTime now = DateTime.now();
+    final String trimmedReason = (reason ?? '').trim();
+    final String note = (reminderNote ?? '').trim();
     match
       ..status = MatchStatus.unavailable
-      ..waitingReason = reason
+      ..waitingReason = trimmedReason.isEmpty ? null : trimmedReason
       ..reminderDate = checkAgainOn
-      ..reminderNote = checkAgainOn == null ? null : reason
+      ..reminderNote = checkAgainOn == null
+          ? null
+          : (note.isNotEmpty
+                ? note
+                : (trimmedReason.isEmpty ? null : trimmedReason))
       ..updatedAt = now;
     await match.save();
     await _createNote(
       matchId: matchId,
-      text: 'ההצעה בהמתנה — $reason',
+      text: trimmedReason.isEmpty
+          ? 'ההצעה עברה להמתנה'
+          : 'ההצעה בהמתנה — $trimmedReason',
       createdAt: now,
       isAutomatic: true,
     );
@@ -550,6 +563,7 @@ class MatchRepository extends ChangeNotifier {
     await _matchBox.delete(matchId);
     HomeBoardStore.instance.forget(HomeItemKind.idea, matchId);
     RecentActivityStore.instance.forget(HomeItemKind.idea, matchId);
+    await ReminderAlerts.forget(matchId);
     notifyListeners();
     _refreshNotifications();
   }
@@ -681,9 +695,9 @@ class MatchRepository extends ChangeNotifier {
     NotificationService.scheduleMatchReminders(allMatches);
   }
 
-  /// Feeds the home screen's "חזרה מהירה" strip. Recorded here rather than at
-  /// the call sites so every path that really changes a proposal shows up, with
-  /// no extra bookkeeping asked of the matchmaker.
+  /// Feeds the home screen's "הפעולות האחרונות שלך" strip. Recorded here
+  /// rather than at the call sites so every path that really changes a
+  /// proposal shows up, with no extra bookkeeping asked of the matchmaker.
   void _recordActivity(String matchId, HomeActivityAction action) {
     RecentActivityStore.instance.record(
       kind: HomeItemKind.idea,

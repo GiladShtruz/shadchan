@@ -35,6 +35,17 @@ import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/person_photo_carousel.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
+/// Opens the "התאמות" view for a person from anywhere in the app — the heart on
+/// a row in המאגר שלי lands on exactly the same screen the profile's own
+/// התאמות button opens, so there is only one matches experience to learn.
+Future<void> openSuggestionsFor(BuildContext context, String personId) {
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (BuildContext context) => _SuggestionsPage(personId: personId),
+    ),
+  );
+}
+
 class PersonDetailScreen extends StatefulWidget {
   const PersonDetailScreen({
     super.key,
@@ -62,7 +73,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
-    // Feeds the home screen's "חזרה מהירה" strip. Deferred past this frame:
+    // Feeds the home screen's "הפעולות האחרונות שלך" strip. Deferred past this frame:
     // the home screen is still alive behind this route, and notifying it from
     // inside initState would rebuild it mid-build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -185,6 +196,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       appBar: AppBar(
         backgroundColor: _profileCanvasColor(theme),
         foregroundColor: _profileTextColor(theme),
+        titleTextStyle: _profileAppBarTitleStyle(theme),
         centerTitle: true,
         // Compact bar: once the big header scrolls away, only the profile
         // name stays pinned at the top.
@@ -636,6 +648,18 @@ Color _profileTextColor(ThemeData theme) {
   return theme.brightness == Brightness.dark
       ? theme.colorScheme.onSurface
       : _profileTextLight;
+}
+
+/// The title style for the profile's own app bars.
+///
+/// The app-wide [AppBarTheme] bakes the banner's cream text colour straight
+/// into `titleTextStyle`, and that wins over an `AppBar.foregroundColor` — so a
+/// bar sitting on the cream canvas has to state the dark title colour itself,
+/// or the title reads cream on cream.
+TextStyle? _profileAppBarTitleStyle(ThemeData theme) {
+  final TextStyle? style =
+      theme.appBarTheme.titleTextStyle ?? theme.textTheme.titleLarge;
+  return style?.copyWith(color: _profileTextColor(theme));
 }
 
 Color _profileMutedColor(ThemeData theme) {
@@ -2069,6 +2093,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
       appBar: AppBar(
         backgroundColor: _profileCanvasColor(theme),
         foregroundColor: _profileTextColor(theme),
+        titleTextStyle: _profileAppBarTitleStyle(theme),
         centerTitle: true,
         title: Text('התאמות · ${person.firstName.trim()}'),
       ),
@@ -2575,14 +2600,37 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Text(
-                              candidate.fullName.trim(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: _profileTextColor(theme),
-                                fontWeight: FontWeight.w800,
-                              ),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: Text(
+                                    candidate.fullName.trim(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      color: _profileTextColor(theme),
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                // The card expander sits up on the name line
+                                // rather than as a third round button — the
+                                // action row stays "לא מתאים" and "פתיחת הצעה"
+                                // only.
+                                if (hasCard)
+                                  _CardExpanderButton(
+                                    expanded: expanded,
+                                    onPressed: () {
+                                      setState(() {
+                                        if (!_expandedIds.remove(
+                                          candidate.id,
+                                        )) {
+                                          _expandedIds.add(candidate.id);
+                                        }
+                                      });
+                                    },
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 3),
                             Text(
@@ -2623,28 +2671,6 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                         foregroundColor: _profileGoldTextLight,
                         onPressed: () => widget.onAccept(candidate),
                       ),
-                      if (hasCard) ...<Widget>[
-                        const SizedBox(width: 4),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          tooltip: expanded ? 'סגירת כרטיס' : 'הצגת כרטיס',
-                          icon: AnimatedRotation(
-                            turns: expanded ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            child: Icon(
-                              Icons.keyboard_arrow_down,
-                              color: _profileMutedColor(theme),
-                            ),
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              if (!_expandedIds.remove(candidate.id)) {
-                                _expandedIds.add(candidate.id);
-                              }
-                            });
-                          },
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -2658,6 +2684,41 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
           ),
         );
       },
+    );
+  }
+}
+
+/// The small chevron on a suggestion's name line that opens their card inline.
+/// Deliberately not one of the round action buttons: three of those in a row
+/// read as a crowd, and this one is a view, not a decision.
+class _CardExpanderButton extends StatelessWidget {
+  const _CardExpanderButton({required this.expanded, required this.onPressed});
+
+  final bool expanded;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Tooltip(
+      message: expanded ? 'סגירת כרטיס' : 'הצגת כרטיס',
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: AnimatedRotation(
+            turns: expanded ? 0.5 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: Icon(
+              Icons.keyboard_arrow_down,
+              size: 20,
+              color: _profileMutedColor(theme),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2983,7 +3044,6 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
   Gender _gender = Gender.unknown;
   ReligiousLevel? _religiousLevel;
   String? _religiousLevelOther;
-  int _avatarIndex = 0;
   bool _isSaving = false;
 
   List<String> _photoPaths = <String>[];
@@ -3021,7 +3081,6 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
       _gender = person.gender;
       _religiousLevel = person.religiousLevel;
       _religiousLevelOther = person.religiousLevelOther;
-      _avatarIndex = person.avatarIndex;
       _photoPaths = List<String>.from(person.photosPaths);
     }
     for (final FocusNode node in _focusNodes) {
@@ -3085,7 +3144,6 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
           _inquiryContactPhoneController.text,
         )
         ..description = _normalizedText(_descriptionController.text)
-        ..avatarIndex = _avatarIndex
         ..photosPaths = List<String>.from(_photoPaths);
       await repository.update(person);
       _newPhotoPaths.clear();
@@ -3172,6 +3230,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
         appBar: AppBar(
           backgroundColor: _profileCanvasColor(theme),
           foregroundColor: _profileTextColor(theme),
+          titleTextStyle: _profileAppBarTitleStyle(theme),
           title: const Text('עריכת כרטיס'),
           centerTitle: true,
           actions: <Widget>[
@@ -3198,11 +3257,6 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
                   onAddPhoto: _pickPhotos,
                   onSetPrimary: _setPrimaryPhoto,
                   onRemove: _removePhoto,
-                  gender: _gender,
-                  avatarIndex: _avatarIndex,
-                  onAvatarChanged: (int index) {
-                    setState(() => _avatarIndex = index);
-                  },
                 ),
               ),
               _Section(
@@ -3900,6 +3954,7 @@ class _PersonHistoryPageState extends State<_PersonHistoryPage> {
       appBar: AppBar(
         backgroundColor: _profileCanvasColor(theme),
         foregroundColor: _profileTextColor(theme),
+        titleTextStyle: _profileAppBarTitleStyle(theme),
         centerTitle: true,
         title: const Text('היסטוריה'),
       ),

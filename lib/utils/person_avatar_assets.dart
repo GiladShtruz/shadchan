@@ -1,23 +1,16 @@
 import 'package:shadchan/utils/enums.dart';
 
-/// Bundled illustrated fallbacks for people who do not have a photo.
+/// The fixed bundled fallbacks for people who do not have a photo.
 ///
-/// The saved value is an index rather than an asset path, so asset filenames
-/// can be cleaned up later without invalidating existing cards.
+/// There is intentionally exactly one avatar per gender. [avatarIndex] remains
+/// in the persisted model only for backwards compatibility with older data.
 abstract final class PersonAvatarAssets {
   static const List<String> male = <String>[
-    'assets/male_pic/ChatGPT Image Jul 23, 2026, 11_03_20 PM (1).png',
-    'assets/male_pic/ChatGPT Image Jul 23, 2026, 11_12_08 PM (1).png',
-    'assets/male_pic/ChatGPT Image Jul 23, 2026, 11_12_08 PM (2).png',
-    'assets/male_pic/ChatGPT Image Jul 23, 2026, 11_12_09 PM (4).png',
-    'assets/male_pic/ChatGPT Image Jul 23, 2026, 11_12_10 PM (6).png',
+    'assets/male_pic/default_male_avatar.png',
   ];
 
   static const List<String> female = <String>[
-    'assets/female_pic/ChatGPT Image Jul 23, 2026, 11_03_20 PM (2).png',
-    'assets/female_pic/ChatGPT Image Jul 23, 2026, 11_12_09 PM (3).png',
-    'assets/female_pic/ChatGPT Image Jul 23, 2026, 11_12_09 PM (5).png',
-    'assets/female_pic/ChatGPT Image Jul 23, 2026, 11_12_10 PM (7).png',
+    'assets/female_pic/default_female_avatar.png',
   ];
 
   static List<String> forGender(Gender gender) {
@@ -28,21 +21,8 @@ abstract final class PersonAvatarAssets {
     };
   }
 
-  /// A stable pseudo-random initial choice. It feels random across contacts,
-  /// but remains unchanged across launches and after backup restore.
-  static int defaultIndex(String personId, Gender gender) {
-    final List<String> assets = forGender(gender);
-    if (assets.isEmpty) {
-      return 0;
-    }
-
-    int hash = 0x811c9dc5;
-    for (final int unit in '$personId:${gender.name}'.codeUnits) {
-      hash ^= unit;
-      hash = (hash * 0x01000193) & 0x7fffffff;
-    }
-    return hash % assets.length;
-  }
+  /// Kept as an API for existing constructors; there is no longer a choice.
+  static int defaultIndex(String _, Gender _) => 0;
 
   static int normalizedIndex(int index, Gender gender) {
     final int count = forGender(gender).length;

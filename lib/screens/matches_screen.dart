@@ -386,20 +386,20 @@ class _MatchesScreenState extends State<MatchesScreen> {
       female = personA;
     }
 
-    // The card is now a quiet summary: no last-updated line, no reminder or
+    // The card is a quiet summary: no last-updated line, no reminder or
     // status-update buttons — those all live on the proposal-detail screen.
-    // The only card action kept is "טופל" while a reminder is actually due.
+    // A card the matchmaker asked to be reminded about carries no status tag
+    // and no "handled" tick either; it only stands out, because the one thing
+    // to do with it is open it.
     return MatchIdeaCard(
       match: match,
       male: male,
       female: female,
       compact: compact,
-      showStatusTag: showStatusTag || isDueReminder,
+      showStatusTag: showStatusTag && !isDueReminder,
+      highlighted: isDueReminder,
       onTap: () => context.push('/matches/${match.id}'),
       onOpenWhatsApp: _openWhatsApp,
-      onMarkReminderHandled: isDueReminder
-          ? () => context.read<MatchRepository>().setReminder(match.id, null)
-          : null,
     );
   }
 

@@ -76,24 +76,18 @@ class ContactImportCandidate {
   }
 }
 
-class ContactImportSelection {
-  const ContactImportSelection({
-    required this.candidate,
-    this.gender = Gender.unknown,
-  });
+/// A contact staged for import, waiting for its quick details to be confirmed.
+///
+/// It is deliberately short-lived: the flow that created it either confirms it
+/// into the database or discards it before the screen is left.
+class StagedContact {
+  const StagedContact({required this.person, required this.isNewRecord});
 
-  final ContactImportCandidate candidate;
-  final Gender gender;
-}
+  final Person person;
 
-class ContactImportResult {
-  const ContactImportResult({
-    required this.addedCount,
-    required this.skippedExistingCount,
-  });
-
-  final int addedCount;
-  final int skippedExistingCount;
+  /// True when the draft was written by this staging call, false when an
+  /// already existing (soft-deleted) contact was reused.
+  final bool isNewRecord;
 }
 
 abstract final class ContactsImportService {
@@ -311,44 +305,17 @@ abstract final class ContactsImportService {
     return (firstName: parts.first, lastName: parts.sublist(1).join(' '));
   }
 
-  static Future<Person?> importSingleCandidate(
-    ContactImportCandidate candidate,
-    PersonRepository personRepository, {
-    Gender gender = Gender.unknown,
-    String source = 'סריקה',
-  }) async {
-    final Person? existing = personRepository.findByPhone(candidate.phone);
-    if (existing != null) {
-      if (existing.hidden) {
-        return personRepository.restoreHidden(existing.id);
-      }
-      return null;
-    }
-
-    final ({String firstName, String lastName}) parsedName = splitDisplayName(
-      candidate.displayName,
-    );
-    final DateTime now = DateTime.now();
-    final Person person = Person(
-      id: _uuid.v4(),
-      firstName: parsedName.firstName,
-      lastName: parsedName.lastName,
-      gender: gender,
-      phone: candidate.phone.trim(),
-      source: source,
-      createdAt: now,
-      updatedAt: now,
-      needsReview: true,
-    );
-
-    await personRepository.addImported(person);
-    await personRepository.finishImport();
-    return person;
-  }
-
-  /// Creates or reuses a hidden draft. The contact only becomes part of the
-  /// visible database after [PersonRepository.activatePendingContactDraft].
-  static Future<Person?> stageSingleCandidate(
+  /// Creates or reuses a hidden draft for one contact.
+  ///
+  /// A draft is not part of the database: it only becomes a real contact once
+  /// the quick details are confirmed ([PersonRepository.activatePendingContactDraft]).
+  /// If they are not, the caller must hand the result back to
+  /// [discardStagedCandidate] — nothing is ever left waiting to be filled in.
+  ///
+  /// [StagedContact.isNewRecord] tells the two cases apart: a draft written
+  /// here for the first time can be deleted outright, while a contact that was
+  /// only soft-deleted keeps everything it already had.
+  static Future<StagedContact?> stageSingleCandidate(
     ContactImportCandidate candidate,
     PersonRepository personRepository, {
     Gender gender = Gender.unknown,
@@ -363,7 +330,7 @@ abstract final class ContactsImportService {
         ..needsReview = true
         ..source = source;
       await personRepository.savePendingContactDraft(existing);
-      return existing;
+      return StagedContact(person: existing, isNewRecord: false);
     }
 
     final ({String firstName, String lastName}) parsedName = splitDisplayName(
@@ -384,63 +351,20 @@ abstract final class ContactsImportService {
     );
 
     await personRepository.savePendingContactDraft(person);
-    return person;
+    return StagedContact(person: person, isNewRecord: true);
   }
 
-  static Future<ContactImportResult> importSelections(
-    List<ContactImportSelection> selections,
+  /// Undoes [stageSingleCandidate] when the matchmaker cancels the details:
+  /// a draft written for this run is deleted, and a contact that already
+  /// existed goes back to being soft-deleted. Either way nothing is left in a
+  /// "waiting for details" state.
+  static Future<void> discardStagedCandidate(
+    StagedContact staged,
     PersonRepository personRepository,
-  ) async {
-    int addedCount = 0;
-    int skippedExistingCount = 0;
-    final Set<String> importedPhones = <String>{};
-
-    for (final ContactImportSelection selection in selections) {
-      final ContactImportCandidate candidate = selection.candidate;
-      final String normalizedPhone = candidate.normalizedPhone;
-      if (importedPhones.contains(normalizedPhone)) {
-        skippedExistingCount++;
-        continue;
-      }
-
-      final Person? existing = personRepository.findByPhone(candidate.phone);
-      if (existing != null) {
-        importedPhones.add(normalizedPhone);
-        if (existing.hidden) {
-          await personRepository.restoreHidden(existing.id);
-          addedCount++;
-        } else {
-          skippedExistingCount++;
-        }
-        continue;
-      }
-
-      importedPhones.add(normalizedPhone);
-      final ({String firstName, String lastName}) parsedName = splitDisplayName(
-        candidate.displayName,
-      );
-      final DateTime now = DateTime.now();
-      final Person person = Person(
-        id: _uuid.v4(),
-        firstName: parsedName.firstName,
-        lastName: parsedName.lastName,
-        gender: selection.gender,
-        phone: candidate.phone.trim(),
-        source: 'אנשי קשר',
-        createdAt: now,
-        updatedAt: now,
-        needsReview: true,
-      );
-
-      await personRepository.addImported(person);
-      addedCount++;
-    }
-
-    await personRepository.finishImport();
-
-    return ContactImportResult(
-      addedCount: addedCount,
-      skippedExistingCount: skippedExistingCount,
+  ) {
+    return personRepository.discardContactDraft(
+      staged.person,
+      deleteRecord: staged.isNewRecord,
     );
   }
 
