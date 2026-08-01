@@ -1,5 +1,6 @@
 import Flutter
 import Foundation
+import UIKit
 import UniformTypeIdentifiers
 
 final class IncomingSharedProfileBridge: NSObject, FlutterStreamHandler {
@@ -40,7 +41,22 @@ final class IncomingSharedProfileBridge: NSObject, FlutterStreamHandler {
     )
     eventChannel.setStreamHandler(self)
 
+    // The fallback path for the share extension: if iOS refuses to let it open
+    // the app, the share still sits in the app group and the matchmaker opens
+    // the app themselves. Observing the notification rather than overriding
+    // sceneWillEnterForeground keeps this working whichever scene is active.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(sceneWillEnterForeground),
+      name: UIScene.willEnterForegroundNotification,
+      object: nil
+    )
+
     isConfigured = true
+  }
+
+  @objc private func sceneWillEnterForeground() {
+    drainSharedInbox()
   }
 
   func handleIncomingFile(url: URL) {
@@ -53,6 +69,41 @@ final class IncomingSharedProfileBridge: NSObject, FlutterStreamHandler {
       "filePaths": [copiedPath],
     ])
     flushPendingDrafts()
+  }
+
+  /// Picks up everything the share extension parked in the app group and turns
+  /// it into drafts, in the same shape `handleIncomingFile` produces.
+  ///
+  /// Files are copied out of the group container into this app's own temporary
+  /// directory before the container copy is dropped, so Flutter keeps seeing
+  /// paths it owns and the shared container never accumulates images.
+  func drainSharedInbox() {
+    for payload in SharedProfileInbox.takeAll() {
+      let copiedPaths = payload.fileURLs.compactMap { copyToTemporaryDirectory(url: $0) }
+      SharedProfileInbox.discard(payload)
+
+      // A share whose files all failed to copy and that carried no text has
+      // nothing left to offer; Flutter would drop it anyway.
+      guard !copiedPaths.isEmpty || payload.text != nil else {
+        continue
+      }
+
+      var draft: [String: Any] = [
+        "id": payload.id,
+        "filePaths": copiedPaths,
+      ]
+      if let text = payload.text {
+        draft["text"] = text
+      }
+      pendingDrafts.append(draft)
+    }
+
+    flushPendingDrafts()
+  }
+
+  /// Whether [url] is the share extension asking the app to come forward.
+  static func isSharedInboxURL(_ url: URL) -> Bool {
+    url.scheme?.lowercased() == SharedProfileInbox.hostAppURLScheme
   }
 
   static func canHandle(url: URL) -> Bool {

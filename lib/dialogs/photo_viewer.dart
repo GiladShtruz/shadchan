@@ -109,7 +109,7 @@ class _PhotoViewerState extends State<PhotoViewer> {
                       onPressed: _currentIndex == 0 ? null : _setCurrentPrimary,
                       tooltip: _currentIndex == 0
                           ? 'זו התמונה הראשית'
-                          : 'בחר כתמונה ראשית',
+                          : 'הגדרה כתמונה ראשית',
                       icon: Icon(
                         _currentIndex == 0 ? Icons.star : Icons.star_border,
                         color: _currentIndex == 0 ? Colors.amber : Colors.white,
@@ -182,10 +182,6 @@ class _PhotoViewerState extends State<PhotoViewer> {
       _currentIndex = 0;
     });
     _pageController.jumpToPage(0);
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('התמונה הראשית עודכנה')));
   }
 
   Future<void> _deleteCurrentPhoto() async {

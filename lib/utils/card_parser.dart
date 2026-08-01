@@ -87,6 +87,38 @@ abstract final class CardParser {
     );
   }
 
+  /// Applies this parser's plausibility rules to a card that was produced
+  /// somewhere else — today, by the Gemini fallback in `AiCardParser`.
+  ///
+  /// A language model will happily return an age of 300 or a height of 40
+  /// because the card said so, and it has no equivalent of the checks the
+  /// regex passes above run inline. Routing its output through here means both
+  /// parsers reject the same nonsense, so the form cannot be filled with a
+  /// value the local parser would have thrown away. Anything implausible
+  /// becomes null rather than an error: a card with one bad field should still
+  /// contribute its good ones.
+  static ParsedCard sanitize(ParsedCard card) {
+    return ParsedCard(
+      firstName: _cleanText(card.firstName),
+      lastName: _cleanText(card.lastName),
+      age: _isPlausibleAge(card.age) ? card.age : null,
+      gender: card.gender,
+      city: _cleanText(card.city),
+      // Passed through the same reader the regex pass uses, so a model that
+      // answers in metres ("1.78") lands on the same centimetres as a model
+      // that answers in centimetres.
+      heightCm: _heightFrom(card.heightCm?.toString()),
+      maritalStatus: card.maritalStatus,
+      inquiryContactName: _cleanText(card.inquiryContactName),
+      inquiryContactPhone: _normalizePhone(card.inquiryContactPhone),
+    );
+  }
+
+  static String? _cleanText(String? value) {
+    final String? trimmed = value?.trim();
+    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+  }
+
   // --- Label pass ---------------------------------------------------------
 
   static const List<String> _nameLabels = <String>[

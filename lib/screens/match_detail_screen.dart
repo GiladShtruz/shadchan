@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
+import 'package:shadchan/dialogs/match_outcome_dialog.dart';
 import 'package:shadchan/dialogs/reminder_note_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -179,12 +180,17 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                 PopupMenuItem<String>(
                   value: 'board',
+                  height: HomeBoardActions.menuItemHeight,
                   child: Row(
                     children: <Widget>[
                       const Icon(Icons.push_pin_outlined),
                       const SizedBox(width: 10),
-                      Text(
-                        HomeBoardActions.menuLabel(HomeItemKind.idea, match.id),
+                      Expanded(
+                        child: HomeBoardActions.menuItemChild(
+                          context,
+                          HomeItemKind.idea,
+                          match.id,
+                        ),
                       ),
                     ],
                   ),
@@ -899,10 +905,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     MatchStatus status,
   ) async {
     final ({MatchOutcomeParty party, String note})? result =
-        await showDialog<({MatchOutcomeParty party, String note})>(
-          context: context,
-          builder: (BuildContext context) => _OutcomeDialog(status: status),
-        );
+        await MatchOutcomeDialog.show(context, status);
     if (result == null) return;
     await repository.recordOutcome(
       match.id,
@@ -2471,7 +2474,7 @@ class _JournalComposer extends StatelessWidget {
             focusNode: focusNode,
             minLines: 1,
             maxLines: 4,
-            decoration: const InputDecoration(hintText: 'הוסיפו הערה ליומן...'),
+            decoration: const InputDecoration(hintText: 'הוספת הערה ליומן...'),
             onSubmitted: (_) => onSend(),
           ),
         ),
@@ -2482,88 +2485,6 @@ class _JournalComposer extends StatelessWidget {
           icon: const Icon(Icons.send_rounded, size: 19),
         ),
       ],
-    );
-  }
-}
-
-class _OutcomeDialog extends StatefulWidget {
-  const _OutcomeDialog({required this.status});
-
-  final MatchStatus status;
-
-  @override
-  State<_OutcomeDialog> createState() => _OutcomeDialogState();
-}
-
-class _OutcomeDialogState extends State<_OutcomeDialog> {
-  final TextEditingController _noteController = TextEditingController();
-  MatchOutcomeParty _party = MatchOutcomeParty.unknown;
-
-  @override
-  void dispose() {
-    _noteController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        widget.status == MatchStatus.dated
-            ? 'יצאו ולא המשיכו'
-            : 'ההצעה לא התקדמה',
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text('מי סיים?'),
-            _option(MatchOutcomeParty.him, 'הוא'),
-            _option(MatchOutcomeParty.her, 'היא'),
-            _option(MatchOutcomeParty.mutual, 'הדדי'),
-            _option(MatchOutcomeParty.unknown, 'לא ידוע'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _noteController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'סיבה או הערה (אופציונלי)',
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('ביטול'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(
-            context,
-          ).pop((party: _party, note: _noteController.text.trim())),
-          child: const Text('שמירה'),
-        ),
-      ],
-    );
-  }
-
-  Widget _option(MatchOutcomeParty value, String label) {
-    final bool selected = _party == value;
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        selected
-            ? Icons.radio_button_checked_rounded
-            : Icons.radio_button_unchecked_rounded,
-        color: selected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-      title: Text(label),
-      onTap: () => setState(() => _party = value),
     );
   }
 }

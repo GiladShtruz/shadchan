@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>CFBundleDevelopmentRegion</key>
+		<string>$(DEVELOPMENT_LANGUAGE)</string>
+		<!-- The name shown in the iOS share sheet, so it must match the launcher
+		     label rather than the target name. -->
+		<key>CFBundleDisplayName</key>
+		<string>שדכן</string>
+		<key>CFBundleExecutable</key>
+		<string>$(EXECUTABLE_NAME)</string>
+		<key>CFBundleIdentifier</key>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<key>CFBundleInfoDictionaryVersion</key>
+		<string>6.0</string>
+		<key>CFBundleLocalizations</key>
+		<array>
+			<string>he</string>
+		</array>
+		<key>CFBundleName</key>
+		<string>$(PRODUCT_NAME)</string>
+		<key>CFBundlePackageType</key>
+		<string>XPC!</string>
+		<!-- Kept in step with the app: an extension whose version does not match
+		     its container app is rejected at upload. -->
+		<key>CFBundleShortVersionString</key>
+		<string>$(FLUTTER_BUILD_NAME)</string>
+		<key>CFBundleVersion</key>
+		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>NSExtension</key>
+		<dict>
+			<key>NSExtensionAttributes</key>
+			<dict>
+				<!-- Mirrors the Android intent filters: text/plain, image/*, and
+				     multiple images. Links are accepted too, since a WhatsApp
+				     share can be a bare link. -->
+				<key>NSExtensionActivationRule</key>
+				<dict>
+					<key>NSExtensionActivationSupportsText</key>
+					<true/>
+					<key>NSExtensionActivationSupportsImageWithMaxCount</key>
+					<integer>20</integer>
+					<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+					<integer>1</integer>
+				</dict>
+			</dict>
+			<key>NSExtensionPointIdentifier</key>
+			<string>com.apple.share-services</string>
+			<!-- A principal class instead of NSExtensionMainStoryboard: the
+			     extension has no UI of its own, it parks the share and opens the
+			     app. -->
+			<key>NSExtensionPrincipalClass</key>
+			<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+		</dict>
+	</dict>
+</plist>

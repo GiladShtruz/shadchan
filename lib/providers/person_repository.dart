@@ -492,6 +492,7 @@ class PersonRepository extends ChangeNotifier {
     String text, {
     String? relatedPersonId,
     String? relatedMatchId,
+    DateTime? createdAt,
   }) async {
     final Box<PersonEvent>? eventBox = _eventBox;
     if (eventBox == null) {
@@ -502,7 +503,7 @@ class PersonRepository extends ChangeNotifier {
       personId: personId,
       type: type,
       text: text,
-      createdAt: DateTime.now(),
+      createdAt: createdAt ?? DateTime.now(),
       relatedPersonId: relatedPersonId,
       relatedMatchId: relatedMatchId,
     );

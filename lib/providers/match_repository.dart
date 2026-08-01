@@ -220,6 +220,7 @@ class MatchRepository extends ChangeNotifier {
     String text, {
     String? relatedPersonId,
     String? relatedMatchId,
+    DateTime? createdAt,
   })?
   logPersonEvent;
 
@@ -364,73 +365,137 @@ class MatchRepository extends ChangeNotifier {
     final PersonEventType eventType = dated
         ? PersonEventType.dated
         : PersonEventType.rejected;
-    if (male != null) {
-      await logPersonEvent?.call(
-        male.id,
-        eventType,
-        _historyLine(
-          selfIsMale: true,
-          otherName: femaleName,
-          party: party,
-          dated: dated,
-          note: trimmedNote,
-        ),
-        relatedPersonId: female?.id,
-        relatedMatchId: match.id,
-      );
-    }
-    if (female != null) {
-      await logPersonEvent?.call(
-        female.id,
-        eventType,
-        _historyLine(
-          selfIsMale: false,
-          otherName: maleName,
-          party: party,
-          dated: dated,
-          note: trimmedNote,
-        ),
-        relatedPersonId: male?.id,
-        relatedMatchId: match.id,
-      );
-    }
+    await _logOutcomeHistory(
+      person: male,
+      otherPerson: female,
+      otherName: femaleName,
+      selfIsMale: true,
+      eventType: eventType,
+      party: party,
+      dated: dated,
+      note: trimmedNote,
+      matchId: match.id,
+    );
+    await _logOutcomeHistory(
+      person: female,
+      otherPerson: male,
+      otherName: maleName,
+      selfIsMale: false,
+      eventType: eventType,
+      party: party,
+      dated: dated,
+      note: trimmedNote,
+      matchId: match.id,
+    );
   }
 
-  String _historyLine({
+  /// Writes one candidate's side of a closing as **two** history entries: the
+  /// closing itself ("נסגרה הצעה עם שושנה") and, on its own line, why
+  /// ("שושנה דחתה כי הוא תורני מדי עבורה"). Keeping them apart means the
+  /// history reads as a sequence of events rather than one long sentence, and
+  /// the closing line stays uniform whatever the reason was.
+  Future<void> _logOutcomeHistory({
+    required Person? person,
+    required Person? otherPerson,
+    required String otherName,
+    required bool selfIsMale,
+    required PersonEventType eventType,
+    required MatchOutcomeParty party,
+    required bool dated,
+    required String note,
+    required String matchId,
+  }) async {
+    if (person == null) {
+      return;
+    }
+
+    // The history feed sorts on createdAt, and both lines are written inside
+    // the same millisecond often enough that letting them default would let
+    // the reason drift away from the closing it explains. Stamping them a
+    // millisecond apart keeps the pair together and in order.
+    final DateTime closedAt = DateTime.now();
+
+    await logPersonEvent?.call(
+      person.id,
+      eventType,
+      'נסגרה הצעה עם $otherName',
+      relatedPersonId: otherPerson?.id,
+      relatedMatchId: matchId,
+      createdAt: closedAt,
+    );
+
+    final String? reason = _outcomeReasonLine(
+      selfIsMale: selfIsMale,
+      otherName: otherName,
+      party: party,
+      dated: dated,
+      note: note,
+    );
+    if (reason == null) {
+      return;
+    }
+
+    await logPersonEvent?.call(
+      person.id,
+      eventType,
+      reason,
+      relatedPersonId: otherPerson?.id,
+      relatedMatchId: matchId,
+      createdAt: closedAt.add(const Duration(milliseconds: 1)),
+    );
+  }
+
+  /// The "why" line that follows a closing, or null when the closing line
+  /// already says everything there is to say.
+  ///
+  /// With a reason it reads as the closing line's follow-up, so the object is
+  /// left out — "שושנה דחתה כי הוא תורני מדי עבורה". Without one it has to
+  /// stand on its own, so it keeps "את ההצעה". The other side is the opposite
+  /// gender by definition, which is what picks the verb form.
+  String? _outcomeReasonLine({
     required bool selfIsMale,
     required String otherName,
     required MatchOutcomeParty party,
     required bool dated,
     required String note,
   }) {
-    final String base;
+    final bool selfEnded =
+        (selfIsMale && party == MatchOutcomeParty.him) ||
+        (!selfIsMale && party == MatchOutcomeParty.her);
+    final bool otherEnded =
+        (selfIsMale && party == MatchOutcomeParty.her) ||
+        (!selfIsMale && party == MatchOutcomeParty.him);
+    final String because = note.isEmpty ? '' : ' כי $note';
+
     if (dated) {
-      base = selfIsMale
-          ? 'יצא עם $otherName ולא המשיכו'
-          : 'יצאה עם $otherName ולא המשיכו';
-    } else {
-      final bool selfEnded =
-          (selfIsMale && party == MatchOutcomeParty.him) ||
-          (!selfIsMale && party == MatchOutcomeParty.her);
-      final bool otherEnded =
-          (selfIsMale && party == MatchOutcomeParty.her) ||
-          (!selfIsMale && party == MatchOutcomeParty.him);
-      if (party == MatchOutcomeParty.mutual) {
-        base = 'ההצעה עם $otherName לא התאימה (הדדי)';
-      } else if (selfEnded) {
-        base = selfIsMale
-            ? 'דחה את ההצעה עם $otherName'
-            : 'דחתה את ההצעה עם $otherName';
-      } else if (otherEnded) {
-        // The other side ended it; phrase by their gender (opposite of self).
-        base = selfIsMale
-            ? '$otherName דחתה את ההצעה'
-            : '$otherName דחה את ההצעה';
-      } else {
-        base = 'ההצעה עם $otherName נדחתה';
+      if (selfEnded) {
+        return selfIsMale ? 'יצא ולא המשיך$because' : 'יצאה ולא המשיכה$because';
       }
+      if (otherEnded) {
+        return selfIsMale
+            ? '$otherName יצאה ולא המשיכה$because'
+            : '$otherName יצא ולא המשיך$because';
+      }
+      return 'יצאו ולא המשיכו$because';
     }
-    return note.isEmpty ? base : '$base — $note';
+
+    if (party == MatchOutcomeParty.mutual) {
+      return 'ההצעה לא התאימה לשני הצדדים$because';
+    }
+    if (selfEnded) {
+      final String verb = selfIsMale ? 'דחה' : 'דחתה';
+      return note.isEmpty ? '$verb את ההצעה' : '$verb$because';
+    }
+    if (otherEnded) {
+      final String verb = selfIsMale ? 'דחתה' : 'דחה';
+      return note.isEmpty
+          ? '$otherName $verb את ההצעה'
+          : '$otherName $verb$because';
+    }
+
+    // Nobody recorded who ended it: the closing line covers that, so only a
+    // written reason is worth a second entry.
+    return note.isEmpty ? null : 'הסיבה: $note';
   }
 
   String _shortName(Person? person, String fallback) {

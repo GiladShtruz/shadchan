@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/add_contacts_screen.dart';
+import 'package:shadchan/screens/ai_import_screen.dart';
 import 'package:shadchan/screens/onboarding_screen.dart';
 import 'package:shadchan/screens/create_match_screen.dart';
 import 'package:shadchan/screens/incoming_shared_profile_screen.dart';
@@ -17,11 +18,13 @@ import 'package:shadchan/screens/monthly_stats_screen.dart';
 import 'package:shadchan/screens/new_ideas_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/reminders_screen.dart';
+import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/religious_levels_settings_screen.dart';
-import 'package:shadchan/screens/settings_screen.dart';
+import 'package:shadchan/screens/stat_detail_screen.dart';
 import 'package:shadchan/screens/whatsapp_message_settings_screen.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/monthly_stats.dart';
 
 List<T> _parseEnumList<T extends Enum>(String? raw, List<T> values) {
   if (raw == null || raw.isEmpty) {
@@ -155,6 +158,18 @@ abstract final class AppRouter {
                         '/people/import',
                   ),
                   GoRoute(
+                    path: 'ai',
+                    builder: (BuildContext context, GoRouterState state) {
+                      // A path arrives here when the file was shared to the app
+                      // or opened with it, rather than picked inside it.
+                      return AiImportScreen(
+                        incomingFilePath: state.extra is String
+                            ? state.extra as String
+                            : null,
+                      );
+                    },
+                  ),
+                  GoRoute(
                     path: 'add',
                     builder: (BuildContext context, GoRouterState state) {
                       final IncomingSharedProfileDraft? draft =
@@ -284,10 +299,12 @@ abstract final class AppRouter {
           ),
         ],
       ),
+      // The matchmaker's own page. It carries every setting the app has —
+      // there is no separate settings screen and no gear on the home page.
       GoRoute(
-        path: '/settings',
+        path: '/profile',
         builder: (BuildContext context, GoRouterState state) {
-          return const SettingsScreen();
+          return const ProfileScreen();
         },
         routes: <RouteBase>[
           GoRoute(
@@ -315,6 +332,26 @@ abstract final class AppRouter {
         builder: (BuildContext context, GoRouterState state) {
           return const MonthlyStatsScreen();
         },
+        routes: <RouteBase>[
+          // One number's own records. An unknown metric falls back to the
+          // month itself rather than to an error page.
+          GoRoute(
+            path: ':metric',
+            redirect: (BuildContext context, GoRouterState state) {
+              final MonthlyStatMetric? metric = MonthlyStatMetric.byName(
+                state.pathParameters['metric'],
+              );
+              return metric == null ? '/stats/month' : null;
+            },
+            builder: (BuildContext context, GoRouterState state) {
+              return StatDetailScreen(
+                metric: MonthlyStatMetric.byName(
+                  state.pathParameters['metric'],
+                )!,
+              );
+            },
+          ),
+        ],
       ),
       GoRoute(
         path: '/reminders',

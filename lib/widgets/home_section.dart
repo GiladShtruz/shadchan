@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -80,7 +82,7 @@ class HomeSectionHeader extends StatelessWidget {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('הצג הכל'),
+                  child: const Text('הצגת הכל'),
                 ),
             ],
           ),
@@ -399,16 +401,18 @@ class HomeActivityCard extends StatelessWidget {
       height: homeScaled(context, HomeConfig.activityCardHeight),
       child: Material(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(999),
+        // Soft, but no longer a full pill: at two wrapped lines the stadium
+        // ends would eat the room the text needs.
+        borderRadius: BorderRadius.circular(26),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           child: Ink(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: BorderRadius.circular(26),
               border: Border.all(color: theme.colorScheme.outlineVariant),
             ),
-            padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 14, 8),
+            padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 12, 8),
             child: Row(
               children: <Widget>[
                 leading,
@@ -433,11 +437,12 @@ class HomeActivityCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         '$action · $timeAgo',
-                        maxLines: 1,
+                        // Wraps like the name above it rather than being cut.
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
                           fontSize: 10.5,
-                          height: 1.1,
+                          height: 1.15,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -642,53 +647,223 @@ class HomeSuggestionBubble extends StatelessWidget {
 }
 
 /// The soft wave the suggestion circles stand on, instead of a row of boxes.
-class HomeWaveBackground extends StatelessWidget {
+///
+/// The water is alive but never busy: the crest slides sideways as the page is
+/// scrolled — so the movement is something the user does, not something the
+/// screen does at them — over a very slow idle bob, and every few seconds a
+/// couple of small droplets pop above the surface and fade.
+class HomeWaveBackground extends StatefulWidget {
   const HomeWaveBackground({super.key, required this.child});
 
   final Widget child;
 
   @override
+  State<HomeWaveBackground> createState() => _HomeWaveBackgroundState();
+}
+
+class _HomeWaveBackgroundState extends State<HomeWaveBackground>
+    with SingleTickerProviderStateMixin {
+  /// One full turn of the idle bob and of the splash cycle.
+  static const Duration _period = Duration(seconds: 9);
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _period,
+  )..repeat();
+
+  /// The page's scroll offset, republished for the painter alone so scrolling
+  /// never rebuilds the row of circles above the wave.
+  final ValueNotifier<double> _scroll = ValueNotifier<double>(0);
+
+  ScrollPosition? _position;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ScrollPosition? position = Scrollable.maybeOf(context)?.position;
+    if (identical(position, _position)) {
+      return;
+    }
+    _position?.removeListener(_handleScroll);
+    _position = position;
+    _position?.addListener(_handleScroll);
+    _handleScroll();
+  }
+
+  void _handleScroll() {
+    final ScrollPosition? position = _position;
+    if (position == null || !position.hasPixels) {
+      return;
+    }
+    _scroll.value = position.pixels;
+  }
+
+  @override
+  void dispose() {
+    _position?.removeListener(_handleScroll);
+    _scroll.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color color = theme.colorScheme.primary.withValues(
+      alpha: dark ? 0.10 : 0.13,
+    );
+    final Color foam = theme.colorScheme.primary.withValues(
+      alpha: dark ? 0.26 : 0.30,
+    );
 
-    return CustomPaint(
-      painter: _WavePainter(
-        color: theme.colorScheme.primary.withValues(
-          alpha: theme.brightness == Brightness.dark ? 0.10 : 0.13,
-        ),
-      ),
-      child: child,
+    return AnimatedBuilder(
+      animation: Listenable.merge(<Listenable>[_controller, _scroll]),
+      builder: (BuildContext context, Widget? child) {
+        return CustomPaint(
+          painter: _WavePainter(
+            color: color,
+            foam: foam,
+            // A quarter of the page's travel: the water drifts, it does not
+            // race the content past it.
+            drift: _scroll.value * 0.25,
+            time: _controller.value,
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }
 
 class _WavePainter extends CustomPainter {
-  const _WavePainter({required this.color});
+  const _WavePainter({
+    required this.color,
+    required this.foam,
+    required this.drift,
+    required this.time,
+  });
 
   final Color color;
 
+  /// The lighter tone of the crest line and the droplets.
+  final Color foam;
+
+  /// Horizontal travel of the crest, in logical pixels, driven by the scroll.
+  final double drift;
+
+  /// 0..1, one turn of the idle bob and of the splash cycle.
+  final double time;
+
+  /// Where along the width the droplets come up, and how far apart in the
+  /// cycle — fixed, so the splashes read as a rhythm rather than as noise.
+  static const List<double> _splashAt = <double>[0.18, 0.52, 0.81];
+
+  /// How much of one cycle a single splash lasts.
+  static const double _splashSpan = 0.22;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()..color = color;
-    final double top = size.height * 0.34;
-    final Path path = Path()
-      ..moveTo(0, top + size.height * 0.10)
-      ..cubicTo(
-        size.width * 0.25,
-        top - size.height * 0.10,
-        size.width * 0.55,
-        top + size.height * 0.20,
-        size.width,
-        top - size.height * 0.02,
-      )
+    if (size.isEmpty) {
+      return;
+    }
+
+    final double baseline = size.height * 0.34;
+    final double amplitude = size.height * 0.055;
+    final double bob = math.sin(time * 2 * math.pi);
+
+    double crestY(double x) {
+      final double t = x / size.width;
+      final double phase = drift / 90 + time * 2 * math.pi * 0.15;
+      return baseline +
+          amplitude * math.sin(t * 2 * math.pi * 1.15 + phase) +
+          amplitude * 0.45 * math.sin(t * 2 * math.pi * 2.7 - phase * 0.8) +
+          bob * size.height * 0.012;
+    }
+
+    // Sampled rather than drawn as one cubic: the curve now has to follow two
+    // frequencies and a moving phase, which a fixed control point cannot.
+    const int steps = 48;
+    final Path water = Path()..moveTo(0, crestY(0));
+    for (int i = 1; i <= steps; i++) {
+      final double x = size.width * i / steps;
+      water.lineTo(x, crestY(x));
+    }
+    water
       ..lineTo(size.width, size.height)
       ..lineTo(0, size.height)
       ..close();
-    canvas.drawPath(path, paint);
+    canvas.drawPath(water, Paint()..color = color);
+
+    final Path crest = Path()..moveTo(0, crestY(0));
+    for (int i = 1; i <= steps; i++) {
+      final double x = size.width * i / steps;
+      crest.lineTo(x, crestY(x));
+    }
+    canvas.drawPath(
+      crest,
+      Paint()
+        ..color = foam.withValues(alpha: foam.a * 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+
+    for (int i = 0; i < _splashAt.length; i++) {
+      final double cycle = (time + i / _splashAt.length) % 1;
+      if (cycle > _splashSpan) {
+        continue;
+      }
+      _paintSplash(
+        canvas,
+        size,
+        x: size.width * _splashAt[i],
+        surfaceY: crestY(size.width * _splashAt[i]),
+        progress: cycle / _splashSpan,
+      );
+    }
+  }
+
+  /// Two droplets and a small ring: they rise, slow down and fade, which is all
+  /// a splash needs to read as one at this size.
+  void _paintSplash(
+    Canvas canvas,
+    Size size, {
+    required double x,
+    required double surfaceY,
+    required double progress,
+  }) {
+    final double fade = 1 - progress;
+    final double lift = math.sin(progress * math.pi) * size.height * 0.075;
+    final Paint paint = Paint()..color = foam.withValues(alpha: foam.a * fade);
+
+    canvas.drawCircle(
+      Offset(x - 3.5, surfaceY - lift),
+      1.8 * fade + 0.5,
+      paint,
+    );
+    canvas.drawCircle(
+      Offset(x + 3, surfaceY - lift * 0.72),
+      1.4 * fade + 0.4,
+      paint,
+    );
+    canvas.drawCircle(
+      Offset(x, surfaceY),
+      2 + progress * 7,
+      Paint()
+        ..color = foam.withValues(alpha: foam.a * fade * 0.6)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
   }
 
   @override
-  bool shouldRepaint(_WavePainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(_WavePainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.foam != foam ||
+        oldDelegate.drift != drift ||
+        oldDelegate.time != time;
+  }
 }
 
 /// The single avatar used on the person-shaped cards.

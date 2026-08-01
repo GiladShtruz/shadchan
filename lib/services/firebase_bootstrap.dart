@@ -22,12 +22,16 @@ const String _appCheckDebugToken = String.fromEnvironment(
 /// still half-configured must still get the whole app; it just won't be
 /// offered the AI import option. Startup correctness beats the feature.
 abstract final class FirebaseBootstrap {
-  static bool _isReady = false;
   static Object? _failure;
 
-  /// Whether Firebase came up far enough for AI calls to be attempted. The
-  /// "הוספה באמצעות AI" entry points check this before offering themselves.
-  static bool get isReady => _isReady;
+  /// Whether Firebase came up far enough for AI calls to be attempted.
+  ///
+  /// Listenable, because startup does not wait for it: the AI entry points are
+  /// built before this is known and have to switch themselves on when it
+  /// lands, rather than staying disabled for the life of the session.
+  static final ValueNotifier<bool> readyListenable = ValueNotifier<bool>(false);
+
+  static bool get isReady => readyListenable.value;
 
   /// What went wrong when [isReady] is false. Kept for a diagnostics line in
   /// Settings; never shown as a blocking error.
@@ -40,22 +44,62 @@ abstract final class FirebaseBootstrap {
   /// AI quota, and when Google Sign-In is added later it becomes a
   /// `linkWithCredential` that keeps the same uid instead of a migration.
   static String? get uid =>
-      _isReady ? FirebaseAuth.instance.currentUser?.uid : null;
+      isReady ? FirebaseAuth.instance.currentUser?.uid : null;
 
-  static Future<void> initialize() async {
-    try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      await _activateAppCheck();
-      await _ensureSignedIn();
-      _isReady = true;
-      _failure = null;
-    } catch (error, stackTrace) {
-      _isReady = false;
-      _failure = error;
-      debugPrint('Firebase bootstrap failed: $error\n$stackTrace');
+  /// A backstop, not a budget. Nothing waits on this — the deadline only
+  /// exists so a step that hangs forever eventually records a failure instead
+  /// of leaving the feature in limbo with no explanation.
+  static const Duration _deadline = Duration(seconds: 30);
+
+  static Future<void>? _pending;
+
+  /// Brings Firebase up, once, the first time something actually needs it.
+  ///
+  /// Deliberately not called from startup. Even unawaited, `initializeApp`,
+  /// App Check activation and the auth restore all do heavy platform-channel
+  /// work that competes with building the first frame — and awaiting them was
+  /// worse still, opening the app to a white screen when a step hung instead
+  /// of failing. Nothing outside the AI import needs Firebase, so it waits
+  /// until an AI screen asks for it and reports itself through
+  /// [readyListenable].
+  ///
+  /// Safe to call repeatedly: concurrent callers share one attempt, and a
+  /// failed attempt can be retried by calling again.
+  static Future<void> ensureReady() {
+    if (isReady) {
+      return Future<void>.value();
     }
+    return _pending ??= _initialize();
+  }
+
+  static Future<void> _initialize() async {
+    final Stopwatch watch = Stopwatch()..start();
+    try {
+      await _connect().timeout(_deadline);
+      _failure = null;
+      readyListenable.value = true;
+      debugPrint(
+        'AI_IMPORT firebase ready in ${watch.elapsedMilliseconds}ms uid=$uid',
+      );
+    } catch (error, stackTrace) {
+      _failure = error;
+      readyListenable.value = false;
+      debugPrint(
+        'AI_IMPORT firebase FAILED after ${watch.elapsedMilliseconds}ms: '
+        '$error\n$stackTrace',
+      );
+      // Cleared so a later attempt can retry — the usual cause is no network,
+      // which is exactly the kind of thing that fixes itself.
+      _pending = null;
+    }
+  }
+
+  static Future<void> _connect() async {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    await _activateAppCheck();
+    await _ensureSignedIn();
   }
 
   /// App Check must be active before any Firebase AI call, so that Gemini
@@ -65,6 +109,20 @@ abstract final class FirebaseBootstrap {
     final String? debugToken = _appCheckDebugToken.trim().isEmpty
         ? null
         : _appCheckDebugToken.trim();
+
+    // A debug build with no registered token cannot attest, and trying anyway
+    // is not a no-op: the exchange is refused with a 403 that surfaces as a
+    // failure of the AI call itself, then the SDK rate-limits and every later
+    // attempt returns "Too many attempts". Skipping is honest about what this
+    // build can do. Release builds always attest through Play Integrity, and
+    // pass a token here via
+    // `--dart-define=APP_CHECK_DEBUG_TOKEN=…` when a debug build needs to.
+    if (kDebugMode && debugToken == null) {
+      debugPrint(
+        'AI_IMPORT App Check skipped: debug build with no APP_CHECK_DEBUG_TOKEN',
+      );
+      return;
+    }
 
     await FirebaseAppCheck.instance.activate(
       providerAndroid: kDebugMode

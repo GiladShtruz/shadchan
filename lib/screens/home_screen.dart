@@ -9,15 +9,18 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
 import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
+import 'package:shadchan/utils/monthly_stats.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/home_panels.dart';
@@ -97,18 +100,28 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- AppBars ------------------------------------------------------------
 
   AppBar _buildGreetingAppBar(ThemeData theme, UserProfileProvider profile) {
-    final String name = profile.name ?? 'שדכן';
+    final Gender? gender = profile.gender;
+    final String name = profile.name ?? '{שדכן|שדכנית}'.forGender(gender);
     final TimeOfDay now = TimeOfDay.fromDateTime(DateTime.now());
 
     return AppBar(
       titleSpacing: 16,
       centerTitle: false,
+      // The photo is the way into the matchmaker's own page, which is also
+      // where every setting lives — so the bar carries no gear.
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           // First child sits at the start edge, which in RTL is the right.
-          Icon(_timeOfDayIcon(now), size: 22),
-          const SizedBox(width: 8),
+          UserProfileAvatar(
+            photoPath: profile.photoPath,
+            gender: gender,
+            name: profile.name,
+            radius: 17,
+            showEditBadge: profile.photoPath == null,
+            onTap: () => context.push('/profile'),
+          ),
+          const SizedBox(width: 10),
           Flexible(
             child: Text(
               '${_timeOfDayGreeting(now)}, $name',
@@ -128,11 +141,6 @@ class _HomeScreenState extends State<HomeScreen> {
           tooltip: 'חיפוש',
           icon: const Icon(Icons.search),
           onPressed: () => setState(() => _searchVisible = true),
-        ),
-        IconButton(
-          tooltip: 'הגדרות',
-          icon: const Icon(Icons.settings_outlined),
-          onPressed: () => context.push('/settings'),
         ),
       ],
     );
@@ -161,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 isDense: true,
                 filled: true,
                 fillColor: theme.colorScheme.surface,
-                hintText: 'חפש במאגר שלך',
+                hintText: 'חיפוש במאגר שלך',
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(999),
@@ -197,6 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHome() {
     final MatchRepository matchRepository = context.watch<MatchRepository>();
     final PersonRepository personRepository = context.watch<PersonRepository>();
+    final Gender? userGender = context.watch<UserProfileProvider>().gender;
     final HomeBoardStore board = HomeBoardStore.instance;
     final RecentActivityStore activity = RecentActivityStore.instance;
 
@@ -269,16 +278,20 @@ class _HomeScreenState extends State<HomeScreen> {
           personRepository: personRepository,
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 22, 14, 0),
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 0),
           sliver: SliverToBoxAdapter(
-            child: HomeStatsButton(onTap: () => context.push('/stats/month')),
+            child: HomeStatsPanel(
+              stats: MonthlyStats.current(allMatches, allPeople),
+              onTap: () => context.push('/stats/month'),
+            ),
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 28),
           sliver: SliverToBoxAdapter(
             child: HomeTipStrip(
-              tip: _tip,
+              tip: _tip.forGender(userGender),
+              userGender: userGender,
               onAnother: () {
                 setState(() {
                   _tip = MatchmakerTips.next(previous: _tip);
@@ -372,6 +385,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Hebrew greeting for the current part of the day: morning until noon,
   /// afternoon until 17:00, evening until 21:00, night from then until 05:00.
+  /// The greetings themselves are gender-free — what follows the comma is the
+  /// matchmaker's own name.
   static String _timeOfDayGreeting(TimeOfDay now) {
     final int hour = now.hour;
     if (hour >= 5 && hour < 12) {
@@ -384,17 +399,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'ערב טוב';
     }
     return 'לילה טוב';
-  }
-
-  static IconData _timeOfDayIcon(TimeOfDay now) {
-    final int hour = now.hour;
-    if (hour >= 5 && hour < 17) {
-      return Icons.wb_sunny_outlined;
-    }
-    if (hour >= 17 && hour < 21) {
-      return Icons.wb_twilight;
-    }
-    return Icons.nightlight_outlined;
   }
 }
 
@@ -562,16 +566,18 @@ class _BoardCardMenu extends StatelessWidget {
         return <PopupMenuEntry<String>>[
           PopupMenuItem<String>(
             value: 'note',
-            child: Text(hasNote ? 'ערוך הערה' : 'הוסף הערה'),
+            child: Text(hasNote ? 'עריכת הערה' : 'הוספת הערה'),
           ),
           PopupMenuItem<String>(
             value: 'reminder',
-            child: Text(_hasReminder(context) ? 'ערוך תזכורת' : 'הוסף תזכורת'),
+            child: Text(
+              _hasReminder(context) ? 'עריכת תזכורת' : 'הוספת תזכורת',
+            ),
           ),
           const PopupMenuDivider(),
           const PopupMenuItem<String>(
             value: 'remove',
-            child: Text('הסר מהלוח'),
+            child: Text('הסרה מהלוח'),
           ),
         ];
       },

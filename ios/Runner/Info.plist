@@ -7,7 +7,16 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Shadchan</string>
+		<string>שדכן</string>
+		<!-- The app is Hebrew-only and forces `Locale('he')` in lib/app.dart.
+		     Declaring the localization here makes iOS treat the app as Hebrew
+		     too, so system-supplied UI (the photo picker, the contacts and
+		     notification prompts, the share sheet) comes up in Hebrew and RTL
+		     instead of the device's default language. -->
+		<key>CFBundleLocalizations</key>
+		<array>
+			<string>he</string>
+		</array>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -43,6 +52,22 @@
 		</array>
 		<key>CFBundleName</key>
 		<string>shadchan</string>
+		<!-- How the share extension brings the app forward once it has parked an
+		     incoming share in the shared app group. Nothing is passed in the URL
+		     itself. See ios/Runner/SharedProfileInbox.swift. -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>com.gilad.shadchan.share</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>shadchan-share</string>
+				</array>
+			</dict>
+		</array>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -51,6 +76,11 @@
 		<string>????</string>
 		<key>CFBundleVersion</key>
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<!-- The app uses only the standard HTTPS/Keychain encryption that is
+		     exempt from export compliance, so App Store Connect stops asking on
+		     every single upload. -->
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 		<key>LSSupportsOpeningDocumentsInPlace</key>

@@ -6,6 +6,9 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
@@ -322,7 +325,7 @@ class _ReminderActions extends StatelessWidget {
         FilledButton.tonalIcon(
           onPressed: onSnooze,
           icon: const Icon(Icons.schedule, size: 18),
-          label: const Text('הזכר להמשך'),
+          label: const Text('הזכר בהמשך'),
           style: FilledButton.styleFrom(
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -331,7 +334,7 @@ class _ReminderActions extends StatelessWidget {
         TextButton.icon(
           onPressed: onDelete,
           icon: const Icon(Icons.delete_outline, size: 18),
-          label: const Text('מחק'),
+          label: const Text('מחיקה'),
           style: TextButton.styleFrom(
             foregroundColor: theme.colorScheme.error,
             visualDensity: VisualDensity.compact,
@@ -343,7 +346,7 @@ class _ReminderActions extends StatelessWidget {
   }
 }
 
-/// "מתי להזכיר שוב?" — the short list behind "הזכר להמשך".
+/// "מתי להזכיר שוב?" — the short list behind "הזכר בהמשך".
 abstract final class ReminderSnoozeDialog {
   static Future<DateTime?> show(BuildContext context) {
     final DateTime now = DateTime.now();
@@ -566,6 +569,8 @@ class EmptyReminders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Gender? userGender = context.userGender;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -585,7 +590,9 @@ class EmptyReminders extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'תזכורת תופיע כאן ביום שקבעת לה, לא לפני כן.',
+              '{פתח|פתחי} רעיונות עתידיים {וקבע|וקבעי} לעצמך תזכורות מתי '
+                      'לבדוק אותם.'
+                  .forGender(userGender),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

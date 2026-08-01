@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// Shown on first launch so the matchmaker can introduce themselves. Name and
 /// gender are required, a photo is optional.
@@ -44,8 +45,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             children: <Widget>[
               Icon(Icons.favorite, size: 56, color: theme.colorScheme.primary),
               const SizedBox(height: 24),
+              // The greeting follows the gender chosen just below it, so the
+              // app is speaking to the right person from its very first line.
               Text(
-                'ברוך הבא שדכן!',
+                '{ברוך הבא שדכן|ברוכה הבאה שדכנית}!'.forGender(_selectedGender),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
@@ -53,7 +56,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'איזה כיף שאתה רוצה לחשוב על חברים שלך!',
+                'איזה כיף {שאתה רוצה|שאת רוצה} לחשוב על החברים שלך!'.forGender(
+                  _selectedGender,
+                ),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,

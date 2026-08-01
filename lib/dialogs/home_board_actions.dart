@@ -16,31 +16,53 @@ abstract final class HomeBoardActions {
   /// The menu label for the current state of an item.
   static String menuLabel(HomeItemKind kind, String targetId) {
     return HomeBoardStore.instance.contains(kind, targetId)
-        ? 'הסר מהלוח שלי'
-        : 'הוסף ללוח שלי';
+        ? 'הסרה מהלוח שלי'
+        : 'הוספה ללוח שלי';
   }
 
-  /// Pins or unpins, and says so. Returns whether it is pinned afterwards.
-  static bool toggle(BuildContext context, HomeItemKind kind, String targetId) {
-    final bool pinned = HomeBoardStore.instance.toggle(kind, targetId);
+  /// Room a [PopupMenuItem] built from [menuItemChild] needs for its two lines.
+  static const double menuItemHeight = 60;
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            pinned ? 'נוסף ל׳הלוח שלי׳ במסך הבית' : 'הוסר מ׳הלוח שלי׳',
+  /// The board menu item's body. While an item is not on the board yet, the
+  /// label is followed by one small line saying where it will turn up — "הלוח
+  /// שלי" means nothing until you have seen it once.
+  static Widget menuItemChild(
+    BuildContext context,
+    HomeItemKind kind,
+    String targetId,
+  ) {
+    final String label = menuLabel(kind, targetId);
+    if (HomeBoardStore.instance.contains(kind, targetId)) {
+      return Text(label);
+    }
+
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label),
+        const SizedBox(height: 2),
+        Text(
+          'יופיע בלוח המעקב האישי בעמוד הבית.',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-      );
-    return pinned;
+      ],
+    );
+  }
+
+  /// Pins or unpins. Returns whether it is pinned afterwards.
+  ///
+  /// No confirmation bar: the board itself is the feedback, and the menu label
+  /// flips the next time it is opened.
+  static bool toggle(BuildContext context, HomeItemKind kind, String targetId) {
+    return HomeBoardStore.instance.toggle(kind, targetId);
   }
 
   static void remove(BuildContext context, HomeItemKind kind, String targetId) {
     HomeBoardStore.instance.remove(kind, targetId);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('הוסר מ׳הלוח שלי׳')));
   }
 
   /// Adds, edits or clears the short note shown on the board card.

@@ -513,7 +513,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
                 subtitle: isPermanentlyDenied
                     ? 'כדי לייבא אנשי קשר צריך לאשר גישה בהגדרות המכשיר'
                     : 'כדי לייבא אנשי קשר צריך לאשר גישה לספר הטלפונים',
-                buttonText: isPermanentlyDenied ? 'פתח הגדרות' : 'נסה שוב',
+                buttonText: isPermanentlyDenied ? 'פתיחת הגדרות' : 'לנסות שוב',
                 onButtonPressed: isPermanentlyDenied
                     ? _openSettings
                     : _loadContacts,

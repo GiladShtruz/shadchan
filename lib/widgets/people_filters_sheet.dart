@@ -629,7 +629,7 @@ class _FilterActionsBar extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              child: const Text('הצג תוצאות'),
+              child: const Text('הצגת תוצאות'),
             ),
           ),
           const SizedBox(width: 12),

@@ -24,6 +24,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/details_message_dialog.dart';
+import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -34,6 +35,8 @@ import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/person_photo_carousel.dart';
 import 'package:shadchan/widgets/section_header.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// Opens the "התאמות" view for a person from anywhere in the app — the heart on
 /// a row in המאגר שלי lands on exactly the same screen the profile's own
@@ -43,6 +46,34 @@ Future<void> openSuggestionsFor(BuildContext context, String personId) {
     MaterialPageRoute<void>(
       builder: (BuildContext context) => _SuggestionsPage(personId: personId),
     ),
+  );
+}
+
+/// The same view, raised as a sheet over the list it was opened from.
+///
+/// From המאגר שלי the matchmaker is running down a list of people and dipping
+/// into one person's matches; a full page push makes that a departure and a
+/// return. As a sheet, closing it puts the list back exactly where it was.
+Future<void> openSuggestionsSheet(BuildContext context, String personId) {
+  final ThemeData theme = Theme.of(context);
+
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    backgroundColor: _profileCanvasColor(theme),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+    ),
+    builder: (BuildContext sheetContext) {
+      return SizedBox(
+        // Tall enough to work in, short enough that the list underneath is
+        // still visible behind it.
+        height: MediaQuery.of(sheetContext).size.height * 0.9,
+        child: _SuggestionsPage(personId: personId, asSheet: true),
+      );
+    },
   );
 }
 
@@ -62,7 +93,6 @@ class PersonDetailScreen extends StatefulWidget {
 
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey _cardSectionKey = GlobalKey();
 
   /// Whether the profile header was scrolled away, so the AppBar shows a
   /// compact bar with the person's name only.
@@ -117,24 +147,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         },
       ),
     );
-  }
-
-  void _showCardInline() {
-    if (!_showFullCard) {
-      setState(() => _showFullCard = true);
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final BuildContext? cardContext = _cardSectionKey.currentContext;
-      if (!mounted || cardContext == null) {
-        return;
-      }
-      Scrollable.ensureVisible(
-        cardContext,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOut,
-        alignment: 0.08,
-      );
-    });
   }
 
   @override
@@ -256,8 +268,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               return <PopupMenuEntry<String>>[
                 PopupMenuItem<String>(
                   value: 'board',
-                  child: Text(
-                    HomeBoardActions.menuLabel(HomeItemKind.person, person.id),
+                  height: HomeBoardActions.menuItemHeight,
+                  child: HomeBoardActions.menuItemChild(
+                    context,
+                    HomeItemKind.person,
+                    person.id,
                   ),
                 ),
                 const PopupMenuDivider(),
@@ -298,7 +313,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           children: <Widget>[
             _ProfileSummaryHeader(
               person: person,
-              onAvatarTap: _showCardInline,
+              onAvatarTap: () => PersonCardViewer.open(context, person.id),
+              onShare: () => _showCardShareSheet(context, person),
               onStatusChanged: (ProfileStatus status) =>
                   _changeProfileStatus(context, person, status),
             ),
@@ -309,13 +325,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               onAddProposal: () => _openAddProposal(context, person),
             ),
             _WhatsAppCardSection(
-              key: _cardSectionKey,
               person: person,
               expanded: _showFullCard,
               onToggleFull: () {
                 setState(() => _showFullCard = !_showFullCard);
               },
-              onShare: () => _showCardShareSheet(context, person),
               onRequestDetails: () => _requestDetails(context, person),
               onEditMessage: () => _editDetailsMessage(context, person),
             ),
@@ -908,11 +922,17 @@ class _ProfileSummaryHeader extends StatelessWidget {
   const _ProfileSummaryHeader({
     required this.person,
     required this.onAvatarTap,
+    required this.onShare,
     required this.onStatusChanged,
   });
 
+  /// The width reserved on each side of the photo, so the share button can sit
+  /// beside it without pushing the photo off centre.
+  static const double _sideSlotWidth = 48;
+
   final Person person;
   final VoidCallback onAvatarTap;
+  final VoidCallback onShare;
   final ValueChanged<ProfileStatus> onStatusChanged;
 
   @override
@@ -935,19 +955,36 @@ class _ProfileSummaryHeader extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              GestureDetector(
-                onTap: onAvatarTap,
-                child: Hero(
-                  tag: 'person-${person.id}',
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: _profileWarmSurfaceColor(theme),
-                      shape: BoxShape.circle,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  // Balances the share button opposite it, so the photo itself
+                  // stays centred in the card.
+                  const SizedBox(width: _sideSlotWidth),
+                  GestureDetector(
+                    onTap: onAvatarTap,
+                    child: Hero(
+                      tag: 'person-${person.id}',
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: _profileWarmSurfaceColor(theme),
+                          shape: BoxShape.circle,
+                        ),
+                        child: PersonAvatar(person: person, radius: 54),
+                      ),
                     ),
-                    child: PersonAvatar(person: person, radius: 54),
                   ),
-                ),
+                  SizedBox(
+                    width: _sideSlotWidth,
+                    child: IconButton(
+                      onPressed: onShare,
+                      icon: const Icon(Icons.share_outlined),
+                      tooltip: 'שיתוף הכרטיס',
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Text(
@@ -1204,7 +1241,8 @@ class _PersonalNotesCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
                 child: Text(
-                  'רק לעיניך — עדיין אין הערות. הוסיפו משהו שתרצו לזכור.',
+                  'רק לעיניך — עדיין אין הערות. {הוסף|הוסיפי} משהו {שתרצה|שתרצי} לזכור.'
+                      .forGender(context.userGender),
                   style: theme.textTheme.bodyMedium?.copyWith(color: muted),
                 ),
               )
@@ -1224,7 +1262,7 @@ class _PersonalNotesCard extends StatelessWidget {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text('הצג הכל (${entries.length})'),
+                  child: Text('הצגת הכל (${entries.length})'),
                 ),
               ),
           ],
@@ -1361,7 +1399,7 @@ class _PersonalNotesCard extends StatelessWidget {
             autofocus: true,
             minLines: 2,
             maxLines: 6,
-            decoration: const InputDecoration(hintText: 'משהו שתרצו לזכור...'),
+            decoration: const InputDecoration(hintText: 'משהו שתרצה לזכור...'),
           ),
           actions: <Widget>[
             TextButton(
@@ -1529,11 +1567,9 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
 /// inside the profile and exposes its WhatsApp share action above the text.
 class _WhatsAppCardSection extends StatelessWidget {
   const _WhatsAppCardSection({
-    super.key,
     required this.person,
     required this.expanded,
     required this.onToggleFull,
-    required this.onShare,
     required this.onRequestDetails,
     required this.onEditMessage,
   });
@@ -1541,7 +1577,6 @@ class _WhatsAppCardSection extends StatelessWidget {
   final Person person;
   final bool expanded;
   final VoidCallback onToggleFull;
-  final VoidCallback onShare;
   final VoidCallback onRequestDetails;
   final VoidCallback onEditMessage;
 
@@ -1577,27 +1612,14 @@ class _WhatsAppCardSection extends StatelessWidget {
                     height: 1.5,
                   ),
                 ),
-                secondChild: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: IconButton(
-                        onPressed: onShare,
-                        icon: const Icon(Icons.share_outlined),
-                        tooltip: 'שיתוף הכרטיס המלא',
-                        color: theme.colorScheme.primary,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                    Text(
-                      description,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: _profileTextColor(theme),
-                        height: 1.55,
-                      ),
-                    ),
-                  ],
+                // Sharing lives in the profile header now, beside the photo —
+                // not inside the card.
+                secondChild: Text(
+                  description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: _profileTextColor(theme),
+                    height: 1.55,
+                  ),
                 ),
                 crossFadeState: expanded
                     ? CrossFadeState.showSecond
@@ -1615,7 +1637,9 @@ class _WhatsAppCardSection extends StatelessWidget {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text(expanded ? 'סגירת הכרטיס המלא' : 'הצג כרטיס מלא'),
+                  child: Text(
+                    expanded ? 'סגירת הכרטיס המלא' : 'הצגת הכרטיס המלא',
+                  ),
                 ),
               ),
             ] else ...<Widget>[
@@ -1627,30 +1651,41 @@ class _WhatsAppCardSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              // One action, one row: the request is the button, and editing
+              // its wording is the quiet pencil attached to it — never a
+              // second button on a line of its own, which read as a separate
+              // thing to do.
+              Row(
                 children: <Widget>[
-                  OutlinedButton.icon(
-                    onPressed: onRequestDetails,
-                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
-                    label: const Text('בקש פרטים ב-WhatsApp'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _profileTextColor(theme),
-                      side: BorderSide(
-                        color: _profileMutedColor(theme).withValues(alpha: 0.2),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onRequestDetails,
+                      icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
+                      label: const Text(
+                        'בקש פרטים ב-WhatsApp',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _profileTextColor(theme),
+                        side: BorderSide(
+                          color: _profileMutedColor(
+                            theme,
+                          ).withValues(alpha: 0.2),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                     ),
                   ),
-                  TextButton.icon(
+                  const SizedBox(width: 4),
+                  IconButton(
                     onPressed: onEditMessage,
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('עריכת נוסח'),
-                    style: TextButton.styleFrom(
+                    tooltip: 'ערוך נוסח בקשת פרטים',
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    style: IconButton.styleFrom(
                       foregroundColor: _profileMutedColor(theme),
                     ),
                   ),
@@ -1882,7 +1917,7 @@ abstract final class _MatchPreviewSheet {
                       child: FilledButton.icon(
                         onPressed: () => Navigator.of(dialogContext).pop(true),
                         icon: const Icon(Icons.favorite_border),
-                        label: const Text('פתח רעיון'),
+                        label: const Text('פתיחת רעיון'),
                       ),
                     ),
                   ),
@@ -1981,9 +2016,13 @@ class _MatchPreviewHalf extends StatelessWidget {
 /// bar. It owns the suggestion filtering, ordering and accept/reject flow that
 /// used to live inside the person page's tab.
 class _SuggestionsPage extends StatefulWidget {
-  const _SuggestionsPage({required this.personId});
+  const _SuggestionsPage({required this.personId, this.asSheet = false});
 
   final String personId;
+
+  /// Raised over a list instead of pushed as a page: the canvas is the sheet's
+  /// own, and the bar closes rather than goes back.
+  final bool asSheet;
 
   @override
   State<_SuggestionsPage> createState() => _SuggestionsPageState();
@@ -2008,6 +2047,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
 
     if (person == null) {
       return Scaffold(
+        backgroundColor: widget.asSheet ? Colors.transparent : null,
         appBar: AppBar(title: const Text('התאמות'), centerTitle: true),
         body: const Center(child: Text('האדם לא נמצא')),
       );
@@ -2055,11 +2095,16 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
         activeSuggestions.add(candidate);
       }
     }
-    // Within each tier, candidates that pause matches (תפוס/בהפסקה) drop
-    // after the available ones.
+    // Within each tier, candidates that pause matches (תפוס/בהפסקה) drop after
+    // the available ones — and inside each of those two groups the ones whose
+    // card changed most recently come first, so a candidate the matchmaker has
+    // just updated in the app is the first one they are offered.
+    List<Person> byRecency(Iterable<Person> people) =>
+        people.toList()
+          ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
     List<Person> availableFirst(List<Person> people) => <Person>[
-      ...people.where((Person p) => !p.profileStatus.pausesMatches),
-      ...people.where((Person p) => p.profileStatus.pausesMatches),
+      ...byRecency(people.where((Person p) => !p.profileStatus.pausesMatches)),
+      ...byRecency(people.where((Person p) => p.profileStatus.pausesMatches)),
     ];
     final List<Person> suggestedPeople = <Person>[
       ...availableFirst(prioritizedSuggestions),
@@ -2089,12 +2134,27 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
         : const <Person>[];
 
     return Scaffold(
-      backgroundColor: _profileCanvasColor(theme),
+      // In a sheet the canvas is already painted by the sheet itself; painting
+      // it again here would hide its rounded top corners.
+      backgroundColor: widget.asSheet
+          ? Colors.transparent
+          : _profileCanvasColor(theme),
       appBar: AppBar(
-        backgroundColor: _profileCanvasColor(theme),
+        backgroundColor: widget.asSheet
+            ? Colors.transparent
+            : _profileCanvasColor(theme),
         foregroundColor: _profileTextColor(theme),
         titleTextStyle: _profileAppBarTitleStyle(theme),
         centerTitle: true,
+        elevation: 0,
+        automaticallyImplyLeading: !widget.asSheet,
+        leading: widget.asSheet
+            ? IconButton(
+                tooltip: 'סגירה',
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+              )
+            : null,
         title: Text('התאמות · ${person.firstName.trim()}'),
       ),
       body: SafeArea(
@@ -2324,10 +2384,6 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     await SuggestionDismissals.dismiss(sourcePerson.id, candidate.id);
     if (mounted) {
       setState(() {});
-    }
-
-    if (context.mounted) {
-      _showSnackBar(context, 'ההתאמה הועברה לסוף הרשימה');
     }
   }
 
@@ -3116,7 +3172,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  Future<bool> _save({bool showSnackBar = true}) async {
+  Future<bool> _save() async {
     final PersonRepository repository = context.read<PersonRepository>();
     final Person? person = repository.getById(widget.personId);
     if (person == null) {
@@ -3148,11 +3204,6 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
       await repository.update(person);
       _newPhotoPaths.clear();
 
-      if (showSnackBar && mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('השינויים נשמרו')));
-      }
       return true;
     } finally {
       if (mounted) {
@@ -3207,7 +3258,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
 
   Future<void> _saveAndPop() async {
     final NavigatorState navigator = Navigator.of(context);
-    final bool saved = await _save(showSnackBar: false);
+    final bool saved = await _save();
     if (saved && mounted) {
       navigator.pop();
     }
@@ -3445,7 +3496,7 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
                   controller: _controller,
                   minLines: 1,
                   maxLines: 4,
-                  decoration: const InputDecoration(hintText: 'הוסיפו הערה...'),
+                  decoration: const InputDecoration(hintText: 'הוספת הערה...'),
                   onSubmitted: (_) => _addNote(),
                 ),
               ),

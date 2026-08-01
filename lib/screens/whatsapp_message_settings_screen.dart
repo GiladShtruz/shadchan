@@ -91,7 +91,7 @@ class _WhatsAppMessageSettingsScreenState
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : const Icon(Icons.check),
-        label: const Text('שמור'),
+        label: const Text('שמירה'),
         shape: const StadiumBorder(),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
@@ -110,13 +110,6 @@ class _WhatsAppMessageSettingsScreenState
 
     try {
       await WhatsAppUtils.saveOnboardingMessage(_messageController.text);
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('ההודעה נשמרה')));
     } finally {
       if (mounted) {
         setState(() {
@@ -132,12 +125,9 @@ class _WhatsAppMessageSettingsScreenState
       return;
     }
 
+    // The field filling back up with the default text is the confirmation.
     setState(() {
       _messageController.text = WhatsAppUtils.defaultOnboardingMessage;
     });
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('הוחזרה הודעת ברירת המחדל')));
   }
 }

@@ -1,7 +1,7 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.18+33
+version: 1.0.18+35
 
 environment:
   sdk: ^3.11.0
@@ -34,6 +34,7 @@ dependencies:
   font_awesome_flutter: ^11.0.0
   excel: ^4.0.6
   archive: ^3.6.1
+  path: ^1.9.0
 
   # On-device face detection, used only to work out where the face sits in a
   # photo so avatars can centre on it instead of cropping it off. Runs locally;

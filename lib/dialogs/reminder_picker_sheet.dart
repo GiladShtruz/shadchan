@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/reminder_text_parser.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// The result of picking a reminder date: a date, or an explicit "clear".
 class ReminderChoice {
@@ -188,6 +190,9 @@ class _CustomReminderSheet extends StatefulWidget {
 
 class _CustomReminderSheetState extends State<_CustomReminderSheet> {
   final TextEditingController _controller = TextEditingController();
+
+  /// A [GenderText] template, resolved when it is drawn — `watch` for the
+  /// matchmaker's gender is only legal inside `build`.
   String? _error;
 
   @override
@@ -235,7 +240,7 @@ class _CustomReminderSheetState extends State<_CustomReminderSheet> {
                     textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
                       hintText: '45 ימים',
-                      errorText: _error,
+                      errorText: _error?.forGender(context.userGender),
                     ),
                     onSubmitted: (_) => _submitText(),
                   ),
@@ -269,7 +274,7 @@ class _CustomReminderSheetState extends State<_CustomReminderSheet> {
     );
     if (date == null) {
       setState(() {
-        _error = 'כתבו מספר ואחריו ימים, שבועות או חודשים';
+        _error = '{כתוב|כתבי} מספר ואחריו ימים, שבועות או חודשים';
       });
       return;
     }

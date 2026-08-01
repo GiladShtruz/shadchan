@@ -20,6 +20,17 @@ abstract final class ShareUtils {
     await Share.share(shareText);
   }
 
+  /// Shares a free piece of text, optionally with a photo — used by the
+  /// matchmaker's own card on the profile screen, which is not a [Person].
+  static Future<void> shareText(String text, {String? photoPath}) async {
+    final String trimmed = text.trim();
+    if (photoPath != null && File(photoPath).existsSync()) {
+      await Share.shareXFiles(<XFile>[XFile(photoPath)], text: trimmed);
+      return;
+    }
+    await Share.share(trimmed);
+  }
+
   static List<String> _existingPhotoPaths(Person person) {
     return person.photosPaths
         .where((String path) => File(path).existsSync())

@@ -54,9 +54,12 @@ abstract final class HomeConfig {
   /// The frame the notes run inside, so the row reads as one pinned board.
   static const double boardFramePadding = 10;
 
-  /// "הפעולות האחרונות שלך": a low, wide strip card.
+  /// "הפעולות האחרונות שלך": a low, wide strip card. Tall enough for both of
+  /// its lines to wrap onto a second row, so a long name or a long action is
+  /// never cut — and every card in the strip keeps that same box whether it
+  /// wrapped or not.
   static const double activityCardWidth = 186;
-  static const double activityCardHeight = 74;
+  static const double activityCardHeight = 88;
 
   /// "רעיונות פתוחים": a low, centred card — avatars, names, status.
   static const double ideaCardWidth = 142;

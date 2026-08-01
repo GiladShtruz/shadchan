@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
+/// The empty screen of a list, and often the only sentence the app says to the
+/// matchmaker there — so [title], [subtitle] and [buttonText] are resolved as
+/// [GenderText] templates, and a caller can write `'{נסה|נסי} שם אחר'` without
+/// having to reach for the profile itself.
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
@@ -20,6 +27,7 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Gender? gender = context.userGender;
     final Color iconColor = theme.brightness == Brightness.dark
         ? theme.colorScheme.primaryContainer
         : AppColors.primaryLight;
@@ -43,13 +51,13 @@ class EmptyState extends StatelessWidget {
               Icon(icon, size: 80, color: iconColor),
               const SizedBox(height: 16),
               Text(
-                title,
+                title.forGender(gender),
                 style: theme.textTheme.titleLarge,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
-                subtitle,
+                subtitle.forGender(gender),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -60,7 +68,7 @@ class EmptyState extends StatelessWidget {
                 ElevatedButton.icon(
                   onPressed: onButtonPressed,
                   icon: const Icon(Icons.arrow_forward_rounded),
-                  label: Text(buttonText!),
+                  label: Text(buttonText!.forGender(gender)),
                 ),
               ],
             ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
@@ -17,11 +18,9 @@ class MonthlyStatsScreen extends StatelessWidget {
   /// How many Hebrew months back the comparison trend reaches.
   static const int _monthsBack = 6;
 
-  // The calm pastel accents that carry each metric across cards and chart —
-  // and, through [MonthlyStats], the home screen's summary card too.
-  static const Color _amber = MonthlyStats.ideasColor;
+  // The two calm pastels this screen draws with outside the metric cards —
+  // the per-metric accents themselves live on [MonthlyStatMetric.color].
   static const Color _blue = MonthlyStats.peopleColor;
-  static const Color _green = MonthlyStats.datingColor;
   static const Color _pink = MonthlyStats.weddingsColor;
 
   @override
@@ -61,51 +60,38 @@ class MonthlyStatsScreen extends StatelessWidget {
             ],
             // A 2×2 grid. RTL order puts ideas top-right, people top-left,
             // couples-dating bottom-right and weddings bottom-left.
+            //
+            // The aspect ratio leaves room for a third label line: "זוגות
+            // שהתחילו לצאת" does not fit two at this width, and a cut label is
+            // worse than a slightly taller card.
             GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 0.98,
+              childAspectRatio: 0.86,
               children: <Widget>[
-                _StatCard(
-                  icon: Icons.lightbulb_outline_rounded,
-                  label: 'רעיונות שנפתחו',
-                  value: current.ideas,
-                  previous: previous?.ideas,
-                  accent: _amber,
-                ),
-                _StatCard(
-                  icon: Icons.handshake_outlined,
-                  label: 'חברים שנוספו',
-                  value: current.people,
-                  previous: previous?.people,
-                  accent: _blue,
-                ),
-                _StatCard(
-                  icon: Icons.favorite_rounded,
-                  label: 'זוגות שהתחילו לצאת',
-                  value: current.dating,
-                  previous: previous?.dating,
-                  accent: _green,
-                ),
-                _StatCard(
-                  icon: Icons.diamond_outlined,
-                  label: 'חתונות החודש',
-                  value: current.weddings,
-                  previous: previous?.weddings,
-                  accent: _pink,
-                ),
+                for (final MonthlyStatMetric metric in MonthlyStatMetric.values)
+                  _StatCard(
+                    metric: metric,
+                    value: metric.valueOf(current),
+                    previous: previous == null
+                        ? null
+                        : metric.valueOf(previous),
+                    onTap: () => context.push('/stats/month/${metric.name}'),
+                  ),
               ],
             ),
+            const SizedBox(height: 20),
+            // The nudge reads as an introduction to the months below it, so it
+            // comes before the tracker rather than after it.
+            const _DidYouKnowCard(),
             const SizedBox(height: 20),
             _TrendSection(
               periods: periods.reversed.toList(),
               stats: stats.reversed.toList(),
             ),
-            const SizedBox(height: 20),
-            const _DidYouKnowCard(),
           ],
         ),
       ),
@@ -191,25 +177,25 @@ class _MonthHeader extends StatelessWidget {
 }
 
 /// A single metric card: coloured icon badge, big number and — only when the
-/// month improved on the previous one — a rise chip.
+/// month improved on the previous one — a rise chip. Tapping it opens the
+/// records the number was counted from.
 class _StatCard extends StatelessWidget {
   const _StatCard({
-    required this.icon,
-    required this.label,
+    required this.metric,
     required this.value,
     required this.previous,
-    required this.accent,
+    required this.onTap,
   });
 
-  final IconData icon;
-  final String label;
+  final MonthlyStatMetric metric;
   final int value;
   final int? previous;
-  final Color accent;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color accent = metric.color;
 
     // Requirement: only surface the month-over-month comparison when there is a
     // genuine rise. Drops or "no change" show nothing at all.
@@ -217,63 +203,74 @@ class _StatCard extends StatelessWidget {
     final bool showRise = prev != null && value - prev > 0;
     final int delta = prev == null ? 0 : value - prev;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      metric.title,
+                      // Three lines: the longest label ("זוגות שהתחילו לצאת")
+                      // needs a third at a phone's column width.
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        height: 1.25,
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: accent.withValues(alpha: 0.16),
+                    ),
+                    child: Icon(metric.icon, color: accent, size: 24),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                '$value',
+                style: theme.textTheme.displaySmall?.copyWith(
+                  color: accent,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: accent.withValues(alpha: 0.16),
-                ),
-                child: Icon(icon, color: accent, size: 24),
+              const SizedBox(height: 8),
+              // A fixed slot keeps every card the same height whether or not a
+              // rise chip is present.
+              SizedBox(
+                height: 26,
+                child: showRise
+                    ? Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: _RiseChip(delta: delta),
+                      )
+                    : const SizedBox.shrink(),
               ),
             ],
           ),
-          const Spacer(),
-          Text(
-            '$value',
-            style: theme.textTheme.displaySmall?.copyWith(
-              color: accent,
-              fontWeight: FontWeight.w900,
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // A fixed slot keeps every card the same height whether or not a rise
-          // chip is present.
-          SizedBox(
-            height: 26,
-            child: showRise
-                ? Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: _RiseChip(delta: delta),
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ],
+        ),
       ),
     );
   }

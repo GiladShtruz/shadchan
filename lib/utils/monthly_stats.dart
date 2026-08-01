@@ -37,6 +37,120 @@ class MonthStats {
   int get total => ideas + people + dating + weddings;
 }
 
+/// Which of the four numbers is being looked at. Tapping a card on the stats
+/// screen opens the records behind exactly one of these.
+enum MonthlyStatMetric {
+  ideas,
+  people,
+  dating,
+  weddings;
+
+  /// The url segment the drill-down route is addressed by.
+  static MonthlyStatMetric? byName(String? name) {
+    for (final MonthlyStatMetric metric in MonthlyStatMetric.values) {
+      if (metric.name == name) {
+        return metric;
+      }
+    }
+    return null;
+  }
+
+  String get title {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return 'רעיונות שנפתחו';
+      case MonthlyStatMetric.people:
+        return 'חברים שנוספו';
+      case MonthlyStatMetric.dating:
+        return 'זוגות שהתחילו לצאת';
+      case MonthlyStatMetric.weddings:
+        return 'חתונות החודש';
+    }
+  }
+
+  /// The caption on the home card, where a third of a phone's width is all the
+  /// label gets. Same count, fewer words.
+  String get shortTitle {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return 'רעיונות שנפתחו';
+      case MonthlyStatMetric.people:
+        return 'חברים שנוספו';
+      case MonthlyStatMetric.dating:
+        return 'התחילו לצאת';
+      case MonthlyStatMetric.weddings:
+        return 'חתונות';
+    }
+  }
+
+  /// One line saying what the app counted, so the number is never a mystery.
+  String get explanation {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return 'כל רעיון שנפתח בחודש הזה, לפי תאריך הפתיחה שלו.';
+      case MonthlyStatMetric.people:
+        return 'כל חבר שנוסף למאגר בחודש הזה.';
+      case MonthlyStatMetric.dating:
+        return 'זוגות שמסומנים "יוצאים" ושהעדכון האחרון שלהם היה החודש.';
+      case MonthlyStatMetric.weddings:
+        return 'זוגות שמסומנים "חתונה" ושהעדכון האחרון שלהם היה החודש.';
+    }
+  }
+
+  String get emptyLine {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return 'עוד לא נפתחו רעיונות בחודש הזה';
+      case MonthlyStatMetric.people:
+        return 'עוד לא נוספו חברים בחודש הזה';
+      case MonthlyStatMetric.dating:
+        return 'עוד לא התחילו לצאת זוגות בחודש הזה';
+      case MonthlyStatMetric.weddings:
+        return 'עוד לא נרשמו חתונות בחודש הזה';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return Icons.lightbulb_outline_rounded;
+      case MonthlyStatMetric.people:
+        return Icons.handshake_outlined;
+      case MonthlyStatMetric.dating:
+        return Icons.favorite_rounded;
+      case MonthlyStatMetric.weddings:
+        return Icons.diamond_outlined;
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return MonthlyStats.ideasColor;
+      case MonthlyStatMetric.people:
+        return MonthlyStats.peopleColor;
+      case MonthlyStatMetric.dating:
+        return MonthlyStats.datingColor;
+      case MonthlyStatMetric.weddings:
+        return MonthlyStats.weddingsColor;
+    }
+  }
+
+  /// This metric's own number out of a month's [MonthStats].
+  int valueOf(MonthStats stats) {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return stats.ideas;
+      case MonthlyStatMetric.people:
+        return stats.people;
+      case MonthlyStatMetric.dating:
+        return stats.dating;
+      case MonthlyStatMetric.weddings:
+        return stats.weddings;
+    }
+  }
+}
+
 /// The four metrics behind "הנתונים שלך החודש", shared by the full stats screen
 /// and the compact card at the bottom of the home screen so the two can never
 /// drift apart.
@@ -133,5 +247,63 @@ abstract final class MonthlyStats {
   /// The current Hebrew month only — what the home screen's compact card needs.
   static MonthStats current(List<MatchIdea> matches, List<Person> people) {
     return statsFor(buildPeriods(DateTime.now(), 1).first, matches, people);
+  }
+
+  /// The proposals a match-shaped metric counted, newest first. Empty for
+  /// [MonthlyStatMetric.people], which counts people rather than proposals.
+  static List<MatchIdea> matchesFor(
+    MonthlyStatMetric metric,
+    MonthPeriod period,
+    List<MatchIdea> matches,
+  ) {
+    bool within(DateTime date) =>
+        !date.isBefore(period.start) && date.isBefore(period.end);
+
+    final List<MatchIdea> found = switch (metric) {
+      MonthlyStatMetric.ideas =>
+        matches.where((MatchIdea m) => within(m.createdAt)).toList(),
+      MonthlyStatMetric.dating =>
+        matches
+            .where(
+              (MatchIdea m) =>
+                  m.status == MatchStatus.dating && within(m.updatedAt),
+            )
+            .toList(),
+      MonthlyStatMetric.weddings =>
+        matches
+            .where(
+              (MatchIdea m) =>
+                  m.status == MatchStatus.married && within(m.updatedAt),
+            )
+            .toList(),
+      MonthlyStatMetric.people => <MatchIdea>[],
+    };
+
+    found.sort(
+      (MatchIdea a, MatchIdea b) => b.updatedAt.compareTo(a.updatedAt),
+    );
+    return found;
+  }
+
+  /// The people [MonthlyStatMetric.people] counted, newest first. Empty for
+  /// every other metric.
+  static List<Person> peopleFor(
+    MonthlyStatMetric metric,
+    MonthPeriod period,
+    List<Person> people,
+  ) {
+    if (metric != MonthlyStatMetric.people) {
+      return const <Person>[];
+    }
+    final List<Person> found = people
+        .where(
+          (Person p) =>
+              !p.hidden &&
+              !p.createdAt.isBefore(period.start) &&
+              p.createdAt.isBefore(period.end),
+        )
+        .toList();
+    found.sort((Person a, Person b) => b.createdAt.compareTo(a.createdAt));
+    return found;
   }
 }

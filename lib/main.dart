@@ -5,7 +5,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/match_migrations.dart';
 import 'package:shadchan/services/person_migrations.dart';
@@ -46,13 +45,19 @@ Future<void> main() async {
 /// failures are non-fatal — they must never keep the app from starting — so
 /// they are handled inside their own services / swallowed here.
 Future<void> _bootstrap() async {
-  // Firebase first, but never fatal: FirebaseBootstrap swallows its own
-  // failures so a bad network or an unconfigured project can't stop the app
-  // from opening. Local data and every non-AI feature work regardless.
-  await FirebaseBootstrap.initialize();
+  // Firebase is deliberately absent from startup. It is only needed by the AI
+  // import, and `FirebaseBootstrap.ensureReady()` brings it up when one of
+  // those screens is opened — awaiting it here opened the app to a white
+  // screen when a step hung, and even unawaited it competed with the first
+  // frame.
+  final Stopwatch watch = Stopwatch()..start();
+  void mark(String step) {
+    debugPrint('STARTUP $step: ${watch.elapsedMilliseconds}ms');
+  }
 
   await Hive.initFlutter();
   _registerAdapters();
+  mark('hive_init');
 
   await Hive.openBox<Person>('people');
   await Hive.openBox<PersonNote>('person_notes');
@@ -60,8 +65,11 @@ Future<void> _bootstrap() async {
   await Hive.openBox<MatchIdea>('matches');
   await Hive.openBox<MatchNote>('match_notes');
   await Hive.openBox<dynamic>('settings');
+  mark('boxes_open');
 
   await NotificationService.initialize();
+  mark('notifications');
+
   await PersonMigrations.convertBirthDatesToAges(
     people: Hive.box<Person>('people'),
     settings: Hive.box<dynamic>('settings'),
@@ -71,7 +79,10 @@ Future<void> _bootstrap() async {
     people: Hive.box<Person>('people'),
     settings: Hive.box<dynamic>('settings'),
   );
+  mark('migrations');
+
   await NotificationService.cancelBirthdayNotifications();
+  mark('done');
 }
 
 Widget _buildApp() {

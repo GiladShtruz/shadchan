@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/match_outcome_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
@@ -8,7 +9,7 @@ import 'package:shadchan/utils/enums.dart';
 
 /// The "עדכון סטטוס" menu that opens over a proposal card. Everything happens
 /// in place: picking "בהמתנה" asks why and when to look again, and picking
-/// "נדחה" offers to record the reason.
+/// "נדחה" asks who ended it and why before closing the proposal.
 abstract final class MatchStatusSheet {
   static Future<void> show(
     BuildContext context, {
@@ -81,10 +82,11 @@ abstract final class MatchStatusSheet {
           female: female,
         );
       case MatchStatus.rejected:
-        await repository.updateStatus(match.id, picked);
-        if (context.mounted) {
-          await _askForRejectionNote(context, repository, match);
-        }
+        // Goes through recordOutcome rather than a bare status change, so
+        // closing a proposal from here writes both candidates' history — who
+        // ended it and why — exactly like the proposal screen's own
+        // "סגירת ההצעה" flow does.
+        await _closeAsRejected(context, repository, match);
       case MatchStatus.idea:
       case MatchStatus.checking:
       case MatchStatus.dating:
@@ -156,44 +158,25 @@ abstract final class MatchStatusSheet {
     );
   }
 
-  static Future<void> _askForRejectionNote(
+  /// Closes the proposal as rejected, asking who ended it and why first. The
+  /// answers go to [MatchRepository.recordOutcome], which moves the status and
+  /// writes the proposal journal plus both candidates' history.
+  static Future<void> _closeAsRejected(
     BuildContext context,
     MatchRepository repository,
     MatchIdea match,
   ) async {
-    final TextEditingController controller = TextEditingController();
-    final String? note = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('למה ההצעה נדחתה?'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 1,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: 'סיבת השלילה (לא חובה)',
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('דלג'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text('שמירה'),
-            ),
-          ],
-        );
-      },
-    );
-
-    controller.dispose();
-    if (note != null && note.isNotEmpty) {
-      await repository.addNote(match.id, note);
+    final ({MatchOutcomeParty party, String note})? outcome =
+        await MatchOutcomeDialog.show(context, MatchStatus.rejected);
+    if (outcome == null) {
+      return;
     }
+
+    await repository.recordOutcome(
+      match.id,
+      newStatus: MatchStatus.rejected,
+      party: outcome.party,
+      note: outcome.note.isEmpty ? null : outcome.note,
+    );
   }
 }

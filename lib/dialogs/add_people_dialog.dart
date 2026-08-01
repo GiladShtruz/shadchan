@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// The ways a contact can get into the database. Mirrors the "הוספת חברים"
 /// tiles on the home screen so both entry points offer the same choices.
@@ -24,13 +27,7 @@ abstract final class AddPeopleDialog {
       case AddPeopleMethod.manual:
         context.push('/people/add');
       case AddPeopleMethod.ai:
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text('בקרוב! נעדכן כשהעזרה של ה‑AI תהיה מוכנה ✨'),
-            ),
-          );
+        context.push('/people/ai');
     }
   }
 }
@@ -42,6 +39,7 @@ class _AddPeopleDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
+    final Gender? gender = context.userGender;
 
     // A single calm slate accent carries the whole dialog — no gradients, no
     // per-card colours. The icon badges wear a soft wash of it against a cream
@@ -71,7 +69,9 @@ class _AddPeopleDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'בחרו איך תרצו להוסיף חבר/ה חדש/ה',
+                  '{בחר|בחרי} איך {תרצה|תרצי} להוסיף חבר/ה חדש/ה'.forGender(
+                    gender,
+                  ),
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: slate,
@@ -94,7 +94,7 @@ class _AddPeopleDialog extends StatelessWidget {
                       _MethodCard(
                         icon: Icons.contacts_rounded,
                         title: 'הוספה מאנשי הקשר',
-                        subtitle: 'בחרו איש קשר קיים מהטלפון',
+                        subtitle: 'בחירת איש קשר קיים מהטלפון',
                         slate: slate,
                         dark: dark,
                         onTap: () => Navigator.of(
@@ -115,7 +115,8 @@ class _AddPeopleDialog extends StatelessWidget {
                       _MethodCard(
                         icon: Icons.auto_awesome_rounded,
                         title: 'היעזרו ב‑AI להוספה',
-                        subtitle: 'תנו ל‑AI לעזור לכם להוסיף ולהשלים פרטים',
+                        subtitle: '{תן|תני} ל‑AI לעזור לך להוסיף ולהשלים פרטים'
+                            .forGender(gender),
                         slate: slate,
                         dark: dark,
                         badge: 'חדש!',
@@ -377,6 +378,7 @@ class _SecurityFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Gender? gender = context.userGender;
 
     return Container(
       width: double.infinity,
@@ -391,7 +393,9 @@ class _SecurityFooter extends StatelessWidget {
         children: <Widget>[
           Flexible(
             child: Text(
-              'המידע נשמר בצורה מאובטחת ורק אתם רואים אותו',
+              'המידע נשמר בצורה מאובטחת ורק {אתה רואה|את רואה} אותו'.forGender(
+                gender,
+              ),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

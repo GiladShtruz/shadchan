@@ -116,7 +116,7 @@ class _PhotoThumb extends StatelessWidget {
             child: IconButton(
               visualDensity: VisualDensity.compact,
               iconSize: 16,
-              tooltip: isPrimary ? 'זו התמונה הראשית' : 'בחר כתמונה ראשית',
+              tooltip: isPrimary ? 'זו התמונה הראשית' : 'הגדרה כתמונה ראשית',
               onPressed: isPrimary ? null : onSetPrimary,
               icon: Icon(
                 isPrimary ? Icons.star : Icons.star_border,

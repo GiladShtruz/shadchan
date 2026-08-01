@@ -5,6 +5,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_config.dart';
+import 'package:shadchan/utils/monthly_stats.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
@@ -66,9 +67,9 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('כל חיבור מתחיל ברעיון טוב'), findsOneWidget);
-    expect(find.text('הצג רעיונות חדשים'), findsOneWidget);
-    expect(find.text('הוסף חברים'), findsOneWidget);
-    expect(find.text('הוסף רעיון'), findsOneWidget);
+    expect(find.text('הצגת רעיונות חדשים'), findsOneWidget);
+    expect(find.text('הוספת חברים'), findsOneWidget);
+    expect(find.text('הוספת רעיון'), findsOneWidget);
 
     // The pair must not read as two identical squares: the filled call to
     // action is the wider of the two.
@@ -76,7 +77,7 @@ void main() {
         .getSize(
           find
               .ancestor(
-                of: find.text('הוסף חברים'),
+                of: find.text('הוספת חברים'),
                 matching: find.byType(Material),
               )
               .first,
@@ -86,7 +87,7 @@ void main() {
         .getSize(
           find
               .ancestor(
-                of: find.text('הוסף רעיון'),
+                of: find.text('הוספת רעיון'),
                 matching: find.byType(Material),
               )
               .first,
@@ -131,23 +132,42 @@ void main() {
       find.text('שומרים על קשר :) כל זוג צריך חבר אחד שיאמין בו'),
       findsOneWidget,
     );
+    // The blessing was dropped; the banner is the names and the duration.
+    expect(find.text('מאחלים לכם המשך דרך יפה!'), findsNothing);
+    // Material mirrors the chevrons in RTL, so the arrow that renders pointing
+    // left — the way this page reads forward — is `chevron_right`.
+    expect(
+      tester.widget<HomeArrowButton>(find.byType(HomeArrowButton)).icon,
+      Icons.chevron_right,
+    );
 
     await tester.drag(find.byType(PageView), const Offset(300, 0));
     await tester.pumpAndSettle();
     expect(find.text('יאיר & שושנה'), findsOneWidget);
   });
 
-  testWidgets('the month opens as a button, without its numbers', (
+  testWidgets('the month card carries its three numbers, and the tip its link', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       wrap(
         Column(
           children: <Widget>[
-            HomeStatsButton(onTap: () {}),
-            const SizedBox(height: 12),
+            HomeStatsPanel(
+              stats: const MonthStats(
+                ideas: 12,
+                people: 7,
+                dating: 4,
+                weddings: 2,
+              ),
+              onTap: () {},
+            ),
+            const SizedBox(height: 16),
             HomeTipStrip(
-              tip: 'אם עולה לכם מישהו בראש — תתעדו מיד. אל תסמכו על הזיכרון.',
+              tip: 'אם עולה לך מישהו בראש — תעד מיד. אל תסמוך על הזיכרון.',
               onAnother: () {},
             ),
           ],
@@ -158,11 +178,50 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('הנתונים שלך החודש'), findsOneWidget);
-    expect(find.text('טיפ לחודש'), findsOneWidget);
+    expect(find.text('טיפ לשדכן'), findsOneWidget);
     expect(
-      find.text('אם עולה לכם מישהו בראש — תתעדו מיד. אל תסמכו על הזיכרון.'),
+      find.text('אם עולה לך מישהו בראש — תעד מיד. אל תסמוך על הזיכרון.'),
       findsOneWidget,
     );
+
+    // Three of the four numbers fit the row; the weddings count stays on the
+    // stats screen the card opens.
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('7'), findsOneWidget);
+    expect(find.text('4'), findsOneWidget);
+    expect(find.text('רעיונות שנפתחו'), findsOneWidget);
+    expect(find.text('2'), findsNothing);
+
+    // The arrow points the way the page reads — which in RTL means the mirrored
+    // `chevron_right` — and the tip moves forward rather than reloading, so no
+    // refresh icon is left anywhere.
+    expect(
+      find.descendant(
+        of: find.byType(HomeStatsPanel),
+        matching: find.byIcon(Icons.chevron_right),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.refresh), findsNothing);
+    expect(find.text('טיפ נוסף'), findsOneWidget);
+  });
+
+  testWidgets('the tip heading follows the matchmaker\'s own gender', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        HomeTipStrip(
+          tip: 'אנשים משתנים.',
+          onAnother: () {},
+          userGender: Gender.female,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('טיפ לשדכנית'), findsOneWidget);
+    expect(find.text('טיפ לשדכן'), findsNothing);
   });
 
   testWidgets('a long name wraps instead of being cut, and every card in the '
@@ -205,6 +264,13 @@ void main() {
     );
     expect(name.didExceedMaxLines, isFalse);
     expect(name.size.height, greaterThan(20));
+
+    // The action line under it gets the same treatment: a long "what happened"
+    // is given a second line rather than one line and an ellipsis.
+    expect(
+      tester.widget<Text>(find.text('ערכת פרטים · לפני יומיים')).maxLines,
+      2,
+    );
 
     // Wrapping must not make one card taller than its neighbour.
     final List<Size> sizes = tester

@@ -10,6 +10,8 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// How the screen should open the other side of the proposal when it is
 /// reached from a candidate's "הוסף הצעה" shortcut.
@@ -139,7 +141,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                       const SizedBox(height: 16),
                       _SelectionCard(
                         title: 'בחירת בחור',
-                        emptyLabel: 'בחר בחור',
+                        emptyLabel: 'בחירת בחור',
                         gender: Gender.male,
                         person: _personA,
                         onTap: () => _selectPerson(Gender.male),
@@ -147,7 +149,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                       const _HeartDivider(),
                       _SelectionCard(
                         title: 'בחירת בחורה',
-                        emptyLabel: 'בחר בחורה',
+                        emptyLabel: 'בחירת בחורה',
                         gender: Gender.female,
                         person: _personB,
                         onTap: () => _selectPerson(Gender.female),
@@ -347,7 +349,9 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'בחר שני חברים כדי ליצור רעיון חדש',
+          '{בחר|בחרי} שני חברים כדי ליצור רעיון חדש'.forGender(
+            context.userGender,
+          ),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,

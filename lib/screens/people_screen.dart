@@ -218,7 +218,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             child: EmptyState(
               icon: Icons.search,
               title: 'לא נמצאו תוצאות',
-              subtitle: 'נסו לשנות את החיפוש או את הסינון',
+              subtitle: '{נסה|נסי} לשנות את החיפוש או את הסינון',
             ),
           )
         else
@@ -245,9 +245,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
   }
 
-  /// The heart on a row opens the same "התאמות" screen the profile does — the
+  /// The heart on a row opens the same "התאמות" view the profile does — the
   /// suggestions list with its filter, quick card and accept/reject actions —
-  /// instead of a picker sheet of its own.
+  /// but raised as a sheet over the list, so closing it puts the database back
+  /// exactly where it was rather than walking back through a pushed page.
   Future<void> _openMatchSuggestions(
     BuildContext context,
     Person person,
@@ -262,7 +263,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         );
       return;
     }
-    await openSuggestionsFor(context, person.id);
+    await openSuggestionsSheet(context, person.id);
   }
 
   /// Walks the drafts left over from an older version of the app, one dialog
@@ -716,7 +717,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   person.isFavorite ? Icons.star_outline : Icons.star,
                 ),
                 title: Text(
-                  person.isFavorite ? 'הסר ממועדפים' : 'הוסף למועדפים',
+                  person.isFavorite ? 'הסרה ממועדפים' : 'הוספה למועדפים',
                 ),
                 onTap: () async {
                   Navigator.of(bottomSheetContext).pop();
@@ -887,7 +888,7 @@ class _MembersBanner extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         Text(
-                          'הוסף חברים נוספים',
+                          'הוספת חברים נוספים',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w700,

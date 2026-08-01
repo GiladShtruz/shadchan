@@ -170,7 +170,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
               ? const EmptyState(
                   icon: Icons.search,
                   title: 'לא נמצאו תוצאות',
-                  subtitle: 'נסו לחפש בשם אחר או לשנות את הסינון',
+                  subtitle: '{נסה|נסי} לחפש בשם אחר או לשנות את הסינון',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -640,10 +640,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       return;
     }
 
-    // Taken before the write: after an await this State's context may already
-    // be gone, and the message must not depend on that.
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-
+    // No confirmation bar: the rows disappearing from the list says it.
     setState(() {
       for (final ContactImportCandidate candidate in selected) {
         _handledIds.add(candidate.deviceContactId);
@@ -652,13 +649,6 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       _selectedIds.clear();
     });
     await _saveSkippedPhones();
-
-    _showBriefSnackBar(
-      selected.length == 1
-          ? '${selected.first.displayName} הוסר מהרשימה'
-          : '${selected.length} אנשי קשר הוסרו מהרשימה',
-      messenger: messenger,
-    );
   }
 
   Future<void> _loadContacts() async {
@@ -1209,7 +1199,7 @@ class _PermissionStateView extends StatelessWidget {
               subtitle: isPermanentlyDenied
                   ? 'כדי לייבא אנשי קשר צריך לאשר גישה בהגדרות המכשיר'
                   : 'כדי לייבא אנשי קשר צריך לאשר גישה לספר הטלפונים',
-              buttonText: isPermanentlyDenied ? 'פתח הגדרות' : 'נסה שוב',
+              buttonText: isPermanentlyDenied ? 'פתיחת הגדרות' : 'לנסות שוב',
               onButtonPressed: isPermanentlyDenied ? onOpenSettings : onRetry,
             ),
             if (isPermanentlyDenied)

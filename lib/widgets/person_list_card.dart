@@ -148,8 +148,8 @@ class PersonListCard extends StatelessWidget {
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     tooltip: person.isFavorite
-                        ? 'הסר ממועדפים'
-                        : 'הוסף למועדפים',
+                        ? 'הסרה ממועדפים'
+                        : 'הוספה למועדפים',
                     icon: Icon(
                       person.isFavorite
                           ? Icons.favorite

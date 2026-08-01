@@ -89,6 +89,51 @@ void main() {
     expect(personRepository.personReminderFor(female.id), isNull);
     expect(matchRepository.getNotesForMatch(match.id), isEmpty);
   });
+
+  test(
+    'every idea of a candidate who becomes available again reopens',
+    () async {
+      final DateTime now = DateTime(2026, 7, 27);
+      final Person female = _person('female', 'כרמל', Gender.female, now);
+      final Person first = _person('m1', 'הלל', Gender.male, now);
+      final Person second = _person('m2', 'אליה', Gender.male, now);
+      for (final Person person in <Person>[female, first, second]) {
+        await people.put(person.id, person);
+      }
+      for (final String id in <String>['match1', 'match2']) {
+        await matches.put(
+          id,
+          MatchIdea(
+            id: id,
+            personAId: id == 'match1' ? first.id : second.id,
+            personBId: female.id,
+            status: MatchStatus.idea,
+            currentHandler: CurrentHandler.me,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+      }
+
+      // "תפוס" pauses both of her ideas at once...
+      await personRepository.updateProfileStatus(female.id, ProfileStatus.busy);
+      expect(
+        matchRepository.getAll().map((MatchIdea m) => m.status),
+        everyElement(MatchStatus.unavailable),
+      );
+
+      // ...and going back to "פנוי" hands both of them back as open ideas,
+      // without the matchmaker touching either proposal.
+      await personRepository.updateProfileStatus(
+        female.id,
+        ProfileStatus.available,
+      );
+      expect(
+        matchRepository.getAll().map((MatchIdea m) => m.status),
+        everyElement(MatchStatus.idea),
+      );
+    },
+  );
 }
 
 Person _person(String id, String name, Gender gender, DateTime now) {

@@ -12,7 +12,12 @@
           "package_name": "com.gilad.shadchan"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "769854167286-sjvi4i4petocs4mi1ousrpp7nuq38k8m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBGRJvzhDpPXGgxTmimz1g7Zyk91D5eAPc"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "769854167286-sjvi4i4petocs4mi1ousrpp7nuq38k8m.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

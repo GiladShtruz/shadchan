@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// Lets the matchmaker choose which religious styles the app offers, and add
 /// their own labels under "אחר".
@@ -22,7 +24,9 @@ class ReligiousLevelsSettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: <Widget>[
             Text(
-              'בחרו אילו סגנונות דתיים יופיעו באפליקציה בעת עריכת כרטיס וסינון המאגר.',
+              '{בחר|בחרי} אילו סגנונות דתיים יופיעו באפליקציה בעת עריכת כרטיס '
+                      'וסינון המאגר.'
+                  .forGender(context.userGender),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -51,7 +55,7 @@ class ReligiousLevelsSettingsScreen extends StatelessWidget {
               ],
             ),
             Text(
-              'הגדרה אישית משלכם, שתופיע לצד שאר הסגנונות.',
+              'הגדרה אישית משלך, שתופיע לצד שאר הסגנונות.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

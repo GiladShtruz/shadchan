@@ -13,6 +13,8 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
+import 'package:shadchan/services/ai_card_parser.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/widgets/person_photo_editor.dart';
@@ -68,6 +70,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   List<String> _photoPaths = <String>[];
   bool _didLoadInitialData = false;
   bool _isSaving = false;
+  bool _isReadingWithAi = false;
+  bool _cardHasText = false;
   bool _isImportingIncomingPhotos = false;
 
   bool get _isEditMode =>
@@ -76,6 +80,21 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   @override
   void initState() {
     super.initState();
+    // Watching the controller rather than the onChanged callback catches every
+    // way the card text arrives — typed, loaded from an existing person, or
+    // filled from an incoming share — so the AI button's visibility can never
+    // fall out of step with the field.
+    _descriptionController.addListener(_syncCardHasText);
+    // Warmed here rather than on tap: bringing Firebase up takes a moment, and
+    // the button should be ready by the time a pasted card fails to parse.
+    unawaited(FirebaseBootstrap.ensureReady());
+  }
+
+  void _syncCardHasText() {
+    final bool hasText = _descriptionController.text.trim().isNotEmpty;
+    if (hasText != _cardHasText) {
+      setState(() => _cardHasText = hasText);
+    }
   }
 
   @override
@@ -110,6 +129,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _sourceController.dispose();
     _notesController.dispose();
     _personalNotesController.dispose();
+    _descriptionController.removeListener(_syncCardHasText);
     _descriptionController.dispose();
     super.dispose();
   }
@@ -165,7 +185,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.check),
-            label: const Text('שמור'),
+            label: const Text('שמירה'),
             shape: const StadiumBorder(),
           ),
           floatingActionButtonLocation:
@@ -251,6 +271,41 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 ),
               ],
             ),
+            // Offered only once there is something to read, and only where
+            // Firebase came up. The card text is sent to Gemini, so this stays
+            // a deliberate tap rather than something that happens on its own.
+            if (_cardHasText)
+              ValueListenableBuilder<bool>(
+                valueListenable: FirebaseBootstrap.readyListenable,
+                builder: (BuildContext context, bool ready, _) {
+                  if (!ready) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton.icon(
+                        onPressed: _isReadingWithAi ? null : _readCardWithAi,
+                        icon: _isReadingWithAi
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.auto_awesome_outlined, size: 18),
+                        label: Text(
+                          _isReadingWithAi
+                              ? 'קורא…'
+                              : 'לא זוהו פרטים? קרא עם AI',
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             const SizedBox(height: 24),
             TextFormField(
               controller: _firstNameController,
@@ -494,7 +549,58 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     if (parsed.isEmpty) {
       return;
     }
+    _applyParsedCard(parsed);
+  }
 
+  /// Sends the pasted card to Gemini, for the messy ones [CardParser] cannot
+  /// read. Only ever runs on an explicit tap: the local parser re-runs on every
+  /// keystroke, and this must not.
+  Future<void> _readCardWithAi() async {
+    if (_isReadingWithAi) {
+      return;
+    }
+    setState(() => _isReadingWithAi = true);
+    try {
+      final ParsedCard parsed = await AiCardParser.parse(
+        _descriptionController.text,
+      );
+      if (!mounted) {
+        return;
+      }
+      _applyParsedCard(parsed);
+    } on AiParseException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_aiFailureMessage(error.reason))));
+    } finally {
+      if (mounted) {
+        setState(() => _isReadingWithAi = false);
+      }
+    }
+  }
+
+  String _aiFailureMessage(AiParseFailure reason) {
+    switch (reason) {
+      case AiParseFailure.empty:
+        return 'לא נמצאו פרטים בכרטיסייה. אפשר למלא ידנית.';
+      case AiParseFailure.network:
+        return 'לא הצלחנו להתחבר. בדוק את החיבור לאינטרנט ונסה שוב.';
+      case AiParseFailure.unavailable:
+        return 'הקריאה החכמה אינה זמינה כרגע.';
+      case AiParseFailure.attestation:
+        return 'המכשיר הזה לא מאושר לשימוש ב‑AI.';
+      case AiParseFailure.unknown:
+        return 'משהו השתבש בקריאת הכרטיסייה. אפשר למלא ידנית.';
+    }
+  }
+
+  /// Fills the form from a parsed card, whoever parsed it. Shared by the local
+  /// [CardParser] pass and the Gemini fallback so a card read by the model can
+  /// never reach a field by a route the local parser does not also take.
+  void _applyParsedCard(ParsedCard parsed) {
     setState(() {
       _applyParsedText('firstName', _firstNameController, parsed.firstName);
       _applyParsedText('lastName', _lastNameController, parsed.lastName);

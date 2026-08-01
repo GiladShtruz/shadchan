@@ -24,7 +24,7 @@ class PersonPickerSheet extends StatefulWidget {
     this.religiousLevelOtherLabels = const <String>[],
     this.profileStatuses = const <ProfileStatus>[],
     this.candidatePredicate,
-    this.emptySubtitle = 'נסו לחפש בשם אחר',
+    this.emptySubtitle = '{נסה|נסי} לחפש בשם אחר',
     this.allowCreateOutsideDatabase = false,
   });
 
@@ -54,7 +54,7 @@ class PersonPickerSheet extends StatefulWidget {
     List<String> religiousLevelOtherLabels = const <String>[],
     List<ProfileStatus> profileStatuses = const <ProfileStatus>[],
     PersonFilter? candidatePredicate,
-    String emptySubtitle = 'נסו לחפש בשם אחר',
+    String emptySubtitle = '{נסה|נסי} לחפש בשם אחר',
     bool allowCreateOutsideDatabase = false,
   }) {
     return showModalBottomSheet<Person>(
@@ -425,7 +425,7 @@ class _NotFoundFooter extends StatelessWidget {
             child: OutlinedButton.icon(
               onPressed: onTap,
               icon: const Icon(Icons.person_add_alt_1),
-              label: const Text('הוסף שם מחוץ למאגר'),
+              label: const Text('הוספת שם מחוץ למאגר'),
             ),
           ),
         ],
@@ -762,7 +762,7 @@ class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
 
                     Navigator.of(context).pop(filters);
                   },
-                  child: const Text('הצג תוצאות'),
+                  child: const Text('הצגת תוצאות'),
                 ),
               ),
               Align(

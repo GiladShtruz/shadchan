@@ -66,7 +66,7 @@ void main() {
     expect(find.text('סינון אנשים'), findsOneWidget);
     expect(find.text('הכל'), findsOneWidget);
     expect(find.text('מגיל'), findsOneWidget);
-    expect(find.text('הצג תוצאות'), findsOneWidget);
+    expect(find.text('הצגת תוצאות'), findsOneWidget);
     expect(find.text('נקה'), findsOneWidget);
     expect(_chip(tester, 'זכר').selected, isTrue);
     expect(_chip(tester, 'פנוי').selected, isTrue);

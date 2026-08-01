@@ -61,6 +61,52 @@ abstract final class PhotoPickerService {
     }
   }
 
+  /// Picks a single photo — the matchmaker's own profile picture. Returns the
+  /// copied path, or null when the user cancelled or the pick failed (the
+  /// failure is surfaced to the user here, as in [pickPhotos]).
+  static Future<String?> pickSinglePhoto(
+    BuildContext context, {
+    String namePrefix = 'me',
+  }) async {
+    final bool hasPermission = await _ensureMediaPermission(context);
+    if (!hasPermission || !context.mounted) {
+      return null;
+    }
+
+    try {
+      final XFile? pickedFile = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+      );
+      if (pickedFile == null) {
+        return null;
+      }
+
+      final Directory photosDirectory = await ensurePhotosDirectory();
+      final String targetPath =
+          '${photosDirectory.path}${Platform.pathSeparator}'
+          '${namePrefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await File(pickedFile.path).copy(targetPath);
+      return targetPath;
+    } on PlatformException catch (error) {
+      if (!context.mounted) {
+        return null;
+      }
+
+      if (_looksLikePermissionError(error)) {
+        await showPermissionExplanationDialog(context);
+        return null;
+      }
+
+      _showSnackBar(context, 'לא הצלחנו לבחור תמונה כרגע');
+      return null;
+    } catch (_) {
+      if (context.mounted) {
+        _showSnackBar(context, 'לא הצלחנו לשמור את התמונה');
+      }
+      return null;
+    }
+  }
+
   static Future<Directory> ensurePhotosDirectory() async {
     final Directory documentsDirectory =
         await getApplicationDocumentsDirectory();

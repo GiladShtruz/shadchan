@@ -112,17 +112,12 @@ class _MatchesScreenState extends State<MatchesScreen> {
       appBar: AppBar(
         centerTitle: true,
         title: const Text('רעיונות'),
+        // Adding leads, so it sits at the start edge — the top right in RTL —
+        // and searching sits at the far end, the top left.
         leading: IconButton(
-          tooltip: _searchVisible ? 'סגירת חיפוש' : 'חיפוש',
-          icon: Icon(_searchVisible ? Icons.close : Icons.search),
-          onPressed: () {
-            setState(() {
-              _searchVisible = !_searchVisible;
-              if (!_searchVisible) {
-                _searchController.clear();
-              }
-            });
-          },
+          tooltip: 'רעיון חדש',
+          icon: const Icon(Icons.add),
+          onPressed: () => context.push('/matches/add'),
         ),
         actions: <Widget>[
           IconButton(
@@ -135,9 +130,16 @@ class _MatchesScreenState extends State<MatchesScreen> {
             onPressed: () => RemindersPanel.show(context),
           ),
           IconButton(
-            tooltip: 'רעיון חדש',
-            icon: const Icon(Icons.add),
-            onPressed: () => context.push('/matches/add'),
+            tooltip: _searchVisible ? 'סגירת חיפוש' : 'חיפוש',
+            icon: Icon(_searchVisible ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                _searchVisible = !_searchVisible;
+                if (!_searchVisible) {
+                  _searchController.clear();
+                }
+              });
+            },
           ),
         ],
       ),
@@ -356,7 +358,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
       return const EmptyState(
         icon: Icons.search,
         title: 'לא נמצאו תוצאות',
-        subtitle: 'נסו לחפש בשם אחר',
+        subtitle: '{נסה|נסי} לחפש בשם אחר',
       );
     }
 
@@ -409,7 +411,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
         return EmptyState(
           icon: Icons.favorite_border,
           title: 'אין רעיונות פתוחים',
-          subtitle: 'צרו רעיון חדש בין שני חברים',
+          subtitle: '{צור|צרי} רעיון חדש בין שני חברים',
           buttonText: 'רעיון חדש',
           onButtonPressed: () => context.push('/matches/add'),
         );

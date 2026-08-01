@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:shadchan/utils/app_router.dart';
+import 'package:shadchan/utils/import_file_kind.dart';
 
 class IncomingSharedProfileListener extends StatefulWidget {
   IncomingSharedProfileListener({
@@ -75,6 +76,19 @@ class _IncomingSharedProfileListenerState
 
     while (mounted && _pendingDrafts.isNotEmpty) {
       final IncomingSharedProfileDraft draft = _pendingDrafts.removeFirst();
+
+      // A spreadsheet or a chat export is a batch of people, not one profile,
+      // so it goes to the AI import instead of the single-contact form. Checked
+      // before the profile route because such a file would otherwise land there
+      // as an unreadable attachment.
+      final String? importable = ImportFileKinds.firstSupported(
+        draft.filePaths,
+      );
+      if (importable != null) {
+        await AppRouter.router.push<void>('/people/ai', extra: importable);
+        continue;
+      }
+
       await AppRouter.router.push<void>('/people/shared-import', extra: draft);
     }
 

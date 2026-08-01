@@ -9,8 +9,10 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
+import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
+import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -102,7 +104,7 @@ void main() {
     expect(shouldShowBottomNavigationBar('/people/import'), isFalse);
     expect(shouldShowBottomNavigationBar('/matches/add'), isFalse);
     expect(shouldShowBottomNavigationBar('/dashboard'), isFalse);
-    expect(shouldShowBottomNavigationBar('/settings'), isFalse);
+    expect(shouldShowBottomNavigationBar('/profile'), isFalse);
   });
 
   testWidgets(
@@ -157,7 +159,15 @@ void main() {
       expect(find.text('לפתיחת הצעה'), findsOneWidget);
       expect(find.text('הכרטיס שלו'), findsNothing);
 
-      final Finder showFullCard = find.text('הצג כרטיס מלא');
+      // Sharing sits in the profile header, beside the photo.
+      await tester.tap(find.byTooltip('שיתוף הכרטיס'));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.text('שיתוף הכרטיס המלא'), findsOneWidget);
+      expect(find.text('שיתוף דרך WhatsApp'), findsOneWidget);
+      await tester.tapAt(const Offset(12, 12));
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final Finder showFullCard = find.text('הצגת הכרטיס המלא');
       await tester.ensureVisible(showFullCard);
       await tester.pump(const Duration(milliseconds: 200));
       await tester.tap(showFullCard);
@@ -165,15 +175,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.textContaining('סוף הכרטיס המלא'), findsWidgets);
-      expect(find.byTooltip('שיתוף הכרטיס המלא'), findsOneWidget);
       expect(find.text('סגירת הכרטיס המלא'), findsOneWidget);
-
-      await tester.tap(find.byTooltip('שיתוף הכרטיס המלא'));
-      await tester.pump(const Duration(milliseconds: 250));
-      expect(find.text('שיתוף הכרטיס המלא'), findsOneWidget);
-      expect(find.text('שיתוף דרך WhatsApp'), findsOneWidget);
-      await tester.tapAt(const Offset(12, 12));
-      await tester.pump(const Duration(milliseconds: 250));
+      // The expanded card no longer carries a share button of its own.
+      expect(find.byTooltip('שיתוף הכרטיס המלא'), findsNothing);
 
       await tester.scrollUntilVisible(
         find.text('הצעות פתוחות (1)'),
@@ -186,6 +190,55 @@ void main() {
       expect(find.byTooltip('WhatsApp עם כרמל לוי'), findsOneWidget);
     },
   );
+
+  testWidgets('Tapping the profile photo opens the full card full screen', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2026, 7, 27);
+    final Person profile = Person(
+      id: 'card-viewer-person',
+      firstName: 'הלל',
+      lastName: 'אבולעפיה',
+      gender: Gender.male,
+      manualAge: 27,
+      description: 'שורה ראשונה\nסוף הכרטיס המלא',
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(profile.id, profile);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    AppRouter.router.go('/people/${profile.id}');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.byType(PersonAvatar).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // The viewer shows the person's name and the card text, and deliberately
+    // carries no share button — that lives on the profile header.
+    expect(find.byType(PersonCardViewer), findsOneWidget);
+    expect(find.textContaining('סוף הכרטיס המלא'), findsWidgets);
+    // Scoped to the viewer: the profile page underneath keeps its own share
+    // button in the tree while this route is pushed over it.
+    expect(
+      find.descendant(
+        of: find.byType(PersonCardViewer),
+        matching: find.byTooltip('שיתוף הכרטיס'),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.byTooltip('סגירה'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PersonCardViewer), findsNothing);
+  });
 
   testWidgets('Match detail shows one derived state and compact pair actions', (
     WidgetTester tester,

@@ -106,6 +106,15 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
 
         val handled = when {
+            // Checked first: a spreadsheet or a chat export is a batch of
+            // people for the AI import, and it would otherwise be claimed by
+            // isBackupIntent (which accepts any ACTION_VIEW) and fed to the
+            // backup restore, where it fails as unreadable JSON.
+            isImportDocumentIntent(intent) -> {
+                enqueueIncomingSharedProfile(intent)
+                true
+            }
+
             isBackupIntent(intent) -> {
                 enqueueIncomingFiles(intent)
                 true
@@ -218,6 +227,43 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         return mimeType == "text/plain" || mimeType.startsWith("image/")
     }
 
+    /// A file meant for the AI import: a spreadsheet, or a WhatsApp chat
+    /// export as either the .zip with its media or the bare .txt.
+    ///
+    /// Both the declared type and the file name are consulted. Senders are
+    /// wildly inconsistent — a file manager may offer application/octet-stream
+    /// for a .xlsx, and an ACTION_VIEW of a content:// Uri often carries no
+    /// type at all — so trusting either one alone loses real files.
+    private fun isImportDocumentIntent(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_VIEW &&
+            intent.action != Intent.ACTION_SEND &&
+            intent.action != Intent.ACTION_SEND_MULTIPLE
+        ) {
+            return false
+        }
+
+        val uris = extractIncomingUris(intent)
+        if (uris.isEmpty()) {
+            return false
+        }
+
+        if (IMPORT_MIME_TYPES.contains(intent.type?.lowercase())) {
+            return true
+        }
+
+        return uris.any { uri ->
+            IMPORT_MIME_TYPES.contains(contentResolver.getType(uri)?.lowercase()) ||
+                IMPORT_EXTENSIONS.contains(documentExtension(uri))
+        }
+    }
+
+    /// The lower-cased extension of what a Uri points at, including the dot.
+    private fun documentExtension(uri: Uri): String? {
+        val name = resolveDisplayName(uri) ?: uri.lastPathSegment ?: return null
+        val dot = name.lastIndexOf('.')
+        return if (dot >= 0) name.substring(dot).lowercase() else null
+    }
+
     private fun looksLikeBackupMimeType(mimeType: String?): Boolean {
         val type = mimeType?.lowercase() ?: return false
         return type == "application/json" ||
@@ -313,7 +359,11 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
 
     private fun copySharedUriToCache(uri: Uri): String? {
         return try {
-            val fileName = resolveDisplayName(uri) ?: "shared_profile_image.jpg"
+            // The extension is what the Dart side reads to decide whether this
+            // is a spreadsheet, a chat export or a photo, so a Uri with no
+            // resolvable name falls back to one derived from its type rather
+            // than to a .jpg that would send a workbook down the photo path.
+            val fileName = resolveDisplayName(uri) ?: fallbackFileName(uri)
             val importsDirectory = File(cacheDir, "incoming_shared_profiles")
             if (!importsDirectory.exists()) {
                 importsDirectory.mkdirs()
@@ -332,6 +382,17 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun fallbackFileName(uri: Uri): String {
+        val extension = when (contentResolver.getType(uri)?.lowercase()) {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> ".xlsx"
+            "application/vnd.ms-excel" -> ".xlsx"
+            "application/zip", "application/x-zip-compressed", "multipart/x-zip" -> ".zip"
+            "text/plain" -> ".txt"
+            else -> documentExtension(uri) ?: ".jpg"
+        }
+        return "shared_${UUID.randomUUID()}$extension"
     }
 
     private fun resolveDisplayName(uri: Uri): String? {
@@ -454,6 +515,17 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     }
 
     companion object {
+        /// What the AI import can read: a spreadsheet, or a WhatsApp chat
+        /// export as either the .zip with its media or the bare .txt.
+        private val IMPORT_EXTENSIONS = setOf(".xlsx", ".xlsm", ".zip", ".txt")
+        private val IMPORT_MIME_TYPES = setOf(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "application/zip",
+            "application/x-zip-compressed",
+            "multipart/x-zip",
+        )
+
         private const val METHOD_CHANNEL_NAME = "shadchan/incoming_backup_files/methods"
         private const val EVENT_CHANNEL_NAME = "shadchan/incoming_backup_files/events"
         private const val SHARED_PROFILES_METHOD_CHANNEL_NAME =

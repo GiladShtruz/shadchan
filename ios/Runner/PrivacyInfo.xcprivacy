@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<!-- The app is local-first: people, notes, photos and matches live in Hive
+		     on the device and are never uploaded. Firebase is used only as an
+		     authenticated channel to Gemini for the AI import flows, and no
+		     personal data is written to any Firebase product, so nothing is
+		     "collected" in Apple's sense. -->
+		<key>NSPrivacyCollectedDataTypes</key>
+		<array/>
+		<key>NSPrivacyTracking</key>
+		<false/>
+		<key>NSPrivacyTrackingDomains</key>
+		<array/>
+		<!-- The Runner target's own native code (the two incoming-file bridges)
+		     uses no required-reason APIs; the Flutter engine and each plugin ship
+		     their own manifests for the ones they use. -->
+		<key>NSPrivacyAccessedAPITypes</key>
+		<array/>
+	</dict>
+</plist>

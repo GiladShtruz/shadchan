@@ -49,7 +49,7 @@ class ReligiousLevelPicker extends StatelessWidget {
             ),
             if (showSettingsShortcut)
               TextButton.icon(
-                onPressed: () => context.push('/settings/religious-levels'),
+                onPressed: () => context.push('/profile/religious-levels'),
                 icon: const Icon(Icons.tune, size: 18),
                 label: const Text('עריכת הגדרות דתיות'),
               ),
