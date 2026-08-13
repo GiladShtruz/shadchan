@@ -162,7 +162,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               icon: const Icon(Icons.arrow_back),
               onPressed: _handleBackPressed,
             ),
-            title: Text(_isEditMode ? 'עריכת פרטים' : 'הוספת איש קשר'),
+            title: Text(_isEditMode ? 'עריכת פרטים' : 'הוספת כרטיס'),
             centerTitle: true,
             actions: <Widget>[
               IconButton(
@@ -232,307 +232,357 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            PersonPhotoEditor(
-              photoPaths: _photoPaths,
-              onAddPhoto: _pickPhotos,
-              onSetPrimary: _setPrimaryPhoto,
-            ),
-            const SizedBox(height: 24),
-            // Pasting the card here fills the fields below through
-            // [CardParser], so the common case is paste-then-review.
-            TextFormField(
-              controller: _descriptionController,
-              textInputAction: TextInputAction.newline,
-              maxLines: 10,
-              minLines: 5,
-              onChanged: _handleCardTextChanged,
-              decoration: const InputDecoration(
-                labelText: 'כרטיסייה לשליחה',
-                hintText: 'הדבק כרטיסייה כאן',
-                alignLabelWithHint: true,
+            _PersonFormIntro(isEditMode: _isEditMode),
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 20),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.045),
+                    blurRadius: 18,
+                    offset: const Offset(0, 7),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                Icon(
-                  Icons.auto_fix_high_outlined,
-                  size: 16,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'הפרטים שלמטה יתמלאו אוטומטית מהכרטיסייה. אפשר לתקן הכל ידנית.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const _FormSectionHeading(
+                    icon: Icons.badge_outlined,
+                    title: 'הכרטיס והתמונות',
+                    subtitle: 'אפשר להתחיל מהכרטיס ולתת לפרטים להתמלא',
+                  ),
+                  const SizedBox(height: 16),
+                  PersonPhotoEditor(
+                    photoPaths: _photoPaths,
+                    onAddPhoto: _pickPhotos,
+                    onSetPrimary: _setPrimaryPhoto,
+                  ),
+                  const SizedBox(height: 20),
+                  // Pasting the card here fills the fields below through
+                  // [CardParser], so the common case is paste-then-review.
+                  TextFormField(
+                    controller: _descriptionController,
+                    textInputAction: TextInputAction.newline,
+                    maxLines: 10,
+                    minLines: 5,
+                    onChanged: _handleCardTextChanged,
+                    decoration: const InputDecoration(
+                      labelText: 'כרטיסייה לשליחה',
+                      hintText: 'הדבק כרטיסייה כאן',
+                      alignLabelWithHint: true,
                     ),
                   ),
-                ),
-              ],
-            ),
-            // Offered only once there is something to read, and only where
-            // Firebase came up. The card text is sent to Gemini, so this stays
-            // a deliberate tap rather than something that happens on its own.
-            if (_cardHasText)
-              ValueListenableBuilder<bool>(
-                valueListenable: FirebaseBootstrap.readyListenable,
-                builder: (BuildContext context, bool ready, _) {
-                  if (!ready) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: TextButton.icon(
-                        onPressed: _isReadingWithAi ? null : _readCardWithAi,
-                        icon: _isReadingWithAi
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.auto_awesome_outlined, size: 18),
-                        label: Text(
-                          _isReadingWithAi
-                              ? 'קורא…'
-                              : 'לא זוהו פרטים? קרא עם AI',
+                  const SizedBox(height: 8),
+                  Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.auto_fix_high_outlined,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'הפרטים שלמטה יתמלאו אוטומטית מהכרטיסייה. אפשר לתקן הכל ידנית.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            const SizedBox(height: 24),
-            TextFormField(
-              controller: _firstNameController,
-              textInputAction: TextInputAction.next,
-              onChanged: (_) => _autoFilledFields.remove('firstName'),
-              decoration: const InputDecoration(labelText: 'שם פרטי'),
-              validator: (String? value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'יש להזין שם פרטי';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _lastNameController,
-              textInputAction: TextInputAction.next,
-              onChanged: (_) => _autoFilledFields.remove('lastName'),
-              decoration: const InputDecoration(labelText: 'שם משפחה'),
-              validator: (String? value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'יש להזין שם משפחה';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-            ReligiousLevelPicker(
-              selected: ReligiousLevelChoice(
-                _selectedReligiousLevel,
-                _religiousLevelOther,
-              ),
-              onChanged: (ReligiousLevelChoice choice) {
-                setState(() {
-                  _selectedReligiousLevel = choice.level;
-                  _religiousLevelOther = choice.customLabel;
-                });
-              },
-            ),
-            const SizedBox(height: 20),
-            Text('סטטוס', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ProfileStatus.values.map((ProfileStatus status) {
-                final bool selected = _selectedProfileStatus == status;
-                return ChoiceChip(
-                  label: Text('${status.emoji} ${status.displayName}'),
-                  selected: selected,
-                  onSelected: (bool value) {
-                    if (!value) {
-                      return;
-                    }
-                    setState(() {
-                      _selectedProfileStatus = status;
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            Text('מגדר', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: Gender.values.map((Gender gender) {
-                return ChoiceChip(
-                  label: Text(gender.displayName),
-                  selected: _selectedGender == gender,
-                  onSelected: (bool selected) {
-                    if (!selected) {
-                      return;
-                    }
-
-                    setState(() {
-                      _selectedGender = gender;
-                      _autoFilledFields.remove('gender');
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _manualAgeController,
-              keyboardType: TextInputType.number,
-              onChanged: (_) => _autoFilledFields.remove('age'),
-              decoration: const InputDecoration(
-                labelText: 'גיל',
-                helperText: 'הגיל מתעדכן אוטומטית פעם בשנה',
-              ),
-              validator: (String? value) {
-                final String trimmed = value?.trim() ?? '';
-                if (trimmed.isEmpty) {
-                  return null;
-                }
-
-                final int? parsed = int.tryParse(trimmed);
-                if (parsed == null || parsed < 10 || parsed > 120) {
-                  return 'יש להזין גיל בין 10 ל-120';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _heightController,
-              keyboardType: TextInputType.number,
-              onChanged: (_) => _autoFilledFields.remove('height'),
-              decoration: const InputDecoration(
-                labelText: 'גובה',
-                suffixText: 'ס״מ',
-                hintText: 'לדוגמה: 170',
-              ),
-              validator: (String? value) {
-                final String trimmed = value?.trim() ?? '';
-                if (trimmed.isEmpty) {
-                  return null;
-                }
-
-                final int? parsed = int.tryParse(trimmed);
-                if (parsed == null || parsed < 120 || parsed > 220) {
-                  return 'יש להזין גובה בסנטימטרים (120-220)';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-            Text('מצב משפחתי', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: MaritalStatus.values.map((MaritalStatus status) {
-                final bool selected = _selectedMaritalStatus == status;
-                return ChoiceChip(
-                  label: Text(status.displayNameFor(_selectedGender)),
-                  selected: selected,
-                  onSelected: (bool value) {
-                    setState(() {
-                      _selectedMaritalStatus = value && !selected
-                          ? status
-                          : null;
-                      _autoFilledFields.remove('maritalStatus');
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _cityController,
-              textInputAction: TextInputAction.next,
-              onChanged: (_) => _autoFilledFields.remove('city'),
-              decoration: const InputDecoration(labelText: 'מיקום'),
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _phoneController,
-              textInputAction: TextInputAction.next,
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                labelText: 'טלפון',
-                hintText: 'לדוגמה: 050-1234567',
-                suffixIcon: IconButton(
-                  tooltip: 'בחירה מאנשי הקשר',
-                  icon: const Icon(Icons.contacts_outlined),
-                  onPressed: _pickPhoneFromDevice,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    'איש קשר לבירורים',
-                    style: theme.textTheme.titleMedium,
+                    ],
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: _pickInquiryContactFromDevice,
-                  icon: const Icon(Icons.contacts_outlined, size: 18),
-                  label: const Text('בחירה מאנשי הקשר'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: TextFormField(
-                    controller: _inquiryContactNameController,
+                  // Offered only once there is something to read, and only where
+                  // Firebase came up. The card text is sent to Gemini, so this stays
+                  // a deliberate tap rather than something that happens on its own.
+                  if (_cardHasText)
+                    ValueListenableBuilder<bool>(
+                      valueListenable: FirebaseBootstrap.readyListenable,
+                      builder: (BuildContext context, bool ready, _) {
+                        if (!ready) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: TextButton.icon(
+                              onPressed: _isReadingWithAi
+                                  ? null
+                                  : _readCardWithAi,
+                              icon: _isReadingWithAi
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.auto_awesome_outlined,
+                                      size: 18,
+                                    ),
+                              label: Text(
+                                _isReadingWithAi
+                                    ? 'קורא…'
+                                    : 'לא זוהו פרטים? קרא עם AI',
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  const _FormSectionDivider(),
+                  const _FormSectionHeading(
+                    icon: Icons.person_outline_rounded,
+                    title: 'פרטים אישיים',
+                    subtitle: 'המידע שיעזור להכיר ולחשוב על התאמה',
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _firstNameController,
                     textInputAction: TextInputAction.next,
-                    onChanged: (_) => _autoFilledFields.remove('contactName'),
-                    decoration: const InputDecoration(
-                      labelText: 'שם',
-                      isDense: true,
-                    ),
+                    onChanged: (_) => _autoFilledFields.remove('firstName'),
+                    decoration: const InputDecoration(labelText: 'שם פרטי'),
+                    validator: (String? value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'יש להזין שם פרטי';
+                      }
+                      return null;
+                    },
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    controller: _inquiryContactPhoneController,
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _lastNameController,
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) => _autoFilledFields.remove('lastName'),
+                    decoration: const InputDecoration(labelText: 'שם משפחה'),
+                    validator: (String? value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'יש להזין שם משפחה';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  ReligiousLevelPicker(
+                    selected: ReligiousLevelChoice(
+                      _selectedReligiousLevel,
+                      _religiousLevelOther,
+                    ),
+                    onChanged: (ReligiousLevelChoice choice) {
+                      setState(() {
+                        _selectedReligiousLevel = choice.level;
+                        _religiousLevelOther = choice.customLabel;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  Text('סטטוס', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  _ProfileStatusSelector(
+                    selected: _selectedProfileStatus,
+                    options: <ProfileStatus>[
+                      ProfileStatus.available,
+                      ProfileStatus.busy,
+                      ProfileStatus.onBreak,
+                      if (_isEditMode &&
+                          _selectedProfileStatus == ProfileStatus.mazelTov)
+                        ProfileStatus.mazelTov,
+                    ],
+                    onSelected: (ProfileStatus status) {
+                      setState(() => _selectedProfileStatus = status);
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  Text('מגדר', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: Gender.values.map((Gender gender) {
+                      return ChoiceChip(
+                        label: Text(gender.displayName),
+                        selected: _selectedGender == gender,
+                        onSelected: (bool selected) {
+                          if (!selected) {
+                            return;
+                          }
+
+                          setState(() {
+                            _selectedGender = gender;
+                            _autoFilledFields.remove('gender');
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _manualAgeController,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => _autoFilledFields.remove('age'),
+                    decoration: const InputDecoration(
+                      labelText: 'גיל',
+                      helperText: 'הגיל מתעדכן אוטומטית פעם בשנה',
+                    ),
+                    validator: (String? value) {
+                      final String trimmed = value?.trim() ?? '';
+                      if (trimmed.isEmpty) {
+                        return null;
+                      }
+
+                      final int? parsed = int.tryParse(trimmed);
+                      if (parsed == null || parsed < 10 || parsed > 120) {
+                        return 'יש להזין גיל בין 10 ל-120';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _heightController,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => _autoFilledFields.remove('height'),
+                    decoration: const InputDecoration(
+                      labelText: 'גובה',
+                      suffixText: 'ס״מ',
+                      hintText: 'לדוגמה: 170',
+                    ),
+                    validator: (String? value) {
+                      final String trimmed = value?.trim() ?? '';
+                      if (trimmed.isEmpty) {
+                        return null;
+                      }
+
+                      final int? parsed = int.tryParse(trimmed);
+                      if (parsed == null || parsed < 120 || parsed > 220) {
+                        return 'יש להזין גובה בסנטימטרים (120-220)';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  Text('מצב משפחתי', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: MaritalStatus.values.map((MaritalStatus status) {
+                      final bool selected = _selectedMaritalStatus == status;
+                      return ChoiceChip(
+                        label: Text(status.displayNameFor(_selectedGender)),
+                        selected: selected,
+                        onSelected: (bool value) {
+                          setState(() {
+                            _selectedMaritalStatus = value && !selected
+                                ? status
+                                : null;
+                            _autoFilledFields.remove('maritalStatus');
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _cityController,
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) => _autoFilledFields.remove('city'),
+                    decoration: const InputDecoration(labelText: 'מיקום'),
+                  ),
+                  const _FormSectionDivider(),
+                  const _FormSectionHeading(
+                    icon: Icons.contact_phone_outlined,
+                    title: 'יצירת קשר',
+                    subtitle: 'הטלפון של המועמד ופרטי איש הקשר לבירורים',
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _phoneController,
                     textInputAction: TextInputAction.next,
                     keyboardType: TextInputType.phone,
-                    onChanged: (_) => _autoFilledFields.remove('contactPhone'),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'טלפון',
-                      isDense: true,
+                      hintText: 'לדוגמה: 050-1234567',
+                      suffixIcon: IconButton(
+                        tooltip: 'בחירה מאנשי הקשר',
+                        icon: const Icon(Icons.contacts_outlined),
+                        onPressed: _pickPhoneFromDevice,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            TextFormField(
-              controller: _personalNotesController,
-              textInputAction: TextInputAction.newline,
-              maxLines: 5,
-              minLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'הערות אישיות',
-                hintText: 'הערה שתתווסף ליומן ההערות בכרטיס',
-                alignLabelWithHint: true,
+                  const SizedBox(height: 20),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        'איש קשר לבירורים',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      TextButton.icon(
+                        onPressed: _pickInquiryContactFromDevice,
+                        icon: const Icon(Icons.contacts_outlined, size: 18),
+                        label: const Text('בחירה מאנשי הקשר'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: TextFormField(
+                          controller: _inquiryContactNameController,
+                          textInputAction: TextInputAction.next,
+                          onChanged: (_) =>
+                              _autoFilledFields.remove('contactName'),
+                          decoration: const InputDecoration(
+                            labelText: 'שם',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _inquiryContactPhoneController,
+                          textInputAction: TextInputAction.next,
+                          keyboardType: TextInputType.phone,
+                          onChanged: (_) =>
+                              _autoFilledFields.remove('contactPhone'),
+                          decoration: const InputDecoration(
+                            labelText: 'טלפון',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const _FormSectionDivider(),
+                  const _FormSectionHeading(
+                    icon: Icons.notes_rounded,
+                    title: 'הערה אישית',
+                    subtitle: 'מידע פנימי שיופיע ביומן הכרטיס',
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _personalNotesController,
+                    textInputAction: TextInputAction.newline,
+                    maxLines: 5,
+                    minLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'הערות אישיות',
+                      hintText: 'הערה שתתווסף ליומן ההערות בכרטיס',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1050,6 +1100,230 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     }
 
     return initialSnapshot != _currentSnapshot();
+  }
+}
+
+class _PersonFormIntro extends StatelessWidget {
+  const _PersonFormIntro({required this.isEditMode});
+
+  final bool isEditMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: <Color>[
+            theme.colorScheme.primaryContainer,
+            Color.alphaBlend(
+              theme.colorScheme.secondaryContainer.withValues(alpha: 0.62),
+              theme.colorScheme.surface,
+            ),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.78),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isEditMode ? Icons.edit_note_rounded : Icons.person_add_alt_1,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  isEditMode ? 'עדכון הכרטיס' : 'כרטיס חדש למאגר',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  isEditMode
+                      ? 'כל הפרטים נשמרים מקומית וניתנים לעדכון בכל זמן'
+                      : 'אפשר להוסיף רק את מה שידוע עכשיו ולהשלים בהמשך',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FormSectionHeading extends StatelessWidget {
+  const _FormSectionHeading({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Icon(icon, size: 22, color: theme.colorScheme.primary),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FormSectionDivider extends StatelessWidget {
+  const _FormSectionDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Divider(
+        height: 1,
+        color: Theme.of(context).colorScheme.outlineVariant,
+      ),
+    );
+  }
+}
+
+class _ProfileStatusSelector extends StatelessWidget {
+  const _ProfileStatusSelector({
+    required this.selected,
+    required this.options,
+    required this.onSelected,
+  });
+
+  final ProfileStatus selected;
+  final List<ProfileStatus> options;
+  final ValueChanged<ProfileStatus> onSelected;
+
+  IconData _iconFor(ProfileStatus status) {
+    switch (status) {
+      case ProfileStatus.available:
+        return Icons.person_outline_rounded;
+      case ProfileStatus.busy:
+        return Icons.hourglass_top_rounded;
+      case ProfileStatus.onBreak:
+        return Icons.coffee_outlined;
+      case ProfileStatus.mazelTov:
+        return Icons.celebration_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int columns = options.length > 3 ? 2 : options.length;
+        final double width =
+            (constraints.maxWidth - (columns - 1) * 8) / columns;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final ProfileStatus status in options)
+              SizedBox(
+                width: width,
+                child: Material(
+                  color: selected == status
+                      ? theme.colorScheme.primaryContainer
+                      : theme.colorScheme.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => onSelected(status),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 68),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: selected == status
+                              ? theme.colorScheme.primary.withValues(
+                                  alpha: 0.45,
+                                )
+                              : theme.colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          Icon(
+                            _iconFor(status),
+                            size: 21,
+                            color: selected == status
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            status.displayName,
+                            maxLines: 1,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: selected == status
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 }
 

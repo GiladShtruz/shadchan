@@ -74,7 +74,7 @@ void main() {
     );
 
     expect(suggestions.single.kind, HomeSuggestionReason.noIdeaYet);
-    expect(suggestions.single.reason, 'עוד לא נפתח לו רעיון — אולי זה הזמן');
+    expect(suggestions.single.reason, 'עוד לא נפתח לו רעיון, אולי זה הזמן');
   });
 
   test('the reason is worded for the person’s gender', () {
@@ -85,7 +85,7 @@ void main() {
       matches: const <MatchIdea>[],
     );
 
-    expect(suggestions.single.reason, 'עוד לא נפתח לה רעיון — אולי זה הזמן');
+    expect(suggestions.single.reason, 'עוד לא נפתח לה רעיון, אולי זה הזמן');
   });
 
   test('a newcomer is surfaced as new in the database', () {
@@ -97,7 +97,7 @@ void main() {
     );
 
     expect(suggestions.single.kind, HomeSuggestionReason.newInDatabase);
-    expect(suggestions.single.reason, 'חדש במאגר — שווה להתחיל לחשוב עליו');
+    expect(suggestions.single.reason, 'חדש במאגר, שווה להתחיל לחשוב עליו');
   });
 
   test('a long silence after the last idea reads as neglect', () {
@@ -118,7 +118,7 @@ void main() {
     expect(suggestions.single.kind, HomeSuggestionReason.notThoughtAbout);
     expect(
       suggestions.single.reason,
-      'לא חשבת עליו לאחרונה — אולי הגיע הזמן לכיוון חדש',
+      'לא חשבת עליו לאחרונה, אולי הגיע הזמן לכיוון חדש',
     );
   });
 
@@ -140,7 +140,7 @@ void main() {
     expect(suggestions.single.kind, HomeSuggestionReason.lastIdeaClosed);
     expect(
       suggestions.single.reason,
-      'הרעיון האחרון נסגר — אולי מתאים עכשיו כיוון חדש',
+      'הרעיון האחרון נסגר, אולי מתאים עכשיו כיוון חדש',
     );
   });
 
@@ -157,7 +157,7 @@ void main() {
     );
 
     expect(suggestions.single.kind, HomeSuggestionReason.returnedToAvailable);
-    expect(suggestions.single.reason, 'חזר להיות פנוי — שווה לחשוב עליו מחדש');
+    expect(suggestions.single.reason, 'חזר להיות פנוי, שווה לחשוב עליו מחדש');
   });
 
   test('a person who is simply available is never said to have returned', () {
@@ -201,7 +201,7 @@ void main() {
     expect(suggestions.single.kind, HomeSuggestionReason.severalOpenIdeas);
     expect(
       suggestions.single.reason,
-      'יש לו כבר 2 רעיונות פתוחים — שווה לבדוק מה מתקדם',
+      'יש לו כבר 2 רעיונות פתוחים, שווה לבדוק מה מתקדם',
     );
   });
 
@@ -216,7 +216,7 @@ void main() {
     expect(suggestions.single.kind, HomeSuggestionReason.openIdeasWaiting);
     expect(
       suggestions.single.reason,
-      'הרעיונות שלו מחכים לעדכון — אולי הגיע הזמן לקדם',
+      'הרעיונות שלו מחכים לעדכון, אולי הגיע הזמן לקדם',
     );
   });
 
@@ -239,7 +239,7 @@ void main() {
     expect(suggestions.single.kind, HomeSuggestionReason.detailsAdded);
     expect(
       suggestions.single.reason,
-      'נוספו פרטים חדשים — אולי הם יפתחו כיוון מתאים',
+      'נוספו פרטים חדשים, אולי הם יפתחו כיוון מתאים',
     );
   });
 
@@ -271,5 +271,45 @@ void main() {
     );
 
     expect(suggestions.length, HomeConfig.worthThinkingCount);
+  });
+
+  test('the row alternates reasons while preserving priority rounds', () {
+    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
+      people: <Person>[
+        person(
+          id: 'new-1',
+          firstName: 'חדש 1',
+          createdDaysAgo: 1,
+          updatedDaysAgo: 1,
+        ),
+        person(
+          id: 'new-2',
+          firstName: 'חדש 2',
+          createdDaysAgo: 2,
+          updatedDaysAgo: 2,
+        ),
+        person(
+          id: 'new-3',
+          firstName: 'חדש 3',
+          createdDaysAgo: 3,
+          updatedDaysAgo: 3,
+        ),
+        person(id: 'old-1', firstName: 'ותיק 1'),
+        person(id: 'old-2', firstName: 'ותיק 2'),
+      ],
+      matches: const <MatchIdea>[],
+      limit: 5,
+    );
+
+    expect(
+      suggestions.map((HomeSuggestion item) => item.kind),
+      <HomeSuggestionReason>[
+        HomeSuggestionReason.newInDatabase,
+        HomeSuggestionReason.noIdeaYet,
+        HomeSuggestionReason.newInDatabase,
+        HomeSuggestionReason.noIdeaYet,
+        HomeSuggestionReason.newInDatabase,
+      ],
+    );
   });
 }

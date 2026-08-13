@@ -116,6 +116,42 @@ abstract final class AppDateUtils {
     return years == 1 ? 'שנה' : '$years שנים';
   }
 
+  /// A future reminder in the same language as the interval picker. Calendar
+  /// month choices stay "בעוד חודש" / "בעוד חודשיים" instead of being
+  /// flattened into an arbitrary number of days.
+  static String futureReminderLabel(DateTime date, {DateTime? now}) {
+    final DateTime current = _dateOnly(now ?? DateTime.now());
+    final DateTime target = _dateOnly(date);
+    final int days = target.difference(current).inDays;
+
+    if (days <= 0) return 'היום';
+    if (days == 1) return 'מחר';
+    if (days == 2) return 'בעוד יומיים';
+    if (days == 7) return 'בעוד שבוע';
+    if (days == 14) return 'בעוד שבועיים';
+
+    for (int months = 1; months <= 12; months++) {
+      final DateTime shifted = DateTime(
+        current.year,
+        current.month + months,
+        current.day,
+      );
+      if (shifted == target) {
+        if (months == 1) return 'בעוד חודש';
+        if (months == 2) return 'בעוד חודשיים';
+        return 'בעוד $months חודשים';
+      }
+    }
+
+    final DateTime nextYear = DateTime(
+      current.year + 1,
+      current.month,
+      current.day,
+    );
+    if (target == nextYear) return 'בעוד שנה';
+    return 'בעוד $days ימים';
+  }
+
   /// How long a due reminder has been waiting, in the matchmaker's own terms:
   /// "עברו 3 ימים מאז שביקשת שנזכיר לך". Used on a card that was opened after
   /// its reminder came due.

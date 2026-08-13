@@ -13,6 +13,7 @@ import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/widgets/person_photo_editor.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -22,7 +23,9 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/app_router.dart';
 
 void main() {
@@ -67,12 +70,17 @@ void main() {
     // of the welcome screen.
     await settings.put('userName', 'בודק');
     await settings.put('userGender', 'male');
+    await settings.put('userIsSingle', false);
   });
 
   setUp(() async {
     await Hive.box<Person>('people').clear();
     await Hive.box<MatchIdea>('matches').clear();
     await Hive.box<MatchNote>('match_notes').clear();
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    await settings.put('userIsSingle', false);
+    await settings.delete('userPersonalCard');
+    await settings.delete('userPersonalCardPhotos');
     AppRouter.router.go('/home');
   });
 
@@ -95,6 +103,97 @@ void main() {
     expect(find.text('רעיונות'), findsWidgets);
   });
 
+  testWidgets('Onboarding requires an explicit single or married choice', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    await tester.runAsync(() => settings.delete('userIsSingle'));
+    AppRouter.router.go('/onboarding');
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
+    expect(find.text('רווק'), findsOneWidget);
+    expect(find.text('נשוי'), findsOneWidget);
+    expect(
+      find.text('למשתמשים רווקים תופיע בפרופיל אפשרות לשמור ולשתף כרטיס אישי.'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'יאללה, מתחילים!'),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    await tester.ensureVisible(find.text('רווק'));
+    await tester.pump();
+    await tester.runAsync(() => tester.tap(find.text('רווק')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'יאללה, מתחילים!'),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('Only a single user sees and edits a personal card', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+
+    await tester.pumpWidget(_buildProfileTestApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('מצב אישי'), findsOneWidget);
+    expect(find.text('הכרטיס האישי שלי'), findsNothing);
+    expect(find.text('יצירת כרטיס אישי'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(() => settings.put('userIsSingle', true));
+    await tester.pumpWidget(_buildProfileTestApp());
+    await tester.pumpAndSettle();
+    expect(find.text('הכרטיס האישי שלי'), findsOneWidget);
+    expect(find.text('יצירת כרטיס אישי'), findsOneWidget);
+
+    await tester.tap(find.text('יצירת כרטיס אישי'));
+    await tester.pumpAndSettle();
+    expect(find.text('עריכת הכרטיס האישי'), findsOneWidget);
+    expect(find.text('הוספת תמונות'), findsOneWidget);
+    expect(find.text('שמירת הכרטיס'), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'זה הכרטיס האישי שלי לשיתוף מהיר',
+    );
+    expect(find.text('זה הכרטיס האישי שלי לשיתוף מהיר'), findsOneWidget);
+    await tester.tap(find.text('ביטול'));
+    await tester.pumpAndSettle();
+  });
+
+  test('Personal card photo order is stored exactly as arranged', () async {
+    final UserProfileProvider profile = UserProfileProvider(
+      Hive.box<dynamic>('settings'),
+    );
+    await profile.setPersonalCardContent(
+      text: 'כרטיס עם גלריה',
+      photoPaths: const <String>['second.jpg', 'primary.jpg', 'third.jpg'],
+    );
+
+    expect(profile.personalCard, 'כרטיס עם גלריה');
+    expect(profile.personalCardPhotos, const <String>[
+      'second.jpg',
+      'primary.jpg',
+      'third.jpg',
+    ]);
+  });
+
   test('Bottom navigation includes primary paths and person profiles', () {
     expect(shouldShowBottomNavigationBar('/home'), isTrue);
     expect(shouldShowBottomNavigationBar('/people'), isTrue);
@@ -105,6 +204,34 @@ void main() {
     expect(shouldShowBottomNavigationBar('/matches/add'), isFalse);
     expect(shouldShowBottomNavigationBar('/dashboard'), isFalse);
     expect(shouldShowBottomNavigationBar('/profile'), isFalse);
+  });
+
+  testWidgets('Manual add uses the current card design without Mazel Tov', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/people/add');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('הוספת כרטיס'), findsOneWidget);
+    expect(find.text('כרטיס חדש למאגר'), findsOneWidget);
+    expect(find.text('הכרטיס והתמונות'), findsOneWidget);
+    expect(find.text('פרטים אישיים'), findsOneWidget);
+    expect(find.text('פנוי'), findsOneWidget);
+    expect(find.text('תפוס'), findsOneWidget);
+    expect(find.text('בהפסקה'), findsOneWidget);
+    expect(find.text('מזל טוב'), findsNothing);
+    expect(find.textContaining('🟢'), findsNothing);
+    expect(find.textContaining('🔴'), findsNothing);
+    expect(find.textContaining('🟡'), findsNothing);
+    expect(tester.takeException(), isNull);
+    // Let the form's non-fatal Firebase warm-up timeout finish in fake time.
+    await tester.pump(const Duration(seconds: 31));
   });
 
   testWidgets(
@@ -158,14 +285,112 @@ void main() {
       expect(find.text('התאמות'), findsOneWidget);
       expect(find.text('לפתיחת הצעה'), findsOneWidget);
       expect(find.text('הכרטיס שלו'), findsNothing);
+      expect(find.byTooltip('עריכת פרטי המועמד'), findsOneWidget);
+      expect(find.byTooltip('עריכת טקסט הכרטיס המלא'), findsOneWidget);
 
-      // Sharing sits in the profile header, beside the photo.
-      await tester.tap(find.byTooltip('שיתוף הכרטיס'));
-      await tester.pump(const Duration(milliseconds: 250));
-      expect(find.text('שיתוף הכרטיס המלא'), findsOneWidget);
-      expect(find.text('שיתוף דרך WhatsApp'), findsOneWidget);
-      await tester.tapAt(const Offset(12, 12));
-      await tester.pump(const Duration(milliseconds: 250));
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      expect(find.text('עריכת כרטיס'), findsNothing);
+      expect(find.text('עריכה מורחבת'), findsOneWidget);
+      await tester.tap(find.text('עריכה מורחבת'));
+      await tester.pumpAndSettle();
+      expect(find.text('עריכת כרטיס'), findsOneWidget);
+      expect(find.text('שם פרטי'), findsOneWidget);
+      expect(find.text('עיר'), findsOneWidget);
+      expect(find.text('תמונות'), findsWidgets);
+      Navigator.of(tester.element(find.text('עריכת כרטיס'))).pop();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(ModalBarrier).last);
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('לפתיחת הצעה'));
+      await tester.tap(find.text('לפתיחת הצעה'));
+      await tester.pumpAndSettle();
+      expect(find.text('הוספת הצעה עם מועמד מתוך המאגר שלי'), findsOneWidget);
+      expect(find.text('הוספת הצעה עם מועמד מחוץ למאגר שלי'), findsOneWidget);
+      await tester.tap(find.text('ביטול'));
+      await tester.pumpAndSettle();
+
+      tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position
+          .jumpTo(0);
+      await tester.pump();
+      await tester.tap(find.byTooltip('עריכת פרטי המועמד'));
+      await tester.pumpAndSettle();
+      expect(find.text('עריכת כרטיס'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('quick-name-profile-person')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('quick-age-profile-person')),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('בחירת סגנון דתי'), findsOneWidget);
+      expect(find.byTooltip('החלפת תמונת הפרופיל'), findsOneWidget);
+      expect(find.byType(PersonPhotoEditor), findsNothing);
+      await tester.tap(find.byTooltip('בחירת סגנון דתי'));
+      await tester.pumpAndSettle();
+      expect(find.text('חרדי'), findsOneWidget);
+      expect(find.text('דתי לאומי'), findsOneWidget);
+      await tester.tap(find.byType(ModalBarrier).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('ביטול עריכה מהירה'));
+      await tester.pumpAndSettle();
+
+      final Finder editFullCard = find.byTooltip('עריכת טקסט הכרטיס המלא');
+      await tester.ensureVisible(editFullCard);
+      await tester.pump(const Duration(milliseconds: 200));
+      final double cardBodyTop = tester
+          .getTopLeft(
+            find.byKey(
+              const ValueKey<String>('candidate-full-card-body-profile-person'),
+            ),
+          )
+          .dy;
+      final double cardTextTop = tester
+          .getTopLeft(
+            find.byKey(
+              const ValueKey<String>('candidate-full-card-text-profile-person'),
+            ),
+          )
+          .dy;
+      expect(cardTextTop, closeTo(cardBodyTop, 0.5));
+      expect(tester.getTopLeft(editFullCard).dy, lessThan(cardBodyTop + 4));
+      await tester.tap(editFullCard);
+      await tester.pumpAndSettle();
+      expect(find.text('עריכת הכרטיס המלא'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('quick-card-profile-person')),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('quick-card-profile-person')),
+        'שורה ראשונה\nשורה שנייה\nסוף הכרטיס המלא\n'
+        'טקסט כרטיס מעודכן מתוך המשבצת',
+      );
+      await tester.tap(find.byTooltip('ביטול עריכת הכרטיס'));
+      await tester.pumpAndSettle();
+      expect(
+        Hive.box<Person>('people').get(profile.id)?.description,
+        'שורה ראשונה\nשורה שנייה\nסוף הכרטיס המלא',
+      );
+
+      // Sharing sits in the profile app bar.
+      await tester.tap(find.byTooltip('שיתוף כרטיס'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(PersonCardViewer), findsOneWidget);
+      expect(find.textContaining('תצוגה מקדימה'), findsOneWidget);
+      expect(find.text('שיתוף הכרטיס ב-WhatsApp'), findsOneWidget);
+      expect(find.textContaining('סוף הכרטיס המלא'), findsWidgets);
+      await tester.tap(find.byTooltip('סגירה'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
       final Finder showFullCard = find.text('הצגת הכרטיס המלא');
       await tester.ensureVisible(showFullCard);
@@ -194,6 +419,9 @@ void main() {
   testWidgets('Tapping the profile photo opens the full card full screen', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final DateTime now = DateTime(2026, 7, 27);
     final Person profile = Person(
       id: 'card-viewer-person',
@@ -220,24 +448,109 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // The viewer shows the person's name and the card text, and deliberately
-    // carries no share button — that lives on the profile header.
+    // The viewer carries both app-bar actions alongside the card itself.
     expect(find.byType(PersonCardViewer), findsOneWidget);
     expect(find.textContaining('סוף הכרטיס המלא'), findsWidgets);
-    // Scoped to the viewer: the profile page underneath keeps its own share
-    // button in the tree while this route is pushed over it.
     expect(
       find.descendant(
         of: find.byType(PersonCardViewer),
-        matching: find.byTooltip('שיתוף הכרטיס'),
+        matching: find.text('שיתוף כרטיס'),
       ),
-      findsNothing,
+      findsOneWidget,
     );
+    expect(find.byTooltip('פתיחת שיחה ב-WhatsApp'), findsOneWidget);
+
+    await tester.tap(find.text('הכרטיס המלא'));
+    await tester.pumpAndSettle();
+    expect(find.text('הצג פחות'), findsOneWidget);
 
     await tester.tap(find.byTooltip('סגירה'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(PersonCardViewer), findsNothing);
+  });
+
+  testWidgets('Pinning a person opens home directly at the board', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final DateTime now = DateTime(2026, 8, 2);
+    final Person profile = Person(
+      id: 'board-navigation-person',
+      firstName: 'אבישי',
+      lastName: 'הלוי',
+      gender: Gender.male,
+      manualAge: 29,
+      createdAt: now,
+      updatedAt: now,
+    );
+    HomeBoardStore.instance.remove(HomeItemKind.person, profile.id);
+    addTearDown(
+      () => HomeBoardStore.instance.remove(HomeItemKind.person, profile.id),
+    );
+    await tester.runAsync(
+      () => Hive.box<Person>('people').put(profile.id, profile),
+    );
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    AppRouter.router.go('/people/${profile.id}');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('הוספה ללוח שלי'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(AppRouter.router.routeInformationProvider.value.uri.path, '/home');
+    expect(
+      AppRouter.router.routeInformationProvider.value.uri.queryParameters,
+      containsPair('section', 'board'),
+    );
+    expect(find.text('הלוח שלי'), findsOneWidget);
+    expect(find.text('אבישי הלוי'), findsWidgets);
+    expect(tester.getTopLeft(find.text('הלוח שלי')).dy, lessThan(260));
+  });
+
+  testWidgets('The edit route opens quick editing inside the profile card', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2026, 8, 2);
+    final Person profile = Person(
+      id: 'quick-edit-route-person',
+      firstName: 'אבישי',
+      lastName: 'כהן',
+      gender: Gender.male,
+      manualAge: 29,
+      religiousLevel: ReligiousLevel.datiLeumi,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.runAsync(
+      () => Hive.box<Person>('people').put(profile.id, profile),
+    );
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/people/${profile.id}/edit');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('עריכת כרטיס'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('quick-name-quick-edit-route-person')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('החלפת תמונת הפרופיל'), findsOneWidget);
+    expect(find.byTooltip('בחירת סגנון דתי'), findsOneWidget);
+    expect(find.byTooltip('שמירת עריכה מהירה'), findsOneWidget);
   });
 
   testWidgets('Match detail shows one derived state and compact pair actions', (
@@ -304,6 +617,174 @@ void main() {
     expect(find.text('בהפסקה'), findsOneWidget);
   });
 
+  testWidgets('Ideas default to all live states and celebrate dating couples', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2026, 8, 2);
+    final List<Person> people = <Person>[
+      _testPerson(
+        id: 'all-open-a',
+        firstName: 'פתוח',
+        lastName: 'אחד',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      ),
+      _testPerson(
+        id: 'all-open-b',
+        firstName: 'פתוחה',
+        lastName: 'אחת',
+        gender: Gender.female,
+        age: 25,
+        now: now,
+      ),
+      _testPerson(
+        id: 'all-wait-a',
+        firstName: 'ממתין',
+        lastName: 'אחד',
+        gender: Gender.male,
+        age: 28,
+        now: now,
+      ),
+      _testPerson(
+        id: 'all-wait-b',
+        firstName: 'ממתינה',
+        lastName: 'אחת',
+        gender: Gender.female,
+        age: 26,
+        now: now,
+      ),
+      _testPerson(
+        id: 'all-date-a',
+        firstName: 'שמח',
+        lastName: 'חתן',
+        gender: Gender.male,
+        age: 29,
+        now: now,
+      ),
+      _testPerson(
+        id: 'all-date-b',
+        firstName: 'שמחה',
+        lastName: 'כלה',
+        gender: Gender.female,
+        age: 27,
+        now: now,
+      ),
+      _testPerson(
+        id: 'all-archive-a',
+        firstName: 'ארכיון',
+        lastName: 'אחד',
+        gender: Gender.male,
+        age: 30,
+        now: now,
+      ),
+      _testPerson(
+        id: 'all-archive-b',
+        firstName: 'ארכיון',
+        lastName: 'שתיים',
+        gender: Gender.female,
+        age: 28,
+        now: now,
+      ),
+    ];
+    final List<MatchIdea> matches = <MatchIdea>[
+      _testMatch(
+        id: 'all-open',
+        personAId: 'all-open-a',
+        personBId: 'all-open-b',
+        now: now,
+      ),
+      _testMatch(
+        id: 'all-wait',
+        personAId: 'all-wait-a',
+        personBId: 'all-wait-b',
+        now: now,
+      )..status = MatchStatus.unavailable,
+      _testMatch(
+        id: 'all-dating',
+        personAId: 'all-date-a',
+        personBId: 'all-date-b',
+        now: now,
+      )..status = MatchStatus.dating,
+      _testMatch(
+        id: 'all-archive',
+        personAId: 'all-archive-a',
+        personBId: 'all-archive-b',
+        now: now,
+      )..status = MatchStatus.rejected,
+    ];
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').putAll(<String, Person>{
+        for (final Person person in people) person.id: person,
+      });
+      await Hive.box<MatchIdea>('matches').putAll(<String, MatchIdea>{
+        for (final MatchIdea match in matches) match.id: match,
+      });
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('הכול'), findsOneWidget);
+    expect(find.text('פתוחים'), findsOneWidget);
+    expect(find.text('בהמתנה'), findsOneWidget);
+    expect(find.text('יוצאים'), findsOneWidget);
+    expect(find.text('פתוח אחד, 27'), findsOneWidget);
+    expect(find.text('ממתין אחד, 28'), findsOneWidget);
+    expect(find.text('✨ יוצאים יחד ✨'), findsOneWidget);
+    expect(find.text('ארכיון אחד, 30'), findsNothing);
+
+    await tester.tap(find.text('✨ יוצאים יחד ✨'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('איזה כיף — הם יוצאים!'), findsOneWidget);
+  });
+
+  testWidgets('New ideas uses the matching explanation and rejection wording', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2026, 8, 2);
+    final Person male = _testPerson(
+      id: 'new-idea-man',
+      firstName: 'אורי',
+      lastName: 'כהן',
+      gender: Gender.male,
+      age: 27,
+      now: now,
+    )..religiousLevel = ReligiousLevel.datiLeumi;
+    final Person female = _testPerson(
+      id: 'new-idea-woman',
+      firstName: 'נועה',
+      lastName: 'לוי',
+      gender: Gender.female,
+      age: 25,
+      now: now,
+    )..religiousLevel = ReligiousLevel.datiLeumi;
+    await tester.runAsync(() async {
+      await Hive.box<Person>(
+        'people',
+      ).putAll(<String, Person>{male.id: male, female.id: female});
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/ideas/new');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(
+      find.text(
+        'המאגר שלך מציע רעיונות לזוגות שיכולים להתאים לפי גיל וסגנון דתי',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('לא מתאים'), findsOneWidget);
+    expect(find.text('לא עכשיו'), findsNothing);
+  });
+
   testWidgets('Profile-canvas app bars keep a dark title, not cream on cream', (
     WidgetTester tester,
   ) async {
@@ -330,7 +811,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final RenderParagraph title = tester.renderObject<RenderParagraph>(
-      find.text('התאמות · הלל'),
+      find.text('התאמות · הלל אבולעפיה'),
     );
     final Color? color = title.text.style?.color;
     expect(color, isNotNull);
@@ -901,5 +1382,33 @@ Widget _buildTestApp() {
       ),
     ],
     child: const App(),
+  );
+}
+
+Widget _buildProfileTestApp() {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<PersonRepository>(
+        create: (_) => PersonRepository(Hive.box<Person>('people')),
+      ),
+      ChangeNotifierProvider<MatchRepository>(
+        create: (_) => MatchRepository(
+          Hive.box<MatchIdea>('matches'),
+          Hive.box<MatchNote>('match_notes'),
+        ),
+      ),
+      ChangeNotifierProvider<ThemeModeProvider>(
+        create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<UserProfileProvider>(
+        create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+    ],
+    child: const MaterialApp(
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: ProfileScreen(),
+      ),
+    ),
   );
 }

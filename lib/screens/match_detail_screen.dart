@@ -11,7 +11,6 @@ import 'package:shadchan/dialogs/match_outcome_dialog.dart';
 import 'package:shadchan/dialogs/reminder_note_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/services/home_board_store.dart';
-import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -59,15 +58,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   void initState() {
     super.initState();
     _noteController.addListener(_handleNoteChanged);
-    // Feeds the home screen's "הפעולות האחרונות שלך" strip. Deferred past this frame:
-    // the home screen is still alive behind this route, and notifying it from
-    // inside initState would rebuild it mid-build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      RecentActivityStore.instance.record(
-        kind: HomeItemKind.idea,
-        targetId: widget.matchId,
-        action: HomeActivityAction.openedIdea,
-      );
       // Opening the card answers the home screen's alert badge. The reminder
       // itself stays until it is really handled.
       if (!mounted) {
@@ -220,6 +211,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
               _PairCard(
                 female: sides.female,
                 male: sides.male,
+                celebrating: match.status == MatchStatus.dating,
                 statusLine: situation.line,
                 statusColor: situation.color,
                 statusIcon: situation.icon,
@@ -1289,6 +1281,7 @@ class _PairCard extends StatelessWidget {
   const _PairCard({
     required this.female,
     required this.male,
+    required this.celebrating,
     required this.statusLine,
     required this.statusColor,
     required this.statusIcon,
@@ -1299,6 +1292,7 @@ class _PairCard extends StatelessWidget {
 
   final Person? female;
   final Person? male;
+  final bool celebrating;
 
   /// The single derived line at the bottom: state plus what is needed now.
   final String statusLine;
@@ -1313,23 +1307,71 @@ class _PairCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
+    final Color celebrationAccent = dark
+        ? AppColors.femaleAccentDm
+        : AppColors.femaleAccent;
 
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: celebrating ? null : theme.colorScheme.surface,
+        gradient: celebrating
+            ? LinearGradient(
+                begin: AlignmentDirectional.topStart,
+                end: AlignmentDirectional.bottomEnd,
+                colors: <Color>[
+                  Color.alphaBlend(
+                    AppColors.softRose.withValues(alpha: dark ? 0.18 : 0.78),
+                    theme.colorScheme.surface,
+                  ),
+                  Color.alphaBlend(
+                    AppColors.softYellow.withValues(alpha: dark ? 0.10 : 0.46),
+                    theme.colorScheme.surface,
+                  ),
+                ],
+              )
+            : null,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(
+          color: celebrating
+              ? celebrationAccent.withValues(alpha: 0.72)
+              : theme.colorScheme.outlineVariant,
+          width: celebrating ? 1.8 : 1,
+        ),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: celebrating
+                ? celebrationAccent.withValues(alpha: 0.24)
+                : Colors.black.withValues(alpha: 0.035),
+            blurRadius: celebrating ? 20 : 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Column(
         children: <Widget>[
+          if (celebrating)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              color: celebrationAccent.withValues(alpha: dark ? 0.13 : 0.10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(Icons.auto_awesome, size: 16, color: celebrationAccent),
+                  const SizedBox(width: 7),
+                  Text(
+                    'איזה כיף — הם יוצאים!',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: celebrationAccent,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Icon(Icons.auto_awesome, size: 16, color: celebrationAccent),
+                ],
+              ),
+            ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -1354,7 +1396,7 @@ class _PairCard extends StatelessWidget {
                           onStatusPicked: onStatusPicked,
                         ),
                       ),
-                      const _HeartLink(),
+                      _HeartLink(celebrating: celebrating),
                       Expanded(
                         child: _CandidateSide(
                           person: male,
@@ -1429,7 +1471,9 @@ class _EdgeStripe extends StatelessWidget {
 
 /// The heart between the two photos, with the dotted line the mockup uses.
 class _HeartLink extends StatelessWidget {
-  const _HeartLink();
+  const _HeartLink({this.celebrating = false});
+
+  final bool celebrating;
 
   @override
   Widget build(BuildContext context) {
@@ -1439,10 +1483,28 @@ class _HeartLink extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
-            Icons.favorite_rounded,
-            size: 22,
-            color: theme.colorScheme.secondary,
+          Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: <Widget>[
+              Icon(
+                Icons.favorite_rounded,
+                size: celebrating ? 29 : 22,
+                color: celebrating
+                    ? AppColors.statusDating
+                    : theme.colorScheme.secondary,
+              ),
+              if (celebrating)
+                const Positioned(
+                  top: -9,
+                  right: -8,
+                  child: Icon(
+                    Icons.auto_awesome,
+                    size: 12,
+                    color: AppColors.secondary,
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 4),
           Container(
@@ -1806,7 +1868,7 @@ class _ReminderCard extends StatelessWidget {
                   ),
                   if (onTap != null)
                     Icon(
-                      Icons.chevron_left,
+                      Icons.chevron_right,
                       size: 22,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -1880,8 +1942,7 @@ class _ReminderCard extends StatelessWidget {
   static String _relativeLabel(DateTime date) {
     final int days = _daysFromToday(date);
     if (days == 0) return 'היום';
-    if (days == 1) return 'מחר';
-    if (days > 1) return 'בעוד $days ימים';
+    if (days > 0) return AppDateUtils.futureReminderLabel(date);
     if (days == -1) return 'התאריך היה אתמול';
     return 'עברו ${-days} ימים';
   }

@@ -155,7 +155,9 @@ class _Headline extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${metric.title} · $monthLabel',
+                  metric == MonthlyStatMetric.weddings
+                      ? metric.title
+                      : '${metric.title} · $monthLabel',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),

@@ -42,19 +42,23 @@ class ReligiousLevelPicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text('סגנון דתי', style: theme.textTheme.titleMedium),
-            ),
-            if (showSettingsShortcut)
+        if (showSettingsShortcut)
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 2,
+            children: <Widget>[
+              Text('סגנון דתי', style: theme.textTheme.titleMedium),
               TextButton.icon(
                 onPressed: () => context.push('/profile/religious-levels'),
                 icon: const Icon(Icons.tune, size: 18),
                 label: const Text('עריכת הגדרות דתיות'),
               ),
-          ],
-        ),
+            ],
+          )
+        else
+          Text('סגנון דתי', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,

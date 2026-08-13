@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/backup_import_feedback.dart';
@@ -17,6 +16,7 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/widgets/person_photo_editor.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
 /// "הפרופיל שלי" — the matchmaker's own page, and the one place the app's
@@ -48,14 +48,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final List<Widget> sections = <Widget>[
       _ProfileHeader(profile: profile, onEditPhoto: () => _editPhoto(profile)),
       const SizedBox(height: 24),
-      const SectionHeader(title: 'הכרטיס האישי שלי'),
-      _SingleCard(
+      const SectionHeader(title: 'מצב אישי'),
+      _MaritalStatusCard(
         profile: profile,
-        onToggle: (bool value) => profile.setIsSingle(value),
-        onEditCard: () => _editPersonalCard(profile),
-        onShareCard: () => _sharePersonalCard(profile),
+        onChanged: (bool value) => profile.setIsSingle(value),
       ),
       const SizedBox(height: 24),
+      if (profile.isSingle) ...<Widget>[
+        const SectionHeader(title: 'הכרטיס האישי שלי'),
+        _PersonalCardSection(
+          profile: profile,
+          onEditCard: () => _editPersonalCard(profile),
+          onShareCard: () => _sharePersonalCard(profile),
+        ),
+        const SizedBox(height: 24),
+      ],
       const SectionHeader(title: 'תצוגה'),
       _ThemeCard(themeModeProvider: themeModeProvider),
       const SizedBox(height: 24),
@@ -67,16 +74,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           subtitle: const Text('אילו סגנונות יופיעו באפליקציה'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.push('/profile/religious-levels'),
-        ),
-      ),
-      const SizedBox(height: 24),
-      const SectionHeader(title: 'הודעות'),
-      Card(
-        child: ListTile(
-          leading: const FaIcon(FontAwesomeIcons.whatsapp),
-          title: const Text('הודעה לבקשת פרטים בוואטסאפ'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/profile/whatsapp-message'),
         ),
       ),
       const SizedBox(height: 24),
@@ -213,24 +210,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // --- The personal card --------------------------------------------------
 
   Future<void> _editPersonalCard(UserProfileProvider profile) async {
-    final String? text = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return _PersonalCardDialog(initialText: profile.personalCard ?? '');
-      },
-    );
-    if (text == null) {
+    final List<String> initialPhotos = profile.personalCardPhotos;
+    final _PersonalCardDraft? draft =
+        await showModalBottomSheet<_PersonalCardDraft>(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          showDragHandle: true,
+          builder: (BuildContext sheetContext) {
+            return _PersonalCardEditorSheet(
+              initialText: profile.personalCard ?? '',
+              initialPhotos: initialPhotos,
+            );
+          },
+        );
+    if (draft == null) {
       return;
     }
-    await profile.setPersonalCard(text);
+    await profile.setPersonalCardContent(
+      text: draft.text,
+      photoPaths: draft.photos,
+    );
+    PhotoPickerService.deletePhotoFiles(
+      initialPhotos.where((String path) => !draft.photos.contains(path)),
+    );
   }
 
   Future<void> _sharePersonalCard(UserProfileProvider profile) async {
     final String card = profile.personalCard ?? '';
-    if (card.isEmpty) {
+    final List<String> photos = profile.personalCardPhotos;
+    if (card.isEmpty && photos.isEmpty) {
       return;
     }
-    await ShareUtils.shareText(card, photoPath: profile.photoPath);
+    await ShareUtils.shareText(card, photoPaths: photos);
   }
 
   // --- Backup and restore -------------------------------------------------
@@ -402,18 +414,74 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-/// "רווק/ה? שמור כאן את הכרטיס האישי שלך" — off unless the matchmaker says so,
-/// and only then does the card area appear.
-class _SingleCard extends StatelessWidget {
-  const _SingleCard({
+class _MaritalStatusCard extends StatelessWidget {
+  const _MaritalStatusCard({required this.profile, required this.onChanged});
+
+  final UserProfileProvider profile;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Gender? gender = profile.gender;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'המצב האישי שלך',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'אפשר לעדכן כאן אם המצב השתנה.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<bool>(
+                segments: <ButtonSegment<bool>>[
+                  ButtonSegment<bool>(
+                    value: true,
+                    icon: const Icon(Icons.favorite_border_rounded),
+                    label: Text('{רווק|רווקה}'.forGender(gender)),
+                  ),
+                  ButtonSegment<bool>(
+                    value: false,
+                    icon: const Icon(Icons.home_outlined),
+                    label: Text('{נשוי|נשואה}'.forGender(gender)),
+                  ),
+                ],
+                selected: <bool>{profile.isSingle},
+                onSelectionChanged: (Set<bool> selection) {
+                  onChanged(selection.first);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Only rendered for a user whose explicit personal status is single.
+class _PersonalCardSection extends StatelessWidget {
+  const _PersonalCardSection({
     required this.profile,
-    required this.onToggle,
     required this.onEditCard,
     required this.onShareCard,
   });
 
   final UserProfileProvider profile;
-  final ValueChanged<bool> onToggle;
   final VoidCallback onEditCard;
   final VoidCallback onShareCard;
 
@@ -422,131 +490,261 @@ class _SingleCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Gender? gender = profile.gender;
     final String? card = profile.personalCard;
+    final List<String> photos = profile.personalCardPhotos;
+    final bool hasContent = card != null || photos.isNotEmpty;
 
     return Card(
-      child: Column(
-        children: <Widget>[
-          SwitchListTile(
-            value: profile.isSingle,
-            onChanged: onToggle,
-            secondary: const Icon(Icons.favorite_border),
-            title: Text('גם אני {רווק|רווקה}'.forGender(gender)),
-            subtitle: Text(
-              'אני {מחפש|מחפשת} גם לעצמי'.forGender(gender),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              '{שמור|שמרי} כאן טקסט ותמונות, סדר אותם ושתף את הכרטיס במהירות.'
+                  .forGender(gender),
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
             ),
-          ),
-          if (profile.isSingle) ...<Widget>[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    '{רווק|רווקה}? {שמור|שמרי} כאן את הכרטיס האישי שלך '
-                            '{ושתף|ושתפי} אותו בקלות בעת הצורך.'
-                        .forGender(gender),
-                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-                  ),
-                  if (card != null) ...<Widget>[
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        card,
-                        maxLines: 6,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Row(
-                    children: <Widget>[
-                      FilledButton.tonalIcon(
-                        onPressed: onEditCard,
-                        icon: Icon(
-                          card == null ? Icons.add : Icons.edit_outlined,
-                          size: 18,
-                        ),
-                        label: Text(
-                          card == null ? 'הוספת הכרטיס שלי' : 'עריכת הכרטיס',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (card != null)
-                        TextButton.icon(
-                          onPressed: onShareCard,
-                          icon: const Icon(Icons.ios_share, size: 18),
-                          label: const Text('שיתוף'),
-                        ),
-                    ],
-                  ),
-                ],
+            if (photos.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 94,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: photos.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (BuildContext context, int index) {
+                    final File file = File(photos[index]);
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: file.existsSync()
+                          ? Image.file(
+                              file,
+                              width: 78,
+                              height: 94,
+                              fit: BoxFit.cover,
+                              cacheWidth: 156,
+                            )
+                          : Container(
+                              width: 78,
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.broken_image_outlined),
+                            ),
+                    );
+                  },
+                ),
               ),
+            ],
+            if (card != null) ...<Widget>[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  card,
+                  maxLines: 8,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                FilledButton.tonalIcon(
+                  onPressed: onEditCard,
+                  icon: Icon(
+                    hasContent ? Icons.edit_outlined : Icons.add,
+                    size: 18,
+                  ),
+                  label: Text(hasContent ? 'עריכת הכרטיס' : 'יצירת כרטיס אישי'),
+                ),
+                if (hasContent)
+                  TextButton.icon(
+                    onPressed: onShareCard,
+                    icon: const Icon(Icons.ios_share, size: 18),
+                    label: const Text('שיתוף מהיר'),
+                  ),
+              ],
             ),
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-class _PersonalCardDialog extends StatefulWidget {
-  const _PersonalCardDialog({required this.initialText});
+class _PersonalCardDraft {
+  const _PersonalCardDraft({required this.text, required this.photos});
 
-  final String initialText;
-
-  @override
-  State<_PersonalCardDialog> createState() => _PersonalCardDialogState();
+  final String text;
+  final List<String> photos;
 }
 
-class _PersonalCardDialogState extends State<_PersonalCardDialog> {
+class _PersonalCardEditorSheet extends StatefulWidget {
+  const _PersonalCardEditorSheet({
+    required this.initialText,
+    required this.initialPhotos,
+  });
+
+  final String initialText;
+  final List<String> initialPhotos;
+
+  @override
+  State<_PersonalCardEditorSheet> createState() =>
+      _PersonalCardEditorSheetState();
+}
+
+class _PersonalCardEditorSheetState extends State<_PersonalCardEditorSheet> {
   late final TextEditingController _controller = TextEditingController(
     text: widget.initialText,
   );
+  late final List<String> _photos = List<String>.of(widget.initialPhotos);
+  final Set<String> _newPhotos = <String>{};
+  bool _submitted = false;
 
   @override
   void dispose() {
     _controller.dispose();
+    if (!_submitted) {
+      PhotoPickerService.deletePhotoFiles(_newPhotos);
+    }
     super.dispose();
+  }
+
+  Future<void> _addPhotos() async {
+    final List<String> added = await PhotoPickerService.pickPhotos(
+      context,
+      personId: 'my_personal_card',
+    );
+    if (!mounted || added.isEmpty) {
+      return;
+    }
+    setState(() {
+      _photos.addAll(added);
+      _newPhotos.addAll(added);
+    });
+  }
+
+  void _setPrimary(int index) {
+    if (index <= 0 || index >= _photos.length) {
+      return;
+    }
+    setState(() {
+      final String path = _photos.removeAt(index);
+      _photos.insert(0, path);
+    });
+  }
+
+  void _removePhoto(int index) {
+    final String removed = _photos.removeAt(index);
+    if (_newPhotos.remove(removed)) {
+      PhotoPickerService.deletePhotoFiles(<String>[removed]);
+    }
+    setState(() {});
+  }
+
+  void _reorderPhotos(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final String path = _photos.removeAt(oldIndex);
+      _photos.insert(newIndex, path);
+    });
+  }
+
+  void _save() {
+    _submitted = true;
+    Navigator.of(context).pop(
+      _PersonalCardDraft(
+        text: _controller.text.trim(),
+        photos: List<String>.unmodifiable(_photos),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('הכרטיס האישי שלי'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLines: 10,
-        minLines: 5,
-        decoration: const InputDecoration(
-          hintText: 'הדבק כאן את הכרטיס שלך',
-          alignLabelWithHint: true,
+    final ThemeData theme = Theme.of(context);
+    final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
+
+    return FractionallySizedBox(
+      heightFactor: 0.92,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, keyboard + 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'עריכת הכרטיס האישי',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'אפשר לשמור טקסט חופשי, להוסיף כמה תמונות שרוצים ולסדר אותן.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: ListView(
+                children: <Widget>[
+                  TextField(
+                    controller: _controller,
+                    minLines: 6,
+                    maxLines: 12,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      labelText: 'הטקסט שלי',
+                      hintText: 'אפשר לכתוב או להדביק כאן את הכרטיס שלך',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  PersonPhotoEditor(
+                    photoPaths: _photos,
+                    onAddPhoto: _addPhotos,
+                    onSetPrimary: _setPrimary,
+                    onRemove: _removePhoto,
+                    onReorder: _reorderPhotos,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('ביטול'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _save,
+                    icon: const Icon(Icons.save_outlined, size: 18),
+                    label: const Text('שמירת הכרטיס'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('ביטול'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text),
-          child: const Text('שמירה'),
-        ),
-      ],
     );
   }
 }

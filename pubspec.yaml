@@ -1,7 +1,7 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.18+35
+version: 1.0.18+37
 
 environment:
   sdk: ^3.11.0
@@ -60,13 +60,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icon4.png"
+  image_path: "assets/Logo5.jpeg"
 
 flutter_native_splash:
   color: "#F7F0E4"
-  image: "assets/icon4.png"
+  image: "assets/Logo5.jpeg"
   color_dark: "#211D17"
-  image_dark: "assets/icon4.png"
+  image_dark: "assets/Logo5.jpeg"
   android_12:
     color: "#F7F0E4"
     color_dark: "#211D17"

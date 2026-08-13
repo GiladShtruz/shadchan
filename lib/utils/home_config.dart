@@ -1,14 +1,8 @@
 /// The tuning knobs of the home screen, kept out of the widgets so the layout
 /// can be adjusted without touching the design code.
 abstract final class HomeConfig {
-  /// Below this many people in the database, "הוסף חברים" is shown as one wide
-  /// invitation card above "הוסף רעיון" — building the database is the only
-  /// thing that matters yet. From this count up, the two actions sit side by
-  /// side as a pair of differently weighted cards.
-  static const int compactActionsFromPeopleCount = 8;
-
-  /// How many items the board and the recent-activity strip keep.
-  static const int boardMaxItems = 40;
+  /// How many items the recent-activity strip keeps. The board itself is
+  /// intentionally unlimited and remains a horizontally scrolling surface.
   static const int recentActivityMaxItems = 25;
 
   /// How many cards each of the computed rows offers before the user has to
@@ -51,24 +45,16 @@ abstract final class HomeConfig {
   static const double cardWidth = 152;
   static const double cardHeight = 186;
 
-  /// The frame the notes run inside, so the row reads as one pinned board.
-  static const double boardFramePadding = 10;
-
-  /// "הפעולות האחרונות שלך": a low, wide strip card. Tall enough for both of
-  /// its lines to wrap onto a second row, so a long name or a long action is
-  /// never cut — and every card in the strip keeps that same box whether it
-  /// wrapped or not.
+  /// "הפעולות האחרונות שלך": the maximum phone-width strip card. Height is
+  /// content-driven.
   static const double activityCardWidth = 186;
-  static const double activityCardHeight = 88;
 
-  /// "רעיונות פתוחים": a low, centred card — avatars, names, status.
-  static const double ideaCardWidth = 142;
-  static const double ideaCardHeight = 112;
+  /// "רעיונות פתוחים": maximum width; narrow screens calculate a smaller
+  /// width that leaves two whole cards plus a deliberate next-card peek.
+  static const double ideaCardWidth = 190;
 
-  /// "חברים ששווה לחשוב עליהם": a free-standing circle with a name and one
-  /// line of reasoning under it, on a soft wave rather than in a box.
+  /// "חברים ששווה לחשוב עליהם": maximum bubble width. Height follows text.
   static const double suggestionBubbleWidth = 128;
-  static const double suggestionBubbleHeight = 168;
 
   /// The breathing room the wave row keeps above and below the circles.
   static const double suggestionRowPadding = 8;

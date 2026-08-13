@@ -4,9 +4,7 @@ import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// The board's notes are fixed-size boxes on purpose, so the row reads as one
-/// pinned board. That only holds if the fullest possible note still fits inside
-/// the box — including at a larger system font, where the note grows with it.
+/// The board notes have a minimum paper size but grow naturally with content.
 void main() {
   Widget wrap(Widget child, {double textScale = 1.0}) {
     return MaterialApp(
@@ -27,17 +25,13 @@ void main() {
       leading: const HomeCardCoupleAvatars(personA: null, personB: null),
       title: 'ישראלה בת אברהם',
       subtitle: 'הערה ארוכה שנשברת לשתי שורות מלאות בפתק',
-      footer: const HomeCardFooter(
-        label: '12.08.26',
-        icon: Icons.event_outlined,
-      ),
-      actions: const HomeNoteActionsButton(label: 'פעולות'),
+      actions: const HomeNoteActionsButton(),
       tintSeed: 'person:1',
       onTap: () {},
     );
   }
 
-  testWidgets('the fullest note fits its fixed box', (
+  testWidgets('the fullest note uses the base paper without a date', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(wrap(Center(child: fullestNote())));
@@ -45,10 +39,29 @@ void main() {
     expect(tester.takeException(), isNull);
     final Size size = tester.getSize(find.byType(HomeBoardNote));
     expect(size.width, HomeConfig.cardWidth);
-    expect(size.height, HomeConfig.cardHeight);
+    expect(size.height, greaterThanOrEqualTo(HomeConfig.cardHeight));
 
-    // The actions button replaced the corner menu, so it is part of the note.
-    expect(find.text('פעולות'), findsOneWidget);
+    // The menu is a small clean arrow, without the old text label.
+    expect(find.text('פעולות'), findsNothing);
+    expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
+    expect(find.text('12.08.26'), findsNothing);
+
+    final Offset noteCenter = tester.getCenter(find.byType(HomeBoardNote));
+    final Offset contentCenter = tester.getCenter(
+      find.byKey(const ValueKey<String>('home-board-note-content')),
+    );
+    // The whole paper is rotated by a fraction of a degree for the natural
+    // board effect, so sub-pixel geometry can drift slightly.
+    expect(contentCenter.dx, closeTo(noteCenter.dx, 1));
+    expect(contentCenter.dy, closeTo(noteCenter.dy, 1));
+    expect(
+      tester.getCenter(find.text('ישראלה בת אברהם')).dx,
+      closeTo(noteCenter.dx, 1),
+    );
+    expect(
+      tester.getCenter(find.text('הערה ארוכה שנשברת לשתי שורות מלאות בפתק')).dx,
+      closeTo(noteCenter.dx, 1),
+    );
   });
 
   testWidgets('the note grows with the system font instead of overflowing', (
@@ -63,7 +76,7 @@ void main() {
     );
   });
 
-  testWidgets('the board frames the notes running inside it', (
+  testWidgets('the corkboard carries notes directly in a horizontal row', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -72,14 +85,15 @@ void main() {
     await tester.pumpWidget(
       wrap(
         HomeNoteBoard(
-          child: SizedBox(
-            height: HomeConfig.cardHeight,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: 4,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(width: HomeConfig.cardGap),
-              itemBuilder: (BuildContext context, int index) => fullestNote(),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                for (int index = 0; index < 4; index++) ...<Widget>[
+                  if (index > 0) const SizedBox(width: HomeConfig.cardGap),
+                  fullestNote(),
+                ],
+              ],
             ),
           ),
         ),
@@ -87,7 +101,8 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    // The frame runs wider than the notes it holds.
+    // The cork surface runs wider than a note and does not constrain its
+    // natural height.
     expect(
       tester.getSize(find.byType(HomeNoteBoard)).width,
       greaterThan(HomeConfig.cardWidth),

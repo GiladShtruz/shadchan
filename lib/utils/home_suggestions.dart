@@ -130,9 +130,46 @@ abstract final class HomeSuggestions {
     }
 
     suggestions.sort(_byPriorityThenTime);
-    return suggestions.length > limit
-        ? suggestions.sublist(0, limit)
-        : suggestions;
+    return _diversify(suggestions, limit);
+  }
+
+  /// Keeps the existing priority order, but deals one person from each reason
+  /// before taking a second person for the same reason. This prevents the home
+  /// row from becoming ten consecutive newcomers (or ten stale cards) while
+  /// still letting the highest-priority reason lead every round.
+  static List<HomeSuggestion> _diversify(
+    List<HomeSuggestion> ranked,
+    int limit,
+  ) {
+    final Map<HomeSuggestionReason, List<HomeSuggestion>> buckets =
+        <HomeSuggestionReason, List<HomeSuggestion>>{};
+    for (final HomeSuggestion suggestion in ranked) {
+      buckets
+          .putIfAbsent(suggestion.kind, () => <HomeSuggestion>[])
+          .add(suggestion);
+    }
+
+    final List<HomeSuggestion> result = <HomeSuggestion>[];
+    int round = 0;
+    while (result.length < limit) {
+      bool added = false;
+      for (final HomeSuggestionReason reason in HomeSuggestionReason.values) {
+        final List<HomeSuggestion>? bucket = buckets[reason];
+        if (bucket == null || round >= bucket.length) {
+          continue;
+        }
+        result.add(bucket[round]);
+        added = true;
+        if (result.length == limit) {
+          break;
+        }
+      }
+      if (!added) {
+        break;
+      }
+      round++;
+    }
+    return result;
   }
 
   // --- Which sentence applies ------------------------------------------------
@@ -294,52 +331,52 @@ abstract final class HomeSuggestions {
     switch (kind) {
       case HomeSuggestionReason.returnedToAvailable:
         return female
-            ? 'חזרה להיות פנויה — שווה לחשוב עליה מחדש'
-            : 'חזר להיות פנוי — שווה לחשוב עליו מחדש';
+            ? 'חזרה להיות פנויה, שווה לחשוב עליה מחדש'
+            : 'חזר להיות פנוי, שווה לחשוב עליו מחדש';
       case HomeSuggestionReason.matchesFound:
         return female
             ? 'יש במאגר $count אנשים שעשויים להתאים לה'
             : 'יש במאגר $count אנשים שעשויים להתאים לו';
       case HomeSuggestionReason.newInDatabase:
         return female
-            ? 'חדשה במאגר — שווה להתחיל לחשוב עליה'
-            : 'חדש במאגר — שווה להתחיל לחשוב עליו';
+            ? 'חדשה במאגר, שווה להתחיל לחשוב עליה'
+            : 'חדש במאגר, שווה להתחיל לחשוב עליו';
       case HomeSuggestionReason.detailsAdded:
-        return 'נוספו פרטים חדשים — אולי הם יפתחו כיוון מתאים';
+        return 'נוספו פרטים חדשים, אולי הם יפתחו כיוון מתאים';
       case HomeSuggestionReason.cardUpdated:
         return female
-            ? 'הכרטיס שלה עודכן — שווה להסתכל עליו מחדש'
-            : 'הכרטיס שלו עודכן — שווה להסתכל עליו מחדש';
+            ? 'הכרטיס שלה עודכן, שווה להסתכל עליו מחדש'
+            : 'הכרטיס שלו עודכן, שווה להסתכל עליו מחדש';
       case HomeSuggestionReason.noIdeaYet:
         return female
-            ? 'עוד לא נפתח לה רעיון — אולי זה הזמן'
-            : 'עוד לא נפתח לו רעיון — אולי זה הזמן';
+            ? 'עוד לא נפתח לה רעיון, אולי זה הזמן'
+            : 'עוד לא נפתח לו רעיון, אולי זה הזמן';
       case HomeSuggestionReason.lastIdeaClosed:
-        return 'הרעיון האחרון נסגר — אולי מתאים עכשיו כיוון חדש';
+        return 'הרעיון האחרון נסגר, אולי מתאים עכשיו כיוון חדש';
       case HomeSuggestionReason.cardReady:
         return female
-            ? 'הכרטיס שלה מוכן — נשאר רק למצוא את החיבור'
-            : 'הכרטיס שלו מוכן — נשאר רק למצוא את החיבור';
+            ? 'הכרטיס שלה מוכן, נשאר רק למצוא את החיבור'
+            : 'הכרטיס שלו מוכן, נשאר רק למצוא את החיבור';
       case HomeSuggestionReason.notThoughtAbout:
         return female
-            ? 'לא חשבת עליה לאחרונה — אולי הגיע הזמן לכיוון חדש'
-            : 'לא חשבת עליו לאחרונה — אולי הגיע הזמן לכיוון חדש';
+            ? 'לא חשבת עליה לאחרונה, אולי הגיע הזמן לכיוון חדש'
+            : 'לא חשבת עליו לאחרונה, אולי הגיע הזמן לכיוון חדש';
       case HomeSuggestionReason.cardNotUpdated:
         return female
-            ? 'הכרטיס שלה לא עודכן לאחרונה — שווה לבדוק מה חדש'
-            : 'הכרטיס שלו לא עודכן לאחרונה — שווה לבדוק מה חדש';
+            ? 'הכרטיס שלה לא עודכן לאחרונה, שווה לבדוק מה חדש'
+            : 'הכרטיס שלו לא עודכן לאחרונה, שווה לבדוק מה חדש';
       case HomeSuggestionReason.openIdeasWaiting:
         return female
-            ? 'הרעיונות שלה מחכים לעדכון — אולי הגיע הזמן לקדם'
-            : 'הרעיונות שלו מחכים לעדכון — אולי הגיע הזמן לקדם';
+            ? 'הרעיונות שלה מחכים לעדכון, אולי הגיע הזמן לקדם'
+            : 'הרעיונות שלו מחכים לעדכון, אולי הגיע הזמן לקדם';
       case HomeSuggestionReason.severalOpenIdeas:
         return female
-            ? 'יש לה כבר $count רעיונות פתוחים — שווה לבדוק מה מתקדם'
-            : 'יש לו כבר $count רעיונות פתוחים — שווה לבדוק מה מתקדם';
+            ? 'יש לה כבר $count רעיונות פתוחים, שווה לבדוק מה מתקדם'
+            : 'יש לו כבר $count רעיונות פתוחים, שווה לבדוק מה מתקדם';
       case HomeSuggestionReason.oneOpenIdea:
         return female
-            ? 'יש לה רעיון פתוח — שווה לבדוק אם אפשר לקדם אותו'
-            : 'יש לו רעיון פתוח — שווה לבדוק אם אפשר לקדם אותו';
+            ? 'יש לה רעיון פתוח, שווה לבדוק אם אפשר לקדם אותו'
+            : 'יש לו רעיון פתוח, שווה לבדוק אם אפשר לקדם אותו';
       case HomeSuggestionReason.worthAThought:
         return 'אולי דווקא עכשיו יעלה לך הרעיון הנכון';
     }

@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
-import 'package:shadchan/utils/home_config.dart';
 
 /// Stores one of the home screen's settings as plain background I/O.
 ///
@@ -114,6 +113,23 @@ class HomeBoardStore extends ChangeNotifier {
   static const String _key = 'home.board';
 
   List<HomeBoardEntry>? _cache;
+  bool _focusPending = false;
+
+  /// Brings the already-mounted home tab to the board after an item is pinned.
+  void requestFocus() {
+    _focusPending = true;
+    notifyListeners();
+  }
+
+  /// Consumes a focus request exactly once. It remains pending while the home
+  /// branch is being recreated, so navigation cannot lose the request.
+  bool takeFocusRequest() {
+    if (!_focusPending) {
+      return false;
+    }
+    _focusPending = false;
+    return true;
+  }
 
   Box<dynamic>? get _box =>
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
@@ -216,16 +232,12 @@ class HomeBoardStore extends ChangeNotifier {
   }
 
   void _write(List<HomeBoardEntry> entries) {
-    final List<HomeBoardEntry> capped =
-        entries.length > HomeConfig.boardMaxItems
-        ? entries.sublist(0, HomeConfig.boardMaxItems)
-        : entries;
-    _cache = capped;
+    _cache = entries;
     notifyListeners();
     persistHomeSetting(
       _key,
       jsonEncode(<Map<String, Object?>>[
-        for (final HomeBoardEntry entry in capped) entry.toJson(),
+        for (final HomeBoardEntry entry in entries) entry.toJson(),
       ]),
     );
   }

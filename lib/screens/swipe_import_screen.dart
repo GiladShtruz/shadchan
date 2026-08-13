@@ -66,6 +66,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
   int _addedCount = 0;
   int _skippedCount = 0;
   int _remaining = 0;
+  int _progressTotal = 0;
   bool _isFinished = false;
   bool _hintSeen = true;
   final List<_SwipeHistoryEntry> _history = <_SwipeHistoryEntry>[];
@@ -154,6 +155,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         _permissionState = permissionState;
         _candidates = sortedCachedCandidates;
         _remaining = _candidates.length;
+        _progressTotal =
+            personRepository.databaseCount + sortedCachedCandidates.length;
         _isLoading = false;
         _isFinished = _candidates.isEmpty;
       });
@@ -189,6 +192,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       _permissionState = permissionState;
       _candidates = sortedCandidates;
       _remaining = _candidates.length;
+      _progressTotal = personRepository.databaseCount + sortedCandidates.length;
       _isLoading = false;
       _loadingProgress = null;
       _loadingMessage = 'טוענים אנשי קשר...';
@@ -552,7 +556,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           child: AddContactsProgressHeader(
             addedToDatabase: databaseCount,
             remaining: _remaining,
-            total: _candidates.length,
+            total: _progressTotal,
           ),
         ),
         Padding(

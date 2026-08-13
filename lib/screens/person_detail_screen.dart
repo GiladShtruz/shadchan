@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -22,12 +23,12 @@ import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/services/home_board_store.dart';
-import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
@@ -98,28 +99,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   /// compact bar with the person's name only.
   bool _showCollapsedTitle = false;
   bool _showFullCard = false;
+  bool _editingDetails = false;
+  bool _editingFullCard = false;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
-    // Feeds the home screen's "הפעולות האחרונות שלך" strip. Deferred past this frame:
-    // the home screen is still alive behind this route, and notifying it from
-    // inside initState would rebuild it mid-build.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      RecentActivityStore.instance.record(
-        kind: HomeItemKind.person,
-        targetId: widget.personId,
-        action: HomeActivityAction.openedPerson,
-      );
-    });
     if (widget.initiallyEditing) {
-      // The old edit route now lands on the dedicated card-edit page.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _openCardEditPage(context);
-        }
-      });
+      _editingDetails = true;
     }
   }
 
@@ -222,20 +210,28 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           ),
         ),
         actions: <Widget>[
+          IconButton(
+            onPressed: () =>
+                PersonCardViewer.openSharePreview(context, person.id),
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'שיתוף כרטיס',
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (String value) async {
               switch (value) {
+                case 'extendedEdit':
+                  setState(() {
+                    _editingDetails = false;
+                    _editingFullCard = false;
+                  });
+                  await _openCardEditPage(context);
                 case 'board':
                   HomeBoardActions.toggle(
                     context,
                     HomeItemKind.person,
                     person.id,
                   );
-                case 'edit':
-                  await _openCardEditPage(context);
-                case 'share':
-                  await _sharePerson(context, person);
                 case 'shareContact':
                   await _shareInquiryContact(context, person);
                 case 'whatsappContact':
@@ -266,6 +262,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 person,
               ).isNotEmpty;
               return <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'extendedEdit',
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.edit_note_outlined),
+                      SizedBox(width: 10),
+                      Text('עריכה מורחבת'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
                 PopupMenuItem<String>(
                   value: 'board',
                   height: HomeBoardActions.menuItemHeight,
@@ -274,15 +281,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     HomeItemKind.person,
                     person.id,
                   ),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem<String>(
-                  value: 'edit',
-                  child: Text('עריכת כרטיס'),
-                ),
-                const PopupMenuItem<String>(
-                  value: 'share',
-                  child: Text('שיתוף כרטיס'),
                 ),
                 if (hasContact) ...<PopupMenuEntry<String>>[
                   const PopupMenuDivider(),
@@ -313,10 +311,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           children: <Widget>[
             _ProfileSummaryHeader(
               person: person,
+              editing: _editingDetails,
               onAvatarTap: () => PersonCardViewer.open(context, person.id),
-              onShare: () => _showCardShareSheet(context, person),
               onStatusChanged: (ProfileStatus status) =>
                   _changeProfileStatus(context, person, status),
+              onEdit: () {
+                setState(() {
+                  _editingDetails = true;
+                  _editingFullCard = false;
+                });
+              },
+              onEditingDone: () => setState(() => _editingDetails = false),
             ),
             _ProfileInlineActions(
               whatsappLabel: _firstNameOr(person, 'WhatsApp'),
@@ -326,12 +331,20 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             ),
             _WhatsAppCardSection(
               person: person,
+              editing: _editingFullCard,
               expanded: _showFullCard,
               onToggleFull: () {
                 setState(() => _showFullCard = !_showFullCard);
               },
               onRequestDetails: () => _requestDetails(context, person),
               onEditMessage: () => _editDetailsMessage(context, person),
+              onEditCard: () {
+                setState(() {
+                  _editingFullCard = true;
+                  _editingDetails = false;
+                });
+              },
+              onEditingDone: () => setState(() => _editingFullCard = false),
             ),
             _PersonalNotesCard(
               person: person,
@@ -462,66 +475,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 
-  Future<void> _sharePerson(BuildContext context, Person person) async {
-    try {
-      await ShareUtils.sharePerson(person);
-    } catch (_) {
-      if (context.mounted) {
-        _showSnackBar(context, 'לא ניתן לשתף כרגע');
-      }
-    }
-  }
-
-  Future<void> _showCardShareSheet(BuildContext context, Person person) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext sheetContext) {
-        final ThemeData theme = Theme.of(sheetContext);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  'שיתוף הכרטיס המלא',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'בחירת הנמען תיפתח ב-WhatsApp',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      Navigator.of(sheetContext).pop();
-                      final bool launched = await WhatsAppUtils.sharePersonCard(
-                        person,
-                      );
-                      if (!launched && context.mounted) {
-                        _showSnackBar(context, 'לא הצלחנו לפתוח את WhatsApp');
-                      }
-                    },
-                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 20),
-                    label: const Text('שיתוף דרך WhatsApp'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   /// Opens a new idea for this person, either against someone already in the
   /// database or against a name that is not.
   Future<void> _openAddProposal(BuildContext context, Person person) async {
@@ -536,12 +489,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             children: <Widget>[
               ListTile(
                 leading: const Icon(Icons.group_outlined),
-                title: const Text('התאמה עם מועמד מתוך המאגר'),
+                title: const Text('הוספת הצעה עם מועמד מתוך המאגר שלי'),
                 onTap: () => Navigator.of(dialogContext).pop('database'),
               ),
               ListTile(
                 leading: const Icon(Icons.person_add_alt_1),
-                title: const Text('התאמה עם אדם שאינו נמצא במאגר'),
+                title: const Text('הוספת הצעה עם מועמד מחוץ למאגר שלי'),
                 onTap: () => Navigator.of(dialogContext).pop('outside'),
               ),
             ],
@@ -702,12 +655,14 @@ class _InlinePersonEditForm extends StatelessWidget {
     required this.firstNameController,
     required this.lastNameController,
     required this.manualAgeController,
+    required this.cityController,
     required this.phoneController,
     required this.inquiryContactNameController,
     required this.inquiryContactPhoneController,
     required this.firstNameFocus,
     required this.lastNameFocus,
     required this.manualAgeFocus,
+    required this.cityFocus,
     required this.phoneFocus,
     required this.inquiryContactNameFocus,
     required this.inquiryContactPhoneFocus,
@@ -724,12 +679,14 @@ class _InlinePersonEditForm extends StatelessWidget {
   final TextEditingController firstNameController;
   final TextEditingController lastNameController;
   final TextEditingController manualAgeController;
+  final TextEditingController cityController;
   final TextEditingController phoneController;
   final TextEditingController inquiryContactNameController;
   final TextEditingController inquiryContactPhoneController;
   final FocusNode firstNameFocus;
   final FocusNode lastNameFocus;
   final FocusNode manualAgeFocus;
+  final FocusNode cityFocus;
   final FocusNode phoneFocus;
   final FocusNode inquiryContactNameFocus;
   final FocusNode inquiryContactPhoneFocus;
@@ -809,6 +766,17 @@ class _InlinePersonEditForm extends StatelessWidget {
                 selectedReligiousLevelOther,
               ),
               onChanged: onReligiousLevelChanged,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: cityController,
+              focusNode: cityFocus,
+              textInputAction: TextInputAction.next,
+              onChanged: (_) => onFieldChanged(),
+              decoration: InputDecoration(
+                labelText: 'עיר',
+                suffixIcon: _saveSuffix(cityFocus),
+              ),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -918,27 +886,172 @@ class _InlinePersonEditForm extends StatelessWidget {
   }
 }
 
-class _ProfileSummaryHeader extends StatelessWidget {
+class _ProfileSummaryHeader extends StatefulWidget {
   const _ProfileSummaryHeader({
     required this.person,
+    required this.editing,
     required this.onAvatarTap,
-    required this.onShare,
     required this.onStatusChanged,
+    required this.onEdit,
+    required this.onEditingDone,
   });
 
-  /// The width reserved on each side of the photo, so the share button can sit
-  /// beside it without pushing the photo off centre.
-  static const double _sideSlotWidth = 48;
-
   final Person person;
+  final bool editing;
   final VoidCallback onAvatarTap;
-  final VoidCallback onShare;
   final ValueChanged<ProfileStatus> onStatusChanged;
+  final VoidCallback onEdit;
+  final VoidCallback onEditingDone;
+
+  @override
+  State<_ProfileSummaryHeader> createState() => _ProfileSummaryHeaderState();
+}
+
+class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
+  late final TextEditingController _nameController = TextEditingController();
+  late final TextEditingController _ageController = TextEditingController();
+  ReligiousLevel? _religiousLevel;
+  String? _religiousLevelOther;
+  List<String> _photoPaths = <String>[];
+  final Set<String> _newPhotoPaths = <String>{};
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetDraft();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProfileSummaryHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.person.id != widget.person.id ||
+        (!oldWidget.editing && widget.editing)) {
+      _resetDraft();
+    } else if (oldWidget.editing && !widget.editing) {
+      _discardNewPhotos();
+    }
+  }
+
+  @override
+  void dispose() {
+    _discardNewPhotos();
+    _nameController.dispose();
+    _ageController.dispose();
+    super.dispose();
+  }
+
+  void _resetDraft() {
+    _discardNewPhotos();
+    _nameController.text = widget.person.fullName;
+    _ageController.text = widget.person.age?.toString() ?? '';
+    _religiousLevel = widget.person.religiousLevel;
+    _religiousLevelOther = widget.person.religiousLevelOther;
+    _photoPaths = List<String>.from(widget.person.photosPaths);
+  }
+
+  void _discardNewPhotos() {
+    if (_newPhotoPaths.isEmpty) {
+      return;
+    }
+    PhotoPickerService.deletePhotoFiles(_newPhotoPaths);
+    _newPhotoPaths.clear();
+  }
+
+  Future<void> _pickPrimaryPhoto() async {
+    final String? path = await PhotoPickerService.pickSinglePhoto(
+      context,
+      namePrefix: widget.person.id,
+    );
+    if (path == null || !mounted) {
+      return;
+    }
+    _discardNewPhotos();
+    setState(() {
+      _newPhotoPaths.add(path);
+      _photoPaths = <String>[
+        path,
+        if (_photoPaths.length > 1) ..._photoPaths.skip(1),
+      ];
+    });
+  }
+
+  Future<void> _save() async {
+    if (_saving) {
+      return;
+    }
+    final String fullName = _nameController.text.trim();
+    if (fullName.isEmpty) {
+      _showValidationMessage('יש להזין שם');
+      return;
+    }
+    final String ageText = _ageController.text.trim();
+    final int? age = ageText.isEmpty ? null : int.tryParse(ageText);
+    if (ageText.isNotEmpty && (age == null || age < 10 || age > 120)) {
+      _showValidationMessage('יש להזין גיל בין 10 ל-120');
+      return;
+    }
+
+    setState(() => _saving = true);
+    final List<String> parts = fullName
+        .split(RegExp(r'\s+'))
+        .where((String part) => part.isNotEmpty)
+        .toList();
+    widget.person
+      ..firstName = parts.first
+      ..lastName = parts.skip(1).join(' ')
+      ..setManualAge(age)
+      ..religiousLevel = _religiousLevel
+      ..religiousLevelOther = _religiousLevelOther
+      ..photosPaths = List<String>.from(_photoPaths);
+    await context.read<PersonRepository>().update(widget.person);
+    _newPhotoPaths.clear();
+    if (mounted) {
+      setState(() => _saving = false);
+      widget.onEditingDone();
+    }
+  }
+
+  void _showValidationMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _cancel() {
+    _resetDraft();
+    widget.onEditingDone();
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String summary = _personSummary(person);
+    final String summary = _personSummary(widget.person);
+    final ReligiousLevelsProvider levelsProvider = context
+        .watch<ReligiousLevelsProvider>();
+    final List<ReligiousLevelChoice> religiousChoices = <ReligiousLevelChoice>[
+      for (final ReligiousLevel level in levelsProvider.enabledLevels)
+        ReligiousLevelChoice(level),
+      for (final String label in levelsProvider.customLabels)
+        ReligiousLevelChoice(ReligiousLevel.other, label),
+    ];
+    if (_religiousLevel != null &&
+        !religiousChoices.any(
+          (ReligiousLevelChoice choice) =>
+              choice.level == _religiousLevel &&
+              choice.customLabel == _religiousLevelOther,
+        )) {
+      religiousChoices.insert(
+        0,
+        ReligiousLevelChoice(_religiousLevel, _religiousLevelOther),
+      );
+    }
+    final Person shownPerson = widget.editing
+        ? widget.person.copyWith(photosPaths: _photoPaths)
+        : widget.person;
+    final String religiousLabel = _religiousLevel == ReligiousLevel.other
+        ? (_religiousLevelOther ?? ReligiousLevel.other.displayName)
+        : _religiousLevel?.displayName ?? 'סגנון דתי';
 
     return Material(
       color: _profileCanvasColor(theme),
@@ -955,67 +1068,242 @@ class _ProfileSummaryHeader extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: widget.editing
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          IconButton(
+                            onPressed: _saving ? null : _cancel,
+                            icon: const Icon(Icons.close, size: 20),
+                            tooltip: 'ביטול עריכה מהירה',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          IconButton(
+                            onPressed: _saving ? null : _save,
+                            icon: _saving
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.check, size: 20),
+                            tooltip: 'שמירת עריכה מהירה',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      )
+                    : IconButton(
+                        onPressed: widget.onEdit,
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        tooltip: 'עריכת פרטי המועמד',
+                        visualDensity: VisualDensity.compact,
+                        style: IconButton.styleFrom(
+                          foregroundColor: _profileMutedColor(theme),
+                        ),
+                      ),
+              ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  // Balances the share button opposite it, so the photo itself
-                  // stays centred in the card.
-                  const SizedBox(width: _sideSlotWidth),
-                  GestureDetector(
-                    onTap: onAvatarTap,
-                    child: Hero(
-                      tag: 'person-${person.id}',
-                      child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: _profileWarmSurfaceColor(theme),
-                          shape: BoxShape.circle,
+                  Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: <Widget>[
+                      GestureDetector(
+                        onTap: widget.editing ? null : widget.onAvatarTap,
+                        child: Hero(
+                          tag: 'person-${widget.person.id}',
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: _profileWarmSurfaceColor(theme),
+                              shape: BoxShape.circle,
+                            ),
+                            child: PersonAvatar(
+                              person: shownPerson,
+                              radius: 54,
+                            ),
+                          ),
                         ),
-                        child: PersonAvatar(person: person, radius: 54),
                       ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: _sideSlotWidth,
-                    child: IconButton(
-                      onPressed: onShare,
-                      icon: const Icon(Icons.share_outlined),
-                      tooltip: 'שיתוף הכרטיס',
-                      color: theme.colorScheme.primary,
-                    ),
+                      if (widget.editing)
+                        Positioned(
+                          bottom: 5,
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.38),
+                            shape: const CircleBorder(),
+                            child: IconButton(
+                              onPressed: _saving ? null : _pickPrimaryPhoto,
+                              icon: const Icon(Icons.add, color: Colors.white),
+                              tooltip: 'החלפת תמונת הפרופיל',
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              Text(
-                person.fullName.trim(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  color: _profileTextColor(theme),
-                  fontWeight: FontWeight.w800,
-                  height: 1.05,
+              if (widget.editing)
+                TextField(
+                  key: ValueKey<String>('quick-name-${widget.person.id}'),
+                  controller: _nameController,
+                  autofocus: true,
+                  textAlign: TextAlign.center,
+                  textCapitalization: TextCapitalization.words,
+                  minLines: 1,
+                  maxLines: 2,
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    enabledBorder: UnderlineInputBorder(),
+                    focusedBorder: UnderlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(vertical: 4),
+                  ),
+                )
+              else
+                Text(
+                  widget.person.fullName.trim(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                  ),
                 ),
-              ),
               const SizedBox(height: 6),
-              Text(
-                summary,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: _profileMutedColor(theme),
+              if (widget.editing)
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          'גיל',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: _profileMutedColor(theme),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 42,
+                          child: TextField(
+                            key: ValueKey<String>(
+                              'quick-age-${widget.person.id}',
+                            ),
+                            controller: _ageController,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: <TextInputFormatter>[
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: _profileMutedColor(theme),
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: InputBorder.none,
+                              enabledBorder: UnderlineInputBorder(),
+                              focusedBorder: UnderlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(vertical: 2),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '·',
+                      style: TextStyle(color: _profileMutedColor(theme)),
+                    ),
+                    PopupMenuButton<ReligiousLevelChoice>(
+                      tooltip: 'בחירת סגנון דתי',
+                      onSelected: (ReligiousLevelChoice choice) {
+                        setState(() {
+                          _religiousLevel = choice.level;
+                          _religiousLevelOther = choice.customLabel;
+                        });
+                      },
+                      itemBuilder: (BuildContext context) =>
+                          religiousChoices.map((ReligiousLevelChoice choice) {
+                            final String label =
+                                choice.level == ReligiousLevel.other
+                                ? (choice.customLabel ??
+                                      ReligiousLevel.other.displayName)
+                                : choice.level?.displayName ?? '';
+                            return PopupMenuItem<ReligiousLevelChoice>(
+                              value: choice,
+                              child: Text(label),
+                            );
+                          }).toList(),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              religiousLabel,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: _profileMutedColor(theme),
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            Icon(
+                              Icons.expand_more,
+                              size: 18,
+                              color: _profileMutedColor(theme),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if ((widget.person.city ?? '')
+                        .trim()
+                        .isNotEmpty) ...<Widget>[
+                      Text(
+                        '·',
+                        style: TextStyle(color: _profileMutedColor(theme)),
+                      ),
+                      Text(
+                        widget.person.city!.trim(),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: _profileMutedColor(theme),
+                        ),
+                      ),
+                    ],
+                  ],
+                )
+              else
+                Text(
+                  summary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: _profileMutedColor(theme),
+                  ),
                 ),
-              ),
               const SizedBox(height: 12),
               _ProfileStatusSwitcher(
-                status: person.profileStatus,
-                onStatusChanged: onStatusChanged,
+                status: widget.person.profileStatus,
+                onStatusChanged: widget.onStatusChanged,
               ),
               const SizedBox(height: 10),
               Text(
-                _relativeUpdatedLabel(person.updatedAt),
+                _relativeUpdatedLabel(widget.person.updatedAt),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: _profileMutedColor(theme),
@@ -1563,27 +1851,77 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
   }
 }
 
-/// Inline preview of the person's send-card. Expanding keeps the complete card
-/// inside the profile and exposes its WhatsApp share action above the text.
-class _WhatsAppCardSection extends StatelessWidget {
+/// Inline preview of the person's send-card. Its quick edit mode keeps this
+/// exact surface in place and swaps only the text for an editor.
+class _WhatsAppCardSection extends StatefulWidget {
   const _WhatsAppCardSection({
     required this.person,
+    required this.editing,
     required this.expanded,
     required this.onToggleFull,
     required this.onRequestDetails,
     required this.onEditMessage,
+    required this.onEditCard,
+    required this.onEditingDone,
   });
 
   final Person person;
+  final bool editing;
   final bool expanded;
   final VoidCallback onToggleFull;
   final VoidCallback onRequestDetails;
   final VoidCallback onEditMessage;
+  final VoidCallback onEditCard;
+  final VoidCallback onEditingDone;
+
+  @override
+  State<_WhatsAppCardSection> createState() => _WhatsAppCardSectionState();
+}
+
+class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.person.description ?? '',
+  );
+  bool _saving = false;
+
+  @override
+  void didUpdateWidget(covariant _WhatsAppCardSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.person.id != widget.person.id ||
+        (!oldWidget.editing && widget.editing)) {
+      _controller.text = widget.person.description ?? '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) {
+      return;
+    }
+    setState(() => _saving = true);
+    final String value = _controller.text.trim();
+    widget.person.description = value.isEmpty ? null : value;
+    await context.read<PersonRepository>().update(widget.person);
+    if (mounted) {
+      setState(() => _saving = false);
+      widget.onEditingDone();
+    }
+  }
+
+  void _cancel() {
+    _controller.text = widget.person.description ?? '';
+    widget.onEditingDone();
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String description = (person.description ?? '').trim();
+    final String description = (widget.person.description ?? '').trim();
     final bool hasCard = description.isNotEmpty;
 
     return Padding(
@@ -1598,100 +1936,175 @@ class _WhatsAppCardSection extends StatelessWidget {
             color: _profileMutedColor(theme).withValues(alpha: 0.14),
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: <Widget>[
-            if (hasCard) ...<Widget>[
-              AnimatedCrossFade(
-                firstChild: Text(
-                  description,
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: _profileTextColor(theme),
-                    height: 1.5,
-                  ),
-                ),
-                // Sharing lives in the profile header now, beside the photo —
-                // not inside the card.
-                secondChild: Text(
-                  description,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: _profileTextColor(theme),
-                    height: 1.55,
-                  ),
-                ),
-                crossFadeState: expanded
-                    ? CrossFadeState.showSecond
-                    : CrossFadeState.showFirst,
-                duration: const Duration(milliseconds: 180),
-                sizeCurve: Curves.easeOut,
+            // The body owns the top of the card. Only its end-side inset is
+            // reserved for the overlaid edit control, so the control never
+            // consumes a row or pushes the whole card down.
+            Padding(
+              key: ValueKey<String>(
+                'candidate-full-card-body-${widget.person.id}',
               ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  onPressed: onToggleFull,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    expanded ? 'סגירת הכרטיס המלא' : 'הצגת הכרטיס המלא',
-                  ),
-                ),
+              padding: EdgeInsetsDirectional.only(
+                end: widget.editing ? 80 : 38,
               ),
-            ] else ...<Widget>[
-              Text(
-                'אין עדיין כרטיס מלא או תמונה — רק פרטים בסיסיים.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: _profileMutedColor(theme),
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 10),
-              // One action, one row: the request is the button, and editing
-              // its wording is the quiet pencil attached to it — never a
-              // second button on a line of its own, which read as a separate
-              // thing to do.
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onRequestDetails,
-                      icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
-                      label: const Text(
-                        'בקש פרטים ב-WhatsApp',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+              child: widget.editing
+                  ? TextField(
+                      key: ValueKey<String>('quick-card-${widget.person.id}'),
+                      controller: _controller,
+                      autofocus: true,
+                      minLines: 5,
+                      maxLines: 14,
+                      textInputAction: TextInputAction.newline,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: _profileTextColor(theme),
+                        height: 1.55,
                       ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _profileTextColor(theme),
-                        side: BorderSide(
-                          color: _profileMutedColor(
-                            theme,
-                          ).withValues(alpha: 0.2),
+                      decoration: const InputDecoration(
+                        hintText: 'טקסט הכרטיס המלא לשיתוף',
+                        alignLabelWithHint: true,
+                      ),
+                    )
+                  : hasCard
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        AnimatedCrossFade(
+                          key: ValueKey<String>(
+                            'candidate-full-card-text-${widget.person.id}',
+                          ),
+                          firstChild: Text(
+                            description,
+                            maxLines: 5,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: _profileTextColor(theme),
+                              height: 1.5,
+                            ),
+                          ),
+                          secondChild: Text(
+                            description,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: _profileTextColor(theme),
+                              height: 1.55,
+                            ),
+                          ),
+                          crossFadeState: widget.expanded
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                          duration: const Duration(milliseconds: 180),
+                          sizeCurve: Curves.easeOut,
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: TextButton(
+                            onPressed: widget.onToggleFull,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              widget.expanded
+                                  ? 'סגירת הכרטיס המלא'
+                                  : 'הצגת הכרטיס המלא',
+                            ),
+                          ),
                         ),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'אין עדיין כרטיס מלא או תמונה — רק פרטים בסיסיים.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: _profileMutedColor(theme),
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: widget.onRequestDetails,
+                                icon: const FaIcon(
+                                  FontAwesomeIcons.whatsapp,
+                                  size: 16,
+                                ),
+                                label: const Text(
+                                  'בקש פרטים ב-WhatsApp',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _profileTextColor(theme),
+                                  side: BorderSide(
+                                    color: _profileMutedColor(
+                                      theme,
+                                    ).withValues(alpha: 0.2),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: widget.onEditMessage,
+                              tooltip: 'ערוך נוסח בקשת פרטים',
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              visualDensity: VisualDensity.compact,
+                              style: IconButton.styleFrom(
+                                foregroundColor: _profileMutedColor(theme),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+            ),
+            PositionedDirectional(
+              top: -8,
+              end: -8,
+              child: widget.editing
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        IconButton(
+                          onPressed: _saving ? null : _cancel,
+                          icon: const Icon(Icons.close, size: 20),
+                          tooltip: 'ביטול עריכת הכרטיס',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        IconButton(
+                          onPressed: _saving ? null : _save,
+                          icon: _saving
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.check, size: 20),
+                          tooltip: 'שמירת הכרטיס',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    )
+                  : IconButton(
+                      onPressed: widget.onEditCard,
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      tooltip: 'עריכת טקסט הכרטיס המלא',
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        foregroundColor: _profileMutedColor(theme),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    onPressed: onEditMessage,
-                    tooltip: 'ערוך נוסח בקשת פרטים',
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    visualDensity: VisualDensity.compact,
-                    style: IconButton.styleFrom(
-                      foregroundColor: _profileMutedColor(theme),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ],
         ),
       ),
@@ -2155,7 +2568,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
                 onPressed: () => Navigator.of(context).pop(),
               )
             : null,
-        title: Text('התאמות · ${person.firstName.trim()}'),
+        title: Text('התאמות · ${person.fullName.trim()}'),
       ),
       body: SafeArea(
         child: Column(
@@ -2504,7 +2917,7 @@ class _SearchResultsList extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_left, color: _profileMutedColor(theme)),
+                  Icon(Icons.chevron_right, color: _profileMutedColor(theme)),
                 ],
               ),
             ),
@@ -2790,11 +3203,9 @@ class _CandidateQuickCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String description = (candidate.description ?? '').trim();
-    final String? photoPath = candidate.photosPaths.isEmpty
-        ? null
-        : candidate.photosPaths.first;
-    final File? photoFile = photoPath == null ? null : File(photoPath);
-    final bool hasPhoto = photoFile != null && photoFile.existsSync();
+    final List<String> photoPaths = candidate.photosPaths
+        .where((String path) => File(path).existsSync())
+        .toList(growable: false);
 
     return Container(
       width: double.infinity,
@@ -2806,12 +3217,13 @@ class _CandidateQuickCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (hasPhoto)
-            Image.file(
-              photoFile,
+          if (photoPaths.isNotEmpty)
+            PersonPhotoCarousel(
+              photosPaths: photoPaths,
               height: 220,
-              cacheWidth: 720,
-              fit: BoxFit.cover,
+              borderRadius: BorderRadius.zero,
+              fit: BoxFit.contain,
+              backgroundColor: _profileWarmSurfaceColor(theme),
             ),
           Padding(
             padding: const EdgeInsets.all(14),
@@ -3082,6 +3494,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _manualAgeController = TextEditingController();
+  final TextEditingController _cityController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _inquiryContactNameController =
       TextEditingController();
@@ -3092,6 +3505,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
   final FocusNode _firstNameFocus = FocusNode();
   final FocusNode _lastNameFocus = FocusNode();
   final FocusNode _manualAgeFocus = FocusNode();
+  final FocusNode _cityFocus = FocusNode();
   final FocusNode _phoneFocus = FocusNode();
   final FocusNode _inquiryContactNameFocus = FocusNode();
   final FocusNode _inquiryContactPhoneFocus = FocusNode();
@@ -3112,6 +3526,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
     _firstNameFocus,
     _lastNameFocus,
     _manualAgeFocus,
+    _cityFocus,
     _phoneFocus,
     _inquiryContactNameFocus,
     _inquiryContactPhoneFocus,
@@ -3130,6 +3545,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
       // Show the current (auto-advancing) manual age so re-saving re-anchors
       // it.
       _manualAgeController.text = person.age?.toString() ?? '';
+      _cityController.text = person.city ?? '';
       _phoneController.text = person.phone ?? '';
       _inquiryContactNameController.text = person.inquiryContactName ?? '';
       _inquiryContactPhoneController.text = person.inquiryContactPhone ?? '';
@@ -3154,6 +3570,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _manualAgeController.dispose();
+    _cityController.dispose();
     _phoneController.dispose();
     _inquiryContactNameController.dispose();
     _inquiryContactPhoneController.dispose();
@@ -3192,6 +3609,7 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
         ..setManualAge(manualAge)
         ..religiousLevel = _religiousLevel
         ..religiousLevelOther = _religiousLevelOther
+        ..city = _normalizedText(_cityController.text)
         ..phone = _normalizedText(_phoneController.text)
         ..inquiryContactName = _normalizedText(
           _inquiryContactNameController.text,
@@ -3329,12 +3747,14 @@ class _PersonCardEditPageState extends State<_PersonCardEditPage> {
                 firstNameController: _firstNameController,
                 lastNameController: _lastNameController,
                 manualAgeController: _manualAgeController,
+                cityController: _cityController,
                 phoneController: _phoneController,
                 inquiryContactNameController: _inquiryContactNameController,
                 inquiryContactPhoneController: _inquiryContactPhoneController,
                 firstNameFocus: _firstNameFocus,
                 lastNameFocus: _lastNameFocus,
                 manualAgeFocus: _manualAgeFocus,
+                cityFocus: _cityFocus,
                 phoneFocus: _phoneFocus,
                 inquiryContactNameFocus: _inquiryContactNameFocus,
                 inquiryContactPhoneFocus: _inquiryContactPhoneFocus,

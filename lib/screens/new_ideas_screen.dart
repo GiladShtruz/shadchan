@@ -140,14 +140,15 @@ class _Intro extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'המאגר שלך מציע $count רעיונות',
+                  'המאגר שלך מציע רעיונות לזוגות שיכולים להתאים לפי גיל וסגנון דתי',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
+                    height: 1.3,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'זוגות שמתאימים לפי גיל והשקפה ושעוד לא נפתח להם רעיון',
+                  '$count רעיונות חדשים שעוד לא נפתחו',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     height: 1.3,
@@ -252,7 +253,7 @@ class _IdeaCard extends StatelessWidget {
                 style: TextButton.styleFrom(
                   foregroundColor: theme.colorScheme.onSurfaceVariant,
                 ),
-                child: const Text('לא עכשיו'),
+                child: const Text('לא מתאים'),
               ),
             ],
           ),

@@ -5,12 +5,13 @@ import 'package:hive/hive.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/home_config.dart';
 
-/// What the matchmaker last did with a person or a proposal. Opening a
-/// WhatsApp chat is deliberately absent: it happens constantly and would drown
-/// out the real work.
+/// What the matchmaker last changed on a person or proposal. The two `opened*`
+/// values remain only so activity saved by older versions can be decoded and
+/// discarded cleanly; opening a screen is not work completed.
 enum HomeActivityAction {
   openedPerson,
   openedIdea,
+  createdPerson,
   createdIdea,
   editedDetails,
   addedNote,
@@ -25,22 +26,9 @@ enum HomeActivityAction {
     return null;
   }
 
-  String get label {
-    switch (this) {
-      case HomeActivityAction.openedPerson:
-        return 'צפית בכרטיס';
-      case HomeActivityAction.openedIdea:
-        return 'פתחת רעיון';
-      case HomeActivityAction.createdIdea:
-        return 'רעיון חדש';
-      case HomeActivityAction.editedDetails:
-        return 'ערכת פרטים';
-      case HomeActivityAction.addedNote:
-        return 'הוספת הערה';
-      case HomeActivityAction.changedStatus:
-        return 'עדכנת סטטוס';
-    }
-  }
+  bool get isPerformedAction =>
+      this != HomeActivityAction.openedPerson &&
+      this != HomeActivityAction.openedIdea;
 }
 
 class HomeActivityEntry {
@@ -55,6 +43,16 @@ class HomeActivityEntry {
   final String targetId;
   final HomeActivityAction action;
   final DateTime at;
+
+  String get label {
+    if (action == HomeActivityAction.createdPerson) {
+      return 'הוספת כרטיס';
+    }
+    if (action == HomeActivityAction.createdIdea) {
+      return 'הוספת רעיון';
+    }
+    return kind == HomeItemKind.person ? 'ערכת כרטיס' : 'ערכת רעיון';
+  }
 
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.name,
@@ -88,10 +86,10 @@ class HomeActivityEntry {
 /// "הפעולות האחרונות שלך" — the trail of what the matchmaker just worked on,
 /// so getting back to it is one tap instead of a search.
 ///
-/// One entry per person / proposal: touching the same card again refreshes it
+/// One entry per person / proposal: changing the same item again refreshes it
 /// and floats it back to the front rather than piling up duplicates. Recording
-/// is automatic — every call site is a place the app already knew something
-/// happened, so the matchmaker is never asked to log anything.
+/// is automatic at repository writes, so the matchmaker is never asked to log
+/// anything.
 ///
 /// A singleton for the same reason as [HomeBoardStore]: the repositories record
 /// into it, and passing it through their constructors would buy nothing.
@@ -115,7 +113,7 @@ class RecentActivityStore extends ChangeNotifier {
     required String targetId,
     required HomeActivityAction action,
   }) {
-    if (targetId.isEmpty) {
+    if (targetId.isEmpty || !action.isPerformedAction) {
       return;
     }
 
@@ -172,7 +170,8 @@ class RecentActivityStore extends ChangeNotifier {
       }
       return <HomeActivityEntry>[
         for (final Object? raw in decoded)
-          if (HomeActivityEntry.fromJson(raw) case final HomeActivityEntry e) e,
+          if (HomeActivityEntry.fromJson(raw) case final HomeActivityEntry e)
+            if (e.action.isPerformedAction) e,
       ];
     } catch (_) {
       return <HomeActivityEntry>[];

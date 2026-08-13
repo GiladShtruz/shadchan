@@ -41,6 +41,10 @@ class MonthlyStatsScreen extends StatelessWidget {
     ];
 
     final MonthStats current = stats.first;
+    final MonthStats displayedCurrent = MonthlyStats.withAllTimeWeddings(
+      current,
+      matches,
+    );
     final MonthStats? previous = stats.length > 1 ? stats[1] : null;
 
     return Scaffold(
@@ -75,8 +79,9 @@ class MonthlyStatsScreen extends StatelessWidget {
                 for (final MonthlyStatMetric metric in MonthlyStatMetric.values)
                   _StatCard(
                     metric: metric,
-                    value: metric.valueOf(current),
-                    previous: previous == null
+                    value: metric.valueOf(displayedCurrent),
+                    previous:
+                        metric == MonthlyStatMetric.weddings || previous == null
                         ? null
                         : metric.valueOf(previous),
                     onTap: () => context.push('/stats/month/${metric.name}'),
@@ -300,13 +305,16 @@ class _RiseChip extends StatelessWidget {
           const Icon(Icons.trending_up_rounded, size: 15, color: _riseColor),
           const SizedBox(width: 4),
           Flexible(
-            child: Text(
-              '+$delta מהחודש שעבר',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: _riseColor,
-                fontWeight: FontWeight.w700,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                '+$delta מהחודש שעבר',
+                maxLines: 1,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: _riseColor,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),

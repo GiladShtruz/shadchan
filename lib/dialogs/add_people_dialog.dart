@@ -305,7 +305,7 @@ class _MethodCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Icon(
-                  Icons.chevron_left_rounded,
+                  Icons.chevron_right_rounded,
                   color: slate.withValues(alpha: 0.75),
                 ),
               ],

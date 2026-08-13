@@ -52,7 +52,9 @@ class AddContactsProgressHeader extends StatelessWidget {
   /// Contacts left in the swipe deck, or null in the list view.
   final int? remaining;
 
-  /// Size of the deck the [remaining] count is measured against.
+  /// Stable total of people already imported plus contacts available when the
+  /// deck was opened. Unlike the session deck length, this does not reset the
+  /// progress whenever the screen is opened again.
   final int? total;
 
   @override
@@ -117,7 +119,7 @@ class AddContactsProgressHeader extends StatelessWidget {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(999),
                         child: LinearProgressIndicator(
-                          value: ((total - remaining) / total).clamp(0.0, 1.0),
+                          value: (addedToDatabase / total).clamp(0.0, 1.0),
                           minHeight: 6,
                           backgroundColor: theme.colorScheme.outlineVariant,
                           valueColor: AlwaysStoppedAnimation<Color>(

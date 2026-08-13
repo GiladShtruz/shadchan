@@ -20,15 +20,29 @@ abstract final class ShareUtils {
     await Share.share(shareText);
   }
 
-  /// Shares a free piece of text, optionally with a photo — used by the
-  /// matchmaker's own card on the profile screen, which is not a [Person].
-  static Future<void> shareText(String text, {String? photoPath}) async {
+  /// Shares free text with any number of photos. [photoPath] remains for the
+  /// older single-profile-photo call sites; [photoPaths] is the ordered gallery
+  /// attached to the matchmaker's own card.
+  static Future<void> shareText(
+    String text, {
+    String? photoPath,
+    Iterable<String> photoPaths = const <String>[],
+  }) async {
     final String trimmed = text.trim();
-    if (photoPath != null && File(photoPath).existsSync()) {
-      await Share.shareXFiles(<XFile>[XFile(photoPath)], text: trimmed);
+    final List<String> existing = <String>[
+      ...photoPaths.where((String path) => File(path).existsSync()),
+      if (photoPath != null && File(photoPath).existsSync()) photoPath,
+    ];
+    if (existing.isNotEmpty) {
+      await Share.shareXFiles(
+        existing.map((String path) => XFile(path)).toList(),
+        text: trimmed.isEmpty ? null : trimmed,
+      );
       return;
     }
-    await Share.share(trimmed);
+    if (trimmed.isNotEmpty) {
+      await Share.share(trimmed);
+    }
   }
 
   static List<String> _existingPhotoPaths(Person person) {

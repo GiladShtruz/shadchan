@@ -7,6 +7,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/person_reminders.dart';
@@ -132,9 +133,7 @@ String _formatReminderDate(DateTime date) {
       ? 'עבר זמנו'
       : dueToday
       ? 'היום'
-      : daysDiff == 1
-      ? 'מחר'
-      : 'בעוד $daysDiff ימים';
+      : AppDateUtils.futureReminderLabel(date, now: todayDay);
   return (daysDiff: daysDiff, overdue: overdue, dueToday: dueToday, when: when);
 }
 

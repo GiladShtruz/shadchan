@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -58,7 +59,17 @@ abstract final class HomeBoardActions {
   /// No confirmation bar: the board itself is the feedback, and the menu label
   /// flips the next time it is opened.
   static bool toggle(BuildContext context, HomeItemKind kind, String targetId) {
-    return HomeBoardStore.instance.toggle(kind, targetId);
+    final bool pinned = HomeBoardStore.instance.toggle(kind, targetId);
+    if (pinned) {
+      context.go('/home?section=board');
+      // Stateful shell branches keep their root widgets alive. Send a second,
+      // explicit signal after navigation so the existing home scroll view is
+      // focused too, even when the query-string route reuses that widget.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        HomeBoardStore.instance.requestFocus();
+      });
+    }
+    return pinned;
   }
 
   static void remove(BuildContext context, HomeItemKind kind, String targetId) {

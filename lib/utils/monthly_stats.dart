@@ -64,7 +64,7 @@ enum MonthlyStatMetric {
       case MonthlyStatMetric.dating:
         return 'זוגות שהתחילו לצאת';
       case MonthlyStatMetric.weddings:
-        return 'חתונות החודש';
+        return 'חתונות בכל הזמנים';
     }
   }
 
@@ -93,7 +93,7 @@ enum MonthlyStatMetric {
       case MonthlyStatMetric.dating:
         return 'זוגות שמסומנים "יוצאים" ושהעדכון האחרון שלהם היה החודש.';
       case MonthlyStatMetric.weddings:
-        return 'זוגות שמסומנים "חתונה" ושהעדכון האחרון שלהם היה החודש.';
+        return 'כל הזוגות שמסומנים "חתונה" במאגר, ללא תלות בחודש.';
     }
   }
 
@@ -106,7 +106,7 @@ enum MonthlyStatMetric {
       case MonthlyStatMetric.dating:
         return 'עוד לא התחילו לצאת זוגות בחודש הזה';
       case MonthlyStatMetric.weddings:
-        return 'עוד לא נרשמו חתונות בחודש הזה';
+        return 'עוד לא נרשמו חתונות במאגר';
     }
   }
 
@@ -246,7 +246,24 @@ abstract final class MonthlyStats {
 
   /// The current Hebrew month only — what the home screen's compact card needs.
   static MonthStats current(List<MatchIdea> matches, List<Person> people) {
-    return statsFor(buildPeriods(DateTime.now(), 1).first, matches, people);
+    return withAllTimeWeddings(
+      statsFor(buildPeriods(DateTime.now(), 1).first, matches, people),
+      matches,
+    );
+  }
+
+  static MonthStats withAllTimeWeddings(
+    MonthStats monthly,
+    List<MatchIdea> matches,
+  ) {
+    return MonthStats(
+      ideas: monthly.ideas,
+      people: monthly.people,
+      dating: monthly.dating,
+      weddings: matches
+          .where((MatchIdea match) => match.status == MatchStatus.married)
+          .length,
+    );
   }
 
   /// The proposals a match-shaped metric counted, newest first. Empty for
@@ -271,10 +288,7 @@ abstract final class MonthlyStats {
             .toList(),
       MonthlyStatMetric.weddings =>
         matches
-            .where(
-              (MatchIdea m) =>
-                  m.status == MatchStatus.married && within(m.updatedAt),
-            )
+            .where((MatchIdea m) => m.status == MatchStatus.married)
             .toList(),
       MonthlyStatMetric.people => <MatchIdea>[],
     };

@@ -4,6 +4,23 @@ import 'package:shadchan/utils/date_utils.dart';
 /// The line a proposal shows once its reminder has come due — the answer to
 /// "why is this card shouting at me?".
 void main() {
+  test('future reminders keep the interval wording the user selected', () {
+    final DateTime now = DateTime(2026, 8, 2);
+
+    expect(
+      AppDateUtils.futureReminderLabel(DateTime(2026, 8, 9), now: now),
+      'בעוד שבוע',
+    );
+    expect(
+      AppDateUtils.futureReminderLabel(DateTime(2026, 9, 2), now: now),
+      'בעוד חודש',
+    );
+    expect(
+      AppDateUtils.futureReminderLabel(DateTime(2026, 10, 2), now: now),
+      'בעוד חודשיים',
+    );
+  });
+
   final DateTime today = DateTime(2026, 8, 10);
 
   String label(int daysAgo) {

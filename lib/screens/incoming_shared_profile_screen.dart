@@ -105,7 +105,7 @@ class _IncomingSharedProfileScreenState
                       person.fullName.isEmpty ? 'ללא שם' : person.fullName,
                     ),
                     subtitle: Text(_personSubtitle(person)),
-                    trailing: const Icon(Icons.chevron_left),
+                    trailing: const Icon(Icons.chevron_right),
                     onTap: () => _openExistingPersonForm(person),
                   ),
                 ),

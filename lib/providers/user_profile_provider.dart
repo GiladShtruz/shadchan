@@ -33,6 +33,7 @@ class UserProfileProvider extends ChangeNotifier {
   static const String _photoPathKey = 'userPhotoPath';
   static const String _isSingleKey = 'userIsSingle';
   static const String _personalCardKey = 'userPersonalCard';
+  static const String _personalCardPhotosKey = 'userPersonalCardPhotos';
 
   final Box<dynamic> _box;
 
@@ -55,9 +56,13 @@ class UserProfileProvider extends ChangeNotifier {
     return (value == null || value.isEmpty) ? null : value;
   }
 
-  /// Whether the matchmaker is looking for a match themselves. Off unless they
-  /// say so, and the only thing that reveals the personal-card area on the
-  /// profile screen.
+  /// Whether onboarding (or a later profile edit) recorded the user's personal
+  /// status. Kept separate from [isSingle] so an existing installation is asked
+  /// once after upgrading instead of silently being treated as married.
+  bool get hasMaritalStatus => _box.containsKey(_isSingleKey);
+
+  /// Whether the matchmaker is looking for a match themselves. This is an
+  /// explicit onboarding answer, not a default inferred from a missing value.
   bool get isSingle => _box.get(_isSingleKey) as bool? ?? false;
 
   /// The matchmaker's own shidduch card, kept so they can share it in one tap
@@ -67,13 +72,28 @@ class UserProfileProvider extends ChangeNotifier {
     return (value == null || value.isEmpty) ? null : value;
   }
 
-  /// Onboarding is complete once a name and gender have been provided. The photo
-  /// is optional.
-  bool get isOnboarded => name != null && gender != null;
+  /// Ordered photos attached to the matchmaker's own card. Hive returns a
+  /// dynamic list, so tolerate old/corrupt values rather than failing profile
+  /// rendering. The first path is the primary photo used in previews.
+  List<String> get personalCardPhotos {
+    final dynamic stored = _box.get(_personalCardPhotosKey);
+    if (stored is! Iterable) {
+      return const <String>[];
+    }
+    return <String>[
+      for (final dynamic value in stored)
+        if (value is String && value.trim().isNotEmpty) value.trim(),
+    ];
+  }
+
+  /// Onboarding is complete once name, gender and personal status have all been
+  /// answered. The profile photo stays optional.
+  bool get isOnboarded => name != null && gender != null && hasMaritalStatus;
 
   Future<void> saveProfile({
     required String name,
     required Gender gender,
+    required bool isSingle,
     String? photoPath,
   }) async {
     await _box.put(_nameKey, name.trim());
@@ -83,6 +103,7 @@ class UserProfileProvider extends ChangeNotifier {
     } else {
       await _box.put(_photoPathKey, photoPath.trim());
     }
+    await _box.put(_isSingleKey, isSingle);
     notifyListeners();
   }
 
@@ -109,6 +130,41 @@ class UserProfileProvider extends ChangeNotifier {
       await _box.delete(_personalCardKey);
     } else {
       await _box.put(_personalCardKey, trimmed);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setPersonalCardPhotos(Iterable<String> paths) async {
+    final List<String> cleaned = paths
+        .map((String path) => path.trim())
+        .where((String path) => path.isNotEmpty)
+        .toList();
+    if (cleaned.isEmpty) {
+      await _box.delete(_personalCardPhotosKey);
+    } else {
+      await _box.put(_personalCardPhotosKey, cleaned);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setPersonalCardContent({
+    required String text,
+    required Iterable<String> photoPaths,
+  }) async {
+    final String trimmed = text.trim();
+    final List<String> cleaned = photoPaths
+        .map((String path) => path.trim())
+        .where((String path) => path.isNotEmpty)
+        .toList();
+    if (trimmed.isEmpty) {
+      await _box.delete(_personalCardKey);
+    } else {
+      await _box.put(_personalCardKey, trimmed);
+    }
+    if (cleaned.isEmpty) {
+      await _box.delete(_personalCardPhotosKey);
+    } else {
+      await _box.put(_personalCardPhotosKey, cleaned);
     }
     notifyListeners();
   }

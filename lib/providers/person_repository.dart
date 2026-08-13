@@ -289,6 +289,7 @@ class PersonRepository extends ChangeNotifier {
 
   Future<void> add(Person person) async {
     await _box.put(person.id, person);
+    _recordActivity(person.id, HomeActivityAction.createdPerson);
     notifyListeners();
     _refreshBirthdayNotificationsInBackground();
   }
@@ -307,8 +308,15 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> activatePendingContactDraft(Person person) async {
-    person.hidden = false;
-    await update(person);
+    person
+      ..hidden = false
+      ..needsReview = false
+      ..updatedAt = DateTime.now();
+    await person.save();
+    _recordActivity(person.id, HomeActivityAction.createdPerson);
+    notifyListeners();
+    await onPersonStatusChanged?.call(person.id);
+    _refreshBirthdayNotificationsInBackground();
   }
 
   Future<void> update(Person person) async {

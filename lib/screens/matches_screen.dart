@@ -11,13 +11,15 @@ import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 
-/// The four buckets a proposal can be looked at through. Order is the reading
-/// order of the chips: open, waiting, dating, archive.
-enum MatchCategory { open, waiting, dating, archive }
+/// Live proposals can be seen together or through one focused state. Archive
+/// remains a deliberate destination and is never mixed into "הכול".
+enum MatchCategory { all, open, waiting, dating, archive }
 
 extension on MatchCategory {
   String get displayName {
     switch (this) {
+      case MatchCategory.all:
+        return 'הכול';
       case MatchCategory.open:
         return 'פתוחים';
       case MatchCategory.waiting:
@@ -50,7 +52,7 @@ class MatchesScreen extends StatefulWidget {
 class _MatchesScreenState extends State<MatchesScreen> {
   final TextEditingController _searchController = TextEditingController();
 
-  MatchCategory _category = MatchCategory.open;
+  MatchCategory _category = MatchCategory.all;
   _ArchiveTab _archiveTab = _ArchiveTab.rejected;
   bool _searchVisible = false;
 
@@ -77,7 +79,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   static MatchCategory _categoryFor(List<MatchStatus> statuses) {
     if (statuses.isEmpty) {
-      return MatchCategory.open;
+      return MatchCategory.all;
     }
     switch (statuses.first) {
       case MatchStatus.dating:
@@ -104,6 +106,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final List<MatchIdea> allMatches = matchRepository.getAll();
     final Map<MatchCategory, List<MatchIdea>> groups = _groupMatches(
       allMatches,
+      personRepository,
     );
     final List<MatchIdea> dueReminders = _dueReminders(allMatches);
     final String query = _searchController.text.trim();
@@ -177,7 +180,15 @@ class _MatchesScreenState extends State<MatchesScreen> {
           Expanded(
             child: query.isNotEmpty
                 ? _buildSearchResults(
-                    matchRepository.search(query, personRepository),
+                    matchRepository
+                        .search(query, personRepository)
+                        .where(
+                          (MatchIdea match) =>
+                              _category == MatchCategory.archive
+                              ? match.status.isArchived
+                              : !match.status.isArchived,
+                        )
+                        .toList(),
                     personRepository,
                   )
                 : _buildCategory(theme, groups, dueReminders, personRepository),
@@ -190,7 +201,10 @@ class _MatchesScreenState extends State<MatchesScreen> {
   // --- Grouping -----------------------------------------------------------
 
   /// Newest first inside every category.
-  Map<MatchCategory, List<MatchIdea>> _groupMatches(List<MatchIdea> matches) {
+  Map<MatchCategory, List<MatchIdea>> _groupMatches(
+    List<MatchIdea> matches,
+    PersonRepository personRepository,
+  ) {
     final Map<MatchCategory, List<MatchIdea>> groups =
         <MatchCategory, List<MatchIdea>>{
           for (final MatchCategory category in MatchCategory.values)
@@ -198,18 +212,33 @@ class _MatchesScreenState extends State<MatchesScreen> {
         };
 
     for (final MatchIdea match in matches) {
-      switch (match.status) {
-        case MatchStatus.idea:
-        case MatchStatus.checking:
+      final Person? personA = personRepository.getById(match.personAId);
+      final Person? personB = personRepository.getById(match.personBId);
+      final MatchProposalTab? tab = matchProposalTabFor(
+        status: match.status,
+        anyPersonArchived:
+            (personA?.profileStatus.isArchived ?? false) ||
+            (personB?.profileStatus.isArchived ?? false),
+        anyPersonPaused:
+            (personA?.profileStatus.pausesMatches ?? false) ||
+            (personB?.profileStatus.pausesMatches ?? false),
+      );
+      switch (tab) {
+        case MatchProposalTab.open:
+          groups[MatchCategory.all]!.add(match);
           groups[MatchCategory.open]!.add(match);
-        case MatchStatus.unavailable:
+        case MatchProposalTab.waiting:
+          groups[MatchCategory.all]!.add(match);
           groups[MatchCategory.waiting]!.add(match);
-        case MatchStatus.dating:
+        case MatchProposalTab.dating:
+          groups[MatchCategory.all]!.add(match);
           groups[MatchCategory.dating]!.add(match);
-        case MatchStatus.rejected:
-        case MatchStatus.dated:
-        case MatchStatus.married:
+        case MatchProposalTab.dated:
+        case MatchProposalTab.rejected:
+        case MatchProposalTab.weddings:
           groups[MatchCategory.archive]!.add(match);
+        case null:
+          break;
       }
     }
 
@@ -259,10 +288,11 @@ class _MatchesScreenState extends State<MatchesScreen> {
     }
 
     final List<MatchIdea> matches = groups[_category]!;
-    // The due-reminder list sits at the top of "פתוחים" whatever the proposals'
+    // The due-reminder list sits at the top of the broad live views whatever the proposals'
     // own status is; they keep their place in their own category too.
     final bool showReminders =
-        _category == MatchCategory.open && dueReminders.isNotEmpty;
+        (_category == MatchCategory.all || _category == MatchCategory.open) &&
+        dueReminders.isNotEmpty;
 
     if (matches.isEmpty && !showReminders) {
       return _emptyState(_category);
@@ -277,7 +307,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
             _card(match, personRepository, isDueReminder: true),
           const SizedBox(height: 8),
           Text(
-            'כל הרעיונות הפתוחים (${matches.length})',
+            _category == MatchCategory.all
+                ? 'כל הרעיונות הפעילים (${matches.length})'
+                : 'כל הרעיונות הפתוחים (${matches.length})',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -407,6 +439,14 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   Widget _emptyState(MatchCategory category) {
     switch (category) {
+      case MatchCategory.all:
+        return EmptyState(
+          icon: Icons.favorite_border,
+          title: 'אין רעיונות פעילים',
+          subtitle: '{צור|צרי} רעיון חדש בין שני חברים',
+          buttonText: 'רעיון חדש',
+          onButtonPressed: () => context.push('/matches/add'),
+        );
       case MatchCategory.open:
         return EmptyState(
           icon: Icons.favorite_border,

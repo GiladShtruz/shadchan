@@ -41,30 +41,65 @@ class MatchIdeaCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color accent = theme.colorScheme.secondary;
+    final bool dating = match.status == MatchStatus.dating;
+    final Color datingAccent = dark
+        ? AppColors.femaleAccentDm
+        : AppColors.femaleAccent;
+    final Color regularSurface = highlighted
+        ? Color.alphaBlend(
+            accent.withValues(alpha: dark ? 0.16 : 0.07),
+            theme.colorScheme.surface,
+          )
+        : theme.colorScheme.surface;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: highlighted
-            ? Color.alphaBlend(
-                accent.withValues(alpha: dark ? 0.16 : 0.07),
-                theme.colorScheme.surface,
-              )
-            : theme.colorScheme.surface,
+        color: dating ? Colors.transparent : regularSurface,
         borderRadius: BorderRadius.circular(16),
-        elevation: highlighted ? 2 : 0,
-        shadowColor: accent.withValues(alpha: 0.4),
+        elevation: dating
+            ? 4
+            : highlighted
+            ? 2
+            : 0,
+        shadowColor: (dating ? datingAccent : accent).withValues(alpha: 0.38),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
+              gradient: dating
+                  ? LinearGradient(
+                      begin: AlignmentDirectional.topStart,
+                      end: AlignmentDirectional.bottomEnd,
+                      colors: <Color>[
+                        Color.alphaBlend(
+                          AppColors.softRose.withValues(
+                            alpha: dark ? 0.18 : 0.72,
+                          ),
+                          theme.colorScheme.surface,
+                        ),
+                        Color.alphaBlend(
+                          AppColors.softYellow.withValues(
+                            alpha: dark ? 0.10 : 0.42,
+                          ),
+                          theme.colorScheme.surface,
+                        ),
+                      ],
+                    )
+                  : null,
               border: Border.all(
-                color: highlighted
+                color: dating
+                    ? datingAccent.withValues(alpha: 0.72)
+                    : highlighted
                     ? accent.withValues(alpha: 0.65)
                     : theme.colorScheme.outlineVariant,
-                width: highlighted ? 1.6 : 1,
+                width: dating
+                    ? 1.8
+                    : highlighted
+                    ? 1.6
+                    : 1,
               ),
             ),
             child: Column(
@@ -242,13 +277,40 @@ class _Middle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool dating = status == MatchStatus.dating;
     return Padding(
       // The top padding lands the heart level with the middle of the photos.
       padding: const EdgeInsets.fromLTRB(6, 24, 6, 0),
-      child: Icon(
-        Icons.favorite,
-        size: 20,
-        color: AppColors.statusColor(status.name),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: <Widget>[
+          Icon(
+            Icons.favorite,
+            size: dating ? 25 : 20,
+            color: AppColors.statusColor(status.name),
+          ),
+          if (dating) ...<Widget>[
+            const Positioned(
+              top: -9,
+              right: -7,
+              child: Icon(
+                Icons.auto_awesome,
+                size: 11,
+                color: AppColors.secondary,
+              ),
+            ),
+            const Positioned(
+              bottom: -8,
+              left: -6,
+              child: Icon(
+                Icons.auto_awesome,
+                size: 9,
+                color: AppColors.femaleAccent,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -272,8 +334,9 @@ class _Footer extends StatelessWidget {
 
     final bool hasWaitingReason =
         waitingReason != null && waitingReason.isNotEmpty;
+    final bool dating = match.status == MatchStatus.dating;
     // Reminders no longer surface on the card — they live on the detail screen.
-    if (!showStatusTag && !hasWaitingReason) {
+    if (!showStatusTag && !hasWaitingReason && !dating) {
       return const SizedBox.shrink();
     }
 
@@ -282,10 +345,12 @@ class _Footer extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          if (showStatusTag)
+          if (showStatusTag || dating)
             Align(
               alignment: AlignmentDirectional.centerStart,
-              child: _StatusTag(status: match.status),
+              child: dating
+                  ? const _DatingTag()
+                  : _StatusTag(status: match.status),
             ),
           if (hasWaitingReason) ...<Widget>[
             const SizedBox(height: 4),
@@ -298,6 +363,31 @@ class _Footer extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _DatingTag extends StatelessWidget {
+  const _DatingTag();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = AppColors.statusDating;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.softGreen.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        '✨ יוצאים יחד ✨',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }

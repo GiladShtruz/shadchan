@@ -1,27 +1,48 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
+import 'package:shadchan/utils/whatsapp_utils.dart';
 
 /// The person's full card, full screen: every photo, swipeable, with the text
 /// written about them readable over it.
 ///
 /// This is the read-only counterpart to the profile page — opened by tapping
-/// the profile photo. Sharing deliberately lives in the profile header instead
-/// of here, so the full card stays purely for looking at.
+/// the profile photo. Its app bar exposes card sharing and a direct WhatsApp
+/// conversation without forcing the user back to the profile.
 class PersonCardViewer extends StatefulWidget {
-  const PersonCardViewer({super.key, required this.personId});
+  const PersonCardViewer({
+    super.key,
+    required this.personId,
+    this.sharePreview = false,
+  });
 
   final String personId;
+
+  /// A deliberate step between tapping "share card" and opening WhatsApp.
+  /// In this mode the entire card is open for review and the only primary
+  /// action is the clear WhatsApp button at the bottom.
+  final bool sharePreview;
 
   static Future<void> open(BuildContext context, String personId) {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (BuildContext context) => PersonCardViewer(personId: personId),
+      ),
+    );
+  }
+
+  static Future<void> openSharePreview(BuildContext context, String personId) {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (BuildContext context) =>
+            PersonCardViewer(personId: personId, sharePreview: true),
       ),
     );
   }
@@ -37,7 +58,7 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
 
   /// Whether the card text is opened to its full height. Collapsed it shows a
   /// few lines over the photo; expanded it scrolls on its own.
-  bool _isTextExpanded = false;
+  late bool _isTextExpanded = widget.sharePreview;
 
   @override
   void dispose() {
@@ -71,6 +92,9 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
 
     return Scaffold(
       backgroundColor: Colors.black,
+      bottomNavigationBar: widget.sharePreview
+          ? _SharePreviewBar(onShare: () => _shareToWhatsApp(person))
+          : null,
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
@@ -95,12 +119,18 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
               },
             ),
           _TopBar(
-            title: person.fullName.trim(),
+            title: widget.sharePreview
+                ? 'תצוגה מקדימה · ${person.fullName.trim()}'
+                : person.fullName.trim(),
             counter: photoPaths.length > 1
                 ? '${_currentIndex + 1}/${photoPaths.length}'
                 : null,
+            showActions: !widget.sharePreview,
+            onShare: () =>
+                PersonCardViewer.openSharePreview(context, person.id),
+            onWhatsApp: () => _openWhatsApp(person),
           ),
-          if (photoPaths.length > 1)
+          if (photoPaths.length > 1 && !widget.sharePreview)
             Positioned(
               bottom: 0,
               left: 0,
@@ -129,22 +159,51 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
               child: _CardText(
                 text: description,
                 isExpanded: _isTextExpanded,
-                onToggle: () {
-                  setState(() => _isTextExpanded = !_isTextExpanded);
-                },
+                showToggle: !widget.sharePreview,
+                onToggle: () =>
+                    setState(() => _isTextExpanded = !_isTextExpanded),
               ),
             ),
         ],
       ),
     );
   }
+
+  Future<void> _shareToWhatsApp(Person person) async {
+    final bool launched = await WhatsAppUtils.sharePersonCard(person);
+    if (!launched && mounted) {
+      _showError('לא הצלחנו לפתוח את WhatsApp');
+    }
+  }
+
+  Future<void> _openWhatsApp(Person person) async {
+    final bool launched = await WhatsAppUtils.openChat(person);
+    if (!launched && mounted) {
+      _showError('אין מספר טלפון תקין לפתיחת WhatsApp');
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.counter});
+  const _TopBar({
+    required this.title,
+    required this.counter,
+    required this.showActions,
+    required this.onShare,
+    required this.onWhatsApp,
+  });
 
   final String title;
   final String? counter;
+  final bool showActions;
+  final VoidCallback onShare;
+  final VoidCallback onWhatsApp;
 
   @override
   Widget build(BuildContext context) {
@@ -164,44 +223,80 @@ class _TopBar extends StatelessWidget {
         ),
         child: SafeArea(
           bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 4, 12, 16),
-            child: Row(
-              children: <Widget>[
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  tooltip: 'סגירה',
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool narrow = constraints.maxWidth < 370;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(4, 4, 8, 16),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      tooltip: 'סגירה',
+                    ),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: narrow ? 14 : 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (showActions) ...<Widget>[
+                      TextButton.icon(
+                        onPressed: onShare,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: narrow ? 5 : 8,
+                          ),
+                        ),
+                        icon: Icon(
+                          Icons.share_outlined,
+                          size: narrow ? 17 : 19,
+                        ),
+                        label: Text(
+                          'שיתוף כרטיס',
+                          style: TextStyle(fontSize: narrow ? 11 : 13),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: onWhatsApp,
+                        icon: const FaIcon(
+                          FontAwesomeIcons.whatsapp,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        tooltip: 'פתיחת שיחה ב-WhatsApp',
+                      ),
+                    ],
+                    if (counter != null && (!narrow || !showActions))
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          counter!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                if (counter != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      counter!,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                  ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -215,11 +310,13 @@ class _CardText extends StatelessWidget {
   const _CardText({
     required this.text,
     required this.isExpanded,
+    required this.showToggle,
     required this.onToggle,
   });
 
   final String text;
   final bool isExpanded;
+  final bool showToggle;
   final VoidCallback onToggle;
 
   @override
@@ -271,17 +368,61 @@ class _CardText extends StatelessWidget {
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: onToggle,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              if (showToggle) ...<Widget>[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.only(top: 8),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Colors.white30)),
+                  ),
+                  child: TextButton(
+                    onPressed: onToggle,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      alignment: AlignmentDirectional.centerStart,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(isExpanded ? 'הצג פחות' : 'הכרטיס המלא'),
+                  ),
                 ),
-                child: Text(isExpanded ? 'הצגה מקוצרת' : 'הכרטיס המלא'),
-              ),
+              ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SharePreviewBar extends StatelessWidget {
+  const _SharePreviewBar({required this.onShare});
+
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: onShare,
+            icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 20),
+            label: const Text('שיתוף הכרטיס ב-WhatsApp'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ),
         ),
       ),

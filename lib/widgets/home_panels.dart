@@ -21,26 +21,18 @@ Color _leadTone(ThemeData theme) {
       : AppColors.primaryDark;
 }
 
-/// The three closing blocks of the page — the couples banner, the month's
-/// numbers and the tip — are drawn from their own small palette rather than
-/// from the theme: a barely-there green paper, one green ink, one blue ink and
-/// one grey, with a hairline between the numbers. Dark mode swaps each for a
-/// lighter twin, since these tones are mixed for cream paper.
-const Color _datingPaper = Color(0xFFF3F7ED);
-const Color _datingInk = Color(0xFF699A6A);
-const Color _datingInkDm = Color(0xFF9BC49B);
+/// A restrained closing palette: blue carries the celebratory banner, the
+/// warm sand belongs to the tip, and each monthly metric keeps its established
+/// accent. None of these introduces a new visual language to the home page.
+const Color _datingPaper = Color(0xFFF1F6F8);
+const Color _datingPaperWarm = Color(0xFFFFFBF4);
+const Color _datingInk = Color(0xFF4F7D99);
+const Color _datingInkDm = Color(0xFFA9C9DC);
+const Color _celebrationGold = Color(0xFFD4A34B);
 const Color _quietInk = Color(0xFF666666);
-const Color _hairline = Color(0xFFECECEC);
 const Color _tipInk = Color(0xFF5C84A3);
 const Color _tipInkDm = Color(0xFF9DBED6);
-
-/// The white paper the numbers and the tip sit on. It is the one place on the
-/// page that is plain white rather than the app's cream.
-Color _cardPaper(ThemeData theme) {
-  return theme.brightness == Brightness.dark
-      ? theme.colorScheme.surface
-      : Colors.white;
-}
+const Color _tipPaper = Color(0xFFFBF5EA);
 
 /// The opening band under the app bar: one short thought about connections and
 /// the single button that starts the work.
@@ -55,87 +47,110 @@ class HomeHeroBand extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
     final Color lead = _leadTone(theme);
 
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.18),
-        ),
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: dark
-              ? <Color>[
-                  theme.colorScheme.primary.withValues(alpha: 0.18),
-                  theme.colorScheme.surface,
-                ]
-              : <Color>[
-                  AppColors.primaryLight.withValues(alpha: 0.75),
-                  AppColors.surface,
-                  AppColors.secondaryLight.withValues(alpha: 0.65),
-                ],
-        ),
-      ),
-      child: CustomPaint(
-        painter: _HeartLinePainter(
-          color: (dark ? theme.colorScheme.primary : AppColors.femaleAccent)
-              .withValues(alpha: dark ? 0.22 : 0.28),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 16, 18),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      'כל חיבור מתחיל ברעיון טוב',
-                      maxLines: 2,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'אנחנו כאן כדי לעזור לך לחבר בין לבבות',
-                      maxLines: 2,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    FilledButton.icon(
-                      onPressed: onShowIdeas,
-                      icon: const Icon(Icons.auto_awesome, size: 18),
-                      label: const Text('הצגת רעיונות חדשים'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: lead,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 12,
-                        ),
-                        shape: const StadiumBorder(),
-                        textStyle: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              const _HeroCouple(),
-            ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool narrow = constraints.maxWidth < 410 || textScale > 1.2;
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(narrow ? 22 : 28),
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.18),
+            ),
+            gradient: LinearGradient(
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
+              colors: dark
+                  ? <Color>[
+                      theme.colorScheme.primary.withValues(alpha: 0.18),
+                      theme.colorScheme.surface,
+                    ]
+                  : <Color>[
+                      AppColors.primaryLight.withValues(alpha: 0.75),
+                      AppColors.surface,
+                      AppColors.secondaryLight.withValues(alpha: 0.65),
+                    ],
+            ),
           ),
-        ),
-      ),
+          child: CustomPaint(
+            painter: _HeartLinePainter(
+              color: (dark ? theme.colorScheme.primary : AppColors.femaleAccent)
+                  .withValues(alpha: dark ? 0.22 : 0.28),
+            ),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                narrow ? 12 : 18,
+                narrow ? 14 : 18,
+                narrow ? 12 : 16,
+                narrow ? 14 : 18,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          'אנחנו כאן כדי לעזור לך לחבר בין לבבות',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontSize: narrow ? 14 : null,
+                            fontWeight: FontWeight.w800,
+                            height: 1.25,
+                          ),
+                        ),
+                        SizedBox(height: narrow ? 10 : 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: onShowIdeas,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: lead,
+                              foregroundColor: theme.colorScheme.onPrimary,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: narrow ? 10 : 18,
+                                vertical: narrow ? 9 : 12,
+                              ),
+                              shape: const StadiumBorder(),
+                              textStyle: theme.textTheme.labelLarge?.copyWith(
+                                fontSize: narrow ? 11.5 : null,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: <Widget>[
+                                Icon(
+                                  Icons.auto_awesome,
+                                  size: narrow ? 15 : 18,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      'הצגת רעיונות חדשים',
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: narrow ? 6 : 10),
+                  _HeroCouple(compact: narrow),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -143,13 +158,15 @@ class HomeHeroBand extends StatelessWidget {
 /// The two bundled illustrations that stand in for a couple, with a small heart
 /// where they meet. Decorative only — no record is behind them.
 class _HeroCouple extends StatelessWidget {
-  const _HeroCouple();
+  const _HeroCouple({required this.compact});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    const double radius = 31;
-    const double overlap = 18;
+    final double radius = compact ? 19 : 31;
+    final double overlap = compact ? 12 : 18;
 
     Widget portrait(String? asset, Color ring) {
       return Container(
@@ -262,51 +279,44 @@ class _HeartLinePainter extends CustomPainter {
 class HomeActionCards extends StatelessWidget {
   const HomeActionCards({
     super.key,
-    required this.stacked,
     required this.onAddPeople,
     required this.onAddIdea,
   });
-
-  /// While the database is still small, growing it is the only thing that
-  /// matters, so "הוסף חברים" takes a wide card of its own above the other.
-  final bool stacked;
 
   final VoidCallback onAddPeople;
   final VoidCallback onAddIdea;
 
   @override
   Widget build(BuildContext context) {
-    if (stacked) {
-      return Column(
-        children: <Widget>[
-          _AddPeopleCard(onTap: onAddPeople, wide: true),
-          const SizedBox(height: 10),
-          _AddIdeaCard(onTap: onAddIdea, wide: true),
-        ],
-      );
-    }
-
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // In RTL the first child sits on the right: "הוסף חברים" leads the
-          // pair. Unequal weights on purpose, so the two never read as two
-          // identical squares.
-          Expanded(flex: 11, child: _AddPeopleCard(onTap: onAddPeople)),
-          const SizedBox(width: 12),
-          Expanded(flex: 9, child: _AddIdeaCard(onTap: onAddIdea)),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool narrow = constraints.maxWidth < 350;
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                flex: narrow ? 1 : 11,
+                child: _AddPeopleCard(onTap: onAddPeople, compact: narrow),
+              ),
+              SizedBox(width: narrow ? 8 : 12),
+              Expanded(
+                flex: narrow ? 1 : 9,
+                child: _AddIdeaCard(onTap: onAddIdea, compact: narrow),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
 class _AddPeopleCard extends StatelessWidget {
-  const _AddPeopleCard({required this.onTap, this.wide = false});
+  const _AddPeopleCard({required this.onTap, required this.compact});
 
   final VoidCallback onTap;
-  final bool wide;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -323,7 +333,12 @@ class _AddPeopleCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(14, wide ? 16 : 14, 14, 12),
+          padding: EdgeInsets.fromLTRB(
+            compact ? 10 : 14,
+            compact ? 11 : 14,
+            compact ? 10 : 14,
+            compact ? 10 : 12,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -331,51 +346,44 @@ class _AddPeopleCard extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Container(
-                    padding: const EdgeInsets.all(7),
+                    padding: EdgeInsets.all(compact ? 5 : 7),
                     decoration: BoxDecoration(
                       color: onFill.withValues(alpha: 0.18),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.person_add_alt,
-                      size: wide ? 24 : 20,
+                      size: compact ? 17 : 20,
                       color: onFill,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: compact ? 6 : 10),
                   Expanded(
-                    child: Text(
-                      'הוספת חברים',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          (wide
-                                  ? theme.textTheme.titleMedium
-                                  : theme.textTheme.titleSmall)
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: onFill,
-                              ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        'הוספת חברים',
+                        maxLines: 1,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          fontSize: compact ? 15 : 17,
+                          height: 1.2,
+                          color: onFill,
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'לא משאירים אף חבר/ה רווק/ה מאחור',
-                maxLines: 2,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: onFill.withValues(alpha: 0.88),
-                  height: 1.25,
-                ),
-              ),
-              const SizedBox(height: 10),
+              SizedBox(height: compact ? 12 : 16),
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: HomeArrowButton(
                   background: onFill.withValues(alpha: 0.22),
                   foreground: onFill,
                   icon: Icons.chevron_right,
+                  size: compact ? 27 : 30,
                 ),
               ),
             ],
@@ -387,10 +395,10 @@ class _AddPeopleCard extends StatelessWidget {
 }
 
 class _AddIdeaCard extends StatelessWidget {
-  const _AddIdeaCard({required this.onTap, this.wide = false});
+  const _AddIdeaCard({required this.onTap, required this.compact});
 
   final VoidCallback onTap;
-  final bool wide;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -409,7 +417,12 @@ class _AddIdeaCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(14, wide ? 16 : 14, 14, 12),
+          padding: EdgeInsets.fromLTRB(
+            compact ? 10 : 14,
+            compact ? 11 : 14,
+            compact ? 10 : 14,
+            compact ? 10 : 12,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -417,7 +430,7 @@ class _AddIdeaCard extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Container(
-                    padding: const EdgeInsets.all(7),
+                    padding: EdgeInsets.all(compact ? 5 : 7),
                     decoration: BoxDecoration(
                       color: dark
                           ? theme.colorScheme.surface
@@ -426,38 +439,30 @@ class _AddIdeaCard extends StatelessWidget {
                     ),
                     child: Icon(
                       Icons.auto_awesome_outlined,
-                      size: wide ? 24 : 20,
+                      size: compact ? 17 : 20,
                       color: ink,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: compact ? 6 : 10),
                   Expanded(
-                    child: Text(
-                      'הוספת רעיון',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          (wide
-                                  ? theme.textTheme.titleMedium
-                                  : theme.textTheme.titleSmall)
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: ink,
-                              ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        'הוספת רעיון',
+                        maxLines: 1,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          fontSize: compact ? 15 : 17,
+                          height: 1.2,
+                          color: ink,
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'שמירת רעיונות במקום אחד',
-                maxLines: 2,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.25,
-                ),
-              ),
-              const SizedBox(height: 10),
+              SizedBox(height: compact ? 12 : 16),
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: HomeArrowButton(
@@ -466,6 +471,7 @@ class _AddIdeaCard extends StatelessWidget {
                       : AppColors.surface.withValues(alpha: 0.9),
                   foreground: ink,
                   icon: Icons.chevron_right,
+                  size: compact ? 27 : 30,
                 ),
               ),
             ],
@@ -496,8 +502,9 @@ class HomeDatingCouple {
   final Person? personB;
 }
 
-/// "זוגות שיוצאים" — one wide, quietly festive banner rather than another row
-/// of cards. Several couples are paged through in place.
+/// "זוגות שיוצאים" — the strongest of the closing home banners. It is festive
+/// through the brand blue, a warm gold glint and layered paper rather than pink
+/// decoration, so it stays joyful without becoming loud or gendered.
 class HomeDatingBanner extends StatefulWidget {
   const HomeDatingBanner({
     super.key,
@@ -532,68 +539,135 @@ class _HomeDatingBannerState extends State<HomeDatingBanner> {
 
     return Container(
       clipBehavior: Clip.antiAlias,
-      // No frame: the green paper alone is what lifts the banner off the page.
       decoration: BoxDecoration(
-        color: dark ? theme.colorScheme.surface : _datingPaper,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        children: <Widget>[
-          SizedBox(
-            height: homeScaled(context, 116),
-            child: PageView.builder(
-              controller: _controller,
-              itemCount: count,
-              onPageChanged: (int index) => setState(() => _page = index),
-              itemBuilder: (BuildContext context, int index) {
-                return _DatingPage(
-                  couple: widget.couples[index],
-                  onOpen: () => widget.onOpen(widget.couples[index].matchId),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-            child: Column(
-              children: <Widget>[
-                if (count > 1) ...<Widget>[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      for (int i = 0; i < count; i++)
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          width: i == current ? 14 : 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: accent.withValues(
-                              alpha: i == current ? 0.85 : 0.30,
-                            ),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                Text(
-                  'שומרים על קשר :) כל זוג צריך חבר אחד שיאמין בו',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 13,
-                    height: 1.3,
-                    color: dark
-                        ? theme.colorScheme.onSurfaceVariant
-                        : _quietInk,
-                  ),
-                ),
-              ],
-            ),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(
+          color: accent.withValues(alpha: dark ? 0.48 : 0.38),
+          width: 1.4,
+        ),
+        gradient: LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: dark
+              ? <Color>[
+                  theme.colorScheme.surfaceContainerHighest,
+                  theme.colorScheme.surface,
+                ]
+              : const <Color>[_datingPaperWarm, _datingPaper],
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: accent.withValues(alpha: dark ? 0.12 : 0.16),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
           ),
         ],
       ),
+      child: Stack(
+        children: <Widget>[
+          PositionedDirectional(
+            top: -32,
+            start: -24,
+            child: _CelebrationOrb(
+              size: 104,
+              color: _celebrationGold.withValues(alpha: dark ? 0.08 : 0.10),
+            ),
+          ),
+          PositionedDirectional(
+            bottom: -42,
+            end: -30,
+            child: _CelebrationOrb(
+              size: 126,
+              color: accent.withValues(alpha: dark ? 0.08 : 0.09),
+            ),
+          ),
+          Column(
+            children: <Widget>[
+              SizedBox(
+                height: homeScaled(context, 128),
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: count,
+                  onPageChanged: (int index) => setState(() => _page = index),
+                  itemBuilder: (BuildContext context, int index) {
+                    return _DatingPage(
+                      couple: widget.couples[index],
+                      onOpen: () =>
+                          widget.onOpen(widget.couples[index].matchId),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 14, 12),
+                child: Column(
+                  children: <Widget>[
+                    if (count > 1) ...<Widget>[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          for (int i = 0; i < count; i++)
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              width: i == current ? 16 : 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: accent.withValues(
+                                  alpha: i == current ? 0.90 : 0.26,
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: dark ? 0.15 : 0.10),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'ממשיכים לשמור על קשר עד החתונה! :)',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                          color: dark
+                              ? theme.colorScheme.onSurface
+                              : _datingInk,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CelebrationOrb extends StatelessWidget {
+  const _CelebrationOrb({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
@@ -614,7 +688,7 @@ class _DatingPage extends StatelessWidget {
     return InkWell(
       onTap: onOpen,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
         child: Row(
           children: <Widget>[
             _CoupleFaces(
@@ -628,25 +702,38 @@ class _DatingPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  // The label carries no heart of its own: the only one on the
-                  // banner is the small one between the two faces.
-                  Text(
-                    'זוגות שיוצאים',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: accent,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          size: 15,
+                          color: _celebrationGold,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'זוגות שיוצאים',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: accent,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     couple.names,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleLarge?.copyWith(
-                      fontSize: 21,
+                      fontSize: 22,
                       height: 1.15,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
@@ -724,14 +811,19 @@ class _CoupleFaces extends StatelessWidget {
   }
 }
 
-/// "הנתונים שלך החודש": the month's three numbers on white paper, each one a
-/// pastel circle over a big figure, with hairlines between them. It stays a way
-/// in — the fourth number and the records behind all of them live on the stats
-/// screen.
+/// "הנתונים שלך החודש": three small metric cards on one calm surface. Their
+/// order is deliberately RTL: ideas on the right, people in the middle and
+/// couples who started dating on the left.
 class HomeStatsPanel extends StatelessWidget {
-  const HomeStatsPanel({super.key, required this.stats, required this.onTap});
+  const HomeStatsPanel({
+    super.key,
+    required this.stats,
+    required this.onTap,
+    this.previous,
+  });
 
   final MonthStats stats;
+  final MonthStats? previous;
   final VoidCallback onTap;
 
   /// The three the card has room for, in the order the row reads.
@@ -746,72 +838,87 @@ class HomeStatsPanel extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color lead = _leadTone(theme);
-    final Color line = dark ? theme.dividerColor : _hairline;
 
     return Material(
-      color: _cardPaper(theme),
-      borderRadius: BorderRadius.circular(24),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(26),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(
+              color: lead.withValues(alpha: dark ? 0.30 : 0.16),
+            ),
+            gradient: LinearGradient(
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
+              colors: dark
+                  ? <Color>[
+                      theme.colorScheme.surfaceContainerHighest,
+                      theme.colorScheme.surface,
+                    ]
+                  : <Color>[
+                      Colors.white,
+                      AppColors.primaryLight.withValues(alpha: 0.28),
+                    ],
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Row(
                 children: <Widget>[
                   Container(
-                    width: 34,
-                    height: 34,
+                    width: 38,
+                    height: 38,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: lead.withValues(alpha: dark ? 0.22 : 0.10),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.insights_outlined, size: 18, color: lead),
+                    child: Icon(Icons.insights_rounded, size: 20, color: lead),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'הנתונים שלך החודש',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: lead,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  HomeArrowButton(
+                    background: lead.withValues(alpha: dark ? 0.20 : 0.10),
+                    foreground: lead,
+                    size: 30,
+                    icon: Icons.chevron_right,
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  for (final MonthlyStatMetric metric in _shown) ...<Widget>[
-                    if (metric != _shown.first)
-                      Container(width: 1, height: 36, color: line),
-                    Expanded(
-                      child: _MonthNumber(
-                        metric: metric,
-                        value: metric.valueOf(stats),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (final MonthlyStatMetric metric in _shown) ...<Widget>[
+                      if (metric != _shown.first) const SizedBox(width: 7),
+                      Expanded(
+                        child: _MonthNumber(
+                          metric: metric,
+                          value: metric.valueOf(stats),
+                          previous: previous == null
+                              ? null
+                              : metric.valueOf(previous!),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                  const SizedBox(width: 6),
-                  HomeArrowButton(
-                    background: line,
-                    foreground: theme.colorScheme.onSurface.withValues(
-                      alpha: 0.72,
-                    ),
-                    size: 30,
-                    // Material mirrors the chevrons in RTL, so `chevron_right`
-                    // is the one that renders as an arrow pointing left.
-                    icon: Icons.chevron_right,
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -821,70 +928,98 @@ class HomeStatsPanel extends StatelessWidget {
   }
 }
 
-/// One of the month's numbers: the figure, the metric's own pastel circle
-/// beside it, and the caption under both.
+/// One metric tile. The title remains complete and a positive month-over-month
+/// line scales down as one unit rather than being ellipsized.
 class _MonthNumber extends StatelessWidget {
-  const _MonthNumber({required this.metric, required this.value});
+  const _MonthNumber({
+    required this.metric,
+    required this.value,
+    required this.previous,
+  });
 
   final MonthlyStatMetric metric;
   final int value;
+  final int? previous;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color tone = metric.color;
+    final int delta = previous == null ? 0 : value - previous!;
+    final bool showRise = delta > 0;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(
-              '$value',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontSize: 22,
-                height: 1.1,
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.onSurface,
-              ),
+    return Container(
+      key: ValueKey<String>('home-stat-${metric.name}'),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 10),
+      decoration: BoxDecoration(
+        color: tone.withValues(alpha: dark ? 0.16 : 0.075),
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(color: tone.withValues(alpha: dark ? 0.28 : 0.15)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: tone.withValues(alpha: dark ? 0.28 : 0.15),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 8),
+            child: Icon(metric.icon, size: 18, color: tone),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$value',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              height: 1,
+              fontWeight: FontWeight.w900,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            metric.title,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11.5,
+              height: 1.22,
+              fontWeight: FontWeight.w700,
+              color: dark ? theme.colorScheme.onSurfaceVariant : _quietInk,
+            ),
+          ),
+          if (showRise) ...<Widget>[
+            const SizedBox(height: 7),
             Container(
-              width: 32,
-              height: 32,
-              alignment: Alignment.center,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
               decoration: BoxDecoration(
-                color: tone.withValues(alpha: dark ? 0.26 : 0.16),
-                shape: BoxShape.circle,
+                color: tone.withValues(alpha: dark ? 0.22 : 0.13),
+                borderRadius: BorderRadius.circular(999),
               ),
-              child: Icon(metric.icon, size: 17, color: tone),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '+$delta מחודש שעבר',
+                  maxLines: 1,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: tone,
+                  ),
+                ),
+              ),
             ),
           ],
-        ),
-        const SizedBox(height: 5),
-        Text(
-          metric.shortTitle,
-          maxLines: 2,
-          textAlign: TextAlign.center,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.labelSmall?.copyWith(
-            fontSize: 12.5,
-            height: 1.25,
-            color: dark ? theme.colorScheme.onSurfaceVariant : _quietInk,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// The tip that closes the page: white paper with one blue stripe down its
-/// leading edge and a lamp resting on it. The tip itself is left in plain body
-/// ink — it is the one sentence on the page meant to be *read*, not scanned —
-/// and moving on is a quiet link rather than a button.
+/// The tip that closes the page: warm cream paper, a blue lamp badge and a very
+/// light botanical line. Its height follows the sentence; no tip is clipped.
 class HomeTipStrip extends StatelessWidget {
   const HomeTipStrip({
     super.key,
@@ -910,59 +1045,69 @@ class HomeTipStrip extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: _cardPaper(theme),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: ink.withValues(alpha: dark ? 0.30 : 0.16)),
+        gradient: LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: dark
+              ? <Color>[
+                  theme.colorScheme.surfaceContainerHighest,
+                  theme.colorScheme.surface,
+                ]
+              : <Color>[_tipPaper, AppColors.surface.withValues(alpha: 0.96)],
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: ink.withValues(alpha: dark ? 0.06 : 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Stack(
         children: <Widget>[
-          // The stripe runs the full height of whatever the text needs, so a
-          // long tip simply makes it longer.
           PositionedDirectional(
-            top: 0,
-            bottom: 0,
-            end: 0,
-            child: Container(
-              width: 16,
-              decoration: BoxDecoration(
-                color: ink,
-                borderRadius: const BorderRadiusDirectional.horizontal(
-                  start: Radius.circular(16),
-                ),
-              ),
+            end: 16,
+            bottom: -8,
+            child: Icon(
+              Icons.eco_outlined,
+              size: 74,
+              color: _celebrationGold.withValues(alpha: dark ? 0.08 : 0.13),
+            ),
+          ),
+          PositionedDirectional(
+            end: 68,
+            bottom: 24,
+            child: Icon(
+              Icons.favorite_border_rounded,
+              size: 34,
+              color: ink.withValues(alpha: dark ? 0.07 : 0.10),
             ),
           ),
           Padding(
-            // The end padding leaves the lamp and its stripe a lane of their
-            // own, so no line of the tip ever runs under them.
-            padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 70, 6),
+            padding: const EdgeInsetsDirectional.fromSTEB(68, 14, 14, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(
                   'טיפ {לשדכן|לשדכנית}'.forGender(userGender),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
                     color: ink,
-                    letterSpacing: 0.2,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 7),
                 Text(
                   tip,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontSize: 16,
-                    height: 1.45,
-                    fontWeight: FontWeight.w600,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    height: 1.5,
+                    fontWeight: FontWeight.w500,
                     color: theme.colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 2),
-                // In RTL the end edge is the left one, which is where the way
-                // on sits — out of the way of the sentence itself.
+                const SizedBox(height: 4),
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
                   child: TextButton(
@@ -977,10 +1122,20 @@ class HomeTipStrip extends StatelessWidget {
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       textStyle: theme.textTheme.labelLarge?.copyWith(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    child: const Text('טיפ נוסף'),
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text('לטיפ נוסף'),
+                          SizedBox(width: 3),
+                          Icon(Icons.chevron_right, size: 18),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -988,18 +1143,19 @@ class HomeTipStrip extends StatelessWidget {
           ),
           PositionedDirectional(
             top: 12,
-            end: 14,
+            start: 14,
             child: Container(
-              width: 44,
-              height: 44,
+              width: 42,
+              height: 42,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: dark
                     ? theme.colorScheme.surfaceContainerHighest
-                    : ink.withValues(alpha: 0.14),
+                    : Colors.white.withValues(alpha: 0.88),
                 shape: BoxShape.circle,
+                border: Border.all(color: ink.withValues(alpha: 0.16)),
               ),
-              child: Icon(Icons.lightbulb_outline, size: 22, color: ink),
+              child: Icon(Icons.lightbulb_rounded, size: 22, color: ink),
             ),
           ),
         ],

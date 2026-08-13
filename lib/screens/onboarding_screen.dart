@@ -11,8 +11,8 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 
-/// Shown on first launch so the matchmaker can introduce themselves. Name and
-/// gender are required, a photo is optional.
+/// Shown on first launch so the matchmaker can introduce themselves. Name,
+/// gender and personal status are required; a photo is optional.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -23,8 +23,24 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final TextEditingController _nameController = TextEditingController();
   Gender _selectedGender = Gender.male;
+  bool? _selectedIsSingle;
   String? _photoPath;
   bool _saving = false;
+  bool _loadedExistingProfile = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_loadedExistingProfile) {
+      return;
+    }
+    _loadedExistingProfile = true;
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    _nameController.text = profile.name ?? '';
+    _selectedGender = profile.gender ?? Gender.male;
+    _photoPath = profile.photoPath;
+    _selectedIsSingle = profile.hasMaritalStatus ? profile.isSingle : null;
+  }
 
   @override
   void dispose() {
@@ -108,7 +124,41 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   setState(() => _selectedGender = selection.first);
                 },
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 24),
+              Text('מה המצב האישי שלך?', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                segments: <ButtonSegment<bool>>[
+                  ButtonSegment<bool>(
+                    value: true,
+                    icon: const Icon(Icons.favorite_border_rounded),
+                    label: Text('{רווק|רווקה}'.forGender(_selectedGender)),
+                  ),
+                  ButtonSegment<bool>(
+                    value: false,
+                    icon: const Icon(Icons.home_outlined),
+                    label: Text('{נשוי|נשואה}'.forGender(_selectedGender)),
+                  ),
+                ],
+                emptySelectionAllowed: true,
+                selected: _selectedIsSingle == null
+                    ? const <bool>{}
+                    : <bool>{_selectedIsSingle!},
+                onSelectionChanged: (Set<bool> selection) {
+                  if (selection.isNotEmpty) {
+                    setState(() => _selectedIsSingle = selection.first);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'למשתמשים רווקים תופיע בפרופיל אפשרות לשמור ולשתף כרטיס אישי.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 32),
               FilledButton(
                 onPressed: _canContinue && !_saving ? _continue : null,
                 child: _saving
@@ -126,7 +176,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  bool get _canContinue => _nameController.text.trim().isNotEmpty;
+  bool get _canContinue =>
+      _nameController.text.trim().isNotEmpty && _selectedIsSingle != null;
 
   Future<void> _continue() async {
     setState(() => _saving = true);
@@ -134,6 +185,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       await context.read<UserProfileProvider>().saveProfile(
         name: _nameController.text,
         gender: _selectedGender,
+        isSingle: _selectedIsSingle!,
         photoPath: _photoPath,
       );
       if (!mounted) {

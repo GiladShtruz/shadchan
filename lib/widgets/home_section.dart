@@ -9,24 +9,43 @@ import 'package:shadchan/widgets/person_avatar.dart';
 /// The shared building blocks of the home screen.
 ///
 /// The page is deliberately *not* one repeated card: every area has its own
-/// shape. The board keeps the square [HomeMiniCard] (a pinned item carries a
-/// note, a reminder and a menu), recent actions are low wide strips, open ideas
-/// are short centred cards, and the people worth a thought are free circles on
-/// a soft wave. What they share is the cream canvas, the same soft corners and
-/// the same very light lines.
+/// shape. The board keeps paper notes on a cream cork surface, recent actions
+/// are low wide strips, open ideas are short centred cards, and the people
+/// worth a thought are free circles on a soft wave. Heights follow their text;
+/// the shared rhythm comes from widths, margins and typography.
 
-/// Grows a fixed box with the system font, so the cards keep fitting their text
-/// instead of overflowing at a larger accessibility setting.
+bool homeIsNarrow(BuildContext context) {
+  final double width = MediaQuery.sizeOf(context).width;
+  return width > 0 && width < 350;
+}
+
+double homeHorizontalInset(BuildContext context) =>
+    homeIsNarrow(context) ? 10 : HomeConfig.carouselPadding;
+
+double homeCardGap(BuildContext context) =>
+    homeIsNarrow(context) ? 8 : HomeConfig.cardGap;
+
+double homeBoardCardWidth(BuildContext context) =>
+    homeIsNarrow(context) ? 144 : HomeConfig.cardWidth;
+
+double homeActivityCardWidth(BuildContext context) =>
+    homeIsNarrow(context) ? 174 : HomeConfig.activityCardWidth;
+
+double homeIdeaCardWidth(BuildContext context) {
+  final double viewport = MediaQuery.sizeOf(context).width;
+  final double inset = homeHorizontalInset(context);
+  final double available = viewport - inset * 2 - homeCardGap(context) - 18;
+  return (available / 2).clamp(128, HomeConfig.ideaCardWidth);
+}
+
+double homeSuggestionWidth(BuildContext context) =>
+    homeIsNarrow(context) ? 116 : HomeConfig.suggestionBubbleWidth;
+
 double homeScaled(BuildContext context, double base) {
   final double scale = MediaQuery.textScalerOf(
     context,
   ).scale(1).clamp(1.0, 1.6);
   return base * scale;
-}
-
-/// The board card's box.
-double homeCardHeight(BuildContext context) {
-  return homeScaled(context, HomeConfig.cardHeight);
 }
 
 /// A section title, optionally with a "הצג הכל" shortcut.
@@ -50,10 +69,10 @@ class HomeSectionHeader extends StatelessWidget {
     final String? sub = subtitle?.trim();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        HomeConfig.carouselPadding + 2,
-        20,
-        HomeConfig.carouselPadding,
+      padding: EdgeInsets.fromLTRB(
+        homeHorizontalInset(context),
+        homeIsNarrow(context) ? 16 : 20,
+        homeHorizontalInset(context),
         8,
       ),
       child: Column(
@@ -66,10 +85,12 @@ class HomeSectionHeader extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(
+                    fontSize: homeIsNarrow(context) ? 13 : null,
                     fontWeight: FontWeight.w800,
+                    height: 1.2,
                   ),
                 ),
               ),
@@ -90,9 +111,10 @@ class HomeSectionHeader extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               sub,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
+                height: 1.25,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
@@ -111,38 +133,34 @@ class HomeCarousel extends StatelessWidget {
     super.key,
     required this.itemCount,
     required this.itemBuilder,
-    this.height,
   });
 
   final int itemCount;
   final NullableIndexedWidgetBuilder itemBuilder;
 
-  /// The row's fixed height. Defaults to the board card's box.
-  final double? height;
-
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height ?? homeCardHeight(context),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: HomeConfig.carouselPadding,
-        ),
-        itemCount: itemCount,
-        separatorBuilder: (_, _) => const SizedBox(width: HomeConfig.cardGap),
-        itemBuilder: itemBuilder,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: homeHorizontalInset(context)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (int index = 0; index < itemCount; index++) ...<Widget>[
+            if (index > 0) SizedBox(width: homeCardGap(context)),
+            itemBuilder(context, index) ?? const SizedBox.shrink(),
+          ],
+        ],
       ),
     );
   }
 }
 
-/// The frame the board's notes run inside: a thin line around the whole row,
-/// on a wash a shade warmer than the page, so the notes read as pinned to one
-/// board instead of floating on the cream canvas.
+/// A quiet cream corkboard. Notes sit directly on its texture; there is no
+/// inner frame competing with the paper edges.
 class HomeNoteBoard extends StatelessWidget {
   const HomeNoteBoard({super.key, required this.child});
 
@@ -151,36 +169,63 @@ class HomeNoteBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: HomeConfig.carouselPadding,
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          vertical: HomeConfig.boardFramePadding,
-        ),
+      padding: EdgeInsets.symmetric(horizontal: homeHorizontalInset(context)),
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          color: dark
-              ? AppColors.secondaryDarkDm.withValues(alpha: 0.08)
-              : AppColors.secondaryLight.withValues(alpha: 0.45),
+          color: theme.brightness == Brightness.dark
+              ? const Color(0xFF55483A)
+              : const Color(0xFFE8D4AE),
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: (dark ? AppColors.secondaryDarkDm : AppColors.secondary)
-                .withValues(alpha: 0.35),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: CustomPaint(
+            painter: _CorkPainter(
+              color: theme.brightness == Brightness.dark
+                  ? const Color(0xFFB59B78)
+                  : const Color(0xFFC8A978),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: child,
+            ),
           ),
         ),
-        child: child,
       ),
     );
   }
 }
 
-/// One item on the board, drawn as a paper note: a strip of tape at the top,
-/// the avatars centred under it, the name below them, the pinned note and
-/// reminder, and the actions button along the bottom edge — which is also the
-/// menu, so the resting screen still shows nothing open.
+class _CorkPainter extends CustomPainter {
+  const _CorkPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint dot = Paint()..color = color.withValues(alpha: 0.22);
+    for (double y = 7; y < size.height; y += 13) {
+      for (double x = 6 + ((y ~/ 13).isOdd ? 5 : 0); x < size.width; x += 17) {
+        canvas.drawCircle(Offset(x, y), 0.8, dot);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CorkPainter oldDelegate) => oldDelegate.color != color;
+}
+
+/// One item on the board, drawn as a paper note: a small pin at the top,
+/// the avatars and every line of text centred as one balanced group, and a
+/// small arrow-only menu along the bottom edge.
 class HomeBoardNote extends StatelessWidget {
   const HomeBoardNote({
     super.key,
@@ -189,7 +234,6 @@ class HomeBoardNote extends StatelessWidget {
     required this.onTap,
     required this.actions,
     this.subtitle,
-    this.footer,
     this.tintSeed = '',
   });
 
@@ -199,36 +243,33 @@ class HomeBoardNote extends StatelessWidget {
   final String title;
   final VoidCallback onTap;
 
-  /// The full-width button along the bottom. Given a [PopupMenuButton] it opens
-  /// the same options the old corner menu had.
+  /// The small arrow menu along the bottom.
   final Widget actions;
 
   /// The pinned note in the matchmaker's words.
   final String? subtitle;
 
-  /// The reminder line, when one is set.
-  final Widget? footer;
-
   /// Keeps the same person or proposal on the same paper colour between
   /// builds, so the board looks hand-arranged rather than random.
   final String tintSeed;
 
-  /// The papers the notes are torn from — all from the app's own pastels.
+  /// Cream, pale blue and pale pink papers, matching the app palette.
   static const List<Color> _papers = <Color>[
     AppColors.softYellow,
     AppColors.softRose,
-    AppColors.softGreen,
     AppColors.softBlue,
-    AppColors.softSand,
-    AppColors.softPurple,
   ];
 
-  Color _paperFor(ThemeData theme) {
+  int get _stableHash {
     int hash = 0;
     for (final int unit in tintSeed.codeUnits) {
       hash = (hash * 31 + unit) & 0x7fffffff;
     }
-    final Color paper = _papers[hash % _papers.length];
+    return hash;
+  }
+
+  Color _paperFor(ThemeData theme) {
+    final Color paper = _papers[_stableHash % _papers.length];
     return theme.brightness == Brightness.dark
         ? Color.alphaBlend(
             paper.withValues(alpha: 0.16),
@@ -243,62 +284,84 @@ class HomeBoardNote extends StatelessWidget {
     final String? sub = subtitle?.trim();
     final Color paper = _paperFor(theme);
 
-    return SizedBox(
-      width: HomeConfig.cardWidth,
-      height: homeCardHeight(context),
-      child: Material(
-        color: paper,
-        // A note is torn paper: square-ish corners, only barely rounded.
-        borderRadius: BorderRadius.circular(10),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.07),
+    final double angle = ((_stableHash % 7) - 3) * 0.006;
+
+    return Transform.rotate(
+      angle: angle,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: HomeConfig.cardHeight,
+          minWidth: homeBoardCardWidth(context),
+          maxWidth: homeBoardCardWidth(context),
+        ),
+        child: Material(
+          color: paper,
+          // A note is torn paper: square-ish corners, only barely rounded.
+          borderRadius: BorderRadius.circular(10),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
               ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-              child: Column(
-                children: <Widget>[
-                  _NoteTape(color: theme.colorScheme.surface),
-                  const SizedBox(height: 6),
-                  leading,
-                  const SizedBox(height: 7),
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    Positioned(
+                      top: -2,
+                      left: 0,
+                      right: 0,
+                      child: Center(child: _NotePin(seed: _stableHash)),
                     ),
-                  ),
-                  if (sub != null && sub.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 2),
-                    Text(
-                      sub,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurfaceVariant,
-                        height: 1.25,
+                    Padding(
+                      // Keeps the central group clear of the pin and the menu,
+                      // without changing where its text is centred.
+                      padding: const EdgeInsets.symmetric(vertical: 28),
+                      child: Column(
+                        key: const ValueKey<String>('home-board-note-content'),
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Center(child: leading),
+                          const SizedBox(height: 7),
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                            ),
+                          ),
+                          if (sub != null && sub.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 4),
+                            Text(
+                              sub,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 10,
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Center(child: actions),
+                    ),
                   ],
-                  if (footer != null) ...<Widget>[
-                    const SizedBox(height: 4),
-                    footer!,
-                  ],
-                  const Spacer(),
-                  actions,
-                ],
+                ),
               ),
             ),
           ),
@@ -308,42 +371,66 @@ class HomeBoardNote extends StatelessWidget {
   }
 }
 
-/// The little strip of tape that holds a note to the board.
-class _NoteTape extends StatelessWidget {
-  const _NoteTape({required this.color});
+/// The small coloured drawing pin holding a note to the cork.
+class _NotePin extends StatelessWidget {
+  const _NotePin({required this.seed});
 
-  final Color color;
+  final int seed;
 
   @override
   Widget build(BuildContext context) {
-    return Transform.rotate(
-      angle: -0.05,
-      child: Container(
-        width: 46,
-        height: 9,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.75),
-          borderRadius: BorderRadius.circular(2),
-        ),
+    const List<Color> pins = <Color>[
+      Color(0xFFB96F78),
+      Color(0xFF638EAA),
+      Color(0xFFB78A52),
+    ];
+    final Color pin = pins[seed % pins.length];
+    return SizedBox(
+      width: 20,
+      height: 17,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        children: <Widget>[
+          Positioned(
+            top: 8,
+            child: Container(
+              width: 2,
+              height: 8,
+              color: pin.withValues(alpha: 0.7),
+            ),
+          ),
+          Container(
+            width: 13,
+            height: 13,
+            decoration: BoxDecoration(
+              color: pin,
+              shape: BoxShape.circle,
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 3,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// The board note's bottom button: the same options the corner menu used to
-/// hold, in a control that can actually be seen and hit.
+/// The board note's clean, arrow-only menu banner.
 class HomeNoteActionsButton extends StatelessWidget {
-  const HomeNoteActionsButton({super.key, required this.label});
-
-  final String label;
+  const HomeNoteActionsButton({super.key});
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      width: 48,
+      height: 26,
       decoration: BoxDecoration(
         color: theme.colorScheme.surface.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(999),
@@ -351,24 +438,10 @@ class HomeNoteActionsButton extends StatelessWidget {
           color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(
-            Icons.tune_rounded,
-            size: 14,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
+      child: Icon(
+        Icons.keyboard_arrow_down_rounded,
+        size: 20,
+        color: theme.colorScheme.onSurfaceVariant,
       ),
     );
   }
@@ -396,9 +469,12 @@ class HomeActivityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return SizedBox(
-      width: HomeConfig.activityCardWidth,
-      height: homeScaled(context, HomeConfig.activityCardHeight),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: homeActivityCardWidth(context),
+        maxWidth: homeActivityCardWidth(context),
+        minHeight: 74,
+      ),
       child: Material(
         color: theme.colorScheme.surface,
         // Soft, but no longer a full pill: at two wrapped lines the stadium
@@ -486,9 +562,12 @@ class HomeIdeaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return SizedBox(
-      width: HomeConfig.ideaCardWidth,
-      height: homeScaled(context, HomeConfig.ideaCardHeight),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: homeIdeaCardWidth(context),
+        maxWidth: homeIdeaCardWidth(context),
+        minHeight: 106,
+      ),
       child: Material(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
@@ -501,13 +580,19 @@ class HomeIdeaCard extends StatelessWidget {
               border: Border.all(color: theme.colorScheme.outlineVariant),
             ),
             child: Stack(
+              alignment: Alignment.center,
               children: <Widget>[
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 12,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: <Widget>[
                         HomeCardCoupleAvatars(
                           personA: personA,
@@ -517,7 +602,7 @@ class HomeIdeaCard extends StatelessWidget {
                         const SizedBox(height: 7),
                         Text(
                           title,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.labelLarge?.copyWith(
@@ -593,7 +678,7 @@ class HomeSuggestionBubble extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
 
     return SizedBox(
-      width: HomeConfig.suggestionBubbleWidth,
+      width: homeSuggestionWidth(context),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
@@ -618,7 +703,7 @@ class HomeSuggestionBubble extends StatelessWidget {
               const SizedBox(height: 7),
               Text(
                 person.fullName.trim(),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelLarge?.copyWith(
@@ -629,7 +714,7 @@ class HomeSuggestionBubble extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 reason,
-                maxLines: 3,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -713,17 +798,12 @@ class _HomeWaveBackgroundState extends State<HomeWaveBackground>
     final Color color = theme.colorScheme.primary.withValues(
       alpha: dark ? 0.10 : 0.13,
     );
-    final Color foam = theme.colorScheme.primary.withValues(
-      alpha: dark ? 0.26 : 0.30,
-    );
-
     return AnimatedBuilder(
       animation: Listenable.merge(<Listenable>[_controller, _scroll]),
       builder: (BuildContext context, Widget? child) {
         return CustomPaint(
           painter: _WavePainter(
             color: color,
-            foam: foam,
             // A quarter of the page's travel: the water drifts, it does not
             // race the content past it.
             drift: _scroll.value * 0.25,
@@ -740,25 +820,20 @@ class _HomeWaveBackgroundState extends State<HomeWaveBackground>
 class _WavePainter extends CustomPainter {
   const _WavePainter({
     required this.color,
-    required this.foam,
     required this.drift,
     required this.time,
   });
 
   final Color color;
 
-  /// The lighter tone of the crest line and the droplets.
-  final Color foam;
-
-  /// Horizontal travel of the crest, in logical pixels, driven by the scroll.
+  /// Scroll travel used to advance the gentle flow cycle.
   final double drift;
 
   /// 0..1, one turn of the idle bob and of the splash cycle.
   final double time;
 
-  /// Where along the width the droplets come up, and how far apart in the
-  /// cycle — fixed, so the splashes read as a rhythm rather than as noise.
-  static const List<double> _splashAt = <double>[0.18, 0.52, 0.81];
+  /// Mirrored splash positions keep the whole waterline visually balanced.
+  static const List<double> _splashAt = <double>[0.2, 0.5, 0.8];
 
   /// How much of one cycle a single splash lasts.
   static const double _splashSpan = 0.22;
@@ -771,19 +846,20 @@ class _WavePainter extends CustomPainter {
 
     final double baseline = size.height * 0.34;
     final double amplitude = size.height * 0.055;
-    final double bob = math.sin(time * 2 * math.pi);
+    final double flowPhase = time * 2 * math.pi + drift / 120;
+    final double bob = math.sin(flowPhase);
+    final double breathing = 0.96 + math.cos(flowPhase) * 0.04;
 
     double crestY(double x) {
       final double t = x / size.width;
-      final double phase = drift / 90 + time * 2 * math.pi * 0.15;
       return baseline +
-          amplitude * math.sin(t * 2 * math.pi * 1.15 + phase) +
-          amplitude * 0.45 * math.sin(t * 2 * math.pi * 2.7 - phase * 0.8) +
-          bob * size.height * 0.012;
+          amplitude * breathing * math.cos((t - 0.5) * 4 * math.pi) +
+          bob * size.height * 0.01;
     }
 
-    // Sampled rather than drawn as one cubic: the curve now has to follow two
-    // frequencies and a moving phase, which a fixed control point cannot.
+    // A single mirrored frequency gives equal crests and troughs on both
+    // sides. The baseline and amplitude breathe together, so it still flows
+    // without the uneven interference pattern created by mixed frequencies.
     const int steps = 48;
     final Path water = Path()..moveTo(0, crestY(0));
     for (int i = 1; i <= steps; i++) {
@@ -796,21 +872,9 @@ class _WavePainter extends CustomPainter {
       ..close();
     canvas.drawPath(water, Paint()..color = color);
 
-    final Path crest = Path()..moveTo(0, crestY(0));
-    for (int i = 1; i <= steps; i++) {
-      final double x = size.width * i / steps;
-      crest.lineTo(x, crestY(x));
-    }
-    canvas.drawPath(
-      crest,
-      Paint()
-        ..color = foam.withValues(alpha: foam.a * 0.55)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2,
-    );
-
     for (int i = 0; i < _splashAt.length; i++) {
-      final double cycle = (time + i / _splashAt.length) % 1;
+      // The outer pair rises together; the centre follows half a cycle later.
+      final double cycle = (time + (i == 1 ? 0.5 : 0)) % 1;
       if (cycle > _splashSpan) {
         continue;
       }
@@ -835,7 +899,8 @@ class _WavePainter extends CustomPainter {
   }) {
     final double fade = 1 - progress;
     final double lift = math.sin(progress * math.pi) * size.height * 0.075;
-    final Paint paint = Paint()..color = foam.withValues(alpha: foam.a * fade);
+    final Paint paint = Paint()
+      ..color = color.withValues(alpha: color.a * fade);
 
     canvas.drawCircle(
       Offset(x - 3.5, surfaceY - lift),
@@ -851,7 +916,7 @@ class _WavePainter extends CustomPainter {
       Offset(x, surfaceY),
       2 + progress * 7,
       Paint()
-        ..color = foam.withValues(alpha: foam.a * fade * 0.6)
+        ..color = color.withValues(alpha: color.a * fade * 0.6)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
@@ -860,7 +925,6 @@ class _WavePainter extends CustomPainter {
   @override
   bool shouldRepaint(_WavePainter oldDelegate) {
     return oldDelegate.color != color ||
-        oldDelegate.foam != foam ||
         oldDelegate.drift != drift ||
         oldDelegate.time != time;
   }
@@ -1015,7 +1079,7 @@ class HomeArrowButton extends StatelessWidget {
     required this.background,
     required this.foreground,
     this.size = 30,
-    this.icon = Icons.chevron_left,
+    this.icon = Icons.chevron_right,
   });
 
   final Color background;

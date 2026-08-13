@@ -37,9 +37,14 @@ import 'package:shadchan/widgets/person_list_card.dart';
 /// only at the bottom the way into the numbers and the month's tip. Nothing on
 /// the resting screen is open, expanded or asking to be dismissed.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.initialSearch = ''});
+  const HomeScreen({
+    super.key,
+    this.initialSearch = '',
+    this.focusBoard = false,
+  });
 
   final String initialSearch;
+  final bool focusBoard;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -47,6 +52,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _homeScrollController = ScrollController();
+  final GlobalKey _boardSectionKey = GlobalKey();
   bool _searchVisible = false;
 
   /// Picked once per visit to the screen, so every entry shows a different tip.
@@ -59,12 +66,49 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.text = widget.initialSearch;
     _searchVisible = widget.initialSearch.trim().isNotEmpty;
     _searchController.addListener(() => setState(() {}));
+    _scheduleBoardFocus();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusBoard && !oldWidget.focusBoard) {
+      _scheduleBoardFocus();
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _homeScrollController.dispose();
     super.dispose();
+  }
+
+  void _scheduleBoardFocus({bool force = false}) {
+    if (!force && !widget.focusBoard) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? boardContext = _boardSectionKey.currentContext;
+      if (!mounted || boardContext == null) {
+        return;
+      }
+      final RenderObject? renderObject = boardContext.findRenderObject();
+      if (renderObject is! RenderBox || !_homeScrollController.hasClients) {
+        return;
+      }
+      final double desiredTop =
+          MediaQuery.paddingOf(context).top + kToolbarHeight + 8;
+      final double target =
+          (_homeScrollController.offset +
+                  renderObject.localToGlobal(Offset.zero).dy -
+                  desiredTop)
+              .clamp(
+                _homeScrollController.position.minScrollExtent,
+                _homeScrollController.position.maxScrollExtent,
+              );
+      _homeScrollController.jumpTo(target);
+    });
   }
 
   @override
@@ -209,8 +253,25 @@ class _HomeScreenState extends State<HomeScreen> {
     final HomeBoardStore board = HomeBoardStore.instance;
     final RecentActivityStore activity = RecentActivityStore.instance;
 
+    if (board.takeFocusRequest()) {
+      _scheduleBoardFocus(force: true);
+    }
+
     final List<MatchIdea> allMatches = matchRepository.getAll();
     final List<Person> allPeople = personRepository.getAll();
+    final List<MonthPeriod> monthPeriods = MonthlyStats.buildPeriods(
+      DateTime.now(),
+      2,
+    );
+    final MonthStats currentMonthStats = MonthlyStats.withAllTimeWeddings(
+      MonthlyStats.statsFor(monthPeriods.first, allMatches, allPeople),
+      allMatches,
+    );
+    final MonthStats previousMonthStats = MonthlyStats.statsFor(
+      monthPeriods[1],
+      allMatches,
+      allPeople,
+    );
     final List<Person> visiblePeople = allPeople
         .where((Person p) => !p.hidden)
         .toList();
@@ -238,28 +299,36 @@ class _HomeScreenState extends State<HomeScreen> {
       activity: activity.entries,
     );
 
-    final bool compactActions =
-        visiblePeople.length >= HomeConfig.compactActionsFromPeopleCount;
-
     return CustomScrollView(
+      controller: _homeScrollController,
       slivers: <Widget>[
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+          padding: EdgeInsets.fromLTRB(
+            homeHorizontalInset(context),
+            14,
+            homeHorizontalInset(context),
+            0,
+          ),
           sliver: SliverToBoxAdapter(
             child: HomeHeroBand(onShowIdeas: () => context.push('/ideas/new')),
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+          padding: EdgeInsets.fromLTRB(
+            homeHorizontalInset(context),
+            12,
+            homeHorizontalInset(context),
+            0,
+          ),
           sliver: SliverToBoxAdapter(
             child: HomeActionCards(
-              stacked: !compactActions,
               onAddPeople: () => AddPeopleDialog.show(context),
               onAddIdea: () => context.push('/matches/add'),
             ),
           ),
         ),
         _BoardSection(
+          focusKey: _boardSectionKey,
           entries: board.entries,
           personRepository: personRepository,
           matchRepository: matchRepository,
@@ -278,16 +347,27 @@ class _HomeScreenState extends State<HomeScreen> {
           personRepository: personRepository,
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 16, 14, 0),
+          padding: EdgeInsets.fromLTRB(
+            homeHorizontalInset(context),
+            16,
+            homeHorizontalInset(context),
+            0,
+          ),
           sliver: SliverToBoxAdapter(
             child: HomeStatsPanel(
-              stats: MonthlyStats.current(allMatches, allPeople),
+              stats: currentMonthStats,
+              previous: previousMonthStats,
               onTap: () => context.push('/stats/month'),
             ),
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 16, 14, 28),
+          padding: EdgeInsets.fromLTRB(
+            homeHorizontalInset(context),
+            16,
+            homeHorizontalInset(context),
+            0,
+          ),
           sliver: SliverToBoxAdapter(
             child: HomeTipStrip(
               tip: _tip.forGender(userGender),
@@ -298,6 +378,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 });
               },
             ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height:
+                MediaQuery.viewPaddingOf(context).bottom +
+                kBottomNavigationBarHeight +
+                16,
           ),
         ),
       ],
@@ -408,11 +496,13 @@ class _HomeScreenState extends State<HomeScreen> {
 /// entirely until something is pinned.
 class _BoardSection extends StatelessWidget {
   const _BoardSection({
+    required this.focusKey,
     required this.entries,
     required this.personRepository,
     required this.matchRepository,
   });
 
+  final Key focusKey;
   final List<HomeBoardEntry> entries;
   final PersonRepository personRepository;
   final MatchRepository matchRepository;
@@ -432,34 +522,35 @@ class _BoardSection extends StatelessWidget {
 
     return SliverToBoxAdapter(
       child: Column(
+        key: focusKey,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           const HomeSectionHeader(
             title: 'הלוח שלי',
             icon: Icons.push_pin_outlined,
-            subtitle: 'אנשים ורעיונות ששמרת לחזור אליהם',
+            subtitle: 'אנשים או רעיונות שחשוב לי לזכור',
           ),
           HomeNoteBoard(
-            child: SizedBox(
-              height: homeCardHeight(context),
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: HomeConfig.boardFramePadding,
-                ),
-                itemCount: live.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(width: HomeConfig.cardGap),
-                itemBuilder: (BuildContext context, int index) {
-                  return _BoardCard(
-                    entry: live[index],
-                    personRepository: personRepository,
-                    matchRepository: matchRepository,
-                  );
-                },
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: EdgeInsets.symmetric(
+                horizontal: homeIsNarrow(context) ? 8 : 10,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  for (int index = 0; index < live.length; index++) ...<Widget>[
+                    if (index > 0) SizedBox(width: homeCardGap(context)),
+                    _BoardCard(
+                      entry: live[index],
+                      personRepository: personRepository,
+                      matchRepository: matchRepository,
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -488,7 +579,6 @@ class _BoardCard extends StatelessWidget {
         context,
         leading: HomeCardAvatar(person: person),
         title: person.fullName.trim(),
-        reminder: personRepository.personReminderFor(person.id),
         onTap: () => context.push('/people/${person.id}'),
       );
     }
@@ -500,7 +590,6 @@ class _BoardCard extends StatelessWidget {
       context,
       leading: HomeCardCoupleAvatars(personA: personA, personB: personB),
       title: '${_firstName(personA)} & ${_firstName(personB)}',
-      reminder: match.reminderDate,
       onTap: () => context.push('/matches/${match.id}'),
     );
   }
@@ -509,7 +598,6 @@ class _BoardCard extends StatelessWidget {
     BuildContext context, {
     required Widget leading,
     required String title,
-    required DateTime? reminder,
     required VoidCallback onTap,
   }) {
     return HomeBoardNote(
@@ -518,13 +606,6 @@ class _BoardCard extends StatelessWidget {
       title: title,
       subtitle: entry.note,
       onTap: onTap,
-      footer: reminder == null
-          ? null
-          : HomeCardFooter(
-              label: AppDateUtils.formatDateShort(reminder),
-              icon: Icons.event_outlined,
-              color: Theme.of(context).colorScheme.primary,
-            ),
       actions: _BoardCardMenu(kind: entry.kind, targetId: entry.targetId),
     );
   }
@@ -548,7 +629,7 @@ class _BoardCardMenu extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 190),
       // A `child` rather than an `icon`: the icon form is an IconButton, whose
       // fixed tap target does not fit the note's bottom edge.
-      child: const HomeNoteActionsButton(label: 'פעולות'),
+      child: const HomeNoteActionsButton(),
       onSelected: (String value) async {
         switch (value) {
           case 'note':
@@ -632,7 +713,6 @@ class _RecentActionsSection extends StatelessWidget {
             icon: Icons.history,
           ),
           HomeCarousel(
-            height: homeScaled(context, HomeConfig.activityCardHeight),
             itemCount: live.length,
             itemBuilder: (BuildContext context, int index) {
               return _RecentActionCard(
@@ -668,7 +748,7 @@ class _RecentActionCard extends StatelessWidget {
       return HomeActivityCard(
         leading: HomeCardAvatar(person: person, radius: 20),
         title: person.fullName.trim(),
-        action: entry.action.label,
+        action: entry.label,
         timeAgo: timeAgo,
         onTap: () => context.push('/people/${person.id}'),
       );
@@ -684,7 +764,7 @@ class _RecentActionCard extends StatelessWidget {
         radius: 15,
       ),
       title: '${_firstName(personA)} & ${_firstName(personB)}',
-      action: entry.action.label,
+      action: entry.label,
       timeAgo: timeAgo,
       onTap: () => context.push('/matches/${match.id}'),
     );
@@ -720,7 +800,6 @@ class _OpenIdeasSection extends StatelessWidget {
             onSeeAll: () => context.go('/matches'),
           ),
           HomeCarousel(
-            height: homeScaled(context, HomeConfig.ideaCardHeight),
             itemCount: ideas.length,
             itemBuilder: (BuildContext context, int index) {
               final HomeOpenIdea idea = ideas[index];
@@ -792,28 +871,33 @@ class _WorthThinkingSection extends StatelessWidget {
             onSeeAll: () => context.go('/people'),
           ),
           HomeWaveBackground(
-            child: SizedBox(
-              height: homeScaled(context, HomeConfig.suggestionBubbleHeight),
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: HomeConfig.carouselPadding - 4,
-                  vertical: HomeConfig.suggestionRowPadding,
-                ),
-                itemCount: suggestions.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 2),
-                itemBuilder: (BuildContext context, int index) {
-                  final HomeSuggestion suggestion = suggestions[index];
-                  return HomeSuggestionBubble(
-                    person: suggestion.person,
-                    reason: suggestion.reason,
-                    onTap: () =>
-                        context.push('/people/${suggestion.person.id}'),
-                  );
-                },
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: EdgeInsets.symmetric(
+                horizontal: homeHorizontalInset(context),
+                vertical: HomeConfig.suggestionRowPadding,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  for (
+                    int index = 0;
+                    index < suggestions.length;
+                    index++
+                  ) ...<Widget>[
+                    if (index > 0) const SizedBox(width: 2),
+                    HomeSuggestionBubble(
+                      person: suggestions[index].person,
+                      reason: suggestions[index].reason,
+                      onTap: () => context.push(
+                        '/people/${suggestions[index].person.id}',
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -855,7 +939,12 @@ class _DatingSection extends StatelessWidget {
     ];
 
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(14, 22, 14, 0),
+      padding: EdgeInsets.fromLTRB(
+        homeHorizontalInset(context),
+        22,
+        homeHorizontalInset(context),
+        0,
+      ),
       sliver: SliverToBoxAdapter(
         child: HomeDatingBanner(
           couples: couples,

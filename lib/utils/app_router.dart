@@ -120,6 +120,7 @@ abstract final class AppRouter {
                   return HomeScreen(
                     key: ValueKey<String>('home:${state.uri}'),
                     initialSearch: q['q'] ?? '',
+                    focusBoard: q['section'] == 'board',
                   );
                 },
               ),
