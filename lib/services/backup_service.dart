@@ -181,6 +181,34 @@ class BackupService {
       'inquiryContactPhone': person.inquiryContactPhone,
       'heightCm': person.heightCm,
       'maritalStatus': person.maritalStatus?.name,
+      'region': person.region?.name,
+      'additionalContacts': person.additionalContacts
+          .map(
+            (MatchContact contact) => <String, Object?>{
+              'name': contact.name,
+              'phone': contact.phone,
+              'description': contact.description,
+            },
+          )
+          .toList(),
+      // What this candidate is looking for. Part of their card, so a restored
+      // backup keeps producing the same matches it did before.
+      'preferredMinAge': person.preferredMinAge,
+      'preferredMaxAge': person.preferredMaxAge,
+      'preferredMinHeightCm': person.preferredMinHeightCm,
+      'preferredMaxHeightCm': person.preferredMaxHeightCm,
+      'preferredCity': person.preferredCity,
+      'preferredRegions': person.preferredRegions
+          .map((Region region) => region.name)
+          .toList(),
+      'preferredMaritalStatuses': person.preferredMaritalStatuses
+          .map((MaritalStatus status) => status.name)
+          .toList(),
+      'preferredReligiousLevels': person.preferredReligiousLevels
+          .map((ReligiousLevel level) => level.name)
+          .toList(),
+      'preferredReligiousLevelOtherLabels':
+          person.preferredReligiousLevelOtherLabels,
       'profileStatus': person.profileStatus.name,
       'photos': List<String>.from(person.photosPaths),
       'isFavorite': person.isFavorite,
@@ -277,6 +305,25 @@ class BackupService {
       inquiryContactPhone: _string(json['inquiryContactPhone']),
       heightCm: _int(json['heightCm']),
       maritalStatus: _enumByName(MaritalStatus.values, json['maritalStatus']),
+      region: _enumByName(Region.values, json['region']),
+      additionalContacts: _parseContacts(json['additionalContacts']),
+      preferredMinAge: _int(json['preferredMinAge']),
+      preferredMaxAge: _int(json['preferredMaxAge']),
+      preferredMinHeightCm: _int(json['preferredMinHeightCm']),
+      preferredMaxHeightCm: _int(json['preferredMaxHeightCm']),
+      preferredCity: _string(json['preferredCity']),
+      preferredRegions: _parseEnums(Region.values, json['preferredRegions']),
+      preferredMaritalStatuses: _parseEnums(
+        MaritalStatus.values,
+        json['preferredMaritalStatuses'],
+      ),
+      preferredReligiousLevels: _parseEnums(
+        ReligiousLevel.values,
+        json['preferredReligiousLevels'],
+      ),
+      preferredReligiousLevelOtherLabels: _parseStrings(
+        json['preferredReligiousLevelOtherLabels'],
+      ),
       profileStatus:
           _enumByName(ProfileStatus.values, json['profileStatus']) ??
           ProfileStatus.available,
@@ -448,6 +495,50 @@ class BackupService {
       return <String>[];
     }
     return raw.whereType<String>().toList();
+  }
+
+  static List<String> _parseStrings(Object? raw) {
+    if (raw is! List) {
+      return <String>[];
+    }
+    return raw.whereType<String>().toList();
+  }
+
+  /// Unknown names are dropped rather than failing the whole import: a backup
+  /// written by a newer version must still restore everything this one knows.
+  static List<T> _parseEnums<T extends Enum>(List<T> values, Object? raw) {
+    if (raw is! List) {
+      return <T>[];
+    }
+    return raw
+        .map((Object? name) => _enumByName(values, name))
+        .whereType<T>()
+        .toList();
+  }
+
+  static List<MatchContact> _parseContacts(Object? raw) {
+    if (raw is! List) {
+      return <MatchContact>[];
+    }
+    final List<MatchContact> contacts = <MatchContact>[];
+    for (final Object? entry in raw) {
+      if (entry is! Map) {
+        continue;
+      }
+      final String name = _string(entry['name']) ?? '';
+      final String phone = _string(entry['phone']) ?? '';
+      if (name.isEmpty && phone.isEmpty) {
+        continue;
+      }
+      contacts.add(
+        MatchContact(
+          name: name,
+          phone: phone,
+          description: _string(entry['description']),
+        ),
+      );
+    }
+    return contacts;
   }
 }
 

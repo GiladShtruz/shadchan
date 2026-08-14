@@ -65,7 +65,7 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('אנחנו כאן כדי לעזור לך לחבר בין לבבות'), findsOneWidget);
+    expect(find.text('רעיונות שהמאגר מציע לך'), findsOneWidget);
     expect(find.text('כל חיבור מתחיל ברעיון טוב'), findsNothing);
     expect(find.text('הצגת רעיונות חדשים'), findsOneWidget);
     expect(find.text('הוספת חברים'), findsOneWidget);
@@ -488,7 +488,7 @@ void main() {
 
         expect(tester.takeException(), isNull);
         for (final String label in <String>[
-          'אנחנו כאן כדי לעזור לך לחבר בין לבבות',
+          'רעיונות שהמאגר מציע לך',
           'הצגת רעיונות חדשים',
           'הוספת חברים',
           'הוספת רעיון',

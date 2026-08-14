@@ -499,7 +499,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   const _FormSectionHeading(
                     icon: Icons.contact_phone_outlined,
                     title: 'יצירת קשר',
-                    subtitle: 'הטלפון של המועמד ופרטי איש הקשר לבירורים',
+                    subtitle: 'הטלפון של המועמד ואיש הקשר להעברת הצעות',
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -523,7 +523,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
                       Text(
-                        'איש קשר לבירורים',
+                        'איש קשר להעברת הצעות',
                         style: theme.textTheme.titleMedium,
                       ),
                       TextButton.icon(

@@ -10,6 +10,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/profile_screen.dart';
+import 'package:shadchan/screens/think_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -18,13 +19,17 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
+import 'package:shadchan/utils/home_promote.dart';
+import 'package:shadchan/utils/home_stage.dart';
+import 'package:shadchan/utils/home_stats_banner.dart';
 import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
-import 'package:shadchan/utils/monthly_stats.dart';
+import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 
 /// The landing screen: a calm workspace rather than a dashboard.
@@ -58,6 +63,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Picked once per visit to the screen, so every entry shows a different tip.
   late String _tip;
+
+  /// Advances once per visit. "שווה לקדם" and the numbers banner rotate on it,
+  /// so the same five faces and the same sentence are not waiting every time.
+  late final int _visit = HomeVisitCounter.next();
 
   @override
   void initState() {
@@ -176,17 +185,31 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       actions: <Widget>[
-        IconButton(
-          tooltip: 'תזכורות',
-          icon: const Icon(Icons.notifications_outlined),
-          onPressed: () => RemindersPanel.show(context),
-        ),
+        // Only ever the matchmaker's own reminders. A bell that is always there
+        // with nothing behind it is an unanswered notification.
+        if (_hasAnyReminder(context))
+          IconButton(
+            tooltip: 'תזכורות',
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => RemindersPanel.show(context),
+          ),
         IconButton(
           tooltip: 'חיפוש',
           icon: const Icon(Icons.search),
           onPressed: () => setState(() => _searchVisible = true),
         ),
       ],
+    );
+  }
+
+  /// True when the matchmaker has set a reminder of their own — on a person or
+  /// on a proposal. Nothing else in the app creates one.
+  bool _hasAnyReminder(BuildContext context) {
+    if (PersonReminders.all().isNotEmpty) {
+      return true;
+    }
+    return context.read<MatchRepository>().getAll().any(
+      (MatchIdea match) => match.reminderDate != null,
     );
   }
 
@@ -259,19 +282,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final List<MatchIdea> allMatches = matchRepository.getAll();
     final List<Person> allPeople = personRepository.getAll();
-    final List<MonthPeriod> monthPeriods = MonthlyStats.buildPeriods(
-      DateTime.now(),
-      2,
-    );
-    final MonthStats currentMonthStats = MonthlyStats.withAllTimeWeddings(
-      MonthlyStats.statsFor(monthPeriods.first, allMatches, allPeople),
-      allMatches,
-    );
-    final MonthStats previousMonthStats = MonthlyStats.statsFor(
-      monthPeriods[1],
-      allMatches,
-      allPeople,
-    );
+    // The month's figures are not computed here any more: the home screen shows
+    // one encouraging line, and every number, chart and comparison lives on the
+    // screen that line opens.
     final List<Person> visiblePeople = allPeople
         .where((Person p) => !p.hidden)
         .toList();
@@ -299,87 +312,154 @@ class _HomeScreenState extends State<HomeScreen> {
       activity: activity.entries,
     );
 
+    final int friends = personRepository.databaseCount;
+    final HomeStage stage = HomeStage.forCount(friends);
+    final HomeMilestone milestone = HomeMilestone.forCount(friends);
+
+    final List<HomePromoteItem> promote = HomePromote.build(
+      people: visiblePeople,
+      matches: allMatches,
+      personById: personRepository.getById,
+      events: personRepository.getAllEvents(),
+      notes: personRepository.getAllNotes(),
+      activity: activity.entries,
+      rotation: _visit,
+    );
+    final HomeStatLine statLine = HomeStatsBanner.build(
+      matches: allMatches,
+      friends: friends,
+      rotation: _visit,
+    );
+
+    double inset() => homeHorizontalInset(context);
+    SliverPadding block(Widget child, {double top = 12}) {
+      return SliverPadding(
+        padding: EdgeInsets.fromLTRB(inset(), top, inset(), 0),
+        sliver: SliverToBoxAdapter(child: child),
+      );
+    }
+
+    // The order of what follows *is* the design. Everything that leads to an
+    // action comes before everything that reports on one, and a block that
+    // would be empty at this stage is not drawn at all rather than shown as an
+    // empty box — an empty screen teaches that the app is empty.
     return CustomScrollView(
       controller: _homeScrollController,
       slivers: <Widget>[
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(
-            homeHorizontalInset(context),
-            14,
-            homeHorizontalInset(context),
-            0,
+        // A brand-new matchmaker lands on the real home screen with one
+        // welcoming card on it, not on a wizard that has to be got through.
+        if (friends == 0)
+          block(
+            HomeWelcomeCard(onAddPeople: () => AddPeopleDialog.show(context)),
+            top: 14,
           ),
-          sliver: SliverToBoxAdapter(
-            child: HomeHeroBand(onShowIdeas: () => context.push('/ideas/new')),
+
+        // The automatic pair suggestions lead once the database can actually
+        // produce them. Design, wording and behaviour are untouched.
+        if (stage.leadsWithAutomaticIdeas)
+          block(
+            HomeHeroBand(onShowIdeas: () => context.push('/ideas/new')),
+            top: 14,
           ),
+
+        block(
+          HomeActionCards(
+            onAddPeople: () => AddPeopleDialog.show(context),
+            onAddIdea: () => context.push('/matches/add'),
+            emphasiseAddPeople: stage.leadsWithGrowth,
+          ),
+          top: stage.leadsWithAutomaticIdeas || friends == 0 ? 12 : 14,
         ),
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(
-            homeHorizontalInset(context),
-            12,
-            homeHorizontalInset(context),
-            0,
-          ),
-          sliver: SliverToBoxAdapter(
-            child: HomeActionCards(
-              onAddPeople: () => AddPeopleDialog.show(context),
-              onAddIdea: () => context.push('/matches/add'),
+
+        if (stage.showsTarget) block(HomeMilestoneCard(milestone: milestone)),
+
+        // From ten friends on, the app has enough to say "two of these might
+        // fit". Only until the first proposal exists.
+        if (friends >= 10 && allMatches.isEmpty)
+          block(
+            HomeFirstIdeaCard(
+              friends: friends,
+              onOpenIdea: () => context.push('/matches/add'),
             ),
           ),
-        ),
+
+        if (stage.showsImportTool)
+          block(HomeImportInvite(onTap: () => context.push('/people/ai'))),
+
         _BoardSection(
           focusKey: _boardSectionKey,
           entries: board.entries,
           personRepository: personRepository,
           matchRepository: matchRepository,
         ),
-        _OpenIdeasSection(ideas: openIdeas, personRepository: personRepository),
-        _WorthThinkingSection(suggestions: suggestions),
-        _RecentActionsSection(
-          entries: activity.entries
-              .take(HomeConfig.recentActionsInRow)
-              .toList(),
-          personRepository: personRepository,
-          matchRepository: matchRepository,
-        ),
+
+        // "שווה לקדם" replaces both the recent-activity trail and the general
+        // open-ideas list: a name with no reason attached says nothing about
+        // what to do with it.
+        if (promote.isNotEmpty && friends > 0)
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const HomeSectionHeader(
+                  title: 'שווה לקדם',
+                  icon: Icons.trending_up,
+                ),
+                HomeCarousel(
+                  itemCount: promote.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final HomePromoteItem item = promote[index];
+                    return HomePromoteCard(
+                      item: item,
+                      onTap: () => item.isPerson
+                          ? context.push('/people/${item.person!.id}')
+                          : context.push('/matches/${item.match!.id}'),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
+        if (friends >= 3)
+          block(HomeThinkBanner(onTap: () => ThinkScreen.open(context))),
+
+        if (stage.showsIdeaAreas)
+          _OpenIdeasSection(
+            ideas: openIdeas,
+            personRepository: personRepository,
+          ),
+
+        if (stage != HomeStage.starting)
+          _WorthThinkingSection(suggestions: suggestions),
+
+        // The emotional anchor, after the blocks that lead to action.
         _DatingSection(
           matches: datingMatches.take(HomeConfig.datingCouplesInRow).toList(),
           personRepository: personRepository,
         ),
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(
-            homeHorizontalInset(context),
-            16,
-            homeHorizontalInset(context),
-            0,
+
+        block(
+          HomeStatBanner(
+            text: statLine.text,
+            onTap: () => context.push('/stats/month'),
           ),
-          sliver: SliverToBoxAdapter(
-            child: HomeStatsPanel(
-              stats: currentMonthStats,
-              previous: previousMonthStats,
-              onTap: () => context.push('/stats/month'),
-            ),
-          ),
+          top: 16,
         ),
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(
-            homeHorizontalInset(context),
-            16,
-            homeHorizontalInset(context),
-            0,
+
+        block(
+          HomeTipStrip(
+            tip: _tip.forGender(userGender),
+            userGender: userGender,
+            onAnother: () {
+              setState(() {
+                _tip = MatchmakerTips.next(previous: _tip);
+              });
+            },
           ),
-          sliver: SliverToBoxAdapter(
-            child: HomeTipStrip(
-              tip: _tip.forGender(userGender),
-              userGender: userGender,
-              onAnother: () {
-                setState(() {
-                  _tip = MatchmakerTips.next(previous: _tip);
-                });
-              },
-            ),
-          ),
+          top: 16,
         ),
+
         SliverToBoxAdapter(
           child: SizedBox(
             height:
@@ -675,106 +755,14 @@ class _BoardCardMenu extends StatelessWidget {
   }
 }
 
-// --- הפעולות האחרונות שלך ---------------------------------------------------
+// --- רעיונות שכדאי לחזור אליהם ----------------------------------------------
 
-/// The trail back to whatever was just worked on — a low strip of compact
-/// cards rather than a row of full-size ones.
-class _RecentActionsSection extends StatelessWidget {
-  const _RecentActionsSection({
-    required this.entries,
-    required this.personRepository,
-    required this.matchRepository,
-  });
-
-  final List<HomeActivityEntry> entries;
-  final PersonRepository personRepository;
-  final MatchRepository matchRepository;
-
-  @override
-  Widget build(BuildContext context) {
-    final List<HomeActivityEntry> live = entries.where((
-      HomeActivityEntry entry,
-    ) {
-      return entry.kind == HomeItemKind.person
-          ? personRepository.getById(entry.targetId) != null
-          : matchRepository.getById(entry.targetId) != null;
-    }).toList();
-
-    if (live.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-
-    return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const HomeSectionHeader(
-            title: 'הפעולות האחרונות שלך',
-            icon: Icons.history,
-          ),
-          HomeCarousel(
-            itemCount: live.length,
-            itemBuilder: (BuildContext context, int index) {
-              return _RecentActionCard(
-                entry: live[index],
-                personRepository: personRepository,
-                matchRepository: matchRepository,
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RecentActionCard extends StatelessWidget {
-  const _RecentActionCard({
-    required this.entry,
-    required this.personRepository,
-    required this.matchRepository,
-  });
-
-  final HomeActivityEntry entry;
-  final PersonRepository personRepository;
-  final MatchRepository matchRepository;
-
-  @override
-  Widget build(BuildContext context) {
-    final String timeAgo = AppDateUtils.timeAgoShort(entry.at);
-
-    if (entry.kind == HomeItemKind.person) {
-      final Person person = personRepository.getById(entry.targetId)!;
-      return HomeActivityCard(
-        leading: HomeCardAvatar(person: person, radius: 20),
-        title: person.fullName.trim(),
-        action: entry.label,
-        timeAgo: timeAgo,
-        onTap: () => context.push('/people/${person.id}'),
-      );
-    }
-
-    final MatchIdea match = matchRepository.getById(entry.targetId)!;
-    final Person? personA = personRepository.getById(match.personAId);
-    final Person? personB = personRepository.getById(match.personBId);
-    return HomeActivityCard(
-      leading: HomeCardCoupleAvatars(
-        personA: personA,
-        personB: personB,
-        radius: 15,
-      ),
-      title: '${_firstName(personA)} & ${_firstName(personB)}',
-      action: entry.label,
-      timeAgo: timeAgo,
-      onTap: () => context.push('/matches/${match.id}'),
-    );
-  }
-}
-
-// --- רעיונות פתוחים ---------------------------------------------------------
-
-/// Only what can be moved forward today: proposals that are open, with both
-/// sides available. Anything waiting sits in the proposals screen instead.
+/// Not the list of open proposals — that is what the proposals screen is for.
+///
+/// Only the ones with a reason to be looked at again today: a reminder that has
+/// come due, or an idea that has not moved in weeks. A row of every open
+/// proposal is a list to scroll past; a row of the two that are actually asking
+/// for something is a row that gets used.
 class _OpenIdeasSection extends StatelessWidget {
   const _OpenIdeasSection({
     required this.ideas,
@@ -784,9 +772,20 @@ class _OpenIdeasSection extends StatelessWidget {
   final List<HomeOpenIdea> ideas;
   final PersonRepository personRepository;
 
+  /// An idea nobody has moved for this long is worth surfacing again.
+  static const int _staleAfterDays = HomeConfig.openIdeaStaleAfterDays;
+
   @override
   Widget build(BuildContext context) {
-    if (ideas.isEmpty) {
+    final DateTime now = DateTime.now();
+    final List<HomeOpenIdea> worthReturningTo = ideas.where((
+      HomeOpenIdea idea,
+    ) {
+      return idea.alerting ||
+          now.difference(idea.match.updatedAt).inDays >= _staleAfterDays;
+    }).toList();
+
+    if (worthReturningTo.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
@@ -795,14 +794,14 @@ class _OpenIdeasSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           HomeSectionHeader(
-            title: 'רעיונות פתוחים',
+            title: 'רעיונות שכדאי לחזור אליהם',
             icon: Icons.lightbulb_outline,
             onSeeAll: () => context.go('/matches'),
           ),
           HomeCarousel(
-            itemCount: ideas.length,
+            itemCount: worthReturningTo.length,
             itemBuilder: (BuildContext context, int index) {
-              final HomeOpenIdea idea = ideas[index];
+              final HomeOpenIdea idea = worthReturningTo[index];
               return _OpenIdeaCard(
                 match: idea.match,
                 alerting: idea.alerting,

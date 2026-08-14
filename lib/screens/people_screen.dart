@@ -280,13 +280,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
         return;
       }
       final Person person = drafts[index];
-      final bool confirmed = await QuickUpdateDialog.show(
+      final QuickUpdateOutcome outcome = await QuickUpdateDialog.show(
         context,
         person,
         stepIndex: index + 1,
         stepCount: drafts.length,
       );
-      if (!confirmed) {
+      if (!outcome.isAdded) {
         // The record itself is kept (it may be a contact that was only
         // soft-deleted) but stops waiting for anything.
         await repository.discardContactDraft(person, deleteRecord: false);
@@ -297,6 +297,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
       }
       try {
         await repository.activatePendingContactDraft(person);
+        if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
+          // The full card ends on that person's profile, so the rest of the
+          // batch is left rather than resumed behind it.
+          await openExtendedPersonEditor(context, person.id, isNewFriend: true);
+          if (mounted) {
+            context.push('/people/${person.id}');
+          }
+          return;
+        }
       } catch (_) {
         if (mounted) {
           ScaffoldMessenger.of(context)

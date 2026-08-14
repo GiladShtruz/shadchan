@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
-import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/screens/match_detail_screen.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
@@ -37,7 +37,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('רעיונות חדשים')),
+      appBar: AppBar(title: const Text('רעיונות שהמאגר מציע לך')),
       body: SafeArea(
         child: ideas.isEmpty
             ? _EmptyState(theme: theme)
@@ -54,8 +54,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
                     idea: idea,
                     onOpen: () => _openIdea(idea),
                     onSkip: () => _skipIdea(idea),
-                    onOpenPerson: (Person person) =>
-                        context.push('/people/${person.id}'),
+                    onComparePair: () => _comparePair(idea),
                   );
                 },
               ),
@@ -65,6 +64,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
 
   Future<void> _openIdea(NewIdeaSuggestion idea) async {
     final MatchRepository matchRepository = context.read<MatchRepository>();
+    final NavigatorState navigator = Navigator.of(context);
     final MatchIdea? match = await matchRepository.create(
       idea.male.id,
       idea.female.id,
@@ -80,7 +80,32 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
         );
       return;
     }
-    context.push('/matches/${match.id}?justCreated=true');
+    // This screen sits outside the navigation shell, and `/matches/:id` lives
+    // inside one of its branches — routing to it from here left the shell
+    // unbuilt and drew a blank page. The proposal is pushed as a plain page
+    // instead, which also means closing it returns to this list.
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            MatchDetailScreen(matchId: match.id, autoPromptWhatsApp: true),
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// The two candidates side by side — the same comparison התאמות uses.
+  /// Agreeing to it there opens the proposal, so it does here too.
+  Future<void> _comparePair(NewIdeaSuggestion idea) async {
+    final bool? open = await openMatchComparison(
+      context,
+      source: idea.female,
+      candidate: idea.male,
+    );
+    if (open == true && mounted) {
+      await _openIdea(idea);
+    }
   }
 
   Future<void> _skipIdea(NewIdeaSuggestion idea) async {
@@ -88,23 +113,9 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     if (!mounted) {
       return;
     }
+    // The card leaving the list is the whole confirmation: a bar across the
+    // bottom for a dismissal the matchmaker just chose is in the way.
     setState(() {});
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: const Text('הרעיון הוסר מהרשימה'),
-          action: SnackBarAction(
-            label: 'ביטול',
-            onPressed: () async {
-              await SuggestionDismissals.restore(idea.male.id, idea.female.id);
-              if (mounted) {
-                setState(() {});
-              }
-            },
-          ),
-        ),
-      );
   }
 }
 
@@ -168,13 +179,15 @@ class _IdeaCard extends StatelessWidget {
     required this.idea,
     required this.onOpen,
     required this.onSkip,
-    required this.onOpenPerson,
+    required this.onComparePair,
   });
 
   final NewIdeaSuggestion idea;
   final VoidCallback onOpen;
   final VoidCallback onSkip;
-  final void Function(Person person) onOpenPerson;
+
+  /// Tapping the couple opens the two cards facing each other.
+  final VoidCallback onComparePair;
 
   @override
   Widget build(BuildContext context) {
@@ -190,45 +203,48 @@ class _IdeaCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              GestureDetector(
-                onTap: () => onOpenPerson(idea.female),
-                child: HomeCardCoupleAvatars(
+          // The whole pair tile — photos, names and reasons — opens the two
+          // cards facing each other, which is the question this card asks.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onComparePair,
+            child: Row(
+              children: <Widget>[
+                HomeCardCoupleAvatars(
                   personA: idea.female,
                   personB: idea.male,
                   radius: 24,
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      '${idea.female.fullName.trim()} & '
-                      '${idea.male.fullName.trim()}',
-                      maxLines: 2,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        height: 1.2,
-                      ),
-                    ),
-                    if (idea.reasons.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 4),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
                       Text(
-                        idea.reasons.join(' · '),
+                        '${idea.female.fullName.trim()} & '
+                        '${idea.male.fullName.trim()}',
                         maxLines: 2,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          height: 1.3,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          height: 1.2,
                         ),
                       ),
+                      if (idea.reasons.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 4),
+                        Text(
+                          idea.reasons.join(' · '),
+                          maxLines: 2,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           Row(

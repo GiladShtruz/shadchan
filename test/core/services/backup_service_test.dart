@@ -28,6 +28,9 @@ void main() {
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapter(PersonAdapter());
     }
+    if (!Hive.isAdapterRegistered(14)) {
+      Hive.registerAdapter(RegionAdapter());
+    }
     if (!Hive.isAdapterRegistered(1)) {
       Hive.registerAdapter(MatchIdeaAdapter());
     }

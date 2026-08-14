@@ -9,6 +9,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/parsed_person.dart';
+import 'package:shadchan/utils/phone_utils.dart';
 import 'package:uuid/uuid.dart';
 
 /// The last stop before an import is written.
@@ -37,14 +38,70 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
       .map(_Draft.fromParsed)
       .toList();
   bool _showReady = false;
+  bool _showDuplicates = false;
   bool _isSaving = false;
+  bool _duplicatesResolved = false;
 
-  List<_Draft> get _kept =>
-      _drafts.where((_Draft draft) => draft.keep).toList();
+  List<_Draft> get _kept => _drafts
+      .where((_Draft draft) => draft.keep && !draft.isDuplicate)
+      .toList();
   List<_Draft> get _attention =>
       _kept.where((_Draft draft) => draft.needsAttention).toList();
   List<_Draft> get _ready =>
       _kept.where((_Draft draft) => !draft.needsAttention).toList();
+  List<_Draft> get _duplicates =>
+      _drafts.where((_Draft draft) => draft.isDuplicate).toList();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_duplicatesResolved) {
+      return;
+    }
+    _duplicatesResolved = true;
+    // Drawn on its own in widget tests, where there is no repository to compare
+    // against — an absent provider means "nothing to be a duplicate of", not a
+    // crash.
+    try {
+      _markDuplicates(context.read<PersonRepository>());
+    } on ProviderNotFoundException {
+      return;
+    }
+  }
+
+  /// Marks the records the database already holds.
+  ///
+  /// Re-importing the same group is the normal case, not the exception — a
+  /// matchmaker exports the chat again a month later for the twelve new cards
+  /// in it. Matching is by phone first, since that is the one field that is
+  /// genuinely the same person, and falls back to the full name for the cards
+  /// that carry no number.
+  void _markDuplicates(PersonRepository repository) {
+    final Set<String> phones = <String>{};
+    final Set<String> names = <String>{};
+    for (final Person person in repository.getAll()) {
+      final String? phone = PhoneUtils.normalizeForComparison(person.phone);
+      if (phone != null) {
+        phones.add(phone);
+      }
+      final String name = person.fullName.trim().toLowerCase();
+      if (name.isNotEmpty) {
+        names.add(name);
+      }
+    }
+
+    for (final _Draft draft in _drafts) {
+      final String? phone = PhoneUtils.normalizeForComparison(
+        draft.parsed.phone,
+      );
+      final String name = '${draft.firstName.trim()} ${draft.lastName.trim()}'
+          .trim()
+          .toLowerCase();
+      draft.isDuplicate =
+          (phone != null && phones.contains(phone)) ||
+          (phone == null && name.isNotEmpty && names.contains(name));
+    }
+  }
 
   Future<void> _save() async {
     if (_isSaving) {
@@ -76,6 +133,7 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
     final Color slate = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
     final List<_Draft> attention = _attention;
     final List<_Draft> ready = _ready;
+    final List<_Draft> duplicates = _duplicates;
 
     return Scaffold(
       appBar: AppBar(title: const Text('בדיקה לפני הוספה')),
@@ -127,6 +185,42 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
                         dark: dark,
                         onChanged: () => setState(() {}),
                         onRemove: () => setState(() => draft.keep = false),
+                      ),
+                ],
+                if (duplicates.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  _SectionTitle(
+                    title: 'כבר במאגר (${duplicates.length})',
+                    subtitle: 'לא ייווצרו שוב, כדי שלא ייווצרו כפילויות',
+                    slate: slate,
+                    trailing: TextButton(
+                      onPressed: () =>
+                          setState(() => _showDuplicates = !_showDuplicates),
+                      child: Text(_showDuplicates ? 'הסתר' : 'הצג'),
+                    ),
+                  ),
+                  if (_showDuplicates)
+                    for (final _Draft draft in duplicates)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: <Widget>[
+                            Icon(
+                              Icons.how_to_reg_outlined,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${draft.firstName} ${draft.lastName}'.trim(),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                 ],
               ],
@@ -181,6 +275,10 @@ class _Draft {
   int? age;
   Gender? gender;
   bool keep = true;
+
+  /// True when this person is already in the database. They are listed but
+  /// never written, so re-reading the same chat adds only what is new.
+  bool isDuplicate = false;
 
   /// True until the record is complete. A gender the model worked out from a
   /// first name counts as incomplete until the user leaves it or changes it —

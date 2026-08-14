@@ -186,6 +186,48 @@ class NotificationService {
     await _scheduleQueue;
   }
 
+  /// The one notification the app sends that the matchmaker did not ask for.
+  ///
+  /// Re-armed for a week ahead on every launch, so it only ever fires for
+  /// someone who has genuinely not opened the app in that time. It is an
+  /// invitation, not a scoreboard: there is no count of what is "waiting" and
+  /// nothing in it implies that anything was neglected. Everything else the app
+  /// sends is a reminder the matchmaker set themselves.
+  static Future<void> scheduleReturnInvitation() async {
+    if (!_isInitialized) {
+      return;
+    }
+
+    try {
+      await _plugin.cancel(_returnInvitationId);
+      final tz.TZDateTime when = tz.TZDateTime.from(
+        DateTime.now().add(const Duration(days: 7)),
+        tz.local,
+      );
+      await _plugin.zonedSchedule(
+        _returnInvitationId,
+        'החברים שלך כאן',
+        'אולי דווקא עכשיו יעלה הרעיון הנכון לאחד מהם',
+        _atHour(when, _reminderHour),
+        _personNotificationDetails,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'NotificationService.scheduleReturnInvitation failed: '
+        '$error\n$stackTrace',
+      );
+    }
+  }
+
+  static const int _returnInvitationId = 40001;
+
+  static tz.TZDateTime _atHour(tz.TZDateTime day, int hour) {
+    return tz.TZDateTime(tz.local, day.year, day.month, day.day, hour);
+  }
+
   static Future<void> cancelAll() async {
     if (!_isInitialized) {
       return;

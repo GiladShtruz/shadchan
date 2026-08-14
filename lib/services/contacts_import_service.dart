@@ -180,7 +180,10 @@ abstract final class ContactsImportService {
         hiddenPhones: hiddenPhones,
       );
 
-      if (candidate != null && !candidate.alreadyExists) {
+      // Contacts already in the database are kept rather than dropped: the
+      // add-friends search reaches past the regular list and tags them
+      // `במאגר`, which it can only do if they are still here.
+      if (candidate != null) {
         candidates.add(candidate);
       }
 
@@ -447,8 +450,7 @@ abstract final class ContactsImportService {
     if (deviceContactId == null ||
         displayName == null ||
         phone == null ||
-        normalizedPhone == null ||
-        existingPhones.contains(normalizedPhone)) {
+        normalizedPhone == null) {
       return null;
     }
 
@@ -457,7 +459,7 @@ abstract final class ContactsImportService {
       displayName: displayName,
       phone: phone,
       normalizedPhone: normalizedPhone,
-      alreadyExists: false,
+      alreadyExists: existingPhones.contains(normalizedPhone),
       hasAdditionalPhones: rawCandidate['hasAdditionalPhones'] == true,
       // Recompute from the name (rather than trusting the cached flag) so
       // changes to the filtering logic / allowlist take effect immediately,

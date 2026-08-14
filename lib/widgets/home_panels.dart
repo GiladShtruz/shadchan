@@ -93,10 +93,12 @@ class HomeHeroBand extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
+                        // Named for what it is: pairs the database worked out
+                        // on its own, not ideas the matchmaker opened.
                         Text(
-                          'אנחנו כאן כדי לעזור לך לחבר בין לבבות',
+                          'רעיונות שהמאגר מציע לך',
                           style: theme.textTheme.titleMedium?.copyWith(
-                            fontSize: narrow ? 14 : null,
+                            fontSize: narrow ? 16 : 19,
                             fontWeight: FontWeight.w800,
                             height: 1.25,
                           ),
@@ -281,27 +283,34 @@ class HomeActionCards extends StatelessWidget {
     super.key,
     required this.onAddPeople,
     required this.onAddIdea,
+    this.emphasiseAddPeople = false,
   });
 
   final VoidCallback onAddPeople;
   final VoidCallback onAddIdea;
+
+  /// While the database is still small, adding friends is the thing that
+  /// actually moves anything forward, so it takes visibly more of the row.
+  final bool emphasiseAddPeople;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool narrow = constraints.maxWidth < 350;
+        final int peopleFlex = emphasiseAddPeople ? 14 : 11;
+        final int ideaFlex = emphasiseAddPeople ? 8 : 9;
         return IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Expanded(
-                flex: narrow ? 1 : 11,
+                flex: narrow && !emphasiseAddPeople ? 1 : peopleFlex,
                 child: _AddPeopleCard(onTap: onAddPeople, compact: narrow),
               ),
               SizedBox(width: narrow ? 8 : 12),
               Expanded(
-                flex: narrow ? 1 : 9,
+                flex: narrow && !emphasiseAddPeople ? 1 : ideaFlex,
                 child: _AddIdeaCard(onTap: onAddIdea, compact: narrow),
               ),
             ],

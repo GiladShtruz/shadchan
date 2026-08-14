@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 
 /// The person's full card, full screen: every photo, swipeable, with the text
@@ -15,34 +16,15 @@ import 'package:shadchan/utils/whatsapp_utils.dart';
 /// the profile photo. Its app bar exposes card sharing and a direct WhatsApp
 /// conversation without forcing the user back to the profile.
 class PersonCardViewer extends StatefulWidget {
-  const PersonCardViewer({
-    super.key,
-    required this.personId,
-    this.sharePreview = false,
-  });
+  const PersonCardViewer({super.key, required this.personId});
 
   final String personId;
-
-  /// A deliberate step between tapping "share card" and opening WhatsApp.
-  /// In this mode the entire card is open for review and the only primary
-  /// action is the clear WhatsApp button at the bottom.
-  final bool sharePreview;
 
   static Future<void> open(BuildContext context, String personId) {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (BuildContext context) => PersonCardViewer(personId: personId),
-      ),
-    );
-  }
-
-  static Future<void> openSharePreview(BuildContext context, String personId) {
-    return Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (BuildContext context) =>
-            PersonCardViewer(personId: personId, sharePreview: true),
       ),
     );
   }
@@ -58,7 +40,7 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
 
   /// Whether the card text is opened to its full height. Collapsed it shows a
   /// few lines over the photo; expanded it scrolls on its own.
-  late bool _isTextExpanded = widget.sharePreview;
+  bool _isTextExpanded = false;
 
   @override
   void dispose() {
@@ -92,9 +74,6 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      bottomNavigationBar: widget.sharePreview
-          ? _SharePreviewBar(onShare: () => _shareToWhatsApp(person))
-          : null,
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
@@ -119,18 +98,15 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
               },
             ),
           _TopBar(
-            title: widget.sharePreview
-                ? 'תצוגה מקדימה · ${person.fullName.trim()}'
-                : person.fullName.trim(),
+            title: person.fullName.trim(),
             counter: photoPaths.length > 1
                 ? '${_currentIndex + 1}/${photoPaths.length}'
                 : null,
-            showActions: !widget.sharePreview,
-            onShare: () =>
-                PersonCardViewer.openSharePreview(context, person.id),
+            showActions: true,
+            onShare: () => ShareUtils.sharePerson(person),
             onWhatsApp: () => _openWhatsApp(person),
           ),
-          if (photoPaths.length > 1 && !widget.sharePreview)
+          if (photoPaths.length > 1)
             Positioned(
               bottom: 0,
               left: 0,
@@ -159,7 +135,7 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
               child: _CardText(
                 text: description,
                 isExpanded: _isTextExpanded,
-                showToggle: !widget.sharePreview,
+                showToggle: true,
                 onToggle: () =>
                     setState(() => _isTextExpanded = !_isTextExpanded),
               ),
@@ -167,13 +143,6 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
         ],
       ),
     );
-  }
-
-  Future<void> _shareToWhatsApp(Person person) async {
-    final bool launched = await WhatsAppUtils.sharePersonCard(person);
-    if (!launched && mounted) {
-      _showError('לא הצלחנו לפתוח את WhatsApp');
-    }
   }
 
   Future<void> _openWhatsApp(Person person) async {
@@ -390,39 +359,6 @@ class _CardText extends StatelessWidget {
                 ),
               ],
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SharePreviewBar extends StatelessWidget {
-  const _SharePreviewBar({required this.onShare});
-
-  final VoidCallback onShare;
-
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black,
-      child: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: onShare,
-            icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 20),
-            label: const Text('שיתוף הכרטיס ב-WhatsApp'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF25D366),
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
           ),
         ),
       ),

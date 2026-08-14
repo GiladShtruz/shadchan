@@ -5,6 +5,10 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/models/match_note.dart';
+import 'package:shadchan/models/person_event.dart';
+import 'package:shadchan/models/person_note.dart';
+import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 
 /// "הנתונים שלך החודש" — a calm dashboard of what happened this Hebrew month
@@ -46,6 +50,49 @@ class MonthlyStatsScreen extends StatelessWidget {
       matches,
     );
     final MonthStats? previous = stats.length > 1 ? stats[1] : null;
+
+    // What the matchmaker actually did, counted from the records rather than
+    // from time spent in the app.
+    final List<PersonNote> personNotes = personRepository.getAllNotes();
+    final List<MatchNote> matchNotes = matchRepository.getAllNotes();
+    final List<PersonEvent> events = personRepository.getAllEvents();
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final int actionsThisWeek = ActivityStats.countBetween(
+      start: today.subtract(const Duration(days: 6)),
+      end: today.add(const Duration(days: 1)),
+      people: people,
+      matches: matches,
+      personNotes: personNotes,
+      matchNotes: matchNotes,
+      events: events,
+    );
+    final int actionsThisMonth = ActivityStats.countBetween(
+      start: periods.first.start,
+      end: periods.first.end,
+      people: people,
+      matches: matches,
+      personNotes: personNotes,
+      matchNotes: matchNotes,
+      events: events,
+    );
+    final int actionsAllTime = ActivityStats.countBetween(
+      start: DateTime(2000),
+      end: now.add(const Duration(days: 1)),
+      people: people,
+      matches: matches,
+      personNotes: personNotes,
+      matchNotes: matchNotes,
+      events: events,
+    );
+    final List<ActivityBucket> bars = ActivityStats.monthlyBars(
+      periods: periods,
+      people: people,
+      matches: matches,
+      personNotes: personNotes,
+      matchNotes: matchNotes,
+      events: events,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('הנתונים שלך החודש'), centerTitle: true),
@@ -89,6 +136,13 @@ class MonthlyStatsScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
+            _ActivitySection(
+              bars: bars,
+              thisWeek: actionsThisWeek,
+              thisMonth: actionsThisMonth,
+              allTime: actionsAllTime,
+            ),
+            const SizedBox(height: 20),
             // The nudge reads as an introduction to the months below it, so it
             // comes before the tracker rather than after it.
             const _DidYouKnowCard(),
@@ -105,6 +159,175 @@ class MonthlyStatsScreen extends StatelessWidget {
 }
 
 // --- Widgets --------------------------------------------------------------
+
+/// The activity chart: one bar per month, counted in actions.
+///
+/// This is the one place in the app where a chart earns its keep — it is the
+/// screen someone opened *to see numbers*. Even here it stays a plain bar per
+/// month with no axes or gridlines, and the word underneath is generous by
+/// design: the point is to notice a good month, never to grade a bad one.
+class _ActivitySection extends StatelessWidget {
+  const _ActivitySection({
+    required this.bars,
+    required this.thisWeek,
+    required this.thisMonth,
+    required this.allTime,
+  });
+
+  final List<ActivityBucket> bars;
+  final int thisWeek;
+  final int thisMonth;
+  final int allTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color blue = MonthlyStatsScreen._blue;
+    final int peak = bars.fold<int>(
+      0,
+      (int max, ActivityBucket bucket) =>
+          bucket.count > max ? bucket.count : max,
+    );
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'הפעילות שלך',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: blue.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  ActivityStats.grade(thisMonth),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: blue,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'נספרות הוספת חבר, פתיחת רעיון, עדכון סטטוס של הצעה וכתיבת הערה.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: <Widget>[
+              _Figure(label: 'השבוע', value: thisWeek),
+              _Figure(label: 'החודש', value: thisMonth),
+              _Figure(label: 'בכל הזמנים', value: allTime),
+            ],
+          ),
+          if (bars.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 108,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  for (final ActivityBucket bucket in bars)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: <Widget>[
+                            Text(
+                              '${bucket.count}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              height: peak == 0
+                                  ? 4
+                                  : (bucket.count / peak * 62).clamp(4.0, 62.0),
+                              decoration: BoxDecoration(
+                                color: blue.withValues(
+                                  alpha: bucket.count == 0 ? 0.18 : 0.75,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              bucket.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Figure extends StatelessWidget {
+  const _Figure({required this.label, required this.value});
+
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Expanded(
+      child: Column(
+        children: <Widget>[
+          Text(
+            '$value',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// A clean banner naming the current Hebrew month with a word of praise.
 class _MonthHeader extends StatelessWidget {

@@ -51,7 +51,9 @@ class _WhatsAppMessageSettingsScreenState
             Text('הודעה לבקשת פרטים', style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              'זו ההודעה שתיפתח אוטומטית בוואטסאפ עבור אנשים שבהמתנה לעדכון.',
+              'זו ההודעה שתיפתח אוטומטית בוואטסאפ עבור אנשים שבהמתנה לעדכון. '
+              'הנוסח כאן הוא ברירת המחדל עבור כל החברים במאגר, ולא עבור מועמד '
+              'אחד בלבד.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

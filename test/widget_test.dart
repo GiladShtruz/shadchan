@@ -39,6 +39,9 @@ void main() {
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapter(PersonAdapter());
     }
+    if (!Hive.isAdapterRegistered(14)) {
+      Hive.registerAdapter(RegionAdapter());
+    }
     if (!Hive.isAdapterRegistered(1)) {
       Hive.registerAdapter(MatchIdeaAdapter());
     }
@@ -151,18 +154,26 @@ void main() {
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('מצב אישי'), findsOneWidget);
-    expect(find.text('הכרטיס האישי שלי'), findsNothing);
-    expect(find.text('יצירת כרטיס אישי'), findsNothing);
+    // The personal status is a quiet line under the name, not a titled section.
+    expect(find.text('מצב אישי'), findsNothing);
+    expect(find.textContaining('· שינוי'), findsOneWidget);
+    expect(find.text('הכרטיס שלך'), findsNothing);
+    expect(find.text('יצירת הכרטיס'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userIsSingle', true));
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
-    expect(find.text('הכרטיס האישי שלי'), findsOneWidget);
-    expect(find.text('יצירת כרטיס אישי'), findsOneWidget);
+    expect(find.text('הכרטיס שלך'), findsOneWidget);
+    expect(
+      find.text(
+        'שמור את הכרטיס שלך כאן כדי שתוכל לשתף אותו בקלות בכל פעם שתצטרך.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('יצירת הכרטיס'), findsOneWidget);
 
-    await tester.tap(find.text('יצירת כרטיס אישי'));
+    await tester.tap(find.text('יצירת הכרטיס'));
     await tester.pumpAndSettle();
     expect(find.text('עריכת הכרטיס האישי'), findsOneWidget);
     expect(find.text('הוספת תמונות'), findsOneWidget);
@@ -296,8 +307,23 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('עריכת כרטיס'), findsOneWidget);
       expect(find.text('שם פרטי'), findsOneWidget);
-      expect(find.text('עיר'), findsOneWidget);
+      expect(find.text('עיר או יישוב'), findsOneWidget);
+      // The page is a stack of collapsible areas; the basics start open and
+      // the rest are one tap away.
+      expect(find.text('כרטיסייה לשליחה'), findsOneWidget);
       expect(find.text('תמונות'), findsWidgets);
+      for (final String area in <String>[
+        'מה המועמד מחפש',
+        'הערות אישיות – לעיניי בלבד',
+        'איש קשר להעברת הצעות',
+      ]) {
+        for (int i = 0; i < 12 && find.text(area).evaluate().isEmpty; i++) {
+          await tester.drag(find.byType(ListView).last, const Offset(0, -260));
+          await tester.pump();
+        }
+        expect(find.text(area), findsOneWidget);
+      }
+      await tester.pumpAndSettle();
       Navigator.of(tester.element(find.text('עריכת כרטיס'))).pop();
       await tester.pumpAndSettle();
 
@@ -380,17 +406,10 @@ void main() {
         'שורה ראשונה\nשורה שנייה\nסוף הכרטיס המלא',
       );
 
-      // Sharing sits in the profile app bar.
-      await tester.tap(find.byTooltip('שיתוף כרטיס'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.byType(PersonCardViewer), findsOneWidget);
-      expect(find.textContaining('תצוגה מקדימה'), findsOneWidget);
-      expect(find.text('שיתוף הכרטיס ב-WhatsApp'), findsOneWidget);
-      expect(find.textContaining('סוף הכרטיס המלא'), findsWidgets);
-      await tester.tap(find.byTooltip('סגירה'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      // Sharing sits in the profile app bar and goes straight to the share
+      // sheet with the card text and every photo — no preview step in between.
+      expect(find.byTooltip('שיתוף כרטיס'), findsOneWidget);
+      expect(find.byType(PersonCardViewer), findsNothing);
 
       final Finder showFullCard = find.text('הצגת הכרטיס המלא');
       await tester.ensureVisible(showFullCard);
@@ -1135,7 +1154,7 @@ void main() {
       needsReview: true,
       hidden: true,
     );
-    bool? result;
+    QuickUpdateOutcome? result;
 
     await tester.pumpWidget(
       ChangeNotifierProvider<ReligiousLevelsProvider>(
@@ -1162,7 +1181,7 @@ void main() {
     await tester.tap(find.text('ביטול'));
     await tester.pumpAndSettle();
 
-    expect(result, isFalse);
+    expect(result, QuickUpdateOutcome.cancelled);
     expect(draft.gender, Gender.unknown);
     expect(draft.religiousLevel, isNull);
     expect(draft.age, isNull);

@@ -68,6 +68,9 @@ Future<void> _bootstrap() async {
   mark('boxes_open');
 
   await NotificationService.initialize();
+  // Pushed a week out on every launch, so it can only ever reach someone who
+  // has not opened the app in that time.
+  unawaited(NotificationService.scheduleReturnInvitation());
   mark('notifications');
 
   await PersonMigrations.convertBirthDatesToAges(
@@ -234,5 +237,8 @@ void _registerAdapters() {
   }
   if (!Hive.isAdapterRegistered(11)) {
     Hive.registerAdapter(MatchContactAdapter());
+  }
+  if (!Hive.isAdapterRegistered(14)) {
+    Hive.registerAdapter(RegionAdapter());
   }
 }

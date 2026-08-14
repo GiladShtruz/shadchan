@@ -17,6 +17,7 @@ import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -218,6 +219,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                 onOpenProfile: (Person person) =>
                     context.push('/people/${person.id}'),
                 onWhatsApp: _openWhatsAppMenu,
+                onComparePair: sides.female == null || sides.male == null
+                    ? null
+                    : () => openMatchComparison(
+                        context,
+                        source: sides.female!,
+                        candidate: sides.male!,
+                        // The proposal is already open — this is only the
+                        // side-by-side look, and closing it lands back here.
+                        showOpenIdeaAction: false,
+                      ),
                 onStatusPicked: (Person person, ProfileStatus status) =>
                     _applyPersonStatus(
                       context,
@@ -1287,6 +1298,7 @@ class _PairCard extends StatelessWidget {
     required this.statusIcon,
     required this.onOpenProfile,
     required this.onWhatsApp,
+    required this.onComparePair,
     required this.onStatusPicked,
   });
 
@@ -1301,6 +1313,10 @@ class _PairCard extends StatelessWidget {
 
   final ValueChanged<Person> onOpenProfile;
   final void Function(Person person, Person? other) onWhatsApp;
+
+  /// Tapping the tile itself — anywhere that is not one of the per-person
+  /// controls — opens the two cards facing each other.
+  final VoidCallback? onComparePair;
   final void Function(Person person, ProfileStatus status) onStatusPicked;
 
   @override
@@ -1372,48 +1388,61 @@ class _PairCard extends StatelessWidget {
                 ],
               ),
             ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Stack(
             children: <Widget>[
-              _EdgeStripe(
-                color: AppColors.genderAccent(Gender.female, dark: dark),
-                atStart: true,
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(6, 14, 6, 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      // In RTL the first child sits on the right.
-                      Expanded(
-                        child: _CandidateSide(
-                          person: female,
-                          other: male,
-                          gender: Gender.female,
-                          onOpenProfile: onOpenProfile,
-                          onWhatsApp: onWhatsApp,
-                          onStatusPicked: onStatusPicked,
-                        ),
-                      ),
-                      _HeartLink(celebrating: celebrating),
-                      Expanded(
-                        child: _CandidateSide(
-                          person: male,
-                          other: female,
-                          gender: Gender.male,
-                          onOpenProfile: onOpenProfile,
-                          onWhatsApp: onWhatsApp,
-                          onStatusPicked: onStatusPicked,
-                        ),
-                      ),
-                    ],
-                  ),
+              // Sits behind the two sides, so the per-person avatar, WhatsApp
+              // and status controls keep their own taps and everything around
+              // them opens the comparison.
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(onTap: onComparePair),
                 ),
               ),
-              _EdgeStripe(
-                color: AppColors.genderAccent(Gender.male, dark: dark),
-                atStart: false,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _EdgeStripe(
+                    color: AppColors.genderAccent(Gender.female, dark: dark),
+                    atStart: true,
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 14, 6, 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          // In RTL the first child sits on the right.
+                          Expanded(
+                            child: _CandidateSide(
+                              person: female,
+                              other: male,
+                              gender: Gender.female,
+                              onOpenProfile: onOpenProfile,
+                              onWhatsApp: onWhatsApp,
+                              onStatusPicked: onStatusPicked,
+                            ),
+                          ),
+                          _HeartLink(celebrating: celebrating),
+                          Expanded(
+                            child: _CandidateSide(
+                              person: male,
+                              other: female,
+                              gender: Gender.male,
+                              onOpenProfile: onOpenProfile,
+                              onWhatsApp: onWhatsApp,
+                              onStatusPicked: onStatusPicked,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  _EdgeStripe(
+                    color: AppColors.genderAccent(Gender.male, dark: dark),
+                    atStart: false,
+                  ),
+                ],
               ),
             ],
           ),

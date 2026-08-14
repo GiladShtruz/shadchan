@@ -4,6 +4,23 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
 
+/// How the matchmaker left the quick-details dialog.
+enum QuickUpdateOutcome {
+  /// Backed out — the staged draft is thrown away.
+  cancelled,
+
+  /// The basic details were enough. The friend joins the database and the
+  /// matchmaker stays where they were, adding the next person.
+  added,
+
+  /// They want the full card. Everything typed here is kept, the friend joins
+  /// the database, and the extended editor opens on top — which ends on the new
+  /// friend's profile rather than back in the add-friends list.
+  openFullEditor;
+
+  bool get isAdded => this != QuickUpdateOutcome.cancelled;
+}
+
 /// Collects the minimum details required before an imported contact may enter
 /// the database. The passed [person] is only mutated after a valid confirmation;
 /// cancelling leaves the draft untouched.
@@ -19,13 +36,13 @@ class QuickUpdateDialog extends StatefulWidget {
   final int? stepIndex;
   final int? stepCount;
 
-  static Future<bool> show(
+  static Future<QuickUpdateOutcome> show(
     BuildContext context,
     Person person, {
     int? stepIndex,
     int? stepCount,
   }) async {
-    return await showDialog<bool>(
+    return await showDialog<QuickUpdateOutcome>(
           context: context,
           barrierDismissible: false,
           builder: (_) => QuickUpdateDialog(
@@ -34,7 +51,7 @@ class QuickUpdateDialog extends StatefulWidget {
             stepCount: stepCount,
           ),
         ) ??
-        false;
+        QuickUpdateOutcome.cancelled;
   }
 
   @override
@@ -158,12 +175,40 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                 errorText: _ageError,
               ),
             ),
+            const SizedBox(height: 20),
+            // Offered rather than required: the whole point of this dialog is
+            // that a friend can join on four fields. Everything typed above is
+            // carried across, so choosing the full card is never a fresh start.
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openFullEditor,
+                icon: const Icon(Icons.edit_note_outlined),
+                label: const Text('לעדכון פרטים מלאים'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: BorderSide(
+                    color: theme.brightness == Brightness.dark
+                        ? theme.colorScheme.primary
+                        : AppColors.primaryDark,
+                    width: 1.4,
+                  ),
+                  foregroundColor: theme.brightness == Brightness.dark
+                      ? theme.colorScheme.primary
+                      : AppColors.primaryDark,
+                  textStyle: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () =>
+              Navigator.of(context).pop(QuickUpdateOutcome.cancelled),
           child: const Text('ביטול'),
         ),
         FilledButton(onPressed: _confirm, child: Text(_finishLabel)),
@@ -206,9 +251,17 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
     final int? stepIndex = widget.stepIndex;
     final int? stepCount = widget.stepCount;
     if (stepIndex != null && stepCount != null && stepIndex < stepCount) {
-      return 'אישור והבא';
+      return 'הוספה והבא';
     }
-    return 'אישור';
+    return 'הוספה';
+  }
+
+  /// Hands over to the full card without demanding the four fields first —
+  /// whatever is already typed is written onto the draft, and the extended
+  /// editor is where the required details are enforced.
+  void _openFullEditor() {
+    _applyToPerson(int.tryParse(_ageController.text.trim()));
+    Navigator.of(context).pop(QuickUpdateOutcome.openFullEditor);
   }
 
   void _confirm() {
@@ -231,6 +284,14 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
       return;
     }
 
+    _applyToPerson(age);
+    Navigator.of(context).pop(QuickUpdateOutcome.added);
+  }
+
+  /// Writes whatever has been entered onto the draft. Both exits use it, so the
+  /// full editor always opens on the details already given here.
+  void _applyToPerson(int? age) {
+    final String fullName = _nameController.text.trim();
     final int spaceIndex = fullName.indexOf(' ');
     widget.person
       ..firstName = spaceIndex == -1
@@ -243,8 +304,6 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
       ..religiousLevel = _religiousLevel
       ..religiousLevelOther = _religiousLevelOther
       ..setManualAge(age);
-
-    Navigator.of(context).pop(true);
   }
 }
 

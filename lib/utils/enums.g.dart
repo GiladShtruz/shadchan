@@ -370,6 +370,80 @@ class MatchProgressAdapter extends TypeAdapter<MatchProgress> {
           typeId == other.typeId;
 }
 
+class RegionAdapter extends TypeAdapter<Region> {
+  @override
+  final int typeId = 14;
+
+  @override
+  Region read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return Region.north;
+      case 1:
+        return Region.haifa;
+      case 2:
+        return Region.sharon;
+      case 3:
+        return Region.center;
+      case 4:
+        return Region.jerusalem;
+      case 5:
+        return Region.shfela;
+      case 6:
+        return Region.judeaSamaria;
+      case 7:
+        return Region.south;
+      case 8:
+        return Region.abroad;
+      default:
+        return Region.north;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, Region obj) {
+    switch (obj) {
+      case Region.north:
+        writer.writeByte(0);
+        break;
+      case Region.haifa:
+        writer.writeByte(1);
+        break;
+      case Region.sharon:
+        writer.writeByte(2);
+        break;
+      case Region.center:
+        writer.writeByte(3);
+        break;
+      case Region.jerusalem:
+        writer.writeByte(4);
+        break;
+      case Region.shfela:
+        writer.writeByte(5);
+        break;
+      case Region.judeaSamaria:
+        writer.writeByte(6);
+        break;
+      case Region.south:
+        writer.writeByte(7);
+        break;
+      case Region.abroad:
+        writer.writeByte(8);
+        break;
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RegionAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
 class CurrentHandlerAdapter extends TypeAdapter<CurrentHandler> {
   @override
   final int typeId = 6;

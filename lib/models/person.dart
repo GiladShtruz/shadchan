@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
 
@@ -27,6 +28,17 @@ class Person extends HiveObject {
     this.inquiryContactPhone,
     this.heightCm,
     this.maritalStatus,
+    this.region,
+    this.preferredMinAge,
+    this.preferredMaxAge,
+    this.preferredMinHeightCm,
+    this.preferredMaxHeightCm,
+    this.preferredCity,
+    List<Region> preferredRegions = const <Region>[],
+    List<MaritalStatus> preferredMaritalStatuses = const <MaritalStatus>[],
+    List<ReligiousLevel> preferredReligiousLevels = const <ReligiousLevel>[],
+    List<String> preferredReligiousLevelOtherLabels = const <String>[],
+    List<MatchContact> additionalContacts = const <MatchContact>[],
     this.profileStatus = ProfileStatus.available,
     this.legacyHebrewBirthYear,
     this.legacyHebrewBirthMonth,
@@ -37,6 +49,17 @@ class Person extends HiveObject {
     this.hidden = false,
     int? avatarIndex,
   }) : photosPaths = List<String>.from(photosPaths),
+       preferredRegions = List<Region>.from(preferredRegions),
+       preferredMaritalStatuses = List<MaritalStatus>.from(
+         preferredMaritalStatuses,
+       ),
+       preferredReligiousLevels = List<ReligiousLevel>.from(
+         preferredReligiousLevels,
+       ),
+       preferredReligiousLevelOtherLabels = List<String>.from(
+         preferredReligiousLevelOtherLabels,
+       ),
+       additionalContacts = List<MatchContact>.from(additionalContacts),
        avatarIndex = avatarIndex ?? PersonAvatarAssets.defaultIndex(id, gender);
 
   @HiveField(0)
@@ -141,6 +164,73 @@ class Person extends HiveObject {
   @HiveField(26)
   MaritalStatus? maritalStatus;
 
+  /// Where in the country they live. Part of the extended filtering only: a
+  /// candidate with no region set never turns up in a region search rather
+  /// than being guessed from their city.
+  @HiveField(29)
+  Region? region;
+
+  // --- What this candidate is looking for --------------------------------
+  //
+  // The matching filters belong to the candidate, not to the matchmaker: they
+  // are set once on their card and then used every time matches are looked for
+  // on their behalf. Changing them here never touches anyone else's.
+
+  @HiveField(30)
+  int? preferredMinAge;
+
+  @HiveField(31)
+  int? preferredMaxAge;
+
+  @HiveField(32)
+  int? preferredMinHeightCm;
+
+  @HiveField(33)
+  int? preferredMaxHeightCm;
+
+  @HiveField(34)
+  String? preferredCity;
+
+  @HiveField(35, defaultValue: <Region>[])
+  List<Region> preferredRegions;
+
+  @HiveField(36, defaultValue: <MaritalStatus>[])
+  List<MaritalStatus> preferredMaritalStatuses;
+
+  @HiveField(37, defaultValue: <ReligiousLevel>[])
+  List<ReligiousLevel> preferredReligiousLevels;
+
+  /// Custom style labels, alongside [preferredReligiousLevels], for styles the
+  /// matchmaker defined themselves.
+  @HiveField(38, defaultValue: <String>[])
+  List<String> preferredReligiousLevelOtherLabels;
+
+  /// People other than [inquiryContactName] through whom proposals can be
+  /// passed on. The first contact stays in its own two fields so every existing
+  /// reader keeps working.
+  @HiveField(39, defaultValue: <MatchContact>[])
+  List<MatchContact> additionalContacts;
+
+  /// Everyone a proposal can be passed through, the primary contact first.
+  List<MatchContact> get proposalContacts {
+    final String name = (inquiryContactName ?? '').trim();
+    final String phone = (inquiryContactPhone ?? '').trim();
+    return <MatchContact>[
+      if (name.isNotEmpty || phone.isNotEmpty)
+        MatchContact(name: name, phone: phone),
+      ...additionalContacts,
+    ];
+  }
+
+  /// True once the record carries everything a friend needs before joining the
+  /// database: a full name, an age, a gender and a religious style.
+  bool get hasRequiredDetails =>
+      firstName.trim().isNotEmpty &&
+      lastName.trim().isNotEmpty &&
+      manualAge != null &&
+      gender != Gender.unknown &&
+      religiousLevel != null;
+
   /// Legacy avatar selection index.
   ///
   /// The app now has exactly one bundled fallback per gender, so this remains
@@ -230,6 +320,17 @@ class Person extends HiveObject {
     Object? inquiryContactPhone = _sentinel,
     Object? heightCm = _sentinel,
     Object? maritalStatus = _sentinel,
+    Object? region = _sentinel,
+    Object? preferredMinAge = _sentinel,
+    Object? preferredMaxAge = _sentinel,
+    Object? preferredMinHeightCm = _sentinel,
+    Object? preferredMaxHeightCm = _sentinel,
+    Object? preferredCity = _sentinel,
+    List<Region>? preferredRegions,
+    List<MaritalStatus>? preferredMaritalStatuses,
+    List<ReligiousLevel>? preferredReligiousLevels,
+    List<String>? preferredReligiousLevelOtherLabels,
+    List<MatchContact>? additionalContacts,
     ProfileStatus? profileStatus,
     List<String>? photosPaths,
     bool? isFavorite,
@@ -275,6 +376,31 @@ class Person extends HiveObject {
       maritalStatus: identical(maritalStatus, _sentinel)
           ? this.maritalStatus
           : maritalStatus as MaritalStatus?,
+      region: identical(region, _sentinel) ? this.region : region as Region?,
+      preferredMinAge: identical(preferredMinAge, _sentinel)
+          ? this.preferredMinAge
+          : preferredMinAge as int?,
+      preferredMaxAge: identical(preferredMaxAge, _sentinel)
+          ? this.preferredMaxAge
+          : preferredMaxAge as int?,
+      preferredMinHeightCm: identical(preferredMinHeightCm, _sentinel)
+          ? this.preferredMinHeightCm
+          : preferredMinHeightCm as int?,
+      preferredMaxHeightCm: identical(preferredMaxHeightCm, _sentinel)
+          ? this.preferredMaxHeightCm
+          : preferredMaxHeightCm as int?,
+      preferredCity: identical(preferredCity, _sentinel)
+          ? this.preferredCity
+          : preferredCity as String?,
+      preferredRegions: preferredRegions ?? this.preferredRegions,
+      preferredMaritalStatuses:
+          preferredMaritalStatuses ?? this.preferredMaritalStatuses,
+      preferredReligiousLevels:
+          preferredReligiousLevels ?? this.preferredReligiousLevels,
+      preferredReligiousLevelOtherLabels:
+          preferredReligiousLevelOtherLabels ??
+          this.preferredReligiousLevelOtherLabels,
+      additionalContacts: additionalContacts ?? this.additionalContacts,
       profileStatus: profileStatus ?? this.profileStatus,
       photosPaths: photosPaths ?? this.photosPaths,
       isFavorite: isFavorite ?? this.isFavorite,

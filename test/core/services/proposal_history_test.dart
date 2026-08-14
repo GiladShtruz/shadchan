@@ -27,6 +27,9 @@ void main() {
     directory = await Directory.systemTemp.createTemp('proposal_history_');
     Hive.init(directory.path);
     Hive.registerAdapter(PersonAdapter());
+    if (!Hive.isAdapterRegistered(14)) {
+      Hive.registerAdapter(RegionAdapter());
+    }
     Hive.registerAdapter(MatchIdeaAdapter());
     Hive.registerAdapter(MatchNoteAdapter());
     Hive.registerAdapter(GenderAdapter());

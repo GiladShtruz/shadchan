@@ -3,9 +3,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/services/call_log_sort_service.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
@@ -14,17 +16,24 @@ import 'package:shadchan/widgets/add_contacts_common.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/initials_avatar.dart';
 
+/// The swipe half of the add-friends screen.
+///
+/// It shows exactly the same contacts as the list view and counts exactly the
+/// same progress — both read [AddContactsSession]. The only difference is that
+/// here they arrive one card at a time.
 class SwipeImportScreen extends StatefulWidget {
   const SwipeImportScreen({
     super.key,
     this.embedded = false,
-    this.onAddedCountChanged,
+    this.isActive = true,
   });
 
   final bool embedded;
 
-  /// Called whenever the number of contacts accepted in this session changes.
-  final ValueChanged<int>? onAddedCountChanged;
+  /// False while the list view is the one on screen. The deck is re-synced with
+  /// the session when this turns true again, so contacts handled in the list
+  /// never come back as cards.
+  final bool isActive;
 
   @override
   State<SwipeImportScreen> createState() => _SwipeImportScreenState();
@@ -47,10 +56,6 @@ class _SwipeHistoryEntry {
 }
 
 class _SwipeImportScreenState extends State<SwipeImportScreen> {
-  static const String _skippedBoxName = 'swipe_skipped_phones';
-  static const String _skippedSetKey = 'skipped_phones';
-  static const String _revealedFilteredSetKey = 'revealed_filtered_phones';
-
   /// Remembers that the swipe hint was already shown, so it only ever greets a
   /// first-time user.
   static const String _settingsBoxName = 'settings';
@@ -58,36 +63,45 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
 
   final CardSwiperController _controller = CardSwiperController();
 
-  bool _isLoading = true;
-  ContactsPermissionState? _permissionState;
-  double? _loadingProgress;
-  String _loadingMessage = 'טוענים אנשי קשר...';
-  List<ContactImportCandidate> _candidates = const <ContactImportCandidate>[];
+  /// The cards currently in the stack. Taken from the session and refreshed
+  /// whenever this view comes back to the front.
+  List<ContactImportCandidate>? _deck;
+
   int _addedCount = 0;
   int _skippedCount = 0;
-  int _remaining = 0;
-  int _progressTotal = 0;
   bool _isFinished = false;
   bool _hintSeen = true;
   final List<_SwipeHistoryEntry> _history = <_SwipeHistoryEntry>[];
-  Set<String> _skippedPhones = <String>{};
-  Set<String> _revealedFilteredPhones = <String>{};
+
+  /// Bumped whenever the deck contents change so the [CardSwiper] is rebuilt
+  /// from scratch instead of reusing a stale index.
+  int _deckGeneration = 0;
 
   /// Contacts the user chose to come back to later this session ("דילוג"). They
-  /// are neither imported nor permanently skipped; once the main deck is done
-  /// they can be reviewed again.
+  /// are neither imported nor removed; once the main deck is done they can be
+  /// reviewed again.
   final List<ContactImportCandidate> _deferredCandidates =
       <ContactImportCandidate>[];
-
-  /// Bumped whenever the deck contents change (e.g. reviewing deferred cards) so
-  /// the [CardSwiper] is rebuilt from scratch instead of reusing a stale index.
-  int _deckGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _loadHintSeen();
-    _loadContacts();
+  }
+
+  @override
+  void didUpdateWidget(SwipeImportScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      // Coming back from the list: whatever was added or removed there is
+      // reflected here immediately rather than at the next visit.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        setState(() => _deck = null);
+      });
+    }
   }
 
   @override
@@ -100,9 +114,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     if (!Hive.isBoxOpen(_settingsBoxName)) {
       return;
     }
-    final bool seen =
-        Hive.box<dynamic>(_settingsBoxName).get(_hintSeenKey) == true;
-    _hintSeen = seen;
+    _hintSeen = Hive.box<dynamic>(_settingsBoxName).get(_hintSeenKey) == true;
   }
 
   /// Called the first time the user acts on a card — by swipe or by button —
@@ -117,128 +129,18 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     }
   }
 
-  Future<void> _loadContacts() async {
-    setState(() {
-      _isLoading = true;
-      _loadingProgress = null;
-      _loadingMessage = 'מבקשים גישה לאנשי קשר...';
-    });
+  AddContactsSession get _session => context.read<AddContactsSession>();
 
-    final ContactsPermissionState permissionState =
-        await ContactsImportService.requestPermission();
-    if (!mounted) return;
-
-    if (permissionState != ContactsPermissionState.granted) {
-      setState(() {
-        _permissionState = permissionState;
-        _isLoading = false;
-      });
-      return;
-    }
-
-    _skippedPhones = await _loadSkippedPhones();
-    if (!mounted) return;
-    _revealedFilteredPhones = await _loadRevealedFilteredPhones();
-    if (!mounted) return;
-
-    final PersonRepository personRepository = context.read<PersonRepository>();
-    final List<ContactImportCandidate> cachedCandidates =
-        await ContactsImportService.loadCachedCandidates(personRepository);
-    if (!mounted) return;
-
-    if (cachedCandidates.isNotEmpty) {
-      final List<ContactImportCandidate> sortedCachedCandidates =
-          await _prepareCandidates(cachedCandidates);
-      if (!mounted) return;
-
-      setState(() {
-        _permissionState = permissionState;
-        _candidates = sortedCachedCandidates;
-        _remaining = _candidates.length;
-        _progressTotal =
-            personRepository.databaseCount + sortedCachedCandidates.length;
-        _isLoading = false;
-        _isFinished = _candidates.isEmpty;
-      });
-
-      unawaited(_refreshCandidatesCache(personRepository));
-      return;
-    }
-
-    setState(() {
-      _loadingMessage = 'טוענים אנשי קשר מהמכשיר...';
-    });
-
-    final List<ContactImportCandidate>
-    candidates = await ContactsImportService.loadCandidates(
-      personRepository,
-      onProgress: (ContactImportLoadProgress progress) {
-        if (!mounted) {
-          return;
-        }
-
-        setState(() {
-          _loadingProgress = progress.value;
-          _loadingMessage =
-              'מסננים אנשי קשר (${progress.processedCount}/${progress.totalCount})...';
-        });
-      },
-    );
-    final List<ContactImportCandidate> sortedCandidates =
-        await _prepareCandidates(candidates);
-    if (!mounted) return;
-
-    setState(() {
-      _permissionState = permissionState;
-      _candidates = sortedCandidates;
-      _remaining = _candidates.length;
-      _progressTotal = personRepository.databaseCount + sortedCandidates.length;
-      _isLoading = false;
-      _loadingProgress = null;
-      _loadingMessage = 'טוענים אנשי קשר...';
-      _isFinished = _candidates.isEmpty;
-    });
-  }
-
-  Future<List<ContactImportCandidate>> _prepareCandidates(
-    List<ContactImportCandidate> candidates,
-  ) {
-    return CallLogSortService.sortByRecentCalls(
-      candidates
-          .where(
-            (ContactImportCandidate candidate) =>
-                (!candidate.isFilteredByName ||
-                    _revealedFilteredPhones.contains(
-                      candidate.normalizedPhone,
-                    )) &&
-                !_skippedPhones.contains(candidate.normalizedPhone),
-          )
-          .toList(),
-    );
-  }
-
-  Future<void> _refreshCandidatesCache(
-    PersonRepository personRepository,
-  ) async {
-    await ContactsImportService.loadCandidates(personRepository);
-  }
-
-  Future<void> _openSettings() async {
-    await ContactsImportService.openSettings();
-    if (!mounted) return;
-
-    final ContactsPermissionState permissionState =
-        await ContactsImportService.checkPermission();
-    if (!mounted) return;
-
-    if (permissionState == ContactsPermissionState.granted) {
-      await _loadContacts();
-      return;
-    }
-
-    setState(() {
-      _permissionState = permissionState;
-    });
+  List<ContactImportCandidate> _buildDeck(AddContactsSession session) {
+    final Set<String> deferred = _deferredCandidates
+        .map((ContactImportCandidate c) => c.normalizedPhone)
+        .toSet();
+    return session.availableCandidates
+        .where(
+          (ContactImportCandidate candidate) =>
+              !deferred.contains(candidate.normalizedPhone),
+        )
+        .toList();
   }
 
   bool _onSwipe(
@@ -246,7 +148,12 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     int? currentIndex,
     CardSwiperDirection direction,
   ) {
-    final ContactImportCandidate candidate = _candidates[previousIndex];
+    final List<ContactImportCandidate> deck =
+        _deck ?? const <ContactImportCandidate>[];
+    if (previousIndex >= deck.length) {
+      return false;
+    }
+    final ContactImportCandidate candidate = deck[previousIndex];
     if (direction == CardSwiperDirection.right) {
       _handleAccept(candidate);
     } else if (direction == CardSwiperDirection.left) {
@@ -290,15 +197,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     );
     _history.add(entry);
     unawaited(_importAcceptedCandidate(candidate, repo, entry));
-    setState(() {
-      _addedCount++;
-      _remaining = (_remaining - 1).clamp(0, _candidates.length);
-    });
-    _notifyAddedCount();
-  }
-
-  void _notifyAddedCount() {
-    widget.onAddedCountChanged?.call(_addedCount);
+    setState(() => _addedCount++);
   }
 
   Future<void> _importAcceptedCandidate(
@@ -306,6 +205,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     PersonRepository repo,
     _SwipeHistoryEntry entry,
   ) async {
+    final AddContactsSession session = _session;
     try {
       final StagedContact? staged =
           await ContactsImportService.stageSingleCandidate(candidate, repo);
@@ -326,13 +226,26 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         return;
       }
 
-      final bool confirmed = await QuickUpdateDialog.show(
+      final QuickUpdateOutcome outcome = await QuickUpdateDialog.show(
         context,
         staged.person,
       );
-      if (confirmed && !entry.wasUndone) {
+      if (outcome.isAdded && !entry.wasUndone) {
         await repo.activatePendingContactDraft(staged.person);
+        await session.clearRemoval(candidate);
+        session.recordAdded();
         entry.importedPersonId = staged.person.id;
+        if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
+          // The full card ends on that person's profile, not back at the deck.
+          await openExtendedPersonEditor(
+            context,
+            staged.person.id,
+            isNewFriend: true,
+          );
+          if (mounted) {
+            context.push('/people/${staged.person.id}');
+          }
+        }
         return;
       }
 
@@ -362,9 +275,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
 
     setState(() {
       entry.importedCounted = false;
-      _addedCount = (_addedCount - 1).clamp(0, _candidates.length);
+      _addedCount = (_addedCount - 1).clamp(0, 1 << 30);
     });
-    _notifyAddedCount();
   }
 
   void _undoAccept(_SwipeHistoryEntry entry) {
@@ -373,28 +285,26 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     if (personId != null) {
       final PersonRepository repo = context.read<PersonRepository>();
       unawaited(repo.delete(personId));
+      _session.recordAddUndone();
     }
     setState(() {
       if (entry.importedCounted) {
         entry.importedCounted = false;
-        _addedCount = (_addedCount - 1).clamp(0, _candidates.length);
+        _addedCount = (_addedCount - 1).clamp(0, 1 << 30);
       }
-      _remaining = (_remaining + 1).clamp(0, _candidates.length);
       _isFinished = false;
     });
-    _notifyAddedCount();
   }
 
   void _handleDefer(ContactImportCandidate candidate) {
     // Not persisted anywhere: the candidate simply moves to a "review later"
-    // pile that is offered again once the main deck is finished.
+    // pile that is offered again once the main deck is finished. They stay in
+    // the list view the whole time.
     _deferredCandidates.add(candidate);
     _history.add(
       _SwipeHistoryEntry(action: _SwipeAction.defer, candidate: candidate),
     );
-    setState(() {
-      _remaining = (_remaining - 1).clamp(0, _candidates.length);
-    });
+    setState(() {});
   }
 
   void _undoDefer(_SwipeHistoryEntry entry) {
@@ -402,10 +312,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       (ContactImportCandidate c) =>
           c.normalizedPhone == entry.candidate.normalizedPhone,
     );
-    setState(() {
-      _remaining = (_remaining + 1).clamp(0, _candidates.length);
-      _isFinished = false;
-    });
+    setState(() => _isFinished = false);
   }
 
   /// Reloads the deck with the deferred contacts so the user can decide on them.
@@ -414,71 +321,32 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       return;
     }
     setState(() {
-      _candidates = List<ContactImportCandidate>.from(_deferredCandidates);
+      _deck = List<ContactImportCandidate>.from(_deferredCandidates);
       _deferredCandidates.clear();
       _history.clear();
-      _remaining = _candidates.length;
       _isFinished = false;
       _deckGeneration++;
     });
   }
 
   void _handleReject(ContactImportCandidate candidate) {
-    _skippedPhones.add(candidate.normalizedPhone);
-    unawaited(_saveSkippedPhones());
+    unawaited(_session.removeFromList(<ContactImportCandidate>[candidate]));
     _history.add(
       _SwipeHistoryEntry(action: _SwipeAction.reject, candidate: candidate),
     );
-    setState(() {
-      _skippedCount++;
-      _remaining = (_remaining - 1).clamp(0, _candidates.length);
-    });
+    setState(() => _skippedCount++);
   }
 
   void _undoReject(_SwipeHistoryEntry entry) {
-    _skippedPhones.remove(entry.candidate.normalizedPhone);
-    unawaited(_saveSkippedPhones());
+    unawaited(_session.restoreToList(entry.candidate));
     setState(() {
-      _skippedCount = (_skippedCount - 1).clamp(0, _candidates.length);
-      _remaining = (_remaining + 1).clamp(0, _candidates.length);
+      _skippedCount = (_skippedCount - 1).clamp(0, 1 << 30);
       _isFinished = false;
     });
   }
 
-  Future<Set<String>> _loadSkippedPhones() async {
-    final Box<dynamic> box = await _openSkippedBox();
-    final Object? raw = box.get(_skippedSetKey);
-    if (raw is List) {
-      return raw.cast<String>().toSet();
-    }
-    return <String>{};
-  }
-
-  Future<Set<String>> _loadRevealedFilteredPhones() async {
-    final Box<dynamic> box = await _openSkippedBox();
-    final Object? raw = box.get(_revealedFilteredSetKey);
-    if (raw is List) {
-      return raw.whereType<String>().toSet();
-    }
-    return <String>{};
-  }
-
-  Future<void> _saveSkippedPhones() async {
-    final Box<dynamic> box = await _openSkippedBox();
-    await box.put(_skippedSetKey, _skippedPhones.toList());
-  }
-
-  Future<Box<dynamic>> _openSkippedBox() async {
-    if (Hive.isBoxOpen(_skippedBoxName)) {
-      return Hive.box<dynamic>(_skippedBoxName);
-    }
-    return Hive.openBox<dynamic>(_skippedBoxName);
-  }
-
   void _onEnd() {
-    setState(() {
-      _isFinished = true;
-    });
+    setState(() => _isFinished = true);
   }
 
   @override
@@ -493,14 +361,18 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (_isLoading) {
+    final AddContactsSession session = context.watch<AddContactsSession>();
+    // Watched so a friend added in the list view changes the numbers here too.
+    context.watch<PersonRepository>();
+
+    if (session.isLoading) {
       return _LoadingContactsView(
-        message: _loadingMessage,
-        progress: _loadingProgress,
+        message: session.loadingMessage,
+        progress: session.loadingProgress,
       );
     }
 
-    final ContactsPermissionState? permissionState = _permissionState;
+    final ContactsPermissionState? permissionState = session.permissionState;
     if (permissionState == ContactsPermissionState.denied ||
         permissionState == ContactsPermissionState.permanentlyDenied) {
       final bool isPermanentlyDenied =
@@ -519,12 +391,12 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
                     : 'כדי לייבא אנשי קשר צריך לאשר גישה לספר הטלפונים',
                 buttonText: isPermanentlyDenied ? 'פתיחת הגדרות' : 'לנסות שוב',
                 onButtonPressed: isPermanentlyDenied
-                    ? _openSettings
-                    : _loadContacts,
+                    ? session.openSettingsAndRecheck
+                    : session.load,
               ),
               if (isPermanentlyDenied)
                 TextButton(
-                  onPressed: _loadContacts,
+                  onPressed: session.load,
                   child: const Text('בדיקה מחדש'),
                 ),
             ],
@@ -533,41 +405,49 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       );
     }
 
-    if (_candidates.isEmpty) {
+    if (_deck == null) {
+      // A new stack needs a new key, otherwise the swiper keeps the index it
+      // had for the previous (differently sized) deck.
+      _deck = _buildDeck(session);
+      _deckGeneration++;
+      _history.clear();
+      _isFinished = false;
+    }
+    final List<ContactImportCandidate> deck = _deck!;
+
+    if (deck.isEmpty && _deferredCandidates.isEmpty) {
       return EmptyState(
         icon: Icons.done_all,
         title: 'אין אנשי קשר חדשים לסקור',
-        subtitle: 'כל אנשי הקשר שלך כבר במאגר',
+        subtitle: 'כל אנשי הקשר שלך כבר במאגר או הוסרו מהרשימה',
         buttonText: 'חזרה',
         onButtonPressed: () => Navigator.of(context).maybePop(),
       );
     }
 
-    if (_isFinished) {
+    if (_isFinished || deck.isEmpty) {
       return _buildSummary(context);
     }
-
-    final int databaseCount = context.watch<PersonRepository>().databaseCount;
 
     return Column(
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: AddContactsProgressHeader(
-            addedToDatabase: databaseCount,
-            remaining: _remaining,
-            total: _progressTotal,
+            addedToDatabase: session.databaseCount,
+            remaining: session.remainingCount,
+            total: session.progressTotal,
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: _buildStats(context),
         ),
-        Expanded(child: _buildDeck(context)),
+        Expanded(child: _buildDeckView(context, deck)),
         if (!_hintSeen)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            child: const _SwipeHint(),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: _SwipeHint(),
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
@@ -607,7 +487,10 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
 
   /// The card stack, deliberately kept small so the screen doesn't turn into a
   /// large empty white rectangle.
-  Widget _buildDeck(BuildContext context) {
+  Widget _buildDeckView(
+    BuildContext context,
+    List<ContactImportCandidate> deck,
+  ) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double deckWidth = math.min(constraints.maxWidth * 0.8, 300);
@@ -630,10 +513,8 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
             child: CardSwiper(
               key: ValueKey<int>(_deckGeneration),
               controller: _controller,
-              cardsCount: _candidates.length,
-              numberOfCardsDisplayed: _candidates.length >= 3
-                  ? 3
-                  : _candidates.length,
+              cardsCount: deck.length,
+              numberOfCardsDisplayed: deck.length >= 3 ? 3 : deck.length,
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 30),
               scale: 0.94,
               backCardOffset: const Offset(0, 18),
@@ -654,7 +535,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
                     int percentThresholdY,
                   ) {
                     return _NameCard(
-                      candidate: _candidates[index],
+                      candidate: deck[index],
                       avatarDiameter: avatarDiameter,
                     );
                   },

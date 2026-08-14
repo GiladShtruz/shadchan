@@ -20,6 +20,9 @@ void main() {
     );
     Hive.init(hiveDirectory.path);
     if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(PersonAdapter());
+    if (!Hive.isAdapterRegistered(14)) {
+      Hive.registerAdapter(RegionAdapter());
+    }
     if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(MatchIdeaAdapter());
     if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(MatchNoteAdapter());
     if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(GenderAdapter());

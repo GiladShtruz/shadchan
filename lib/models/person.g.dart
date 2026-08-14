@@ -37,6 +37,27 @@ class PersonAdapter extends TypeAdapter<Person> {
       inquiryContactPhone: fields[22] as String?,
       heightCm: fields[25] as int?,
       maritalStatus: fields[26] as MaritalStatus?,
+      region: fields[29] as Region?,
+      preferredMinAge: fields[30] as int?,
+      preferredMaxAge: fields[31] as int?,
+      preferredMinHeightCm: fields[32] as int?,
+      preferredMaxHeightCm: fields[33] as int?,
+      preferredCity: fields[34] as String?,
+      preferredRegions: fields[35] == null
+          ? []
+          : (fields[35] as List).cast<Region>(),
+      preferredMaritalStatuses: fields[36] == null
+          ? []
+          : (fields[36] as List).cast<MaritalStatus>(),
+      preferredReligiousLevels: fields[37] == null
+          ? []
+          : (fields[37] as List).cast<ReligiousLevel>(),
+      preferredReligiousLevelOtherLabels: fields[38] == null
+          ? []
+          : (fields[38] as List).cast<String>(),
+      additionalContacts: fields[39] == null
+          ? []
+          : (fields[39] as List).cast<MatchContact>(),
       profileStatus: fields[16] == null
           ? ProfileStatus.available
           : fields[16] as ProfileStatus,
@@ -56,7 +77,7 @@ class PersonAdapter extends TypeAdapter<Person> {
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(29)
+      ..writeByte(40)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -113,6 +134,28 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..write(obj.heightCm)
       ..writeByte(26)
       ..write(obj.maritalStatus)
+      ..writeByte(29)
+      ..write(obj.region)
+      ..writeByte(30)
+      ..write(obj.preferredMinAge)
+      ..writeByte(31)
+      ..write(obj.preferredMaxAge)
+      ..writeByte(32)
+      ..write(obj.preferredMinHeightCm)
+      ..writeByte(33)
+      ..write(obj.preferredMaxHeightCm)
+      ..writeByte(34)
+      ..write(obj.preferredCity)
+      ..writeByte(35)
+      ..write(obj.preferredRegions)
+      ..writeByte(36)
+      ..write(obj.preferredMaritalStatuses)
+      ..writeByte(37)
+      ..write(obj.preferredReligiousLevels)
+      ..writeByte(38)
+      ..write(obj.preferredReligiousLevelOtherLabels)
+      ..writeByte(39)
+      ..write(obj.additionalContacts)
       ..writeByte(28)
       ..write(obj.avatarIndex);
   }

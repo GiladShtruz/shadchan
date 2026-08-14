@@ -387,6 +387,64 @@ enum MatchProgress {
   }
 }
 
+/// Where in the country a candidate lives, for the extended filtering.
+///
+/// Deliberately coarser than a city: a matchmaker looking for "someone in the
+/// south" is not going to enumerate towns, and a candidate with no region set
+/// is simply absent from a region search rather than being guessed at.
+@HiveType(typeId: 14)
+enum Region {
+  @HiveField(0)
+  north,
+
+  @HiveField(1)
+  haifa,
+
+  @HiveField(2)
+  sharon,
+
+  @HiveField(3)
+  center,
+
+  @HiveField(4)
+  jerusalem,
+
+  @HiveField(5)
+  shfela,
+
+  @HiveField(6)
+  judeaSamaria,
+
+  @HiveField(7)
+  south,
+
+  @HiveField(8)
+  abroad;
+
+  String get displayName {
+    switch (this) {
+      case Region.north:
+        return 'צפון';
+      case Region.haifa:
+        return 'חיפה והקריות';
+      case Region.sharon:
+        return 'השרון';
+      case Region.center:
+        return 'מרכז';
+      case Region.jerusalem:
+        return 'ירושלים והסביבה';
+      case Region.shfela:
+        return 'שפלה';
+      case Region.judeaSamaria:
+        return 'יהודה ושומרון';
+      case Region.south:
+        return 'דרום';
+      case Region.abroad:
+        return 'חו״ל';
+    }
+  }
+}
+
 @HiveType(typeId: 6)
 enum CurrentHandler {
   @HiveField(0)

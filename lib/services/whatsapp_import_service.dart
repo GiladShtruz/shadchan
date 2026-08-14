@@ -244,13 +244,17 @@ abstract final class WhatsAppImportService {
   /// `[17.2.2024, 15:49:30] שם: הודעה`. Supporting only one silently produces
   /// an export where every line looks like a continuation and no message is
   /// ever found.
+  /// The date separator and the comma after it both vary by locale — `.`, `/`
+  /// and `-` all occur, and some builds write no comma at all. Being strict
+  /// here is indistinguishable from a corrupt file: every line reads as a
+  /// continuation and the import reports "no messages found".
   static final RegExp _androidHeader = RegExp(
-    r'^(\d{1,2})[./](\d{1,2})[./](\d{2,4}),\s+(\d{1,2}):(\d{2})(?::\d{2})?'
-    r'(?:\s*[APap][Mm])?\s+-\s+([^:]{1,80}):\s?(.*)$',
+    r'^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::\d{2})?'
+    r'(?:\s*[APap]\.?[Mm]\.?)?\s+-\s+([^:]{1,80}):\s?(.*)$',
   );
   static final RegExp _iosHeader = RegExp(
-    r'^\[(\d{1,2})[./](\d{1,2})[./](\d{2,4}),\s+(\d{1,2}):(\d{2})(?::\d{2})?'
-    r'(?:\s*[APap][Mm])?\]\s*([^:]{1,80}):\s?(.*)$',
+    r'^\[(\d{1,2})[./-](\d{1,2})[./-](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::\d{2})?'
+    r'(?:\s*[APap]\.?[Mm]\.?)?\]\s*([^:]{1,80}):\s?(.*)$',
   );
 
   static _Header? _readHeader(String line) {

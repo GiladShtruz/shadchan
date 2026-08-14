@@ -141,21 +141,6 @@ abstract final class WhatsAppUtils {
     );
   }
 
-  /// Opens WhatsApp's recipient picker with the person's complete saved
-  /// send-card text. Unlike [openChat], this is not addressed to the person
-  /// whose profile is open; it is meant for sharing their card onward.
-  static Future<bool> sharePersonCard(Person person) async {
-    final String text = (person.description ?? '').trim();
-    if (text.isEmpty) {
-      return false;
-    }
-
-    return launchUrl(
-      Uri.https('wa.me', '/', <String, String>{'text': text}),
-      mode: LaunchMode.externalApplication,
-    );
-  }
-
   static String currentOnboardingMessage() {
     if (!Hive.isBoxOpen('settings')) {
       return defaultOnboardingMessage;

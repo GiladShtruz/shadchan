@@ -191,8 +191,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (!mounted) {
         return;
       }
-      // First stop after onboarding: add some contacts to the app.
-      context.go('/people/import');
+      // Straight into the real home screen. Landing on the add-contacts flow
+      // instead made the first thing the app ever showed a task standing
+      // between the matchmaker and everything else; the invitation to add
+      // friends is now a card on the home screen itself, which can be taken up
+      // or scrolled past.
+      context.go('/home');
     } finally {
       if (mounted) {
         setState(() => _saving = false);

@@ -32,6 +32,9 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isExporting = false;
+
+  /// Whether the personal card preview is showing its full text.
+  bool _personalCardExpanded = false;
   bool _isExportingExcel = false;
   bool _isImporting = false;
 
@@ -47,17 +50,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final List<Widget> sections = <Widget>[
       _ProfileHeader(profile: profile, onEditPhoto: () => _editPhoto(profile)),
-      const SizedBox(height: 24),
-      const SectionHeader(title: 'מצב אישי'),
-      _MaritalStatusCard(
+      const SizedBox(height: 6),
+      // The answer was already given during sign-up. All that is left here is a
+      // quiet way back to it if it ever changes — not a section of its own.
+      _PersonalStatusLine(
         profile: profile,
-        onChanged: (bool value) => profile.setIsSingle(value),
+        onChangeRequested: () => _changePersonalStatus(profile),
       ),
-      const SizedBox(height: 24),
+      const SizedBox(height: 18),
       if (profile.isSingle) ...<Widget>[
-        const SectionHeader(title: 'הכרטיס האישי שלי'),
-        _PersonalCardSection(
+        _PersonalCardCard(
           profile: profile,
+          expanded: _personalCardExpanded,
+          onToggleExpanded: () =>
+              setState(() => _personalCardExpanded = !_personalCardExpanded),
           onEditCard: () => _editPersonalCard(profile),
           onShareCard: () => _sharePersonalCard(profile),
         ),
@@ -205,6 +211,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     await profile.setPhotoPath(path);
+  }
+
+  // --- Personal status ----------------------------------------------------
+
+  /// Offered from the quiet line under the name. Changing to married hides the
+  /// personal card rather than deleting it, so nothing is lost by answering.
+  Future<void> _changePersonalStatus(UserProfileProvider profile) async {
+    final Gender? gender = profile.gender;
+    final bool? isSingle = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.favorite_border_rounded),
+                title: Text('{רווק|רווקה}'.forGender(gender)),
+                trailing: profile.isSingle ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.of(sheetContext).pop(true),
+              ),
+              ListTile(
+                leading: const Icon(Icons.home_outlined),
+                title: Text('{נשוי|נשואה}'.forGender(gender)),
+                trailing: profile.isSingle ? null : const Icon(Icons.check),
+                onTap: () => Navigator.of(sheetContext).pop(false),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (isSingle == null || isSingle == profile.isSingle) {
+      return;
+    }
+    await profile.setIsSingle(isSingle);
   }
 
   // --- The personal card --------------------------------------------------
@@ -414,171 +457,169 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-class _MaritalStatusCard extends StatelessWidget {
-  const _MaritalStatusCard({required this.profile, required this.onChanged});
+/// The personal status, as small as it can be while still being changeable.
+///
+/// Whether the matchmaker is single was settled during sign-up; repeating it as
+/// a titled card on the profile gave a one-off answer permanent furniture.
+class _PersonalStatusLine extends StatelessWidget {
+  const _PersonalStatusLine({
+    required this.profile,
+    required this.onChangeRequested,
+  });
 
   final UserProfileProvider profile;
-  final ValueChanged<bool> onChanged;
+  final VoidCallback onChangeRequested;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Gender? gender = profile.gender;
+    final String label = profile.isSingle
+        ? '{רווק|רווקה}'.forGender(gender)
+        : '{נשוי|נשואה}'.forGender(gender);
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              'המצב האישי שלך',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'אפשר לעדכן כאן אם המצב השתנה.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<bool>(
-                segments: <ButtonSegment<bool>>[
-                  ButtonSegment<bool>(
-                    value: true,
-                    icon: const Icon(Icons.favorite_border_rounded),
-                    label: Text('{רווק|רווקה}'.forGender(gender)),
-                  ),
-                  ButtonSegment<bool>(
-                    value: false,
-                    icon: const Icon(Icons.home_outlined),
-                    label: Text('{נשוי|נשואה}'.forGender(gender)),
-                  ),
-                ],
-                selected: <bool>{profile.isSingle},
-                onSelectionChanged: (Set<bool> selection) {
-                  onChanged(selection.first);
-                },
-              ),
-            ),
-          ],
+    return Center(
+      child: TextButton(
+        onPressed: onChangeRequested,
+        style: TextButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurfaceVariant,
+          textStyle: theme.textTheme.bodySmall,
+          visualDensity: VisualDensity.compact,
         ),
+        child: Text('$label · שינוי'),
       ),
     );
   }
 }
 
-/// Only rendered for a user whose explicit personal status is single.
-class _PersonalCardSection extends StatelessWidget {
-  const _PersonalCardSection({
+/// The matchmaker's own card, at the top of their page and only when they are
+/// single.
+///
+/// It is a preview, not an editor: the text alone, four lines of it, with the
+/// two things anyone ever wants to do with it — change it, send it — as icons
+/// in the corner. Anything more would make a card that has to be scrolled past
+/// on the way to the settings underneath.
+class _PersonalCardCard extends StatelessWidget {
+  const _PersonalCardCard({
     required this.profile,
+    required this.expanded,
+    required this.onToggleExpanded,
     required this.onEditCard,
     required this.onShareCard,
   });
 
   final UserProfileProvider profile;
+  final bool expanded;
+  final VoidCallback onToggleExpanded;
   final VoidCallback onEditCard;
   final VoidCallback onShareCard;
+
+  /// Roughly how many lines fit in the collapsed preview.
+  static const int _previewLines = 4;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Gender? gender = profile.gender;
-    final String? card = profile.personalCard;
-    final List<String> photos = profile.personalCardPhotos;
-    final bool hasContent = card != null || photos.isNotEmpty;
+    final String card = (profile.personalCard ?? '').trim();
+    final bool hasCard =
+        card.isNotEmpty || profile.personalCardPhotos.isNotEmpty;
 
     return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 10, 8, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              '{שמור|שמרי} כאן טקסט ותמונות, סדר אותם ושתף את הכרטיס במהירות.'
-                  .forGender(gender),
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'הכרטיס שלך',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (hasCard) ...<Widget>[
+                  IconButton(
+                    onPressed: onEditCard,
+                    icon: const Icon(Icons.edit_outlined, size: 20),
+                    tooltip: 'עריכת הכרטיס',
+                    visualDensity: VisualDensity.compact,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  IconButton(
+                    onPressed: onShareCard,
+                    icon: const Icon(Icons.ios_share, size: 20),
+                    tooltip: 'שיתוף הכרטיס',
+                    visualDensity: VisualDensity.compact,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ],
             ),
-            if (photos.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 94,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: photos.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (BuildContext context, int index) {
-                    final File file = File(photos[index]);
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: file.existsSync()
-                          ? Image.file(
-                              file,
-                              width: 78,
-                              height: 94,
-                              fit: BoxFit.cover,
-                              cacheWidth: 156,
-                            )
-                          : Container(
-                              width: 78,
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              alignment: Alignment.center,
-                              child: const Icon(Icons.broken_image_outlined),
-                            ),
-                    );
-                  },
+            if (!hasCard) ...<Widget>[
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 8),
+                child: Text(
+                  'שמור את הכרטיס שלך כאן כדי שתוכל לשתף אותו בקלות בכל פעם '
+                  'שתצטרך.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
                 ),
               ),
-            ],
-            if (card != null) ...<Widget>[
               const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.5,
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: onEditCard,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('יצירת הכרטיס'),
                   ),
-                  borderRadius: BorderRadius.circular(14),
                 ),
+              ),
+            ] else ...<Widget>[
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 8),
                 child: Text(
-                  card,
-                  maxLines: 8,
-                  overflow: TextOverflow.ellipsis,
+                  card.isEmpty ? 'הכרטיס שלך שמור כאן.' : card,
+                  maxLines: expanded ? null : _previewLines,
+                  overflow: expanded
+                      ? TextOverflow.clip
+                      : TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
                 ),
               ),
-            ],
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                FilledButton.tonalIcon(
-                  onPressed: onEditCard,
-                  icon: Icon(
-                    hasContent ? Icons.edit_outlined : Icons.add,
-                    size: 18,
+              if (_isLong(card))
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton(
+                    onPressed: onToggleExpanded,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      textStyle: theme.textTheme.bodySmall,
+                    ),
+                    child: Text(expanded ? 'הצג פחות' : 'הצג עוד'),
                   ),
-                  label: Text(hasContent ? 'עריכת הכרטיס' : 'יצירת כרטיס אישי'),
                 ),
-                if (hasContent)
-                  TextButton.icon(
-                    onPressed: onShareCard,
-                    icon: const Icon(Icons.ios_share, size: 18),
-                    label: const Text('שיתוף מהיר'),
-                  ),
-              ],
-            ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// Cheap stand-in for "does not fit in the preview": either it already has
+  /// more lines than the preview shows, or it is long enough to wrap past it.
+  static bool _isLong(String card) {
+    return '\n'.allMatches(card).length >= _previewLines || card.length > 180;
   }
 }
 

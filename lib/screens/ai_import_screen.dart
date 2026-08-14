@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shadchan/dialogs/import_file_kind_dialog.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/screens/ai_import_review_screen.dart';
@@ -78,19 +81,79 @@ class _AiImportScreenState extends State<AiImportScreen> {
     );
   }
 
+  static const List<String> _excelExtensions = <String>['xlsx', 'xlsm'];
+  static const List<String> _chatExtensions = <String>['zip', 'txt'];
+
+  /// Opens the system picker and returns a real file on this device.
+  ///
+  /// Deliberately `FileType.any` rather than an extension whitelist. On Android
+  /// the whitelist is translated into MIME types, and the providers people
+  /// actually keep a WhatsApp export in — Drive, Files, the manufacturer's own
+  /// file app — hand back `application/octet-stream` for a `.zip`, so the
+  /// export was greyed out and unpickable. That is what made the feature look
+  /// broken on "many phones" while working on the developer's. The extension is
+  /// checked here instead, where a wrong choice can be explained.
+  ///
+  /// `withData` covers the second half of the same problem: a file picked from
+  /// a cloud provider has no local path at all, and the old code silently
+  /// returned when `path` was null. Those bytes are written to a temp file so
+  /// the rest of the flow sees an ordinary file either way.
+  Future<String?> _pickImportFile(AiImportSource source) async {
+    final List<String> allowed = source == AiImportSource.excel
+        ? _excelExtensions
+        : _chatExtensions;
+
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      withData: true,
+    );
+    final PlatformFile? file = picked?.files.singleOrNull;
+    if (file == null) {
+      return null;
+    }
+
+    final String extension = (file.extension ?? p.extension(file.name))
+        .replaceAll('.', '')
+        .toLowerCase();
+    if (!allowed.contains(extension)) {
+      _fail(
+        source == AiImportSource.excel
+            ? 'צריך לבחור קובץ אקסל (xlsx).'
+            : 'צריך לבחור את קובץ הייצוא של וואטסאפ (zip או txt).',
+      );
+      return null;
+    }
+
+    final String? path = file.path;
+    if (path != null && path.isNotEmpty && File(path).existsSync()) {
+      return path;
+    }
+
+    final Uint8List? bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      _fail(
+        'לא הצלחנו לקרוא את הקובץ שנבחר. נסו לשמור אותו במכשיר ולבחור שוב.',
+      );
+      return null;
+    }
+
+    final Directory temp = await getTemporaryDirectory();
+    final File copy = File(
+      p.join(
+        temp.path,
+        'import_${DateTime.now().millisecondsSinceEpoch}_${file.name}',
+      ),
+    );
+    await copy.writeAsBytes(bytes);
+    return copy.path;
+  }
+
   Future<void> _start(AiImportSource source) async {
     if (_isWorking) {
       return;
     }
 
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: source == AiImportSource.excel
-          ? const <String>['xlsx', 'xlsm']
-          : const <String>['zip', 'txt'],
-    );
-    final String? path = picked?.files.single.path;
-    if (path == null || path.isEmpty || !mounted) {
+    final String? path = await _pickImportFile(source);
+    if (path == null || !mounted) {
       return;
     }
     await _run(path, source);
@@ -273,6 +336,8 @@ class _AiImportScreenState extends State<AiImportScreen> {
             },
           ),
           const SizedBox(height: 8),
+          _WhatsAppExportGuide(slate: slate),
+          const SizedBox(height: 8),
           _PrivacyNote(slate: slate),
         ],
       ),
@@ -400,6 +465,94 @@ class _SourceCard extends StatelessWidget {
     AiImportSource.camera => 'צילום של כרטיסייה מודפסת',
     AiImportSource.gallery => 'צילום מסך או תמונה שכבר שמורה',
   };
+}
+
+/// How to get a WhatsApp export onto the phone, step by step.
+///
+/// Folded away by default: it is a one-time thing to learn, and it should not
+/// stand between someone who already knows it and the file picker. Written out
+/// because "ייצוא צ׳אט" is buried two menus deep and the step people miss —
+/// saving the file to the device instead of sending it on in WhatsApp — is the
+/// one that makes the import look broken.
+class _WhatsAppExportGuide extends StatelessWidget {
+  const _WhatsAppExportGuide({required this.slate});
+
+  final Color slate;
+
+  static const List<String> _steps = <String>[
+    'פותחים בוואטסאפ את השיחה או הקבוצה שרוצים לייבא.',
+    'מקישים על שם השיחה בראש המסך כדי לפתוח את פרטי השיחה.',
+    'גוללים למטה ובוחרים "ייצוא צ׳אט" (Export chat).',
+    'בוחרים "צרף מדיה" כדי לקבל גם את התמונות, או "ללא מדיה" לייצוא מהיר יותר.',
+    'שומרים את הקובץ במכשיר — "שמירה בקבצים" או Drive — ולא שולחים אותו '
+        'בוואטסאפ.',
+    'חוזרים לכאן, בוחרים "ייצוא מוואטסאפ" ומאתרים את הקובץ שנשמר (zip או txt).',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsetsDirectional.only(start: 4, bottom: 8),
+        leading: Icon(Icons.help_outline_rounded, size: 20, color: slate),
+        title: Text(
+          'איך מייצאים שיחה או קבוצה מוואטסאפ?',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: slate,
+          ),
+        ),
+        children: <Widget>[
+          for (int i = 0; i < _steps.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    width: 22,
+                    height: 22,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: slate.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${i + 1}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: slate,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _steps[i],
+                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 32, top: 2),
+            child: Text(
+              'בקבוצה גדולה הייצוא עשוי לקחת כמה דקות, ווטסאפ מגבילה אותו '
+              'להודעות האחרונות בלבד.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Says plainly what leaves the phone. The app is local-first everywhere else,
