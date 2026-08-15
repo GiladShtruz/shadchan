@@ -37,12 +37,13 @@ abstract final class FirebaseBootstrap {
   /// Settings; never shown as a blocking error.
   static Object? get failure => _failure;
 
-  /// The anonymous uid for this device, or null when Firebase is not ready.
+  /// The uid for this device, or null when Firebase is not ready.
   ///
-  /// Anonymous auth is on from day one even though nothing is signed in yet:
-  /// it gives every device a stable uid for App Check and the future per-user
-  /// AI quota, and when Google Sign-In is added later it becomes a
-  /// `linkWithCredential` that keeps the same uid instead of a migration.
+  /// Anonymous auth is on from day one: it gives every device a stable uid for
+  /// App Check and the per-user AI quota before anyone has signed in to
+  /// anything. Signing in with Google upgrades that same account through
+  /// `linkWithCredential` (see `AccountService`), so this uid survives the
+  /// upgrade rather than being replaced.
   static String? get uid =>
       isReady ? FirebaseAuth.instance.currentUser?.uid : null;
 
@@ -133,6 +134,24 @@ abstract final class FirebaseBootstrap {
           : const AppleAppAttestWithDeviceCheckFallbackProvider(),
     );
     await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
+  }
+
+  /// Signs back in anonymously after a sign-out.
+  ///
+  /// The app is never deliberately left without a uid: App Check and the AI
+  /// import both need one, and signing out of a Google account is meant to
+  /// cost the cloud backup, not the rest of the app. A failure is swallowed
+  /// for the same reason every other failure here is — the caller is a button
+  /// in Settings, not a gate on the app working.
+  static Future<void> restoreAnonymousSession() async {
+    if (!isReady) {
+      return;
+    }
+    try {
+      await _ensureSignedIn();
+    } catch (error) {
+      debugPrint('AI_IMPORT anonymous re-sign-in failed: $error');
+    }
   }
 
   /// Waits for a persisted session to be restored before creating a new one.

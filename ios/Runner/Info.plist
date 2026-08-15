@@ -52,11 +52,11 @@
 		</array>
 		<key>CFBundleName</key>
 		<string>shadchan</string>
-		<!-- How the share extension brings the app forward once it has parked an
-		     incoming share in the shared app group. Nothing is passed in the URL
-		     itself. See ios/Runner/SharedProfileInbox.swift. -->
 		<key>CFBundleURLTypes</key>
 		<array>
+			<!-- How the share extension brings the app forward once it has parked
+			     an incoming share in the shared app group. Nothing is passed in
+			     the URL itself. See ios/Runner/SharedProfileInbox.swift. -->
 			<dict>
 				<key>CFBundleTypeRole</key>
 				<string>Editor</string>
@@ -65,6 +65,20 @@
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>shadchan-share</string>
+				</array>
+			</dict>
+			<!-- Where Google returns to after the sign-in sheet. This is
+			     REVERSED_CLIENT_ID from ios/Runner/GoogleService-Info.plist, and
+			     the two must be changed together — re-running `flutterfire
+			     configure` rewrites that file and can issue a new iOS client. -->
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>com.gilad.shadchan.google-signin</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.769854167286-5na6e01udi9gammkpo7qjtc2vr9c9idr</string>
 				</array>
 			</dict>
 		</array>

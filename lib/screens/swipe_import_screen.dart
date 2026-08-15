@@ -249,15 +249,23 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         return;
       }
 
-      // Cancelled (or undone meanwhile): the draft is thrown away instead of
-      // being parked as a contact waiting for details. The candidate itself
-      // goes back to the review-later pile, so the deck can offer them again.
+      // Cancelled: the draft is thrown away instead of being parked as a
+      // contact waiting for details.
       await ContactsImportService.discardStagedCandidate(staged, repo);
       if (!mounted || entry.wasUndone) {
         return;
       }
       _revertPendingAddedCount(entry);
-      if (!_deferredCandidates.any(
+
+      // The card comes straight back, rather than being pushed to the
+      // review-later pile at the end of the deck. "ביטול" here means "not that
+      // — let me decide again", and answering it by making the person vanish
+      // until the whole address book has been dealt with is the opposite of
+      // what was asked for. The dialog is modal, so this swipe is still the
+      // last one and undoing it restores exactly this candidate.
+      if (_history.isNotEmpty && identical(_history.last, entry)) {
+        _controller.undo();
+      } else if (!_deferredCandidates.any(
         (ContactImportCandidate deferred) =>
             deferred.normalizedPhone == candidate.normalizedPhone,
       )) {

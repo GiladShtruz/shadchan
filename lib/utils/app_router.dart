@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/add_contacts_screen.dart';
+import 'package:shadchan/screens/add_tip_screen.dart';
+import 'package:shadchan/screens/tips_admin_screen.dart';
 import 'package:shadchan/screens/ai_import_screen.dart';
 import 'package:shadchan/screens/onboarding_screen.dart';
 import 'package:shadchan/screens/create_match_screen.dart';
@@ -318,6 +320,20 @@ abstract final class AppRouter {
             path: 'whatsapp-message',
             builder: (BuildContext context, GoRouterState state) {
               return const WhatsAppMessageSettingsScreen();
+            },
+          ),
+          // Writing a tip for the community, and — for the one account that
+          // may — reviewing what everyone else wrote.
+          GoRoute(
+            path: 'tips',
+            builder: (BuildContext context, GoRouterState state) {
+              return const AddTipScreen();
+            },
+          ),
+          GoRoute(
+            path: 'tips-review',
+            builder: (BuildContext context, GoRouterState state) {
+              return const TipsAdminScreen();
             },
           ),
         ],

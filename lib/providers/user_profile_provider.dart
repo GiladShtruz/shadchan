@@ -34,6 +34,8 @@ class UserProfileProvider extends ChangeNotifier {
   static const String _isSingleKey = 'userIsSingle';
   static const String _personalCardKey = 'userPersonalCard';
   static const String _personalCardPhotosKey = 'userPersonalCardPhotos';
+  static const String _tipAuthorNameKey = 'userTipAuthorName';
+  static const String _introSeenKey = 'userSeenIntro';
 
   final Box<dynamic> _box;
 
@@ -84,6 +86,40 @@ class UserProfileProvider extends ChangeNotifier {
       for (final dynamic value in stored)
         if (value is String && value.trim().isNotEmpty) value.trim(),
     ];
+  }
+
+  /// The name a contributed tip is signed with — first name and surname.
+  ///
+  /// Kept apart from [name], which onboarding fills with whatever the
+  /// matchmaker wants to be greeted by and is usually a first name alone. A tip
+  /// is read by strangers, so it is signed in full; the value is asked for once
+  /// and remembered here.
+  String? get tipAuthorName {
+    final String? value = (_box.get(_tipAuthorNameKey) as String?)?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> setTipAuthorName(String? value) async {
+    final String trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty) {
+      await _box.delete(_tipAuthorNameKey);
+    } else {
+      await _box.put(_tipAuthorNameKey, trimmed);
+    }
+    notifyListeners();
+  }
+
+  /// Whether the first-launch introduction has been read.
+  ///
+  /// Kept apart from [isOnboarded] because they answer different questions: the
+  /// introduction explains what this app is and that the database is private,
+  /// and it is worth showing *before* asking anybody to type their name. Once
+  /// seen it never returns — it is a welcome, not a help screen.
+  bool get hasSeenIntro => _box.get(_introSeenKey) as bool? ?? false;
+
+  Future<void> markIntroSeen() async {
+    await _box.put(_introSeenKey, true);
+    notifyListeners();
   }
 
   /// Onboarding is complete once name, gender and personal status have all been

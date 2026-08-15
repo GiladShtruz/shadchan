@@ -11,12 +11,16 @@ import 'package:shadchan/services/person_migrations.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
+import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
+import 'package:shadchan/providers/sync_provider.dart';
+import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 
@@ -64,6 +68,7 @@ Future<void> _bootstrap() async {
   await Hive.openBox<PersonEvent>('person_events');
   await Hive.openBox<MatchIdea>('matches');
   await Hive.openBox<MatchNote>('match_notes');
+  await Hive.openBox<MatchStatusEvent>('match_status_events');
   await Hive.openBox<dynamic>('settings');
   mark('boxes_open');
 
@@ -103,6 +108,7 @@ Widget _buildApp() {
           final MatchRepository matchRepository = MatchRepository(
             Hive.box<MatchIdea>('matches'),
             Hive.box<MatchNote>('match_notes'),
+            Hive.box<MatchStatusEvent>('match_status_events'),
           );
           final PersonRepository personRepository = context
               .read<PersonRepository>();
@@ -114,10 +120,18 @@ Widget _buildApp() {
               matchRepository.syncMatchesForPerson;
           matchRepository
             ..resolvePerson = personRepository.getById
-            ..markPersonBusy = ((String personId) => personRepository
-                .updateProfileStatus(personId, ProfileStatus.busy))
-            ..markPersonMazelTov = ((String personId) => personRepository
-                .updateProfileStatus(personId, ProfileStatus.mazelTov))
+            ..markPersonBusy = ((String personId, String matchId) =>
+                personRepository.updateProfileStatus(
+                  personId,
+                  ProfileStatus.busy,
+                  causedByMatchId: matchId,
+                ))
+            ..markPersonMazelTov = ((String personId, String matchId) =>
+                personRepository.updateProfileStatus(
+                  personId,
+                  ProfileStatus.mazelTov,
+                  causedByMatchId: matchId,
+                ))
             ..logPersonEvent = personRepository.logEvent;
           return matchRepository;
         },
@@ -130,6 +144,22 @@ Widget _buildApp() {
       ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+      // Lazy on purpose: constructing this is what starts Firebase, and
+      // nothing outside Settings watches it, so the first frame never pays for
+      // it. See the note in `_bootstrap` about keeping Firebase off startup.
+      ChangeNotifierProvider<AccountProvider>(create: (_) => AccountProvider()),
+      // Not lazy: `CloudSyncScheduler` reads it from the app's own builder, on
+      // the frame after startup, to run the opening backup.
+      ChangeNotifierProvider<SyncProvider>(
+        lazy: false,
+        create: (_) => SyncProvider(Hive.box<dynamic>('settings')),
+      ),
+      // The home screen watches this on the first frame, which is exactly why
+      // its constructor only reads the local cache — see the note there.
+      ChangeNotifierProvider<TipsProvider>(
+        lazy: false,
+        create: (_) => TipsProvider(Hive.box<dynamic>('settings')),
       ),
     ],
     child: const _DismissKeyboardOnTap(child: App()),
@@ -231,6 +261,7 @@ void _registerAdapters() {
   }
   if (!Hive.isAdapterRegistered(12)) {
     Hive.registerAdapter(PersonEventAdapter());
+    Hive.registerAdapter(MatchStatusEventAdapter());
   }
   if (!Hive.isAdapterRegistered(13)) {
     Hive.registerAdapter(PersonEventTypeAdapter());

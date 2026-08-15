@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/home_promote.dart';
 import 'package:shadchan/utils/home_stage.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
@@ -312,7 +310,10 @@ class HomeThinkBanner extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'עוצרים רגע לחשוב על שידוך?',
+                  // A statement, not a question. The banner is an open door,
+                  // and a question mark on the home screen asks for an answer
+                  // the matchmaker did not come here to give.
+                  'עוצרים רגע לחשוב על שידוך',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w900,
                     color: dark
@@ -330,130 +331,6 @@ class HomeThinkBanner extends StatelessWidget {
                     : AppColors.secondaryInk,
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The single number line. Tapping it opens the numbers screen — the page it
-/// leads to is where charts belong, not here.
-class HomeStatBanner extends StatelessWidget {
-  const HomeStatBanner({super.key, required this.text, required this.onTap});
-
-  final String text;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = dark
-        ? AppColors.femaleAccentDm
-        : AppColors.femaleAccent;
-
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accent.withValues(alpha: 0.28)),
-          ),
-          child: Row(
-            children: <Widget>[
-              Icon(Icons.favorite, size: 18, color: accent),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  text,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-              ),
-              HomeArrowButton(
-                background: accent.withValues(alpha: 0.14),
-                foreground: accent,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One card of "שווה לקדם": who or what, and one line saying why it is here.
-class HomePromoteCard extends StatelessWidget {
-  const HomePromoteCard({super.key, required this.item, required this.onTap});
-
-  final HomePromoteItem item;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Person? person = item.person;
-
-    return SizedBox(
-      width: homeActivityCardWidth(context),
-      child: Material(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                if (person != null)
-                  HomeCardAvatar(person: person, radius: 21)
-                else
-                  HomeCardCoupleAvatars(
-                    personA: item.personA,
-                    personB: item.personB,
-                    radius: 16,
-                  ),
-                const SizedBox(height: 8),
-                Text(
-                  item.title,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                // The reason is the whole point of the card: without it this is
-                // just a face, and the matchmaker has to work out for themselves
-                // why the app put it there.
-                Text(
-                  item.reason,
-                  maxLines: 3,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),

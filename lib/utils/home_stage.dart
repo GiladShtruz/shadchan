@@ -1,23 +1,3 @@
-/// How many times the home screen has been opened in this run of the app.
-///
-/// The rotating parts of the page — which handful of items is worth promoting,
-/// which encouraging number is shown — advance on this rather than on a random
-/// draw, so consecutive visits are reliably *different* rather than merely
-/// unrelated.
-///
-/// Deliberately in memory only. Persisting it would mean a Hive write during a
-/// build, and a Hive write inside a `testWidgets` fake-async zone never
-/// completes — it hangs the whole suite. Restarting the app restarting the
-/// rotation is a cosmetic detail; a frozen test run is not.
-abstract final class HomeVisitCounter {
-  static int _visits = 0;
-
-  static int next() => ++_visits;
-
-  /// Test seam: lets a test start from a known point in the rotation.
-  static void resetForTesting() => _visits = 0;
-}
-
 /// How far along the matchmaker is, expressed as the one number that actually
 /// changes what the home screen should say: how many friends are in the
 /// database.

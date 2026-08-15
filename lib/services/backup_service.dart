@@ -36,18 +36,26 @@ class BackupService {
   /// accepts older versions too, so raising this never orphans old backups.
   static const int _currentVersion = 2;
 
+  /// The whole database in one map, in the shape the JSON file has always had.
+  static Map<String, Object?> buildPayload(
+    PersonRepository personRepo,
+    MatchRepository matchRepo,
+  ) {
+    return <String, Object?>{
+      'version': _currentVersion,
+      'exportDate': DateTime.now().toIso8601String(),
+      'people': personRepo.getAll().map(personToJson).toList(),
+      'personNotes': personRepo.getAllNotes().map(personNoteToJson).toList(),
+      'matches': matchRepo.getAll().map(matchToJson).toList(),
+      'matchNotes': matchRepo.getAllNotes().map(matchNoteToJson).toList(),
+    };
+  }
+
   static Future<File> exportData(
     PersonRepository personRepo,
     MatchRepository matchRepo,
   ) async {
-    final Map<String, Object?> payload = <String, Object?>{
-      'version': _currentVersion,
-      'exportDate': DateTime.now().toIso8601String(),
-      'people': personRepo.getAll().map(_personToJson).toList(),
-      'personNotes': personRepo.getAllNotes().map(_personNoteToJson).toList(),
-      'matches': matchRepo.getAll().map(_matchToJson).toList(),
-      'matchNotes': matchRepo.getAllNotes().map(_matchNoteToJson).toList(),
-    };
+    final Map<String, Object?> payload = buildPayload(personRepo, matchRepo);
 
     final Directory tempDirectory = await getTemporaryDirectory();
     final String formattedDate = DateFormat(
@@ -97,13 +105,27 @@ class BackupService {
       throw const FormatException('קובץ הגיבוי אינו תקין');
     }
 
+    return importPayload(decoded, personRepo, matchRepo);
+  }
+
+  /// The merge itself, over an already-decoded backup.
+  ///
+  /// Split out from [importData] so the cloud restore can reuse it: Firestore
+  /// hands back the same four sections as maps rather than as a file, and the
+  /// rules that matter — additive only, existing ids never overwritten, a
+  /// match dropped when either side is missing — should not exist twice.
+  static Future<ImportResult> importPayload(
+    Map<String, dynamic> decoded,
+    PersonRepository personRepo,
+    MatchRepository matchRepo,
+  ) async {
     int peopleAdded = 0;
     int matchesAdded = 0;
     int notesAdded = 0;
     int skipped = 0;
 
     for (final Map<String, dynamic> item in _records(decoded['people'])) {
-      final Person? person = _tryParse(() => _personFromJson(item));
+      final Person? person = _tryParse(() => personFromJson(item));
       if (person == null || personRepo.containsId(person.id)) {
         skipped++;
         continue;
@@ -113,7 +135,7 @@ class BackupService {
     }
 
     for (final Map<String, dynamic> item in _records(decoded['matches'])) {
-      final MatchIdea? match = _tryParse(() => _matchFromJson(item));
+      final MatchIdea? match = _tryParse(() => matchFromJson(item));
       if (match == null ||
           !personRepo.containsId(match.personAId) ||
           !personRepo.containsId(match.personBId) ||
@@ -126,7 +148,7 @@ class BackupService {
     }
 
     for (final Map<String, dynamic> item in _records(decoded['personNotes'])) {
-      final PersonNote? note = _tryParse(() => _personNoteFromJson(item));
+      final PersonNote? note = _tryParse(() => personNoteFromJson(item));
       if (note == null ||
           !personRepo.containsId(note.personId) ||
           personRepo.containsNoteId(note.id)) {
@@ -138,7 +160,7 @@ class BackupService {
     }
 
     for (final Map<String, dynamic> item in _records(decoded['matchNotes'])) {
-      final MatchNote? note = _tryParse(() => _matchNoteFromJson(item));
+      final MatchNote? note = _tryParse(() => matchNoteFromJson(item));
       if (note == null ||
           !matchRepo.containsMatchId(note.matchId) ||
           matchRepo.containsNoteId(note.id)) {
@@ -161,8 +183,13 @@ class BackupService {
   }
 
   // --- Serialization ------------------------------------------------------
+  //
+  // Public, and deliberately so: `CloudSyncService` writes the same records to
+  // Firestore one document at a time rather than as one file. A second copy of
+  // person→JSON is the kind of thing that agrees on the day it is written and
+  // silently disagrees a field later, so both paths go through these.
 
-  static Map<String, Object?> _personToJson(Person person) {
+  static Map<String, Object?> personToJson(Person person) {
     return <String, Object?>{
       'id': person.id,
       'firstName': person.firstName,
@@ -220,7 +247,7 @@ class BackupService {
     };
   }
 
-  static Map<String, Object?> _matchToJson(MatchIdea match) {
+  static Map<String, Object?> matchToJson(MatchIdea match) {
     return <String, Object?>{
       'id': match.id,
       'personAId': match.personAId,
@@ -247,7 +274,7 @@ class BackupService {
     };
   }
 
-  static Map<String, Object?> _personNoteToJson(PersonNote note) {
+  static Map<String, Object?> personNoteToJson(PersonNote note) {
     return <String, Object?>{
       'id': note.id,
       'personId': note.personId,
@@ -257,7 +284,7 @@ class BackupService {
     };
   }
 
-  static Map<String, Object?> _matchNoteToJson(MatchNote note) {
+  static Map<String, Object?> matchNoteToJson(MatchNote note) {
     return <String, Object?>{
       'id': note.id,
       'matchId': note.matchId,
@@ -272,7 +299,7 @@ class BackupService {
   /// Returns null (skip) when the record has no id — nothing can reference or
   /// de-duplicate it. Every other field degrades to a default rather than
   /// throwing, so a slightly-off record still restores.
-  static Person? _personFromJson(Map<String, dynamic> json) {
+  static Person? personFromJson(Map<String, dynamic> json) {
     final String? id = _string(json['id']);
     if (id == null) {
       return null;
@@ -337,7 +364,7 @@ class BackupService {
     );
   }
 
-  static MatchIdea? _matchFromJson(Map<String, dynamic> json) {
+  static MatchIdea? matchFromJson(Map<String, dynamic> json) {
     final String? id = _string(json['id']);
     final String? personAId = _string(json['personAId']);
     final String? personBId = _string(json['personBId']);
@@ -382,7 +409,7 @@ class BackupService {
     }).toList();
   }
 
-  static PersonNote? _personNoteFromJson(Map<String, dynamic> json) {
+  static PersonNote? personNoteFromJson(Map<String, dynamic> json) {
     final String? id = _string(json['id']);
     final String? personId = _string(json['personId']);
     if (id == null || personId == null) {
@@ -398,7 +425,7 @@ class BackupService {
     );
   }
 
-  static MatchNote? _matchNoteFromJson(Map<String, dynamic> json) {
+  static MatchNote? matchNoteFromJson(Map<String, dynamic> json) {
     final String? id = _string(json['id']);
     final String? matchId = _string(json['matchId']);
     if (id == null || matchId == null) {

@@ -12,6 +12,14 @@ abstract final class HomeConfig {
   static const int datingCouplesInRow = 15;
   static const int recentActionsInRow = 12;
 
+  /// "רעיונות שהמאגר מציע לך" only appears above this many friends.
+  ///
+  /// Below it the pair scan finds a handful at best and then nothing, so the
+  /// block would be a promise the database cannot keep — and the screen has
+  /// better things to say to a small database, all of which are about growing
+  /// it. Above it there is always something to offer.
+  static const int databaseIdeasMinFriends = 50;
+
   /// A person with no proposal opened for this long counts as someone the
   /// matchmaker has not thought about in a while.
   static const int notThoughtAboutAfterDays = 45;
@@ -39,11 +47,26 @@ abstract final class HomeConfig {
   /// row simply falls back to its other reasons.
   static const int matchScanMaxPeople = 500;
 
-  /// "הלוח שלי": a paper note — avatars centred, the name under them, and the
-  /// actions button along the bottom. Taller than the other cards because it
-  /// carries a note, a reminder and its own button.
+  /// "הלוח שלי": a paper note — the pin at the top, avatars and text centred
+  /// under it, and the actions button along the bottom edge.
+  ///
+  /// Both are *fixed*. The board is one row however many notes are on it, so
+  /// its height must not depend on the longest note's text — a board that grows
+  /// taller as it fills is the thing the redesign set out to remove.
+  /// Both are *fixed* at the base text size and scale together with the system
+  /// font — never with the content. Two notes are always the same box; a longer
+  /// note is clamped, not taller.
   static const double cardWidth = 152;
-  static const double cardHeight = 186;
+  static const double cardHeight = 190;
+
+  /// The cork surface's own padding above and below the notes. The top figure
+  /// is what guarantees the drawing pin is never clipped.
+  static const double boardPaddingTop = 16;
+  static const double boardPaddingBottom = 14;
+
+  /// "הפעולות הבאות שלך": every card is exactly this size, whatever its text
+  /// says. Three fit a phone's width with a small gap.
+  static const double nextActionCardHeight = 158;
 
   /// "הפעולות האחרונות שלך": the maximum phone-width strip card. Height is
   /// content-driven.

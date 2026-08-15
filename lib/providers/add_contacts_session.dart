@@ -217,6 +217,41 @@ class AddContactsSession extends ChangeNotifier {
     return _persistSkipped();
   }
 
+  // ------------------------------------------------------------- selection
+
+  /// The contacts ticked in the list view.
+  ///
+  /// Held here rather than inside the list because the screen around both views
+  /// has to be able to answer one question: is there a selection right now? A
+  /// back press with contacts ticked means "undo the ticking", not "leave" —
+  /// losing a dozen deliberate taps to a stray back gesture is the kind of
+  /// thing that stops people using multi-select at all. It also means a
+  /// selection survives a switch to the swipe view and back.
+  final Set<String> _selectedContactIds = <String>{};
+
+  Set<String> get selectedContactIds =>
+      Set<String>.unmodifiable(_selectedContactIds);
+
+  bool get hasSelection => _selectedContactIds.isNotEmpty;
+
+  bool isSelected(String deviceContactId) =>
+      _selectedContactIds.contains(deviceContactId);
+
+  void toggleSelected(String deviceContactId) {
+    if (!_selectedContactIds.remove(deviceContactId)) {
+      _selectedContactIds.add(deviceContactId);
+    }
+    _notify();
+  }
+
+  void clearSelection() {
+    if (_selectedContactIds.isEmpty) {
+      return;
+    }
+    _selectedContactIds.clear();
+    _notify();
+  }
+
   void recordAdded([int count = 1]) {
     _addedThisSession += count;
     _notify();

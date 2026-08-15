@@ -93,6 +93,17 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ),
         ],
       ),
+      // Adding a friend is the whole point of this screen, so it gets the
+      // thumb's corner as well as the app bar. The icon in the bar stays: it is
+      // where someone who already knows the app looks, and the two open exactly
+      // the same sheet.
+      floatingActionButton: FloatingActionButton(
+        // `endFloat` in RTL is the bottom-left corner — the same place the
+        // messaging apps everyone already uses put theirs.
+        tooltip: 'הוספת חברים',
+        onPressed: () => AddPeopleDialog.show(context),
+        child: const Icon(Icons.add),
+      ),
       // Only the search row is fixed; the banner, gender tabs and the list all
       // scroll together as one page.
       body: Column(

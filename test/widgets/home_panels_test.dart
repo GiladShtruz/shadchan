@@ -5,13 +5,14 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_config.dart';
-import 'package:shadchan/utils/monthly_stats.dart';
+import 'package:shadchan/utils/home_next_actions.dart';
+import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// The redesigned home page is a hierarchy of differently shaped blocks. These
 /// cover the two things that can silently break on a phone: a block that does
-/// not fit its width, and a compact card that no longer fits its own box.
+/// not fit its width, and a fixed-size card that no longer fits its own box.
 void main() {
   Widget wrap(Widget child, {double width = 360, double textScale = 1.0}) {
     return MaterialApp(
@@ -45,6 +46,15 @@ void main() {
     );
   }
 
+  HomeNextAction action(String title, String reason) {
+    return HomeNextAction.person(
+      kind: HomeActionKind.noIdeas,
+      person: contact(title, title, Gender.female),
+      title: title,
+      reason: reason,
+    );
+  }
+
   testWidgets('the opening band and the two action cards fit a phone', (
     WidgetTester tester,
   ) async {
@@ -66,14 +76,13 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('רעיונות שהמאגר מציע לך'), findsOneWidget);
-    expect(find.text('כל חיבור מתחיל ברעיון טוב'), findsNothing);
     expect(find.text('הצגת רעיונות חדשים'), findsOneWidget);
     expect(find.text('הוספת חברים'), findsOneWidget);
     expect(find.text('הוספת רעיון'), findsOneWidget);
-    expect(find.text('לא משאירים אף חבר/ה רווק/ה מאחור'), findsNothing);
-    expect(find.text('שמירת רעיונות במקום אחד'), findsNothing);
 
-    // On a narrow phone both actions get the same room and stay in one row.
+    // Adding friends is deliberately the louder of the two at every width: it
+    // is what makes everything else on the page possible. Both still sit in one
+    // row, level with each other.
     final double addPeople = tester
         .getSize(
           find
@@ -94,7 +103,16 @@ void main() {
               .first,
         )
         .width;
-    expect(addPeople, addIdea);
+    expect(addPeople, greaterThan(addIdea));
+    // Neither tile carries a chevron any more: the whole surface is the button,
+    // and an arrow inside it was one decoration too many.
+    expect(
+      find.descendant(
+        of: find.byType(HomeActionCards),
+        matching: find.byType(HomeArrowButton),
+      ),
+      findsNothing,
+    );
     final double peopleTop = tester.getTopLeft(find.text('הוספת חברים')).dy;
     final double ideaTop = tester.getTopLeft(find.text('הוספת רעיון')).dy;
     expect(peopleTop, closeTo(ideaTop, 1));
@@ -133,8 +151,6 @@ void main() {
     expect(find.text('אלעד & תהילה'), findsOneWidget);
     expect(find.text('יוצאים כבר 3 חודשים'), findsOneWidget);
     expect(find.text('ממשיכים לשמור על קשר עד החתונה! :)'), findsOneWidget);
-    // The blessing was dropped; the banner is the names and the duration.
-    expect(find.text('מאחלים לכם המשך דרך יפה!'), findsNothing);
     // Material mirrors the chevrons in RTL, so the arrow that renders pointing
     // left — the way this page reads forward — is `chevron_right`.
     expect(
@@ -147,7 +163,53 @@ void main() {
     expect(find.text('יאיר & שושנה'), findsOneWidget);
   });
 
-  testWidgets('the month card carries its three numbers, and the tip its link', (
+  testWidgets('the activity card shows one total for the window picked', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    HomeActivityRange picked = HomeActivityRange.week;
+    int opened = 0;
+
+    await tester.pumpWidget(
+      wrap(
+        StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return HomeActivityPanel(
+              range: picked,
+              total: switch (picked) {
+                HomeActivityRange.week => 6,
+                HomeActivityRange.month => 21,
+                HomeActivityRange.allTime => 348,
+              },
+              onRangeChanged: (HomeActivityRange range) =>
+                  setState(() => picked = range),
+              onOpen: () => opened++,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('הפעילות שלך'), findsOneWidget);
+    expect(find.text('השבוע'), findsOneWidget);
+    expect(find.text('החודש'), findsOneWidget);
+    expect(find.text('כל הזמנים'), findsOneWidget);
+    // One number, not a breakdown by kind of action.
+    expect(find.text('6'), findsOneWidget);
+    expect(find.text('21'), findsNothing);
+
+    // Picking a window changes the figure without opening the stats screen.
+    await tester.tap(find.text('כל הזמנים'));
+    await tester.pump();
+    expect(find.text('348'), findsOneWidget);
+    expect(opened, 0);
+  });
+
+  testWidgets('the tip carousel credits its author and follows gender', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -155,28 +217,11 @@ void main() {
 
     await tester.pumpWidget(
       wrap(
-        Column(
-          children: <Widget>[
-            HomeStatsPanel(
-              stats: const MonthStats(
-                ideas: 12,
-                people: 7,
-                dating: 4,
-                weddings: 2,
-              ),
-              previous: const MonthStats(
-                ideas: 9,
-                people: 7,
-                dating: 2,
-                weddings: 1,
-              ),
-              onTap: () {},
-            ),
-            const SizedBox(height: 16),
-            HomeTipStrip(
-              tip: 'אם עולה לך מישהו בראש — תעד מיד. אל תסמוך על הזיכרון.',
-              onAnother: () {},
-            ),
+        const HomeTipCarousel(
+          userGender: Gender.female,
+          tips: <HomeTip>[
+            HomeTip(text: 'אנשים משתנים.', author: 'רבקה לוי'),
+            HomeTip(text: 'תזמון הוא חלק מהשידוך.'),
           ],
         ),
       ),
@@ -184,71 +229,109 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('הנתונים שלך החודש'), findsOneWidget);
-    expect(find.text('טיפ לשדכן'), findsOneWidget);
-    expect(
-      find.text('אם עולה לך מישהו בראש — תעד מיד. אל תסמוך על הזיכרון.'),
-      findsOneWidget,
-    );
+    expect(find.text('טיפ לשדכנית'), findsOneWidget);
+    expect(find.text('טיפ לשדכן'), findsNothing);
+    expect(find.text('אנשים משתנים.'), findsOneWidget);
+    // The author's name rides under the tip, small and quiet.
+    expect(find.text('רבקה לוי'), findsOneWidget);
+    // Tips are read here and written from the settings; no compose entry.
+    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
 
-    // Three of the four numbers fit the row; the weddings count stays on the
-    // stats screen the card opens.
-    expect(find.text('12'), findsOneWidget);
-    expect(find.text('7'), findsOneWidget);
-    expect(find.text('4'), findsOneWidget);
-    expect(find.text('רעיונות שנפתחו'), findsOneWidget);
-    expect(find.text('זוגות שהתחילו לצאת'), findsOneWidget);
-    expect(find.text('+3 מחודש שעבר'), findsOneWidget);
-    expect(find.text('+2 מחודש שעבר'), findsOneWidget);
-    expect(find.text('2'), findsNothing);
-
-    // RTL order keeps the dating metric in the physical left-hand card.
-    expect(
-      tester
-          .getCenter(find.byKey(const ValueKey<String>('home-stat-dating')))
-          .dx,
-      lessThan(
-        tester
-            .getCenter(find.byKey(const ValueKey<String>('home-stat-ideas')))
-            .dx,
-      ),
-    );
-
-    // The arrow points the way the page reads — which in RTL means the mirrored
-    // `chevron_right` — and the tip moves forward rather than reloading, so no
-    // refresh icon is left anywhere.
-    expect(
-      find.descendant(
-        of: find.byType(HomeStatsPanel),
-        matching: find.byIcon(Icons.chevron_right),
-      ),
-      findsOneWidget,
-    );
-    expect(find.byIcon(Icons.refresh), findsNothing);
-    expect(find.text('לטיפ נוסף'), findsOneWidget);
-    expect(find.text('טיפ נוסף'), findsNothing);
+    // Swiping moves to the next tip rather than reloading the same one.
+    await tester.drag(find.byType(PageView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('תזמון הוא חלק מהשידוך.'), findsOneWidget);
   });
 
-  testWidgets('the tip heading follows the matchmaker\'s own gender', (
+  testWidgets('the tip ring has no end to swipe off', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       wrap(
-        HomeTipStrip(
-          tip: 'אנשים משתנים.',
-          onAnother: () {},
-          userGender: Gender.female,
+        const HomeTipCarousel(
+          tips: <HomeTip>[
+            HomeTip(text: 'ראשון'),
+            HomeTip(text: 'שני'),
+          ],
         ),
       ),
     );
     await tester.pump();
 
-    expect(find.text('טיפ לשדכנית'), findsOneWidget);
-    expect(find.text('טיפ לשדכן'), findsNothing);
+    // Backwards from the opening page is a legal move: the pages wrap by
+    // modulo rather than stopping at a first tip.
+    await tester.drag(find.byType(PageView), const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('שני'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('every next-action card is exactly the same box', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      wrap(
+        HomeNextActionsRow(
+          actions: <HomeNextAction>[
+            action('רבקה', 'אין לו כרגע אף רעיון פתוח'),
+            action(
+              'אלישבע-מרים',
+              'הכרטיס לא עודכן כבר ארבעה חודשים, ויש בו כמה שדות חדשים '
+                  'שעדיין ריקים לגמרי',
+            ),
+            action('דנה', 'חסר בכרטיס: גיל'),
+            action('שירה', 'חסר בכרטיס: אזור בארץ'),
+          ],
+          onOpen: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('הפעולות הבאות שלך'), findsOneWidget);
+
+    // Three at a time, and the long reason does not make its card taller or
+    // wider than the short one beside it.
+    final List<Size> sizes = tester
+        .widgetList<Ink>(
+          find.descendant(
+            of: find.byType(HomeNextActionsRow),
+            matching: find.byType(Ink),
+          ),
+        )
+        .map((Ink card) => tester.getSize(find.byWidget(card)))
+        .toList();
+    expect(sizes.length, 3);
+    for (final Size size in sizes) {
+      expect(size.height, sizes.first.height);
+      expect(size.width, sizes.first.width);
+      expect(size.height, HomeConfig.nextActionCardHeight);
+    }
+    expect(find.text('שירה'), findsNothing);
+
+    // "פעולות נוספות" swaps the whole trio rather than stepping one card, and
+    // there is no per-card "next" button anywhere.
+    expect(find.text('הבא'), findsNothing);
+    await tester.tap(find.text('פעולות נוספות'));
+    await tester.pump();
+    expect(find.text('שירה'), findsOneWidget);
+    expect(find.text('רבקה'), findsNothing);
+
+    // The end of the list wraps back to the start; the control never dies.
+    await tester.tap(find.text('פעולות נוספות'));
+    await tester.pump();
+    expect(find.text('רבקה'), findsOneWidget);
   });
 
   for (final double width in <double>[320, 360, 390, 430]) {
-    testWidgets('the three closing banners fit ${width.toInt()}px at 1.5x text', (
+    testWidgets('the closing blocks fit ${width.toInt()}px at 1.5x text', (
       WidgetTester tester,
     ) async {
       await tester.binding.setSurfaceSize(Size(width, 1800));
@@ -269,26 +352,22 @@ void main() {
                 onOpen: (_) {},
               ),
               const SizedBox(height: 14),
-              HomeStatsPanel(
-                stats: const MonthStats(
-                  ideas: 128,
-                  people: 47,
-                  dating: 14,
-                  weddings: 3,
-                ),
-                previous: const MonthStats(
-                  ideas: 27,
-                  people: 5,
-                  dating: 2,
-                  weddings: 2,
-                ),
-                onTap: () {},
+              HomeActivityPanel(
+                range: HomeActivityRange.allTime,
+                total: 1284,
+                onRangeChanged: (_) {},
+                onOpen: () {},
               ),
               const SizedBox(height: 14),
-              HomeTipStrip(
-                tip:
-                    'לפעמים ההבדל בין הצעה שמתקבלת להצעה שנדחית הוא פשוט איך מציגים אותה.',
-                onAnother: () {},
+              const HomeTipCarousel(
+                tips: <HomeTip>[
+                  HomeTip(
+                    text:
+                        'לפעמים ההבדל בין הצעה שמתקבלת להצעה שנדחית הוא פשוט '
+                        'איך מציגים אותה.',
+                    author: 'מרים בת־אברהם',
+                  ),
+                ],
               ),
             ],
           ),
@@ -301,11 +380,9 @@ void main() {
       expect(tester.takeException(), isNull);
       for (final String label in <String>[
         'ממשיכים לשמור על קשר עד החתונה! :)',
-        'זוגות שהתחילו לצאת',
-        '+101 מחודש שעבר',
-        '+42 מחודש שעבר',
-        '+12 מחודש שעבר',
-        'לטיפ נוסף',
+        'הפעילות שלך',
+        'כל הזמנים',
+        'מרים בת־אברהם',
       ]) {
         expect(find.text(label), findsOneWidget, reason: label);
         final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
@@ -316,141 +393,39 @@ void main() {
     });
   }
 
-  testWidgets('a long name wraps instead of being cut, and every card in the '
-      'strip keeps the same box', (WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    // Long enough to need a second line at the strip's width.
-    const String longName = 'אביה אברהם';
-    await tester.pumpWidget(
-      wrap(
-        Column(
-          children: <Widget>[
-            HomeActivityCard(
-              leading: const HomeCardAvatar(person: null, radius: 20),
-              title: longName,
-              action: 'ערכת פרטים',
-              timeAgo: 'לפני יומיים',
-              onTap: () {},
-            ),
-            const SizedBox(height: 10),
-            HomeActivityCard(
-              leading: const HomeCardAvatar(person: null, radius: 20),
-              title: 'דנה',
-              action: 'רעיון חדש',
-              timeAgo: 'עכשיו',
-              onTap: () {},
-            ),
-          ],
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-
-    // The name uses a second line rather than an ellipsis.
-    final RenderParagraph name = tester.renderObject<RenderParagraph>(
-      find.text(longName),
-    );
-    expect(name.didExceedMaxLines, isFalse);
-    expect(name.size.height, greaterThan(20));
-
-    // The action line under it gets the same treatment: a long "what happened"
-    // is given a second line rather than one line and an ellipsis.
-    expect(
-      tester.widget<Text>(find.text('ערכת פרטים · לפני יומיים')).maxLines,
-      2,
-    );
-
-    // A wrapped card is allowed to grow naturally; no fixed-height box clips
-    // either line.
-    final List<Size> sizes = tester
-        .widgetList<HomeActivityCard>(find.byType(HomeActivityCard))
-        .map((HomeActivityCard card) => tester.getSize(find.byWidget(card)))
-        .toList();
-    expect(sizes.first.height, greaterThanOrEqualTo(74));
-    expect(sizes.last.height, greaterThanOrEqualTo(74));
-  });
-
-  testWidgets('the compact strip cards fit their own boxes', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      wrap(
-        Column(
-          children: <Widget>[
-            HomeActivityCard(
-              leading: const HomeCardAvatar(person: null, radius: 20),
-              title: 'ישראלה בת אברהם',
-              action: 'ערכת פרטים',
-              timeAgo: 'לפני יומיים',
-              onTap: () {},
-            ),
-            const SizedBox(height: 10),
-            HomeIdeaCard(
-              personA: null,
-              personB: null,
-              title: 'אריאל & אסתר',
-              status: 'ממתין לתשובה',
-              statusColor: Colors.teal,
-              onTap: () {},
-            ),
-            const SizedBox(height: 10),
-            HomeSuggestionBubble(
-              person: contact('c', 'מיכל', Gender.unknown),
-              reason: 'הכרטיס שלה לא עודכן לאחרונה, שווה לבדוק מה חדש',
-              onTap: () {},
-            ),
-          ],
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(
-      tester.getSize(find.byType(HomeActivityCard)).height,
-      greaterThan(70),
-    );
-    expect(tester.getSize(find.byType(HomeIdeaCard)).height, greaterThan(100));
-    expect(
-      tester.getSize(find.byType(HomeSuggestionBubble)).width,
-      HomeConfig.suggestionBubbleWidth,
-    );
-  });
-
-  testWidgets('open idea content is centred on both axes', (
+  testWidgets('an open idea reads as a bubble on the wave, not a white box', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       wrap(
         Center(
-          child: HomeIdeaCard(
+          child: HomeOpenIdeaBubble(
             personA: null,
             personB: null,
             title: 'אריאל & אסתר',
-            status: 'רעיון',
+            status: 'ממתין לתשובה',
             statusColor: Colors.teal,
             onTap: () {},
           ),
         ),
       ),
     );
+    await tester.pump();
 
-    final Finder card = find.byType(HomeIdeaCard);
-    final Finder content = find
-        .descendant(of: card, matching: find.byType(Column))
-        .first;
-    final Offset cardCenter = tester.getCenter(card);
-    final Offset contentCenter = tester.getCenter(content);
-
-    expect(contentCenter.dx, closeTo(cardCenter.dx, 0.5));
-    expect(contentCenter.dy, closeTo(cardCenter.dy, 0.5));
+    expect(tester.takeException(), isNull);
+    expect(find.text('אריאל & אסתר'), findsOneWidget);
+    expect(find.text('ממתין לתשובה'), findsOneWidget);
     expect(
       tester.widget<Text>(find.text('אריאל & אסתר')).textAlign,
       TextAlign.center,
+    );
+    // No card of its own: the bubble carries no bordered surface.
+    expect(
+      find.descendant(
+        of: find.byType(HomeOpenIdeaBubble),
+        matching: find.byType(Card),
+      ),
+      findsNothing,
     );
   });
 
@@ -470,7 +445,7 @@ void main() {
                 const SizedBox(height: 12),
                 HomeActionCards(onAddPeople: () {}, onAddIdea: () {}),
                 const SizedBox(height: 12),
-                HomeIdeaCard(
+                HomeOpenIdeaBubble(
                   personA: null,
                   personB: null,
                   title: 'אלישבע-מרים & יהונתן-יוסף',
@@ -497,9 +472,6 @@ void main() {
               .renderObject<RenderParagraph>(find.text(label));
           expect(paragraph.didExceedMaxLines, isFalse, reason: label);
         }
-        expect(find.text('כל חיבור מתחיל ברעיון טוב'), findsNothing);
-        expect(find.text('לא משאירים אף חבר/ה רווק/ה מאחור'), findsNothing);
-        expect(find.text('שמירת רעיונות במקום אחד'), findsNothing);
 
         final Iterable<Size> cards = tester
             .widgetList<Material>(
@@ -513,16 +485,13 @@ void main() {
         expect(cards.length, 2);
         expect(cards.first.height, closeTo(cards.last.height, 1));
 
-        final double ideaWidth = tester
-            .getSize(find.byType(HomeIdeaCard))
+        // Two whole bubbles plus a slice of the next always fit the row: that
+        // slice is the only affordance saying it scrolls.
+        final double bubbleWidth = tester
+            .getSize(find.byType(HomeOpenIdeaBubble))
             .width;
         final double inset = width < 350 ? 10 : HomeConfig.carouselPadding;
-        final double gap = width < 350 ? 8 : HomeConfig.cardGap;
-        final double twoCardsEnd = inset + ideaWidth * 2 + gap;
-        expect(twoCardsEnd, lessThan(width));
-        // A third card begins with a small, deliberate slice; the second card
-        // itself is always complete.
-        expect(width - (twoCardsEnd + gap), inInclusiveRange(14, 28));
+        expect(inset + bubbleWidth * 2, lessThan(width));
       });
     }
   }

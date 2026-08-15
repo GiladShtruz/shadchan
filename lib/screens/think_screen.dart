@@ -1,26 +1,28 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
-/// "עוצרים רגע לחשוב על שידוך?" — friends, one after another, each with the
+/// "עוצרים רגע לחשוב על שידוך" — friends, one after another, each with the
 /// reason they came up.
 ///
-/// There is no session here on purpose: no timer, no "5 people left", no
-/// progress. Thinking about one person and closing the screen is a complete
-/// use of it. Everything a matchmaker might then want to do — open an idea,
-/// look at matches, update details, change a status — already lives on the
-/// person's own page, so a tap goes there rather than growing a second set of
-/// actions that would have to be kept in step.
+/// This page is the *whole* of that idea. The home screen shows only the
+/// banner: no faces, no names, no count. Putting people in front of the
+/// matchmaker on the landing page turns a moment of reflection into another
+/// queue to get through, and the point of this is the opposite — it is here
+/// when there is room to think and invisible when there is not.
+///
+/// There is no session here either: no timer, no "5 people left", no progress.
+/// Thinking about one person and closing the screen is a complete use of it.
 class ThinkScreen extends StatefulWidget {
   const ThinkScreen({super.key});
 
@@ -30,6 +32,24 @@ class ThinkScreen extends StatefulWidget {
         builder: (BuildContext context) => const ThinkScreen(),
       ),
     );
+  }
+
+  /// Tapping a person opens the question this page is asking — "who could this
+  /// one go with?" — which is the matches screen, not the profile.
+  ///
+  /// The profile is pushed underneath it rather than skipped, so backing out of
+  /// the matches lands on the person's own card and backing out again returns
+  /// here. That is the route a matchmaker actually walks: consider the pairs,
+  /// then look at who this person is, then move on to the next thought.
+  static void openPerson(BuildContext context, String personId) {
+    final NavigatorState navigator = Navigator.of(context);
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            PersonDetailScreen(personId: personId),
+      ),
+    );
+    openSuggestionsFor(context, personId);
   }
 
   @override
@@ -68,7 +88,7 @@ class _ThinkScreenState extends State<ThinkScreen> {
         backgroundColor: ProfilePalette.canvas(theme),
         foregroundColor: ProfilePalette.text(theme),
         titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
-        title: const Text('עוצרים רגע לחשוב'),
+        title: const Text('עוצרים רגע לחשוב על שידוך'),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -94,7 +114,7 @@ class _ThinkScreenState extends State<ThinkScreen> {
                   return _PersonThought(
                     person: row.person,
                     reason: row.reason,
-                    onTap: () => context.push('/people/${row.person.id}'),
+                    onTap: () => ThinkScreen.openPerson(context, row.person.id),
                   );
                 },
               ),

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/dialogs/match_outcome_dialog.dart';
+import 'package:shadchan/dialogs/match_status_sheet.dart';
 import 'package:shadchan/dialogs/reminder_note_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -90,7 +91,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
     if (match == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('פרטי הצעה')),
+        appBar: AppBar(title: const Text('פרטי רעיון')),
         body: SafeArea(
           child: Center(
             child: Column(
@@ -151,7 +152,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       child: Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
-          title: const Text('פרטי הצעה'),
+          title: const Text('פרטי רעיון'),
           centerTitle: true,
           actions: <Widget>[
             PopupMenuButton<String>(
@@ -432,9 +433,12 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     MatchIdea match,
     _MatchSituation situation,
   ) {
+    // Named for the act, not the state: "יוצאים" read as a label describing
+    // where the proposal already is, which is exactly the confusion the filled
+    // treatment below is there to remove.
     final _ProposalAction dating = _ProposalAction(
-      label: 'יוצאים',
-      icon: Icons.people_alt_outlined,
+      label: 'מתחילים לצאת',
+      icon: Icons.celebration_outlined,
       tone: _ActionTone.go,
       emphasized: true,
       onTap: () => repository.updateStatus(match.id, MatchStatus.dating),
@@ -443,7 +447,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       label: 'סגירת הצעה',
       icon: Icons.close_rounded,
       tone: _ActionTone.stop,
-      onTap: () => _showCloseSheet(context, repository, match),
+      onTap: () => _closeProposal(context, repository, match),
     );
 
     switch (match.status) {
@@ -792,16 +796,11 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     MatchRepository repository,
     MatchIdea match,
   ) async {
-    const List<String> reasons = <String>[
-      'מחכים לתשובה ממנו',
-      'מחכים לתשובה ממנה',
-      'מחכים לתשובה משניהם',
-      'צריך לברר עוד פרטים',
-    ];
-    // The reason is optional — the sheet leads with "בלי סיבה מיוחדת" so the
-    // action never demands an explanation. The reminder that follows is the
-    // part worth encouraging: it is what keeps the proposal from getting stuck
-    // in "בהמתנה" with no date to come back to.
+    // The reasons a proposal actually waits are about one side being
+    // unavailable — that is what the matchmaker is recording, and it is what
+    // makes "בהמתנה" mean something when they come back to it. "בלי סיבה
+    // מיוחדת" sits with the rest rather than above them, so the list reads as
+    // one set of answers instead of an escape hatch and a form.
     final String? reason = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -810,21 +809,16 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const ListTile(
-                title: Text('למה ההצעה בהמתנה?'),
-                subtitle: Text('לא חובה'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.pause_rounded),
-                title: const Text('בלי סיבה מיוחדת'),
-                onTap: () => Navigator.of(sheetContext).pop(''),
-              ),
-              const Divider(height: 1),
-              for (final String reason in reasons)
+              const ListTile(title: Text('למה ההצעה בהמתנה?')),
+              for (final String reason in MatchWaitingReasons.options)
                 ListTile(
                   title: Text(reason),
                   onTap: () => Navigator.of(sheetContext).pop(reason),
                 ),
+              ListTile(
+                title: const Text(MatchWaitingReasons.noReason),
+                onTap: () => Navigator.of(sheetContext).pop(''),
+              ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
                 title: const Text('סיבה אחרת'),
@@ -865,40 +859,19 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     );
   }
 
-  Future<void> _showCloseSheet(
+  /// Closing a proposal that never reached "מתחילים לצאת".
+  ///
+  /// There used to be a sheet in front of this asking whether the proposal did
+  /// not progress or whether they dated and stopped. It was a question with a
+  /// known answer: a couple who dated carry the "יוצאים" status and are offered
+  /// "הפסיקו לצאת" instead, so anything reaching here by definition never got
+  /// that far. The step is gone and the reason is asked straight away.
+  Future<void> _closeProposal(
     BuildContext context,
     MatchRepository repository,
     MatchIdea match,
   ) async {
-    final MatchStatus? status = await showModalBottomSheet<MatchStatus>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const ListTile(title: Text('סגירת ההצעה')),
-              ListTile(
-                leading: const Icon(Icons.close_rounded),
-                title: const Text('ההצעה לא התקדמה'),
-                onTap: () =>
-                    Navigator.of(sheetContext).pop(MatchStatus.rejected),
-              ),
-              ListTile(
-                leading: const Icon(Icons.heart_broken_outlined),
-                title: const Text('יצאו ולא המשיכו'),
-                onTap: () => Navigator.of(sheetContext).pop(MatchStatus.dated),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
-    if (status != null && context.mounted) {
-      await _showOutcomeDialog(context, repository, match, status);
-    }
+    await _showOutcomeDialog(context, repository, match, MatchStatus.rejected);
   }
 
   Future<void> _showOutcomeDialog(
@@ -2049,47 +2022,53 @@ class _ActionTile extends StatelessWidget {
     final Color ink = action.ink;
     final bool lead = action.emphasized;
 
+    // The leading action is **filled and raised**; the other two are quiet
+    // tinted tiles. The previous version gave the leader a slightly stronger
+    // wash of the same tint plus a border, which is exactly how this app draws
+    // a *selected* chip — so every new proposal looked as though the couple
+    // were already out. A solid button with a shadow and white text cannot be
+    // mistaken for a state: nothing else in the app that reports a status is
+    // filled and lifted off the surface.
+    final Color surface = lead
+        ? ink
+        : ink.withValues(alpha: dark ? 0.18 : 0.09);
+    final Color label = lead ? Colors.white : ink;
+
     return Material(
-      color: ink.withValues(alpha: dark ? 0.20 : (lead ? 0.16 : 0.09)),
+      color: surface,
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
+      elevation: lead ? 3 : 0,
+      shadowColor: ink.withValues(alpha: 0.5),
       child: InkWell(
         onTap: action.onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: lead
-                ? Border.all(color: ink.withValues(alpha: 0.55), width: 1.4)
-                : null,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 6,
+            vertical: lead ? 14 : 11,
           ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: 6,
-              vertical: lead ? 14 : 11,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Icon(action.icon, size: lead ? 24 : 20, color: ink),
-                const SizedBox(height: 7),
-                // The label is the whole tile now. A name that does not fit the
-                // tile's width wraps onto a second line instead of being cut.
-                Text(
-                  action.label,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  style:
-                      (lead
-                              ? theme.textTheme.titleSmall
-                              : theme.textTheme.labelMedium)
-                          ?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: ink,
-                            height: 1.2,
-                          ),
-                ),
-              ],
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(action.icon, size: lead ? 24 : 20, color: label),
+              const SizedBox(height: 7),
+              // The label is the whole tile. A phrase that does not fit the
+              // tile's width wraps onto a second line instead of being cut.
+              Text(
+                action.label,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style:
+                    (lead
+                            ? theme.textTheme.titleSmall
+                            : theme.textTheme.labelMedium)
+                        ?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: label,
+                          height: 1.2,
+                        ),
+              ),
+            ],
           ),
         ),
       ),

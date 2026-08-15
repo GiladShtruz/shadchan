@@ -26,6 +26,7 @@ class PersonPickerSheet extends StatefulWidget {
     this.candidatePredicate,
     this.emptySubtitle = '{נסה|נסי} לחפש בשם אחר',
     this.allowCreateOutsideDatabase = false,
+    this.filterKey,
   });
 
   final Gender? filterGender;
@@ -43,6 +44,16 @@ class PersonPickerSheet extends StatefulWidget {
   /// a match can be opened with a person who has not been added yet.
   final bool allowCreateOutsideDatabase;
 
+  /// Turns on the filter button, and is the key its choices are remembered
+  /// under.
+  ///
+  /// Null on the pickers that already arrive pre-filtered — the התאמות flow
+  /// hands this sheet a candidate list that is *already* the answer to a
+  /// filter, and offering a second one there would be two filters fighting.
+  /// Set on the open-a-proposal flow, where the alternative is scrolling the
+  /// whole database by name.
+  final String? filterKey;
+
   static Future<Person?> show(
     BuildContext context, {
     required String title,
@@ -56,6 +67,7 @@ class PersonPickerSheet extends StatefulWidget {
     PersonFilter? candidatePredicate,
     String emptySubtitle = '{נסה|נסי} לחפש בשם אחר',
     bool allowCreateOutsideDatabase = false,
+    String? filterKey,
   }) {
     return showModalBottomSheet<Person>(
       context: context,
@@ -76,6 +88,7 @@ class PersonPickerSheet extends StatefulWidget {
             candidatePredicate: candidatePredicate,
             emptySubtitle: emptySubtitle,
             allowCreateOutsideDatabase: allowCreateOutsideDatabase,
+            filterKey: filterKey,
           ),
         );
       },
@@ -152,10 +165,82 @@ Future<Person?> _persistNewPerson(
 class _PersonPickerSheetState extends State<PersonPickerSheet> {
   final TextEditingController _searchController = TextEditingController();
 
+  /// The matchmaker's own narrowing, on top of whatever the caller already
+  /// required. Restored from the last time this picker was used, because
+  /// somebody opening proposals for a 27-year-old דתי לאומי is going to want
+  /// the same window again in five minutes.
+  MatchProposalFilters? _filters;
+
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
+    final String? key = widget.filterKey;
+    if (key != null) {
+      _filters = MatchProposalFilterSheet.savedFiltersFor(key);
+    }
+  }
+
+  bool get _hasFilters {
+    final MatchProposalFilters? filters = _filters;
+    return filters != null &&
+        (filters.minAge != null ||
+            filters.maxAge != null ||
+            filters.religiousLevels.isNotEmpty ||
+            filters.religiousLevelOtherLabels.isNotEmpty ||
+            filters.profileStatuses.isNotEmpty);
+  }
+
+  /// True when [person] survives the matchmaker's own filter. Deliberately the
+  /// same shape as the caller-supplied constraints above it, so the two read as
+  /// one list of reasons a candidate is not shown.
+  bool _passesFilters(Person person) {
+    final MatchProposalFilters? filters = _filters;
+    if (filters == null) {
+      return true;
+    }
+
+    final int? age = person.age;
+    if (filters.minAge != null && (age == null || age < filters.minAge!)) {
+      return false;
+    }
+    if (filters.maxAge != null && (age == null || age > filters.maxAge!)) {
+      return false;
+    }
+
+    final bool hasReligiousFilter =
+        filters.religiousLevels.isNotEmpty ||
+        filters.religiousLevelOtherLabels.isNotEmpty;
+    if (hasReligiousFilter &&
+        !filters.religiousLevels.contains(person.religiousLevel) &&
+        !(person.religiousLevel == ReligiousLevel.other &&
+            filters.religiousLevelOtherLabels.contains(
+              person.religiousLevelOther?.trim(),
+            ))) {
+      return false;
+    }
+
+    if (filters.profileStatuses.isNotEmpty &&
+        !filters.profileStatuses.contains(person.profileStatus)) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _openFilters() async {
+    final String? key = widget.filterKey;
+    if (key == null) {
+      return;
+    }
+    final MatchProposalFilters? picked = await MatchProposalFilterSheet.show(
+      context,
+      targetGender: widget.filterGender ?? Gender.unknown,
+      sourcePersonId: key,
+      initialFilters: _filters,
+    );
+    if (picked != null && mounted) {
+      setState(() => _filters = picked);
+    }
   }
 
   @override
@@ -218,6 +303,10 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
         return false;
       }
 
+      if (!_passesFilters(person)) {
+        return false;
+      }
+
       if (query.isEmpty) {
         return true;
       }
@@ -237,19 +326,56 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
           children: <Widget>[
             Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'חיפוש לפי שם...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: _searchController.clear,
-                      ),
-              ),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'חיפוש לפי שם...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: query.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: _searchController.clear,
+                            ),
+                    ),
+                  ),
+                ),
+                // Searching by name only works when you already know whose name
+                // you want. Opening a proposal is the opposite: the matchmaker
+                // is looking for whoever fits, so the same filters התאמות uses
+                // are offered here too.
+                if (widget.filterKey != null) ...<Widget>[
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    tooltip: 'סינון',
+                    onPressed: _openFilters,
+                    isSelected: _hasFilters,
+                    icon: Icon(
+                      _hasFilters
+                          ? Icons.filter_alt
+                          : Icons.filter_alt_outlined,
+                    ),
+                  ),
+                ],
+              ],
             ),
+            if (_hasFilters) ...<Widget>[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _filters = null),
+                  icon: const Icon(Icons.close, size: 16),
+                  label: const Text('ניקוי הסינון'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Expanded(
               child: people.isEmpty

@@ -1,15 +1,22 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/backup_import_feedback.dart';
+import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/backup_service.dart';
+import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/excel_export_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -47,6 +54,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final ThemeModeProvider themeModeProvider = context
         .watch<ThemeModeProvider>();
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
+    final AccountProvider account = context.watch<AccountProvider>();
+    final SyncProvider sync = context.watch<SyncProvider>();
 
     final List<Widget> sections = <Widget>[
       _ProfileHeader(profile: profile, onEditPhoto: () => _editPhoto(profile)),
@@ -83,7 +92,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
       const SizedBox(height: 24),
-      const SectionHeader(title: 'גיבוי ושחזור'),
+      // Tips are read on the home screen and written here. The admin entry
+      // only appears for the reviewing account; the rules refuse the queue to
+      // anyone else regardless of what the app chooses to draw.
+      const SectionHeader(title: 'טיפים לשדכנים'),
+      Card(
+        child: Column(
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.lightbulb_outline),
+              title: const Text('הוספת טיפ'),
+              subtitle: const Text('טיפ משלך, שיוצג לשדכנים אחרים לאחר אישור'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/profile/tips'),
+            ),
+            if (account.isTipsAdmin) ...<Widget>[
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.verified_outlined),
+                title: const Text('אישור טיפים'),
+                subtitle: const Text('טיפים שנשלחו וממתינים לבדיקה'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/profile/tips-review'),
+              ),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+      const SectionHeader(title: 'החשבון שלי'),
+      _AccountCard(
+        account: account,
+        onSignIn: () => _signIn(account, sync, personRepo, matchRepo, profile),
+        onSignOut: () => _confirmSignOut(account, sync),
+      ),
+      const SizedBox(height: 24),
+      const SectionHeader(title: 'גיבוי בענן'),
+      _CloudBackupCard(
+        account: account,
+        sync: sync,
+        onBackUpNow: () => _backUpNow(sync, personRepo, matchRepo, profile),
+        onRestore: () => _confirmRestore(sync, personRepo, matchRepo, profile),
+      ),
+      const SizedBox(height: 24),
+      const SectionHeader(title: 'גיבוי לקובץ'),
       Card(
         child: Column(
           children: <Widget>[
@@ -288,6 +340,167 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await ShareUtils.shareText(card, photoPaths: photos);
   }
 
+  // --- The Google account -------------------------------------------------
+
+  Future<void> _signIn(
+    AccountProvider account,
+    SyncProvider sync,
+    PersonRepository personRepo,
+    MatchRepository matchRepo,
+    UserProfileProvider userProfile,
+  ) async {
+    final AccountSignInResult result = await account.signIn();
+    if (!mounted) {
+      return;
+    }
+    if (result.outcome == AccountSignInOutcome.failure) {
+      _showSnackBar(result.message!);
+      return;
+    }
+    if (result.outcome == AccountSignInOutcome.success) {
+      // The first backup runs now rather than at the next app open, so the
+      // section directly below stops saying "עדיין לא גובה" while the person
+      // who just connected the account is still looking at it.
+      unawaited(
+        sync.sync(
+          personRepo: personRepo,
+          matchRepo: matchRepo,
+          profile: userProfile,
+        ),
+      );
+    }
+  }
+
+  /// Asks first, and says what is actually lost. Signing out is not
+  /// destructive here — the database is in Hive either way — and saying so is
+  /// the difference between a confirmation and a scare.
+  Future<void> _confirmSignOut(
+    AccountProvider account,
+    SyncProvider sync,
+  ) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('יציאה מהחשבון?'),
+          content: const Text(
+            'המאגר שלך שמור במכשיר וימשיך לעבוד כרגיל. רק החיבור לחשבון '
+            'Google יתנתק.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('יציאה'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+    await account.signOut();
+    // The ledger describes what is in *that* account's cloud tree. Signing
+    // back into a different one and diffing against it would leave the new
+    // account's backup missing everything the old one happened to hold.
+    await sync.forget();
+  }
+
+  // --- The cloud backup ---------------------------------------------------
+
+  Future<void> _backUpNow(
+    SyncProvider sync,
+    PersonRepository personRepo,
+    MatchRepository matchRepo,
+    UserProfileProvider profile,
+  ) async {
+    final CloudSyncResult result = await sync.sync(
+      personRepo: personRepo,
+      matchRepo: matchRepo,
+      profile: profile,
+    );
+    if (!mounted) {
+      return;
+    }
+    // Success is silent — the card's own "גובה לפני רגע" line already says it,
+    // and a snackbar for every tap of a button whose result is visible above it
+    // is the kind of confirmation this app removed everywhere else.
+    final String? message = switch (result) {
+      CloudSyncResult.success || CloudSyncResult.upToDate => null,
+      CloudSyncResult.skipped => 'צריך להתחבר לחשבון Google כדי לגבות',
+      CloudSyncResult.notPermitted => 'אין הרשאה לגבות. יש לפנות לתמיכה.',
+      CloudSyncResult.empty || CloudSyncResult.failed =>
+        'הגיבוי לא הושלם. יש לוודא חיבור לאינטרנט ולנסות שוב.',
+    };
+    if (message != null) {
+      _showSnackBar(message);
+    }
+  }
+
+  /// Restore asks first, because it is the one action here that changes the
+  /// database. What it does *not* do is overwrite: the merge is additive and
+  /// skips ids that already exist, and the dialog says so — someone restoring
+  /// onto a phone that already has people needs to know their work is not
+  /// about to be replaced.
+  Future<void> _confirmRestore(
+    SyncProvider sync,
+    PersonRepository personRepo,
+    MatchRepository matchRepo,
+    UserProfileProvider profile,
+  ) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('שחזור מהענן?'),
+          content: const Text(
+            'נוסיף למאגר שבמכשיר את כל מי שנמצא בגיבוי ועדיין לא אצלך, וגם '
+            'נשלים פרטים חסרים בפרופיל שלך. כרטיסים ופרטים שכבר קיימים כאן '
+            'יישארו בדיוק כפי שהם.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('שחזור'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    final CloudRestoreOutcome outcome = await sync.restore(
+      personRepo: personRepo,
+      matchRepo: matchRepo,
+      profile: profile,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    final ImportResult? result = outcome.result;
+    if (result != null) {
+      await BackupImportFeedback.showResultDialog(context, result);
+      return;
+    }
+    _showSnackBar(switch (outcome.status) {
+      CloudSyncResult.empty => 'אין עדיין גיבוי בענן',
+      CloudSyncResult.skipped => 'צריך להתחבר לחשבון Google כדי לשחזר',
+      CloudSyncResult.notPermitted => 'אין הרשאה לשחזר. יש לפנות לתמיכה.',
+      _ => 'השחזור לא הושלם. יש לוודא חיבור לאינטרנט ולנסות שוב.',
+    });
+  }
+
   // --- Backup and restore -------------------------------------------------
 
   Future<void> _exportData(
@@ -398,6 +611,236 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+/// The Google account: connected, or an invitation to connect one.
+///
+/// Written as three plain states rather than one clever tile, because the
+/// unavailable state is the one that has to explain itself — a device with no
+/// network gets a sentence saying so instead of a button that fails when
+/// tapped.
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({
+    required this.account,
+    required this.onSignIn,
+    required this.onSignOut,
+  });
+
+  final AccountProvider account;
+  final VoidCallback onSignIn;
+  final VoidCallback onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (account.isSignedIn) {
+      final String? email = account.email;
+      return Card(
+        child: Column(
+          children: <Widget>[
+            ListTile(
+              leading: _AccountAvatar(
+                photoUrl: account.photoUrl,
+                displayName: account.displayName ?? email,
+              ),
+              title: Text(
+                account.displayName ?? email ?? 'מחובר',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: email == null
+                  ? null
+                  : Text(email, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: account.isBusy
+                  ? const _TileSpinner()
+                  : Icon(Icons.logout, color: theme.colorScheme.error),
+              title: Text(
+                'יציאה מהחשבון',
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+              enabled: !account.isBusy,
+              onTap: account.isBusy ? null : onSignOut,
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!account.isFirebaseReady) {
+      return Card(
+        child: ListTile(
+          leading: const Icon(Icons.cloud_off_outlined),
+          title: const Text('החיבור לחשבון אינו זמין כרגע'),
+          subtitle: const Text('יש לוודא חיבור לאינטרנט ולנסות שוב מאוחר יותר'),
+          enabled: false,
+        ),
+      );
+    }
+
+    return Card(
+      child: ListTile(
+        leading: account.isBusy
+            ? const _TileSpinner()
+            : const FaIcon(FontAwesomeIcons.google, size: 20),
+        title: const Text('התחברות עם Google'),
+        subtitle: const Text('כדי שנוכל לגבות את המאגר ולשחזר אותו במכשיר חדש'),
+        enabled: !account.isBusy,
+        onTap: account.isBusy ? null : onSignIn,
+      ),
+    );
+  }
+}
+
+/// The cloud backup: whether it is on, when it last ran, and the two things
+/// that can be done to it.
+///
+/// Signed out, it is a single explanatory line and nothing else. Offering
+/// `גיבוי עכשיו` to someone with no account would be a button whose only
+/// possible outcome is an error, and the account section directly above is
+/// already the answer.
+class _CloudBackupCard extends StatelessWidget {
+  const _CloudBackupCard({
+    required this.account,
+    required this.sync,
+    required this.onBackUpNow,
+    required this.onRestore,
+  });
+
+  final AccountProvider account;
+  final SyncProvider sync;
+  final VoidCallback onBackUpNow;
+  final VoidCallback onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (!account.isSignedIn) {
+      return Card(
+        child: ListTile(
+          leading: const Icon(Icons.cloud_off_outlined),
+          title: const Text('הגיבוי בענן כבוי'),
+          subtitle: const Text(
+            'אחרי התחברות לחשבון Google המאגר יגובה אוטומטית, ואפשר יהיה '
+            'לשחזר אותו במכשיר חדש',
+          ),
+        ),
+      );
+    }
+
+    final bool busy = sync.isSyncing || sync.isRestoring;
+
+    return Card(
+      child: Column(
+        children: <Widget>[
+          ListTile(
+            leading: sync.isSyncing
+                ? const _TileSpinner()
+                : Icon(
+                    Icons.cloud_done_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+            title: const Text('גיבוי אוטומטי פעיל'),
+            subtitle: Text(_statusLine(sync)),
+            trailing: busy
+                ? null
+                : IconButton(
+                    onPressed: onBackUpNow,
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'גיבוי עכשיו',
+                  ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: sync.isRestoring
+                ? const _TileSpinner()
+                : const Icon(Icons.cloud_download_outlined),
+            title: const Text('שחזור מהענן'),
+            subtitle: const Text('הוספת הכרטיסים מהגיבוי למאגר שבמכשיר'),
+            enabled: !busy,
+            onTap: busy ? null : onRestore,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Says when, not whether. A failed attempt still reports the last good
+  /// backup alongside it, because "נסינו ולא הצלחנו" without a date leaves
+  /// someone unable to tell a hiccup from a month of silence.
+  static String _statusLine(SyncProvider sync) {
+    if (sync.isSyncing) {
+      return 'מגבה עכשיו…';
+    }
+    final DateTime? at = sync.lastSyncedAt;
+    final String when = at == null ? 'עדיין לא גובה' : 'גובה ${_relative(at)}';
+    return switch (sync.lastResult) {
+      CloudSyncResult.failed ||
+      CloudSyncResult.notPermitted => '$when · הניסיון האחרון נכשל',
+      _ => when,
+    };
+  }
+
+  static String _relative(DateTime at) {
+    final Duration ago = DateTime.now().difference(at);
+    if (ago.inMinutes < 1) {
+      return 'לפני רגע';
+    }
+    if (ago.inHours < 1) {
+      return 'לפני ${ago.inMinutes} דקות';
+    }
+    if (ago.inHours < 24) {
+      return ago.inHours == 1 ? 'לפני שעה' : 'לפני ${ago.inHours} שעות';
+    }
+    final int days = ago.inDays;
+    if (days == 1) {
+      return 'אתמול';
+    }
+    if (days < 30) {
+      return 'לפני $days ימים';
+    }
+    return 'ב-${DateFormat('d.M.yyyy').format(at)}';
+  }
+}
+
+/// The Google profile picture, falling back to the initial and then to a
+/// generic icon — the photo is a remote URL and may simply not load.
+class _AccountAvatar extends StatelessWidget {
+  const _AccountAvatar({required this.photoUrl, required this.displayName});
+
+  final String? photoUrl;
+  final String? displayName;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String initial = (displayName ?? '').trim().isEmpty
+        ? ''
+        : displayName!.trim().characters.first;
+
+    return CircleAvatar(
+      radius: 20,
+      backgroundColor: theme.colorScheme.primaryContainer,
+      foregroundImage: photoUrl == null ? null : NetworkImage(photoUrl!),
+      child: initial.isEmpty
+          ? Icon(
+              Icons.person_outline,
+              size: 20,
+              color: theme.colorScheme.onPrimaryContainer,
+            )
+          : Text(
+              initial,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+    );
   }
 }
 

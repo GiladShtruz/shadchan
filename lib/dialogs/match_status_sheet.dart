@@ -7,6 +7,28 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/enums.dart';
 
+/// Why a proposal is waiting.
+///
+/// One list, shared by the proposal screen and the status sheet, because a
+/// reason written in one place is read in the other — two lists would drift and
+/// the same pause would be worded two ways depending on where it was set.
+///
+/// They are all about one side being unavailable, which is what a pause
+/// actually is. "מחכים לתשובה" was dropped: that is not a pause, it is the
+/// ordinary state of an open proposal.
+abstract final class MatchWaitingReasons {
+  static const List<String> options = <String>[
+    'הוא בהפסקה',
+    'היא בהפסקה',
+    'הוא תפוס',
+    'היא תפוסה',
+  ];
+
+  /// Offered alongside the rest rather than above them: pausing a proposal
+  /// never has to be justified.
+  static const String noReason = 'בלי סיבה מיוחדת';
+}
+
 /// The "עדכון סטטוס" menu that opens over a proposal card. Everything happens
 /// in place: picking "בהמתנה" asks why and when to look again, and picking
 /// "נדחה" asks who ended it and why before closing the proposal.
@@ -119,20 +141,20 @@ abstract final class MatchStatusSheet {
                   child: Align(
                     alignment: AlignmentDirectional.centerStart,
                     child: Text(
-                      'למה ההצעה ממתינה?',
+                      'למה ההצעה בהמתנה?',
                       style: Theme.of(sheetContext).textTheme.titleMedium,
                     ),
                   ),
                 ),
                 for (final String option in <String>[
-                  'הוא בהפסקה',
-                  'היא בהפסקה',
-                  'הוא תפוס',
-                  'היא תפוסה',
+                  ...MatchWaitingReasons.options,
+                  MatchWaitingReasons.noReason,
                 ])
                   ListTile(
                     title: Text(option),
-                    onTap: () => Navigator.of(sheetContext).pop(option),
+                    onTap: () => Navigator.of(
+                      sheetContext,
+                    ).pop(option == MatchWaitingReasons.noReason ? '' : option),
                   ),
                 const SizedBox(height: 8),
               ],

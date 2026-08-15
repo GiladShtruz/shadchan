@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 
@@ -51,6 +52,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+
+    // The welcome comes first, on the very first launch only. It says what the
+    // app is and — the part that actually changes behaviour — that the database
+    // is private, before anybody is asked to type anything into it.
+    if (!context.watch<UserProfileProvider>().hasSeenIntro) {
+      return IntroScreens(
+        onFinished: () => context.read<UserProfileProvider>().markIntroSeen(),
+      );
+    }
 
     return Scaffold(
       body: SafeArea(

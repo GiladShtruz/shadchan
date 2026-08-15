@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "769854167286-fp69ga20d5inqm6cjeecc0f05f9c8pl8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gilad.shadchan",
+            "certificate_hash": "401d602547863af00d87bafb12c639580ac07b65"
+          }
+        },
+        {
+          "client_id": "769854167286-vsg435fo6a821sjgqj2tih0lqhbj1d97.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gilad.shadchan",
+            "certificate_hash": "179e6ec2f8e099f96d686dd0b1035fac105e545b"
+          }
+        },
+        {
           "client_id": "769854167286-sjvi4i4petocs4mi1ousrpp7nuq38k8m.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -29,6 +45,13 @@
             {
               "client_id": "769854167286-sjvi4i4petocs4mi1ousrpp7nuq38k8m.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "769854167286-5na6e01udi9gammkpo7qjtc2vr9c9idr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.gilad.shadchan"
+              }
             }
           ]
         }

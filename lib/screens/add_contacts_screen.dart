@@ -18,8 +18,13 @@ class AddContactsScreen extends StatefulWidget {
 }
 
 class _AddContactsScreenState extends State<AddContactsScreen> {
-  _AddContactsMode _mode = _AddContactsMode.swipe;
-  bool _listMounted = false;
+  /// The list leads. Swiping is the more enjoyable way through a long address
+  /// book, but it is also the one that asks a decision per contact with no way
+  /// to see what is coming — landing on it is a surprise, and a matchmaker who
+  /// opened this screen to add three people they already have in mind wants to
+  /// find them, not be dealt them one at a time. Swiping stays a tab away.
+  _AddContactsMode _mode = _AddContactsMode.list;
+  bool _listMounted = true;
 
   /// The one store both views read and write. Owned here so the two halves of
   /// the screen are literally looking at the same contacts, the same progress
@@ -46,6 +51,16 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
   }
 
   Future<void> _handleLeave() async {
+    // A back press with contacts ticked undoes the ticking and nothing else.
+    // Leaving on the first press throws away a dozen deliberate taps, which is
+    // what stops people trusting multi-select at all; a second press, with
+    // nothing selected, leaves as before.
+    final AddContactsSession? session = _session;
+    if (session != null && session.hasSelection) {
+      session.clearSelection();
+      return;
+    }
+
     final int added = _session?.addedThisSession ?? 0;
     if (added > 1) {
       await ContactsAddedCelebration.show(
@@ -154,16 +169,17 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
                       ),
                     ),
                   ),
+                  // The default view is named first.
                   segments: const <ButtonSegment<_AddContactsMode>>[
-                    ButtonSegment<_AddContactsMode>(
-                      value: _AddContactsMode.swipe,
-                      icon: Icon(Icons.style),
-                      label: Text('החלקה'),
-                    ),
                     ButtonSegment<_AddContactsMode>(
                       value: _AddContactsMode.list,
                       icon: Icon(Icons.view_list),
                       label: Text('רשימה'),
+                    ),
+                    ButtonSegment<_AddContactsMode>(
+                      value: _AddContactsMode.swipe,
+                      icon: Icon(Icons.style),
+                      label: Text('החלקה'),
                     ),
                   ],
                   selected: <_AddContactsMode>{_mode},

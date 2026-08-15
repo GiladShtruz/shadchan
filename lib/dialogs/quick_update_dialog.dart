@@ -123,7 +123,11 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: Gender.values.map((Gender gender) {
+              // Only the two real answers; "לא מוגדר" is not an outcome the
+              // matchmaker should be able to choose.
+              children: <Gender>[Gender.male, Gender.female].map((
+                Gender gender,
+              ) {
                 return ChoiceChip(
                   label: Text(gender.displayName),
                   selected: _gender == gender,

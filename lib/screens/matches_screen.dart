@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/reminders_panel.dart';
+import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -434,6 +435,14 @@ class _MatchesScreenState extends State<MatchesScreen> {
       highlighted: isDueReminder,
       onTap: () => context.push('/matches/${match.id}'),
       onOpenWhatsApp: _openWhatsApp,
+      // Everything a matchmaker does after a round of phone calls — this one is
+      // on a break, that one is out, close that one — is now doable from the
+      // list. Opening a proposal to change one word was the reason statuses
+      // went stale.
+      onPersonStatusPicked: (Person person, ProfileStatus status) =>
+          MatchQuickActions.setPersonStatus(context, person, status),
+      onQuickAction: (MatchQuickAction action) =>
+          MatchQuickActions.run(context, action, match),
     );
   }
 

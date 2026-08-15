@@ -18,9 +18,12 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
+import 'package:shadchan/providers/sync_provider.dart';
+import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/profile_screen.dart';
@@ -111,6 +114,9 @@ void main() {
   ) async {
     final Box<dynamic> settings = Hive.box<dynamic>('settings');
     await tester.runAsync(() => settings.delete('userIsSingle'));
+    // The first-launch welcome sits in front of the profile form; this test is
+    // about the form, so it starts from an install that has already read it.
+    await tester.runAsync(() => settings.put('userSeenIntro', true));
     AppRouter.router.go('/onboarding');
 
     await tester.pumpWidget(_buildTestApp());
@@ -143,6 +149,30 @@ void main() {
           )
           .onPressed,
       isNotNull,
+    );
+  });
+
+  testWidgets('The account section explains itself when Firebase is down', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildProfileTestApp());
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('החשבון שלי'), 200);
+    await tester.pumpAndSettle();
+
+    // Without Firebase there is no sign-in button to offer — a tap could only
+    // fail — so the tile says why instead of pretending to work.
+    expect(find.text('החיבור לחשבון אינו זמין כרגע'), findsOneWidget);
+    expect(find.text('התחברות עם Google'), findsNothing);
+    expect(find.text('יציאה מהחשבון'), findsNothing);
+    expect(
+      tester
+          .widget<ListTile>(
+            find.widgetWithText(ListTile, 'החיבור לחשבון אינו זמין כרגע'),
+          )
+          .enabled,
+      isFalse,
     );
   });
 
@@ -611,13 +641,16 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('פרטי הצעה'), findsOneWidget);
+    expect(find.text('פרטי רעיון'), findsOneWidget);
     expect(find.text('הלל אבולעפיה'), findsOneWidget);
     expect(find.text('כרמל לוי'), findsOneWidget);
     // One derived line, and the three ways on in a single area.
     expect(find.text('פתוחה · יאללה לקדם'), findsOneWidget);
     expect(find.text('עדכון הצעה'), findsOneWidget);
-    expect(find.text('יוצאים'), findsOneWidget);
+    // Named for the act rather than the state, so the tile cannot be read as a
+    // label saying where the proposal already is.
+    expect(find.text('מתחילים לצאת'), findsOneWidget);
+    expect(find.text('יוצאים'), findsNothing);
     expect(find.text('העברה להמתנה'), findsOneWidget);
     expect(find.text('סגירת הצעה'), findsOneWidget);
     expect(find.text('סטטוס הצעה'), findsNothing);
@@ -1399,6 +1432,21 @@ Widget _buildTestApp() {
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
       ),
+      // Lazy, so this only costs anything if a test actually routes to the
+      // profile. See `_buildProfileTestApp` for why Firebase is kept out.
+      ChangeNotifierProvider<AccountProvider>(
+        create: (_) => AccountProvider(connect: () async {}),
+      ),
+      ChangeNotifierProvider<SyncProvider>(
+        create: (_) =>
+            SyncProvider(Hive.box<dynamic>('settings'), enabled: false),
+      ),
+      // Same seam, same reason: disabled, the tips provider serves whatever is
+      // in the local cache and never reaches Firebase.
+      ChangeNotifierProvider<TipsProvider>(
+        create: (_) =>
+            TipsProvider(Hive.box<dynamic>('settings'), enabled: false),
+      ),
     ],
     child: const App(),
   );
@@ -1421,6 +1469,23 @@ Widget _buildProfileTestApp() {
       ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+      // Firebase is never reached under `flutter test`: `initializeApp` would
+      // hang inside the fake-async zone and leave its deadline timer pending.
+      // The provider settles on "not ready", which is exactly the state the
+      // account section has to be able to draw.
+      ChangeNotifierProvider<AccountProvider>(
+        create: (_) => AccountProvider(connect: () async {}),
+      ),
+      ChangeNotifierProvider<SyncProvider>(
+        create: (_) =>
+            SyncProvider(Hive.box<dynamic>('settings'), enabled: false),
+      ),
+      // Same seam, same reason: disabled, the tips provider serves whatever is
+      // in the local cache and never reaches Firebase.
+      ChangeNotifierProvider<TipsProvider>(
+        create: (_) =>
+            TipsProvider(Hive.box<dynamic>('settings'), enabled: false),
       ),
     ],
     child: const MaterialApp(

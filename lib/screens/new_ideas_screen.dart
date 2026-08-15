@@ -108,8 +108,18 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     }
   }
 
+  /// "לא מתאים" is final. The pair leaves the database's suggestions for good
+  /// and settles at the bottom of each side's own matches list, beside the
+  /// ideas that were opened and turned down — which is where a matchmaker looks
+  /// when they want to reconsider something they once ruled out.
+  ///
+  /// Recorded on *both* candidates, not just one. A dismissal written in one
+  /// direction only would keep the pair out of one profile's list and leave it
+  /// sitting at the top of the other's, and the same pair would come back round
+  /// as a fresh suggestion the moment the scan started from the other side.
   Future<void> _skipIdea(NewIdeaSuggestion idea) async {
     await SuggestionDismissals.dismiss(idea.male.id, idea.female.id);
+    await SuggestionDismissals.dismiss(idea.female.id, idea.male.id);
     if (!mounted) {
       return;
     }

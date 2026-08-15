@@ -1389,7 +1389,10 @@ class _PersonalNotesCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
                 child: Text(
-                  'רק לעיניך — עדיין אין הערות. {הוסף|הוסיפי} משהו {שתרצה|שתרצי} לזכור.'
+                  // "רק לעיניך" is a promise about notes that exist. With none
+                  // written it is reassurance nobody asked for, in front of an
+                  // empty box.
+                  'עדיין אין הערות. {הוסף|הוסיפי} משהו {שתרצה|שתרצי} לזכור.'
                       .forGender(context.userGender),
                   style: theme.textTheme.bodyMedium?.copyWith(color: muted),
                 ),
@@ -2683,7 +2686,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     final bool confirmed = await ConfirmDialog.show(
       context,
       title: 'לא מתאים?',
-      message: 'ההתאמה תעבור לסוף הרשימה.',
+      message: 'ההתאמה תעבור לסוף הרשימה אצל שני הצדדים, ולא תוצע שוב.',
       confirmText: 'לא מתאים',
       isDestructive: true,
     );
@@ -2691,10 +2694,12 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
       return;
     }
 
-    // Soft dismissal only: the candidate drops to the end of the suggestions
-    // list. No rejected proposal is created, so the pair never shows up under
-    // רעיונות שנשללו.
+    // The candidate drops to the end of the suggestions list on *both* cards
+    // and stops being offered by the database. No rejected proposal is created,
+    // so the pair never shows up under רעיונות שנשללו — this is a decision
+    // about a suggestion, not about an idea that was ever opened.
     await SuggestionDismissals.dismiss(sourcePerson.id, candidate.id);
+    await SuggestionDismissals.dismiss(candidate.id, sourcePerson.id);
     if (mounted) {
       setState(() {});
     }

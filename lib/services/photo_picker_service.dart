@@ -119,6 +119,23 @@ abstract final class PhotoPickerService {
     return photosDirectory;
   }
 
+  /// The file name on its own, without the directory.
+  ///
+  /// This is the identity a photo carries outside this device. An absolute
+  /// path is meaningless anywhere else — iOS even changes the sandbox prefix
+  /// on every reinstall — so the cloud backup stores basenames and rebuilds
+  /// the path on the way back. Both separators are handled because a path may
+  /// have been written on either platform.
+  static String basenameOf(String path) {
+    return path.split('/').last.split(r'\').last;
+  }
+
+  /// Where a photo with this [basename] lives on this device.
+  static Future<File> fileFor(String basename) async {
+    final Directory photosDirectory = await ensurePhotosDirectory();
+    return File('${photosDirectory.path}${Platform.pathSeparator}$basename');
+  }
+
   /// Best-effort cleanup of photos copied during an edit that was abandoned.
   static void deletePhotoFiles(Iterable<String> paths) {
     for (final String path in paths) {

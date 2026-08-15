@@ -434,7 +434,19 @@ class PersonRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateProfileStatus(String id, ProfileStatus newStatus) async {
+  /// Sets a person's availability.
+  ///
+  /// [causedByMatchId] is set when the app made this change itself because a
+  /// proposal moved — a couple who start dating are both marked "תפוס", a
+  /// wedding marks both "מזל טוב". The id is stamped onto the history event,
+  /// which is what lets `ActivityStats` count that whole thing as the one
+  /// action it was instead of three. It is also simply true, and makes the
+  /// person's timeline explain itself.
+  Future<void> updateProfileStatus(
+    String id,
+    ProfileStatus newStatus, {
+    String? causedByMatchId,
+  }) async {
     final Person? person = getById(id);
     if (person == null) {
       return;
@@ -461,6 +473,7 @@ class PersonRepository extends ChangeNotifier {
       id,
       PersonEventType.statusChanged,
       'הסטטוס שונה ל־${newStatus.displayName}',
+      relatedMatchId: causedByMatchId,
     );
     _recordActivity(id, HomeActivityAction.changedStatus);
     notifyListeners();

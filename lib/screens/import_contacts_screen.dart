@@ -52,7 +52,6 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
 
   /// Contacts picked for a batch action. A plain set literal keeps insertion
   /// order, so a multi-add walks through people in the order they were picked.
-  final Set<String> _selectedIds = <String>{};
 
   /// Normalized phone -> recency index (0 = most recent) from the device call
   /// log, loaded the first time the user picks the "recent calls" sort.
@@ -149,7 +148,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     }
 
     final List<ContactCandidateEntry> rows = _rowsFor(session);
-    final int selectedCount = _selectedIds.length;
+    // The selection lives on the session, not here, so the screen around this
+    // one can answer a back press with "clear the ticks" instead of leaving.
+    final int selectedCount = session.selectedContactIds.length;
 
     return Column(
       children: <Widget>[
@@ -223,7 +224,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                       busy: _importingIds.contains(
                         entry.candidate.deviceContactId,
                       ),
-                      selected: _selectedIds.contains(
+                      selected: session.isSelected(
                         entry.candidate.deviceContactId,
                       ),
                       onTap: () => _handleRowTap(session, entry),
@@ -235,7 +236,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
           count: selectedCount,
           onAdd: () => _addSelected(session),
           onRemove: () => _removeSelected(session),
-          onClear: () => setState(_selectedIds.clear),
+          onClear: session.clearSelection,
         ),
       ],
     );
@@ -282,11 +283,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
         _openRemovedContactSheet(session, entry.candidate);
       case ContactCandidateStatus.available:
       case ContactCandidateStatus.hiddenByFilter:
-        setState(() {
-          if (!_selectedIds.remove(entry.candidate.deviceContactId)) {
-            _selectedIds.add(entry.candidate.deviceContactId);
-          }
-        });
+        session.toggleSelected(entry.candidate.deviceContactId);
     }
   }
 
@@ -644,7 +641,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       return;
     }
 
-    setState(_selectedIds.clear);
+    session.clearSelection();
     // Adding someone previously taken off the list also un-removes them, so a
     // new friend is never marked as removed underneath.
     for (final ContactImportCandidate candidate in selected) {
@@ -727,7 +724,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     if (selected.isEmpty) {
       return;
     }
-    setState(_selectedIds.clear);
+    session.clearSelection();
     await session.removeFromList(selected);
   }
 
@@ -737,7 +734,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
           for (final ContactImportCandidate candidate in session.allCandidates)
             candidate.deviceContactId: candidate,
         };
-    return _selectedIds
+    return session.selectedContactIds
         .map((String id) => byId[id])
         .whereType<ContactImportCandidate>()
         .toList();

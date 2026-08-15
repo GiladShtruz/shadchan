@@ -1,0 +1,32 @@
+rules_version = '2';
+
+// The candidates' photos. Same rule as firestore.rules, and for a stronger
+// reason: a readable photo URL is a face, and these are faces of people who
+// gave them to a matchmaker in confidence.
+//
+// Deploy with: firebase deploy --only storage
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    match /users/{userId}/photos/{fileName} {
+      function isOwner() {
+        return request.auth != null
+            && request.auth.uid == userId
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+
+      allow read, delete: if isOwner();
+
+      // A 12MB ceiling and an image content type, so a bug or a misuse cannot
+      // turn the bucket into general-purpose storage. Photos reaching here have
+      // already been through the picker and the editor and are far under this.
+      allow write: if isOwner()
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

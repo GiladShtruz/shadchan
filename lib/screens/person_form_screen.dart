@@ -54,7 +54,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   final Uuid _uuid = const Uuid();
   late final String _draftPersonId = _uuid.v4();
 
-  Gender _selectedGender = Gender.male;
+  /// Deliberately unanswered until the matchmaker answers it. A default of
+  /// "male" meant a card saved without a thought carried a stated gender that
+  /// nobody had chosen — and gender is the one field every suggestion in the
+  /// app is built on, so a wrong one is not a cosmetic slip.
+  Gender _selectedGender = Gender.unknown;
   ReligiousLevel? _selectedReligiousLevel;
   String? _religiousLevelOther;
   ProfileStatus _selectedProfileStatus = ProfileStatus.available;
@@ -402,9 +406,14 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   const SizedBox(height: 20),
                   Text('מגדר', style: theme.textTheme.titleMedium),
                   const SizedBox(height: 8),
+                  // Only the two real answers. "לא מוגדר" was a value a card
+                  // could sit in forever, and a candidate with no gender can be
+                  // matched with nobody.
                   Wrap(
                     spacing: 8,
-                    children: Gender.values.map((Gender gender) {
+                    children: <Gender>[Gender.male, Gender.female].map((
+                      Gender gender,
+                    ) {
                       return ChoiceChip(
                         label: Text(gender.displayName),
                         selected: _selectedGender == gender,
@@ -703,7 +712,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
 
   bool get _userTouchedGender =>
       !_autoFilledFields.contains('gender') &&
-      _selectedGender != Gender.male &&
       _selectedGender != Gender.unknown;
 
   Future<void> _pickInquiryContactFromDevice() async {
@@ -785,6 +793,13 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     }
 
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Not a form validator: the picker is a Wrap of chips, not a field, so
+    // there is nothing for `validate()` to run against.
+    if (_selectedGender == Gender.unknown) {
+      _showSnackBar('יש לבחור זכר או נקבה');
       return;
     }
 
@@ -921,9 +936,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _sourceController.text = person.source ?? '';
     _notesController.text = person.notes ?? '';
     _descriptionController.text = person.description ?? '';
-    _selectedGender = person.gender == Gender.unknown
-        ? Gender.male
-        : person.gender;
+    // An older record with no gender opens with the question still open
+    // rather than being silently declared male on the way in.
+    _selectedGender = person.gender;
     _selectedReligiousLevel = person.religiousLevel;
     _religiousLevelOther = person.religiousLevelOther;
     _selectedProfileStatus = person.profileStatus;

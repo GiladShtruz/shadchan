@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
+import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
 import 'package:shadchan/widgets/incoming_shared_profile_listener.dart';
 import 'package:shadchan/utils/app_router.dart';
@@ -34,9 +35,11 @@ class App extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: IncomingBackupImportListener(
-            child: IncomingSharedProfileListener(
-              child: child ?? const SizedBox.shrink(),
+          child: CloudSyncScheduler(
+            child: IncomingBackupImportListener(
+              child: IncomingSharedProfileListener(
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         );

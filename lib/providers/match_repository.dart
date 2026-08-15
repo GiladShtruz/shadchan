@@ -6,6 +6,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -20,7 +21,11 @@ import 'package:uuid/uuid.dart';
 enum MatchOutcomeParty { him, her, mutual, unknown }
 
 class MatchRepository extends ChangeNotifier {
-  MatchRepository(this._matchBox, this._noteBox) {
+  /// [_statusEventBox] is optional for the same reason `PersonRepository`'s
+  /// event box is: a test that only needs proposals should not have to open a
+  /// third box and register a third adapter to get one. Without it the ledger
+  /// simply is not written, and everything else behaves identically.
+  MatchRepository(this._matchBox, this._noteBox, [this._statusEventBox]) {
     // Pending notifications do not survive a reinstall or a device restart on
     // every Android build, so the whole set is re-scheduled on startup.
     _refreshNotifications();
@@ -28,7 +33,59 @@ class MatchRepository extends ChangeNotifier {
 
   final Box<MatchIdea> _matchBox;
   final Box<MatchNote> _noteBox;
+  final Box<MatchStatusEvent>? _statusEventBox;
   final Uuid _uuid = const Uuid();
+
+  /// Every recorded status move, in no particular order.
+  ///
+  /// This is the ledger `ActivityStats` counts from. Before it existed a status
+  /// change had to be inferred from the automatic journal notes, which only
+  /// some transitions write, and person events had to be de-duplicated against
+  /// them by a time window. Both guesses are gone.
+  List<MatchStatusEvent> getAllStatusEvents() =>
+      _statusEventBox?.values.toList() ?? const <MatchStatusEvent>[];
+
+  /// One proposal's own moves, oldest first.
+  List<MatchStatusEvent> getStatusEventsForMatch(String matchId) {
+    final List<MatchStatusEvent> events =
+        _statusEventBox?.values
+            .where((MatchStatusEvent event) => event.matchId == matchId)
+            .toList() ??
+        <MatchStatusEvent>[];
+    events.sort(
+      (MatchStatusEvent a, MatchStatusEvent b) =>
+          a.createdAt.compareTo(b.createdAt),
+    );
+    return events;
+  }
+
+  /// Records a move. Called from every place a proposal's status is written —
+  /// there are three, and adding a fourth without calling this is the one way
+  /// to make the activity figures wrong again.
+  ///
+  /// [automatic] marks a move the app made itself, which is history worth
+  /// keeping but not work the matchmaker did.
+  Future<void> _logStatusChange({
+    required String matchId,
+    required MatchStatus? from,
+    required MatchStatus to,
+    required DateTime at,
+    bool automatic = false,
+  }) async {
+    final Box<MatchStatusEvent>? box = _statusEventBox;
+    if (box == null || from == to) {
+      return;
+    }
+    final MatchStatusEvent event = MatchStatusEvent(
+      id: _uuid.v4(),
+      matchId: matchId,
+      fromStatus: from,
+      toStatus: to,
+      createdAt: at,
+      automatic: automatic,
+    );
+    await box.put(event.id, event);
+  }
 
   int get count => _matchBox.length;
 
@@ -171,6 +228,7 @@ class MatchRepository extends ChangeNotifier {
     }
 
     final DateTime now = DateTime.now();
+    final MatchStatus previous = match.status;
     match
       ..status = newStatus
       ..updatedAt = now;
@@ -179,10 +237,16 @@ class MatchRepository extends ChangeNotifier {
       match.waitingReason = null;
     }
     await match.save();
+    await _logStatusChange(
+      matchId: matchId,
+      from: previous,
+      to: newStatus,
+      at: now,
+    );
     // A couple that starts dating is no longer available to anyone else.
     if (newStatus == MatchStatus.dating) {
-      await markPersonBusy?.call(match.personAId);
-      await markPersonBusy?.call(match.personBId);
+      await markPersonBusy?.call(match.personAId, matchId);
+      await markPersonBusy?.call(match.personBId, matchId);
       await _createNote(
         matchId: matchId,
         text: 'התחילו לצאת',
@@ -190,8 +254,8 @@ class MatchRepository extends ChangeNotifier {
         isAutomatic: true,
       );
     } else if (newStatus == MatchStatus.married) {
-      await markPersonMazelTov?.call(match.personAId);
-      await markPersonMazelTov?.call(match.personBId);
+      await markPersonMazelTov?.call(match.personAId, matchId);
+      await markPersonMazelTov?.call(match.personBId, matchId);
       await _createNote(
         matchId: matchId,
         text: 'מזל טוב — התחתנו',
@@ -206,10 +270,14 @@ class MatchRepository extends ChangeNotifier {
   }
 
   /// Marks a person as "תפוס". Wired to [PersonRepository] in `main.dart`.
-  Future<void> Function(String personId)? markPersonBusy;
+  ///
+  /// The proposal's id travels with it so the person's history records *why*
+  /// their status changed — and so the activity count knows this was the same
+  /// act as the proposal's own move rather than a second one.
+  Future<void> Function(String personId, String matchId)? markPersonBusy;
 
   /// Marks both people as "מזל טוב" when the proposal becomes a wedding.
-  Future<void> Function(String personId)? markPersonMazelTov;
+  Future<void> Function(String personId, String matchId)? markPersonMazelTov;
 
   /// Records a history event on a person. Wired to
   /// [PersonRepository.logEvent] in `main.dart` so proposal outcomes are logged
@@ -263,6 +331,7 @@ class MatchRepository extends ChangeNotifier {
     }
 
     final DateTime now = DateTime.now();
+    final MatchStatus previous = match.status;
     final String trimmedReason = (reason ?? '').trim();
     final String note = (reminderNote ?? '').trim();
     match
@@ -276,6 +345,12 @@ class MatchRepository extends ChangeNotifier {
                 : (trimmedReason.isEmpty ? null : trimmedReason))
       ..updatedAt = now;
     await match.save();
+    await _logStatusChange(
+      matchId: matchId,
+      from: previous,
+      to: MatchStatus.unavailable,
+      at: now,
+    );
     await _createNote(
       matchId: matchId,
       text: trimmedReason.isEmpty
@@ -556,9 +631,19 @@ class MatchRepository extends ChangeNotifier {
         continue;
       }
 
+      final MatchStatus previous = match.status;
       match.status = target;
       match.updatedAt = now;
       await match.save();
+      // Recorded, but marked automatic: one decision about a person's
+      // availability can move five proposals, and that is one action, not six.
+      await _logStatusChange(
+        matchId: match.id,
+        from: previous,
+        to: target,
+        at: now,
+        automatic: true,
+      );
       changed = true;
     }
 
@@ -623,6 +708,18 @@ class MatchRepository extends ChangeNotifier {
 
     if (noteKeys.isNotEmpty) {
       await _noteBox.deleteAll(noteKeys);
+    }
+
+    // The ledger describes a proposal that no longer exists, so it goes with
+    // it — and the activity figures stop counting work on a deleted record.
+    final Box<MatchStatusEvent>? statusEvents = _statusEventBox;
+    if (statusEvents != null) {
+      final List<dynamic> eventKeys = statusEvents.keys.where((dynamic key) {
+        return statusEvents.get(key)?.matchId == matchId;
+      }).toList();
+      if (eventKeys.isNotEmpty) {
+        await statusEvents.deleteAll(eventKeys);
+      }
     }
 
     await _matchBox.delete(matchId);

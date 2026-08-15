@@ -108,31 +108,4 @@ void main() {
       greaterThan(HomeConfig.cardWidth),
     );
   });
-
-  testWidgets('a carousel leaves the next card peeking in', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(
-      wrap(
-        HomeCarousel(
-          itemCount: 6,
-          itemBuilder: (BuildContext context, int index) => fullestNote(),
-        ),
-      ),
-    );
-
-    expect(tester.takeException(), isNull);
-
-    // Two whole cards plus a visible slice of the third: that slice is the
-    // only affordance telling the user the row scrolls.
-    const double used =
-        HomeConfig.carouselPadding +
-        HomeConfig.cardWidth * 2 +
-        HomeConfig.cardGap * 2;
-    expect(used, lessThan(360));
-    expect(used + HomeConfig.cardWidth, greaterThan(360));
-  });
 }

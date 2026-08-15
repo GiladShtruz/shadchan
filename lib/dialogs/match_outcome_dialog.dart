@@ -3,12 +3,18 @@ import 'package:shadchan/providers/match_repository.dart'
     show MatchOutcomeParty;
 import 'package:shadchan/utils/enums.dart';
 
-/// Asks who ended a proposal and why, so closing it can be written to both
-/// candidates' history properly.
+/// Asks why a proposal ended, so closing it can be written to both candidates'
+/// history properly.
 ///
-/// Shared by the proposal screen's "סגירת ההצעה" flow and the status sheet's
-/// "נדחתה" option — both close a proposal, so both have to collect the same
-/// answers and go through `MatchRepository.recordOutcome`.
+/// Two shapes, because the two closings are different questions. A proposal
+/// that never got off the ground is asked **why it did not progress**, in the
+/// matchmaker's own words — "פחות התאים לו" is what actually happened, and it
+/// is more useful six months from now than a name with a verdict attached. A
+/// couple who dated and stopped is asked who ended it, which is the fact that
+/// matters there.
+///
+/// The note is the point of the whole screen: it is the one place a matchmaker
+/// records what they learned, and it lands on both candidates' histories.
 class MatchOutcomeDialog extends StatefulWidget {
   const MatchOutcomeDialog({super.key, required this.status});
 
@@ -29,9 +35,36 @@ class MatchOutcomeDialog extends StatefulWidget {
   State<MatchOutcomeDialog> createState() => _MatchOutcomeDialogState();
 }
 
+/// One answer, and which side it puts the decision on.
+class _Reason {
+  const _Reason(this.label, this.party);
+
+  final String label;
+  final MatchOutcomeParty party;
+}
+
 class _MatchOutcomeDialogState extends State<MatchOutcomeDialog> {
   final TextEditingController _noteController = TextEditingController();
-  MatchOutcomeParty _party = MatchOutcomeParty.unknown;
+
+  /// Nothing is chosen at first: a pre-ticked answer is one the matchmaker
+  /// never actually gave, and it would end up in two people's histories.
+  MatchOutcomeParty? _party;
+
+  bool get _dated => widget.status == MatchStatus.dated;
+
+  List<_Reason> get _reasons => _dated
+      ? const <_Reason>[
+          _Reason('הוא', MatchOutcomeParty.him),
+          _Reason('היא', MatchOutcomeParty.her),
+          _Reason('הדדי', MatchOutcomeParty.mutual),
+          _Reason('לא ידוע', MatchOutcomeParty.unknown),
+        ]
+      : const <_Reason>[
+          _Reason('פחות התאים לו', MatchOutcomeParty.him),
+          _Reason('פחות התאים לה', MatchOutcomeParty.her),
+          _Reason('מהבירור עלה שזה פחות מתאים', MatchOutcomeParty.mutual),
+          _Reason('סיבה אחרת', MatchOutcomeParty.unknown),
+        ];
 
   @override
   void dispose() {
@@ -41,28 +74,40 @@ class _MatchOutcomeDialogState extends State<MatchOutcomeDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
     return AlertDialog(
       title: Text(
-        widget.status == MatchStatus.dated
-            ? 'יצאו ולא המשיכו'
-            : 'ההצעה לא התקדמה',
+        _dated ? 'מי סיים?' : 'מה הייתה הסיבה שהרעיון לא התקדם?',
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w800,
+          height: 1.3,
+        ),
       ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text('מי סיים?'),
-            _option(MatchOutcomeParty.him, 'הוא'),
-            _option(MatchOutcomeParty.her, 'היא'),
-            _option(MatchOutcomeParty.mutual, 'הדדי'),
-            _option(MatchOutcomeParty.unknown, 'לא ידוע'),
+            for (final _Reason reason in _reasons) _option(reason),
+            const SizedBox(height: 12),
+            // Said before the field rather than under it: it is an invitation
+            // to write, and an invitation after the fact is a caption.
+            Text(
+              'כדאי לתעד כאן כל פרט שיכול לעזור בהמשך. ההערה תישמר בהיסטוריה '
+              'של שני המועמדים ותעזור לך לדייק רעיונות עתידיים.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _noteController,
               maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'סיבה או הערה (אופציונלי)',
+                labelText: 'הערה',
+                border: OutlineInputBorder(),
               ),
             ),
           ],
@@ -74,17 +119,19 @@ class _MatchOutcomeDialogState extends State<MatchOutcomeDialog> {
           child: const Text('ביטול'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(
-            context,
-          ).pop((party: _party, note: _noteController.text.trim())),
+          onPressed: _party == null
+              ? null
+              : () => Navigator.of(
+                  context,
+                ).pop((party: _party!, note: _noteController.text.trim())),
           child: const Text('שמירה'),
         ),
       ],
     );
   }
 
-  Widget _option(MatchOutcomeParty value, String label) {
-    final bool selected = _party == value;
+  Widget _option(_Reason reason) {
+    final bool selected = _party == reason.party;
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -96,8 +143,8 @@ class _MatchOutcomeDialogState extends State<MatchOutcomeDialog> {
             ? Theme.of(context).colorScheme.primary
             : Theme.of(context).colorScheme.onSurfaceVariant,
       ),
-      title: Text(label),
-      onTap: () => setState(() => _party = value),
+      title: Text(reason.label),
+      onTap: () => setState(() => _party = reason.party),
     );
   }
 }

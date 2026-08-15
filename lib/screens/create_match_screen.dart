@@ -231,6 +231,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       filterGender: gender,
       excludeIds: excludeIds,
       allowCreateOutsideDatabase: true,
+      // Remembered per side rather than per person: there is no source person
+      // yet at this point in the flow — that is what is being chosen.
+      filterKey: 'createMatch.${gender.name}',
     );
 
     if (selectedPerson == null || !mounted) {

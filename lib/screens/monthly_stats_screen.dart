@@ -5,27 +5,38 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/models/match_note.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person_event.dart';
-import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 
-/// "הנתונים שלך החודש" — a calm dashboard of what happened this Hebrew month
-/// (since Rosh Chodesh) together with a running comparison to previous months.
+/// "הפעילות שלך" — what this matchmaker has actually done, month by month.
 ///
-/// Counts are read straight from the records rather than kept as running
-/// totals, so they reset on their own every Rosh Chodesh.
-class MonthlyStatsScreen extends StatelessWidget {
+/// One chart, not two. The screen used to carry an actions-per-month chart and
+/// a "מעקב לאורך החודשים" chart directly under it; they counted slightly
+/// different things but drew the same six bars over the same six months, which
+/// read as the same chart printed twice. What is left is the one chart that
+/// answers the question, and it is now the screen's control as well as its
+/// picture: tapping a month moves every number above it to that month, so the
+/// figures and the bars can never disagree about which month is being read.
+class MonthlyStatsScreen extends StatefulWidget {
   const MonthlyStatsScreen({super.key});
 
-  /// How many Hebrew months back the comparison trend reaches.
+  /// How many Hebrew months back the chart reaches.
   static const int _monthsBack = 6;
 
   // The two calm pastels this screen draws with outside the metric cards —
   // the per-metric accents themselves live on [MonthlyStatMetric.color].
   static const Color _blue = MonthlyStats.peopleColor;
   static const Color _pink = MonthlyStats.weddingsColor;
+
+  @override
+  State<MonthlyStatsScreen> createState() => _MonthlyStatsScreenState();
+}
+
+class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
+  /// Index into the newest-first list of periods. 0 is the current month.
+  int _selected = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -37,76 +48,57 @@ class MonthlyStatsScreen extends StatelessWidget {
 
     final List<MonthPeriod> periods = MonthlyStats.buildPeriods(
       DateTime.now(),
-      _monthsBack,
+      MonthlyStatsScreen._monthsBack,
     );
+    final int selected = _selected.clamp(0, periods.length - 1);
     final List<MonthStats> stats = <MonthStats>[
       for (final MonthPeriod period in periods)
         MonthlyStats.statsFor(period, matches, people),
     ];
 
-    final MonthStats current = stats.first;
-    final MonthStats displayedCurrent = MonthlyStats.withAllTimeWeddings(
-      current,
+    final MonthStats shown = MonthlyStats.withAllTimeWeddings(
+      stats[selected],
       matches,
     );
-    final MonthStats? previous = stats.length > 1 ? stats[1] : null;
+    // The comparison is always against the month before the one on screen, so
+    // stepping back through the chart keeps saying something true.
+    final MonthStats? previous = selected + 1 < stats.length
+        ? stats[selected + 1]
+        : null;
 
-    // What the matchmaker actually did, counted from the records rather than
-    // from time spent in the app.
-    final List<PersonNote> personNotes = personRepository.getAllNotes();
-    final List<MatchNote> matchNotes = matchRepository.getAllNotes();
+    final List<MatchStatusEvent> matchStatusEvents = matchRepository
+        .getAllStatusEvents();
     final List<PersonEvent> events = personRepository.getAllEvents();
-    final DateTime now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
-    final int actionsThisWeek = ActivityStats.countBetween(
-      start: today.subtract(const Duration(days: 6)),
-      end: today.add(const Duration(days: 1)),
-      people: people,
-      matches: matches,
-      personNotes: personNotes,
-      matchNotes: matchNotes,
-      events: events,
-    );
-    final int actionsThisMonth = ActivityStats.countBetween(
-      start: periods.first.start,
-      end: periods.first.end,
-      people: people,
-      matches: matches,
-      personNotes: personNotes,
-      matchNotes: matchNotes,
-      events: events,
-    );
-    final int actionsAllTime = ActivityStats.countBetween(
-      start: DateTime(2000),
-      end: now.add(const Duration(days: 1)),
-      people: people,
-      matches: matches,
-      personNotes: personNotes,
-      matchNotes: matchNotes,
-      events: events,
-    );
     final List<ActivityBucket> bars = ActivityStats.monthlyBars(
       periods: periods,
       people: people,
       matches: matches,
-      personNotes: personNotes,
-      matchNotes: matchNotes,
+      matchStatusEvents: matchStatusEvents,
+      events: events,
+    );
+    final int actionsInMonth = ActivityStats.countBetween(
+      start: periods[selected].start,
+      end: periods[selected].end,
+      people: people,
+      matches: matches,
+      matchStatusEvents: matchStatusEvents,
       events: events,
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('הנתונים שלך החודש'), centerTitle: true),
+      appBar: AppBar(title: const Text('הפעילות שלך'), centerTitle: true),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: <Widget>[
             _MonthHeader(
-              monthLabel: periods.first.label,
-              totalThisMonth: current.total,
+              monthLabel: periods[selected].label,
+              actions: actionsInMonth,
+              isCurrentMonth: selected == 0,
             ),
             const SizedBox(height: 16),
-            if (current.weddings > 0) ...<Widget>[
-              _MazalTovCard(count: current.weddings),
+            if (stats[selected].weddings > 0) ...<Widget>[
+              _MazalTovCard(count: stats[selected].weddings),
               const SizedBox(height: 16),
             ],
             // A 2×2 grid. RTL order puts ideas top-right, people top-left,
@@ -126,7 +118,7 @@ class MonthlyStatsScreen extends StatelessWidget {
                 for (final MonthlyStatMetric metric in MonthlyStatMetric.values)
                   _StatCard(
                     metric: metric,
-                    value: metric.valueOf(displayedCurrent),
+                    value: metric.valueOf(shown),
                     previous:
                         metric == MonthlyStatMetric.weddings || previous == null
                         ? null
@@ -136,21 +128,15 @@ class MonthlyStatsScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            _ActivitySection(
+            _ActivityChart(
               bars: bars,
-              thisWeek: actionsThisWeek,
-              thisMonth: actionsThisMonth,
-              allTime: actionsAllTime,
+              // The bars run oldest-first, the periods newest-first.
+              selectedBar: bars.length - 1 - selected,
+              onSelect: (int barIndex) =>
+                  setState(() => _selected = bars.length - 1 - barIndex),
             ),
             const SizedBox(height: 20),
-            // The nudge reads as an introduction to the months below it, so it
-            // comes before the tracker rather than after it.
             const _DidYouKnowCard(),
-            const SizedBox(height: 20),
-            _TrendSection(
-              periods: periods.reversed.toList(),
-              stats: stats.reversed.toList(),
-            ),
           ],
         ),
       ),
@@ -160,24 +146,23 @@ class MonthlyStatsScreen extends StatelessWidget {
 
 // --- Widgets --------------------------------------------------------------
 
-/// The activity chart: one bar per month, counted in actions.
+/// The activity chart: one bar per Hebrew month, counted in actions, and the
+/// control that chooses which month the whole screen is about.
 ///
 /// This is the one place in the app where a chart earns its keep — it is the
 /// screen someone opened *to see numbers*. Even here it stays a plain bar per
 /// month with no axes or gridlines, and the word underneath is generous by
 /// design: the point is to notice a good month, never to grade a bad one.
-class _ActivitySection extends StatelessWidget {
-  const _ActivitySection({
+class _ActivityChart extends StatelessWidget {
+  const _ActivityChart({
     required this.bars,
-    required this.thisWeek,
-    required this.thisMonth,
-    required this.allTime,
+    required this.selectedBar,
+    required this.onSelect,
   });
 
   final List<ActivityBucket> bars;
-  final int thisWeek;
-  final int thisMonth;
-  final int allTime;
+  final int selectedBar;
+  final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +175,7 @@ class _ActivitySection extends StatelessWidget {
     );
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(24),
@@ -199,147 +184,183 @@ class _ActivitySection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'הפעילות שלך',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: blue.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  ActivityStats.grade(thisMonth),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: blue,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'נספרות הוספת חבר, פתיחת רעיון, עדכון סטטוס של הצעה וכתיבת הערה.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: <Widget>[
-              _Figure(label: 'השבוע', value: thisWeek),
-              _Figure(label: 'החודש', value: thisMonth),
-              _Figure(label: 'בכל הזמנים', value: allTime),
-            ],
-          ),
-          if (bars.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 108,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: <Widget>[
-                  for (final ActivityBucket bucket in bars)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: <Widget>[
-                            Text(
-                              '${bucket.count}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Container(
-                              height: peak == 0
-                                  ? 4
-                                  : (bucket.count / peak * 62).clamp(4.0, 62.0),
-                              decoration: BoxDecoration(
-                                color: blue.withValues(
-                                  alpha: bucket.count == 0 ? 0.18 : 0.75,
-                                ),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              bucket.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                      child: Text(
+                        'פעולות לפי חודשים',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                ],
-              ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: blue.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        ActivityStats.grade(
+                          selectedBar >= 0 && selectedBar < bars.length
+                              ? bars[selectedBar].count
+                              : 0,
+                        ),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: blue,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                // What counts, said plainly. A note is deliberately absent from
+                // this list — writing something down is thinking, not doing.
+                Text(
+                  'נספרות הוספת חבר, פתיחת רעיון ועדכון סטטוס של חבר/רעיון. '
+                  'לחיצה על חודש תציג את הנתונים שלו למעלה.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 128,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                for (int i = 0; i < bars.length; i++)
+                  Expanded(
+                    child: _Bar(
+                      bucket: bars[i],
+                      peak: peak,
+                      selected: i == selectedBar,
+                      onTap: () => onSelect(i),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _Figure extends StatelessWidget {
-  const _Figure({required this.label, required this.value});
+class _Bar extends StatelessWidget {
+  const _Bar({
+    required this.bucket,
+    required this.peak,
+    required this.selected,
+    required this.onTap,
+  });
 
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Expanded(
-      child: Column(
-        children: <Widget>[
-          Text(
-            '$value',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A clean banner naming the current Hebrew month with a word of praise.
-class _MonthHeader extends StatelessWidget {
-  const _MonthHeader({required this.monthLabel, required this.totalThisMonth});
-
-  final String monthLabel;
-  final int totalThisMonth;
+  final ActivityBucket bucket;
+  final int peak;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color blue = MonthlyStatsScreen._blue;
+    final double factor = peak == 0 ? 0 : bucket.count / peak;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+        child: Column(
+          children: <Widget>[
+            Text(
+              '${bucket.count}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: selected ? FontWeight.w900 : FontWeight.w500,
+                color: selected ? blue : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            // The bar area flexes to whatever height is left, so the labels
+            // above and below always fit — no manual height arithmetic.
+            Expanded(
+              child: FractionallySizedBox(
+                alignment: Alignment.bottomCenter,
+                widthFactor: 1,
+                // Keep a sliver of a bar even at zero so the axis reads as a
+                // base rather than as a gap.
+                heightFactor: factor.clamp(0.04, 1.0),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: blue.withValues(alpha: selected ? 0.95 : 0.34),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              bucket.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                color: selected ? blue : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A clean banner naming the month being read, with a word of praise.
+class _MonthHeader extends StatelessWidget {
+  const _MonthHeader({
+    required this.monthLabel,
+    required this.actions,
+    required this.isCurrentMonth,
+  });
+
+  final String monthLabel;
+  final int actions;
+
+  /// Past months are described in the past tense; there is nothing left to
+  /// encourage about a month that is over.
+  final bool isCurrentMonth;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color blue = MonthlyStatsScreen._blue;
+
+    final String line;
+    if (actions == 0) {
+      line = isCurrentMonth
+          ? 'חודש חדש, דף חדש — קדימה לעבודה!'
+          : 'בחודש הזה לא נרשמו פעולות.';
+    } else if (isCurrentMonth) {
+      line = 'כל הכבוד! כבר עשית $actions פעולות טובות החודש עבור החברים שלך!';
+    } else {
+      line = 'בחודש הזה עשית $actions פעולות עבור החברים שלך.';
+    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
@@ -362,10 +383,7 @@ class _MonthHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  totalThisMonth == 0
-                      ? 'חודש חדש, דף חדש — קדימה לעבודה!'
-                      : 'כל הכבוד! כבר עשית $totalThisMonth פעולות טובות '
-                            'החודש עבור החברים שלך!',
+                  line,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     height: 1.35,
@@ -539,158 +557,6 @@ class _RiseChip extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The month-over-month tracker: a small bar chart of total activity across the
-/// last few Hebrew months, with the current month highlighted. No y-axis scale.
-class _TrendSection extends StatelessWidget {
-  const _TrendSection({required this.periods, required this.stats});
-
-  /// Oldest first, so the bars read right-to-left up to the current month.
-  final List<MonthPeriod> periods;
-  final List<MonthStats> stats;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final int maxTotal = stats
-        .map((MonthStats s) => s.total)
-        .fold<int>(0, (int a, int b) => a > b ? a : b);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'מעקב לאורך החודשים',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'סך כל הפעילות בכל חודש',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.show_chart_rounded,
-                color: theme.colorScheme.primary,
-                size: 22,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 150,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                for (int i = 0; i < periods.length; i++)
-                  Expanded(
-                    child: _TrendBar(
-                      value: stats[i].total,
-                      maxValue: maxTotal,
-                      label: periods[i].shortLabel,
-                      isCurrent: i == periods.length - 1,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TrendBar extends StatelessWidget {
-  const _TrendBar({
-    required this.value,
-    required this.maxValue,
-    required this.label,
-    required this.isCurrent,
-  });
-
-  final int value;
-  final int maxValue;
-  final String label;
-  final bool isCurrent;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final double factor = maxValue == 0 ? 0 : value / maxValue;
-
-    final Color barColor = isCurrent
-        ? theme.colorScheme.primary
-        : theme.colorScheme.primary.withValues(alpha: 0.35);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        children: <Widget>[
-          Text(
-            '$value',
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: isCurrent
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          // The bar area flexes to whatever height is left, so the labels above
-          // and below always fit — no manual height arithmetic to overflow.
-          Expanded(
-            child: FractionallySizedBox(
-              alignment: Alignment.bottomCenter,
-              widthFactor: 1,
-              // Keep a sliver of a bar even at zero so the axis reads as a base.
-              heightFactor: factor.clamp(0.03, 1.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: barColor,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(8),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w500,
-              color: isCurrent
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],

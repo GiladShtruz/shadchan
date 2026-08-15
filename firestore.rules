@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// Every matchmaker's database is private to their own account, full stop.
+//
+// The data behind these rules is other people's names, ages, phone numbers and
+// private notes about their shidduchim — collected by a matchmaker who was
+// trusted with it, not published by the candidates themselves. There is no
+// sharing feature, no admin view and no cross-user query anywhere in the app,
+// so there is no reason for any rule here to be wider than "your own uid".
+//
+// Deploy with: firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      // An anonymous account must never own a backup. It dies with the
+      // install, so data written under one is unrecoverable — and the app
+      // refuses to sync under one for the same reason (CloudSyncService
+      // ._requireAccount). Enforced here too, because a client-side rule is
+      // not a rule.
+      function isOwner() {
+        return request.auth != null
+            && request.auth.uid == userId
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+
+      allow read, write: if isOwner();
+
+      // The four record collections. Named explicitly rather than matched with
+      // a wildcard so a future collection has to be considered before it can
+      // be written.
+      match /people/{personId} {
+        allow read, write: if isOwner();
+      }
+      match /personNotes/{noteId} {
+        allow read, write: if isOwner();
+      }
+      match /matches/{matchId} {
+        allow read, write: if isOwner();
+      }
+      match /matchNotes/{noteId} {
+        allow read, write: if isOwner();
+      }
+
+      // The matchmaker's own profile — one document, `main`.
+      match /profile/{documentId} {
+        allow read, write: if isOwner();
+      }
+    }
+
+    // The one deliberately shared collection in the app: tips written by a
+    // matchmaker for every other matchmaker. Nothing about a candidate is in
+    // here — the only personal field is the author's own name, which they put
+    // there themselves.
+    match /tips/{tipId} {
+      // The administrator, decided on the server. `token.email` is written by
+      // the identity provider, not by the client, and `email_verified` closes
+      // the door on an unverified address claiming to be this one. `get` with a
+      // default is used because an anonymous token carries no email at all, and
+      // reading an absent field is an error rather than a false.
+      function isAdmin() {
+        return request.auth != null
+            && request.auth.token.get('email_verified', false) == true
+            && request.auth.token.get('email', '').lower()
+                 == 'yitz292@gmail.com';
+      }
+
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      // Approved tips are readable by every signed-in device, anonymous ones
+      // included — a matchmaker who never connected an account still gets the
+      // community's tips. Beyond that you may read only your own submissions.
+      allow read: if isSignedIn()
+                  && (resource.data.status == 'approved'
+                      || resource.data.authorUid == request.auth.uid
+                      || isAdmin());
+
+      // Writing one needs a durable account, for the same reason a backup does:
+      // an anonymous uid dies with the install, and a tip credited to nobody
+      // cannot be reviewed, corrected or withdrawn. Every new tip starts
+      // pending — a client cannot publish straight into the rotation.
+      allow create: if isSignedIn()
+                    && request.auth.token.firebase.sign_in_provider != 'anonymous'
+                    && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 400
+                    && request.resource.data.authorName is string
+                    && request.resource.data.authorName.size() <= 80;
+
+      // Approval, rejection and removal are the administrator's alone.
+      allow update, delete: if isAdmin();
+    }
+
+    // Anything not named above is closed. Without this, a path added later
+    // starts life world-readable.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

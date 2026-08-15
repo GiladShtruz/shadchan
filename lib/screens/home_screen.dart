@@ -8,25 +8,27 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/think_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
+import 'package:shadchan/services/tips_service.dart';
+import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_config.dart';
+import 'package:shadchan/utils/home_next_actions.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
-import 'package:shadchan/utils/home_promote.dart';
 import 'package:shadchan/utils/home_stage.dart';
-import 'package:shadchan/utils/home_stats_banner.dart';
-import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
@@ -61,17 +63,22 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey _boardSectionKey = GlobalKey();
   bool _searchVisible = false;
 
-  /// Picked once per visit to the screen, so every entry shows a different tip.
-  late String _tip;
+  /// Which window "הפעילות שלך" is showing. A screen-lifetime choice, not a
+  /// stored setting: it is a question asked of the moment, not a preference.
+  HomeActivityRange _activityRange = HomeActivityRange.week;
 
-  /// Advances once per visit. "שווה לקדם" and the numbers banner rotate on it,
-  /// so the same five faces and the same sentence are not waiting every time.
-  late final int _visit = HomeVisitCounter.next();
+  /// The built-in tips, in one order picked per visit.
+  ///
+  /// Fixed for the life of the screen because the tip block is now swiped
+  /// rather than re-rolled: a list that reshuffled on every rebuild would put a
+  /// different tip behind the same backwards swipe. Rotating between visits is
+  /// what stops the same tip greeting the matchmaker every morning.
+  late final List<String> _tipOrder = List<String>.of(MatchmakerTips.tips)
+    ..shuffle();
 
   @override
   void initState() {
     super.initState();
-    _tip = MatchmakerTips.next();
     _searchController.text = widget.initialSearch;
     _searchVisible = widget.initialSearch.trim().isNotEmpty;
     _searchController.addListener(() => setState(() {}));
@@ -274,7 +281,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final Gender? userGender = context.watch<UserProfileProvider>().gender;
     final HomeBoardStore board = HomeBoardStore.instance;
-    final RecentActivityStore activity = RecentActivityStore.instance;
 
     if (board.takeFocusRequest()) {
       _scheduleBoardFocus(force: true);
@@ -305,30 +311,24 @@ class _HomeScreenState extends State<HomeScreen> {
       limit: HomeConfig.openIdeasInRow,
     );
 
-    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
-      people: visiblePeople,
-      matches: allMatches,
-      events: personRepository.getAllEvents(),
-      activity: activity.entries,
-    );
-
     final int friends = personRepository.databaseCount;
     final HomeStage stage = HomeStage.forCount(friends);
     final HomeMilestone milestone = HomeMilestone.forCount(friends);
 
-    final List<HomePromoteItem> promote = HomePromote.build(
+    // What the app itself thinks is most worth doing, ranked. Deliberately not
+    // the board, and deliberately not chronological.
+    final List<HomeNextAction> nextActions = HomeNextActions.build(
       people: visiblePeople,
       matches: allMatches,
       personById: personRepository.getById,
-      events: personRepository.getAllEvents(),
-      notes: personRepository.getAllNotes(),
-      activity: activity.entries,
-      rotation: _visit,
+      personReminder: PersonReminders.forPerson,
     );
-    final HomeStatLine statLine = HomeStatsBanner.build(
+
+    final ActivityTotals totals = ActivityStats.totals(
+      people: allPeople,
       matches: allMatches,
-      friends: friends,
-      rotation: _visit,
+      matchStatusEvents: matchRepository.getAllStatusEvents(),
+      events: personRepository.getAllEvents(),
     );
 
     double inset() => homeHorizontalInset(context);
@@ -339,9 +339,13 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // The order of what follows *is* the design. Everything that leads to an
-    // action comes before everything that reports on one, and a block that
-    // would be empty at this stage is not drawn at all rather than shown as an
+    // The order of what follows *is* the design, and it is an order of
+    // usefulness rather than of features: first the two things that grow the
+    // database, then what the matchmaker parked or asked to be reminded of,
+    // then a moment to think, then the work already in flight, then what the
+    // app itself recommends, and only at the end what has been achieved.
+    //
+    // A block with nothing in it is not drawn at all rather than shown as an
     // empty box — an empty screen teaches that the app is empty.
     return CustomScrollView(
       controller: _homeScrollController,
@@ -354,21 +358,16 @@ class _HomeScreenState extends State<HomeScreen> {
             top: 14,
           ),
 
-        // The automatic pair suggestions lead once the database can actually
-        // produce them. Design, wording and behaviour are untouched.
-        if (stage.leadsWithAutomaticIdeas)
-          block(
-            HomeHeroBand(onShowIdeas: () => context.push('/ideas/new')),
-            top: 14,
-          ),
-
+        // 2. The two entry actions. They stay at the top at every stage,
+        // because everything below them is only possible once they have been
+        // used.
         block(
           HomeActionCards(
             onAddPeople: () => AddPeopleDialog.show(context),
             onAddIdea: () => context.push('/matches/add'),
             emphasiseAddPeople: stage.leadsWithGrowth,
           ),
-          top: stage.leadsWithAutomaticIdeas || friends == 0 ? 12 : 14,
+          top: friends == 0 ? 12 : 14,
         ),
 
         if (stage.showsTarget) block(HomeMilestoneCard(milestone: milestone)),
@@ -386,6 +385,8 @@ class _HomeScreenState extends State<HomeScreen> {
         if (stage.showsImportTool)
           block(HomeImportInvite(onTap: () => context.push('/people/ai'))),
 
+        // 3. הלוח שלי — what was pinned by hand, plus whatever asked to be
+        // remembered today. Absent entirely when there is nothing on it.
         _BoardSection(
           focusKey: _boardSectionKey,
           entries: board.entries,
@@ -393,70 +394,67 @@ class _HomeScreenState extends State<HomeScreen> {
           matchRepository: matchRepository,
         ),
 
-        // "שווה לקדם" replaces both the recent-activity trail and the general
-        // open-ideas list: a name with no reason attached says nothing about
-        // what to do with it.
-        if (promote.isNotEmpty && friends > 0)
-          SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const HomeSectionHeader(
-                  title: 'שווה לקדם',
-                  icon: Icons.trending_up,
-                ),
-                HomeCarousel(
-                  itemCount: promote.length,
-                  itemBuilder: (BuildContext context, int index) {
-                    final HomePromoteItem item = promote[index];
-                    return HomePromoteCard(
-                      item: item,
-                      onTap: () => item.isPerson
-                          ? context.push('/people/${item.person!.id}')
-                          : context.push('/matches/${item.match!.id}'),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-
+        // 4. The invitation to think. A banner and nothing else: no faces, no
+        // names, no count — the people live on the page it opens.
         if (friends >= 3)
           block(HomeThinkBanner(onTap: () => ThinkScreen.open(context))),
 
+        // 5. רעיונות פתוחים — the proposals with an actual reason to be looked
+        // at again today.
         if (stage.showsIdeaAreas)
           _OpenIdeasSection(
             ideas: openIdeas,
             personRepository: personRepository,
           ),
 
-        if (stage != HomeStage.starting)
-          _WorthThinkingSection(suggestions: suggestions),
-
-        // The emotional anchor, after the blocks that lead to action.
+        // 6. The emotional anchor, and the only block on the page wearing
+        // colour. Drawn only while there is somebody to celebrate.
         _DatingSection(
           matches: datingMatches.take(HomeConfig.datingCouplesInRow).toList(),
           personRepository: personRepository,
         ),
 
+        // 7. What the app recommends, ranked by urgency — three at a time.
+        if (nextActions.isNotEmpty)
+          SliverToBoxAdapter(
+            child: HomeNextActionsRow(
+              actions: nextActions,
+              onOpen: (HomeNextAction action) => action.isPerson
+                  ? context.push('/people/${action.person!.id}')
+                  : context.push('/matches/${action.match!.id}'),
+            ),
+          ),
+
+        // 8. The pairs the database worked out on its own. Held back until the
+        // database is big enough to keep producing them — below fifty friends
+        // the well runs dry and the block becomes a promise the app cannot
+        // keep, so the screen goes on pushing towards growth instead.
+        if (friends > HomeConfig.databaseIdeasMinFriends)
+          block(
+            HomeHeroBand(onShowIdeas: () => context.push('/ideas/new')),
+            top: 18,
+          ),
+
+        // 9. What has been done, in one number. Everything behind it is a tap
+        // away rather than on the workspace.
         block(
-          HomeStatBanner(
-            text: statLine.text,
-            onTap: () => context.push('/stats/month'),
+          HomeActivityPanel(
+            range: _activityRange,
+            total: switch (_activityRange) {
+              HomeActivityRange.week => totals.week,
+              HomeActivityRange.month => totals.month,
+              HomeActivityRange.allTime => totals.allTime,
+            },
+            onRangeChanged: (HomeActivityRange range) =>
+                setState(() => _activityRange = range),
+            onOpen: () => context.push('/stats/month'),
           ),
           top: 16,
         ),
 
+        // 10. The community's tip.
         block(
-          HomeTipStrip(
-            tip: _tip.forGender(userGender),
-            userGender: userGender,
-            onAnother: () {
-              setState(() {
-                _tip = MatchmakerTips.next(previous: _tip);
-              });
-            },
-          ),
+          HomeTipCarousel(tips: _tips(context), userGender: userGender),
           top: 16,
         ),
 
@@ -470,6 +468,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  /// The rotation the tip block swipes through: the tips that ship with the app
+  /// first, then every approved community tip.
+  ///
+  /// The built-in ones are unsigned — there is nobody to credit — while a
+  /// community tip carries the name of the matchmaker who wrote it. The order
+  /// is fixed for the life of the screen so a swipe back really does return to
+  /// the previous tip.
+  List<HomeTip> _tips(BuildContext context) {
+    final Gender? gender = context.watch<UserProfileProvider>().gender;
+    final List<CommunityTip> community = context.watch<TipsProvider>().approved;
+    return <HomeTip>[
+      for (final String template in _tipOrder)
+        HomeTip(text: template.forGender(gender)),
+      for (final CommunityTip tip in community)
+        HomeTip(
+          text: tip.text,
+          author: tip.authorName.isEmpty ? null : tip.authorName,
+        ),
+    ];
   }
 
   // --- Search -------------------------------------------------------------
@@ -572,8 +591,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // --- הלוח שלי ---------------------------------------------------------------
 
-/// The people and proposals the matchmaker parked to come back to. Hidden
-/// entirely until something is pinned.
+/// The people and proposals the matchmaker parked to come back to — plus
+/// whatever asked to be remembered today.
+///
+/// Two sources, one surface. A note pinned by hand and a reminder whose date has
+/// arrived are the same thing from where the matchmaker is standing: something
+/// they told the app to put back in front of them. The reminders lead, because
+/// they are the ones with a date attached.
+///
+/// Always exactly one row, however many notes there are, and hidden entirely
+/// when there are none.
 class _BoardSection extends StatelessWidget {
   const _BoardSection({
     required this.focusKey,
@@ -587,15 +614,65 @@ class _BoardSection extends StatelessWidget {
   final PersonRepository personRepository;
   final MatchRepository matchRepository;
 
-  @override
-  Widget build(BuildContext context) {
+  /// The pinned entries plus the due reminders, without repeating an item that
+  /// is both.
+  List<HomeBoardEntry> _live() {
     // A pinned record that has since been deleted simply drops out.
-    final List<HomeBoardEntry> live = entries.where((HomeBoardEntry entry) {
+    final List<HomeBoardEntry> pinned = entries.where((HomeBoardEntry entry) {
       return entry.kind == HomeItemKind.person
           ? personRepository.getById(entry.targetId) != null
           : matchRepository.getById(entry.targetId) != null;
     }).toList();
 
+    final Set<String> seen = <String>{
+      for (final HomeBoardEntry entry in pinned)
+        '${entry.kind.name}:${entry.targetId}',
+    };
+    final List<HomeBoardEntry> due = <HomeBoardEntry>[];
+
+    void addDue(HomeItemKind kind, String id, DateTime at, String? note) {
+      if (!seen.add('${kind.name}:$id')) {
+        return;
+      }
+      due.add(
+        HomeBoardEntry(
+          kind: kind,
+          targetId: id,
+          addedAt: at,
+          note: (note ?? '').trim().isEmpty ? 'הגיע מועד התזכורת' : note,
+        ),
+      );
+    }
+
+    PersonReminders.all().forEach((String personId, DateTime at) {
+      if (at.isAfter(DateTime.now()) ||
+          personRepository.getById(personId) == null) {
+        return;
+      }
+      addDue(
+        HomeItemKind.person,
+        personId,
+        at,
+        PersonReminders.noteFor(personId),
+      );
+    });
+    for (final MatchIdea match in matchRepository.getAll()) {
+      final DateTime? at = match.reminderDate;
+      if (at == null || at.isAfter(DateTime.now())) {
+        continue;
+      }
+      addDue(HomeItemKind.idea, match.id, at, match.reminderNote);
+    }
+
+    due.sort(
+      (HomeBoardEntry a, HomeBoardEntry b) => a.addedAt.compareTo(b.addedAt),
+    );
+    return <HomeBoardEntry>[...due, ...pinned];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<HomeBoardEntry> live = _live();
     if (live.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
@@ -611,26 +688,26 @@ class _BoardSection extends StatelessWidget {
             subtitle: 'אנשים או רעיונות שחשוב לי לזכור',
           ),
           HomeNoteBoard(
-            child: SingleChildScrollView(
+            // The end padding is smaller than a note, so the next one always
+            // peeks in from the edge — which is what says the row scrolls,
+            // without an arrow and without a second line of notes.
+            child: ListView.separated(
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(
                 parent: AlwaysScrollableScrollPhysics(),
               ),
-              padding: EdgeInsets.symmetric(
-                horizontal: homeIsNarrow(context) ? 8 : 10,
+              padding: EdgeInsetsDirectional.fromSTEB(
+                homeIsNarrow(context) ? 10 : 12,
+                0,
+                28,
+                0,
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: <Widget>[
-                  for (int index = 0; index < live.length; index++) ...<Widget>[
-                    if (index > 0) SizedBox(width: homeCardGap(context)),
-                    _BoardCard(
-                      entry: live[index],
-                      personRepository: personRepository,
-                      matchRepository: matchRepository,
-                    ),
-                  ],
-                ],
+              itemCount: live.length,
+              separatorBuilder: (_, _) => SizedBox(width: homeCardGap(context)),
+              itemBuilder: (BuildContext context, int index) => _BoardCard(
+                entry: live[index],
+                personRepository: personRepository,
+                matchRepository: matchRepository,
               ),
             ),
           ),
@@ -694,6 +771,10 @@ class _BoardCard extends StatelessWidget {
 /// The note's own options, opened from the button along its bottom edge. It is
 /// only ever a closed button at rest, so the home screen stays free of open
 /// menus.
+///
+/// A note that is on the board because its reminder came due is not pinned, so
+/// it is offered the pin rather than "הסרה מהלוח" — removing it from a board it
+/// was never put on would have nothing to remove.
 class _BoardCardMenu extends StatelessWidget {
   const _BoardCardMenu({required this.kind, required this.targetId});
 
@@ -716,19 +797,24 @@ class _BoardCardMenu extends StatelessWidget {
             await HomeBoardActions.editNote(context, kind, targetId);
           case 'reminder':
             await HomeBoardActions.editReminder(context, kind, targetId);
+          case 'pin':
+            HomeBoardStore.instance.add(kind, targetId);
           case 'remove':
             HomeBoardActions.remove(context, kind, targetId);
         }
       },
       itemBuilder: (BuildContext context) {
-        final bool hasNote =
-            (HomeBoardStore.instance.entryFor(kind, targetId)?.note ?? '')
-                .isNotEmpty;
+        final HomeBoardEntry? pinned = HomeBoardStore.instance.entryFor(
+          kind,
+          targetId,
+        );
+        final bool hasNote = (pinned?.note ?? '').isNotEmpty;
         return <PopupMenuEntry<String>>[
-          PopupMenuItem<String>(
-            value: 'note',
-            child: Text(hasNote ? 'עריכת הערה' : 'הוספת הערה'),
-          ),
+          if (pinned != null)
+            PopupMenuItem<String>(
+              value: 'note',
+              child: Text(hasNote ? 'עריכת הערה' : 'הוספת הערה'),
+            ),
           PopupMenuItem<String>(
             value: 'reminder',
             child: Text(
@@ -736,10 +822,13 @@ class _BoardCardMenu extends StatelessWidget {
             ),
           ),
           const PopupMenuDivider(),
-          const PopupMenuItem<String>(
-            value: 'remove',
-            child: Text('הסרה מהלוח'),
-          ),
+          if (pinned == null)
+            const PopupMenuItem<String>(value: 'pin', child: Text('הצמדה ללוח'))
+          else
+            const PopupMenuItem<String>(
+              value: 'remove',
+              child: Text('הסרה מהלוח'),
+            ),
         ];
       },
     );
@@ -789,85 +878,18 @@ class _OpenIdeasSection extends StatelessWidget {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
+    // The open ideas inherit the wave: free circles on soft water rather than
+    // one more row of white rectangles. The page already carries a board, a
+    // banner, three action cards and a tip — another rounded box would have
+    // been the fifth variation on the same shape.
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           HomeSectionHeader(
-            title: 'רעיונות שכדאי לחזור אליהם',
+            title: 'רעיונות פתוחים',
             icon: Icons.lightbulb_outline,
             onSeeAll: () => context.go('/matches'),
-          ),
-          HomeCarousel(
-            itemCount: worthReturningTo.length,
-            itemBuilder: (BuildContext context, int index) {
-              final HomeOpenIdea idea = worthReturningTo[index];
-              return _OpenIdeaCard(
-                match: idea.match,
-                alerting: idea.alerting,
-                personA: personRepository.getById(idea.match.personAId),
-                personB: personRepository.getById(idea.match.personBId),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OpenIdeaCard extends StatelessWidget {
-  const _OpenIdeaCard({
-    required this.match,
-    required this.alerting,
-    required this.personA,
-    required this.personB,
-  });
-
-  final MatchIdea match;
-
-  /// The reminder came due and the card has not been opened since.
-  final bool alerting;
-
-  final Person? personA;
-  final Person? personB;
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeIdeaCard(
-      personA: personA,
-      personB: personB,
-      title: '${_firstName(personA)} & ${_firstName(personB)}',
-      status: match.status.displayName,
-      statusColor: AppColors.statusColor(match.status.name),
-      onTap: () => context.push('/matches/${match.id}'),
-      // The badge only asks to be looked at; opening the card answers it.
-      marker: alerting ? const HomeAlertBadge() : null,
-    );
-  }
-}
-
-// --- חברים ששווה לחשוב עליהם ------------------------------------------------
-
-class _WorthThinkingSection extends StatelessWidget {
-  const _WorthThinkingSection({required this.suggestions});
-
-  final List<HomeSuggestion> suggestions;
-
-  @override
-  Widget build(BuildContext context) {
-    if (suggestions.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-
-    return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          HomeSectionHeader(
-            title: 'חברים ששווה לחשוב עליהם',
-            icon: Icons.auto_awesome_outlined,
-            onSeeAll: () => context.go('/people'),
           ),
           HomeWaveBackground(
             child: SingleChildScrollView(
@@ -884,17 +906,30 @@ class _WorthThinkingSection extends StatelessWidget {
                 children: <Widget>[
                   for (
                     int index = 0;
-                    index < suggestions.length;
+                    index < worthReturningTo.length;
                     index++
                   ) ...<Widget>[
                     if (index > 0) const SizedBox(width: 2),
-                    HomeSuggestionBubble(
-                      person: suggestions[index].person,
-                      reason: suggestions[index].reason,
-                      onTap: () => context.push(
-                        '/people/${suggestions[index].person.id}',
-                      ),
-                    ),
+                    () {
+                      final HomeOpenIdea idea = worthReturningTo[index];
+                      final Person? a = personRepository.getById(
+                        idea.match.personAId,
+                      );
+                      final Person? b = personRepository.getById(
+                        idea.match.personBId,
+                      );
+                      return HomeOpenIdeaBubble(
+                        personA: a,
+                        personB: b,
+                        title: '${_firstName(a)} & ${_firstName(b)}',
+                        status: idea.match.status.displayName,
+                        statusColor: AppColors.statusColor(
+                          idea.match.status.name,
+                        ),
+                        alerting: idea.alerting,
+                        onTap: () => context.push('/matches/${idea.match.id}'),
+                      );
+                    }(),
                   ],
                 ],
               ),
