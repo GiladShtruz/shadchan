@@ -14,8 +14,13 @@ import 'package:shadchan/screens/matches_screen.dart';
 import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
+import 'package:shadchan/screens/community_activity_screen.dart';
 import 'package:shadchan/screens/dashboard_screen.dart';
+import 'package:shadchan/screens/help_center_screen.dart';
 import 'package:shadchan/screens/home_screen.dart';
+import 'package:shadchan/screens/privacy_overview_screen.dart';
+import 'package:shadchan/screens/support_admin_screen.dart';
+import 'package:shadchan/screens/support_report_screen.dart';
 import 'package:shadchan/screens/monthly_stats_screen.dart';
 import 'package:shadchan/screens/new_ideas_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
@@ -344,6 +349,13 @@ abstract final class AppRouter {
           return const NewIdeasScreen();
         },
       ),
+      // The community and the matchmaker's own numbers, on one screen.
+      GoRoute(
+        path: '/activity',
+        builder: (BuildContext context, GoRouterState state) {
+          return const CommunityActivityScreen();
+        },
+      ),
       GoRoute(
         path: '/stats/month',
         builder: (BuildContext context, GoRouterState state) {
@@ -381,6 +393,42 @@ abstract final class AppRouter {
         builder: (BuildContext context, GoRouterState state) {
           return const PrivacyPolicyScreen();
         },
+      ),
+      // Everything behind "קהילה, עזרה ומשוב": the one report form, the short
+      // help centre, the plain-language privacy page, and — for the accounts on
+      // the administrator list — the console the reports arrive in.
+      GoRoute(
+        path: '/support',
+        redirect: (BuildContext context, GoRouterState state) =>
+            state.uri.path == '/support' ? '/support/help' : null,
+        routes: <RouteBase>[
+          GoRoute(
+            path: 'report',
+            builder: (BuildContext context, GoRouterState state) {
+              return SupportReportScreen(
+                initialText: state.extra is String ? state.extra as String : '',
+              );
+            },
+          ),
+          GoRoute(
+            path: 'help',
+            builder: (BuildContext context, GoRouterState state) {
+              return const HelpCenterScreen();
+            },
+          ),
+          GoRoute(
+            path: 'privacy',
+            builder: (BuildContext context, GoRouterState state) {
+              return const PrivacyOverviewScreen();
+            },
+          ),
+          GoRoute(
+            path: 'admin',
+            builder: (BuildContext context, GoRouterState state) {
+              return const SupportAdminScreen();
+            },
+          ),
+        ],
       ),
     ],
   );

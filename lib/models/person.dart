@@ -47,6 +47,7 @@ class Person extends HiveObject {
     this.isFavorite = false,
     this.needsReview = false,
     this.hidden = false,
+    this.importBatchId,
     int? avatarIndex,
   }) : photosPaths = List<String>.from(photosPaths),
        preferredRegions = List<Region>.from(preferredRegions),
@@ -211,6 +212,22 @@ class Person extends HiveObject {
   @HiveField(39, defaultValue: <MatchContact>[])
   List<MatchContact> additionalContacts;
 
+  /// The one import that brought this record in, or null for a friend added by
+  /// hand.
+  ///
+  /// It exists for exactly one question: *how many of the people counted this
+  /// week arrived in the same batch?* A file with four hundred cards in it is
+  /// real work and counts everywhere — the community total, the leaderboard,
+  /// the activity figures — but it must not be allowed to set the personal
+  /// weekly record, because a record of four hundred is one nobody can ever
+  /// beat, and an unreachable record stops being encouragement.
+  ///
+  /// Nothing else may be inferred from it. It is not a source, not a
+  /// provenance trail and not shown anywhere; two people sharing a batch id
+  /// means only that they were saved in one pass.
+  @HiveField(40)
+  String? importBatchId;
+
   /// Everyone a proposal can be passed through, the primary contact first.
   List<MatchContact> get proposalContacts {
     final String name = (inquiryContactName ?? '').trim();
@@ -336,6 +353,7 @@ class Person extends HiveObject {
     bool? isFavorite,
     bool? needsReview,
     bool? hidden,
+    Object? importBatchId = _sentinel,
     int? avatarIndex,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -406,6 +424,9 @@ class Person extends HiveObject {
       isFavorite: isFavorite ?? this.isFavorite,
       needsReview: needsReview ?? this.needsReview,
       hidden: hidden ?? this.hidden,
+      importBatchId: identical(importBatchId, _sentinel)
+          ? this.importBatchId
+          : importBatchId as String?,
       avatarIndex: avatarIndex ?? this.avatarIndex,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

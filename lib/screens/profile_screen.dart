@@ -1,13 +1,18 @@
 import 'dart:async';
 import 'dart:io';
+// `intl` also exports a `TextDirection`, so the framework's one is qualified.
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/app_menu_sheet.dart';
 import 'package:shadchan/dialogs/backup_import_feedback.dart';
+import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -17,12 +22,15 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/backup_service.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
+import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/excel_export_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/person_photo_editor.dart';
 import 'package:shadchan/widgets/section_header.dart';
 
@@ -119,6 +127,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
+      const SizedBox(height: 24),
+      // One place for everything that connects the matchmaker to the people
+      // behind the app. The three most useful of these are also on the top
+      // bar's three-dots menu, which is the short way in — this is the full
+      // list, and the only home any of it has.
+      const SectionHeader(title: 'קהילה, עזרה ומשוב'),
+      _CommunityCard(isSupportAdmin: account.isSupportAdmin),
       const SizedBox(height: 24),
       const SectionHeader(title: 'החשבון שלי'),
       _AccountCard(
@@ -354,7 +369,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     if (result.outcome == AccountSignInOutcome.failure) {
-      _showSnackBar(result.message!);
+      _showSnackBar(result.message!, details: result.details);
+      return;
+    }
+    if (result.outcome == AccountSignInOutcome.canceled &&
+        result.details != null) {
+      // A cancellation the platform reported rather than one the user obviously
+      // made: on Android a release build whose signing certificate is unknown to
+      // the Firebase project shows the whole account list and then comes back
+      // here, indistinguishable from a dismissed sheet until you read the text.
+      _showSnackBar('ההתחברות לא הושלמה.', details: result.details);
       return;
     }
     if (result.outcome == AccountSignInOutcome.success) {
@@ -607,10 +631,178 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _showSnackBar(String message) {
+  /// [details] adds a "פרטים" action carrying the untranslated platform error.
+  /// It is behind a button rather than in the message because it is written for
+  /// whoever has to fix it, not for whoever hit it.
+  void _showSnackBar(String message, {String? details}) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: details == null
+              ? const Duration(seconds: 4)
+              : const Duration(seconds: 10),
+          action: details == null
+              ? null
+              : SnackBarAction(
+                  label: 'פרטים',
+                  onPressed: () => _showErrorDetails(details),
+                ),
+        ),
+      );
+  }
+
+  /// The raw error, selectable and copyable, so it can be pasted into a message
+  /// to us instead of retyped from a photograph of the screen.
+  Future<void> _showErrorDetails(String details) async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final ThemeData theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: const Text('פרטים טכניים'),
+          content: SingleChildScrollView(
+            child: SelectableText(
+              details,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                height: 1.4,
+              ),
+              textDirection: ui.TextDirection.ltr,
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: details));
+                Navigator.of(dialogContext).pop();
+                _showSnackBar('הפרטים הועתקו');
+              },
+              child: const Text('העתקה'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('סגירה'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// "קהילה, עזרה ומשוב": the updates group, sharing the app, the one report
+/// form, the help centre, the privacy explanation and the way to write to us.
+///
+/// Ordered by who each row is for. The first two give something to the
+/// matchmaker's own circle; the middle two are what they need when something
+/// goes wrong or is unclear; the last two are about their own data and about
+/// reaching a person. The administrator console is drawn last and only for the
+/// accounts that can open it.
+class _CommunityCard extends StatelessWidget {
+  const _CommunityCard({required this.isSupportAdmin});
+
+  final bool isSupportAdmin;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    Widget row({
+      required IconData icon,
+      required String title,
+      String? subtitle,
+      required VoidCallback onTap,
+    }) {
+      return ListTile(
+        leading: Icon(icon),
+        title: Text(title),
+        subtitle: subtitle == null ? null : Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      );
+    }
+
+    return Card(
+      child: Column(
+        children: <Widget>[
+          if (CommunityLinks.hasUpdatesGroup) ...<Widget>[
+            row(
+              icon: Icons.groups_outlined,
+              title: 'קבוצת העדכונים',
+              subtitle: CommunityPromptsStore.isInUpdatesGroup
+                  ? 'סימנת שאתם כבר בקבוצה'
+                  : 'קבוצה שקטה — רק המנהלים מפרסמים בה',
+              // The dialog rather than the link: it is the only place that can
+              // hear "אני כבר בקבוצה", which is the one answer that stops the
+              // reminders.
+              onTap: () => UpdatesGroupDialog.show(context),
+            ),
+            const Divider(height: 1),
+          ],
+          row(
+            icon: Icons.ios_share_outlined,
+            title: 'שיתוף האפליקציה עם חבר',
+            subtitle: 'הודעה מוכנה עם קישור להורדה',
+            onTap: shareTheApp,
+          ),
+          const Divider(height: 1),
+          row(
+            icon: Icons.forum_outlined,
+            title: 'שליחת תקלה / רעיון לשיפור',
+            subtitle: 'טופס אחד לכל פנייה, עם אפשרות לצרף תמונה',
+            onTap: () => context.push('/support/report'),
+          ),
+          const Divider(height: 1),
+          row(
+            icon: Icons.help_outline_rounded,
+            title: 'עזרה והדרכה',
+            onTap: () => context.push('/support/help'),
+          ),
+          const Divider(height: 1),
+          row(
+            icon: Icons.insights_outlined,
+            title: 'הפעילות והקהילה',
+            subtitle: 'הפעולות שלך, הקהילה, היעד השבועי והדירוג',
+            onTap: () => context.push('/activity'),
+          ),
+          const Divider(height: 1),
+          // The leaderboard opt-out lives here as well as on the board itself.
+          // A privacy control that exists only where the thing it controls is
+          // drawn is one that has to be hunted for later.
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: HideFromLeaderboardTile(dense: true),
+          ),
+          const Divider(height: 1),
+          row(
+            icon: Icons.lock_outline_rounded,
+            title: 'פרטיות והמאגר שלי',
+            onTap: () => context.push('/support/privacy'),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.mail_outline_rounded),
+            title: const Text('כתבו לנו במייל'),
+            subtitle: Text(
+              CommunityLinks.supportEmail,
+              style: theme.textTheme.bodySmall,
+            ),
+            onTap: () => CommunityLinks.openSupportEmail(),
+          ),
+          if (isSupportAdmin) ...<Widget>[
+            const Divider(height: 1),
+            row(
+              icon: Icons.admin_panel_settings_outlined,
+              title: 'מסך ניהול',
+              subtitle: 'פניות, "מה חדש" ומנהלי מערכת',
+              onTap: () => context.push('/support/admin'),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -964,8 +1156,8 @@ class _PersonalCardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String card = (profile.personalCard ?? '').trim();
-    final bool hasCard =
-        card.isNotEmpty || profile.personalCardPhotos.isNotEmpty;
+    final List<String> photos = profile.personalCardPhotos;
+    final bool hasCard = card.isNotEmpty || photos.isNotEmpty;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -1006,8 +1198,8 @@ class _PersonalCardCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsetsDirectional.only(end: 8),
                 child: Text(
-                  'שמור את הכרטיס שלך כאן כדי שתוכל לשתף אותו בקלות בכל פעם '
-                  'שתצטרך.',
+                  'כאן אפשר לשמור את הכרטיס שלך, כדי לשתף אותו בקלות בכל פעם '
+                  'שצריך.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     height: 1.45,
@@ -1052,6 +1244,10 @@ class _PersonalCardCard extends StatelessWidget {
                     child: Text(expanded ? 'הצג פחות' : 'הצג עוד'),
                   ),
                 ),
+              if (photos.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                _PersonalCardPhotos(photos: photos),
+              ],
             ],
           ],
         ),
@@ -1063,6 +1259,198 @@ class _PersonalCardCard extends StatelessWidget {
   /// more lines than the preview shows, or it is long enough to wrap past it.
   static bool _isLong(String card) {
     return '\n'.allMatches(card).length >= _previewLines || card.length > 180;
+  }
+}
+
+/// Every photo saved on the personal card, laid out under its text.
+///
+/// The card used to show its text and nothing else, so the only way to find out
+/// which photos were attached — or how many — was to open the editor. That is
+/// the wrong moment to discover it: this card exists to be *shared*, the photos
+/// go with it, and nobody should have to send it once to learn what it sends.
+/// They are all here, in the order they will go out in, with the first one
+/// marked because that is the one that leads.
+class _PersonalCardPhotos extends StatelessWidget {
+  const _PersonalCardPhotos({required this.photos});
+
+  final List<String> photos;
+
+  static const double _thumbSize = 74;
+
+  Future<void> _open(BuildContext context, int index) {
+    return showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (BuildContext dialogContext) =>
+          _PersonalCardPhotoViewer(photos: photos, initialIndex: index),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.photo_library_outlined,
+                size: 15,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  photos.length == 1
+                      ? 'תמונה אחת תישלח יחד עם הכרטיס'
+                      : '${photos.length} תמונות יישלחו יחד עם הכרטיס',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: _thumbSize,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            // Flush with the card's text on the start edge; the trailing gap is
+            // the card's own padding.
+            padding: const EdgeInsetsDirectional.only(end: 8),
+            itemCount: photos.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (BuildContext context, int index) {
+              return _PersonalCardThumb(
+                path: photos[index],
+                isFirst: index == 0,
+                size: _thumbSize,
+                onTap: () => _open(context, index),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PersonalCardThumb extends StatelessWidget {
+  const _PersonalCardThumb({
+    required this.path,
+    required this.isFirst,
+    required this.size,
+    required this.onTap,
+  });
+
+  final String path;
+  final bool isFirst;
+  final double size;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return SizedBox.square(
+      dimension: size,
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Image.file(
+                File(path),
+                fit: BoxFit.cover,
+                // A photo whose file has gone is shown as a gap rather than as
+                // a red error box on the matchmaker's own profile.
+                errorBuilder: (_, _, _) => Icon(
+                  Icons.broken_image_outlined,
+                  size: 22,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (isFirst)
+                PositionedDirectional(
+                  start: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    color: Colors.black54,
+                    child: const Text(
+                      'ראשית',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The photos at full size, swipeable, on a dark ground.
+class _PersonalCardPhotoViewer extends StatelessWidget {
+  const _PersonalCardPhotoViewer({
+    required this.photos,
+    required this.initialIndex,
+  });
+
+  final List<String> photos;
+  final int initialIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.transparent,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: PageView.builder(
+              controller: PageController(initialPage: initialIndex),
+              itemCount: photos.length,
+              itemBuilder: (BuildContext context, int index) {
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.file(File(photos[index]), fit: BoxFit.contain),
+                  ),
+                );
+              },
+            ),
+          ),
+          PositionedDirectional(
+            top: MediaQuery.paddingOf(context).top + 8,
+            end: 8,
+            child: IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: 'סגירה',
+              icon: const Icon(Icons.close, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

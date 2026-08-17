@@ -3,13 +3,18 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
+import 'package:shadchan/widgets/app_update_prompt.dart';
 import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
 import 'package:shadchan/widgets/incoming_shared_profile_listener.dart';
 import 'package:shadchan/utils/app_router.dart';
 
 class App extends StatelessWidget {
-  const App({super.key});
+  const App({super.key, this.checkForUpdates = true});
+
+  /// Passed straight to `AppUpdatePrompt.enabled`; see the note there for why
+  /// the store check has to be switchable off from a test.
+  final bool checkForUpdates;
 
   @override
   Widget build(BuildContext context) {
@@ -35,10 +40,13 @@ class App extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: CloudSyncScheduler(
-            child: IncomingBackupImportListener(
-              child: IncomingSharedProfileListener(
-                child: child ?? const SizedBox.shrink(),
+          child: AppUpdatePrompt(
+            enabled: checkForUpdates,
+            child: CloudSyncScheduler(
+              child: IncomingBackupImportListener(
+                child: IncomingSharedProfileListener(
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             ),
           ),

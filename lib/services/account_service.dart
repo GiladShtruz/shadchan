@@ -90,28 +90,77 @@ abstract final class AccountService {
       if (idToken == null) {
         return const AccountSignInResult.failure(
           'ההתחברות לא הושלמה. כדאי לנסות שוב.',
+          details:
+              'google/no-id-token\n'
+              'החשבון נבחר אך לא הוחזר idToken — סימן שמזהה הלקוח (serverClientId) '
+              'או טביעת האצבע של החתימה אינם רשומים בפרויקט.',
         );
       }
 
       await _attachToFirebase(GoogleAuthProvider.credential(idToken: idToken));
       return const AccountSignInResult.success();
     } on GoogleSignInException catch (error) {
-      if (error.code == GoogleSignInExceptionCode.canceled) {
-        return const AccountSignInResult.canceled();
-      }
-      debugPrint(
-        'ACCOUNT google sign-in failed: ${error.code} ${error.details}',
+      final String details = _describe(
+        'google',
+        error.code.name,
+        error.description,
+        error.details,
       );
-      return AccountSignInResult.failure(_googleMessage(error.code));
+      debugPrint('ACCOUNT google sign-in failed: $details');
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        return AccountSignInResult.canceled(details);
+      }
+      return AccountSignInResult.failure(
+        _googleMessage(error.code),
+        details: details,
+      );
     } on FirebaseAuthException catch (error) {
-      debugPrint('ACCOUNT firebase sign-in failed: ${error.code}');
-      return AccountSignInResult.failure(_firebaseMessage(error.code));
+      final String details = _describe(
+        'firebase',
+        error.code,
+        error.message,
+        null,
+      );
+      debugPrint('ACCOUNT firebase sign-in failed: $details');
+      return AccountSignInResult.failure(
+        _firebaseMessage(error.code),
+        details: details,
+      );
     } catch (error, stackTrace) {
       debugPrint('ACCOUNT sign-in failed: $error\n$stackTrace');
-      return const AccountSignInResult.failure(
+      return AccountSignInResult.failure(
         'לא הצלחנו להתחבר. כדאי לנסות שוב.',
+        details: _describe(
+          'unexpected',
+          error.runtimeType.toString(),
+          '$error',
+          null,
+        ),
       );
     }
+  }
+
+  /// The technical one-liner behind a Hebrew sentence.
+  ///
+  /// It exists because the interesting half of an Android sign-in failure is in
+  /// the platform's own text and nowhere else: a release build signed with a
+  /// certificate the Firebase project does not know answers the account picker
+  /// with `10: … Developer console is not set up correctly`, and every code
+  /// path above would otherwise flatten that into "כדאי לנסות שוב".
+  static String _describe(
+    String source,
+    String code,
+    String? description,
+    Object? extra,
+  ) {
+    final StringBuffer buffer = StringBuffer('$source/$code');
+    if (description != null && description.isNotEmpty) {
+      buffer.write('\n$description');
+    }
+    if (extra != null) {
+      buffer.write('\n$extra');
+    }
+    return buffer.toString();
   }
 
   /// Upgrades the anonymous account in place when it can, and falls back to a
@@ -196,17 +245,25 @@ enum AccountSignInOutcome { success, canceled, failure }
 class AccountSignInResult {
   const AccountSignInResult.success()
     : outcome = AccountSignInOutcome.success,
-      message = null;
+      message = null,
+      details = null;
 
-  const AccountSignInResult.canceled()
+  const AccountSignInResult.canceled([this.details])
     : outcome = AccountSignInOutcome.canceled,
       message = null;
 
-  const AccountSignInResult.failure(String this.message)
+  const AccountSignInResult.failure(String this.message, {this.details})
     : outcome = AccountSignInOutcome.failure;
 
   final AccountSignInOutcome outcome;
 
   /// A Hebrew sentence to show, on [AccountSignInOutcome.failure] only.
   final String? message;
+
+  /// The untranslated platform error, for the "פרטים טכניים" dialog.
+  ///
+  /// Kept apart from [message] on purpose: nobody should be shown a Credential
+  /// Manager stack trace by default, and nobody debugging a release build
+  /// should have to go without one.
+  final String? details;
 }

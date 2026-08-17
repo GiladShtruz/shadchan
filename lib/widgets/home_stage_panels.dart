@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_stage.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
@@ -51,8 +53,10 @@ class HomeWelcomeCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'כאן נשמרים החברים שאת/ה חושב/ת עליהם, הרעיונות שנפתחו ומה קרה '
-            'איתם. מתחילים בהוספת כמה חברים — כל אחד שנוסף פותח כיוון.',
+            'כאן נשמרים החברים {שאתה חושב|שאת חושבת} עליהם, הרעיונות שנפתחו '
+                    'ומה קרה איתם. מתחילים בהוספת כמה חברים — כל אחד שנוסף '
+                    'פותח כיוון.'
+                .forGender(context.userGender),
             style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
           ),
           const SizedBox(height: 14),
@@ -268,6 +272,12 @@ class HomeImportInvite extends StatelessWidget {
 
 /// The invitation into the continuous "think about someone" view. Warm rather
 /// than urgent — it is an offer to sit and think, not a queue with a count.
+///
+/// It opens the page now, above the two add actions, so it wears the same
+/// bordered surface with a soft tint that the block under it wears. The only
+/// thing separating the two is the accent: this one is warm, the ideas card is
+/// the brand blue. Two adjacent blocks in two different visual languages was
+/// the loudest thing about the old top of this screen.
 class HomeThinkBanner extends StatelessWidget {
   const HomeThinkBanner({super.key, required this.onTap});
 
@@ -277,58 +287,68 @@ class HomeThinkBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
+    final Color accent = dark
+        ? AppColors.secondaryDarkDm
+        : AppColors.secondaryInk;
 
     return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(22),
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 15, 12, 15),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: accent.withValues(alpha: 0.22)),
             gradient: LinearGradient(
-              begin: AlignmentDirectional.centerStart,
-              end: AlignmentDirectional.centerEnd,
-              colors: dark
-                  ? <Color>[
-                      AppColors.secondaryDarkDm.withValues(alpha: 0.22),
-                      theme.colorScheme.surface,
-                    ]
-                  : <Color>[AppColors.secondaryLight, AppColors.surface],
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
+              colors: <Color>[
+                accent.withValues(alpha: dark ? 0.16 : 0.09),
+                theme.colorScheme.surface,
+              ],
             ),
           ),
           child: Row(
             children: <Widget>[
-              Icon(
-                Icons.self_improvement_outlined,
-                color: dark
-                    ? AppColors.secondaryDarkDm
-                    : AppColors.secondaryInk,
-              ),
+              Icon(Icons.self_improvement_outlined, color: accent),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   // A statement, not a question. The banner is an open door,
                   // and a question mark on the home screen asks for an answer
                   // the matchmaker did not come here to give.
-                  'עוצרים רגע לחשוב על שידוך',
+                  'עוצרים רגע לחשוב על החברים',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w900,
-                    color: dark
-                        ? theme.colorScheme.onSurface
-                        : AppColors.secondaryInk,
+                    color: dark ? theme.colorScheme.onSurface : accent,
                   ),
                 ),
               ),
-              HomeArrowButton(
-                background:
-                    (dark ? AppColors.secondaryDarkDm : AppColors.secondaryInk)
-                        .withValues(alpha: 0.14),
-                foreground: dark
-                    ? AppColors.secondaryDarkDm
-                    : AppColors.secondaryInk,
+              const SizedBox(width: 8),
+              // A word rather than a chevron in a circle. The whole banner is
+              // the tap target, so the mark on the end is only there to say
+              // that it opens something — and a filled round arrow says it in
+              // the voice of a system control, next to a line that is an
+              // invitation to sit and think.
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: dark ? 0.20 : 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'מתחילים',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
               ),
             ],
           ),

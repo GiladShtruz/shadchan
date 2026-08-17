@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
@@ -80,6 +81,17 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // belongs. A tip approved this morning shows up on the next app open, which
     // is soon enough for a tip.
     unawaited(context.read<TipsProvider>().refreshApproved());
+
+    // And so do this matchmaker's own community counters. Open and pause is
+    // twice a session — the alternative, writing on every action, would be a
+    // Firestore write per friend added during an import of four hundred.
+    unawaited(
+      context.read<CommunityProvider>().refresh(
+        people: context.read<PersonRepository>(),
+        matches: context.read<MatchRepository>(),
+        profile: context.read<UserProfileProvider>(),
+      ),
+    );
   }
 
   @override

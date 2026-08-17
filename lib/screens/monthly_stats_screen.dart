@@ -8,6 +8,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/utils/activity_stats.dart';
+import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 
 /// "הפעילות שלך" — what this matchmaker has actually done, month by month.
@@ -46,6 +47,11 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
     final List<MatchIdea> matches = matchRepository.getAll();
     final List<Person> people = personRepository.getAll();
 
+    final List<MatchStatusEvent> matchStatusEvents = matchRepository
+        .getAllStatusEvents();
+    final List<PersonEvent> events = personRepository.getAllEvents();
+    final Set<String> excludedFromDating = DatingCountExclusions.all();
+
     final List<MonthPeriod> periods = MonthlyStats.buildPeriods(
       DateTime.now(),
       MonthlyStatsScreen._monthsBack,
@@ -53,12 +59,20 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
     final int selected = _selected.clamp(0, periods.length - 1);
     final List<MonthStats> stats = <MonthStats>[
       for (final MonthPeriod period in periods)
-        MonthlyStats.statsFor(period, matches, people),
+        MonthlyStats.statsFor(
+          period,
+          matches,
+          people,
+          statusEvents: matchStatusEvents,
+          excludedFromDating: excludedFromDating,
+        ),
     ];
 
-    final MonthStats shown = MonthlyStats.withAllTimeWeddings(
+    final MonthStats shown = MonthlyStats.withAllTimeTotals(
       stats[selected],
       matches,
+      matchStatusEvents,
+      excludedFromDating: excludedFromDating,
     );
     // The comparison is always against the month before the one on screen, so
     // stepping back through the chart keeps saying something true.
@@ -66,9 +80,6 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
         ? stats[selected + 1]
         : null;
 
-    final List<MatchStatusEvent> matchStatusEvents = matchRepository
-        .getAllStatusEvents();
-    final List<PersonEvent> events = personRepository.getAllEvents();
     final List<ActivityBucket> bars = ActivityStats.monthlyBars(
       periods: periods,
       people: people,
@@ -119,8 +130,7 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
                   _StatCard(
                     metric: metric,
                     value: metric.valueOf(shown),
-                    previous:
-                        metric == MonthlyStatMetric.weddings || previous == null
+                    previous: metric.isAllTime || previous == null
                         ? null
                         : metric.valueOf(previous),
                     onTap: () => context.push('/stats/month/${metric.name}'),

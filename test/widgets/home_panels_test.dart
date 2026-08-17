@@ -118,6 +118,75 @@ void main() {
     expect(peopleTop, closeTo(ideaTop, 1));
   });
 
+  group('the two entry cards are illustrated', () {
+    testWidgets('each carries its own picture, and the label stays text', (
+      WidgetTester tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        wrap(HomeActionCards(onAddPeople: () {}, onAddIdea: () {})),
+      );
+      await tester.pump();
+
+      final List<String> assets = tester
+          .widgetList<Image>(
+            find.descendant(
+              of: find.byType(HomeActionCards),
+              matching: find.byType(Image),
+            ),
+          )
+          .map((Image image) => (image.image as AssetImage).assetName)
+          .toList();
+      expect(assets, <String>[
+        'assets/home_add_people.jpg',
+        'assets/home_add_idea.jpg',
+      ]);
+
+      // The artwork these were cut from had the Hebrew painted into it. If it
+      // ever goes back to being part of the picture, it stops growing with the
+      // system font and stops being readable to a screen reader — and this is
+      // the assertion that would notice.
+      expect(find.text('הוספת חברים'), findsOneWidget);
+      expect(find.text('הוספת רעיון'), findsOneWidget);
+    });
+
+    testWidgets('a tap on the picture counts, not only on the label', (
+      WidgetTester tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      int people = 0;
+      int ideas = 0;
+      await tester.pumpWidget(
+        wrap(
+          HomeActionCards(
+            onAddPeople: () => people++,
+            onAddIdea: () => ideas++,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // The whole surface is the button, and the picture is most of the
+      // surface. It sits above the `Material` that paints the ink, so without
+      // the tap target stacked over it this is the half that does nothing.
+      for (final ({Finder image, String label}) tile
+          in <({Finder image, String label})>[
+            (image: find.byType(Image).at(0), label: 'הוספת חברים'),
+            (image: find.byType(Image).at(1), label: 'הוספת רעיון'),
+          ]) {
+        await tester.tapAt(tester.getCenter(tile.image));
+        await tester.pump();
+      }
+
+      expect(people, 1);
+      expect(ideas, 1);
+    });
+  });
+
   testWidgets('the couples banner pages between couples and keeps its line', (
     WidgetTester tester,
   ) async {
@@ -163,50 +232,62 @@ void main() {
     expect(find.text('יאיר & שושנה'), findsOneWidget);
   });
 
-  testWidgets('the activity card shows one total for the window picked', (
+  testWidgets('the activity card shows all three windows at once', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    HomeActivityRange picked = HomeActivityRange.week;
     int opened = 0;
 
     await tester.pumpWidget(
       wrap(
-        StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return HomeActivityPanel(
-              range: picked,
-              total: switch (picked) {
-                HomeActivityRange.week => 6,
-                HomeActivityRange.month => 21,
-                HomeActivityRange.allTime => 348,
-              },
-              onRangeChanged: (HomeActivityRange range) =>
-                  setState(() => picked = range),
-              onOpen: () => opened++,
-            );
-          },
+        HomeActivityPanel(
+          week: 6,
+          month: 21,
+          allTime: 348,
+          onOpen: () => opened++,
         ),
       ),
     );
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('הפעילות שלך'), findsOneWidget);
-    expect(find.text('השבוע'), findsOneWidget);
-    expect(find.text('החודש'), findsOneWidget);
-    expect(find.text('כל הזמנים'), findsOneWidget);
-    // One number, not a breakdown by kind of action.
-    expect(find.text('6'), findsOneWidget);
-    expect(find.text('21'), findsNothing);
+    expect(find.text('הפעולות שעשית בשביל החברים שלך'), findsOneWidget);
 
-    // Picking a window changes the figure without opening the stats screen.
-    await tester.tap(find.text('כל הזמנים'));
-    await tester.pump();
-    expect(find.text('348'), findsOneWidget);
+    // Not tabs: the three figures and their three captions are all on screen
+    // together, so a quiet week can be read against a good year without tapping.
+    for (final String label in <String>['השבוע', 'החודש', 'כל הזמנים']) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+    for (final String figure in <String>['6', '21', '348']) {
+      expect(find.text(figure), findsOneWidget, reason: figure);
+    }
+
+    // A gentle line, and never a reproach.
+    expect(find.text('עוד פעולה וניפגש בחופה'), findsOneWidget);
     expect(opened, 0);
+
+    // The whole card is the way into the numbers.
+    await tester.tap(find.text('הפעולות שעשית בשביל החברים שלך'));
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  testWidgets('a quiet week is answered with an invitation, not a tally', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      wrap(HomeActivityPanel(week: 0, month: 0, allTime: 0, onOpen: () {})),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('כל פעולה מקדמת עוד רעיון'), findsOneWidget);
+    expect(find.text('עוד פעולה וניפגש בחופה'), findsNothing);
   });
 
   testWidgets('the tip carousel credits its author and follows gender', (
@@ -269,9 +350,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('every next-action card is exactly the same box', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('every next-action card is the same compact box, and the row '
+      'scrolls', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -286,7 +366,7 @@ void main() {
                   'שעדיין ריקים לגמרי',
             ),
             action('דנה', 'חסר בכרטיס: גיל'),
-            action('שירה', 'חסר בכרטיס: אזור בארץ'),
+            action('שירה', 'חסר בכרטיס: סגנון דתי'),
           ],
           onOpen: (_) {},
         ),
@@ -297,8 +377,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('הפעולות הבאות שלך'), findsOneWidget);
 
-    // Three at a time, and the long reason does not make its card taller or
-    // wider than the short one beside it.
+    // A long reason does not make its card taller or wider than the short one
+    // beside it — it is clamped to the box, never the other way round.
     final List<Size> sizes = tester
         .widgetList<Ink>(
           find.descendant(
@@ -308,26 +388,61 @@ void main() {
         )
         .map((Ink card) => tester.getSize(find.byWidget(card)))
         .toList();
-    expect(sizes.length, 3);
+    expect(sizes, isNotEmpty);
     for (final Size size in sizes) {
       expect(size.height, sizes.first.height);
       expect(size.width, sizes.first.width);
       expect(size.height, HomeConfig.nextActionCardHeight);
+      expect(size.width, HomeConfig.nextActionCardWidth);
     }
+
+    // The row is dragged, not paged. There is no button that swaps the visible
+    // set, and the card that was off the end comes in by scrolling.
+    expect(find.text('פעולות נוספות'), findsNothing);
     expect(find.text('שירה'), findsNothing);
-
-    // "פעולות נוספות" swaps the whole trio rather than stepping one card, and
-    // there is no per-card "next" button anywhere.
-    expect(find.text('הבא'), findsNothing);
-    await tester.tap(find.text('פעולות נוספות'));
-    await tester.pump();
+    // The row is RTL: later cards sit off the *left* edge, so the finger
+    // travels rightwards to bring them in.
+    await tester.drag(
+      find.descendant(
+        of: find.byType(HomeNextActionsRow),
+        matching: find.byType(ListView),
+      ),
+      const Offset(400, 0),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('שירה'), findsOneWidget);
-    expect(find.text('רבקה'), findsNothing);
+  });
 
-    // The end of the list wraps back to the start; the control never dies.
-    await tester.tap(find.text('פעולות נוספות'));
+  testWidgets('a habit prompt is a card with no face and its own route', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    HomeNextAction? opened;
+    await tester.pumpWidget(
+      wrap(
+        HomeNextActionsRow(
+          actions: const <HomeNextAction>[
+            HomeNextAction.prompt(
+              kind: HomeActionKind.addFriendNudge,
+              title: 'הוספת חבר',
+              reason: 'כבר שבוע לא הוספת חבר למאגר',
+            ),
+          ],
+          onOpen: (HomeNextAction action) => opened = action,
+        ),
+      ),
+    );
     await tester.pump();
-    expect(find.text('רבקה'), findsOneWidget);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('כבר שבוע לא הוספת חבר למאגר'), findsOneWidget);
+
+    await tester.tap(find.text('הוספת חבר'));
+    await tester.pump();
+    expect(opened?.kind, HomeActionKind.addFriendNudge);
+    expect(opened?.isPrompt, isTrue);
   });
 
   for (final double width in <double>[320, 360, 390, 430]) {
@@ -353,9 +468,9 @@ void main() {
               ),
               const SizedBox(height: 14),
               HomeActivityPanel(
-                range: HomeActivityRange.allTime,
-                total: 1284,
-                onRangeChanged: (_) {},
+                week: 7,
+                month: 43,
+                allTime: 1284,
                 onOpen: () {},
               ),
               const SizedBox(height: 14),
@@ -380,7 +495,7 @@ void main() {
       expect(tester.takeException(), isNull);
       for (final String label in <String>[
         'ממשיכים לשמור על קשר עד החתונה! :)',
-        'הפעילות שלך',
+        'הפעולות שעשית בשביל החברים שלך',
         'כל הזמנים',
         'מרים בת־אברהם',
       ]) {
@@ -473,6 +588,10 @@ void main() {
           expect(paragraph.didExceedMaxLines, isFalse, reason: label);
         }
 
+        // Only the tiles themselves. Each one also carries a transparent
+        // `Material` holding the tap target over its picture, and taking the
+        // first two Materials would compare a tile with its own overlay and
+        // pass however wrong the row was.
         final Iterable<Size> cards = tester
             .widgetList<Material>(
               find.descendant(
@@ -480,7 +599,7 @@ void main() {
                 matching: find.byType(Material),
               ),
             )
-            .take(2)
+            .where((Material card) => card.type != MaterialType.transparency)
             .map((Material card) => tester.getSize(find.byWidget(card)));
         expect(cards.length, 2);
         expect(cards.first.height, closeTo(cards.last.height, 1));

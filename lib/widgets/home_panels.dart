@@ -29,8 +29,15 @@ const Color _datingInk = Color(0xFF4F7D99);
 const Color _datingInkDm = Color(0xFFA9C9DC);
 const Color _celebrationGold = Color(0xFFD4A34B);
 
-/// The opening band under the app bar: one short thought about connections and
-/// the single button that starts the work.
+/// "רעיונות שהמאגר מציע לך" — the pairs the database worked out on its own.
+///
+/// It sits near the top of the page now, above the two add actions, which is
+/// exactly why it stopped being a banner. It used to carry a three-stop
+/// gradient, a hand-drawn heart trail and a large pair of portraits; at the top
+/// of the screen that read as decoration to scroll past rather than as an
+/// offer. What is left is the page's ordinary bordered surface with a soft tint
+/// — the same shape the activity card wears — one line of type, one button and
+/// one small mark. Nothing here is drawn that does not lead somewhere.
 class HomeHeroBand extends StatelessWidget {
   const HomeHeroBand({super.key, required this.onShowIdeas});
 
@@ -49,101 +56,84 @@ class HomeHeroBand extends StatelessWidget {
         return Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(narrow ? 22 : 28),
-            border: Border.all(
-              color: theme.colorScheme.primary.withValues(alpha: 0.18),
-            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: lead.withValues(alpha: 0.22)),
             gradient: LinearGradient(
               begin: AlignmentDirectional.topStart,
               end: AlignmentDirectional.bottomEnd,
-              colors: dark
-                  ? <Color>[
-                      theme.colorScheme.primary.withValues(alpha: 0.18),
-                      theme.colorScheme.surface,
-                    ]
-                  : <Color>[
-                      AppColors.primaryLight.withValues(alpha: 0.75),
-                      AppColors.surface,
-                      AppColors.secondaryLight.withValues(alpha: 0.65),
-                    ],
+              colors: <Color>[
+                lead.withValues(alpha: dark ? 0.14 : 0.07),
+                theme.colorScheme.surface,
+              ],
             ),
           ),
-          child: CustomPaint(
-            painter: _HeartLinePainter(
-              color: (dark ? theme.colorScheme.primary : AppColors.femaleAccent)
-                  .withValues(alpha: dark ? 0.22 : 0.28),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              narrow ? 12 : 16,
+              narrow ? 13 : 15,
+              narrow ? 12 : 16,
+              narrow ? 13 : 15,
             ),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                narrow ? 12 : 18,
-                narrow ? 14 : 18,
-                narrow ? 12 : 16,
-                narrow ? 14 : 18,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        // Named for what it is: pairs the database worked out
-                        // on its own, not ideas the matchmaker opened.
-                        Text(
-                          'רעיונות שהמאגר מציע לך',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontSize: narrow ? 16 : 19,
-                            fontWeight: FontWeight.w800,
-                            height: 1.25,
-                          ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      // Named for what it is: pairs the database worked out on
+                      // its own, not ideas the matchmaker opened.
+                      Text(
+                        'רעיונות שהמאגר מציע לך',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontSize: narrow ? 15 : 17,
+                          fontWeight: FontWeight.w800,
+                          height: 1.25,
                         ),
-                        SizedBox(height: narrow ? 10 : 14),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: onShowIdeas,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: lead,
-                              foregroundColor: theme.colorScheme.onPrimary,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: narrow ? 10 : 18,
-                                vertical: narrow ? 9 : 12,
-                              ),
-                              shape: const StadiumBorder(),
-                              textStyle: theme.textTheme.labelLarge?.copyWith(
-                                fontSize: narrow ? 11.5 : null,
-                                fontWeight: FontWeight.w700,
-                              ),
+                      ),
+                      SizedBox(height: narrow ? 9 : 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: onShowIdeas,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: lead,
+                            foregroundColor: theme.colorScheme.onPrimary,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: narrow ? 10 : 18,
+                              vertical: narrow ? 9 : 11,
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: <Widget>[
-                                Icon(
-                                  Icons.auto_awesome,
-                                  size: narrow ? 15 : 18,
-                                ),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      'הצגת רעיונות חדשים',
-                                      maxLines: 1,
-                                    ),
+                            shape: const StadiumBorder(),
+                            textStyle: theme.textTheme.labelLarge?.copyWith(
+                              fontSize: narrow ? 11.5 : null,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              Icon(Icons.auto_awesome, size: narrow ? 15 : 18),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'הצגת רעיונות חדשים',
+                                    maxLines: 1,
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  SizedBox(width: narrow ? 6 : 10),
-                  _HeroCouple(compact: narrow),
-                ],
-              ),
+                ),
+                SizedBox(width: narrow ? 8 : 12),
+                _HeroCouple(compact: narrow),
+              ],
             ),
           ),
         );
@@ -162,8 +152,11 @@ class _HeroCouple extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final double radius = compact ? 19 : 31;
-    final double overlap = compact ? 12 : 18;
+    // Smaller than it was: the block is a card near the top of the page now,
+    // not the banner it opened as, and the mark is there to identify it rather
+    // than to fill it.
+    final double radius = compact ? 17 : 24;
+    final double overlap = compact ? 11 : 14;
 
     Widget portrait(String? asset, Color ring) {
       return Container(
@@ -227,59 +220,21 @@ class _HeroCouple extends StatelessWidget {
   }
 }
 
-/// A single soft line, drawn like a hand-sketched heart trail behind the
-/// opening band.
-class _HeartLinePainter extends CustomPainter {
-  const _HeartLinePainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..strokeCap = StrokeCap.round;
-
-    final double x = size.width * 0.06;
-    final double y = size.height * 0.72;
-    final double s = size.height * 0.16;
-
-    final Path heart = Path()
-      ..moveTo(x, y)
-      ..cubicTo(x - s, y - s, x - s * 0.2, y - s * 1.8, x, y - s * 0.9)
-      ..cubicTo(x + s * 0.2, y - s * 1.8, x + s, y - s, x, y);
-    canvas.drawPath(heart, paint);
-
-    final Path trail = Path()
-      ..moveTo(x + s * 0.6, y - s * 0.2)
-      ..cubicTo(
-        x + s * 2.4,
-        y + s * 0.9,
-        x + s * 4.2,
-        y - s * 1.2,
-        x + s * 5.6,
-        y - s * 0.1,
-      );
-    canvas.drawPath(trail, paint);
-  }
-
-  @override
-  bool shouldRepaint(_HeartLinePainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
-
 /// "הוספת חברים" and "הוספת רעיון" — the two most important things on the page,
 /// because they are the two that make everything else on it possible.
 ///
-/// Each is one clean tile: a single icon, a single label, and the whole surface
-/// is the button. There is no chevron and no inner badge — a card that is
-/// entirely a tap target does not need an arrow to say so, and the two arrows
-/// plus two icon plates the previous version carried were the busiest thing at
-/// the top of the screen. Adding friends is the louder of the two: it is filled
-/// in the brand blue and takes more of the row.
+/// Each is one illustrated card: the picture is the top of it, a coloured band
+/// across the bottom carries the name of the action, and the whole surface is
+/// the button. There is no chevron and no inner badge — a card that is entirely
+/// a tap target does not need an arrow to say so. Adding friends is the louder
+/// of the two: it takes more of the row.
+///
+/// **The label is text, not part of the picture.** The artwork these came from
+/// had the Hebrew drawn into it, which would have been one less widget and four
+/// separate losses: it does not grow with the system font size, a screen reader
+/// cannot read it, it is soft on a large display, and it could never be
+/// reworded. So each illustration is cropped to its picture alone and the band
+/// under it is drawn here, in the colour sampled from the band the artwork had.
 class HomeActionCards extends StatelessWidget {
   const HomeActionCards({
     super.key,
@@ -300,7 +255,18 @@ class HomeActionCards extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool narrow = constraints.maxWidth < 350;
-        return IntrinsicHeight(
+        // The band is measured rather than guessed at, and the picture takes
+        // whatever is left. Sizing it the other way round — a fixed tile height
+        // with the band inside it — is what makes a card overflow on a phone
+        // with large system text, and this is a card nobody can navigate past.
+        final double textScale = MediaQuery.textScalerOf(
+          context,
+        ).scale(1).clamp(1, 1.8);
+        final double bandHeight = (narrow ? 54.0 : 60.0) * textScale;
+        final double artHeight = (constraints.maxWidth * 0.42).clamp(104, 172);
+
+        return SizedBox(
+          height: artHeight + bandHeight,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -311,8 +277,11 @@ class HomeActionCards extends StatelessWidget {
                 child: _AddTile(
                   onTap: onAddPeople,
                   compact: narrow,
-                  icon: Icons.person_add_alt_1_rounded,
+                  art: 'assets/home_add_people.jpg',
+                  band: AppColors.addPeopleBand,
+                  ornament: Icons.favorite,
                   label: 'הוספת חברים',
+                  bandHeight: bandHeight,
                   primary: true,
                 ),
               ),
@@ -322,8 +291,11 @@ class HomeActionCards extends StatelessWidget {
                 child: _AddTile(
                   onTap: onAddIdea,
                   compact: narrow,
-                  icon: Icons.favorite_rounded,
+                  art: 'assets/home_add_idea.jpg',
+                  band: AppColors.addIdeaBand,
+                  ornament: Icons.star_rounded,
                   label: 'הוספת רעיון',
+                  bandHeight: bandHeight,
                   primary: false,
                 ),
               ),
@@ -335,78 +307,134 @@ class HomeActionCards extends StatelessWidget {
   }
 }
 
-/// One of the two entry tiles. The only difference between them is weight:
-/// filled blue versus a warm wash, and a slightly larger icon on the primary.
+/// One of the two entry tiles: its picture, its band, and one tap target over
+/// the whole of it.
 class _AddTile extends StatelessWidget {
   const _AddTile({
     required this.onTap,
     required this.compact,
-    required this.icon,
+    required this.art,
+    required this.band,
+    required this.ornament,
     required this.label,
+    required this.bandHeight,
     required this.primary,
   });
 
   final VoidCallback onTap;
   final bool compact;
-  final IconData icon;
+  final String art;
+  final Color band;
+  final IconData ornament;
   final String label;
+  final double bandHeight;
   final bool primary;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-
-    final Color background = primary
-        ? _leadTone(theme)
-        : (dark
-              ? AppColors.secondaryDarkDm.withValues(alpha: 0.18)
-              : AppColors.secondaryLight.withValues(alpha: 0.9));
-    final Color ink = primary
-        ? theme.colorScheme.onPrimary
-        : (dark ? AppColors.secondaryDarkDm : AppColors.secondaryInk);
 
     return Material(
-      color: background,
+      // The band's own colour, so the corners the picture does not reach are
+      // never the page showing through.
+      color: band,
       borderRadius: BorderRadius.circular(22),
       elevation: primary ? 3 : 0,
-      shadowColor: background.withValues(alpha: 0.45),
+      // A neutral shadow, not one tinted with the band. Tinting worked while
+      // the tile was a flat blue rectangle; under an illustration the same
+      // shadow reads as a coloured halo drawn around the card rather than as
+      // the card sitting above the page.
+      shadowColor: AppColors.onSurface.withValues(alpha: 0.4),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 10 : 14,
-            vertical: compact ? 16 : 20,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          Column(
             children: <Widget>[
-              Icon(
-                icon,
-                size: (primary ? 30 : 26) * (compact ? 0.85 : 1),
-                color: ink,
+              Expanded(
+                child: Image.asset(
+                  art,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  // The label under it says everything this picture says.
+                  excludeFromSemantics: true,
+                ),
               ),
-              SizedBox(height: compact ? 8 : 11),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    fontSize: (primary ? 17 : 16) * (compact ? 0.9 : 1),
-                    height: 1.2,
-                    color: ink,
+              SizedBox(
+                height: bandHeight,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            fontSize: (primary ? 17 : 16) * (compact ? 0.9 : 1),
+                            height: 1.2,
+                            color: AppColors.onPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      _BandRule(icon: ornament),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
-        ),
+          // Above the picture rather than under it: the ripple of an `InkWell`
+          // is painted by the `Material` behind it, so an image in between
+          // would leave the tap looking dead everywhere except the band.
+          Positioned.fill(
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(onTap: onTap, child: const SizedBox.expand()),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+/// The little rule under a tile's label — two strokes with a mark between them.
+///
+/// It is the one piece of the artwork's band that is redrawn rather than
+/// cropped away, because without it the band is a plain colour bar and the two
+/// cards stop looking like the pair they were drawn as.
+class _BandRule extends StatelessWidget {
+  const _BandRule({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color ink = AppColors.onPrimary.withValues(alpha: 0.6);
+
+    Widget stroke() => Container(width: 16, height: 1, color: ink);
+    Widget dot() => Container(
+      width: 3,
+      height: 3,
+      decoration: BoxDecoration(color: ink, shape: BoxShape.circle),
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        dot(),
+        stroke(),
+        Icon(icon, size: 10, color: ink),
+        stroke(),
+        dot(),
+      ],
     );
   }
 }

@@ -50,24 +50,79 @@ double homeScaled(BuildContext context, double base) {
 }
 
 /// A section title, optionally with a "הצג הכל" shortcut.
+///
+/// The titles run bare. Each one used to carry a small glyph beside it, and
+/// five of them down one page added up to a column of decoration nobody read —
+/// the words already say which block this is.
 class HomeSectionHeader extends StatelessWidget {
   const HomeSectionHeader({
     super.key,
     required this.title,
-    required this.icon,
+    this.icon,
     this.subtitle,
     this.onSeeAll,
+    this.expanded,
+    this.onToggle,
   });
 
   final String title;
-  final IconData icon;
+
+  /// Left null on the home page. Kept for a section elsewhere that has a real
+  /// reason to be marked.
+  final IconData? icon;
   final String? subtitle;
   final VoidCallback? onSeeAll;
+
+  /// Non-null on a section that can be folded away, which turns the whole
+  /// header into the control: a chevron on the end, and the title itself as the
+  /// tap target. Null leaves the header a plain label.
+  final bool? expanded;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String? sub = subtitle?.trim();
+    final bool? open = expanded;
+
+    final Widget titleRow = Row(
+      children: <Widget>[
+        if (icon != null) ...<Widget>[
+          Icon(icon, size: 18, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontSize: homeIsNarrow(context) ? 13 : null,
+              fontWeight: FontWeight.w800,
+              height: 1.2,
+            ),
+          ),
+        ),
+        if (onSeeAll != null)
+          TextButton(
+            onPressed: onSeeAll,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('הצגת הכל'),
+          ),
+        if (open != null)
+          Icon(
+            open
+                ? Icons.keyboard_arrow_up_rounded
+                : Icons.keyboard_arrow_down_rounded,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+      ],
+    );
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -79,35 +134,20 @@ class HomeSectionHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(icon, size: 18, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontSize: homeIsNarrow(context) ? 13 : null,
-                    fontWeight: FontWeight.w800,
-                    height: 1.2,
-                  ),
-                ),
+          if (open == null)
+            titleRow
+          else
+            // The whole line is the control, not just the chevron: on a folded
+            // section the title *is* the way in, and a 24pt arrow at the far
+            // edge of a phone is the hardest part of it to hit.
+            InkWell(
+              onTap: onToggle,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: titleRow,
               ),
-              if (onSeeAll != null)
-                TextButton(
-                  onPressed: onSeeAll,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('הצגת הכל'),
-                ),
-            ],
-          ),
+            ),
           if (sub != null && sub.isNotEmpty) ...<Widget>[
             const SizedBox(height: 2),
             Text(

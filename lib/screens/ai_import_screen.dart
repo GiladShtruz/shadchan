@@ -7,12 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadchan/dialogs/import_file_kind_dialog.dart';
+import 'package:shadchan/dialogs/import_problem_dialog.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/screens/ai_import_review_screen.dart';
 import 'package:shadchan/utils/import_file_kind.dart';
 import 'package:shadchan/services/ai_import_runner.dart';
 import 'package:shadchan/services/excel_import_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/import_diagnostics.dart';
 import 'package:shadchan/services/whatsapp_import_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
@@ -54,6 +56,10 @@ class _AiImportScreenState extends State<AiImportScreen> {
     // First point in the app that needs Firebase, so this is where it comes
     // up. The cards enable themselves through the listenable when it lands.
     unawaited(FirebaseBootstrap.ensureReady());
+    // Read now rather than when something fails: the version is the first
+    // thing a report has to carry, and looking it up at the moment of a
+    // failure is how it ends up missing from exactly the reports that matter.
+    unawaited(ImportDiagnostics.warmUp());
 
     final String? incoming = widget.incomingFilePath;
     if (incoming != null && ImportFileKinds.isSupported(incoming)) {
@@ -90,21 +96,27 @@ class _AiImportScreenState extends State<AiImportScreen> {
   /// the whitelist is translated into MIME types, and the providers people
   /// actually keep a WhatsApp export in — Drive, Files, the manufacturer's own
   /// file app — hand back `application/octet-stream` for a `.zip`, so the
-  /// export was greyed out and unpickable. That is what made the feature look
-  /// broken on "many phones" while working on the developer's. The extension is
-  /// checked here instead, where a wrong choice can be explained.
+  /// export was greyed out and unpickable. The extension is checked here
+  /// instead, where a wrong choice can be explained.
   ///
-  /// `withData` covers the second half of the same problem: a file picked from
-  /// a cloud provider has no local path at all, and the old code silently
-  /// returned when `path` was null. Those bytes are written to a temp file so
-  /// the rest of the flow sees an ordinary file either way.
+  /// **`withData` must stay off.** `file_picker` already copies whatever was
+  /// picked into the app's cache and always hands back a real path; `withData`
+  /// only adds a second and third copy of the same file — one `ByteArray` on
+  /// the Java heap, one `Uint8List` on the Dart heap, both the full size of the
+  /// export. A WhatsApp group export with media is routinely 100–500 MB and an
+  /// Android heap is commonly 128–256 MB, so on a large export that allocation
+  /// is simply refused: the plugin logs "probably the file is too big to fit
+  /// device memory", returns null bytes, and the import failed before it had
+  /// read a single message. Whether it fell over depended on the size of that
+  /// particular group's export and on that particular phone's heap — which is
+  /// exactly the "works on some phones" this feature had.
   Future<String?> _pickImportFile(AiImportSource source) async {
     final List<String> allowed = source == AiImportSource.excel
         ? _excelExtensions
         : _chatExtensions;
 
     final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      withData: true,
+      withData: false,
     );
     final PlatformFile? file = picked?.files.singleOrNull;
     if (file == null) {
@@ -128,6 +140,9 @@ class _AiImportScreenState extends State<AiImportScreen> {
       return path;
     }
 
+    // Unreachable on a phone — the plugin's own path is the cache copy it just
+    // wrote — and kept only so a platform that ever stops doing that fails with
+    // a sentence instead of silently returning nothing.
     final Uint8List? bytes = file.bytes;
     if (bytes == null || bytes.isEmpty) {
       _fail(
@@ -169,6 +184,15 @@ class _AiImportScreenState extends State<AiImportScreen> {
       _status = 'קורא את הקובץ…';
     });
 
+    final ImportDiagnostics log = ImportDiagnostics(
+      source == AiImportSource.excel ? 'אקסל' : 'וואטסאפ',
+    );
+    final File file = File(path);
+    final bool exists = file.existsSync();
+    log
+      ..noteFile(path, exists ? file.lengthSync() : 0)
+      ..note('הקובץ נמצא', exists ? 'כן' : 'לא');
+
     try {
       void report(int done, int total) {
         if (mounted) {
@@ -176,10 +200,9 @@ class _AiImportScreenState extends State<AiImportScreen> {
         }
       }
 
-      final File file = File(path);
       debugPrint(
         'AI_IMPORT start source=$source path=$path '
-        'exists=${file.existsSync()} bytes=${file.existsSync() ? file.lengthSync() : -1}',
+        'exists=$exists bytes=${exists ? file.lengthSync() : -1}',
       );
 
       final AiImportOutcome outcome;
@@ -189,29 +212,83 @@ class _AiImportScreenState extends State<AiImportScreen> {
           'AI_IMPORT excel read: ${tables.length} sheet(s) '
           '${tables.map((ExcelTable t) => '${t.sheetName}=${t.rows.length}').join(', ')}',
         );
+        final int rows = tables.fold(
+          0,
+          (int sum, ExcelTable t) => sum + t.rows.length,
+        );
+        log
+          ..note('גיליונות', tables.length)
+          ..note('שורות', rows);
         if (tables.isEmpty) {
-          _fail('לא נמצאו שורות בקובץ.');
+          _failWithReport(
+            log,
+            message: 'לא נמצאו שורות בקובץ.',
+            hint: 'ודאו שהגיליון מכיל שורות ולא רק כותרות.',
+          );
           return;
         }
         outcome = await AiImportRunner.runTables(tables, onProgress: report);
       } else {
         final WhatsAppChat chat = await WhatsAppImportService.readFile(file);
+        final WhatsAppReadStats stats = chat.stats;
         debugPrint(
           'AI_IMPORT whatsapp read: ${chat.messages.length} messages, '
-          '${chat.mediaPaths.length} media',
+          '${chat.mediaPaths.length} media, entries=${stats.archiveEntries}, '
+          'skipped=${stats.mediaSkipped}',
         );
+        final int candidates = chat.candidateMessages.length;
+        log
+          ..note('פריטים בארכיון', stats.archiveEntries)
+          ..note('הודעות', chat.messages.length)
+          ..note('הודעות לקריאה', candidates)
+          ..note(
+            'תמונות',
+            '${stats.mediaExtracted} '
+                '(${ImportDiagnostics.formatBytes(stats.mediaBytes)}), '
+                'דולגו ${stats.mediaSkipped}',
+          );
+        if (stats.truncatedMessages) {
+          log.note('נחתך', 'כן — ${WhatsAppImportService.maxMessages} אחרונות');
+        }
+        if (stats.cappedMedia) {
+          log.note('תמונות נחתכו', 'כן');
+        }
         if (chat.isEmpty) {
-          _fail('לא זוהו הודעות בקובץ. ודאו שזה ייצוא צ׳אט מוואטסאפ.');
+          _failWithReport(
+            log,
+            message: 'לא זוהו הודעות בקובץ.',
+            hint:
+                'ודאו שזה קובץ הייצוא של וואטסאפ עצמו ("ייצוא צ׳אט"), ולא צילום '
+                'מסך, קובץ גיבוי או קובץ שנשמר מחדש באפליקציה אחרת.',
+          );
           return;
         }
+        _warnAboutLimits(stats);
         outcome = await AiImportRunner.runChat(chat, onProgress: report);
+      }
+
+      log
+        ..note('מנות', outcome.totalBatches)
+        ..note('מנות שנכשלו', outcome.failedBatches)
+        ..note('אנשים', outcome.people.length);
+      if (outcome.firstFailure != null) {
+        log
+          ..note('סיבה', outcome.firstFailure!.reason.name)
+          ..note(
+            'שגיאה',
+            log.describeError(outcome.firstFailure!.cause ?? '—'),
+          );
       }
 
       if (!mounted) {
         return;
       }
       if (outcome.isEmpty) {
-        _fail(_emptyOutcomeMessage(outcome));
+        _failWithReport(
+          log,
+          message: _emptyOutcomeMessage(outcome),
+          hint: _emptyOutcomeHint(outcome),
+        );
         return;
       }
 
@@ -227,13 +304,81 @@ class _AiImportScreenState extends State<AiImportScreen> {
           ),
         ),
       );
+    } on WhatsAppReadException catch (error, stackTrace) {
+      debugPrint('AI_IMPORT read failed: $error\n$stackTrace');
+      log
+        ..note('סיבה', error.reason.name)
+        ..note('שגיאה', log.redact(error.cause ?? '—'));
+      _failWithReport(
+        log,
+        message: _readFailureMessage(error.reason),
+        hint: _readFailureHint(error.reason),
+      );
     } catch (error, stackTrace) {
       debugPrint('AI_IMPORT read failed: $error\n$stackTrace');
-      _fail('לא הצלחנו לקרוא את הקובץ.');
+      log.note('שגיאה', log.describeError(error));
+      _failWithReport(
+        log,
+        message: 'לא הצלחנו לקרוא את הקובץ.',
+        hint: 'אפשר לנסות שוב, ואם זה חוזר — לשלוח לנו את פרטי התקלה.',
+      );
     }
   }
 
-  /// Says which of the two very different reasons produced no people.
+  /// Says out loud when the import kept less than the file held.
+  ///
+  /// Both of these end in a review list that is *shorter than it should be*,
+  /// which is the one failure mode indistinguishable from success — the user
+  /// sees people, approves them, and never learns that the rest of the group
+  /// was never read.
+  void _warnAboutLimits(WhatsAppReadStats stats) {
+    final String? warning;
+    if (stats.truncatedMessages) {
+      warning =
+          'הצ׳אט ארוך מאוד — נקראו ${WhatsAppImportService.maxMessages} '
+          'ההודעות האחרונות בלבד.';
+    } else if (stats.cappedMedia) {
+      warning =
+          'הייצוא כלל יותר תמונות ממה שאפשר לקרוא בבת אחת — חלק מהאנשים '
+          'יגיעו בלי תמונה.';
+    } else {
+      warning = null;
+    }
+    if (warning == null || !mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(warning), duration: const Duration(seconds: 8)),
+      );
+  }
+
+  String _readFailureMessage(WhatsAppReadFailure reason) => switch (reason) {
+    WhatsAppReadFailure.notAnArchive =>
+      'הקובץ אינו ארכיון תקין, או שהוא נפגם בדרך.',
+    WhatsAppReadFailure.noTranscript => 'הקובץ נפתח, אבל אין בתוכו קובץ שיחה.',
+    WhatsAppReadFailure.outOfMemory => 'הייצוא גדול מדי לזיכרון של המכשיר הזה.',
+    WhatsAppReadFailure.outOfSpace => 'אין מספיק מקום פנוי במכשיר לייבוא הזה.',
+    WhatsAppReadFailure.unreadable => 'לא הצלחנו לקרוא את הקובץ.',
+  };
+
+  String _readFailureHint(WhatsAppReadFailure reason) => switch (reason) {
+    WhatsAppReadFailure.notAnArchive =>
+      'אם שלחתם את הקובץ לעצמכם בוואטסאפ, הוא עלול להישמר חלקית. עדיף לשמור '
+          'אותו ישירות במכשיר ("שמירה בקבצים") ולבחור אותו מכאן.',
+    WhatsAppReadFailure.noTranscript =>
+      'ודאו שבחרתם את קובץ ה‑zip שוואטסאפ יצרה ב"ייצוא צ׳אט", ולא ארכיון אחר.',
+    WhatsAppReadFailure.outOfMemory =>
+      'נסו לייצא את השיחה שוב ולבחור "ללא מדיה" — הקובץ יהיה קטן בהרבה, '
+          'והאנשים ייקראו במלואם (רק בלי תמונות).',
+    WhatsAppReadFailure.outOfSpace =>
+      'פנו מקום במכשיר, או ייצאו את השיחה שוב עם "ללא מדיה".',
+    WhatsAppReadFailure.unreadable =>
+      'אפשר לנסות שוב, ואם זה חוזר — לשלוח לנו את פרטי התקלה.',
+  };
+
+  /// Says which of the very different reasons produced no people.
   ///
   /// "Try again" is the wrong advice for a device whose App Check token is not
   /// registered — it will fail identically every time — and it hides the one
@@ -243,18 +388,51 @@ class _AiImportScreenState extends State<AiImportScreen> {
       return 'הקובץ נקרא, אבל לא זוהו בו אנשים.';
     }
     return switch (outcome.firstFailure?.reason) {
-      AiParseFailure.attestation =>
-        'המכשיר הזה לא מאושר לשימוש ב‑AI. בבנייה לפיתוח יש לרשום את טוקן '
-            'ה‑debug ב‑App Check.',
-      AiParseFailure.unavailable =>
-        'החיבור לשירות ה‑AI לא זמין במכשיר הזה. '
-            'ראו AI_IMPORT ביומן לפרטים.',
-      AiParseFailure.network =>
-        'הקריאה לשירות ה‑AI נכשלה. בדקו חיבור לאינטרנט ונסו שוב.',
-      _ => 'לא הצלחנו לקרוא את הקובץ. ראו AI_IMPORT ביומן לפרטים.',
+      AiParseFailure.attestation => 'המכשיר הזה לא מאושר לשימוש ב‑AI.',
+      AiParseFailure.unavailable => 'החיבור לשירות ה‑AI לא זמין במכשיר הזה.',
+      AiParseFailure.network => 'הקריאה לשירות ה‑AI נכשלה.',
+      _ => 'לא הצלחנו לקרוא את הקובץ.',
     };
   }
 
+  String? _emptyOutcomeHint(AiImportOutcome outcome) {
+    if (outcome.isComplete) {
+      return 'ייתכן שהשיחה לא כוללת כרטיסים עם פרטי אנשים.';
+    }
+    return switch (outcome.firstFailure?.reason) {
+      AiParseFailure.attestation =>
+        'זו תקלה שרק אנחנו יכולים לתקן — שלחו לנו את פרטי התקלה ונטפל בזה.',
+      AiParseFailure.unavailable =>
+        'בדקו חיבור לאינטרנט ונסו שוב. אם זה חוזר, שלחו לנו את פרטי התקלה.',
+      AiParseFailure.network => 'בדקו חיבור לאינטרנט ונסו שוב.',
+      _ => 'אפשר לנסות שוב, ואם זה חוזר — לשלוח לנו את פרטי התקלה.',
+    };
+  }
+
+  /// A failure the user can do something about, or hand over.
+  void _failWithReport(
+    ImportDiagnostics log, {
+    required String message,
+    String? hint,
+  }) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isWorking = false;
+      _status = '';
+    });
+    unawaited(
+      ImportProblemDialog.show(
+        context,
+        message: message,
+        hint: hint,
+        report: log.build(problem: message),
+      ),
+    );
+  }
+
+  /// A wrong tap, not a fault: no report, no dialog to dismiss.
   void _fail(String message) {
     if (!mounted) {
       return;
@@ -467,26 +645,26 @@ class _SourceCard extends StatelessWidget {
   };
 }
 
-/// How to get a WhatsApp export onto the phone, step by step.
+/// How to get a WhatsApp export into the app, step by step.
 ///
 /// Folded away by default: it is a one-time thing to learn, and it should not
-/// stand between someone who already knows it and the file picker. Written out
-/// because "ייצוא צ׳אט" is buried two menus deep and the step people miss —
-/// saving the file to the device instead of sending it on in WhatsApp — is the
-/// one that makes the import look broken.
+/// stand between someone who already knows it and the file picker.
+///
+/// It ends at WhatsApp's own share sheet rather than at "save the file, then
+/// come back and find it" — the app is registered for a shared `.zip`, so
+/// handing it straight over is both shorter to describe and the route with
+/// nowhere to lose the file along the way.
 class _WhatsAppExportGuide extends StatelessWidget {
   const _WhatsAppExportGuide({required this.slate});
 
   final Color slate;
 
   static const List<String> _steps = <String>[
-    'פותחים בוואטסאפ את השיחה או הקבוצה שרוצים לייבא.',
-    'מקישים על שם השיחה בראש המסך כדי לפתוח את פרטי השיחה.',
-    'גוללים למטה ובוחרים "ייצוא צ׳אט" (Export chat).',
-    'בוחרים "צרף מדיה" כדי לקבל גם את התמונות, או "ללא מדיה" לייצוא מהיר יותר.',
-    'שומרים את הקובץ במכשיר — "שמירה בקבצים" או Drive — ולא שולחים אותו '
-        'בוואטסאפ.',
-    'חוזרים לכאן, בוחרים "ייצוא מוואטסאפ" ומאתרים את הקובץ שנשמר (zip או txt).',
+    'פותחים ב־WhatsApp את הקבוצה או השיחה שרוצים לייבא.',
+    'לוחצים על שלוש הנקודות בתפריט העליון.',
+    'בוחרים "עוד" ואז "ייצוא צ׳אט".',
+    'בוחרים "לכלול מדיה".',
+    'במסך השיתוף בוחרים את אפליקציית השדכן – והיא כבר תמשיך מכאן.',
   ];
 
   @override
@@ -500,7 +678,7 @@ class _WhatsAppExportGuide extends StatelessWidget {
         childrenPadding: const EdgeInsetsDirectional.only(start: 4, bottom: 8),
         leading: Icon(Icons.help_outline_rounded, size: 20, color: slate),
         title: Text(
-          'איך מייצאים שיחה או קבוצה מוואטסאפ?',
+          'איך מייבאים מ־WhatsApp?',
           style: theme.textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.w700,
             color: slate,
@@ -542,8 +720,7 @@ class _WhatsAppExportGuide extends StatelessWidget {
           Padding(
             padding: const EdgeInsetsDirectional.only(start: 32, top: 2),
             child: Text(
-              'בקבוצה גדולה הייצוא עשוי לקחת כמה דקות, ווטסאפ מגבילה אותו '
-              'להודעות האחרונות בלבד.',
+              'בקבוצה גדולה הייצוא לוקח רגע — שווה לחכות.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

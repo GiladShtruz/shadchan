@@ -11,6 +11,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -19,6 +20,11 @@ import 'package:uuid/uuid.dart';
 /// Which side (if any) ended a proposal, used to phrase the journal and both
 /// candidates' history when a proposal is rejected or the couple stopped.
 enum MatchOutcomeParty { him, her, mutual, unknown }
+
+/// How a proposal closed by "מהבירור עלה שזה פחות מתאים" is written down —
+/// in the proposal's journal and in both candidates' history alike, so the two
+/// records say the same thing.
+const String _inquiryOutcomeLine = 'מהבירור עלה כי לא מתאים';
 
 class MatchRepository extends ChangeNotifier {
   /// [_statusEventBox] is optional for the same reason `PersonRepository`'s
@@ -191,8 +197,11 @@ class MatchRepository extends ChangeNotifier {
     await _matchBox.put(match.id, match);
 
     final Person? Function(String)? resolve = resolvePerson;
-    final String nameA = _shortName(resolve?.call(personAId), 'מועמד/ת');
-    final String nameB = _shortName(resolve?.call(personBId), 'מועמד/ת');
+    // The fallback only stands in for a record that vanished between the
+    // proposal being made and this line being written, so it is deliberately
+    // the one word that fits either side.
+    final String nameA = _shortName(resolve?.call(personAId), 'הצד השני');
+    final String nameB = _shortName(resolve?.call(personBId), 'הצד השני');
     await logPersonEvent?.call(
       personAId,
       PersonEventType.proposalOpened,
@@ -427,8 +436,16 @@ class MatchRepository extends ChangeNotifier {
       MatchOutcomeParty.mutual => 'שני הצדדים',
       MatchOutcomeParty.unknown => 'לא ידוע',
     };
+    // "שני הצדדים" on a proposal that never got off the ground is not two
+    // people who each said no — it is the one answer the dialog offers for
+    // "מהבירור עלה שזה פחות מתאים", and six months from now that is the fact
+    // worth reading back. So it is written as the sentence rather than as a
+    // name slotted into the generic rejection line.
+    final bool fromInquiry = !dated && party == MatchOutcomeParty.mutual;
     final String journalText = dated
         ? 'יצאו ולא המשיכו (החליט: $who)'
+        : fromInquiry
+        ? _inquiryOutcomeLine
         : 'ההצעה נדחתה (מי: $who)';
     await addNote(
       matchId,
@@ -555,7 +572,7 @@ class MatchRepository extends ChangeNotifier {
     }
 
     if (party == MatchOutcomeParty.mutual) {
-      return 'ההצעה לא התאימה לשני הצדדים$because';
+      return '$_inquiryOutcomeLine$because';
     }
     if (selfEnded) {
       final String verb = selfIsMale ? 'דחה' : 'דחתה';
@@ -726,6 +743,10 @@ class MatchRepository extends ChangeNotifier {
     HomeBoardStore.instance.forget(HomeItemKind.idea, matchId);
     RecentActivityStore.instance.forget(HomeItemKind.idea, matchId);
     await ReminderAlerts.forget(matchId);
+    // The historic dating count is built from proposals that still exist, so a
+    // deleted one drops out of it on its own — this only stops its exclusion
+    // key outliving it.
+    await DatingCountExclusions.forget(matchId);
     notifyListeners();
     _refreshNotifications();
   }

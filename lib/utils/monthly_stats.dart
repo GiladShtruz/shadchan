@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/hebrew_date_utils.dart';
 
@@ -91,11 +93,18 @@ enum MonthlyStatMetric {
       case MonthlyStatMetric.people:
         return 'כל חבר שנוסף למאגר בחודש הזה.';
       case MonthlyStatMetric.dating:
-        return 'זוגות שמסומנים "יוצאים" ושהעדכון האחרון שלהם היה החודש.';
+        return 'כל הזוגות שסומנו "מתחילים לצאת" ונשארו כך יותר מ-24 שעות, '
+            'מאז ומתמיד — גם אם מאוחר יותר הפסיקו לצאת.';
       case MonthlyStatMetric.weddings:
         return 'כל הזוגות שמסומנים "חתונה" במאגר, ללא תלות בחודש.';
     }
   }
+
+  /// True for the two figures that count the whole history rather than one
+  /// month — they carry no month in their heading and no "מהחודש שעבר" chip,
+  /// because there is no previous month for them to have moved from.
+  bool get isAllTime =>
+      this == MonthlyStatMetric.dating || this == MonthlyStatMetric.weddings;
 
   String get emptyLine {
     switch (this) {
@@ -104,7 +113,7 @@ enum MonthlyStatMetric {
       case MonthlyStatMetric.people:
         return 'עוד לא נוספו חברים בחודש הזה';
       case MonthlyStatMetric.dating:
-        return 'עוד לא התחילו לצאת זוגות בחודש הזה';
+        return 'עוד לא נכנסו זוגות לספירה';
       case MonthlyStatMetric.weddings:
         return 'עוד לא נרשמו חתונות במאגר';
     }
@@ -210,8 +219,10 @@ abstract final class MonthlyStats {
   static MonthStats statsFor(
     MonthPeriod period,
     List<MatchIdea> matches,
-    List<Person> people,
-  ) {
+    List<Person> people, {
+    List<MatchStatusEvent> statusEvents = const <MatchStatusEvent>[],
+    Set<String> excludedFromDating = const <String>{},
+  }) {
     bool within(DateTime date) =>
         !date.isBefore(period.start) && date.isBefore(period.end);
 
@@ -221,14 +232,14 @@ abstract final class MonthlyStats {
     final int newPeople = people
         .where((Person p) => !p.hidden && within(p.createdAt))
         .length;
-    // A couple's move into "יוצאים"/"חתונה" is not stamped separately, so the
-    // proposal's last update stands in for when it happened.
-    final int dating = matches
-        .where(
-          (MatchIdea m) =>
-              m.status == MatchStatus.dating && within(m.updatedAt),
-        )
-        .length;
+    // Counted from the same history the all-time figure uses, filtered to this
+    // month — so the trend under the number and the number itself can never
+    // disagree about what a "couple who started dating" is.
+    final int dating = DatingHistory.all(
+      matches: matches,
+      statusEvents: statusEvents,
+      excludedMatchIds: excludedFromDating,
+    ).where((DatingCoupleRecord record) => within(record.startedAt)).length;
     final int weddings = matches
         .where(
           (MatchIdea m) =>
@@ -244,22 +255,27 @@ abstract final class MonthlyStats {
     );
   }
 
-  /// The current Hebrew month only — what the home screen's compact card needs.
-  static MonthStats current(List<MatchIdea> matches, List<Person> people) {
-    return withAllTimeWeddings(
-      statsFor(buildPeriods(DateTime.now(), 1).first, matches, people),
-      matches,
-    );
-  }
-
-  static MonthStats withAllTimeWeddings(
+  /// Swaps the two historic figures into a month's stats.
+  ///
+  /// "זוגות שהתחילו לצאת" and "חתונות" are counted over the whole history, not
+  /// over the month on screen: a couple who started going out is something this
+  /// matchmaker did, and it does not stop being true at Rosh Chodesh. Everything
+  /// else on the screen stays monthly, which is why this is a swap rather than
+  /// a different kind of [MonthStats].
+  static MonthStats withAllTimeTotals(
     MonthStats monthly,
     List<MatchIdea> matches,
-  ) {
+    List<MatchStatusEvent> statusEvents, {
+    Set<String> excludedFromDating = const <String>{},
+  }) {
     return MonthStats(
       ideas: monthly.ideas,
       people: monthly.people,
-      dating: monthly.dating,
+      dating: DatingHistory.count(
+        matches: matches,
+        statusEvents: statusEvents,
+        excludedMatchIds: excludedFromDating,
+      ),
       weddings: matches
           .where((MatchIdea match) => match.status == MatchStatus.married)
           .length,
@@ -268,29 +284,40 @@ abstract final class MonthlyStats {
 
   /// The proposals a match-shaped metric counted, newest first. Empty for
   /// [MonthlyStatMetric.people], which counts people rather than proposals.
+  ///
+  /// [statusEvents] only matters for [MonthlyStatMetric.dating], which reads the
+  /// whole history out of the ledger rather than the month out of the records.
   static List<MatchIdea> matchesFor(
     MonthlyStatMetric metric,
     MonthPeriod period,
-    List<MatchIdea> matches,
-  ) {
+    List<MatchIdea> matches, {
+    List<MatchStatusEvent> statusEvents = const <MatchStatusEvent>[],
+    Set<String> excludedFromDating = const <String>{},
+  }) {
     bool within(DateTime date) =>
         !date.isBefore(period.start) && date.isBefore(period.end);
+
+    // The dating list is already newest-first and must keep the ledger's own
+    // ordering, so it returns before the sort below.
+    if (metric == MonthlyStatMetric.dating) {
+      return <MatchIdea>[
+        for (final DatingCoupleRecord record in DatingHistory.all(
+          matches: matches,
+          statusEvents: statusEvents,
+          excludedMatchIds: excludedFromDating,
+        ))
+          record.match,
+      ];
+    }
 
     final List<MatchIdea> found = switch (metric) {
       MonthlyStatMetric.ideas =>
         matches.where((MatchIdea m) => within(m.createdAt)).toList(),
-      MonthlyStatMetric.dating =>
-        matches
-            .where(
-              (MatchIdea m) =>
-                  m.status == MatchStatus.dating && within(m.updatedAt),
-            )
-            .toList(),
       MonthlyStatMetric.weddings =>
         matches
             .where((MatchIdea m) => m.status == MatchStatus.married)
             .toList(),
-      MonthlyStatMetric.people => <MatchIdea>[],
+      MonthlyStatMetric.dating || MonthlyStatMetric.people => <MatchIdea>[],
     };
 
     found.sort(

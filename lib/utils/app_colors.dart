@@ -40,6 +40,17 @@ abstract final class AppColors {
   static const Color softYellow = Color(0xFFEFE0B8);
   static const Color softRose = Color(0xFFEFDDE4);
 
+  /// The label bands under the two home entry cards.
+  ///
+  /// Sampled from `assets/home_add_people.jpg` and `assets/home_add_idea.jpg`
+  /// rather than picked out of the palette above: the band has to read as the
+  /// bottom of the same painted card as the picture over it, and the nearest
+  /// brand tones (`primaryDark`, `secondary`) are close enough to look like a
+  /// mistake and far enough to show a seam. Re-sample them if the artwork is
+  /// ever replaced.
+  static const Color addPeopleBand = Color(0xFF708C97);
+  static const Color addIdeaBand = Color(0xFFB77D67);
+
   /// Gentle pastel pairs used for the initials circles next to a contact's
   /// name. Each entry is a soft surface plus the ink that stays readable on it.
   static const List<({Color surface, Color ink})> initialsPastels =

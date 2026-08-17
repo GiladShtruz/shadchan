@@ -217,22 +217,17 @@ class _TopBar extends StatelessWidget {
                       ),
                     ),
                     if (showActions) ...<Widget>[
-                      TextButton.icon(
+                      // Icon only: the label was the widest thing in this bar
+                      // and the one part of it a photo behind it had to fight.
+                      // The action is still named, in the tooltip.
+                      IconButton(
                         onPressed: onShare,
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(
-                            horizontal: narrow ? 5 : 8,
-                          ),
-                        ),
-                        icon: Icon(
+                        icon: const Icon(
                           Icons.share_outlined,
-                          size: narrow ? 17 : 19,
+                          color: Colors.white,
+                          size: 20,
                         ),
-                        label: Text(
-                          'שיתוף כרטיס',
-                          style: TextStyle(fontSize: narrow ? 11 : 13),
-                        ),
+                        tooltip: 'שיתוף כרטיס',
                       ),
                       IconButton(
                         onPressed: onWhatsApp,

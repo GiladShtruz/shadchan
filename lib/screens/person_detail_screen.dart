@@ -1550,7 +1550,7 @@ class _PersonalNotesCard extends StatelessWidget {
             autofocus: true,
             minLines: 2,
             maxLines: 6,
-            decoration: const InputDecoration(hintText: 'משהו שתרצה לזכור...'),
+            decoration: const InputDecoration(hintText: 'משהו שחשוב לזכור...'),
           ),
           actions: <Widget>[
             TextButton(
@@ -1801,16 +1801,18 @@ class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
         ),
         child: Stack(
           children: <Widget>[
-            // The body owns the top of the card. Only its end-side inset is
-            // reserved for the overlaid edit control, so the control never
-            // consumes a row or pushes the whole card down.
+            // Reading, the body only gives up its end-side corner to the
+            // pencil. Editing, it gives up a *lane above itself* instead: two
+            // controls side by side in the end-side inset would have taken 80
+            // of the card's ~300 points away from the field, which is the one
+            // thing on this card that wants every point it can get.
             Padding(
               key: ValueKey<String>(
                 'candidate-full-card-body-${widget.person.id}',
               ),
-              padding: EdgeInsetsDirectional.only(
-                end: widget.editing ? 80 : 38,
-              ),
+              padding: widget.editing
+                  ? const EdgeInsetsDirectional.only(top: 26)
+                  : const EdgeInsetsDirectional.only(end: 38),
               child: widget.editing
                   ? TextField(
                       key: ValueKey<String>('quick-card-${widget.person.id}'),
@@ -2574,6 +2576,14 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
 
     if (filters.profileStatuses.isNotEmpty &&
         !filters.profileStatuses.contains(candidate.profileStatus)) {
+      return false;
+    }
+
+    if (!MatchProposalFilters.matchesHeight(candidate, filters)) {
+      return false;
+    }
+    if (filters.maritalStatuses.isNotEmpty &&
+        !filters.maritalStatuses.contains(candidate.maritalStatus)) {
       return false;
     }
 

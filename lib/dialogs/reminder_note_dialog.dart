@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The optional follow-up to picking a reminder date: "תרצה להוסיף הערה
+/// The optional follow-up to picking a reminder date: "להוסיף הערה
 /// לתזכורת?".
 ///
 /// Skipping is a first-class answer — the note is there for the matchmaker who
@@ -10,7 +10,7 @@ abstract final class ReminderNoteDialog {
   /// the matchmaker skipped.
   static Future<String?> show(
     BuildContext context, {
-    String title = 'תרצה להוסיף הערה לתזכורת?',
+    String title = 'להוסיף הערה לתזכורת?',
     String? initialNote,
   }) {
     return showDialog<String>(

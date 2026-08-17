@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/screens/import_contacts_screen.dart';
 import 'package:shadchan/screens/swipe_import_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -63,11 +65,20 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
 
     final int added = _session?.addedThisSession ?? 0;
     if (added > 1) {
-      await ContactsAddedCelebration.show(
-        context,
-        count: added,
-        footnote: 'עדכן את הפרטים שלהם במסך הבית.',
-      );
+      // Past the notice threshold this whole session counts as one large
+      // import and gets the community note instead of the celebration — never
+      // both, which is the entire point of routing it through the same store.
+      CommunityProfileStore.noteBulkImport(added);
+      if (!await BulkImportNoteDialog.maybeShow(context)) {
+        if (!mounted) {
+          return;
+        }
+        await ContactsAddedCelebration.show(
+          context,
+          count: added,
+          footnote: 'אפשר להשלים את הפרטים שלהם ממסך הבית.',
+        );
+      }
       if (!mounted) {
         return;
       }

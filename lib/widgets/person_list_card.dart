@@ -17,8 +17,8 @@ class PersonListCard extends StatelessWidget {
     super.key,
     required this.person,
     required this.onTap,
-    required this.onToggleFavorite,
-    required this.onOpenWhatsApp,
+    this.onToggleFavorite,
+    this.onOpenWhatsApp,
     this.onOpenMatches,
     this.onLongPress,
     this.heroEnabled = true,
@@ -26,8 +26,12 @@ class PersonListCard extends StatelessWidget {
 
   final Person person;
   final VoidCallback onTap;
-  final VoidCallback onToggleFavorite;
-  final VoidCallback onOpenWhatsApp;
+
+  /// The trailing buttons, each drawn only when it has somewhere to go. A row
+  /// used to *pick* somebody leaves both off: favouriting from a picker is a
+  /// side errand, and opening WhatsApp from one abandons the choice being made.
+  final VoidCallback? onToggleFavorite;
+  final VoidCallback? onOpenWhatsApp;
 
   /// When set, the heart button opens this person's match suggestions instead
   /// of toggling the favorite flag (favoriting stays available from the
@@ -144,7 +148,7 @@ class PersonListCard extends StatelessWidget {
                     icon: Icon(Icons.favorite_border, color: accent),
                     onPressed: onOpenMatches,
                   )
-                else
+                else if (onToggleFavorite != null)
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     tooltip: person.isFavorite
@@ -158,18 +162,19 @@ class PersonListCard extends StatelessWidget {
                     ),
                     onPressed: onToggleFavorite,
                   ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: hasPhone ? 'וואטסאפ' : 'אין מספר טלפון תקין',
-                  icon: FaIcon(
-                    FontAwesomeIcons.whatsapp,
-                    size: 20,
-                    color: hasPhone
-                        ? const Color(0xFF25D366)
-                        : theme.colorScheme.onSurfaceVariant,
+                if (onOpenWhatsApp != null)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: hasPhone ? 'וואטסאפ' : 'אין מספר טלפון תקין',
+                    icon: FaIcon(
+                      FontAwesomeIcons.whatsapp,
+                      size: 20,
+                      color: hasPhone
+                          ? const Color(0xFF25D366)
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    onPressed: hasPhone ? onOpenWhatsApp : null,
                   ),
-                  onPressed: hasPhone ? onOpenWhatsApp : null,
-                ),
                 const SizedBox(width: 4),
               ],
             ),

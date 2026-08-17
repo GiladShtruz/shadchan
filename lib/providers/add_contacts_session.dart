@@ -290,28 +290,16 @@ class AddContactsSession extends ChangeNotifier {
       return;
     }
 
-    final List<ContactImportCandidate> cached =
-        await ContactsImportService.loadCachedCandidates(_repository);
-    if (_disposed) {
-      return;
-    }
-
-    if (cached.isNotEmpty) {
-      _allCandidates = await _orderForDeck(cached);
-      if (_disposed) {
-        return;
-      }
-      _isLoading = false;
-      _isRefreshing = true;
-      _captureProgressTotal();
-      _notify();
-    } else {
-      _loadingMessage = 'טוענים אנשי קשר מהמכשיר...';
-      _notify();
-    }
-
-    final List<ContactImportCandidate>
-    fresh = await ContactsImportService.loadCandidates(
+    // Both of the slow things start now and neither of them holds up the first
+    // frame. Reading the device call log goes over a method channel and can
+    // raise its own permission dialog; re-reading the address book walks every
+    // contact on the phone. Awaiting either *before* publishing the cached list
+    // is what used to leave this screen blank for several seconds even though
+    // the list it was going to show had been on disk the whole time.
+    final Future<Map<String, int>> callLogOrder =
+        CallLogSortService.loadRecentCallOrderRequestingPermission();
+    final Future<List<ContactImportCandidate>>
+    deviceContacts = ContactsImportService.loadCandidates(
       _repository,
       onProgress: (ContactImportLoadProgress progress) {
         if (_disposed || !_isLoading) {
@@ -323,11 +311,43 @@ class AddContactsSession extends ChangeNotifier {
         _notify();
       },
     );
+
+    final List<ContactImportCandidate> cached =
+        await ContactsImportService.loadCachedCandidates(_repository);
     if (_disposed) {
       return;
     }
 
-    _allCandidates = await _orderForDeck(fresh);
+    if (cached.isNotEmpty) {
+      // On the screen immediately, in name order. Name order is a real order,
+      // not a placeholder: it is what the list view sorts by anyway, and only
+      // the swipe deck cares about the call-log ordering underneath.
+      _allCandidates = cached;
+      _isLoading = false;
+      _isRefreshing = true;
+      _captureProgressTotal();
+      _notify();
+
+      final Map<String, int> order = await callLogOrder;
+      if (_disposed) {
+        return;
+      }
+      // Only if the fresh read has not already overtaken us.
+      if (_isRefreshing) {
+        _allCandidates = CallLogSortService.applyOrder(cached, order);
+        _notify();
+      }
+    } else {
+      _loadingMessage = 'טוענים אנשי קשר מהמכשיר...';
+      _notify();
+    }
+
+    final List<ContactImportCandidate> fresh = await deviceContacts;
+    if (_disposed) {
+      return;
+    }
+
+    _allCandidates = CallLogSortService.applyOrder(fresh, await callLogOrder);
     if (_disposed) {
       return;
     }
@@ -352,14 +372,6 @@ class AddContactsSession extends ChangeNotifier {
     }
     _permissionState = permissionState;
     _notify();
-  }
-
-  /// Ordered by the device call log where it is available, so the people the
-  /// matchmaker actually talks to come first.
-  Future<List<ContactImportCandidate>> _orderForDeck(
-    List<ContactImportCandidate> candidates,
-  ) {
-    return CallLogSortService.sortByRecentCalls(candidates);
   }
 
   void _captureProgressTotal() {

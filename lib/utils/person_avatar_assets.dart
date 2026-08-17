@@ -6,11 +6,11 @@ import 'package:shadchan/utils/enums.dart';
 /// in the persisted model only for backwards compatibility with older data.
 abstract final class PersonAvatarAssets {
   static const List<String> male = <String>[
-    'assets/male_pic/default_male_avatar.png',
+    'assets/male_pic/default_male_avatar.webp',
   ];
 
   static const List<String> female = <String>[
-    'assets/female_pic/default_female_avatar.png',
+    'assets/female_pic/default_female_avatar.webp',
   ];
 
   static List<String> forGender(Gender gender) {

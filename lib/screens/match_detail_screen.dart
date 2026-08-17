@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/engagement_dialogs.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/dialogs/match_outcome_dialog.dart';
 import 'package:shadchan/dialogs/match_status_sheet.dart';
@@ -18,12 +19,14 @@ import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
+import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -896,15 +899,45 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     MatchRepository repository,
     MatchIdea match,
   ) async {
+    final bool alreadyMarried = match.status == MatchStatus.married;
     final bool confirmed = await ConfirmDialog.show(
       context,
       title: 'מזל טוב!',
       message: 'לעדכן שהזוג התחתן?',
       confirmText: 'עדכון לחתונה',
     );
-    if (confirmed == true) {
-      await repository.updateStatus(match.id, MatchStatus.married);
+    if (confirmed != true) {
+      return;
     }
+    await repository.updateStatus(match.id, MatchStatus.married);
+    // Only on the transition. Re-confirming a status that was already a wedding
+    // is not a second couple, and must not send the community a second "מזל
+    // טוב" about the same one.
+    if (alreadyMarried || !context.mounted) {
+      return;
+    }
+    await _announceEngagement(context, match);
+  }
+
+  /// Tells the community, and offers to say who.
+  ///
+  /// The names are read here rather than inside the flow because this screen
+  /// already holds the repositories, and because what leaves the device must be
+  /// visible at the call site: two first names, and the matchmaker's own name
+  /// if they choose to add it. Nothing else about either candidate is reachable
+  /// from what is passed in.
+  Future<void> _announceEngagement(
+    BuildContext context,
+    MatchIdea match,
+  ) async {
+    final PersonRepository people = context.read<PersonRepository>();
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    await EngagementFlow.celebrate(
+      context,
+      firstNameA: people.getById(match.personAId)?.firstName ?? '',
+      firstNameB: people.getById(match.personBId)?.firstName ?? '',
+      matchmakerName: profile.name ?? '',
+    );
   }
 
   Future<void> _addRelatedContact(
@@ -994,69 +1027,17 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     if (!opened) _showSnackBar('אין מספר טלפון תקין');
   }
 
-  /// The small menu behind a candidate's WhatsApp button: talk to them, or send
-  /// them the other side's card. Both options name the people, so there is
-  /// never a doubt about who receives what.
+  /// The small menu behind a candidate's WhatsApp button, shared with the card
+  /// in the ideas list so both behave identically: with a card on the other
+  /// side it offers the chat or that card, and without one it just opens the
+  /// chat.
   Future<void> _openWhatsAppMenu(Person person, Person? other) async {
-    final String name = _firstName(person);
-    final String? otherName = other == null ? null : _firstName(other);
-    final bool hasCard = (other?.description ?? '').trim().isNotEmpty;
-
-    final String? choice = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext sheetContext) {
-        final ThemeData theme = Theme.of(sheetContext);
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ListTile(
-                title: Text(
-                  'WhatsApp עם $name',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: const FaIcon(
-                  FontAwesomeIcons.whatsapp,
-                  color: Color(0xFF25D366),
-                ),
-                title: Text('פתיחת שיחה עם $name'),
-                onTap: () => Navigator.of(sheetContext).pop('chat'),
-              ),
-              if (otherName != null)
-                ListTile(
-                  enabled: hasCard,
-                  leading: Icon(
-                    Icons.contact_mail_outlined,
-                    color: hasCard
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  title: Text('שליחת הכרטיס של $otherName אל $name'),
-                  subtitle: hasCard
-                      ? null
-                      : Text('אין כרטיס שמור אצל $otherName'),
-                  onTap: hasCard
-                      ? () => Navigator.of(sheetContext).pop('card')
-                      : null,
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
+    final bool opened = await PersonWhatsAppMenu.open(
+      context,
+      person: person,
+      other: other,
     );
-
-    if (choice == 'chat') {
-      await _openPersonWhatsApp(person);
-    } else if (choice == 'card' && other != null) {
-      final bool opened = await WhatsAppUtils.sendCardTo(person, other);
-      if (!opened) _showSnackBar('אין מספר טלפון תקין או כרטיס שמור');
-    }
+    if (!opened) _showSnackBar('אין מספר טלפון תקין או כרטיס שמור');
   }
 
   Future<void> _openContactWhatsApp(MatchContact contact) async {
@@ -1221,7 +1202,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
   String _firstName(Person person) {
     final String name = person.firstName.trim();
-    return name.isEmpty ? 'המועמד/ת' : name;
+    return name.isEmpty ? 'המועמד' : name;
   }
 
   /// The button label for putting a paused person back to "פנוי".
@@ -1901,7 +1882,7 @@ class _ReminderCard extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: onBackToAvailable,
                       icon: const Icon(Icons.check_rounded, size: 17),
-                      label: Text(backToAvailableLabel ?? 'חזר/ה לפנוי'),
+                      label: Text(backToAvailableLabel ?? 'חזרה לפנוי'),
                       style: FilledButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                         backgroundColor: AppColors.statusDating,

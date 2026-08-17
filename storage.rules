@@ -25,6 +25,75 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // Screenshots attached to a problem report. Named after the report they
+    // belong to, so the file and the words cannot drift apart.
+    //
+    // Write is open to any signed-in device, anonymous included, matching the
+    // `supportReports` rule in `firestore.rules` — the report is the thing
+    // being allowed, and a report with its screenshot silently dropped is worse
+    // than no report. Read is the administrators', checked against the same
+    // Firestore list the console uses, so adding a reviewer stays a one-line
+    // change in one place.
+    match /supportReports/{fileName} {
+      function supportEmail() {
+        return request.auth != null
+            && request.auth.token.get('email_verified', false) == true
+               ? request.auth.token.get('email', '').lower()
+               : '';
+      }
+
+      function isSupportAdmin() {
+        return supportEmail() != ''
+            && (supportEmail() == 'yitz292@gmail.com'
+                || firestore.exists(/databases/(default)/documents/supportAdmins/$(supportEmail())));
+      }
+
+      allow read, delete: if isSupportAdmin();
+
+      // One screenshot, an image, under 12MB — the same ceiling the candidate
+      // photos have, and for the same reason: a bug here must not turn the
+      // bucket into general-purpose storage.
+      allow write: if request.auth != null
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // A published couple's photograph — the one readable image in this bucket.
+    //
+    // Everything else here is private by construction, so this path is the
+    // exception and is kept as narrow as it can be. Read is open to signed-in
+    // devices because the announcement is shown to all of them. Write and
+    // delete are the uploader's alone, enforced by the uid in the path rather
+    // than by a lookup, so a matchmaker can replace or withdraw their own
+    // couple's photo and can never touch anybody else's.
+    //
+    // **Nothing reaches here without the `coupleApproved` flag on the matching
+    // Firestore document** (`communityEngagements` in `firestore.rules`), which
+    // the app writes in the same flow. The rule cannot check that — Storage
+    // rules see one file, not the record it belongs to — so the file name is
+    // the engagement id, which is what lets a stray upload be traced back to a
+    // document that either exists and consents, or does not exist at all.
+    //
+    // Anonymous accounts are excluded: publishing a photograph of two real
+    // people under a uid that dies with the install leaves nobody able to take
+    // it down.
+    match /communityEngagements/{userId}/{fileName} {
+      function isPublisher() {
+        return request.auth != null
+            && request.auth.uid == userId
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+
+      allow read: if request.auth != null;
+      allow delete: if isPublisher();
+
+      // One image, well under the 12MB ceiling the rest of the bucket uses —
+      // the picker downsizes to 1200px before this is ever reached.
+      allow write: if isPublisher()
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

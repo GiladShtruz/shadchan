@@ -12,7 +12,7 @@ import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
-/// "עוצרים רגע לחשוב על שידוך" — friends, one after another, each with the
+/// "עוצרים רגע לחשוב על החברים" — friends, one after another, each with the
 /// reason they came up.
 ///
 /// This page is the *whole* of that idea. The home screen shows only the
@@ -88,7 +88,7 @@ class _ThinkScreenState extends State<ThinkScreen> {
         backgroundColor: ProfilePalette.canvas(theme),
         foregroundColor: ProfilePalette.text(theme),
         titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
-        title: const Text('עוצרים רגע לחשוב על שידוך'),
+        title: const Text('עוצרים רגע לחשוב על החברים'),
         centerTitle: true,
       ),
       body: SafeArea(

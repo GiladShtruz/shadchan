@@ -209,6 +209,9 @@ class BackupService {
       'heightCm': person.heightCm,
       'maritalStatus': person.maritalStatus?.name,
       'region': person.region?.name,
+      // Carried so a restored database still knows which friends arrived in
+      // one import, and the weekly record keeps refusing to be set by them.
+      'importBatchId': person.importBatchId,
       'additionalContacts': person.additionalContacts
           .map(
             (MatchContact contact) => <String, Object?>{
@@ -333,6 +336,7 @@ class BackupService {
       heightCm: _int(json['heightCm']),
       maritalStatus: _enumByName(MaritalStatus.values, json['maritalStatus']),
       region: _enumByName(Region.values, json['region']),
+      importBatchId: json['importBatchId'] as String?,
       additionalContacts: _parseContacts(json['additionalContacts']),
       preferredMinAge: _int(json['preferredMinAge']),
       preferredMaxAge: _int(json['preferredMaxAge']),

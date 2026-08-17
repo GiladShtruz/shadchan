@@ -3,12 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
+import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 
@@ -434,7 +434,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
       showStatusTag: showStatusTag && !isDueReminder,
       highlighted: isDueReminder,
       onTap: () => context.push('/matches/${match.id}'),
-      onOpenWhatsApp: _openWhatsApp,
+      onOpenPersonWhatsApp: (Person person) =>
+          _openWhatsApp(person, identical(person, male) ? female : male),
       // Everything a matchmaker does after a round of phone calls — this one is
       // on a break, that one is out, close that one — is now doable from the
       // list. Opening a proposal to change one word was the reason statuses
@@ -487,8 +488,15 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   // --- Actions ------------------------------------------------------------
 
-  Future<void> _openWhatsApp(Person person) async {
-    final bool launched = await WhatsAppUtils.openChat(person);
+  /// One side's chat button. Who is being written to is already decided by
+  /// which face was tapped; all that is left is whether the other side's card
+  /// goes with it, and [PersonWhatsAppMenu] only asks when there is one.
+  Future<void> _openWhatsApp(Person person, Person? other) async {
+    final bool launched = await PersonWhatsAppMenu.open(
+      context,
+      person: person,
+      other: other,
+    );
     if (!launched && mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()

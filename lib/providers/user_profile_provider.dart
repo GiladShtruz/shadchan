@@ -29,6 +29,8 @@ class UserProfileProvider extends ChangeNotifier {
   UserProfileProvider(this._box);
 
   static const String _nameKey = 'userName';
+  static const String _firstNameKey = 'userFirstName';
+  static const String _lastNameKey = 'userLastName';
   static const String _genderKey = 'userGender';
   static const String _photoPathKey = 'userPhotoPath';
   static const String _isSingleKey = 'userIsSingle';
@@ -39,9 +41,53 @@ class UserProfileProvider extends ChangeNotifier {
 
   final Box<dynamic> _box;
 
+  /// The matchmaker's full name, as it has always been stored.
+  ///
+  /// Kept as the single joined key rather than being derived from the two parts
+  /// so that everything already reading it — the profile header, the tip
+  /// author default, the cloud backup — keeps working untouched, and so an
+  /// install from before the name was split still answers.
   String? get name {
     final String? value = (_box.get(_nameKey) as String?)?.trim();
     return (value == null || value.isEmpty) ? null : value;
+  }
+
+  /// The first name alone, which is all the home screen's greeting uses.
+  ///
+  /// "בוקר טוב, רבקה כהן־שטרן" is not how anybody greets anybody. Falls back to
+  /// the first word of [name] for a profile saved before the two were asked for
+  /// separately, so no existing install has to be re-onboarded to be greeted
+  /// properly.
+  String? get firstName {
+    final String? stored = (_box.get(_firstNameKey) as String?)?.trim();
+    if (stored != null && stored.isNotEmpty) {
+      return stored;
+    }
+    final String? full = name;
+    if (full == null) {
+      return null;
+    }
+    final String first = full.split(RegExp(r'\s+')).first.trim();
+    return first.isEmpty ? null : first;
+  }
+
+  /// The surname alone. Null when it was never given — a one-word [name] from
+  /// an older install is a first name, not a surname.
+  String? get lastName {
+    final String? stored = (_box.get(_lastNameKey) as String?)?.trim();
+    if (stored != null && stored.isNotEmpty) {
+      return stored;
+    }
+    final String? full = name;
+    if (full == null) {
+      return null;
+    }
+    final List<String> parts = full.split(RegExp(r'\s+'))
+      ..removeWhere((String part) => part.trim().isEmpty);
+    if (parts.length < 2) {
+      return null;
+    }
+    return parts.sublist(1).join(' ');
   }
 
   Gender? get gender {
@@ -126,13 +172,34 @@ class UserProfileProvider extends ChangeNotifier {
   /// answered. The profile photo stays optional.
   bool get isOnboarded => name != null && gender != null && hasMaritalStatus;
 
+  /// Writes the whole onboarding answer.
+  ///
+  /// [lastName] is optional because a surname is not something the app can
+  /// insist on — plenty of people would give one word and mean it — but when it
+  /// is given it is stored on its own as well as inside the joined [name], so
+  /// the greeting can use the first name without having to guess where one
+  /// name ends and the other begins.
   Future<void> saveProfile({
     required String name,
     required Gender gender,
     required bool isSingle,
+    String? lastName,
     String? photoPath,
   }) async {
-    await _box.put(_nameKey, name.trim());
+    final String trimmedFirst = name.trim();
+    final String trimmedLast = (lastName ?? '').trim();
+    final String fullName = <String>[
+      trimmedFirst,
+      trimmedLast,
+    ].where((String part) => part.isNotEmpty).join(' ');
+
+    await _box.put(_nameKey, fullName);
+    await _box.put(_firstNameKey, trimmedFirst);
+    if (trimmedLast.isEmpty) {
+      await _box.delete(_lastNameKey);
+    } else {
+      await _box.put(_lastNameKey, trimmedLast);
+    }
     await _box.put(_genderKey, gender.name);
     if (photoPath == null || photoPath.trim().isEmpty) {
       await _box.delete(_photoPathKey);

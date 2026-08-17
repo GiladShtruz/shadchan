@@ -22,7 +22,8 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
   Gender _selectedGender = Gender.male;
   bool? _selectedIsSingle;
   String? _photoPath;
@@ -37,7 +38,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
     _loadedExistingProfile = true;
     final UserProfileProvider profile = context.read<UserProfileProvider>();
-    _nameController.text = profile.name ?? '';
+    // A profile saved before the name was split answers both of these from the
+    // one joined value, so re-opening this screen never loses a surname.
+    _firstNameController.text = profile.firstName ?? '';
+    _lastNameController.text = profile.lastName ?? '';
     _selectedGender = profile.gender ?? Gender.male;
     _photoPath = profile.photoPath;
     _selectedIsSingle = profile.hasMaritalStatus ? profile.isSingle : null;
@@ -45,7 +49,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     super.dispose();
   }
 
@@ -103,13 +108,29 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               const SizedBox(height: 32),
               Text('איך קוראים לך?', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
+              // Two fields rather than one, because the two are used for
+              // different things: the home screen greets by the first name
+              // alone, and a tip contributed to the community is signed in
+              // full. Asking once, plainly, beats guessing later where one name
+              // ends and the other begins.
               TextField(
-                controller: _nameController,
+                controller: _firstNameController,
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'שם פרטי',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _lastNameController,
                 textInputAction: TextInputAction.done,
                 textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
-                  hintText: 'השם שלך',
-                  prefixIcon: Icon(Icons.person_outline),
+                  labelText: 'שם משפחה',
+                  prefixIcon: Icon(Icons.badge_outlined),
                 ),
                 onChanged: (_) => setState(() {}),
               ),
@@ -187,13 +208,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   bool get _canContinue =>
-      _nameController.text.trim().isNotEmpty && _selectedIsSingle != null;
+      _firstNameController.text.trim().isNotEmpty &&
+      _lastNameController.text.trim().isNotEmpty &&
+      _selectedIsSingle != null;
 
   Future<void> _continue() async {
     setState(() => _saving = true);
     try {
       await context.read<UserProfileProvider>().saveProfile(
-        name: _nameController.text,
+        name: _firstNameController.text,
+        lastName: _lastNameController.text,
         gender: _selectedGender,
         isSingle: _selectedIsSingle!,
         photoPath: _photoPath,

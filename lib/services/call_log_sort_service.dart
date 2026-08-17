@@ -14,18 +14,35 @@ abstract final class CallLogSortService {
 
     // Adding contacts is the one place we may prompt for the call-log
     // permission, since the recent-call order materially improves the import.
-    final Map<String, int> recentCallOrder = await _loadOrder(
-      'getRecentCallNumbers',
+    return applyOrder(
+      candidates,
+      await loadRecentCallOrderRequestingPermission(),
     );
-    if (recentCallOrder.isEmpty) {
+  }
+
+  /// Sorts an already-loaded list by an already-loaded call-log [order].
+  ///
+  /// Split out from [sortByRecentCalls] so the add-contacts screen can put its
+  /// cached list on the screen *first* and reorder it when the call log
+  /// answers, instead of holding the first frame behind a method channel that
+  /// reads the whole device call log and may raise a permission dialog. That
+  /// wait was the several seconds of blank screen after "הוספה מאנשי קשר".
+  ///
+  /// An empty [order] means the call log was unavailable, unreadable or
+  /// refused; the list keeps whatever order it arrived in, which is by name.
+  static List<ContactImportCandidate> applyOrder(
+    List<ContactImportCandidate> candidates,
+    Map<String, int> order,
+  ) {
+    if (candidates.isEmpty || order.isEmpty) {
       return candidates;
     }
 
     final List<ContactImportCandidate> sorted =
         List<ContactImportCandidate>.from(candidates);
     sorted.sort((ContactImportCandidate a, ContactImportCandidate b) {
-      final int? aIndex = recentCallOrder[a.normalizedPhone];
-      final int? bIndex = recentCallOrder[b.normalizedPhone];
+      final int? aIndex = order[a.normalizedPhone];
+      final int? bIndex = order[b.normalizedPhone];
 
       if (aIndex != null && bIndex != null) {
         return aIndex.compareTo(bIndex);

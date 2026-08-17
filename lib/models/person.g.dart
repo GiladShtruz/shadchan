@@ -70,6 +70,7 @@ class PersonAdapter extends TypeAdapter<Person> {
       isFavorite: fields[12] == null ? false : fields[12] as bool,
       needsReview: fields[20] == null ? false : fields[20] as bool,
       hidden: fields[23] == null ? false : fields[23] as bool,
+      importBatchId: fields[40] as String?,
       avatarIndex: fields[28] as int?,
     );
   }
@@ -77,7 +78,7 @@ class PersonAdapter extends TypeAdapter<Person> {
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(40)
+      ..writeByte(41)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -156,6 +157,8 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..write(obj.preferredReligiousLevelOtherLabels)
       ..writeByte(39)
       ..write(obj.additionalContacts)
+      ..writeByte(40)
+      ..write(obj.importBatchId)
       ..writeByte(28)
       ..write(obj.avatarIndex);
   }

@@ -16,6 +16,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
@@ -160,6 +161,14 @@ Widget _buildApp() {
       ChangeNotifierProvider<TipsProvider>(
         lazy: false,
         create: (_) => TipsProvider(Hive.box<dynamic>('settings')),
+      ),
+      // Not lazy for the same reason as `SyncProvider`: `CloudSyncScheduler`
+      // refreshes it on the frame after startup. Its constructor touches
+      // nothing but the local settings box — the counts are derived from Hive
+      // and the publish only happens once Firebase is already up.
+      ChangeNotifierProvider<CommunityProvider>(
+        lazy: false,
+        create: (_) => CommunityProvider(),
       ),
     ],
     child: const _DismissKeyboardOnTap(child: App()),

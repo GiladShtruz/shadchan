@@ -64,9 +64,20 @@ abstract final class HomeConfig {
   static const double boardPaddingTop = 16;
   static const double boardPaddingBottom = 14;
 
-  /// "הפעולות הבאות שלך": every card is exactly this size, whatever its text
-  /// says. Three fit a phone's width with a small gap.
-  static const double nextActionCardHeight = 158;
+  /// "הפעולות הבאות שלך": every card is exactly this box, whatever its text
+  /// says.
+  ///
+  /// The row scrolls horizontally rather than paging three at a time, so the
+  /// card is sized to be *compact* — the point of the row is to run an eye over
+  /// many actions quickly, and a card tall enough for the longest reason in the
+  /// database makes every other card mostly empty. The reason line is clamped
+  /// to fit this box; it never sets it.
+  /// The height is measured from what a card actually holds — one mark, one
+  /// clamped title line and two clamped reason lines — rather than rounded up
+  /// to something comfortable. At 136 the box stood a third taller than its own
+  /// contents, so every card in the row carried a band of empty white.
+  static const double nextActionCardWidth = 150;
+  static const double nextActionCardHeight = 110;
 
   /// "הפעולות האחרונות שלך": the maximum phone-width strip card. Height is
   /// content-driven.

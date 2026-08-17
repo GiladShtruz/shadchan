@@ -3,9 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/date_utils.dart';
+import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -14,9 +16,13 @@ import 'package:shadchan/widgets/person_avatar.dart';
 ///
 /// A number on its own is only worth as much as the ability to ask "which
 /// ones?" — so every card on the stats screen opens this: the same metric, the
-/// same Hebrew month, and the actual proposals or people it counted, followed
-/// by how that one metric moved across the recent months.
-class StatDetailScreen extends StatelessWidget {
+/// actual proposals or people it counted, and how that one metric moved across
+/// the recent months.
+///
+/// Stateful for one reason: "זוגות שהתחילו לצאת" is the only figure here that
+/// can be edited, and taking a couple out of it has to redraw the list it was
+/// just removed from.
+class StatDetailScreen extends StatefulWidget {
   const StatDetailScreen({super.key, required this.metric});
 
   final MonthlyStatMetric metric;
@@ -26,33 +32,84 @@ class StatDetailScreen extends StatelessWidget {
   static const int _monthsBack = 6;
 
   @override
+  State<StatDetailScreen> createState() => _StatDetailScreenState();
+}
+
+class _StatDetailScreenState extends State<StatDetailScreen> {
+  /// Takes one couple out of the historic count.
+  ///
+  /// Undoable from the snackbar rather than guarded by a confirmation dialog:
+  /// nothing is destroyed — the proposal keeps its status and every note on it
+  /// — so an "are you sure?" would be asking about a decision that costs one
+  /// tap to reverse.
+  Future<void> _removeFromCount(MatchIdea match, String names) async {
+    await DatingCountExclusions.exclude(match.id);
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('$names הוסרו מהספירה'),
+          action: SnackBarAction(
+            label: 'ביטול',
+            onPressed: () async {
+              await DatingCountExclusions.restore(match.id);
+              if (mounted) {
+                setState(() {});
+              }
+            },
+          ),
+        ),
+      );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final MonthlyStatMetric metric = widget.metric;
     final MatchRepository matchRepository = context.watch<MatchRepository>();
     final PersonRepository personRepository = context.watch<PersonRepository>();
 
     final List<MatchIdea> allMatches = matchRepository.getAll();
     final List<Person> allPeople = personRepository.getAll();
+    final List<MatchStatusEvent> statusEvents = matchRepository
+        .getAllStatusEvents();
+    final Set<String> excludedFromDating = DatingCountExclusions.all();
 
     final List<MonthPeriod> periods = MonthlyStats.buildPeriods(
       DateTime.now(),
-      _monthsBack,
+      StatDetailScreen._monthsBack,
     );
     final MonthPeriod current = periods.first;
 
-    final List<MatchIdea> matches = MonthlyStats.matchesFor(
-      metric,
-      current,
-      allMatches,
-    );
+    final List<DatingCoupleRecord> couples = metric == MonthlyStatMetric.dating
+        ? DatingHistory.all(
+            matches: allMatches,
+            statusEvents: statusEvents,
+            excludedMatchIds: excludedFromDating,
+          )
+        : const <DatingCoupleRecord>[];
+    final List<MatchIdea> matches = metric == MonthlyStatMetric.dating
+        ? const <MatchIdea>[]
+        : MonthlyStats.matchesFor(metric, current, allMatches);
     final List<Person> people = MonthlyStats.peopleFor(
       metric,
       current,
       allPeople,
     );
-    final int count = metric == MonthlyStatMetric.people
-        ? people.length
-        : matches.length;
+    final int count = switch (metric) {
+      MonthlyStatMetric.people => people.length,
+      MonthlyStatMetric.dating => couples.length,
+      MonthlyStatMetric.ideas || MonthlyStatMetric.weddings => matches.length,
+    };
+
+    String namesFor(MatchIdea match) {
+      return '${_MatchRow._name(personRepository.getById(match.personAId))} & '
+          '${_MatchRow._name(personRepository.getById(match.personBId))}';
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(metric.title), centerTitle: true),
@@ -65,11 +122,24 @@ class StatDetailScreen extends StatelessWidget {
             if (count == 0)
               _EmptyLine(metric: metric)
             else ...<Widget>[
-              Text(
-                'מה נספר',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'מה נספר',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  if (metric == MonthlyStatMetric.dating)
+                    Text(
+                      'אפשר להסיר זוג שסומן בטעות',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 10),
               if (metric == MonthlyStatMetric.people)
@@ -77,6 +147,16 @@ class StatDetailScreen extends StatelessWidget {
                   _PersonRow(
                     person: person,
                     onTap: () => context.push('/people/${person.id}'),
+                  )
+              else if (metric == MonthlyStatMetric.dating)
+                for (final DatingCoupleRecord record in couples)
+                  _DatingCoupleRow(
+                    record: record,
+                    personA: personRepository.getById(record.match.personAId),
+                    personB: personRepository.getById(record.match.personBId),
+                    onTap: () => context.push('/matches/${record.match.id}'),
+                    onRemove: () =>
+                        _removeFromCount(record.match, namesFor(record.match)),
                   )
               else
                 for (final MatchIdea match in matches)
@@ -94,7 +174,13 @@ class StatDetailScreen extends StatelessWidget {
               periods: periods.reversed.toList(),
               stats: <MonthStats>[
                 for (final MonthPeriod period in periods.reversed)
-                  MonthlyStats.statsFor(period, allMatches, allPeople),
+                  MonthlyStats.statsFor(
+                    period,
+                    allMatches,
+                    allPeople,
+                    statusEvents: statusEvents,
+                    excludedFromDating: excludedFromDating,
+                  ),
               ],
             ),
           ],
@@ -155,7 +241,9 @@ class _Headline extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  metric == MonthlyStatMetric.weddings
+                  // A history carries no month: naming one would say the
+                  // figure belongs to it.
+                  metric.isAllTime
                       ? metric.title
                       : '${metric.title} · $monthLabel',
                   style: theme.textTheme.titleSmall?.copyWith(
@@ -295,6 +383,102 @@ class _MatchRow extends StatelessWidget {
   static String _name(Person? person) {
     final String full = person?.fullName.trim() ?? '';
     return full.isEmpty ? '—' : full;
+  }
+}
+
+/// One couple in the historic "started dating" count.
+///
+/// Unlike every other row on this screen it carries an action, because this is
+/// the only figure in the app that can be edited by hand. The couple's current
+/// status is printed next to the date on purpose: a pair who are in the count
+/// and are now marked "יצאו" is not a mistake, and seeing that spelled out is
+/// what stops the remove button being used to "tidy up" real history.
+class _DatingCoupleRow extends StatelessWidget {
+  const _DatingCoupleRow({
+    required this.record,
+    required this.personA,
+    required this.personB,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final DatingCoupleRecord record;
+  final Person? personA;
+  final Person? personB;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String date = AppDateUtils.formatDateShort(record.startedAt);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            padding: const EdgeInsetsDirectional.fromSTEB(12, 12, 4, 12),
+            child: Row(
+              children: <Widget>[
+                HomeCardCoupleAvatars(
+                  personA: personA,
+                  personB: personB,
+                  radius: 18,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '${_MatchRow._name(personA)} & '
+                        '${_MatchRow._name(personB)}',
+                        maxLines: 2,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        // "בערך" is the honest word for a couple from before
+                        // the status ledger existed: they certainly went out,
+                        // and the date is the proposal's last update.
+                        record.estimated
+                            ? '${record.match.status.displayName} · בערך $date'
+                            : '${record.match.status.displayName} · $date',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: onRemove,
+                  tooltip: 'הסרה מהספירה',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    Icons.remove_circle_outline,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

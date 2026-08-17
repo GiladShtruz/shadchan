@@ -39,7 +39,7 @@ class NotificationService {
       AndroidNotificationDetails(
         'person_reminders',
         'תזכורות לחברים',
-        channelDescription: 'התראות לבדוק שוב עם חבר/ה במאגר',
+        channelDescription: 'התראות לבדוק שוב עם חברים במאגר',
         importance: Importance.high,
         priority: Priority.high,
       );

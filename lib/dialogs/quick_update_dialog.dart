@@ -179,7 +179,20 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                 errorText: _ageError,
               ),
             ),
-            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+      // All three answers live in the pinned footer, as one column.
+      //
+      // "לעדכון פרטים מלאים" used to sit at the bottom of the scrolling
+      // content, which meant that the moment the keyboard came up — which is
+      // the moment somebody is filling this dialog in — it was pushed below the
+      // fold and, in practice, never seen. The footer is the one part of a
+      // dialog the keyboard cannot cover.
+      actions: <Widget>[
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
             // Offered rather than required: the whole point of this dialog is
             // that a friend can join on four fields. Everything typed above is
             // carried across, so choosing the full card is never a fresh start.
@@ -190,7 +203,7 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                 icon: const Icon(Icons.edit_note_outlined),
                 label: const Text('לעדכון פרטים מלאים'),
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   side: BorderSide(
                     color: theme.brightness == Brightness.dark
                         ? theme.colorScheme.primary
@@ -206,16 +219,28 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(QuickUpdateOutcome.cancelled),
+                    child: const Text('ביטול'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton(
+                    onPressed: _confirm,
+                    child: Text(_finishLabel),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () =>
-              Navigator.of(context).pop(QuickUpdateOutcome.cancelled),
-          child: const Text('ביטול'),
-        ),
-        FilledButton(onPressed: _confirm, child: Text(_finishLabel)),
       ],
     );
   }

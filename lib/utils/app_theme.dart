@@ -226,6 +226,83 @@ abstract final class AppTheme {
           borderSide: BorderSide(color: colorScheme.error, width: 1.5),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          side: BorderSide(color: colorScheme.outline),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          textStyle: textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      // The four themes below are what make the app's *forgotten* surfaces
+      // match the ones that were redesigned by hand. A dialog, a sheet, a
+      // snackbar and an expander are each raised from a dozen call sites
+      // scattered through the app, and restyling them one at a time is how a
+      // codebase ends up with five different corner radii — so the shape is
+      // stated once, here, and every caller inherits it whether or not anybody
+      // remembered it existed.
+      dialogTheme: DialogThemeData(
+        backgroundColor: cardColor,
+        surfaceTintColor: Colors.transparent,
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titleTextStyle: textTheme.titleMedium?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          height: 1.3,
+          color: textColor,
+        ),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(
+          height: 1.45,
+          color: textColor,
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: cardColor,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: cardColor,
+        elevation: 0,
+        showDragHandle: true,
+        dragHandleColor: secondaryTextColor.withValues(alpha: 0.4),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(
+          color: colorScheme.surface,
+        ),
+      ),
+      expansionTileTheme: ExpansionTileThemeData(
+        iconColor: colorScheme.primary,
+        collapsedIconColor: secondaryTextColor,
+        textColor: textColor,
+        collapsedTextColor: textColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: appBarForegroundColor,
+        unselectedLabelColor: appBarForegroundColor.withValues(alpha: 0.7),
+        indicatorColor: appBarForegroundColor,
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.transparent,
+        labelStyle: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: colorScheme.primary,
+      ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         selectedItemColor: bottomNavigationSelectedColor,
         unselectedItemColor: bottomNavigationUnselectedColor,

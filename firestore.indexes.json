@@ -1,0 +1,58 @@
+{
+  "//": [
+    "The leaderboard is the only query in the app that sorts across users, and",
+    "every one of its four windows needs its own composite index: Firestore",
+    "cannot combine an equality filter with an ordering on a different field",
+    "without one. The `hidden` filter is what keeps an opted-out matchmaker off",
+    "the board, and the period key is what keeps last week's numbers out of this",
+    "week's — so both are part of every index.",
+    "",
+    "The all-time board has no period key, so it needs one fewer field.",
+    "",
+    "Two `isGreaterThan` filters run against these same indexes and need no",
+    "further index of their own, because a range on the field already being",
+    "ordered by is free: the `> 0` that keeps a member who published a zero",
+    "counter this morning off the board, and the `> myActions` that counts the",
+    "rows above the reader to find their rank.",
+    "",
+    "Deploy with: firebase deploy --only firestore:indexes"
+  ],
+  "indexes": [
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "dayKey", "order": "ASCENDING" },
+        { "fieldPath": "dayActions", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "weekKey", "order": "ASCENDING" },
+        { "fieldPath": "weekActions", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "ASCENDING" },
+        { "fieldPath": "monthActions", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "allActions", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

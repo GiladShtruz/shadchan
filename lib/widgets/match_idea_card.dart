@@ -5,7 +5,6 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 
@@ -19,7 +18,7 @@ class MatchIdeaCard extends StatefulWidget {
     required this.male,
     required this.female,
     required this.onTap,
-    required this.onOpenWhatsApp,
+    required this.onOpenPersonWhatsApp,
     this.onPersonStatusPicked,
     this.onQuickAction,
     this.showStatusTag = false,
@@ -31,7 +30,11 @@ class MatchIdeaCard extends StatefulWidget {
   final Person? male;
   final Person? female;
   final VoidCallback onTap;
-  final ValueChanged<Person> onOpenWhatsApp;
+
+  /// Opens one candidate's WhatsApp. The card does not decide what that
+  /// means — the choice between chatting and sending a card names both people,
+  /// and both people belong to the screen, not to this widget.
+  final void Function(Person person) onOpenPersonWhatsApp;
 
   /// Sets one side's availability from the chip under their name. Null leaves
   /// the chip as a plain label.
@@ -144,25 +147,20 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    // A thin gender stripe on each edge of the card, and — now
-                    // that the status chip has taken its old place under the
-                    // name — the WhatsApp shortcut right beside it. Each side's
-                    // chat sits at that side's own edge, which is where a thumb
-                    // reaches it without covering the card.
+                    // A thin gender stripe on each edge of the card. The
+                    // WhatsApp shortcut is back to one per side — on the face
+                    // itself, so there is never a question of whose chat a tap
+                    // opens.
                     _EdgeStripe(
                       color: AppColors.genderAccent(Gender.female, dark: dark),
                       atStart: true,
                     ),
-                    _EdgeWhatsApp(
-                      person: widget.female,
-                      onOpenWhatsApp: widget.onOpenWhatsApp,
-                    ),
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
+                        padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
                         child: Row(
-                          // Top-aligned so both photos stay level even when one
-                          // name wraps onto a second line.
+                          // Top-aligned so both photos stay level whatever the
+                          // names under them come to.
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             // In RTL the first child sits on the right.
@@ -171,6 +169,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                                 person: widget.female,
                                 gender: Gender.female,
                                 onStatusPicked: widget.onPersonStatusPicked,
+                                onOpenWhatsApp: widget.onOpenPersonWhatsApp,
                               ),
                             ),
                             _Middle(status: match.status),
@@ -179,15 +178,12 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                                 person: widget.male,
                                 gender: Gender.male,
                                 onStatusPicked: widget.onPersonStatusPicked,
+                                onOpenWhatsApp: widget.onOpenPersonWhatsApp,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    _EdgeWhatsApp(
-                      person: widget.male,
-                      onOpenWhatsApp: widget.onOpenWhatsApp,
                     ),
                     _EdgeStripe(
                       color: AppColors.genderAccent(Gender.male, dark: dark),
@@ -195,14 +191,18 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                     ),
                   ],
                 ),
-                if (widget.onQuickAction != null && !match.status.isArchived)
-                  _QuickActionsBar(
-                    open: _actionsOpen,
-                    dating: dating,
-                    onToggle: () =>
-                        setState(() => _actionsOpen = !_actionsOpen),
-                    onAction: widget.onQuickAction!,
-                  ),
+                _CardActionBar(
+                  open: _actionsOpen,
+                  dating: dating,
+                  // An archived proposal has no status left worth setting, but
+                  // there is still every reason to message the people in it —
+                  // which is why the chat button does not live inside the part
+                  // that disappears.
+                  showStatusToggle:
+                      widget.onQuickAction != null && !match.status.isArchived,
+                  onToggle: () => setState(() => _actionsOpen = !_actionsOpen),
+                  onAction: widget.onQuickAction,
+                ),
                 _Footer(
                   match: match,
                   showStatusTag: widget.showStatusTag,
@@ -239,24 +239,27 @@ class _EdgeStripe extends StatelessWidget {
   }
 }
 
-/// One person inside the card: photo in a gender-coloured ring, name, age and —
-/// where the WhatsApp icon used to sit — their own availability, changeable in
+/// One person inside the card: photo in a gender-coloured ring with their own
+/// WhatsApp button on it, then name, age and their availability, changeable in
 /// place.
 ///
-/// The swap is the point. WhatsApp was the most prominent control on a card
-/// about a *proposal*, while the thing that actually decides whether the
-/// proposal can move — is she free, is he on a break — was not on the card at
-/// all. Now the status is a tap under the name, and the chat is at the edge.
+/// **The chat button is a badge on the face, not a row of its own.** It has to
+/// belong unmistakably to *this* side — that is the entire reason the card
+/// stopped having one shared button — and a card in a scrolling list has no
+/// vertical room to spare. Sitting on the corner of the photo it costs nothing
+/// and points at exactly one person.
 class _Side extends StatelessWidget {
   const _Side({
     required this.person,
     required this.gender,
     required this.onStatusPicked,
+    required this.onOpenWhatsApp,
   });
 
   final Person? person;
   final Gender gender;
   final void Function(Person person, ProfileStatus status)? onStatusPicked;
+  final void Function(Person person) onOpenWhatsApp;
 
   @override
   Widget build(BuildContext context) {
@@ -268,44 +271,136 @@ class _Side extends StatelessWidget {
     final String name = current?.fullName.trim().isNotEmpty == true
         ? current!.fullName.trim()
         : 'אדם נמחק';
+    final String first = (current?.firstName ?? '').trim();
     final int? age = current?.age;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Container(
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: ring, width: 2),
-          ),
-          child: current == null
-              ? CircleAvatar(
-                  radius: 24,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  child: Icon(
-                    Icons.person_off_outlined,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                )
-              : PersonAvatar(person: current, radius: 24),
+        Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: ring, width: 2),
+              ),
+              child: current == null
+                  ? CircleAvatar(
+                      radius: 24,
+                      backgroundColor:
+                          theme.colorScheme.surfaceContainerHighest,
+                      child: Icon(
+                        Icons.person_off_outlined,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    )
+                  : PersonAvatar(person: current, radius: 24),
+            ),
+            // Nothing to message when the record is gone.
+            if (current != null)
+              PositionedDirectional(
+                bottom: -4,
+                start: -6,
+                child: _SideWhatsAppButton(
+                  onTap: () => onOpenWhatsApp(current),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
-        Text(
-          age != null ? '$name, $age' : name,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        _NameWithAge(fullName: name, firstName: first, age: age),
         if (current != null) ...<Widget>[
           const SizedBox(height: 4),
           _StatusPicker(person: current, onStatusPicked: onStatusPicked),
         ],
       ],
+    );
+  }
+}
+
+/// A person's name and age on exactly one line, whatever the name is.
+///
+/// A proposal card is one of a scrolling list, and a card that is taller than
+/// the one above it because somebody has two given names makes the whole list
+/// read as unsteady. So the line never wraps, and it gives things up in a fixed
+/// order:
+///
+/// 1. the full name with the age, when it fits;
+/// 2. the **first name** with the age, when the full name does not — dropping a
+///    surname whole is far more readable than "אלישבע-מרים כהן־שט…, 26";
+/// 3. as much of the first name as fits, ellipsized, with the age still there.
+///
+/// The age never gives way, because it is the one thing on the card a
+/// matchmaker scans for and the one thing a truncated name cannot imply.
+class _NameWithAge extends StatelessWidget {
+  const _NameWithAge({
+    required this.fullName,
+    required this.firstName,
+    required this.age,
+  });
+
+  final String fullName;
+  final String firstName;
+  final int? age;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle style =
+        theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700) ??
+        const TextStyle(fontWeight: FontWeight.w700);
+    final String suffix = age == null ? '' : ', $age';
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available = constraints.maxWidth;
+        final TextScaler scaler = MediaQuery.textScalerOf(context);
+
+        double widthOf(String text) {
+          final TextPainter painter = TextPainter(
+            text: TextSpan(text: text, style: style),
+            textDirection: Directionality.of(context),
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          final double width = painter.width;
+          painter.dispose();
+          return width;
+        }
+
+        // The full name is preferred; the first name alone is the fallback, and
+        // only when it is genuinely shorter (a one-word name is both).
+        String name = fullName;
+        if (available.isFinite &&
+            firstName.isNotEmpty &&
+            firstName.length < fullName.length &&
+            widthOf('$fullName$suffix') > available) {
+          name = firstName;
+        }
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            // Flexible, so this is the part that gives; the age beside it is
+            // not, so it cannot be squeezed out.
+            Flexible(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: style,
+              ),
+            ),
+            if (suffix.isNotEmpty)
+              Text(suffix, maxLines: 1, softWrap: false, style: style),
+          ],
+        );
+      },
     );
   }
 }
@@ -371,51 +466,29 @@ class _StatusPicker extends StatelessWidget {
   }
 }
 
-/// The WhatsApp shortcut at the card's own edge, next to that side's stripe.
-class _EdgeWhatsApp extends StatelessWidget {
-  const _EdgeWhatsApp({required this.person, required this.onOpenWhatsApp});
-
-  final Person? person;
-  final ValueChanged<Person> onOpenWhatsApp;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Person? current = person;
-    final bool hasPhone =
-        current != null && PhoneUtils.toWhatsAppNumber(current.phone) != null;
-
-    return SizedBox(
-      width: 34,
-      child: IconButton(
-        tooltip: 'וואטסאפ',
-        visualDensity: VisualDensity.compact,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-        onPressed: hasPhone ? () => onOpenWhatsApp(current) : null,
-        icon: FaIcon(
-          FontAwesomeIcons.whatsapp,
-          size: 20,
-          color: hasPhone
-              ? const Color(0xFF25D366)
-              : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.35),
-        ),
-      ),
-    );
-  }
-}
-
-/// The proposal's own actions, folded into one slim bar under the pair.
+/// The bar under the pair: the proposal's own status actions, folded behind one
+/// line.
 ///
-/// Closed, it is a single line — the card grows by about the height of a chip.
-/// Open, it is the same three actions the proposal screen offers, in the same
-/// order and with the same weighting: "מתחילים לצאת" filled and leading,
-/// because it is the one worth encouraging, and unmistakably a button rather
+/// **No chat button here.** It used to carry one, opening a sheet that asked
+/// which of the two people was meant — a question the card had already made the
+/// reader ask by putting a single icon under two faces. Each side owns its own
+/// button now, on its own photo, and this bar is left doing the one thing that
+/// belongs to the proposal rather than to a person.
+///
+/// **"עדכון סטטוס", not "פעולות מהירות".** The row behind it does exactly one
+/// thing — move the proposal from one status to another — and a label that
+/// says so is the difference between a control people use and a drawer people
+/// open once to find out what is in it.
+///
+/// Closed, it is a single line and the card grows by about the height of a
+/// chip. Open, it is the same actions the proposal screen offers, weighted the
+/// same way: "מתחילים לצאת" filled and leading, unmistakably a button rather
 /// than a badge saying where the couple already are.
-class _QuickActionsBar extends StatelessWidget {
-  const _QuickActionsBar({
+class _CardActionBar extends StatelessWidget {
+  const _CardActionBar({
     required this.open,
     required this.dating,
+    required this.showStatusToggle,
     required this.onToggle,
     required this.onAction,
   });
@@ -425,8 +498,11 @@ class _QuickActionsBar extends StatelessWidget {
   /// A couple who are already out are not offered "מתחילים לצאת" again.
   final bool dating;
 
+  /// False for an archived proposal, which has no status left worth setting.
+  final bool showStatusToggle;
+
   final VoidCallback onToggle;
-  final ValueChanged<MatchQuickAction> onAction;
+  final ValueChanged<MatchQuickAction>? onAction;
 
   List<MatchQuickAction> get _actions => dating
       ? <MatchQuickAction>[MatchQuickAction.close]
@@ -435,55 +511,64 @@ class _QuickActionsBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final ValueChanged<MatchQuickAction>? action = onAction;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       child: Column(
         children: <Widget>[
-          InkWell(
-            onTap: onToggle,
-            borderRadius: BorderRadius.circular(999),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Text(
-                    open ? 'סגירת הפעולות' : 'פעולות מהירות',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  Icon(
-                    open
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: showStatusToggle
+                    ? InkWell(
+                        onTap: onToggle,
+                        borderRadius: BorderRadius.circular(999),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              Text(
+                                open ? 'סגירת עדכון סטטוס' : 'עדכון סטטוס',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              Icon(
+                                open
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
+                                size: 18,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : const SizedBox(height: 34),
               ),
-            ),
+            ],
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             alignment: Alignment.topCenter,
-            child: open
+            child: open && showStatusToggle && action != null
                 ? Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: <Widget>[
-                        for (final MatchQuickAction action in _actions)
+                        for (final MatchQuickAction quickAction in _actions)
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 3,
                               ),
                               child: _QuickActionButton(
-                                action: action,
-                                onTap: () => onAction(action),
+                                action: quickAction,
+                                onTap: () => action(quickAction),
                               ),
                             ),
                           ),
@@ -493,6 +578,39 @@ class _QuickActionsBar extends StatelessWidget {
                 : const SizedBox(width: double.infinity),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One side's WhatsApp control: a small disc sitting on the corner of their
+/// photo, in the card's own surface colour so it reads as resting on the face
+/// rather than punched through it.
+class _SideWhatsAppButton extends StatelessWidget {
+  const _SideWhatsAppButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surface,
+      shape: CircleBorder(
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.all(6),
+          child: FaIcon(
+            FontAwesomeIcons.whatsapp,
+            size: 16,
+            color: Color(0xFF25D366),
+          ),
+        ),
       ),
     );
   }

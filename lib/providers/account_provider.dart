@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/services/tips_service.dart';
 
 /// Who is signed in, for the screens that have to say so.
@@ -71,6 +72,17 @@ class AccountProvider extends ChangeNotifier {
   /// flipping this in a patched client buys a screen full of buttons that every
   /// write refuses.
   bool get isTipsAdmin => isSignedIn && TipsService.isAdminEmail(email);
+
+  /// Whether this account may open the support console.
+  ///
+  /// Unlike [isTipsAdmin] this cannot be answered from a constant: the whole
+  /// point of the console is that administrators are added by address without a
+  /// new build, so the answer lives in Firestore and is re-read whenever the
+  /// signed-in user changes. Until that read returns it is false, which shows
+  /// one settings row a moment late rather than showing it to the wrong person.
+  bool get isSupportAdmin => _isSupportAdmin;
+
+  bool _isSupportAdmin = false;
 
   String? get displayName => _google?.displayName ?? _user?.displayName;
 
@@ -151,10 +163,23 @@ class AccountProvider extends ChangeNotifier {
   void _setUser(User? user) {
     _user = user;
     notifyListeners();
+    unawaited(_refreshSupportAdmin());
   }
+
+  Future<void> _refreshSupportAdmin() async {
+    final bool next = isSignedIn && await SupportService.isAdmin(email);
+    if (_isSupportAdmin == next || _disposed) {
+      return;
+    }
+    _isSupportAdmin = next;
+    notifyListeners();
+  }
+
+  bool _disposed = false;
 
   @override
   void dispose() {
+    _disposed = true;
     FirebaseBootstrap.readyListenable.removeListener(_handleReadyChanged);
     _userChanges?.cancel();
     super.dispose();

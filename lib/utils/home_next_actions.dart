@@ -5,9 +5,11 @@ import 'package:shadchan/utils/enums.dart';
 
 /// What kind of thing "הפעולות הבאות שלך" is asking for.
 ///
-/// The order of the values *is* the priority order: a reminder the matchmaker
-/// set themselves outranks anything the app worked out on its own, and a couple
-/// who have been out for a month outranks a card that has gone quiet.
+/// The order of the values is the priority order *within one round* of the
+/// list — it is no longer the order of the list itself. A due reminder still
+/// outranks everything (see [HomeNextActions.build]), but below that the kinds
+/// are dealt out one at a time rather than in blocks, so the row never becomes
+/// "every open proposal, and then every card nobody updated".
 enum HomeActionKind {
   /// A reminder the matchmaker asked for has come due.
   reminderDue,
@@ -17,6 +19,12 @@ enum HomeActionKind {
 
   /// An open proposal nobody has moved in weeks.
   staleIdea,
+
+  /// A whole week without a friend added to the database.
+  addFriendNudge,
+
+  /// A whole week without a new idea.
+  newIdeaNudge,
 
   /// An older card missing fields the app has since added.
   missingDetails,
@@ -35,6 +43,10 @@ enum HomeActionKind {
         return Icons.favorite_outline;
       case HomeActionKind.staleIdea:
         return Icons.hourglass_bottom_outlined;
+      case HomeActionKind.addFriendNudge:
+        return Icons.group_add_outlined;
+      case HomeActionKind.newIdeaNudge:
+        return Icons.lightbulb_outline;
       case HomeActionKind.missingDetails:
         return Icons.edit_note_outlined;
       case HomeActionKind.noIdeas:
@@ -90,6 +102,22 @@ class HomeNextAction {
          overdueDays: overdueDays,
        );
 
+  /// An action about the matchmaker's own habit rather than about one record —
+  /// "כבר שבוע לא הוספת חבר למאגר". It has no person and no proposal behind it,
+  /// so the card draws its kind's icon where a face would go and the screen
+  /// routes it by [kind] rather than by id.
+  const HomeNextAction.prompt({
+    required HomeActionKind kind,
+    required String title,
+    required String reason,
+    int overdueDays = 0,
+  }) : this._(
+         kind: kind,
+         title: title,
+         reason: reason,
+         overdueDays: overdueDays,
+       );
+
   final HomeActionKind kind;
 
   final Person? person;
@@ -109,18 +137,35 @@ class HomeNextAction {
 
   bool get isPerson => person != null;
 
-  /// Stable identity, so the pager can be reasoned about in tests.
-  String get id =>
-      isPerson ? '${kind.name}:p:${person!.id}' : '${kind.name}:m:${match!.id}';
+  /// True for the habit prompts, which have no record to open.
+  bool get isPrompt => person == null && match == null;
+
+  /// Stable identity, so the row can be reasoned about in tests.
+  String get id {
+    if (person != null) {
+      return '${kind.name}:p:${person!.id}';
+    }
+    if (match != null) {
+      return '${kind.name}:m:${match!.id}';
+    }
+    return '${kind.name}:prompt';
+  }
 }
 
 /// "הפעולות הבאות שלך" — what the app thinks is most worth doing right now.
 ///
 /// Deliberately *not* the board and deliberately not chronological. The board
 /// holds what the matchmaker put there by hand; this is the app's own reading of
-/// the database, ranked by how much each item is asking for attention. An item
-/// that is acted on stops qualifying by itself, so there is no done button and
-/// nothing to dismiss.
+/// the database. An item that is acted on stops qualifying by itself, so there
+/// is no done button and nothing to dismiss.
+///
+/// **The list is mixed, not grouped.** Due reminders lead, all of them, because
+/// they are the only items carrying a date the matchmaker chose themselves.
+/// Everything under them is dealt out one kind at a time — a stale idea, then a
+/// nudge, then a card missing a field, then a friend with no idea, and round
+/// again. Sorting purely by kind produced a row that opened with every open
+/// proposal and only reached the people much later, which reads as two separate
+/// lists glued together and means the second one is never seen.
 abstract final class HomeNextActions {
   /// A couple out for about this long is worth a "how is it going?".
   static const int datingCheckInDays = 28;
@@ -135,10 +180,10 @@ abstract final class HomeNextActions {
   /// once it has settled — a friend added this morning is simply unfinished.
   static const int missingDetailsMinAgeDays = 14;
 
-  /// How many cards the row shows at a time.
-  static const int pageSize = 3;
+  /// How long a quiet stretch has to be before the app mentions it.
+  static const int quietStretchDays = 7;
 
-  /// The whole ranked list. The screen pages through it three at a time.
+  /// The whole ranked list. The screen scrolls through it horizontally.
   static List<HomeNextAction> build({
     required List<Person> people,
     required List<MatchIdea> matches,
@@ -294,9 +339,11 @@ abstract final class HomeNextActions {
       }
     }
 
-    // Most urgent kind first; inside a kind, whatever is furthest past its
-    // moment. `id` breaks the last tie so the order never wobbles between two
-    // builds of the same data.
+    found.addAll(_quietStretchPrompts(visible, matches, today));
+
+    // Inside one kind: whatever is furthest past its moment, with `id` breaking
+    // the last tie so the order never wobbles between two builds of the same
+    // data.
     found.sort((HomeNextAction a, HomeNextAction b) {
       final int byKind = a.kind.index.compareTo(b.kind.index);
       if (byKind != 0) {
@@ -306,18 +353,125 @@ abstract final class HomeNextActions {
       return byOverdue != 0 ? byOverdue : a.id.compareTo(b.id);
     });
 
-    return found.length > limit ? found.sublist(0, limit) : found;
+    final List<HomeNextAction> ranked = _mix(found);
+    return ranked.length > limit ? ranked.sublist(0, limit) : ranked;
+  }
+
+  /// The two habit prompts: a week with no friend added, a week with no idea.
+  ///
+  /// Neither is offered to a database that has not started yet — telling
+  /// somebody with no friends that they have not added one in a week is not a
+  /// nudge, it is a scolding for not having used the app. The friends prompt
+  /// waits for a first friend and the ideas prompt for a second, which is the
+  /// point at which an idea is possible at all.
+  static List<HomeNextAction> _quietStretchPrompts(
+    List<Person> people,
+    List<MatchIdea> matches,
+    DateTime today,
+  ) {
+    final List<HomeNextAction> prompts = <HomeNextAction>[];
+
+    DateTime? latest(Iterable<DateTime> dates) {
+      DateTime? newest;
+      for (final DateTime date in dates) {
+        if (newest == null || date.isAfter(newest)) {
+          newest = date;
+        }
+      }
+      return newest;
+    }
+
+    if (people.isNotEmpty) {
+      final DateTime? lastAdded = latest(
+        people.map((Person person) => person.createdAt),
+      );
+      final int quiet = lastAdded == null
+          ? quietStretchDays
+          : today.difference(lastAdded).inDays;
+      if (quiet >= quietStretchDays) {
+        prompts.add(
+          HomeNextAction.prompt(
+            kind: HomeActionKind.addFriendNudge,
+            title: 'הוספת חבר',
+            reason: 'כבר שבוע לא הוספת חבר למאגר',
+            overdueDays: quiet,
+          ),
+        );
+      }
+    }
+
+    if (people.length >= 2) {
+      final DateTime? lastIdea = latest(
+        matches.map((MatchIdea match) => match.createdAt),
+      );
+      final int quiet = lastIdea == null
+          ? quietStretchDays
+          : today.difference(lastIdea).inDays;
+      if (quiet >= quietStretchDays) {
+        prompts.add(
+          HomeNextAction.prompt(
+            kind: HomeActionKind.newIdeaNudge,
+            title: 'רעיון חדש',
+            reason: 'כבר שבוע לא חשבת על רעיון חדש',
+            overdueDays: quiet,
+          ),
+        );
+      }
+    }
+
+    return prompts;
+  }
+
+  /// Due reminders first, then one of each remaining kind per round.
+  ///
+  /// [sorted] must already be ordered by kind and then by urgency, which is what
+  /// makes the round-robin deal the most pressing item of each kind first.
+  static List<HomeNextAction> _mix(List<HomeNextAction> sorted) {
+    final List<HomeNextAction> reminders = <HomeNextAction>[];
+    final Map<HomeActionKind, List<HomeNextAction>> buckets =
+        <HomeActionKind, List<HomeNextAction>>{};
+
+    for (final HomeNextAction action in sorted) {
+      if (action.kind == HomeActionKind.reminderDue) {
+        reminders.add(action);
+        continue;
+      }
+      buckets.putIfAbsent(action.kind, () => <HomeNextAction>[]).add(action);
+    }
+
+    final List<HomeNextAction> mixed = <HomeNextAction>[...reminders];
+    int taken = 0;
+    while (taken < buckets.length) {
+      taken = 0;
+      for (final HomeActionKind kind in HomeActionKind.values) {
+        final List<HomeNextAction>? bucket = buckets[kind];
+        if (bucket == null) {
+          continue;
+        }
+        if (bucket.isEmpty) {
+          taken++;
+          continue;
+        }
+        mixed.add(bucket.removeAt(0));
+      }
+    }
+
+    return mixed;
   }
 
   /// The fields newer versions of the app ask for and an older card may never
-  /// have been given. Only ever the three that change what the matching sees —
-  /// a missing photo or note is nobody's business.
+  /// have been given.
+  ///
+  /// Deliberately only two. A missing marital status or region is *not* a
+  /// reason to ask anyone for an update — plenty of perfectly usable cards
+  /// never carry either, and asking for them turned the row into a list of
+  /// every card in the database. Age and religious style are different: the
+  /// matching is built on them, so a card without them cannot be suggested at
+  /// all.
   static List<String> _missingBasics(Person person) {
     return <String>[
       if (person.age == null) 'גיל',
       if (person.religiousLevel == null) 'סגנון דתי',
-      if (person.maritalStatus == null) 'מצב משפחתי',
-      if (person.region == null) 'אזור בארץ',
     ];
   }
 

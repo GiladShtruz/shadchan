@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/engagement_dialogs.dart';
 import 'package:shadchan/dialogs/match_outcome_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// Why a proposal is waiting.
@@ -109,11 +111,26 @@ abstract final class MatchStatusSheet {
         // ended it and why — exactly like the proposal screen's own
         // "סגירת ההצעה" flow does.
         await _closeAsRejected(context, repository, match);
+      case MatchStatus.married:
+        // Split out from the plain moves below because this one is also the
+        // app's only piece of *outgoing* good news. Recorded only on the
+        // transition: re-picking a status the proposal already had is not a
+        // second engagement.
+        final bool alreadyMarried = match.status == MatchStatus.married;
+        await repository.updateStatus(match.id, picked);
+        if (alreadyMarried || !context.mounted) {
+          return;
+        }
+        await EngagementFlow.celebrate(
+          context,
+          firstNameA: male?.firstName ?? '',
+          firstNameB: female?.firstName ?? '',
+          matchmakerName: context.read<UserProfileProvider>().name ?? '',
+        );
       case MatchStatus.idea:
       case MatchStatus.checking:
       case MatchStatus.dating:
       case MatchStatus.dated:
-      case MatchStatus.married:
         await repository.updateStatus(match.id, picked);
     }
   }

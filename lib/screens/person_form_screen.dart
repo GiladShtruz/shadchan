@@ -646,7 +646,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       case AiParseFailure.empty:
         return 'לא נמצאו פרטים בכרטיסייה. אפשר למלא ידנית.';
       case AiParseFailure.network:
-        return 'לא הצלחנו להתחבר. בדוק את החיבור לאינטרנט ונסה שוב.';
+        return 'לא הצלחנו להתחבר. כדאי לבדוק את החיבור לאינטרנט ולנסות שוב.';
       case AiParseFailure.unavailable:
         return 'הקריאה החכמה אינה זמינה כרגע.';
       case AiParseFailure.attestation:

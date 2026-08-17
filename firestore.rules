@@ -95,6 +95,176 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // --- Support -----------------------------------------------------------
+    //
+    // Who may run the support console. The root address is written here, and
+    // everybody else is a document in `supportAdmins` keyed by their own
+    // address — which is the whole point: adding a reviewer must not need a new
+    // build of the app. `email_verified` closes the door on an unverified
+    // address claiming to be one of them, and `get` with a default is used
+    // because an anonymous token carries no email field at all.
+    function supportEmail() {
+      return request.auth != null
+          && request.auth.token.get('email_verified', false) == true
+             ? request.auth.token.get('email', '').lower()
+             : '';
+    }
+
+    function isSupportAdmin() {
+      return supportEmail() != ''
+          && (supportEmail() == 'yitz292@gmail.com'
+              || exists(/databases/$(database)/documents/supportAdmins/$(supportEmail())));
+    }
+
+    // Problem reports and improvement ideas.
+    //
+    // Anyone signed in may write one, **anonymous accounts included**: most
+    // matchmakers never connect an account, and a product that only hears from
+    // the ones who did is hearing from the wrong ones. Nobody may read the
+    // collection except an administrator — a report is one person's words about
+    // their own use of the app, and there is no reason for another user to see
+    // it. A reporter cannot read back even their own, which is deliberate:
+    // making it readable would mean a query anyone could run.
+    match /supportReports/{reportId} {
+      allow read, update, delete: if isSupportAdmin();
+
+      allow create: if request.auth != null
+                    && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.status == 'isNew'
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 3000
+                    && request.resource.data.authorName is string
+                    && request.resource.data.authorName.size() <= 80;
+    }
+
+    // The administrator list itself. Readable by a signed-in device so the app
+    // can decide whether to draw the console entry; writable only by the root
+    // address, so an administrator cannot promote themselves a colleague — or
+    // remove the person who appointed them.
+    match /supportAdmins/{adminEmail} {
+      allow read: if request.auth != null;
+      allow write: if supportEmail() == 'yitz292@gmail.com';
+    }
+
+    // "מה חדש?" — read by every signed-in device on app open, written by an
+    // administrator. Public by construction: it is an announcement.
+    match /announcements/{announcementId} {
+      allow read: if request.auth != null;
+      allow write: if isSupportAdmin();
+    }
+
+    // --- The community -----------------------------------------------------
+    //
+    // The one place in this database where a user's own row is readable by
+    // other users, and the exception is deliberate and narrow. A member
+    // document holds a name the matchmaker typed about *themselves* and four
+    // counters. It holds nothing about a candidate: no person, no proposal, no
+    // note, no photo, no phone number — those never leave `users/{uid}`.
+    //
+    // Read is open to any signed-in device because it has to be: the
+    // leaderboard is a sorted query and the community totals are `sum()` /
+    // `count()` aggregates, and neither can run against documents the caller
+    // may not read. Write is the owner's alone, so nobody can put words in
+    // anybody's mouth or push themselves up the board.
+    match /communityMembers/{uid} {
+      allow read: if request.auth != null;
+
+      allow create, update: if request.auth != null
+                            && request.auth.uid == uid
+                            && request.resource.data.name is string
+                            && request.resource.data.name.size() <= 80
+                            && request.resource.data.hidden is bool;
+
+      // Erasure, from the button on "פרטיות והמאגר שלי". Split out because a
+      // delete carries no `request.resource`, so the field checks above would
+      // refuse it — which would have left the app promising a deletion it could
+      // not perform.
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // --- "מזל טוב! זוג חדש התארס!" ----------------------------------------
+    //
+    // The only collection in this database that can hold a candidate's name,
+    // and the rules are written on the assumption that it will be got wrong in
+    // the client one day.
+    //
+    // **An anonymous record is the default and carries nothing.** Marking a
+    // proposal as a wedding writes `{authorUid, createdAt}` and three empty
+    // strings. That is what every other user is shown: a couple, somewhere.
+    //
+    // **Names and a photo require `coupleApproved: true`, and it is checked
+    // here rather than trusted from the app.** A client cannot write a name
+    // without also writing down that it had permission to, which is what makes
+    // the flag worth having — it is a claim on the record, in the record, that
+    // survives the app being rewritten.
+    //
+    // **Read is open to any signed-in device** for the same reason the member
+    // documents are: the announcement is a query over documents the reader does
+    // not own. Write, update and delete are the author's alone, so nobody can
+    // publish anybody else's couple or edit the names on one already published,
+    // and the author can always take their own back down.
+    match /communityEngagements/{engagementId} {
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      // Everything the app ever writes here, and nothing else. Absent fields
+      // are refused rather than defaulted: a document that is missing
+      // `firstNames` cannot be reasoned about by the rule below it.
+      function wellFormed(data) {
+        return data.authorUid is string
+            && data.firstNames is string
+            && data.firstNames.size() <= 80
+            && data.matchmakerName is string
+            && data.matchmakerName.size() <= 80
+            && data.photoUrl is string
+            && data.photoUrl.size() <= 1000;
+      }
+
+      // The one rule this collection exists to enforce. A record naming
+      // somebody must also record that the couple agreed, and it must come
+      // from a durable account: publishing two real people's names under a uid
+      // that dies with the install would leave nobody able to withdraw it.
+      function namedOnlyWithConsent(data) {
+        return data.firstNames == ''
+            || (data.coupleApproved == true
+                && request.auth.token.firebase.sign_in_provider != 'anonymous');
+      }
+
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+                    && request.resource.data.authorUid == request.auth.uid
+                    && wellFormed(request.resource.data)
+                    && namedOnlyWithConsent(request.resource.data);
+
+      // The author fills in the names on their own record afterwards. The
+      // author may never change, so an update cannot move a couple onto
+      // somebody else's account.
+      allow update: if isSignedIn()
+                    && resource.data.authorUid == request.auth.uid
+                    && request.resource.data.authorUid == request.auth.uid
+                    && wellFormed(request.resource.data)
+                    && namedOnlyWithConsent(request.resource.data);
+
+      // Withdrawal, for a couple who changed their mind. Split out because a
+      // delete carries no `request.resource` and the checks above would refuse
+      // it — the same trap `communityMembers` fell into.
+      allow delete: if isSignedIn()
+                    && resource.data.authorUid == request.auth.uid;
+    }
+
+    // The shared weekly target. No personal data at all — a number the whole
+    // community aims at, and the total it actually reached. Any signed-in
+    // client may create the week's target (the first one to look computes it
+    // inside a transaction) and may add its own finished week to `actual` on
+    // rollover, which is an increment rather than a value it chooses.
+    match /communityGoals/{weekKey} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
     // Anything not named above is closed. Without this, a path added later
     // starts life world-readable.
     match /{document=**} {

@@ -24,6 +24,13 @@ class IntroPage {
 /// friend who never asked to be added — which is most of the database.
 ///
 /// Shown once, before the profile form, and never again.
+///
+/// **Everything here addresses one person.** The welcome used to slip between
+/// "שלך" and "שלכם" from page to page, which is worse than either on its own —
+/// a screen whose whole job is to say *your* database is private cannot be
+/// vague about whose it is. Singular throughout, and phrased so it fits a man
+/// or a woman without a single gendered verb, because this is the one screen in
+/// the app shown *before* anybody has said which they are.
 class IntroScreens extends StatefulWidget {
   const IntroScreens({super.key, required this.onFinished});
 
@@ -34,30 +41,30 @@ class IntroScreens extends StatefulWidget {
     IntroPage(
       icon: Icons.favorite_rounded,
       title: 'האפליקציה הזו נבנתה בשבילך',
-      body:
-          'לשדכנים, ולכל מי שחושב מדי פעם על החברים שלו ומחפש להם את '
-          'ההתאמה הנכונה.',
+      body: 'לשדכנים, ולכל מי שחושב מדי פעם על החברים שלו.',
     ),
     IntroPage(
       icon: Icons.folder_shared_outlined,
-      title: 'מאגר השידוכים האישי שלך',
+      // A journal, not a database: what this holds is a train of thought about
+      // people over time, which is not what "מאגר" describes.
+      title: 'יומן השידוכים האישי שלך',
       body:
-          'החברים שאתם חושבים עליהם, הרעיונות שעולים לכם בראש ומה קרה עם כל '
-          'אחד מהם — הכול נשמר במקום אחד, אצלכם.',
+          'החברים שחושבים עליהם, הרעיונות שעולים בראש ומה קרה עם כל אחד מהם – '
+          'הכל נשמר לך במקום אחד.',
     ),
     IntroPage(
       icon: Icons.lock_outline_rounded,
       title: 'פרטי לחלוטין',
       body:
-          'אף משתמש אחר לא יכול לראות את המאגר שלכם, את הרעיונות שלכם או את '
-          'הפעילות שלכם. גם לא שדכנים אחרים.',
+          'אף משתמש אחר לא יכול לראות את המאגר שלך, את הרעיונות שלך או את '
+          'הפעילות שלך. גם לא שדכנים אחרים.',
     ),
     IntroPage(
       icon: Icons.group_add_outlined,
       title: 'אפשר להוסיף בלב שקט',
       body:
-          'אפשר להוסיף למאגר חברים שאתם חושבים עליהם לשידוכים גם בלי לבקש '
-          'מהם מראש לפתוח פרופיל. כל מה שתוסיפו נשאר במאגר האישי שלכם בלבד.',
+          'אפשר להוסיף למאגר חברים שחושבים עליהם לשידוכים גם בלי לבקש מהם '
+          'מראש לפתוח פרופיל. כל מה שנוסף נשאר במאגר האישי שלך בלבד.',
     ),
   ];
 

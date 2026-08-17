@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
@@ -8,6 +9,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/call_log_sort_service.dart';
+import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -194,7 +196,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
             child: Text(
-              'בחר חבר אחד או יותר כדי להוסיף אותם למאגר.',
+              'אפשר לבחור חבר אחד או יותר ולהוסיף אותם למאגר.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -332,7 +334,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                   ),
                   ListTile(
                     leading: const Icon(Icons.person_add_alt),
-                    title: const Text('הוסף למאגר'),
+                    title: const Text('הוספה למאגר'),
                     onTap: () => Navigator.of(
                       sheetContext,
                     ).pop(_RemovedContactAction.addToDatabase),
@@ -703,6 +705,17 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       return;
     }
     session.recordAdded(addedCount);
+    // A long multi-add is a large import too, however many dialogs it took to
+    // confirm. Past the notice threshold the community note replaces the
+    // celebration rather than following it — one word about the moment, not
+    // two. Below it, nothing has changed.
+    CommunityProfileStore.noteBulkImport(addedCount);
+    if (await BulkImportNoteDialog.maybeShow(context)) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
     await ContactsAddedCelebration.show(context, count: addedCount);
   }
 
@@ -1081,10 +1094,10 @@ class _SelectionActionBar extends StatelessWidget {
   }
 
   static String _addLabel(int count) =>
-      count == 1 ? 'הוסף חבר אחד למאגר' : 'הוסף $count חברים למאגר';
+      count == 1 ? 'הוספת חבר אחד למאגר' : 'הוספת $count חברים למאגר';
 
   static String _removeLabel(int count) =>
-      count == 1 ? 'הסר חבר אחד מהרשימה' : 'הסר $count חברים מהרשימה';
+      count == 1 ? 'הסרת חבר אחד מהרשימה' : 'הסרת $count חברים מהרשימה';
 }
 
 class _LoadingContactsView extends StatelessWidget {

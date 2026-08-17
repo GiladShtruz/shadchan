@@ -733,18 +733,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 },
               ),
               ListTile(
-                leading: Icon(
-                  person.isFavorite ? Icons.star_outline : Icons.star,
-                ),
-                title: Text(
-                  person.isFavorite ? 'הסרה ממועדפים' : 'הוספה למועדפים',
-                ),
-                onTap: () async {
-                  Navigator.of(bottomSheetContext).pop();
-                  await repository.toggleFavorite(person.id);
-                },
-              ),
-              ListTile(
                 leading: const Icon(Icons.delete_outline),
                 title: const Text('מחיקה'),
                 textColor: Theme.of(context).colorScheme.error,

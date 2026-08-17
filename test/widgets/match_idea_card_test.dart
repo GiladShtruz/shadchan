@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
@@ -68,7 +69,7 @@ void main() {
       male: person('male', 'דוד', Gender.male, ProfileStatus.available),
       female: person('female', 'שרה', Gender.female, ProfileStatus.onBreak),
       onTap: () {},
-      onOpenWhatsApp: (_) {},
+      onOpenPersonWhatsApp: (_) {},
       onPersonStatusPicked: onStatus,
       onQuickAction: onAction,
     );
@@ -109,27 +110,130 @@ void main() {
     expect(picked, <(String, ProfileStatus)>[('male', ProfileStatus.busy)]);
   });
 
-  testWidgets('the WhatsApp shortcut moved to the card edge', (
+  testWidgets('each side carries its own WhatsApp button, on its own face', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(wrap(card(onAction: (_) {})));
+    final List<String> opened = <String>[];
+    await tester.pumpWidget(
+      wrap(
+        MatchIdeaCard(
+          match: match(),
+          male: person('male', 'דוד', Gender.male, ProfileStatus.available),
+          female: person('female', 'שרה', Gender.female, ProfileStatus.busy),
+          onTap: () {},
+          onOpenPersonWhatsApp: (Person person) => opened.add(person.id),
+          onQuickAction: (_) {},
+        ),
+      ),
+    );
     await tester.pump();
 
-    final List<Offset> chats = tester
-        .widgetList<FaIcon>(find.byType(FaIcon))
-        .map((FaIcon icon) => tester.getCenter(find.byWidget(icon)))
-        .toList();
-    expect(chats, hasLength(2));
+    // Two, one per side. A single icon under two faces cannot say whose chat
+    // it opens, which is the whole reason this changed.
+    expect(find.byType(FaIcon), findsNWidgets(2));
 
-    // Each chat sits outside its own side's name — further from the card's
-    // centre than the name it belongs to.
-    final double cardCentre = tester.getCenter(find.byType(MatchIdeaCard)).dx;
-    for (final Offset chat in chats) {
-      expect((chat.dx - cardCentre).abs(), greaterThan(120));
+    // Up beside the photos rather than down on the status bar — a button that
+    // belongs to a person has to be next to that person.
+    final Offset chat = tester.getCenter(find.byType(FaIcon).first);
+    final Offset status = tester.getCenter(find.text('עדכון סטטוס'));
+    expect(chat.dy, lessThan(status.dy));
+
+    // In RTL the first child sits on the right, and that side is the woman's.
+    await tester.tap(find.byType(FaIcon).first);
+    await tester.pump();
+    expect(opened, <String>['female']);
+
+    await tester.tap(find.byType(FaIcon).last);
+    await tester.pump();
+    expect(opened, <String>['female', 'male']);
+  });
+
+  testWidgets('an archived proposal keeps its chat button', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      wrap(card(status: MatchStatus.rejected, onAction: (_) {})),
+    );
+    await tester.pump();
+
+    // There is no status left worth setting, but there is every reason still to
+    // message the people in it.
+    expect(find.text('עדכון סטטוס'), findsNothing);
+    expect(find.byType(FaIcon), findsNWidgets(2));
+  });
+
+  testWidgets('a long name gives up its surname before it wraps', (
+    WidgetTester tester,
+  ) async {
+    // A narrow card and two long names: the pair of them cannot fit beside each
+    // other in full, and a card that grew a line for it would make every card
+    // in the list a different height.
+    await tester.binding.setSurfaceSize(const Size(320, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      wrap(
+        MatchIdeaCard(
+          match: match(),
+          male: Person(
+            id: 'male',
+            firstName: 'יהונתן-יוסף',
+            lastName: 'אברמוביץ-שטרנבוך',
+            gender: Gender.male,
+            manualAge: 27,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          female: Person(
+            id: 'female',
+            firstName: 'אלישבע-מרים',
+            lastName: 'רוזנבלט-הירשפלד',
+            gender: Gender.female,
+            manualAge: 24,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          onTap: () {},
+          onOpenPersonWhatsApp: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    // The surname is dropped whole rather than ellipsized mid-word, and the age
+    // survives either way — it is what the list is scanned for.
+    expect(find.text('יהונתן-יוסף'), findsOneWidget);
+    expect(find.text('אלישבע-מרים'), findsOneWidget);
+    expect(find.text(', 27'), findsOneWidget);
+    expect(find.text(', 24'), findsOneWidget);
+
+    // Whatever it took, both names stayed on one line.
+    for (final String name in <String>['יהונתן-יוסף', 'אלישבע-מרים']) {
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        find.text(name),
+      );
+      expect(paragraph.size.height, lessThan(30), reason: name);
     }
+  });
+
+  testWidgets('a short name keeps its surname', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(430, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(wrap(card()));
+    await tester.pump();
+
+    // Nothing is given up when nothing has to be.
+    expect(find.text('דוד לוי'), findsOneWidget);
+    expect(find.text('שרה לוי'), findsOneWidget);
+    expect(find.text(', 26'), findsNWidgets(2));
   });
 
   testWidgets('the proposal actions stay folded until asked for', (
@@ -143,13 +247,13 @@ void main() {
     await tester.pump();
 
     // Closed: one line, no buttons.
-    expect(find.text('פעולות מהירות'), findsOneWidget);
+    expect(find.text('עדכון סטטוס'), findsOneWidget);
     expect(find.text('מתחילים לצאת'), findsNothing);
     final double closedHeight = tester
         .getSize(find.byType(MatchIdeaCard))
         .height;
 
-    await tester.tap(find.text('פעולות מהירות'));
+    await tester.tap(find.text('עדכון סטטוס'));
     await tester.pumpAndSettle();
 
     expect(find.text('העברה להמתנה'), findsOneWidget);
@@ -177,7 +281,7 @@ void main() {
       wrap(card(status: MatchStatus.dating, onAction: (_) {})),
     );
     await tester.pump();
-    await tester.tap(find.text('פעולות מהירות'));
+    await tester.tap(find.text('עדכון סטטוס'));
     await tester.pumpAndSettle();
 
     expect(find.text('מתחילים לצאת'), findsNothing);
@@ -192,6 +296,6 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('פעולות מהירות'), findsNothing);
+    expect(find.text('עדכון סטטוס'), findsNothing);
   });
 }

@@ -19,6 +19,7 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
@@ -122,6 +123,14 @@ void main() {
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
+    // Registration asks for the two names apart, so the greeting can use the
+    // first one alone without guessing where it ends.
+    expect(find.widgetWithText(TextField, 'שם פרטי'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'שם משפחה'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'שם פרטי'), 'רבקה');
+    await tester.enterText(find.widgetWithText(TextField, 'שם משפחה'), 'כהן');
+    await tester.pump();
+
     expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
     expect(find.text('רווק'), findsOneWidget);
     expect(find.text('נשוי'), findsOneWidget);
@@ -197,7 +206,7 @@ void main() {
     expect(find.text('הכרטיס שלך'), findsOneWidget);
     expect(
       find.text(
-        'שמור את הכרטיס שלך כאן כדי שתוכל לשתף אותו בקלות בכל פעם שתצטרך.',
+        'כאן אפשר לשמור את הכרטיס שלך, כדי לשתף אותו בקלות בכל פעם שצריך.',
       ),
       findsOneWidget,
     );
@@ -497,13 +506,22 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // The viewer carries both app-bar actions alongside the card itself.
+    // The viewer carries both app-bar actions alongside the card itself. Both
+    // are icons: over a photograph the share label was the one piece of chrome
+    // wide enough to compete with the picture under it.
     expect(find.byType(PersonCardViewer), findsOneWidget);
     expect(find.textContaining('סוף הכרטיס המלא'), findsWidgets);
     expect(
       find.descendant(
         of: find.byType(PersonCardViewer),
         matching: find.text('שיתוף כרטיס'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PersonCardViewer),
+        matching: find.byTooltip('שיתוף כרטיס'),
       ),
       findsOneWidget,
     );
@@ -517,6 +535,78 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(PersonCardViewer), findsNothing);
+  });
+
+  testWidgets('The board can be filled from the home screen itself', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final DateTime now = DateTime(2026, 8, 15);
+    final Person friend = Person(
+      id: 'board-add-person',
+      firstName: 'נעמי',
+      lastName: 'שגב',
+      gender: Gender.female,
+      manualAge: 24,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.runAsync(
+      () => Hive.box<Person>('people').put(friend.id, friend),
+    );
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The board is named even with nothing on it, unlike every other block on
+    // this page — it is the one area filled by hand, and a surface that never
+    // appears until something is on it can never be where the first thing
+    // goes. But an *empty* board is one folded line rather than a corkboard
+    // taking a third of the screen to say it is empty.
+    expect(find.text('הלוח שלי'), findsOneWidget);
+    expect(find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'), findsNothing);
+
+    await tester.ensureVisible(find.text('הלוח שלי'));
+    await tester.pump();
+    await tester.tap(find.text('הלוח שלי'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(find.text('הוספה ללוח'));
+    await tester.pump();
+    await tester.tap(find.text('הוספה ללוח'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Two lists, because a friend and a proposal are not comparable things to
+    // put in front of somebody in one combined list. Scoped to the sheet's own
+    // rows — "הוספת רעיון" is also one of the page's two entry tiles behind it.
+    expect(find.widgetWithText(ListTile, 'הוספת חבר'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'הוספת רעיון'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ListTile, 'הוספת חבר'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('הוספת חבר ללוח'), findsOneWidget);
+
+    await tester.tap(find.text('נעמי שגב').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+
+    expect(
+      HomeBoardStore.instance.contains(HomeItemKind.person, friend.id),
+      isTrue,
+    );
+    addTearDown(
+      () => HomeBoardStore.instance.remove(HomeItemKind.person, friend.id),
+    );
   });
 
   testWidgets('Pinning a person opens home directly at the board', (
@@ -784,10 +874,12 @@ void main() {
     expect(find.text('פתוחים'), findsOneWidget);
     expect(find.text('בהמתנה'), findsOneWidget);
     expect(find.text('יוצאים'), findsOneWidget);
-    expect(find.text('פתוח אחד, 27'), findsOneWidget);
-    expect(find.text('ממתין אחד, 28'), findsOneWidget);
+    // The name and the age are two spans now, so the age can hold its ground
+    // while a long name gives way — see match_idea_card_test.dart.
+    expect(find.text('פתוח אחד'), findsOneWidget);
+    expect(find.text('ממתין אחד'), findsOneWidget);
     expect(find.text('✨ יוצאים יחד ✨'), findsOneWidget);
-    expect(find.text('ארכיון אחד, 30'), findsNothing);
+    expect(find.text('ארכיון אחד'), findsNothing);
 
     await tester.tap(find.text('✨ יוצאים יחד ✨'));
     await tester.pump();
@@ -1336,7 +1428,7 @@ void main() {
                   male: male1,
                   female: female1,
                   onTap: () {},
-                  onOpenWhatsApp: (_) {},
+                  onOpenPersonWhatsApp: (_) {},
                 ),
                 const SizedBox(height: 8),
                 MatchIdeaCard(
@@ -1349,7 +1441,7 @@ void main() {
                   male: male2,
                   female: female2,
                   onTap: () {},
-                  onOpenWhatsApp: (_) {},
+                  onOpenPersonWhatsApp: (_) {},
                 ),
               ],
             ),
@@ -1360,10 +1452,15 @@ void main() {
 
     await tester.pump();
 
-    expect(find.text('דוד כהן, 25'), findsOneWidget);
-    expect(find.text('שרה לוי, 23'), findsOneWidget);
-    expect(find.text('יוסף פרידמן, 28'), findsOneWidget);
-    expect(find.text('רחל מזרחי, 26'), findsOneWidget);
+    for (final (String name, String age) entry in <(String, String)>[
+      ('דוד כהן', ', 25'),
+      ('שרה לוי', ', 23'),
+      ('יוסף פרידמן', ', 28'),
+      ('רחל מזרחי', ', 26'),
+    ]) {
+      expect(find.text(entry.$1), findsOneWidget, reason: entry.$1);
+      expect(find.text(entry.$2), findsOneWidget, reason: entry.$2);
+    }
   });
 }
 
@@ -1447,8 +1544,17 @@ Widget _buildTestApp() {
         create: (_) =>
             TipsProvider(Hive.box<dynamic>('settings'), enabled: false),
       ),
+      // The community layer reads the local ledgers and nothing else until
+      // Firebase is up, which it never is in a test — so it needs no stub, only
+      // to exist.
+      ChangeNotifierProvider<CommunityProvider>(
+        create: (_) => CommunityProvider(),
+      ),
     ],
-    child: const App(),
+    // Same seam once more: the store check reaches SharedPreferences and an
+    // http client through `Upgrader.initialize()`, neither of which exists
+    // under `flutter test`.
+    child: const App(checkForUpdates: false),
   );
 }
 
@@ -1486,6 +1592,12 @@ Widget _buildProfileTestApp() {
       ChangeNotifierProvider<TipsProvider>(
         create: (_) =>
             TipsProvider(Hive.box<dynamic>('settings'), enabled: false),
+      ),
+      // The community layer reads the local ledgers and nothing else until
+      // Firebase is up, which it never is in a test — so it needs no stub, only
+      // to exist.
+      ChangeNotifierProvider<CommunityProvider>(
+        create: (_) => CommunityProvider(),
       ),
     ],
     child: const MaterialApp(

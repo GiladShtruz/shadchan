@@ -156,6 +156,99 @@ void main() {
     expect(count(people: <Person>[person('1', DateTime(2026, 7, 20))]), 0);
   });
 
+  group('the count cannot be inflated', () {
+    // The figure stopped being private the moment it fed the community total
+    // and the leaderboard. A number anybody can raise by flipping a status back
+    // and forth is not a number worth showing to other people.
+
+    test('the same idea moved twice in one day is one action', () {
+      expect(
+        count(
+          matchStatusEvents: <MatchStatusEvent>[
+            matchStatus('there', DateTime(2026, 8, 14, 9)),
+            matchStatus('back', DateTime(2026, 8, 14, 17)),
+          ],
+        ),
+        1,
+      );
+    });
+
+    test('but the same idea moved again the next day is a second action', () {
+      expect(
+        count(
+          matchStatusEvents: <MatchStatusEvent>[
+            matchStatus('day1', DateTime(2026, 8, 14, 9)),
+            matchStatus('day2', DateTime(2026, 8, 15, 9)),
+          ],
+        ),
+        2,
+      );
+    });
+
+    test('the same friend moved twice in one day is one action', () {
+      expect(
+        count(
+          events: <PersonEvent>[
+            statusEvent('there', DateTime(2026, 8, 14, 9)),
+            statusEvent('back', DateTime(2026, 8, 14, 17)),
+          ],
+        ),
+        1,
+      );
+    });
+
+    test('a friend who arrives twice in one day is counted once', () {
+      // An import run a second time, a contact added by hand as well, or a
+      // record deleted and immediately re-added — the last of which comes back
+      // with a *new* id, so nothing keyed on the id would catch it.
+      Person named(String id, String first, String last) => Person(
+        id: id,
+        firstName: first,
+        lastName: last,
+        gender: Gender.male,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      expect(
+        count(
+          people: <Person>[
+            named('first', 'יעקב', 'רוזן'),
+            named('again', ' יעקב  ', 'רוזן'),
+          ],
+        ),
+        1,
+      );
+    });
+
+    test('two friends who really are different both count', () {
+      expect(count(people: <Person>[person('1', now), person('2', now)]), 2);
+    });
+
+    test('the same friend added again next month counts again', () {
+      // A month apart is not a duplicate; it is somebody re-entered after a
+      // restore, or a second real act of adding them.
+      Person named(DateTime at) => Person(
+        id: at.toIso8601String(),
+        firstName: 'יעקב',
+        lastName: 'רוזן',
+        gender: Gender.male,
+        createdAt: at,
+        updatedAt: at,
+      );
+
+      expect(
+        count(
+          people: <Person>[
+            named(DateTime(2026, 8, 2)),
+            named(DateTime(2026, 8, 20)),
+          ],
+        ),
+        2,
+      );
+    });
+  });
+
   test('the three windows are all counted from the same records', () {
     final ActivityTotals totals = ActivityStats.totals(
       people: <Person>[
@@ -174,5 +267,120 @@ void main() {
     // always the longer window. Two days ago can already belong to the month
     // before, and that is correct rather than a rounding slip.
     expect(totals.allTime, greaterThanOrEqualTo(totals.month));
+  });
+
+  /// A file with hundreds of cards in it is real work and counts everywhere.
+  /// The single thing it may not do is set the personal weekly record, because
+  /// a record nobody can beat stops being encouragement.
+  group('a large import counts everywhere except towards the record', () {
+    List<Person> batch(String batchId, int size) => <Person>[
+      for (int i = 0; i < size; i++)
+        person('$batchId-$i', now)..importBatchId = batchId,
+    ];
+
+    test('by default every import counts, however large', () {
+      expect(count(people: batch('big', 40)), 40);
+    });
+
+    test('an import over the limit is dropped when the limit is asked for', () {
+      expect(
+        ActivityStats.countBetween(
+          start: start,
+          end: end,
+          people: batch('big', 40),
+          matches: const <MatchIdea>[],
+          matchStatusEvents: const <MatchStatusEvent>[],
+          events: const <PersonEvent>[],
+          bulkImportLimit: 30,
+        ),
+        0,
+      );
+    });
+
+    test('an import at the limit still counts — the rule is *more than*', () {
+      expect(
+        ActivityStats.countBetween(
+          start: start,
+          end: end,
+          people: batch('exactly', 30),
+          matches: const <MatchIdea>[],
+          matchStatusEvents: const <MatchStatusEvent>[],
+          events: const <PersonEvent>[],
+          bulkImportLimit: 30,
+        ),
+        30,
+      );
+    });
+
+    test('only the oversized batch goes; hand-added friends stay', () {
+      expect(
+        ActivityStats.countBetween(
+          start: start,
+          end: end,
+          people: <Person>[
+            ...batch('big', 40),
+            ...batch('small', 5),
+            person('byHand', now),
+          ],
+          matches: const <MatchIdea>[],
+          matchStatusEvents: const <MatchStatusEvent>[],
+          events: const <PersonEvent>[],
+          bulkImportLimit: 30,
+        ),
+        6,
+      );
+    });
+
+    test('a batch clipped by the window is still judged at its full size', () {
+      // Thirty-five arrived in one import, five of them inside this window. The
+      // batch is a batch of thirty-five, not of five, so none of it may set a
+      // record.
+      final List<Person> people = <Person>[
+        for (int i = 0; i < 30; i++)
+          person('outside-$i', DateTime(2024, 5, 5))..importBatchId = 'one',
+        for (int i = 0; i < 5; i++)
+          person('inside-$i', now)..importBatchId = 'one',
+      ];
+
+      expect(
+        ActivityStats.countBetween(
+          start: start,
+          end: end,
+          people: people,
+          matches: const <MatchIdea>[],
+          matchStatusEvents: const <MatchStatusEvent>[],
+          events: const <PersonEvent>[],
+          bulkImportLimit: 30,
+        ),
+        0,
+      );
+    });
+
+    test('weekForRecord is the only figure the limit reaches', () {
+      final ActivityTotals totals = ActivityStats.totals(
+        people: batch('big', 40),
+        matches: const <MatchIdea>[],
+        matchStatusEvents: const <MatchStatusEvent>[],
+        events: const <PersonEvent>[],
+        now: now,
+        recordBulkImportLimit: 30,
+      );
+
+      expect(totals.week, 40);
+      expect(totals.allTime, 40);
+      expect(totals.weekForRecord, 0);
+    });
+
+    test('weekForRecord equals week when no limit is asked for', () {
+      final ActivityTotals totals = ActivityStats.totals(
+        people: batch('big', 40),
+        matches: const <MatchIdea>[],
+        matchStatusEvents: const <MatchStatusEvent>[],
+        events: const <PersonEvent>[],
+        now: now,
+      );
+
+      expect(totals.weekForRecord, totals.week);
+    });
   });
 }

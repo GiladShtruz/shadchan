@@ -702,7 +702,7 @@ class PersonRepository extends ChangeNotifier {
       final String name = person.fullName.trim();
       reminders.add(
         PersonReminderNotification(
-          name: name.isEmpty ? 'חבר/ה מהמאגר' : name,
+          name: name.isEmpty ? 'מישהו מהמאגר' : name,
           date: entry.value,
         ),
       );

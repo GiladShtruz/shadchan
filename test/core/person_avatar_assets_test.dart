@@ -27,10 +27,10 @@ void main() {
     );
 
     expect(PersonAvatarAssets.male, <String>[
-      'assets/male_pic/default_male_avatar.png',
+      'assets/male_pic/default_male_avatar.webp',
     ]);
     expect(PersonAvatarAssets.female, <String>[
-      'assets/female_pic/default_female_avatar.png',
+      'assets/female_pic/default_female_avatar.webp',
     ]);
     expect(person.avatarIndex, 0);
     expect(

@@ -23,14 +23,19 @@ Color _leadTone(ThemeData theme) => theme.brightness == Brightness.dark
 
 // --- הפעולות הבאות שלך ------------------------------------------------------
 
-/// Three ranked recommendations at a time, with a control that swaps the whole
-/// trio for the next three.
+/// The ranked recommendations, as one horizontally scrolling row.
 ///
-/// Every card is exactly the same box. The reason line is clamped rather than
-/// allowed to set the height, because a row whose cards are three different
-/// heights reads as three different kinds of thing — and they are not, they are
-/// one list in priority order.
-class HomeNextActionsRow extends StatefulWidget {
+/// **A scroll rather than a "פעולות נוספות" button.** The button showed three
+/// at a time and swapped the whole trio, which meant reaching the tenth action
+/// took three taps and no sense of where it sat in the list. A row that is
+/// dragged runs an eye past a dozen actions in one gesture, which is what this
+/// list is for — it is a place to scan, not a queue to work through in order.
+///
+/// Every card is exactly the same box, and a compact one. The reason line is
+/// clamped rather than allowed to set the height: a row whose cards are three
+/// different heights reads as three different kinds of thing, and a card sized
+/// for the longest sentence in the database leaves every other card half empty.
+class HomeNextActionsRow extends StatelessWidget {
   const HomeNextActionsRow({
     super.key,
     required this.actions,
@@ -41,96 +46,39 @@ class HomeNextActionsRow extends StatefulWidget {
   final void Function(HomeNextAction action) onOpen;
 
   @override
-  State<HomeNextActionsRow> createState() => _HomeNextActionsRowState();
-}
-
-class _HomeNextActionsRowState extends State<HomeNextActionsRow> {
-  int _page = 0;
-
-  int get _pageCount =>
-      (widget.actions.length / HomeNextActions.pageSize).ceil();
-
-  @override
-  void didUpdateWidget(covariant HomeNextActionsRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Acting on something shortens the list; the page must not point past it.
-    if (_page >= _pageCount) {
-      _page = 0;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final int start = _page * HomeNextActions.pageSize;
-    final List<HomeNextAction> shown = widget.actions
-        .skip(start)
-        .take(HomeNextActions.pageSize)
-        .toList();
-    final bool hasMore = _pageCount > 1;
+    if (actions.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const HomeSectionHeader(
-          title: 'הפעולות הבאות שלך',
-          icon: Icons.checklist_rtl_rounded,
-        ),
-        Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: homeHorizontalInset(context),
-          ),
-          child: SizedBox(
-            height: HomeConfig.nextActionCardHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (int i = 0; i < HomeNextActions.pageSize; i++) ...<Widget>[
-                  if (i > 0) SizedBox(width: homeCardGap(context)),
-                  // The empty slots keep the three columns the same width on
-                  // the last, partly filled page.
-                  Expanded(
-                    child: i < shown.length
-                        ? _NextActionCard(
-                            action: shown[i],
-                            onTap: () => widget.onOpen(shown[i]),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ],
-              ],
+        const HomeSectionHeader(title: 'הפעולות הבאות שלך'),
+        SizedBox(
+          height: homeScaled(context, HomeConfig.nextActionCardHeight),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
-          ),
-        ),
-        if (hasMore)
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              homeHorizontalInset(context),
-              6,
+            // The end padding is deliberately smaller than a card, so the next
+            // one always peeks in from the edge. That slice is the only thing
+            // telling the user the row moves, and it replaces the button.
+            padding: EdgeInsetsDirectional.fromSTEB(
               homeHorizontalInset(context),
               0,
+              28,
+              0,
             ),
-            child: Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: TextButton.icon(
-                // Wrapping back to the start rather than stopping: the list is
-                // a ring, so the control never becomes a dead button.
-                onPressed: () =>
-                    setState(() => _page = (_page + 1) % _pageCount),
-                style: TextButton.styleFrom(
-                  foregroundColor: _leadTone(theme),
-                  visualDensity: VisualDensity.compact,
-                  textStyle: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                // Material mirrors chevrons in RTL, so `chevron_right` draws
-                // the left-pointing "onward" arrow this page reads with.
-                icon: const Icon(Icons.chevron_right, size: 18),
-                label: const Text('פעולות נוספות'),
-              ),
+            itemCount: actions.length,
+            separatorBuilder: (_, _) => SizedBox(width: homeCardGap(context)),
+            itemBuilder: (BuildContext context, int index) => _NextActionCard(
+              action: actions[index],
+              onTap: () => onOpen(actions[index]),
             ),
           ),
+        ),
       ],
     );
   }
@@ -148,72 +96,132 @@ class _NextActionCard extends StatelessWidget {
     final bool urgent = action.kind == HomeActionKind.reminderDue;
     final Color accent = urgent ? AppColors.secondary : _leadTone(theme);
 
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(18),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: urgent
-                  ? accent.withValues(alpha: 0.45)
-                  : theme.colorScheme.outlineVariant,
+    final bool dark = theme.brightness == Brightness.dark;
+
+    return SizedBox(
+      width: homeIsNarrow(context) ? 134 : HomeConfig.nextActionCardWidth,
+      child: Material(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: urgent
+                    ? accent.withValues(alpha: 0.45)
+                    : accent.withValues(alpha: 0.20),
+              ),
+              // The same wash "רעיונות שהמאגר מציע" and the activity panel
+              // wear — a card that belongs to this page rather than a plain
+              // white rectangle, and quiet enough that twelve of them in a row
+              // still read as one calm strip. Urgent cards take it a shade
+              // deeper; that, and the border, are the whole difference.
+              gradient: LinearGradient(
+                begin: AlignmentDirectional.topStart,
+                end: AlignmentDirectional.bottomEnd,
+                colors: <Color>[
+                  accent.withValues(
+                    alpha: urgent
+                        ? (dark ? 0.20 : 0.13)
+                        : (dark ? 0.13 : 0.065),
+                  ),
+                  theme.colorScheme.surface,
+                ],
+              ),
             ),
-          ),
-          padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              if (action.isPerson)
-                HomeCardAvatar(person: action.person, radius: 20)
-              else
-                HomeCardCoupleAvatars(
-                  personA: action.personA,
-                  personB: action.personB,
-                  radius: 14,
-                ),
-              const SizedBox(height: 8),
-              Text(
-                action.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  height: 1.15,
-                ),
-              ),
-              const SizedBox(height: 5),
-              // Two lines and no more: the card's height is fixed, so a long
-              // sentence is cut rather than allowed to push the box.
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Icon(action.kind.icon, size: 12, color: accent),
-                    const SizedBox(width: 3),
-                    Expanded(
-                      child: Text(
-                        action.reason,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: 10,
-                          height: 1.3,
-                          color: theme.colorScheme.onSurfaceVariant,
+            child: Column(
+              children: <Widget>[
+                // A hairline of the card's own tone along the top edge. It is
+                // what keeps the row from reading as a queue of identical
+                // boxes without any of them raising its voice.
+                Container(height: 3, color: accent.withValues(alpha: 0.55)),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        if (action.isPrompt)
+                          _PromptBadge(icon: action.kind.icon, accent: accent)
+                        else if (action.isPerson)
+                          HomeCardAvatar(person: action.person, radius: 16)
+                        else
+                          HomeCardCoupleAvatars(
+                            personA: action.personA,
+                            personB: action.personB,
+                            radius: 12,
+                          ),
+                        const SizedBox(height: 5),
+                        Text(
+                          action.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.15,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 3),
+                        // Two lines and no more: the card's height is fixed,
+                        // so a long sentence is cut rather than allowed to
+                        // push the box.
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Icon(action.kind.icon, size: 11, color: accent),
+                              const SizedBox(width: 3),
+                              Expanded(
+                                child: Text(
+                                  action.reason,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontSize: 10,
+                                    height: 1.3,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Stands where a face would go on the two habit prompts, which are about the
+/// matchmaker rather than about anybody in the database.
+class _PromptBadge extends StatelessWidget {
+  const _PromptBadge({required this.icon, required this.accent});
+
+  final IconData icon;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: accent.withValues(alpha: 0.12),
+      ),
+      child: Icon(icon, size: 18, color: accent),
     );
   }
 }
@@ -317,39 +325,42 @@ class HomeOpenIdeaBubble extends StatelessWidget {
 
 // --- הפעילות שלך ------------------------------------------------------------
 
-/// Which window "הפעילות שלך" is showing.
-enum HomeActivityRange {
-  week('השבוע'),
-  month('החודש'),
-  allTime('כל הזמנים');
-
-  const HomeActivityRange(this.label);
-
-  final String label;
-}
-
-/// One total, for the window the matchmaker picked.
+/// All three windows at once: this week, this Hebrew month, and everything ever.
 ///
-/// Deliberately a single number. The breakdown by kind of action, the chart and
-/// the months all live one tap away, on a screen someone opened *to look at
-/// numbers* — putting them here would turn a workspace back into a dashboard.
+/// **Not tabs.** The card used to carry three chips that swapped one number
+/// between them, which meant the only way to know whether a quiet week sat
+/// inside a good year was to tap twice and hold both figures in your head. Seen
+/// together they say something none of them says alone, and the comparison is
+/// the encouraging part: "3 this week" reads very differently next to "412 ever".
+///
+/// A little warmer than the rest of the page — a soft tinted ground and one
+/// short line of encouragement — and no further. The breakdown by kind of
+/// action, the chart and the months all live one tap away, on a screen someone
+/// opened *to look at numbers*.
 class HomeActivityPanel extends StatelessWidget {
   const HomeActivityPanel({
     super.key,
-    required this.range,
-    required this.total,
-    required this.onRangeChanged,
+    required this.week,
+    required this.month,
+    required this.allTime,
     required this.onOpen,
   });
 
-  final HomeActivityRange range;
-  final int total;
-  final ValueChanged<HomeActivityRange> onRangeChanged;
+  final int week;
+  final int month;
+  final int allTime;
   final VoidCallback onOpen;
+
+  /// One short line, and never a comparative or a reproach. A quiet week is
+  /// answered with an invitation rather than a tally, because there is no
+  /// amount of matchmaking that counts as "not enough".
+  String get _encouragement =>
+      week > 0 ? 'עוד פעולה וניפגש בחופה' : 'כל פעולה מקדמת עוד רעיון';
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     final Color lead = _leadTone(theme);
 
     return Material(
@@ -361,7 +372,15 @@ class HomeActivityPanel extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
+            border: Border.all(color: lead.withValues(alpha: 0.22)),
+            gradient: LinearGradient(
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
+              colors: <Color>[
+                lead.withValues(alpha: dark ? 0.14 : 0.07),
+                theme.colorScheme.surface,
+              ],
+            ),
           ),
           padding: const EdgeInsets.fromLTRB(14, 12, 12, 14),
           child: Column(
@@ -369,16 +388,21 @@ class HomeActivityPanel extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  Icon(Icons.insights_rounded, size: 18, color: lead),
-                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'הפעילות שלך',
+                      'הפעולות שעשית בשביל החברים שלך',
+                      // Three, not two: the heading is a whole sentence now,
+                      // and at 1.5× system text on a 320px phone it needs the
+                      // third line rather than an ellipsis through it.
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w800,
+                        height: 1.25,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Icon(
                     Icons.chevron_right,
                     size: 20,
@@ -386,55 +410,59 @@ class HomeActivityPanel extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              // The segments are their own tap targets inside a card that is
-              // itself tappable, so picking a window does not open the screen.
-              Row(
-                children: <Widget>[
-                  for (final HomeActivityRange option
-                      in HomeActivityRange.values) ...<Widget>[
-                    if (option != HomeActivityRange.values.first)
-                      const SizedBox(width: 6),
-                    Expanded(
-                      child: _RangeChip(
-                        label: option.label,
-                        selected: option == range,
-                        onTap: () => onRangeChanged(option),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 12),
-              // A four-figure all-time count at 1.5× system text is wider than
-              // a 320px phone; the line scales down as a unit rather than
-              // wrapping the word onto its own row or clipping the number.
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: AlignmentDirectional.centerStart,
+              const SizedBox(height: 14),
+              IntrinsicHeight(
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Text(
-                      '$total',
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                        color: lead,
+                    Expanded(
+                      child: _ActivityFigure(
+                        label: 'השבוע',
+                        value: week,
+                        accent: lead,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      total == 1 ? 'פעולה' : 'פעולות',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurfaceVariant,
+                    _FigureDivider(color: lead.withValues(alpha: 0.18)),
+                    Expanded(
+                      child: _ActivityFigure(
+                        label: 'החודש',
+                        value: month,
+                        accent: lead,
+                      ),
+                    ),
+                    _FigureDivider(color: lead.withValues(alpha: 0.18)),
+                    Expanded(
+                      child: _ActivityFigure(
+                        label: 'כל הזמנים',
+                        value: allTime,
+                        accent: lead,
                       ),
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 13,
+                    color: lead.withValues(alpha: 0.85),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _encouragement,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                        color: lead,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -444,51 +472,69 @@ class HomeActivityPanel extends StatelessWidget {
   }
 }
 
-class _RangeChip extends StatelessWidget {
-  const _RangeChip({
+/// One of the three figures: the number over its window's name.
+class _ActivityFigure extends StatelessWidget {
+  const _ActivityFigure({
     required this.label,
-    required this.selected,
-    required this.onTap,
+    required this.value,
+    required this.accent,
   });
 
   final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final int value;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color lead = _leadTone(theme);
 
-    return Material(
-      color: selected ? lead.withValues(alpha: 0.12) : Colors.transparent,
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected
-                  ? lead.withValues(alpha: 0.45)
-                  : theme.colorScheme.outlineVariant,
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              maxLines: 1,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected ? lead : theme.colorScheme.onSurfaceVariant,
-              ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // A four-figure all-time count at 1.5× system text is wider than a
+        // third of a 320px phone, so the number scales down inside its column
+        // rather than wrapping or clipping.
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            '$value',
+            maxLines: 1,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              height: 1,
+              color: accent,
             ),
           ),
         ),
-      ),
+        const SizedBox(height: 5),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FigureDivider extends StatelessWidget {
+  const _FigureDivider({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      margin: const EdgeInsets.symmetric(horizontal: 6),
+      color: color,
     );
   }
 }
@@ -526,8 +572,9 @@ class HomeTipCarousel extends StatefulWidget {
   /// The matchmaker's own gender, so the heading reads שדכן or שדכנית.
   final Gender? userGender;
 
-  /// Optional route into contributing one. Null on the home screen — tips are
-  /// written from the settings, not from here.
+  /// Route into contributing one. It is offered at the foot of the block as
+  /// well as in the settings: reading somebody else's tip is the moment a
+  /// matchmaker is most likely to think of their own.
   final VoidCallback? onAddTip;
 
   @override
@@ -633,27 +680,12 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Icon(Icons.lightbulb_rounded, size: 20, color: ink),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: ink,
-                        ),
-                      ),
-                    ),
-                    if (widget.onAddTip != null)
-                      IconButton(
-                        tooltip: 'הוספת טיפ',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: widget.onAddTip,
-                        icon: Icon(Icons.add_circle_outline, color: ink),
-                      ),
-                  ],
+                Text(
+                  'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: ink,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 // A fixed height so the block does not jump between a short tip
@@ -696,6 +728,26 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
                     ],
                   ),
                 ],
+                if (widget.onAddTip != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  // Under the tip rather than beside the heading: it answers
+                  // the tip that was just read, and a heading is not the place
+                  // to put a thing to do.
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: widget.onAddTip,
+                      style: TextButton.styleFrom(
+                        foregroundColor: ink,
+                        visualDensity: VisualDensity.compact,
+                        textStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      icon: const Icon(Icons.send_outlined, size: 16),
+                      label: const Text('שליחת טיפ'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -716,8 +768,11 @@ class _TipPage extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final String? author = tip.author?.trim();
 
+    // Centred, not ragged against the reading edge: the block is one sentence
+    // sitting alone on a card, and a short tip pinned to the right of a wide
+    // panel reads as a stray line rather than as the thing the card is for.
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
         Flexible(
@@ -725,6 +780,7 @@ class _TipPage extends StatelessWidget {
             tip.text,
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               height: 1.5,
               fontWeight: FontWeight.w500,
@@ -738,6 +794,7 @@ class _TipPage extends StatelessWidget {
             author,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: theme.textTheme.labelSmall?.copyWith(
               fontSize: 11,
               fontWeight: FontWeight.w700,

@@ -41,7 +41,19 @@ class PeopleFiltersSheet extends StatefulWidget {
     this.initialHeightRange,
     this.heightBounds,
     this.initialMaritalStatuses = const <MaritalStatus>[],
+    this.title = 'סינון אנשים',
+    this.showGender = true,
   });
+
+  /// What the sheet calls itself. The one filter surface serves both the
+  /// database and the candidate pickers, and each says whose list it narrows.
+  final String title;
+
+  /// Whether the "מין" card is offered. The pickers arrive with the side
+  /// already decided by the flow that opened them, and changing it there could
+  /// only ever produce an empty list, so they hide the card and the sheet
+  /// returns [initialGender] untouched.
+  final bool showGender;
 
   final Gender? initialGender;
   final RangeValues? initialAgeRange;
@@ -138,7 +150,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 18),
               child: Text(
-                'סינון אנשים',
+                widget.title,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w900,
@@ -151,44 +163,46 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    _FilterSectionCard(
-                      title: 'מין',
-                      child: Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: _FilterPill(
-                              label: 'הכל',
-                              selected: tempGender == null,
-                              onTap: () => setState(() {
-                                tempGender = null;
-                              }),
+                    if (widget.showGender) ...<Widget>[
+                      _FilterSectionCard(
+                        title: 'מין',
+                        child: Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: _FilterPill(
+                                label: 'הכל',
+                                selected: tempGender == null,
+                                onTap: () => setState(() {
+                                  tempGender = null;
+                                }),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _FilterPill(
-                              label: Gender.male.displayName,
-                              selected: tempGender == Gender.male,
-                              onTap: () => setState(() {
-                                tempGender = Gender.male;
-                              }),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _FilterPill(
+                                label: Gender.male.displayName,
+                                selected: tempGender == Gender.male,
+                                onTap: () => setState(() {
+                                  tempGender = Gender.male;
+                                }),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _FilterPill(
-                              label: Gender.female.displayName,
-                              selected: tempGender == Gender.female,
-                              onTap: () => setState(() {
-                                tempGender = Gender.female;
-                              }),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _FilterPill(
+                                label: Gender.female.displayName,
+                                selected: tempGender == Gender.female,
+                                onTap: () => setState(() {
+                                  tempGender = Gender.female;
+                                }),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    if (widget.ageBounds != null) ...<Widget>[
                       const SizedBox(height: 12),
+                    ],
+                    if (widget.ageBounds != null) ...<Widget>[
                       _FilterSectionCard(
                         title: 'גיל',
                         child: _RangeFilter(
@@ -203,8 +217,8 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                           },
                         ),
                       ),
+                      const SizedBox(height: 12),
                     ],
-                    const SizedBox(height: 12),
                     _FilterSectionCard(
                       title: 'סגנון דתי',
                       child: Wrap(
@@ -416,7 +430,11 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
               },
               onClear: () {
                 setState(() {
-                  tempGender = null;
+                  // A hidden gender is not the user's to clear: it is the side
+                  // the flow is already choosing.
+                  if (widget.showGender) {
+                    tempGender = null;
+                  }
                   tempAgeRange = null;
                   tempHeightRange = null;
                   tempReligiousLevels = <ReligiousLevel>[];

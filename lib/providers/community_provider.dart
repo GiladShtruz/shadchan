@@ -1,0 +1,141 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/community_profile_store.dart';
+import 'package:shadchan/services/community_service.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/utils/community_counts.dart';
+import 'package:shadchan/utils/community_period.dart';
+
+/// The community layer as the screens see it.
+///
+/// It owns two things and deliberately no more: **this device's own counts**,
+/// which are recomputed locally and cost nothing, and **when to publish them**,
+/// which is twice a session. Everything shared — totals, leaderboard, goal —
+/// is read straight from [CommunityService], which does its own caching; there
+/// is no second copy of it here to go stale.
+///
+/// [myCounts] is available with no network at all. That is the point: the home
+/// taster and the personal side of the activity screen work on a plane, and
+/// only the community column waits for anything.
+class CommunityProvider extends ChangeNotifier {
+  CommunityProvider();
+
+  CommunityMemberCounts? _counts;
+  bool _hidden = CommunityProfileStore.isHidden;
+  bool _publishing = false;
+  bool _pulledHidden = false;
+  String _name = '';
+
+  /// This device's own figures, or null before the first refresh.
+  CommunityMemberCounts? get myCounts => _counts;
+
+  /// Whether the matchmaker has taken themselves off the leaderboard — or has
+  /// simply not been asked yet, which counts the same way.
+  bool get isHidden => _hidden;
+
+  /// Whether the one-time "may your name appear on the leaderboard?" question
+  /// still needs asking.
+  bool get needsLeaderboardConsent =>
+      !CommunityProfileStore.hasAnsweredLeaderboardConsent;
+
+  /// Records the answer and pushes it straight to the server, so a "no" takes
+  /// effect without waiting for the next publish.
+  Future<void> answerLeaderboardConsent({required bool hidden}) async {
+    CommunityProfileStore.answerLeaderboardConsent(hidden: hidden);
+    _hidden = hidden;
+    CommunityService.invalidate();
+    notifyListeners();
+    await CommunityService.setHidden(hidden, name: _name);
+  }
+
+  /// Erases this account's row from the shared collection.
+  ///
+  /// Hidden first, then deleted: the next publish will recreate the row, and it
+  /// must not recreate it with a name in it.
+  Future<bool> deleteMyCommunityData() async {
+    CommunityProfileStore.answerLeaderboardConsent(hidden: true);
+    _hidden = true;
+    notifyListeners();
+    return CommunityService.deleteMyData();
+  }
+
+  /// Recomputes the local counts and, if Firebase is up, publishes them.
+  ///
+  /// Called from the two lifecycle moments the cloud backup already uses. It is
+  /// safe to call repeatedly: every figure is derived from the ledgers rather
+  /// than incremented, so a double call writes the same numbers again.
+  Future<void> refresh({
+    required PersonRepository people,
+    required MatchRepository matches,
+    required UserProfileProvider profile,
+  }) async {
+    _name = profile.name ?? '';
+    final CommunityMemberCounts counts = CommunityCounts.build(
+      people: people.getAll(),
+      matches: matches.getAll(),
+      matchStatusEvents: matches.getAllStatusEvents(),
+      events: people.getAllEvents(),
+      recordBulkImportLimit: CommunityProfileStore.bulkImportRecordLimit,
+    );
+    _counts = counts;
+
+    // The record is kept whatever happens to the network — it is a personal
+    // number and has no business depending on Firestore. It is judged on
+    // `weekForRecord` rather than `week`: a single import of hundreds counts
+    // everywhere else, but may not set a personal best nobody could beat.
+    CommunityProfileStore.recordWeek(counts.weekForRecord);
+    notifyListeners();
+
+    if (_publishing || !FirebaseBootstrap.isReady) {
+      return;
+    }
+    _publishing = true;
+    try {
+      // The opt-out is authoritative on the server, because it has to survive
+      // a reinstall — but only the first time, and only if this device has not
+      // been told otherwise since.
+      if (!_pulledHidden) {
+        _pulledHidden = true;
+        final bool? stored = await CommunityService.fetchHidden();
+        if (stored != null && stored != _hidden) {
+          _hidden = stored;
+          CommunityProfileStore.setHidden(stored);
+          notifyListeners();
+        }
+      }
+
+      await CommunityService.publish(
+        counts: counts,
+        name: _name,
+        hidden: _hidden,
+      );
+      // This device's own numbers have just moved, so every cached community
+      // figure is one publish out of date.
+      CommunityService.invalidate();
+    } finally {
+      _publishing = false;
+    }
+  }
+
+  /// Takes the matchmaker off the leaderboard, or puts them back.
+  ///
+  /// Written locally first so the screen answers immediately; the server write
+  /// follows and is retried by the next publish if it fails.
+  Future<void> setHidden(bool hidden) async {
+    if (_hidden == hidden) {
+      return;
+    }
+    _hidden = hidden;
+    CommunityProfileStore.setHidden(hidden);
+    CommunityService.invalidate();
+    notifyListeners();
+    unawaited(CommunityService.setHidden(hidden, name: _name));
+  }
+
+  /// This device's count for [period], or zero before the first refresh.
+  int myActions(CommunityPeriod period) => _counts?.forPeriod(period) ?? 0;
+}

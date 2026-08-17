@@ -191,4 +191,66 @@ void main() {
       );
     });
   });
+
+  group('a file name is found by its shape, not by the wording around it', () {
+    const Map<String, String> media = <String, String>{
+      'IMG-20240217-WA0001.jpg': '/tmp/IMG-20240217-WA0001.jpg',
+    };
+
+    for (final ({String label, String line}) shape
+        in <({String label, String line})>[
+          (
+            label: 'the Android bare name',
+            line: 'IMG-20240217-WA0001.jpg (קובץ מצורף)',
+          ),
+          (
+            label: 'the iOS angle brackets',
+            line: '<attached: IMG-20240217-WA0001.jpg>',
+          ),
+          (
+            label: 'the Hebrew angle brackets',
+            line: '<קובץ מצורף: IMG-20240217-WA0001.jpg>',
+          ),
+          (
+            label: 'a name with words on both sides',
+            line: 'הנה IMG-20240217-WA0001.jpg של יוסי',
+          ),
+        ]) {
+      test(shape.label, () {
+        final WhatsAppChat chat = WhatsAppImportService.parseText(
+          '17.2.2024, 15:02 - רחל: ${shape.line}',
+          mediaPaths: media,
+        );
+
+        expect(
+          chat.messages.single.attachmentName,
+          'IMG-20240217-WA0001.jpg',
+          reason: shape.line,
+        );
+      });
+    }
+  });
+
+  group('a chat longer than the ceiling', () {
+    // Built once: 20,005 messages is a real parse, not a cheap one.
+    late final WhatsAppChat chat = WhatsAppImportService.parseText(
+      <String>[
+        for (int i = 1; i <= WhatsAppImportService.maxMessages + 5; i++)
+          '17.2.2024, 15:49 - רחל: הודעה מספר $i',
+      ].join('\n'),
+    );
+
+    test('keeps the most recent messages, not the oldest', () {
+      // An export is written oldest first, so keeping the *first* 20,000 — as
+      // this did — threw away exactly the recent candidates somebody opened
+      // the import for, and the review list looked like a complete success.
+      expect(chat.messages, hasLength(WhatsAppImportService.maxMessages));
+      expect(chat.messages.last.text, contains('מספר 20005'));
+      expect(chat.messages.first.text, contains('מספר 6'));
+    });
+
+    test('says that it was cut', () {
+      expect(chat.stats.truncatedMessages, isTrue);
+    });
+  });
 }

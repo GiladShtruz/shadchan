@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -12,6 +15,12 @@ enum AddPeopleMethod { fromContacts, manual, ai }
 /// Asks how the user wants to add contacts and routes to the chosen flow.
 abstract final class AddPeopleDialog {
   static Future<void> show(BuildContext context) async {
+    // The seconds spent reading this dialog are seconds the contact cache can
+    // be coming off disk in. It touches no permission and no address book —
+    // only a Hive box the app wrote itself — so warming it here costs nothing
+    // even when the answer turns out to be "הוספה ידנית".
+    unawaited(ContactsImportService.prewarmCache());
+
     final AddPeopleMethod? method = await showDialog<AddPeopleMethod>(
       context: context,
       builder: (BuildContext dialogContext) => const _AddPeopleDialog(),
@@ -61,7 +70,7 @@ class _AddPeopleDialog extends StatelessWidget {
                 _HeaderBadge(slate: slate, dark: dark),
                 const SizedBox(height: 22),
                 Text(
-                  'מוסיפים חבר/ה למאגר',
+                  'מוסיפים חברים למאגר',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w900,
@@ -69,7 +78,7 @@ class _AddPeopleDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  '{בחר|בחרי} איך {תרצה|תרצי} להוסיף חבר/ה חדש/ה'.forGender(
+                  '{בחר|בחרי} איך {תרצה|תרצי} להוסיף מישהו חדש'.forGender(
                     gender,
                   ),
                   textAlign: TextAlign.center,
@@ -105,7 +114,7 @@ class _AddPeopleDialog extends StatelessWidget {
                       _MethodCard(
                         icon: Icons.edit_rounded,
                         title: 'הוספה ידנית',
-                        subtitle: 'מלאו פרטים של חבר/ה חדש/ה',
+                        subtitle: 'מילוי הפרטים של מישהו חדש',
                         slate: slate,
                         dark: dark,
                         onTap: () =>
@@ -273,22 +282,29 @@ class _MethodCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Row(
+                      // A `Wrap`, not a `Row`. The row clamped the title to one
+                      // line and put the "חדש!" badge next to it, so the
+                      // longest of the three titles was cut to "היעזרו ב‑AI…"
+                      // — the one card whose name has to be read to know what
+                      // it does. Here the title takes a second line if it needs
+                      // one, and the badge follows it down rather than pushing
+                      // it out.
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: <Widget>[
-                          Flexible(
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
                             ),
                           ),
-                          if (badge != null) ...<Widget>[
-                            const SizedBox(width: 8),
+                          if (badge != null)
                             _NewBadge(label: badge!, slate: slate),
-                          ],
                         ],
                       ),
                       const SizedBox(height: 4),

@@ -131,12 +131,44 @@ abstract final class ContactsImportService {
     return FlutterContacts.permissions.openSettings();
   }
 
+  /// The last decoded cache, held for the life of the process.
+  ///
+  /// Re-opening the Hive box and re-reading a few thousand maps is not free,
+  /// and "הוספה מאנשי קשר" is a screen people go in and out of. The first visit
+  /// pays for it; every visit after it in the same run does not.
+  static List<Object?>? _cachedRaw;
+
+  /// Reads the contact cache into memory without touching the address book.
+  ///
+  /// Safe to call before any permission has been asked for — it only opens a
+  /// Hive box the app wrote itself. Called when the "how do you want to add?"
+  /// dialog opens, which buys the disk read the second or two the user spends
+  /// choosing.
+  static Future<void> prewarmCache() async {
+    if (_cachedRaw != null) {
+      return;
+    }
+    try {
+      final Box<dynamic> cacheBox = await _openCacheBox();
+      final Object? rawCandidates = cacheBox.get(_cacheCandidatesKey);
+      _cachedRaw = rawCandidates is List ? rawCandidates : const <Object?>[];
+    } on HiveError {
+      // A warm-up that cannot open its box simply has not warmed anything up.
+      _cachedRaw = null;
+    }
+  }
+
   static Future<List<ContactImportCandidate>> loadCachedCandidates(
     PersonRepository personRepository,
   ) async {
-    final Box<dynamic> cacheBox = await _openCacheBox();
-    final Object? rawCandidates = cacheBox.get(_cacheCandidatesKey);
-    if (rawCandidates is! List) {
+    List<Object?>? rawCandidates = _cachedRaw;
+    if (rawCandidates == null) {
+      final Box<dynamic> cacheBox = await _openCacheBox();
+      final Object? stored = cacheBox.get(_cacheCandidatesKey);
+      rawCandidates = stored is List ? stored : const <Object?>[];
+      _cachedRaw = rawCandidates;
+    }
+    if (rawCandidates.isEmpty) {
       return const <ContactImportCandidate>[];
     }
 
@@ -414,11 +446,14 @@ abstract final class ContactsImportService {
   static Future<void> _saveCandidatesToCache(
     List<ContactImportCandidate> candidates,
   ) async {
+    final List<Map<String, Object>> encoded = candidates
+        .map(_candidateToCache)
+        .toList(growable: false);
+    // The in-memory copy moves with the box, or the next visit in this run
+    // would be served a cache one refresh out of date.
+    _cachedRaw = encoded;
     final Box<dynamic> cacheBox = await _openCacheBox();
-    await cacheBox.put(
-      _cacheCandidatesKey,
-      candidates.map(_candidateToCache).toList(growable: false),
-    );
+    await cacheBox.put(_cacheCandidatesKey, encoded);
   }
 
   static Map<String, Object> _candidateToCache(

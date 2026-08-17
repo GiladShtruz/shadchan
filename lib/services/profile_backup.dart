@@ -20,6 +20,12 @@ abstract final class ProfileBackup {
     final String? photoPath = profile.photoPath;
     return <String, Object?>{
       'name': profile.name,
+      // The two halves ride along with the joined name so a restore onto a new
+      // phone can greet by the first name without having to split a string it
+      // did not compose. An older backup carries only 'name', which the
+      // provider still splits on its own.
+      'firstName': profile.firstName,
+      'lastName': profile.lastName,
       'gender': profile.gender?.name,
       'isSingle': profile.isSingle,
       'hasMaritalStatus': profile.hasMaritalStatus,
@@ -77,8 +83,18 @@ abstract final class ProfileBackup {
         profile.gender == null &&
         name != null &&
         gender != null) {
+      // A backup written before the name was split carries only 'name', so it
+      // is split here rather than stored whole as a "first name" — which is
+      // what would make the restored install greet somebody by their full name.
+      final List<String> parts = name.split(RegExp(r'\s+'))
+        ..removeWhere((String part) => part.trim().isEmpty);
+      final String? first = _string(json['firstName']) ?? parts.firstOrNull;
+      final String? last =
+          _string(json['lastName']) ??
+          (parts.length > 1 ? parts.sublist(1).join(' ') : null);
       await profile.saveProfile(
-        name: name,
+        name: first ?? name,
+        lastName: last,
         gender: gender,
         isSingle: _bool(json['isSingle']) ?? false,
       );

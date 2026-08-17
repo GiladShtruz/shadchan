@@ -37,6 +37,19 @@ abstract final class FirebaseBootstrap {
   /// Settings; never shown as a blocking error.
   static Object? get failure => _failure;
 
+  /// The result of this process's **first** App Check token exchange: null once
+  /// it succeeded, a message while it has not.
+  ///
+  /// It is recorded here because the first refusal is the only one that says
+  /// anything. After it, the SDK throttles itself and answers every later call
+  /// — including the one inside the AI request, which is the one the user sees
+  /// — with "Too many attempts", a sentence about our own rate limiter rather
+  /// than about the device. Reports were arriving with the second error and no
+  /// trace of the first.
+  static String? get appCheckError => _appCheckError;
+
+  static String? _appCheckError = 'לא נבדק';
+
   /// The uid for this device, or null when Firebase is not ready.
   ///
   /// Anonymous auth is on from day one: it gives every device a stable uid for
@@ -122,6 +135,7 @@ abstract final class FirebaseBootstrap {
       debugPrint(
         'AI_IMPORT App Check skipped: debug build with no APP_CHECK_DEBUG_TOKEN',
       );
+      _appCheckError = 'דולג (debug בלי טוקן)';
       return;
     }
 
@@ -133,7 +147,27 @@ abstract final class FirebaseBootstrap {
           ? AppleDebugProvider(debugToken: debugToken)
           : const AppleAppAttestWithDeviceCheckFallbackProvider(),
     );
+    _probeAppCheck();
     await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
+  }
+
+  /// Asks for a token now, only to find out whether asking works.
+  ///
+  /// Deliberately not awaited: nothing here needs the token — the AI call
+  /// fetches its own — and Play Integrity can take seconds, which would be
+  /// seconds added to every AI screen for a diagnostic. What matters is only
+  /// that this is the *first* request of the process, so it is the one that
+  /// gets the real answer rather than the throttled one.
+  static void _probeAppCheck() {
+    FirebaseAppCheck.instance.getToken().then(
+      (String? token) {
+        _appCheckError = token == null ? 'לא הוחזר טוקן' : null;
+      },
+      onError: (Object error) {
+        _appCheckError = '$error';
+        debugPrint('AI_IMPORT App Check attestation failed: $error');
+      },
+    );
   }
 
   /// Signs back in anonymously after a sign-out.

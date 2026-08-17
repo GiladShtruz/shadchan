@@ -324,14 +324,18 @@ enum MaritalStatus {
   String get displayName => displayNameFor(Gender.male);
 
   /// Label for filters, which cover both genders at once.
+  ///
+  /// Plural rather than "רווק/ה": a filter selects a group, and the Hebrew
+  /// plural already covers a mixed one — which spares the reader a slash in the
+  /// middle of every chip.
   String get filterLabel {
     switch (this) {
       case MaritalStatus.single:
-        return 'רווק/ה';
+        return 'רווקים';
       case MaritalStatus.divorced:
-        return 'גרוש/ה';
+        return 'גרושים';
       case MaritalStatus.widowed:
-        return 'אלמן/ה';
+        return 'אלמנים';
     }
   }
 }

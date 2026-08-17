@@ -6,9 +6,9 @@ import 'package:uuid/uuid.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/widgets/empty_state.dart';
-import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/widgets/people_filters_sheet.dart';
+import 'package:shadchan/widgets/person_list_card.dart';
 
 typedef PersonFilter = bool Function(Person person);
 
@@ -183,12 +183,7 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
 
   bool get _hasFilters {
     final MatchProposalFilters? filters = _filters;
-    return filters != null &&
-        (filters.minAge != null ||
-            filters.maxAge != null ||
-            filters.religiousLevels.isNotEmpty ||
-            filters.religiousLevelOtherLabels.isNotEmpty ||
-            filters.profileStatuses.isNotEmpty);
+    return filters != null && !filters.isEmpty;
   }
 
   /// True when [person] survives the matchmaker's own filter. Deliberately the
@@ -222,6 +217,17 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
 
     if (filters.profileStatuses.isNotEmpty &&
         !filters.profileStatuses.contains(person.profileStatus)) {
+      return false;
+    }
+
+    // Height and marital status are only recorded on some cards, so filtering
+    // on them also drops everyone who has nothing written down — the same rule
+    // המאגר שלי applies, and the reason the sheet says so above the fields.
+    if (!MatchProposalFilters.matchesHeight(person, filters)) {
+      return false;
+    }
+    if (filters.maritalStatuses.isNotEmpty &&
+        !filters.maritalStatuses.contains(person.maritalStatus)) {
       return false;
     }
     return true;
@@ -324,15 +330,30 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: SizedBox(
+                width: double.infinity,
+                child: Text(
+                  widget.title,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+            // The same row המאגר שלי puts above its list: one field, one
+            // filter button that lights up when something is set.
             Row(
               children: <Widget>[
                 Expanded(
                   child: TextField(
                     controller: _searchController,
+                    textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
-                      hintText: 'חיפוש לפי שם...',
+                      isDense: true,
+                      hintText: 'חיפוש לפי שם',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: query.isEmpty
                           ? null
@@ -348,15 +369,15 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                 // is looking for whoever fits, so the same filters התאמות uses
                 // are offered here too.
                 if (widget.filterKey != null) ...<Widget>[
-                  const SizedBox(width: 8),
-                  IconButton.filledTonal(
+                  const SizedBox(width: 4),
+                  IconButton(
                     tooltip: 'סינון',
                     onPressed: _openFilters,
-                    isSelected: _hasFilters,
                     icon: Icon(
-                      _hasFilters
-                          ? Icons.filter_alt
-                          : Icons.filter_alt_outlined,
+                      _hasFilters ? Icons.filter_list_alt : Icons.tune,
+                      color: _hasFilters
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
                     ),
                   ),
                 ],
@@ -394,19 +415,13 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                             label: entry.sectionLabel!,
                           );
                         }
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: PersonAvatar(person: person, radius: 22),
-                          title: Text(
-                            person.fullName.trim(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            _personSubtitle(person),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        // The same row המאגר שלי draws, minus its two trailing
+                        // buttons: a picker's row has exactly one thing to do.
+                        // The hero is off because the list underneath the sheet
+                        // is very often the same one, tagged the same way.
+                        return PersonListCard(
+                          person: person,
+                          heroEnabled: false,
                           onTap: () => Navigator.of(context).pop(person),
                         );
                       },
@@ -474,16 +489,6 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
     if (choice.addToDatabase) {
       router.push('/people/${person.id}/edit');
     }
-  }
-
-  String _personSubtitle(Person person) {
-    final List<String> parts = <String>[
-      if (person.age != null) person.age!.toString(),
-      if (person.religiousLevelLabel.isNotEmpty) person.religiousLevelLabel,
-      if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
-    ];
-
-    return parts.join(' · ');
   }
 
   void _handleSearchChanged() {
@@ -560,6 +565,8 @@ class _NotFoundFooter extends StatelessWidget {
   }
 }
 
+/// What the matchmaker narrowed a candidate list down to, and what is written
+/// back under the person (or the side) it was chosen for.
 class MatchProposalFilters {
   const MatchProposalFilters({
     this.minAge,
@@ -567,6 +574,9 @@ class MatchProposalFilters {
     this.religiousLevels = const <ReligiousLevel>[],
     this.religiousLevelOtherLabels = const <String>[],
     this.profileStatuses = const <ProfileStatus>[],
+    this.minHeight,
+    this.maxHeight,
+    this.maritalStatuses = const <MaritalStatus>[],
   });
 
   final int? minAge;
@@ -574,38 +584,166 @@ class MatchProposalFilters {
   final List<ReligiousLevel> religiousLevels;
   final List<String> religiousLevelOtherLabels;
   final List<ProfileStatus> profileStatuses;
+
+  /// Height and marital status came with the shared filter sheet. They only
+  /// ever match a candidate whose card *records* them — see the predicates in
+  /// the picker and in the matches view.
+  final int? minHeight;
+  final int? maxHeight;
+  final List<MaritalStatus> maritalStatuses;
+
+  /// True when [person]'s height passes [filters] — false when a height window
+  /// is set and their card has no height on it at all.
+  static bool matchesHeight(Person person, MatchProposalFilters filters) {
+    if (filters.minHeight == null && filters.maxHeight == null) {
+      return true;
+    }
+    final int? height = person.heightCm;
+    if (height == null) {
+      return false;
+    }
+    return (filters.minHeight == null || height >= filters.minHeight!) &&
+        (filters.maxHeight == null || height <= filters.maxHeight!);
+  }
+
+  bool get isEmpty =>
+      minAge == null &&
+      maxAge == null &&
+      religiousLevels.isEmpty &&
+      religiousLevelOtherLabels.isEmpty &&
+      profileStatuses.isEmpty &&
+      minHeight == null &&
+      maxHeight == null &&
+      maritalStatuses.isEmpty;
 }
 
-class MatchProposalFilterSheet extends StatefulWidget {
-  const MatchProposalFilterSheet({
-    super.key,
-    required this.targetGender,
-    required this.sourcePersonId,
-    this.initialFilters,
-  });
-
-  final Gender targetGender;
-  final String sourcePersonId;
-  final MatchProposalFilters? initialFilters;
-
+/// The candidate filter, which is the app's *one* filter sheet —
+/// [PeopleFiltersSheet], the same surface "המאגר שלי" opens — plus the memory
+/// of what was last chosen for a given person or side.
+///
+/// It used to be a second sheet of its own, with its own chips, its own slider
+/// and its own buttons; two filters that narrow the same database by the same
+/// fields should not look like two different features.
+abstract final class MatchProposalFilterSheet {
+  /// Opens the shared filter sheet and remembers the answer under
+  /// [sourcePersonId]. Returns null when it was dismissed.
   static Future<MatchProposalFilters?> show(
     BuildContext context, {
     required Gender targetGender,
     required String sourcePersonId,
     MatchProposalFilters? initialFilters,
-  }) {
-    return showModalBottomSheet<MatchProposalFilters>(
+  }) async {
+    final List<Person> people = context.read<PersonRepository>().getAll();
+    final MatchProposalFilters initial =
+        savedFiltersFor(sourcePersonId) ??
+        initialFilters ??
+        const MatchProposalFilters();
+    final ({int min, int max})? ageBounds = _ageBounds(people, targetGender);
+    const ({int min, int max}) heightBounds = (min: 120, max: 200);
+
+    final PeopleFilterState?
+    picked = await showModalBottomSheet<PeopleFilterState>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (BuildContext context) {
-        return MatchProposalFilterSheet(
-          targetGender: targetGender,
-          sourcePersonId: sourcePersonId,
-          initialFilters: initialFilters,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      clipBehavior: Clip.antiAlias,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.84,
+      ),
+      builder: (BuildContext sheetContext) {
+        return PeopleFiltersSheet(
+          title: 'סינון מועמדים',
+          showGender: false,
+          initialGender: targetGender,
+          initialAgeRange: _rangeIn(initial.minAge, initial.maxAge, ageBounds),
+          ageBounds: ageBounds,
+          initialReligiousLevels: initial.religiousLevels,
+          initialReligiousLevelOtherLabels: initial.religiousLevelOtherLabels,
+          initialProfileStatuses: initial.profileStatuses,
+          initialHeightRange: _rangeIn(
+            initial.minHeight,
+            initial.maxHeight,
+            heightBounds,
+          ),
+          heightBounds: heightBounds,
+          initialMaritalStatuses: initial.maritalStatuses,
         );
       },
     );
+
+    if (picked == null) {
+      return null;
+    }
+
+    final MatchProposalFilters filters = MatchProposalFilters(
+      minAge: picked.ageRange?.start.round(),
+      maxAge: picked.ageRange?.end.round(),
+      religiousLevels: picked.religiousLevels,
+      religiousLevelOtherLabels: picked.religiousLevelOtherLabels,
+      profileStatuses: picked.profileStatuses,
+      minHeight: picked.heightRange?.start.round(),
+      maxHeight: picked.heightRange?.end.round(),
+      maritalStatuses: picked.maritalStatuses,
+    );
+    await saveFiltersFor(sourcePersonId, filters);
+    return filters;
+  }
+
+  /// A saved pair as a slider range, clamped into [bounds].
+  ///
+  /// The clamp is what keeps a remembered window usable after the database has
+  /// moved on: filters saved as 30–34 against a list whose oldest candidate is
+  /// now 28 would otherwise hand `RangeSlider` values outside its own track.
+  static RangeValues? _rangeIn(
+    int? min,
+    int? max,
+    ({int min, int max})? bounds,
+  ) {
+    if (min == null || max == null || bounds == null || min > max) {
+      return null;
+    }
+    final double low = bounds.min.toDouble();
+    final double high = bounds.max.toDouble();
+    return RangeValues(
+      min.toDouble().clamp(low, high),
+      max.toDouble().clamp(low, high),
+    );
+  }
+
+  /// The age span the slider spans: the youngest and oldest candidate on the
+  /// side being chosen, rather than a fixed product range that would leave most
+  /// of the track empty.
+  static ({int min, int max})? _ageBounds(
+    List<Person> people,
+    Gender targetGender,
+  ) {
+    int? min;
+    int? max;
+    for (final Person person in people) {
+      if (person.needsReview ||
+          person.profileStatus.isArchived ||
+          person.gender != targetGender) {
+        continue;
+      }
+      final int? age = person.age;
+      if (age == null) {
+        continue;
+      }
+      if (min == null || age < min) {
+        min = age;
+      }
+      if (max == null || age > max) {
+        max = age;
+      }
+    }
+    if (min == null || max == null) {
+      return null;
+    }
+    return (min: min, max: max);
   }
 
   static const String settingsKeyPrefix = 'matchProposalFilters.';
@@ -640,6 +778,12 @@ class MatchProposalFilterSheet extends StatefulWidget {
           ProfileStatus.onBreak,
         ],
       ),
+      minHeight: _readInt(rawFilters['minHeight']),
+      maxHeight: _readInt(rawFilters['maxHeight']),
+      maritalStatuses: _enumValuesFromNames<MaritalStatus>(
+        rawFilters['maritalStatuses'],
+        MaritalStatus.values,
+      ),
     );
   }
 
@@ -662,6 +806,11 @@ class MatchProposalFilterSheet extends StatefulWidget {
       'religiousLevelOtherLabels': filters.religiousLevelOtherLabels,
       'profileStatuses': filters.profileStatuses
           .map((ProfileStatus status) => status.name)
+          .toList(),
+      'minHeight': filters.minHeight,
+      'maxHeight': filters.maxHeight,
+      'maritalStatuses': filters.maritalStatuses
+          .map((MaritalStatus status) => status.name)
           .toList(),
     });
   }
@@ -699,296 +848,6 @@ class MatchProposalFilterSheet extends StatefulWidget {
         .map((String value) => value.trim())
         .where((String value) => value.isNotEmpty)
         .toList();
-  }
-
-  @override
-  State<MatchProposalFilterSheet> createState() =>
-      _MatchProposalFilterSheetState();
-}
-
-class _MatchProposalFilterSheetState extends State<MatchProposalFilterSheet> {
-  RangeValues? _ageRange;
-  final List<ReligiousLevel> _religiousLevels = <ReligiousLevel>[];
-  final List<String> _religiousLevelOtherLabels = <String>[];
-  final List<ProfileStatus> _profileStatuses = <ProfileStatus>[
-    ProfileStatus.available,
-  ];
-  bool _loadedSavedFilters = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (!_loadSavedFilters() && widget.initialFilters != null) {
-      _applyFilters(widget.initialFilters!);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final List<ReligiousLevel> enabledReligiousLevels = context
-        .watch<ReligiousLevelsProvider>()
-        .enabledLevels;
-    final List<String> enabledReligiousLevelOtherLabels = context
-        .watch<ReligiousLevelsProvider>()
-        .customLabels;
-    final ({int min, int max})? ageBounds = _ageBounds(
-      context.watch<PersonRepository>().getAll(),
-    );
-    final RangeValues? effectiveAgeRange = _effectiveAgeRange(ageBounds);
-    final bool hasAgeFilter =
-        ageBounds != null &&
-        effectiveAgeRange != null &&
-        (effectiveAgeRange.start.round() > ageBounds.min ||
-            effectiveAgeRange.end.round() < ageBounds.max);
-
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          16 + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('סינון:', style: theme.textTheme.titleLarge),
-              if (_loadedSavedFilters) ...<Widget>[
-                const SizedBox(height: 6),
-                Text(
-                  'נטען הסינון האחרון לאיש הקשר הזה',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              if (ageBounds != null && effectiveAgeRange != null) ...<Widget>[
-                Text(
-                  'טווח גילאים: ${effectiveAgeRange.start.round()}-${effectiveAgeRange.end.round()}',
-                  style: theme.textTheme.titleMedium,
-                ),
-                RangeSlider(
-                  min: ageBounds.min.toDouble(),
-                  max: ageBounds.max == ageBounds.min
-                      ? (ageBounds.max + 1).toDouble()
-                      : ageBounds.max.toDouble(),
-                  values: effectiveAgeRange,
-                  divisions: ageBounds.max == ageBounds.min
-                      ? 1
-                      : ageBounds.max - ageBounds.min,
-                  labels: RangeLabels(
-                    effectiveAgeRange.start.round().toString(),
-                    effectiveAgeRange.end.round().toString(),
-                  ),
-                  onChanged: ageBounds.max == ageBounds.min
-                      ? null
-                      : (RangeValues value) {
-                          setState(() => _ageRange = value);
-                        },
-                ),
-                const SizedBox(height: 12),
-              ],
-              Text('סגנון דתי', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: <Widget>[
-                  for (final ReligiousLevel level in enabledReligiousLevels)
-                    FilterChip(
-                      label: Text(level.displayName),
-                      selected: _religiousLevels.contains(level),
-                      onSelected: (bool value) {
-                        setState(() {
-                          if (value) {
-                            _religiousLevels.add(level);
-                          } else {
-                            _religiousLevels.remove(level);
-                          }
-                        });
-                      },
-                    ),
-                  for (final String label in enabledReligiousLevelOtherLabels)
-                    FilterChip(
-                      label: Text(label),
-                      selected: _religiousLevelOtherLabels.contains(label),
-                      onSelected: (bool value) {
-                        setState(() {
-                          if (value) {
-                            _religiousLevelOtherLabels.add(label);
-                          } else {
-                            _religiousLevelOtherLabels.remove(label);
-                          }
-                        });
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text('סטטוס', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children:
-                    <ProfileStatus>[
-                      ProfileStatus.available,
-                      ProfileStatus.busy,
-                      ProfileStatus.onBreak,
-                    ].map((ProfileStatus status) {
-                      final bool selected = _profileStatuses.contains(status);
-                      return FilterChip(
-                        label: Text('${status.emoji} ${status.displayName}'),
-                        selected: selected,
-                        onSelected: (bool value) {
-                          setState(() {
-                            if (value) {
-                              _profileStatuses.add(status);
-                            } else {
-                              _profileStatuses.remove(status);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final MatchProposalFilters filters = MatchProposalFilters(
-                      minAge: hasAgeFilter
-                          ? effectiveAgeRange.start.round()
-                          : null,
-                      maxAge: hasAgeFilter
-                          ? effectiveAgeRange.end.round()
-                          : null,
-                      religiousLevels: _religiousLevels
-                          .where(enabledReligiousLevels.contains)
-                          .toList(),
-                      religiousLevelOtherLabels: _religiousLevelOtherLabels
-                          .where(enabledReligiousLevelOtherLabels.contains)
-                          .toList(),
-                      profileStatuses: List<ProfileStatus>.from(
-                        _profileStatuses,
-                      ),
-                    );
-                    await MatchProposalFilterSheet.saveFiltersFor(
-                      widget.sourcePersonId,
-                      filters,
-                    );
-                    if (!context.mounted) {
-                      return;
-                    }
-
-                    Navigator.of(context).pop(filters);
-                  },
-                  child: const Text('הצגת תוצאות'),
-                ),
-              ),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _ageRange = null;
-                      _religiousLevels.clear();
-                      _religiousLevelOtherLabels.clear();
-                      _profileStatuses.clear();
-                      _loadedSavedFilters = false;
-                    });
-                  },
-                  child: const Text('נקה הכל'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  bool _loadSavedFilters() {
-    final MatchProposalFilters? filters =
-        MatchProposalFilterSheet.savedFiltersFor(widget.sourcePersonId);
-    if (filters == null) {
-      return false;
-    }
-
-    _applyFilters(filters);
-    _loadedSavedFilters = true;
-    return true;
-  }
-
-  void _applyFilters(MatchProposalFilters filters) {
-    final int? minAge = filters.minAge;
-    final int? maxAge = filters.maxAge;
-    if (minAge != null && maxAge != null && minAge <= maxAge) {
-      _ageRange = RangeValues(minAge.toDouble(), maxAge.toDouble());
-    } else {
-      _ageRange = null;
-    }
-
-    _religiousLevels
-      ..clear()
-      ..addAll(filters.religiousLevels);
-    _religiousLevelOtherLabels
-      ..clear()
-      ..addAll(filters.religiousLevelOtherLabels);
-
-    _profileStatuses
-      ..clear()
-      ..addAll(filters.profileStatuses);
-  }
-
-  ({int min, int max})? _ageBounds(List<Person> people) {
-    int? min;
-    int? max;
-    for (final Person person in people) {
-      if (person.needsReview ||
-          person.profileStatus.isArchived ||
-          person.gender != widget.targetGender) {
-        continue;
-      }
-
-      final int? age = person.age;
-      if (age == null) {
-        continue;
-      }
-
-      if (min == null || age < min) {
-        min = age;
-      }
-      if (max == null || age > max) {
-        max = age;
-      }
-    }
-
-    if (min == null || max == null) {
-      return null;
-    }
-    return (min: min, max: max);
-  }
-
-  RangeValues? _effectiveAgeRange(({int min, int max})? bounds) {
-    if (bounds == null) {
-      return null;
-    }
-
-    final RangeValues? range = _ageRange;
-    if (range == null) {
-      return RangeValues(bounds.min.toDouble(), bounds.max.toDouble());
-    }
-
-    return RangeValues(
-      range.start.clamp(bounds.min.toDouble(), bounds.max.toDouble()),
-      range.end.clamp(bounds.min.toDouble(), bounds.max.toDouble()),
-    );
   }
 }
 
