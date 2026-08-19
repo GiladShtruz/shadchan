@@ -25,6 +25,11 @@
     "   its own index; the all-time version filters on one field only and runs",
     "   on the automatic single-field index.",
     "",
+    "3. The mazel-tov postbox, drained oldest-first by the one person a message",
+    "   is addressed to: `toUid == me` ordered by `createdAt`. An equality and",
+    "   an ordering on two different fields, so it needs its own index like",
+    "   everything else here.",
+    "",
     "The `*Actions` fields hold weighted activity points now, not a count of",
     "actions. The names were left alone deliberately: renaming them would have",
     "meant rebuilding all four leaderboard indexes and a window in which every",
@@ -90,6 +95,14 @@
       "fields": [
         { "fieldPath": "monthKey", "order": "ASCENDING" },
         { "fieldPath": "monthActions", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMazelTov",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
     }
   ],

@@ -281,12 +281,24 @@ class _MatchesScreenState extends State<MatchesScreen> {
       return _buildArchive(groups[MatchCategory.archive]!, personRepository);
     }
 
-    final List<MatchIdea> matches = groups[_category]!;
-    // The due-reminder list sits at the top of the broad live views whatever the proposals'
-    // own status is; they keep their place in their own category too.
+    // The due-reminder list sits at the top of the broad live views whatever
+    // the proposals' own status is.
     final bool showReminders =
         (_category == MatchCategory.all || _category == MatchCategory.open) &&
         dueReminders.isNotEmpty;
+    // **And each of them appears exactly once.** A proposal lifted to the top
+    // because its reminder came due used to be drawn a second time further
+    // down, in its ordinary place — the same pair, the same card, twice on one
+    // screen, which reads as a bug every time and makes the list longer than
+    // the work in it.
+    final Set<String> remindedIds = showReminders
+        ? <String>{for (final MatchIdea match in dueReminders) match.id}
+        : const <String>{};
+    final List<MatchIdea> matches = showReminders
+        ? groups[_category]!
+              .where((MatchIdea match) => !remindedIds.contains(match.id))
+              .toList()
+        : groups[_category]!;
 
     if (matches.isEmpty && !showReminders) {
       return _emptyState(_category);

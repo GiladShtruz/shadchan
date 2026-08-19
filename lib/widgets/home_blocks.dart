@@ -178,25 +178,22 @@ class _NextActionCard extends StatelessWidget {
                         // Two lines and no more: the card's height is fixed,
                         // so a long sentence is cut rather than allowed to
                         // push the box.
+                        // The reason, and nothing in front of it. An
+                        // eleven-pixel glyph before every line of eight-word
+                        // explanations was decoration at a size nobody could
+                        // read it at, and it stole a third of a narrow card's
+                        // width from the words that were the point.
                         Expanded(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Icon(action.kind.icon, size: 11, color: accent),
-                              const SizedBox(width: 3),
-                              Expanded(
-                                child: Text(
-                                  action.reason,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    fontSize: 10,
-                                    height: 1.3,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            action.reason,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
+                              height: 1.3,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       ],

@@ -64,12 +64,13 @@ void main() {
             ProfileStatus.mazelTov,
             causedByMatchId: matchId,
           ))
-      ..markPersonAvailable = ((String personId, String matchId) =>
-          personRepository.updateProfileStatus(
-            personId,
-            ProfileStatus.available,
-            causedByMatchId: matchId,
-          ));
+      ..restorePersonStatus =
+          ((String personId, ProfileStatus status, String matchId) =>
+              personRepository.updateProfileStatus(
+                personId,
+                status,
+                causedByMatchId: matchId,
+              ));
     personRepository.onPersonStatusChanged =
         matchRepository.syncMatchesForPerson;
   });

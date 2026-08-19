@@ -10,6 +10,7 @@ class NewIdeaSuggestion {
     required this.female,
     required this.score,
     required this.reasons,
+    this.completeCards = 0,
   });
 
   final Person male;
@@ -17,6 +18,15 @@ class NewIdeaSuggestion {
 
   /// How strongly the database argues for this pair. Only used for ordering.
   final int score;
+
+  /// How many of the two have a card worth reading -- 2, 1 or 0.
+  ///
+  /// **The first thing the list is sorted by, above every other signal.** A
+  /// pair the matchmaker can actually judge is worth more than a
+  /// better-scoring pair of two blank cards: the second one cannot be acted on
+  /// without opening two profiles and finding there is nothing in them. Only
+  /// inside a tier does [score] decide the order.
+  final int completeCards;
 
   /// The short, factual notes behind the pair ("אותה השקפה · שניהם מירושלים").
   final List<String> reasons;
@@ -29,17 +39,27 @@ class NewIdeaSuggestion {
 /// that already has a proposal — open, closed or rejected — or one the
 /// matchmaker has already pushed aside.
 abstract final class NewIdeaSuggestions {
-  /// How many pairs the screen offers at a time.
-  static const int defaultLimit = 40;
+  /// How many pairs are shown at once.
+  ///
+  /// Ten, not forty. A list of forty pairs is not a list of forty decisions --
+  /// it is a wall, and the honest thing a matchmaker does with a wall is close
+  /// it. Ten is a sitting's worth, and the refresh button is there for whoever
+  /// wants another ten.
+  static const int batchSize = 10;
 
-  /// The same person is not allowed to fill the whole screen.
-  static const int maxPairsPerPerson = 3;
+  /// At most one idea per friend inside a single batch.
+  ///
+  /// **Diversity is the whole point of batching.** The same popular candidate
+  /// paired with three different people is one thought shown three times, at
+  /// the cost of two other friends nobody has looked at this month. Across
+  /// batches they may appear again -- that is what the next batch is for.
+  static const int maxPairsPerPersonPerBatch = 1;
 
   static List<NewIdeaSuggestion> build({
     required List<Person> people,
     required List<MatchIdea> matches,
     Set<String> Function(String personId)? dismissedFor,
-    int limit = defaultLimit,
+    int limit = 0,
   }) {
     final List<Person> pool = people.where(_isEligible).toList();
     final List<Person> males = pool
@@ -98,7 +118,12 @@ abstract final class NewIdeaSuggestions {
       }
     }
 
+    // Cards first, then everything else. See [NewIdeaSuggestion.completeCards].
     pairs.sort((NewIdeaSuggestion a, NewIdeaSuggestion b) {
+      final int byCards = b.completeCards.compareTo(a.completeCards);
+      if (byCards != 0) {
+        return byCards;
+      }
       final int byScore = b.score.compareTo(a.score);
       if (byScore != 0) {
         return byScore;
@@ -106,24 +131,47 @@ abstract final class NewIdeaSuggestions {
       return b.female.updatedAt.compareTo(a.female.updatedAt);
     });
 
-    // Spread the screen over as many people as possible instead of showing one
-    // popular candidate against everyone.
-    final Map<String, int> appearances = <String, int>{};
-    final List<NewIdeaSuggestion> result = <NewIdeaSuggestion>[];
-    for (final NewIdeaSuggestion pair in pairs) {
-      final int maleCount = appearances[pair.male.id] ?? 0;
-      final int femaleCount = appearances[pair.female.id] ?? 0;
-      if (maleCount >= maxPairsPerPerson || femaleCount >= maxPairsPerPerson) {
-        continue;
-      }
-      appearances[pair.male.id] = maleCount + 1;
-      appearances[pair.female.id] = femaleCount + 1;
-      result.add(pair);
-      if (result.length >= limit) {
+    // The whole ranked list by default. The screen shows one batch of it at a
+    // time -- see [batches] -- and a caller that genuinely wants a ceiling
+    // asks for one.
+    return limit > 0 && pairs.length > limit ? pairs.sublist(0, limit) : pairs;
+  }
+
+  /// Splits the ranked list into rounds of [size], each showing every friend at
+  /// most [maxPairsPerPersonPerBatch] times.
+  ///
+  /// **Ranking order is preserved, and nothing is thrown away.** Each pair goes
+  /// into the earliest round that has room for it and does not already carry
+  /// one of its two people, so the best pairs are still first, the first round
+  /// still shows ten different friends, and a pair that lost its place to the
+  /// diversity rule turns up in the next round rather than vanishing.
+  static List<List<NewIdeaSuggestion>> batches(
+    List<NewIdeaSuggestion> ranked, {
+    int size = batchSize,
+  }) {
+    final List<List<NewIdeaSuggestion>> rounds = <List<NewIdeaSuggestion>>[];
+    final List<Map<String, int>> seen = <Map<String, int>>[];
+
+    for (final NewIdeaSuggestion pair in ranked) {
+      for (int index = 0; ; index++) {
+        if (index == rounds.length) {
+          rounds.add(<NewIdeaSuggestion>[]);
+          seen.add(<String, int>{});
+        }
+        final Map<String, int> counts = seen[index];
+        final bool crowded =
+            (counts[pair.male.id] ?? 0) >= maxPairsPerPersonPerBatch ||
+            (counts[pair.female.id] ?? 0) >= maxPairsPerPersonPerBatch;
+        if (rounds[index].length >= size || crowded) {
+          continue;
+        }
+        rounds[index].add(pair);
+        counts[pair.male.id] = (counts[pair.male.id] ?? 0) + 1;
+        counts[pair.female.id] = (counts[pair.female.id] ?? 0) + 1;
         break;
       }
     }
-    return result;
+    return rounds;
   }
 
   static NewIdeaSuggestion _describe({
@@ -136,8 +184,11 @@ abstract final class NewIdeaSuggestions {
     int score = 0;
 
     if (maleOpenIdeas == 0 && femaleOpenIdeas == 0) {
+      // Worth points and not worth a word. The line that used to be written
+      // here described the absence of something rather than a reason to put
+      // two people together, and it appeared on nearly every card -- which is
+      // the definition of a line that says nothing.
       score += 5;
-      reasons.add('לשניהם אין רעיון פתוח');
     } else if (maleOpenIdeas == 0 || femaleOpenIdeas == 0) {
       score += 2;
     }
@@ -159,7 +210,9 @@ abstract final class NewIdeaSuggestions {
       reasons.add('גילאים ${female.age} ו-${male.age}');
     }
 
-    if (_cardIsComplete(male) && _cardIsComplete(female)) {
+    final int completeCards =
+        (_cardIsComplete(male) ? 1 : 0) + (_cardIsComplete(female) ? 1 : 0);
+    if (completeCards == 2) {
       score += 2;
       reasons.add('לשניהם כרטיס מלא');
     }
@@ -172,6 +225,7 @@ abstract final class NewIdeaSuggestions {
       male: male,
       female: female,
       score: score,
+      completeCards: completeCards,
       reasons: reasons.take(3).toList(),
     );
   }

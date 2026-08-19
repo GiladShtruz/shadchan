@@ -82,6 +82,12 @@ void main() {
     // it sits between onboarding and the app, so without this every test here
     // would open on it. The gate itself is covered by `sign_in_gate_test.dart`.
     await settings.put('signIn.promptAnswered', 'true');
+    // The WhatsApp updates group is offered on the first launch of a fresh
+    // install, as a dialog over whatever screen is open — which swallows the
+    // taps of any test that happens to run before something else has answered
+    // it. Answered here so every test in this file starts from the same place,
+    // whether it is run alone or after four hundred others.
+    await settings.put('community.inWhatsAppGroup', 'true');
   });
 
   setUp(() async {
@@ -1049,13 +1055,72 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The first WhatsApp button in RTL belongs to the woman's side.
-    expect(find.byType(FaIcon), findsNWidgets(2));
+    // Three WhatsApp glyphs: one on each candidate, and the proposal-level
+    // button on the "יאללה לקדם" row under them.
+    expect(find.byType(FaIcon), findsNWidgets(3));
+    // The first belongs to the woman's side.
     await tester.tap(find.byType(FaIcon).first);
     await tester.pumpAndSettle();
 
     expect(find.text('פתיחת שיחה עם נהרה'), findsOneWidget);
     expect(find.text('שליחת הכרטיס של נדיב אל נהרה'), findsOneWidget);
+  });
+
+  testWidgets('The "יאללה לקדם" row opens both chats and both cards at once', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final DateTime now = DateTime(2026, 7, 27);
+    final Person male = _testPerson(
+      id: 'pair-wa-male',
+      firstName: 'נדיב',
+      lastName: 'לוי',
+      gender: Gender.male,
+      age: 27,
+      now: now,
+      phone: '0501234567',
+      description: 'כרטיס של נדיב',
+    );
+    final Person female = _testPerson(
+      id: 'pair-wa-female',
+      firstName: 'נהרה',
+      lastName: 'כהן',
+      gender: Gender.female,
+      age: 25,
+      now: now,
+      phone: '0509876543',
+      description: 'כרטיס של נהרה',
+    );
+    final MatchIdea match = _testMatch(
+      id: 'pair-wa-match',
+      personAId: male.id,
+      personBId: female.id,
+      now: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(male.id, male);
+      await Hive.box<Person>('people').put(female.id, female);
+      await Hive.box<MatchIdea>('matches').put(match.id, match);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches/${match.id}');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The prompt and the way to act on it are on the same line.
+    expect(find.text('פתוחה · יאללה לקדם'), findsOneWidget);
+    await tester.tap(find.text('וואטסאפ'));
+    await tester.pumpAndSettle();
+
+    // One sheet, both candidates, both cards — no picking a side first.
+    expect(find.text('פתיחת שיחה עם נהרה'), findsOneWidget);
+    expect(find.text('שליחת הכרטיס של נדיב אל נהרה'), findsOneWidget);
+    expect(find.text('פתיחת שיחה עם נדיב'), findsOneWidget);
+    expect(find.text('שליחת הכרטיס של נהרה אל נדיב'), findsOneWidget);
   });
 
   testWidgets('Match detail keeps full names and visible proposal actions', (

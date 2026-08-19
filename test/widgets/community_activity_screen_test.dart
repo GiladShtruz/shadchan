@@ -13,9 +13,9 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/community_activity_screen.dart';
+import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/app_theme.dart';
-import 'package:shadchan/utils/community_achievements.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// "הפעילות שלי".
@@ -154,50 +154,106 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(390, 1400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await people.put('m', person('m', 'הלל', Gender.male));
-    await people.put('f', person('f', 'כרמל', Gender.female));
-    await matches.put(
-      'married',
-      MatchIdea(
-        id: 'married',
-        personAId: 'm',
-        personBId: 'f',
-        status: MatchStatus.married,
-        currentHandler: CurrentHandler.me,
-        createdAt: DateTime(2026, 8, 2),
-        updatedAt: DateTime(2026, 8, 10),
-      ),
-    );
+    // Through `runAsync`: a `Box.put` awaited inside the fake-async zone of a
+    // widget test is never driven to completion, and the test hangs for ever.
+    await tester.runAsync(() async {
+      await people.put('m', person('m', 'הלל', Gender.male));
+      await people.put('f', person('f', 'כרמל', Gender.female));
+      await matches.put(
+        'married',
+        MatchIdea(
+          id: 'married',
+          personAId: 'm',
+          personBId: 'f',
+          status: MatchStatus.married,
+          currentHandler: CurrentHandler.me,
+          createdAt: DateTime(2026, 8, 2),
+          updatedAt: DateTime(2026, 8, 10),
+        ),
+      );
+    });
 
     await tester.pumpWidget(wrap());
     await tester.pump();
 
-    // A wedding outranks every other count on the page, and it is said as a
-    // sentence about a home rather than as a figure in a box.
-    expect(find.text('בית אחד כבר קם בזכותך'), findsOneWidget);
-    // The four counts and the ladders are still there under it.
-    expect(find.text('הדרך שלך עד היום'), findsOneWidget);
-    expect(find.text('אבני דרך'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    // Exactly one of the true lines for this database, and which one is
+    // deliberately not pinned down — the rotation is the feature, and a test
+    // that demanded a particular sentence would be testing the cursor's
+    // starting value rather than the screen.
+    expect(_openingLine(tester), isNotEmpty);
+    // Not the line for a database with nothing in it.
+    expect(find.text('הכול מתחיל מחבר אחד'), findsNothing);
+
+    // The sections under it.
+    expect(find.text('הנתונים שלך'), findsOneWidget);
     expect(find.text('הקצב שלך'), findsOneWidget);
-    // Two friends, so the friends ladder points at the first rung.
-    expect(find.textContaining('עוד 8 חברים ל־10'), findsOneWidget);
+    // "אבני דרך" was removed from this screen entirely.
+    expect(find.text('אבני דרך'), findsNothing);
   });
 
-  group('the ladders', () {
-    test('next() is the rung above, and null at the top', () {
-      expect(CommunityAchievements.next(CommunityAchievements.friendMilestones, 0), 10);
-      expect(CommunityAchievements.next(CommunityAchievements.friendMilestones, 10), 25);
-      expect(
-        CommunityAchievements.next(CommunityAchievements.friendMilestones, 1000),
-        isNull,
+  testWidgets('the opening line changes between visits', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    // Two friends and a wedding gives two true things to say, so consecutive
+    // visits must not say the same one twice.
+    await tester.runAsync(() async {
+      await people.put('m', person('m', 'הלל', Gender.male));
+      await people.put('f', person('f', 'כרמל', Gender.female));
+      await matches.put(
+        'married',
+        MatchIdea(
+          id: 'married',
+          personAId: 'm',
+          personBId: 'f',
+          status: MatchStatus.married,
+          currentHandler: CurrentHandler.me,
+          createdAt: DateTime(2026, 8, 2),
+          updatedAt: DateTime(2026, 8, 10),
+        ),
       );
     });
 
-    test('couples keep climbing in tens past the written ladder', () {
-      // `reached` reads 74 as 70, so `next` has to answer 80 — otherwise the
-      // one ladder that never ends is the one with no progress bar.
-      expect(CommunityAchievements.reached(CommunityAchievements.coupleMilestones, 74), 70);
-      expect(CommunityAchievements.next(CommunityAchievements.coupleMilestones, 74), 80);
+    await tester.pumpWidget(wrap());
+    await tester.pump();
+    final String first = _openingLine(tester);
+    expect(first, isNotEmpty);
+
+    // A second visit, from scratch, the way reopening the screen works.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pumpWidget(wrap());
+    await tester.pump();
+
+    expect(_openingLine(tester), isNot(first));
+  });
+
+  group('"שמור על הפרטיות שלי"', () {
+    testWidgets('stops the publish and takes the name off the board', (
+      WidgetTester tester,
+    ) async {
+      final CommunityProvider community = CommunityProvider();
+      expect(community.isPrivate, isFalse);
+
+      // `deleteMyData` inside runs against a Firebase that is not up in a
+      // test, refuses the anonymous/absent account and answers false — which
+      // is exactly the path a device with no network takes, and the local
+      // state must flip either way.
+      await tester.runAsync(() => community.setPrivate(true));
+
+      expect(community.isPrivate, isTrue);
+      // Private implies hidden: `CommunityService.leaderboard` is asked with
+      // `includeMe: !isHidden`, so this one getter is what keeps a private
+      // matchmaker off the board as well as out of the totals.
+      expect(community.isHidden, isTrue);
+      expect(CommunityProfileStore.isPrivate, isTrue);
+
+      await tester.runAsync(() => community.setPrivate(false));
+      expect(community.isPrivate, isFalse);
+      expect(CommunityProfileStore.isPrivate, isFalse);
     });
   });
 
@@ -218,4 +274,25 @@ void main() {
       expect(real.resolved, isTrue);
     });
   });
+}
+
+/// The headline the screen opened with, out of everything it could have said.
+///
+/// Matched by shape rather than by text: any of the warm openers is a correct
+/// answer, and naming them one by one here would mean editing this file every
+/// time one is reworded.
+String _openingLine(WidgetTester tester) {
+  const List<String> shapes = <String>[
+    'עשית השבוע',
+    'הוספת השבוע',
+    'פתחת השבוע',
+    'החודש כבר',
+    'לדרך בזכותך',
+    'בזכותך',
+    'סומכים עליך',
+  ];
+  return tester
+      .widgetList<Text>(find.byType(Text))
+      .map((Text text) => text.data ?? '')
+      .firstWhere((String line) => shapes.any(line.contains), orElse: () => '');
 }

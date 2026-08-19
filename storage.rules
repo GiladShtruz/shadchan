@@ -94,6 +94,34 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // A matchmaker's own picture, drawn beside their name on the leaderboard.
+    //
+    // The second readable path in this bucket, and the narrower of the two: it
+    // is one file per account, named by the uid in the path, and it can only
+    // ever be the account holder's own face. **No candidate's photo can reach
+    // here** — the app uploads only `UserProfileProvider.photoPath`, the
+    // picture the matchmaker chose for themselves during onboarding.
+    //
+    // It is published under the same consent as the name: the app clears the
+    // Firestore field and deletes this file the moment somebody hides
+    // themselves, goes private, or removes their photo. Read is open to
+    // signed-in devices because the board is shown to all of them.
+    match /communityMembers/{userId}/{fileName} {
+      function isOwner() {
+        return request.auth != null
+            && request.auth.uid == userId
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+
+      allow read: if request.auth != null;
+      allow delete: if isOwner();
+
+      // One image, well under the ceiling the rest of the bucket uses.
+      allow write: if isOwner()
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

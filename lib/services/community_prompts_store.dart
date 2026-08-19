@@ -26,6 +26,9 @@ abstract final class CommunityPromptsStore {
   static const String _ratingDoneKey = 'community.ratingDone';
   static const String _seenAnnouncementKey = 'community.seenAnnouncementId';
   static const String _seenEngagementKey = 'community.seenEngagementId';
+  static const String _congratulatedKey = 'community.congratulatedIds';
+  static const String _mazelTovNotifiedKey = 'community.mazelTovNotified';
+  static const String _mazelTovDeliveredKey = 'community.mazelTovDelivered';
 
   /// How many actions pass between two invitations to the group.
   static const int groupPromptEveryActions = 100;
@@ -177,4 +180,69 @@ abstract final class CommunityPromptsStore {
     }
     _write(_seenEngagementKey, id);
   }
+
+  // --- "שלחו מזל טוב" -------------------------------------------------------
+
+  /// How many ids each of the three sets below keeps.
+  ///
+  /// They are append-only and they are all about things that stop mattering:
+  /// an engagement stops being shown after a week, a message is deleted from
+  /// the server once it is filed, and a wedding is only ever notified about
+  /// once. Trimming to the newest few dozen keeps a settings value from
+  /// growing without bound on a device that is used for years, and the worst
+  /// case of trimming too soon is a second notification about a wedding from
+  /// months ago.
+  static const int _idMemory = 60;
+
+  static Set<String> _readIds(String key) {
+    final Object? raw = _read(key);
+    if (raw is! String || raw.isEmpty) {
+      return <String>{};
+    }
+    return raw.split(',').where((String id) => id.isNotEmpty).toSet();
+  }
+
+  static void _addId(String key, String id) {
+    if (id.isEmpty) {
+      return;
+    }
+    final List<String> ids = <String>[..._readIds(key)..remove(id), id];
+    _write(
+      key,
+      (ids.length <= _idMemory ? ids : ids.sublist(ids.length - _idMemory))
+          .join(','),
+    );
+  }
+
+  /// Engagements this matchmaker has already sent a "מזל טוב" for, so the
+  /// button turns into a thank-you rather than inviting a second one.
+  static bool hasCongratulated(String engagementId) =>
+      _readIds(_congratulatedKey).contains(engagementId);
+
+  static void markCongratulated(String engagementId) =>
+      _addId(_congratulatedKey, engagementId);
+
+  /// Proposals whose congratulations have already raised a notification.
+  ///
+  /// **One per wedding, not one per message.** Six matchmakers wishing the same
+  /// couple well is one piece of news; six notifications for it is a phone
+  /// buzzing at somebody who is trying to enjoy it. The messages all land in
+  /// the journal either way — this only decides how many times the app taps
+  /// somebody on the shoulder about them.
+  static bool hasNotifiedMazelTov(String matchId) =>
+      _readIds(_mazelTovNotifiedKey).contains(matchId);
+
+  static void markMazelTovNotified(String matchId) =>
+      _addId(_mazelTovNotifiedKey, matchId);
+
+  /// Messages already written into a journal.
+  ///
+  /// The belt to the server-side deletion's braces: a delete that fails leaves
+  /// the message in the inbox, and without this it would be filed again on the
+  /// next drain.
+  static bool hasDeliveredMazelTov(String messageId) =>
+      _readIds(_mazelTovDeliveredKey).contains(messageId);
+
+  static void markMazelTovDelivered(String messageId) =>
+      _addId(_mazelTovDeliveredKey, messageId);
 }

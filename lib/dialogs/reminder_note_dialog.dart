@@ -44,40 +44,32 @@ class _ReminderNoteDialogState extends State<_ReminderNoteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
     return AlertDialog(
       title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            'לא חובה — אפשר גם לדלג.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            minLines: 1,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: 'למשל: לבדוק אם חזרה מההפסקה',
-            ),
-          ),
-        ],
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        minLines: 1,
+        maxLines: 3,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => Navigator.of(context).pop(_controller.text.trim()),
+        decoration: const InputDecoration(
+          hintText: 'למשל: לבדוק אם חזרה מההפסקה',
+        ),
       ),
       actions: <Widget>[
+        // Both answers set the reminder. The note has never been required, and
+        // the line of small print that used to say so has gone with the two
+        // buttons that now say it themselves: leaving the field empty and
+        // confirming is the same as skipping, and clearing an existing note
+        // and confirming removes it.
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('דילוג'),
+          child: const Text('בלי הערה'),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
-          child: const Text('שמירה'),
+          child: const Text('שמירת התזכורת'),
         ),
       ],
     );

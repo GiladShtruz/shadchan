@@ -8,6 +8,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/mazel_tov_inbox.dart';
 
 /// Runs the cloud backup when the app opens and when it goes away.
 ///
@@ -92,6 +93,12 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
         profile: context.read<UserProfileProvider>(),
       ),
     );
+
+    // And the postbox: congratulations other matchmakers sent about a wedding,
+    // filed into the journal of the couple they are about. Same two moments,
+    // for the same reason — it is warm news, not urgent news, and it costs one
+    // query against an inbox that is empty for almost everybody.
+    unawaited(MazelTovInbox.drain(context.read<MatchRepository>()));
   }
 
   @override

@@ -17,6 +17,7 @@ import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -224,6 +225,13 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                 onOpenProfile: (Person person) =>
                     context.push('/people/${person.id}'),
                 onWhatsApp: _openWhatsAppMenu,
+                onWhatsAppPair:
+                    MatchWhatsAppSheet.isAvailable(
+                      female: sides.female,
+                      male: sides.male,
+                    )
+                    ? () => _openPairWhatsApp(sides.female, sides.male)
+                    : null,
                 onComparePair: sides.female == null || sides.male == null
                     ? null
                     : () => openMatchComparison(
@@ -932,11 +940,17 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   ) async {
     final PersonRepository people = context.read<PersonRepository>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
+    final CommunityProvider community = context.read<CommunityProvider>();
     await EngagementFlow.celebrate(
       context,
+      matchId: match.id,
       firstNameA: people.getById(match.personAId)?.firstName ?? '',
       firstNameB: people.getById(match.personBId)?.firstName ?? '',
       matchmakerName: profile.name ?? '',
+      // Hidden from the leaderboard means hidden here: the name goes to the
+      // same collection of strangers either way.
+      shareName: !community.isHidden,
+      private: community.isPrivate,
     );
   }
 
@@ -1036,6 +1050,17 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       context,
       person: person,
       other: other,
+    );
+    if (!opened) _showSnackBar('אין מספר טלפון תקין או כרטיס שמור');
+  }
+
+  /// The button on the "יאללה לקדם" row: both candidates and both cards in one
+  /// sheet, so getting from the prompt to the conversation is two taps.
+  Future<void> _openPairWhatsApp(Person? female, Person? male) async {
+    final bool opened = await MatchWhatsAppSheet.open(
+      context,
+      female: female,
+      male: male,
     );
     if (!opened) _showSnackBar('אין מספר טלפון תקין או כרטיס שמור');
   }
@@ -1252,6 +1277,7 @@ class _PairCard extends StatelessWidget {
     required this.statusIcon,
     required this.onOpenProfile,
     required this.onWhatsApp,
+    required this.onWhatsAppPair,
     required this.onComparePair,
     required this.onStatusPicked,
   });
@@ -1267,6 +1293,10 @@ class _PairCard extends StatelessWidget {
 
   final ValueChanged<Person> onOpenProfile;
   final void Function(Person person, Person? other) onWhatsApp;
+
+  /// The proposal-level WhatsApp button on the status row, or null when
+  /// neither candidate has a number to message.
+  final VoidCallback? onWhatsAppPair;
 
   /// Tapping the tile itself — anywhere that is not one of the per-person
   /// controls — opens the two cards facing each other.
@@ -1402,7 +1432,7 @@ class _PairCard extends StatelessWidget {
           ),
           Divider(height: 1, color: theme.colorScheme.outlineVariant),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
+            padding: const EdgeInsets.fromLTRB(14, 8, 10, 9),
             child: Row(
               children: <Widget>[
                 Icon(statusIcon, size: 17, color: statusColor),
@@ -1418,10 +1448,66 @@ class _PairCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                // The way out of the line and into the actual conversation.
+                // "יאללה לקדם" is the app telling somebody to do something
+                // that happens in WhatsApp, and until now the nearest way
+                // there was a small icon on each candidate's avatar above.
+                if (onWhatsAppPair != null) ...<Widget>[
+                  const SizedBox(width: 8),
+                  _WhatsAppPill(onTap: onWhatsAppPair!),
+                ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The WhatsApp button on the status row of the pair card.
+///
+/// Green and labelled, unlike the quiet per-candidate icons above it: this one
+/// answers the line beside it — "יאללה לקדם" — and a prompt to act next to a
+/// control nobody notices is only half a prompt. WhatsApp's own green is used
+/// rather than a brand tone because that is what the button is, and a matchmaker
+/// scanning the screen finds it by colour before they read a word.
+class _WhatsAppPill extends StatelessWidget {
+  const _WhatsAppPill({required this.onTap});
+
+  static const Color _whatsAppGreen = Color(0xFF25D366);
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color ink = dark ? const Color(0xFF5AE08D) : const Color(0xFF128C4A);
+
+    return Material(
+      color: _whatsAppGreen.withValues(alpha: dark ? 0.20 : 0.14),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FaIcon(FontAwesomeIcons.whatsapp, size: 15, color: ink),
+              const SizedBox(width: 6),
+              Text(
+                'וואטסאפ',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: ink,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2374,11 +2460,23 @@ class _MatchTimeline extends StatelessWidget {
     return Column(
       children: ordered.map((MatchNote note) {
         final bool isSelected = isEditing && selectedIds.contains(note.id);
+        // A bracha another matchmaker sent about this couple. Drawn warmer than
+        // the lines around it and labelled with who it came from, because a
+        // congratulation that looks like an automatic status line is a
+        // congratulation nobody reads. Everything else about it is an ordinary
+        // journal entry — it can be opened, edited and deleted like any other,
+        // which is the point of putting it here rather than in an inbox.
+        final String? from = note.mazelTovFrom;
+        final Color mazelTov = theme.brightness == Brightness.dark
+            ? AppColors.secondaryDarkDm
+            : AppColors.secondary;
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Material(
             color: isSelected
                 ? theme.colorScheme.primaryContainer
+                : from != null
+                ? mazelTov.withValues(alpha: 0.10)
                 : theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(15),
             child: InkWell(
@@ -2403,6 +2501,8 @@ class _MatchTimeline extends StatelessWidget {
                   border: Border.all(
                     color: isSelected
                         ? theme.colorScheme.primary
+                        : from != null
+                        ? mazelTov.withValues(alpha: 0.45)
                         : theme.colorScheme.outlineVariant,
                   ),
                 ),
@@ -2428,6 +2528,31 @@ class _MatchTimeline extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
+                          if (from != null) ...<Widget>[
+                            Row(
+                              children: <Widget>[
+                                Icon(
+                                  Icons.celebration_rounded,
+                                  size: 15,
+                                  color: mazelTov,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'מזל טוב מ$from',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w900,
+                                          color: mazelTov,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 5),
+                          ],
                           Text(note.text),
                           const SizedBox(height: 3),
                           Text(

@@ -2755,9 +2755,20 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     }
   }
 
-  /// What the filter sheet opens showing: this candidate's own saved criteria,
-  /// so changing them there starts from what they already say rather than from
-  /// a blank sheet.
+  /// What the filter sheet opens showing when nothing has been saved by hand:
+  /// **everything the automatic filter is already applying.**
+  ///
+  /// This used to carry the age range and the religious styles alone, while
+  /// `MatchSuggestionUtils.matchesOwnPreferences` was quietly also filtering on
+  /// height and marital status. The result was a sheet that looked blank on a
+  /// list that was anything but — somebody opening it to loosen one rule was
+  /// shown a form that implied nothing was set, and confirming it changed the
+  /// list for reasons they never saw. Everything the sheet can show, it now
+  /// shows.
+  ///
+  /// Once a matchmaker has saved their own filters, those win: the sheet reads
+  /// them itself in `MatchProposalFilterSheet.show`, and this is only the
+  /// fallback.
   MatchProposalFilters _defaultSuggestionFilters(Person sourcePerson) {
     final MatchPreferences preferences = MatchPreferences.forPerson(
       sourcePerson,
@@ -2770,6 +2781,9 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     return MatchProposalFilters(
       minAge: preferences.minAge ?? femaleAgeRange?.minAge,
       maxAge: preferences.maxAge ?? femaleAgeRange?.maxAge,
+      minHeight: preferences.minHeightCm,
+      maxHeight: preferences.maxHeightCm,
+      maritalStatuses: preferences.maritalStatuses,
       religiousLevels: preferences.religiousLevels,
       religiousLevelOtherLabels: preferences.religiousLevelOtherLabels,
       profileStatuses: const <ProfileStatus>[],

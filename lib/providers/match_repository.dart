@@ -13,6 +13,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
+import 'package:shadchan/services/dating_status_memory.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:uuid/uuid.dart';
@@ -254,6 +255,24 @@ class MatchRepository extends ChangeNotifier {
     );
     // A couple that starts dating is no longer available to anyone else.
     if (newStatus == MatchStatus.dating) {
+      // Before the status is overwritten, not after. What each side was is the
+      // only thing that can say where to put them back when the couple stop
+      // seeing each other — see [DatingStatusMemory].
+      for (final String personId in <String>[
+        match.personAId,
+        match.personBId,
+      ]) {
+        final ProfileStatus? before = resolvePerson
+            ?.call(personId)
+            ?.profileStatus;
+        if (before != null) {
+          await DatingStatusMemory.remember(
+            matchId: matchId,
+            personId: personId,
+            status: before,
+          );
+        }
+      }
       await markPersonBusy?.call(match.personAId, matchId);
       await markPersonBusy?.call(match.personBId, matchId);
       await _createNote(
@@ -263,6 +282,15 @@ class MatchRepository extends ChangeNotifier {
         isAutomatic: true,
       );
     } else if (newStatus == MatchStatus.married) {
+      // Nothing to put back for a couple who married.
+      await DatingStatusMemory.forget(
+        matchId: matchId,
+        personId: match.personAId,
+      );
+      await DatingStatusMemory.forget(
+        matchId: matchId,
+        personId: match.personBId,
+      );
       await markPersonMazelTov?.call(match.personAId, matchId);
       await markPersonMazelTov?.call(match.personBId, matchId);
       await _createNote(
@@ -284,22 +312,36 @@ class MatchRepository extends ChangeNotifier {
     _refreshNotifications();
   }
 
-  /// Puts both sides of a proposal that has left "יוצאים" back to "פנוי".
+  /// Puts both sides of a proposal that has left "יוצאים" back where they were.
   ///
   /// The guard is the whole point. "תפוס" is not owned by one proposal: the
   /// matchmaker can set it by hand, and somebody can be out with a second
   /// candidate. So a side is only freed when they are still "תפוס" *and* no
   /// other proposal of theirs is dating; anything else is somebody else's
   /// decision to undo.
+  ///
+  /// **Back to what they were, not always to "פנוי".** Almost everybody was
+  /// available before the couple went out and this is the same thing it always
+  /// did — but a candidate who was "בהפסקה" when the proposal moved is put back
+  /// on their break rather than quietly returned to the pool. See
+  /// [DatingStatusMemory].
   Future<void> _releaseFromDating(MatchIdea match) async {
     for (final String personId in <String>[match.personAId, match.personBId]) {
       if (resolvePerson?.call(personId)?.profileStatus != ProfileStatus.busy) {
+        // Whatever they are now, it is not this proposal's to undo — but the
+        // note about what they used to be is dead either way.
+        await DatingStatusMemory.forget(matchId: match.id, personId: personId);
         continue;
       }
       if (_isDatingElsewhere(personId, excludingMatchId: match.id)) {
         continue;
       }
-      await markPersonAvailable?.call(personId, match.id);
+      final ProfileStatus restored = DatingStatusMemory.restoreFor(
+        matchId: match.id,
+        personId: personId,
+      );
+      await DatingStatusMemory.forget(matchId: match.id, personId: personId);
+      await restorePersonStatus?.call(personId, restored, match.id);
     }
   }
 
@@ -322,10 +364,12 @@ class MatchRepository extends ChangeNotifier {
   /// Marks both people as "מזל טוב" when the proposal becomes a wedding.
   Future<void> Function(String personId, String matchId)? markPersonMazelTov;
 
-  /// Marks a person as "פנוי" again. Called only through [_releaseFromDating],
-  /// which owns the decision about whether freeing them is this proposal's to
-  /// make.
-  Future<void> Function(String personId, String matchId)? markPersonAvailable;
+  /// Puts a person back to the status they held before this proposal marked
+  /// them "תפוס" — usually "פנוי", sometimes "בהפסקה". Called only through
+  /// [_releaseFromDating], which owns the decision about whether freeing them
+  /// is this proposal's to make.
+  Future<void> Function(String personId, ProfileStatus status, String matchId)?
+  restorePersonStatus;
 
   /// Records a history event on a person. Wired to
   /// [PersonRepository.logEvent] in `main.dart` so proposal outcomes are logged
@@ -353,9 +397,14 @@ class MatchRepository extends ChangeNotifier {
       return;
     }
 
+    // An emptied note is no note. Storing the empty string instead of null
+    // left the reminder carrying a note that reads as absent everywhere in the
+    // app except the notification, which prints `reminderNote ?? '...'` and so
+    // fired with an empty body.
+    final String trimmedNote = (note ?? '').trim();
     match
       ..reminderDate = date
-      ..reminderNote = date == null ? null : note
+      ..reminderNote = date == null || trimmedNote.isEmpty ? null : trimmedNote
       ..updatedAt = DateTime.now();
     await match.save();
     notifyListeners();
@@ -887,6 +936,7 @@ class MatchRepository extends ChangeNotifier {
     required String text,
     required DateTime createdAt,
     required bool isAutomatic,
+    String? mazelTovFrom,
   }) async {
     final MatchNote note = MatchNote(
       id: _uuid.v4(),
@@ -894,8 +944,47 @@ class MatchRepository extends ChangeNotifier {
       text: text,
       createdAt: createdAt,
       isAutomatic: isAutomatic,
+      mazelTovFrom: mazelTovFrom,
     );
     await _noteBox.put(note.id, note);
+  }
+
+  /// Files a "מזל טוב" from another matchmaker into this proposal's journal.
+  ///
+  /// **The journal is the inbox.** The alternative was a message list
+  /// somewhere else in the app, with its own unread state and its own empty
+  /// screen for the ninety-nine per cent of matchmakers who never receive one.
+  /// A congratulation is about one couple, it arrives once, and the place
+  /// somebody would go to read it is the same place they already read
+  /// everything else about that couple.
+  ///
+  /// Returns false when the proposal is not on this device — a message for a
+  /// proposal that has since been deleted is dropped rather than filed against
+  /// nothing.
+  ///
+  /// Not counted as activity: being congratulated is not work, and a matchmaker
+  /// whose score moved because other people were kind would be the wrong kind
+  /// of scoreboard entirely.
+  Future<bool> addMazelTov({
+    required String matchId,
+    required String text,
+    required String fromName,
+    DateTime? at,
+  }) async {
+    if (getById(matchId) == null) {
+      return false;
+    }
+    await _createNote(
+      matchId: matchId,
+      text: text.trim(),
+      createdAt: at ?? DateTime.now(),
+      isAutomatic: true,
+      // Never empty: a nameless sender is still a person, and the journal
+      // says so rather than leaving the line looking self-written.
+      mazelTovFrom: fromName.trim().isEmpty ? 'שדכן מהקהילה' : fromName.trim(),
+    );
+    notifyListeners();
+    return true;
   }
 
   Future<void> _touchMatch(String matchId, DateTime updatedAt) async {

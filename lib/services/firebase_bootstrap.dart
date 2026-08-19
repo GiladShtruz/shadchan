@@ -13,6 +13,19 @@ const String _appCheckDebugToken = String.fromEnvironment(
   'APP_CHECK_DEBUG_TOKEN',
 );
 
+/// Whether App Check is wired up at all.
+///
+/// Off while the Play Integrity side of the project is still unconfigured. A
+/// registered provider that cannot attest is worse than no provider: the first
+/// exchange is refused, the SDK throttles itself, and every AI call after it
+/// fails with "Too many attempts" — so the feature is simply gone for everyone
+/// who installed from the store. Skipping `activate` sends the request with no
+/// App Check token instead, which the backend accepts for as long as
+/// enforcement stays off in the console. Those two therefore switch together:
+/// build with `--dart-define=APP_CHECK_ENABLED=true` only once enforcement is
+/// meant to be on.
+const bool _appCheckEnabled = bool.fromEnvironment('APP_CHECK_ENABLED');
+
 /// Brings Firebase up so the AI import flows have an authenticated channel to
 /// Gemini. Firebase is used *only* as that channel — no person, note, photo or
 /// match ever leaves Hive, so the app stays exactly as local-first as it was.
@@ -116,10 +129,19 @@ abstract final class FirebaseBootstrap {
     await _ensureSignedIn();
   }
 
-  /// App Check must be active before any Firebase AI call, so that Gemini
-  /// access is bound to genuine installs of this app rather than to anyone who
-  /// extracts the config out of the APK.
+  /// Activates App Check, when this build has it turned on, before any
+  /// Firebase AI call — so that Gemini access is bound to genuine installs of
+  /// this app rather than to anyone who extracts the config out of the APK.
+  ///
+  /// Returning early is never an error: it leaves the AI calls unattested,
+  /// which is the same position the app was in before App Check existed.
   static Future<void> _activateAppCheck() async {
+    if (!_appCheckEnabled) {
+      debugPrint('AI_IMPORT App Check disabled at build time');
+      _appCheckError = 'מבוטל';
+      return;
+    }
+
     final String? debugToken = _appCheckDebugToken.trim().isEmpty
         ? null
         : _appCheckDebugToken.trim();

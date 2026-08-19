@@ -99,6 +99,16 @@
 		<true/>
 		<key>LSSupportsOpeningDocumentsInPlace</key>
 		<true/>
+		<!-- The app never opens the camera — every photo comes from the gallery
+		     (`ImageSource.gallery` in lib/services/photo_picker_service.dart).
+		     The string is here because `image_picker`'s iOS plugin links
+		     `UIImagePickerController` with its camera source either way, and App
+		     Store Connect rejects a binary that references the camera API with no
+		     purpose string (ITMS-90683) regardless of whether the app calls it.
+		     It is worded for the day capture is offered, so nothing has to change
+		     then. -->
+		<key>NSCameraUsageDescription</key>
+		<string>כדי לצלם תמונה ולהוסיף אותה לכרטיס האישי</string>
 		<key>NSContactsUsageDescription</key>
 		<string>כדי לייבא אנשים במהירות מתוך אנשי הקשר שלך</string>
 		<key>NSPhotoLibraryUsageDescription</key>

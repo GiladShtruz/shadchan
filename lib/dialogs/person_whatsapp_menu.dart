@@ -80,13 +80,123 @@ abstract final class PersonWhatsAppMenu {
         ? WhatsAppUtils.sendCardTo(person, other)
         : WhatsAppUtils.openChat(person);
   }
+}
 
-  static String _firstName(Person person) {
-    final String first = person.firstName.trim();
-    if (first.isNotEmpty) {
-      return first;
-    }
-    final String full = person.fullName.trim();
-    return full.isEmpty ? 'המועמד' : full;
+/// What to call somebody in a line of copy: their first name, or the best
+/// stand-in there is. Shared by both sheets below and above so a candidate is
+/// never "המועמד" in one and their full name in the other.
+String _firstName(Person person) {
+  final String first = person.firstName.trim();
+  if (first.isNotEmpty) {
+    return first;
   }
+  final String full = person.fullName.trim();
+  return full.isEmpty ? 'המועמד' : full;
+}
+
+/// The WhatsApp button on the "יאללה לקדם" row of a proposal.
+///
+/// **One button, both candidates, everything it can do in one list.**
+/// [PersonWhatsAppMenu] belongs to a person and is drawn on each side's own
+/// avatar; this belongs to the *proposal* and is what the matchmaker reaches
+/// for when the line under the pair says there is something to push forward.
+/// Making them pick a side first and an action second would be two taps to do
+/// the thing the row exists to prompt, so all four are here at once — a chat
+/// with each of them, and each one's card sent to the other.
+///
+/// Sending a card is offered only where there is one to send: an empty
+/// "כרטיס" arrives as a message with nothing in it, and the row that would
+/// have offered it is simply absent.
+abstract final class MatchWhatsAppSheet {
+  /// Whether the button is worth drawing at all. Nobody to message, no button.
+  static bool isAvailable({required Person? female, required Person? male}) =>
+      _hasPhone(female) || _hasPhone(male);
+
+  static bool _hasPhone(Person? person) =>
+      (person?.phone ?? '').trim().isNotEmpty;
+
+  static bool _hasCard(Person? person) =>
+      (person?.description ?? '').trim().isNotEmpty;
+
+  /// Returns false when something was chosen and could not be opened, so the
+  /// caller can say so. Dismissing is not a failure.
+  static Future<bool> open(
+    BuildContext context, {
+    required Person? female,
+    required Person? male,
+  }) async {
+    final _WhatsAppChoice? choice = await showModalBottomSheet<_WhatsAppChoice>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        final ThemeData theme = Theme.of(sheetContext);
+
+        List<Widget> rowsFor(Person? person, Person? other) {
+          if (person == null || !_hasPhone(person)) {
+            return const <Widget>[];
+          }
+          final String name = _firstName(person);
+          return <Widget>[
+            ListTile(
+              leading: const FaIcon(
+                FontAwesomeIcons.whatsapp,
+                color: Color(0xFF25D366),
+              ),
+              title: Text('פתיחת שיחה עם $name'),
+              onTap: () => Navigator.of(
+                sheetContext,
+              ).pop(_WhatsAppChoice(person: person, other: null)),
+            ),
+            if (other != null && _hasCard(other))
+              ListTile(
+                leading: Icon(
+                  Icons.contact_mail_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: Text('שליחת הכרטיס של ${_firstName(other)} אל $name'),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_WhatsAppChoice(person: person, other: other)),
+              ),
+          ];
+        }
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                title: Text(
+                  'WhatsApp',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                subtitle: const Text('שיחה מהירה, או שליחת הכרטיס של הצד השני'),
+              ),
+              ...rowsFor(female, male),
+              ...rowsFor(male, female),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (choice == null) {
+      return true;
+    }
+    final Person? other = choice.other;
+    return other == null
+        ? WhatsAppUtils.openChat(choice.person)
+        : WhatsAppUtils.sendCardTo(choice.person, other);
+  }
+}
+
+/// What was picked: whom to message, and whose card to send them (or none).
+class _WhatsAppChoice {
+  const _WhatsAppChoice({required this.person, required this.other});
+
+  final Person person;
+  final Person? other;
 }

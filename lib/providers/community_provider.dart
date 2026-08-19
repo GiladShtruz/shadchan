@@ -32,6 +32,7 @@ class CommunityProvider extends ChangeNotifier {
   bool _publishing = false;
   bool _pulledHidden = false;
   String _name = '';
+  String? _photoPath;
 
   /// This device's own figures, or null before the first refresh.
   CommunityMemberCounts? get myCounts => _counts;
@@ -115,6 +116,7 @@ class CommunityProvider extends ChangeNotifier {
     required UserProfileProvider profile,
   }) async {
     _name = profile.name ?? '';
+    _photoPath = profile.photoPath;
     final CommunityMemberCounts counts = CommunityCounts.build(
       people: people.getAll(),
       matches: matches.getAll(),
@@ -149,10 +151,17 @@ class CommunityProvider extends ChangeNotifier {
         }
       }
 
+      // The picture, if there is one and it is allowed. Cheap when nothing
+      // changed — see `CommunityService.uploadAvatar`.
+      final String photoUrl = await CommunityService.uploadAvatar(
+        localPath: _photoPath,
+        hidden: _hidden,
+      );
       await CommunityService.publish(
         counts: counts,
         name: _name,
         hidden: _hidden,
+        photoUrl: photoUrl,
       );
       // This device's own numbers have just moved, so every cached community
       // figure is one publish out of date.

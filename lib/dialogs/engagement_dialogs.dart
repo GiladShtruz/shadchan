@@ -29,11 +29,29 @@ abstract final class EngagementFlow {
   /// community note is the part that can afford to be lost.
   static Future<void> celebrate(
     BuildContext context, {
+    required String matchId,
     required String firstNameA,
     required String firstNameB,
     required String matchmakerName,
+    required bool shareName,
+    required bool private,
   }) async {
-    final String? engagementId = await CommunityEngagementsService.record();
+    // "שמור על הפרטיות שלי" covers this too. A wedding is something this
+    // matchmaker did, and somebody who asked for none of what they do to be
+    // shared has not made an exception for the best of it.
+    if (private) {
+      return;
+    }
+    final String? engagementId = await CommunityEngagementsService.record(
+      // Carried so other matchmakers can send a bracha back into this
+      // proposal's own journal. A uuid from this phone, meaningless anywhere
+      // else — see `CommunityEngagement.matchId`.
+      matchId: matchId,
+      // Only for somebody who already publishes their name on the leaderboard.
+      // Everybody else's couple is announced without one, and can still be
+      // congratulated.
+      matchmakerName: shareName ? matchmakerName : '',
+    );
     if (engagementId == null || !context.mounted) {
       return;
     }

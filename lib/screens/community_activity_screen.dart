@@ -13,7 +13,6 @@ import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/community_achievements.dart';
 import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/utils/dating_history.dart';
@@ -23,7 +22,7 @@ import 'package:shadchan/widgets/community_widgets.dart';
 /// "הפעילות שלי" — everything the app counts, on one screen, in the order a
 /// matchmaker cares about it.
 ///
-/// **The hierarchy is the design.** ההישג → הנתונים → אבני הדרך → הקצב →
+/// **The hierarchy is the design.** הפתיחה → הנתונים → הקצב →
 /// פעילות הקהילה → הדירוג. It opens by naming the best thing that has happened
 /// in this database, in a sentence rather than a figure, and only then turns
 /// the work into counts, ladders and a score. The community comes after all of
@@ -63,9 +62,15 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
   /// cached figures drawn again.
   int _liveGeneration = 0;
 
+  /// Which of the eligible opening lines this visit gets. Read once, so it does
+  /// not change under the reader while the screen is open, and moved on
+  /// immediately so the next visit opens on a different one.
+  late final int _greetingCursor = CommunityProfileStore.greetingCursor;
+
   @override
   void initState() {
     super.initState();
+    CommunityProfileStore.setGreetingCursor(_greetingCursor + 1);
     // Not during the opening frame: this recomputes the local ledgers, writes
     // this device's counters and then reads the community back.
     WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
@@ -134,13 +139,14 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
             children: <Widget>[
               _CelebrationHeader(
-                breakdown: everything,
+                week: community.myBreakdown(CommunityPeriod.week),
+                month: community.myBreakdown(CommunityPeriod.month),
+                allTime: everything,
                 firstName: profile.firstName ?? profile.name ?? '',
+                cursor: _greetingCursor,
               ),
               const SizedBox(height: 16),
               _MyNumbersCard(breakdown: everything),
-              const SizedBox(height: 16),
-              _MilestonesCard(breakdown: everything),
               const SizedBox(height: 16),
               _MyActivityCard(
                 period: _minePeriod,
@@ -148,6 +154,18 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
                     setState(() => _minePeriod = period),
                 points: community.myPoints(_minePeriod),
                 bars: bars,
+                onMonth: (ActivityBucket bucket) => _MonthSheet.show(
+                  context,
+                  label: bucket.period.label,
+                  breakdown: ActivityStats.breakdownBetween(
+                    start: bucket.period.start,
+                    end: bucket.period.end,
+                    people: people,
+                    matches: matches,
+                    matchStatusEvents: statusEvents,
+                    excludedFromDating: excluded,
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               if (signedIn) ...<Widget>[
@@ -175,8 +193,7 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
 /// the copper — one per kind of act, so a wedding is never the same colour as a
 /// contact import. Lightened in the dark theme, where the saturated originals
 /// are too dark to read as ink on their own wash.
-Color _tone(Color base, ThemeData theme) =>
-    theme.brightness == Brightness.dark
+Color _tone(Color base, ThemeData theme) => theme.brightness == Brightness.dark
     ? Color.lerp(base, Colors.white, 0.45)!
     : base;
 
@@ -187,76 +204,130 @@ const Color _weddingsTone = AppColors.secondary;
 
 // --- 0. The one sentence worth opening on ------------------------------------
 
-/// The header: who this is, and the best true thing that can be said about it.
+/// The header: a warm, true sentence about what this matchmaker has been doing.
 ///
-/// **The headline is derived, never generic.** "כל הכבוד!" over an empty
-/// database is the app congratulating somebody for installing it, which is
-/// worth less than nothing; the line here names the highest real thing that has
-/// happened — a wedding if there was one, otherwise a couple, otherwise an
-/// idea, otherwise a friend — and when there is genuinely nothing yet it says
-/// so warmly and points at the first step.
+/// **It opens on the work, not on the trophy.** "5 זוגות כבר יצאו לדרך בזכותך"
+/// is a wonderful thing to be told once and a strange thing to be told every
+/// time — it is a fact about the past that does not move, so on the fourth
+/// visit it reads as the app having nothing new to say. What changes week to
+/// week is the work: friends added, ideas opened, thought given to people. That
+/// is what the line leads with.
+///
+/// **Several lines, and a different one each visit.** Every eligible sentence
+/// is true of this database right now; the cursor picks which of them to say,
+/// so somebody who opens the screen three days running is greeted three
+/// different ways instead of reading the same sentence until it is invisible.
+///
+/// **Nothing is ever congratulated into existence.** Each line carries the
+/// condition that makes it true, and a database with nothing in it falls
+/// through to an invitation rather than to praise for having installed an app.
 class _CelebrationHeader extends StatelessWidget {
-  const _CelebrationHeader({required this.breakdown, required this.firstName});
+  const _CelebrationHeader({
+    required this.week,
+    required this.month,
+    required this.allTime,
+    required this.firstName,
+    required this.cursor,
+  });
 
-  final ActivityBreakdown breakdown;
+  final ActivityBreakdown week;
+  final ActivityBreakdown month;
+  final ActivityBreakdown allTime;
   final String firstName;
+  final int cursor;
 
-  ({IconData icon, Color tone, String headline, String body}) get _story {
-    if (breakdown.engagements > 0) {
-      return (
-        icon: Icons.diamond_outlined,
-        tone: _weddingsTone,
-        headline: breakdown.engagements == 1
-            ? 'בית אחד כבר קם בזכותך'
-            : '${breakdown.engagements} בתים כבר קמו בזכותך',
-        body:
-            'מאחורי כל אחד מהם היו מחשבה, טלפונים והרבה סבלנות. '
-            'אין הרבה דברים בעולם ששווים את זה.',
-      );
+  /// Every sentence that is true right now, in the order they were written.
+  ///
+  /// Ordered from the most immediate to the most enduring, so a quiet week
+  /// falls back to the month and then to what the whole database has done —
+  /// but the cursor may pick any of them, because all of them are true.
+  List<({IconData icon, Color tone, String headline, String body})>
+  get _candidates {
+    final List<({IconData icon, Color tone, String headline, String body})>
+    lines = <({IconData icon, Color tone, String headline, String body})>[];
+
+    if (week.points > 0) {
+      lines.add((
+        icon: Icons.auto_awesome_rounded,
+        tone: _friendsTone,
+        headline:
+            'כל הכבוד! עשית השבוע ${week.points} פעולות '
+            'כדי לחשוב על החברים שלך',
+        body: 'זה בדיוק מה שמזיז דברים. ממשיכים.',
+      ));
     }
-    if (breakdown.couples > 0) {
-      return (
-        icon: Icons.favorite_rounded,
-        tone: _couplesTone,
-        headline: breakdown.couples == 1
-            ? 'זוג אחד כבר יצא לדרך בזכותך'
-            : '${breakdown.couples} זוגות כבר יצאו לדרך בזכותך',
-        body:
-            'כל זוג כזה התחיל ממחשבה שלך על שני אנשים. '
-            'שיהיה בשעה טובה.',
-      );
+    if (week.friends > 0) {
+      lines.add((
+        icon: Icons.person_add_alt_1_outlined,
+        tone: _friendsTone,
+        headline: week.friends == 1
+            ? 'הוספת השבוע עוד חבר למאגר'
+            : 'הוספת השבוע ${week.friends} חברים למאגר',
+        body: 'כל אחד מהם הוא רעיון שעוד מחכה לקרות.',
+      ));
     }
-    if (breakdown.ideas > 0) {
-      return (
+    if (week.ideas > 0) {
+      lines.add((
         icon: Icons.lightbulb_outline_rounded,
         tone: _ideasTone,
-        headline: breakdown.ideas == 1
-            ? 'הרעיון הראשון שלך כבר בדרך'
-            : '${breakdown.ideas} רעיונות כבר יצאו מהראש שלך אל המציאות',
-        body:
-            'לא כל רעיון מגיע לחופה, אבל בלי הרעיונות שום דבר לא קורה. '
-            'ממשיכים.',
-      );
+        headline: week.ideas == 1
+            ? 'פתחת השבוע רעיון חדש'
+            : 'פתחת השבוע ${week.ideas} רעיונות',
+        body: 'לא כל רעיון מגיע לחופה, אבל בלעדיהם שום דבר לא קורה.',
+      ));
     }
-    if (breakdown.friends > 0) {
-      return (
+    if (month.points > 0) {
+      lines.add((
+        icon: Icons.calendar_month_outlined,
+        tone: _ideasTone,
+        headline: 'החודש כבר ${month.points} נקודות פעילות',
+        body: 'קצב יפה. תודה על כל מחשבה שהולכת לחברים שלך.',
+      ));
+    }
+    if (allTime.couples > 0) {
+      lines.add((
+        icon: Icons.favorite_rounded,
+        tone: _couplesTone,
+        headline: allTime.couples == 1
+            ? 'זוג אחד כבר יצא לדרך בזכותך'
+            : '${allTime.couples} זוגות כבר יצאו לדרך בזכותך',
+        body: 'כל אחד מהם התחיל ממחשבה שלך על שני אנשים.',
+      ));
+    }
+    if (allTime.engagements > 0) {
+      lines.add((
+        icon: Icons.diamond_outlined,
+        tone: _weddingsTone,
+        headline: allTime.engagements == 1
+            ? 'בית אחד כבר קם בזכותך'
+            : '${allTime.engagements} בתים כבר קמו בזכותך',
+        body: 'אין הרבה דברים בעולם ששווים את זה.',
+      ));
+    }
+    if (allTime.friends > 0) {
+      lines.add((
         icon: Icons.people_alt_outlined,
         tone: _friendsTone,
-        headline: breakdown.friends == 1
-            ? 'החבר הראשון שלך במאגר'
-            : '${breakdown.friends} חברים כבר במאגר שלך',
+        headline: '${allTime.friends} חברים סומכים עליך',
+        body: 'תמיד שווה לעצור רגע ולחשוב על אחד מהם.',
+      ));
+    }
+    return lines;
+  }
+
+  ({IconData icon, Color tone, String headline, String body}) get _story {
+    final List<({IconData icon, Color tone, String headline, String body})>
+    lines = _candidates;
+    if (lines.isEmpty) {
+      return (
+        icon: Icons.auto_awesome_outlined,
+        tone: _friendsTone,
+        headline: 'הכול מתחיל מחבר אחד',
         body:
-            'כל שם כאן הוא אדם אמיתי שמחכה לרעיון הנכון. '
-            'עכשיו מתחיל החלק המעניין.',
+            'מוסיפים חבר, פותחים רעיון — והמספרים בעמוד הזה מתחילים לספר סיפור.',
       );
     }
-    return (
-      icon: Icons.auto_awesome_outlined,
-      tone: _friendsTone,
-      headline: 'הכול מתחיל מחבר אחד',
-      body:
-          'מוסיפים חבר, פותחים רעיון — והמספרים בעמוד הזה מתחילים לספר סיפור.',
-    );
+    return lines[cursor % lines.length];
   }
 
   @override
@@ -350,7 +421,7 @@ class _MyNumbersCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CommunityCard(
-      title: 'הדרך שלך עד היום',
+      title: 'הנתונים שלך',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -480,176 +551,7 @@ class _NumberTile extends StatelessWidget {
   }
 }
 
-// --- 2. אבני דרך -------------------------------------------------------------
-
-/// The ladders, and where the matchmaker stands on each of them.
-///
-/// **The same ladders the app already congratulates people on**
-/// ([CommunityAchievements]), drawn instead of announced. A milestone dialog is
-/// a moment and then it is gone; this is the place somebody can come back to
-/// and see that eleven more friends is a round number, which is a far better
-/// use of the same four lists.
-///
-/// **Nothing here is a target set by the app.** The next rung is stated, not
-/// demanded — no streaks, no "you are behind", no comparison with anybody —
-/// because the only thing worse than an app that ignores good work is one that
-/// nags about it.
-class _MilestonesCard extends StatelessWidget {
-  const _MilestonesCard({required this.breakdown});
-
-  final ActivityBreakdown breakdown;
-
-  @override
-  Widget build(BuildContext context) {
-    return CommunityCard(
-      title: 'אבני דרך',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _MilestoneRow(
-            icon: Icons.people_alt_outlined,
-            tone: _friendsTone,
-            label: 'חברים במאגר',
-            value: breakdown.friends,
-            ladder: CommunityAchievements.friendMilestones,
-            unit: 'חברים',
-          ),
-          _MilestoneRow(
-            icon: Icons.lightbulb_outline_rounded,
-            tone: _ideasTone,
-            label: 'רעיונות שנפתחו',
-            value: breakdown.ideas,
-            ladder: CommunityAchievements.ideaMilestones,
-            unit: 'רעיונות',
-          ),
-          _MilestoneRow(
-            icon: Icons.favorite_outline_rounded,
-            tone: _couplesTone,
-            label: 'זוגות שיצאו לדרך',
-            value: breakdown.couples,
-            ladder: CommunityAchievements.coupleMilestones,
-            unit: 'זוגות',
-          ),
-          _MilestoneRow(
-            icon: Icons.local_fire_department_outlined,
-            tone: _weddingsTone,
-            label: 'נקודות פעילות',
-            value: breakdown.points,
-            ladder: CommunityAchievements.pointMilestones,
-            unit: 'נקודות',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MilestoneRow extends StatelessWidget {
-  const _MilestoneRow({
-    required this.icon,
-    required this.tone,
-    required this.label,
-    required this.value,
-    required this.ladder,
-    required this.unit,
-  });
-
-  final IconData icon;
-  final Color tone;
-  final String label;
-  final int value;
-  final List<int> ladder;
-
-  /// The word after the number in "עוד 7 חברים".
-  final String unit;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color ink = _tone(tone, theme);
-    final int? reached = CommunityAchievements.reached(ladder, value);
-    final int? next = CommunityAchievements.next(ladder, value);
-
-    // From the rung just passed to the one ahead, so a bar that has just been
-    // reset by a milestone starts empty rather than nearly full.
-    final int floor = reached ?? 0;
-    final double progress = next == null || next <= floor
-        ? 1
-        : ((value - floor) / (next - floor)).clamp(0.0, 1.0);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(icon, size: 16, color: ink),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (reached != null) ...<Widget>[
-                Icon(
-                  Icons.workspace_premium_outlined,
-                  size: 14,
-                  color: ink.withValues(alpha: 0.9),
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  CommunityFigure.format(reached),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: ink,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                CommunityFigure.format(value),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              backgroundColor: ink.withValues(alpha: 0.12),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                ink.withValues(alpha: 0.85),
-              ),
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            next == null
-                ? 'עברת את כל אבני הדרך כאן. מרשים.'
-                : 'עוד ${CommunityFigure.format(next - value)} $unit '
-                      'ל־${CommunityFigure.format(next)}',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- 3. הקצב שלך ------------------------------------------------------------
+// --- 2. הקצב שלך ------------------------------------------------------------
 
 class _MyActivityCard extends StatelessWidget {
   const _MyActivityCard({
@@ -657,6 +559,7 @@ class _MyActivityCard extends StatelessWidget {
     required this.onPeriod,
     required this.points,
     required this.bars,
+    required this.onMonth,
   });
 
   final CommunityPeriod period;
@@ -664,21 +567,16 @@ class _MyActivityCard extends StatelessWidget {
   final int points;
   final List<ActivityBucket> bars;
 
+  /// Tapping a bar. The month's own figures open in a small sheet over the
+  /// chart rather than on a screen of their own — see [_MonthSheet].
+  final ValueChanged<ActivityBucket> onMonth;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
     return CommunityCard(
       title: 'הקצב שלך',
-      trailing: TextButton(
-        onPressed: () => context.push('/stats/month'),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        child: const Text('לפי חודשים'),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -690,7 +588,7 @@ class _MyActivityCard extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: <Widget>[
-              Expanded(
+              Flexible(
                 child: CommunityFigure(
                   value: points,
                   label: 'נקודות פעילות ${period.label}',
@@ -705,7 +603,7 @@ class _MyActivityCard extends StatelessWidget {
           ),
           const _WeeklyBestLine(),
           const SizedBox(height: 16),
-          _ActivityChart(bars: bars),
+          _ActivityChart(bars: bars, onTapMonth: onMonth),
           const SizedBox(height: 10),
           Text(
             ActivityPoints.shortExplanation,
@@ -806,15 +704,101 @@ class _WeeklyBestLine extends StatelessWidget {
   }
 }
 
+/// One month's figures, opened by tapping its bar.
+///
+/// **Where the separate "לפי חודשים" screen used to be.** That screen was a
+/// second home for the same four numbers, reached by a link nobody could guess
+/// the destination of, and it answered a question — "what happened in March?" —
+/// that is asked while looking at March's bar. Asked there, it is answered
+/// there.
+class _MonthSheet extends StatelessWidget {
+  const _MonthSheet({required this.label, required this.breakdown});
+
+  final String label;
+  final ActivityBreakdown breakdown;
+
+  static Future<void> show(
+    BuildContext context, {
+    required String label,
+    required ActivityBreakdown breakdown,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext context) =>
+          _MonthSheet(label: label, breakdown: breakdown),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              label,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 12),
+            CommunityFigure(
+              value: breakdown.points,
+              label: 'נקודות פעילות בחודש הזה',
+            ),
+            const SizedBox(height: 10),
+            CommunityStatLine(
+              icon: Icons.person_add_alt_1_outlined,
+              label: 'חברים שהוספת',
+              value: breakdown.friends,
+            ),
+            CommunityStatLine(
+              icon: Icons.lightbulb_outline_rounded,
+              label: 'רעיונות שפתחת',
+              value: breakdown.ideas,
+            ),
+            CommunityStatLine(
+              icon: Icons.favorite_outline_rounded,
+              label: 'זוגות שיצאו לדייט',
+              value: breakdown.couples,
+            ),
+            CommunityStatLine(
+              icon: Icons.diamond_outlined,
+              label: 'אירוסין/חתונות',
+              value: breakdown.engagements,
+            ),
+            if (breakdown.points == 0) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                'חודש שקט. גם זה קורה.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The personal activity chart: one bar per Hebrew month, oldest first.
 ///
 /// **Only the reader is on it.** A second series for the community would turn
 /// a picture of somebody's own year into a picture of how far behind they are,
 /// and the community's own figures are two cards further down where they belong.
 class _ActivityChart extends StatelessWidget {
-  const _ActivityChart({required this.bars});
+  const _ActivityChart({required this.bars, required this.onTapMonth});
 
   final List<ActivityBucket> bars;
+  final ValueChanged<ActivityBucket> onTapMonth;
 
   static const double _height = 76;
 
@@ -842,48 +826,52 @@ class _ActivityChart extends StatelessWidget {
       children: <Widget>[
         for (final ActivityBucket bucket in bars)
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    '${bucket.points}',
-                    maxLines: 1,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: bucket.points == 0
-                          ? theme.colorScheme.onSurfaceVariant
-                          : lead,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // A hairline for an empty month rather than nothing at all:
-                  // a gap in a row of bars reads as missing data.
-                  Container(
-                    height: (_height * bucket.points / peak).clamp(
-                      2.0,
-                      _height,
-                    ),
-                    decoration: BoxDecoration(
-                      color: lead.withValues(
-                        alpha: bucket.points == 0 ? 0.2 : 0.75,
-                      ),
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(6),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onTapMonth(bucket),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      '${bucket.points}',
+                      maxLines: 1,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: bucket.points == 0
+                            ? theme.colorScheme.onSurfaceVariant
+                            : lead,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    bucket.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 4),
+                    // A hairline for an empty month rather than nothing at all:
+                    // a gap in a row of bars reads as missing data.
+                    Container(
+                      height: (_height * bucket.points / peak).clamp(
+                        2.0,
+                        _height,
+                      ),
+                      decoration: BoxDecoration(
+                        color: lead.withValues(
+                          alpha: bucket.points == 0 ? 0.2 : 0.75,
+                        ),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(6),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      bucket.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -892,7 +880,7 @@ class _ActivityChart extends StatelessWidget {
   }
 }
 
-// --- 4. פעילות הקהילה -------------------------------------------------------
+// --- 3. פעילות הקהילה -------------------------------------------------------
 
 class _CommunityActivityCard extends StatefulWidget {
   const _CommunityActivityCard({super.key, required this.private});
@@ -1084,7 +1072,7 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
   }
 }
 
-// --- 5. דירוג השדכנים -------------------------------------------------------
+// --- 4. דירוג השדכנים -------------------------------------------------------
 
 class _LeaderboardCard extends StatefulWidget {
   const _LeaderboardCard({super.key});

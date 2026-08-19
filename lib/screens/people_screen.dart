@@ -26,11 +26,26 @@ class PeopleScreen extends StatefulWidget {
     this.initialShowArchived = false,
     this.initialProfileStatuses = const <ProfileStatus>[],
     this.initialSort = PeopleSortOption.alphabetical,
+    this.importBatchId,
   });
 
   final bool initialShowArchived;
   final List<ProfileStatus> initialProfileStatuses;
   final PeopleSortOption initialSort;
+
+  /// Show only the people one import just added, and nothing else.
+  ///
+  /// **A temporary view of the database, not a filter on it.** An import of
+  /// forty contacts drops forty half-finished cards into a list of six hundred
+  /// finished ones, and finding them again afterwards means remembering
+  /// forty names. Landing on just those forty — openable, editable, and
+  /// returnable-to — is the difference between an import somebody tidies up
+  /// and one they abandon.
+  ///
+  /// It is deliberately not one of the saved filters: the batch stops being
+  /// interesting the moment it has been gone through, and "לכל המאגר" leaves it
+  /// for good rather than adding another chip to clear.
+  final String? importBatchId;
 
   @override
   State<PeopleScreen> createState() => _PeopleScreenState();
@@ -49,6 +64,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
   bool _showArchived = false;
   PeopleSortOption _sortOption = PeopleSortOption.alphabetical;
 
+  /// Cleared by "לכל המאגר", which is the only way out of the batch view.
+  String? _importBatchId;
+
   /// Sort direction applied on top of [_sortOption]. `true` keeps each option's
   /// natural order; `false` reverses it ("עולה" / "יורד").
   bool _sortAscending = true;
@@ -62,6 +80,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
     _selectedProfileStatuses = List<ProfileStatus>.from(
       widget.initialProfileStatuses,
     );
+    _importBatchId = widget.importBatchId;
+    // Newest first inside the batch, so the order matches the order they were
+    // read out of the file.
+    if (_importBatchId != null) {
+      _sortOption = PeopleSortOption.newest;
+    }
   }
 
   @override
@@ -114,6 +138,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
       // scroll together as one page.
       body: Column(
         children: <Widget>[
+          if (_importBatchId != null)
+            _JustAddedBar(
+              count: visiblePeople.length,
+              onShowAll: () => setState(() => _importBatchId = null),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: _buildSearchRow(theme),
@@ -515,7 +544,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
     final String normalizedSearch = _searchController.text.trim().toLowerCase();
 
+    final String? batchId = _importBatchId;
     final List<Person> visiblePeople = filteredPeople.where((Person person) {
+      // The batch view answers one question and ignores every other control on
+      // the screen except the search box.
+      if (batchId != null && person.importBatchId != batchId) {
+        return false;
+      }
       final bool matchesSearch =
           normalizedSearch.isEmpty ||
           person.firstName.toLowerCase().contains(normalizedSearch) ||
@@ -993,6 +1028,64 @@ class _GenderTabs extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The bar above the list while it is showing one import's people.
+///
+/// It says what is being looked at and gives the one way out. No chip, no
+/// dismiss "x": leaving is a decision worth a labelled button, because
+/// everything else on the screen behaves differently while this is on.
+class _JustAddedBar extends StatelessWidget {
+  const _JustAddedBar({required this.count, required this.onShowAll});
+
+  final int count;
+  final VoidCallback onShowAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color tone = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+      color: tone.withValues(alpha: dark ? 0.16 : 0.10),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.playlist_add_check_rounded, size: 20, color: tone),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'האנשים שנוספו עכשיו',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  '$count במאגר · אפשר להיכנס לכל אחד, לעדכן ולחזור לכאן',
+                  maxLines: 2,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          TextButton(
+            onPressed: onShowAll,
+            style: TextButton.styleFrom(foregroundColor: tone),
+            child: const Text('לכל המאגר'),
+          ),
+        ],
       ),
     );
   }

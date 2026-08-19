@@ -198,10 +198,18 @@ class CommunityFigure extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        // Flexible, not a plain Text: this row is put in a narrowed column
+        // beside the pace chip on the activity screen, and it is read at 1.5x
+        // system text on the home block. A label that cannot give way turns
+        // either of those into an overflow stripe across the card.
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ],
@@ -575,7 +583,9 @@ class CommunityRankRow extends StatelessWidget {
       child: Row(
         children: <Widget>[
           mark(),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
+          _RankAvatar(url: entry.photoUrl),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               entry.name,
@@ -595,6 +605,56 @@ class CommunityRankRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One matchmaker's face on the leaderboard.
+///
+/// **A picture is what makes a board of names a room of people**, which is the
+/// whole reason the community area exists — the numbers were never the point.
+///
+/// The fallback is the app's own "somebody with no photo": the same neutral
+/// circle a friend without a picture and without a stated gender gets. The two
+/// gendered default illustrations are not used here on purpose — the app would
+/// have to publish each matchmaker's gender to pick between them, and adding a
+/// field to a collection every installed copy can read, in order to choose a
+/// drawing, is not a trade worth making.
+class _RankAvatar extends StatelessWidget {
+  const _RankAvatar({required this.url});
+
+  static const double _radius = 15;
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Widget fallback = CircleAvatar(
+      radius: _radius,
+      backgroundColor: theme.brightness == Brightness.dark
+          ? theme.colorScheme.surfaceContainerHighest
+          : AppColors.primaryLight,
+      child: Icon(
+        Icons.person_outline,
+        size: _radius * 1.15,
+        color: AppColors.primary,
+      ),
+    );
+
+    if (url.isEmpty) {
+      return fallback;
+    }
+    return ClipOval(
+      child: Image.network(
+        url,
+        width: _radius * 2,
+        height: _radius * 2,
+        fit: BoxFit.cover,
+        // A face that will not load must not leave a broken box in a list of
+        // people. It falls back to exactly what somebody with no photo gets.
+        errorBuilder: (_, _, _) => fallback,
       ),
     );
   }

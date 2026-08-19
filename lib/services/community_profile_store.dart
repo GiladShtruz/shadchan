@@ -21,6 +21,9 @@ abstract final class CommunityProfileStore {
   static const String _bestWeekAtKey = 'community.bestWeekKey';
   static const String _pendingBulkImportKey = 'community.pendingBulkImport';
   static const String _privateKey = 'community.privateMode';
+  static const String _avatarPathKey = 'community.avatarLocalPath';
+  static const String _avatarUrlKey = 'community.avatarUrl';
+  static const String _greetingKey = 'community.greetingCursor';
 
   /// From this many friends in one import, the app says something about it.
   ///
@@ -108,6 +111,52 @@ abstract final class CommunityProfileStore {
       _read(_privateKey) == true || _read(_privateKey) == 'true';
 
   static void setPrivate(bool private) => _write(_privateKey, private);
+
+  // --- The matchmaker's own picture on the leaderboard ----------------------
+
+  /// Which local photo the published avatar was made from, and the URL it
+  /// became.
+  ///
+  /// **So the picture is uploaded once, not twice a session.** Publishing runs
+  /// at every app open and pause; re-uploading an unchanged photo each time
+  /// would be a megabyte of somebody's data allowance a day for a picture
+  /// nobody has looked at. The local path is the cheapest thing that changes
+  /// exactly when the picture does — the picker writes a new file with a
+  /// timestamp in its name for every photo chosen.
+  static String get uploadedAvatarPath {
+    final Object? raw = _read(_avatarPathKey);
+    return raw is String ? raw : '';
+  }
+
+  static String get uploadedAvatarUrl {
+    final Object? raw = _read(_avatarUrlKey);
+    return raw is String ? raw : '';
+  }
+
+  static void rememberAvatar({required String path, required String url}) {
+    _write(_avatarPathKey, path);
+    _write(_avatarUrlKey, url);
+  }
+
+  // --- The line "הפעילות שלי" opens with -----------------------------------
+
+  /// Which of the eligible opening lines to use next.
+  ///
+  /// **A cursor rather than a random pick**, for the same reason the ideas
+  /// batches use one: randomness repeats, and a matchmaker who opens this
+  /// screen three days running and reads the same sentence each time stops
+  /// reading it. Walking the cursor guarantees a different one every visit for
+  /// as long as there is more than one true thing to say.
+  static int get greetingCursor {
+    final Object? raw = _read(_greetingKey);
+    if (raw is int) {
+      return raw;
+    }
+    return raw is String ? int.tryParse(raw) ?? 0 : 0;
+  }
+
+  static void setGreetingCursor(int value) =>
+      _write(_greetingKey, value.abs() % 1000);
 
   // --- The personal weekly best --------------------------------------------
 

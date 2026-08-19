@@ -184,11 +184,15 @@ abstract final class AppRouter {
                         ProfileStatus.values,
                       );
                   final PeopleSortOption sort = _parsePeopleSort(q['sort']);
+                  final String batch = (q['batch'] ?? '').trim();
                   return PeopleScreen(
                     key: ValueKey<String>('people:${state.uri}'),
                     initialShowArchived: archived,
                     initialProfileStatuses: statuses,
                     initialSort: sort,
+                    // Set by the import flow, which lands here on the people it
+                    // has just added. See `PeopleScreen.importBatchId`.
+                    importBatchId: batch.isEmpty ? null : batch,
                   );
                 },
                 routes: <RouteBase>[

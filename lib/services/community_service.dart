@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/community_period.dart';
@@ -104,11 +108,19 @@ class CommunityRankEntry {
     required this.uid,
     required this.name,
     required this.points,
+    this.photoUrl = '',
   });
 
   final String uid;
   final String name;
   final int points;
+
+  /// The matchmaker's own picture, or empty.
+  ///
+  /// **Their own face, never a candidate's**, published under exactly the same
+  /// consent as their name: a matchmaker who is hidden, private, or has not
+  /// answered the leaderboard question has no photo here and never gets one.
+  final String photoUrl;
 }
 
 /// The whole leaderboard for one window: the top ten, and where the reader
@@ -191,6 +203,14 @@ abstract final class CommunityService {
   /// hour old on the landing page reads as a broken feature.
   static const Duration _freshFor = Duration(minutes: 3);
 
+  /// How many member documents the fallback scan will read in one go.
+  ///
+  /// A ceiling rather than a page: past this the aggregate query is the only
+  /// sensible way to do it, and if it is failing at that size the answer is to
+  /// deploy the index, not to download the collection. Until the community is
+  /// that large this is simply the whole of it.
+  static const int _scanLimit = 400;
+
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   /// The account every read and write here goes through, or null.
@@ -221,6 +241,7 @@ abstract final class CommunityService {
     required CommunityMemberCounts counts,
     required String name,
     required bool hidden,
+    String photoUrl = '',
   }) async {
     final User? user = await _account();
     if (user == null) {
@@ -236,6 +257,9 @@ abstract final class CommunityService {
           // database itself contradicts. What is left against the uid is a row
           // of numbers.
           'name': hidden ? '' : name.trim(),
+          // A face travels further than a name, so it follows the same rule and
+          // is cleared by the same write. See [uploadAvatar].
+          'photoUrl': hidden ? '' : photoUrl.trim(),
           'hidden': hidden,
           for (final CommunityPeriod period in CommunityPeriod.values) ...{
             if (period.keyField case final String key)
@@ -296,11 +320,82 @@ abstract final class CommunityService {
     }
     try {
       await _db.collection(membersCollection).doc(user.uid).set(
-        <String, Object?>{'hidden': hidden, 'name': hidden ? '' : name.trim()},
+        <String, Object?>{
+          'hidden': hidden,
+          'name': hidden ? '' : name.trim(),
+          // Hiding takes the picture down in the same write for the same
+          // reason it erases the name: "we keep it but do not show it" is a
+          // promise this collection cannot make, because every installed copy
+          // of the app can read it.
+          if (hidden) 'photoUrl': '',
+        },
         SetOptions(merge: true),
       );
+      if (hidden) {
+        await _deleteAvatar(user.uid);
+      }
     } catch (_) {
       // Left to the next publish, which writes both fields too.
+    }
+  }
+
+  /// Puts this matchmaker's own picture where the leaderboard can draw it, and
+  /// answers with the URL.
+  ///
+  /// **Uploaded once per picture, not once per launch.** The last uploaded
+  /// path and URL are remembered locally ([CommunityProfileStore]); an
+  /// unchanged photo is answered from that memory without touching the
+  /// network, which matters because publishing happens twice a session.
+  ///
+  /// Returns an empty string — and takes down whatever is already there — for
+  /// a matchmaker who is hidden, has no photo, or whose photo file has gone.
+  /// Never throws: a picture is the least important thing on this screen.
+  static Future<String> uploadAvatar({
+    required String? localPath,
+    required bool hidden,
+  }) async {
+    final User? user = await _account();
+    if (user == null) {
+      return '';
+    }
+
+    final String path = (localPath ?? '').trim();
+    if (hidden || path.isEmpty || !File(path).existsSync()) {
+      if (CommunityProfileStore.uploadedAvatarUrl.isNotEmpty) {
+        await _deleteAvatar(user.uid);
+        CommunityProfileStore.rememberAvatar(path: '', url: '');
+      }
+      return '';
+    }
+
+    if (CommunityProfileStore.uploadedAvatarPath == path &&
+        CommunityProfileStore.uploadedAvatarUrl.isNotEmpty) {
+      return CommunityProfileStore.uploadedAvatarUrl;
+    }
+
+    try {
+      final Reference ref = _avatarRef(user.uid);
+      await ref.putFile(
+        File(path),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      final String url = await ref.getDownloadURL();
+      CommunityProfileStore.rememberAvatar(path: path, url: url);
+      return url;
+    } catch (_) {
+      // The row simply keeps the default avatar. Nothing else is affected.
+      return CommunityProfileStore.uploadedAvatarUrl;
+    }
+  }
+
+  static Reference _avatarRef(String uid) =>
+      FirebaseStorage.instance.ref('$membersCollection/$uid/avatar.jpg');
+
+  static Future<void> _deleteAvatar(String uid) async {
+    try {
+      await _avatarRef(uid).delete();
+    } catch (_) {
+      // Already gone, or never there.
     }
   }
 
@@ -403,10 +498,92 @@ abstract final class CommunityService {
         couples: snapshots[1].getSum(period.couplesField)?.round() ?? 0,
         engagements: snapshots[1].getSum(period.engagementsField)?.round() ?? 0,
       );
-      _totalsCache[cacheKey] = _Cached<CommunityTotals>(result);
-      return result;
+      if (!result.isEmpty) {
+        _totalsCache[cacheKey] = _Cached<CommunityTotals>(result);
+        return result;
+      }
+      // Aggregates said nothing. That is *usually* the truth — but it is also
+      // exactly what a missing composite index looks like from here, so the
+      // zero is checked against a direct read before it is believed.
     } catch (_) {
-      return cached?.value ?? CommunityTotals.empty;
+      // And so is a failure. Both roads lead to the scan below.
+    }
+
+    final CommunityTotals scanned = await _totalsByScan(period);
+    if (scanned.resolved) {
+      _totalsCache[cacheKey] = _Cached<CommunityTotals>(scanned);
+      return scanned;
+    }
+    return cached?.value ?? CommunityTotals.empty;
+  }
+
+  /// The community's figures added up on this device, one member at a time.
+  ///
+  /// **The fallback, and the reason "פעילות הקהילה" can no longer sit on 0 when
+  /// it should not.** The aggregate query above is the right way to do this —
+  /// a handful of reads however large the community grows — but it depends on a
+  /// composite index existing in the project, and when one does not the query
+  /// fails in a way that is indistinguishable from a quiet week: an empty
+  /// answer. Every matchmaker in the app then sees a live community reported as
+  /// zero, and nothing on the device can tell them otherwise.
+  ///
+  /// So a zero is not taken at face value. This reads the member documents for
+  /// the window directly — one equality filter, which needs no composite index
+  /// at all — and adds them up in Dart. It costs one read per member and is
+  /// capped at [_scanLimit], which is why it is the second choice and not the
+  /// first; the three-minute cache means it runs at most a few times an hour.
+  ///
+  /// The `> 0` test the aggregate does in the query is done here in the loop,
+  /// so "שדכנים פעילים" keeps meaning "did at least one thing" rather than
+  /// "opened the app".
+  static Future<CommunityTotals> _totalsByScan(CommunityPeriod period) async {
+    if (await _account() == null) {
+      return CommunityTotals.empty;
+    }
+    try {
+      Query<Map<String, dynamic>> query = _db.collection(membersCollection);
+      if (period.keyField case final String keyField) {
+        query = query.where(
+          keyField,
+          isEqualTo: CommunityPeriods.keyFor(period),
+        );
+      }
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query
+          .limit(_scanLimit)
+          .get();
+
+      int points = 0;
+      int active = 0;
+      int friends = 0;
+      int ideas = 0;
+      int couples = 0;
+      int engagements = 0;
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+          in snapshot.docs) {
+        final Map<String, dynamic> data = doc.data();
+        int read(String field) => (data[field] as num?)?.toInt() ?? 0;
+        final int memberPoints = read(period.actionsField);
+        if (memberPoints <= 0) {
+          continue;
+        }
+        active++;
+        points += memberPoints;
+        friends += read(period.friendsField);
+        ideas += read(period.ideasField);
+        couples += read(period.couplesField);
+        engagements += read(period.engagementsField);
+      }
+
+      return CommunityTotals(
+        points: points,
+        activeMatchmakers: active,
+        friends: friends,
+        ideas: ideas,
+        couples: couples,
+        engagements: engagements,
+      );
+    } catch (_) {
+      return CommunityTotals.empty;
     }
   }
 
@@ -462,6 +639,7 @@ abstract final class CommunityService {
                 ? (doc.data()['name'] as String).trim()
                 : 'שדכן',
             points: (doc.data()[period.actionsField] as num?)?.toInt() ?? 0,
+            photoUrl: ((doc.data()['photoUrl'] as String?) ?? '').trim(),
           ),
       ];
 

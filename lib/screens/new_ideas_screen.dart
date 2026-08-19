@@ -24,17 +24,38 @@ class NewIdeasScreen extends StatefulWidget {
 }
 
 class _NewIdeasScreenState extends State<NewIdeasScreen> {
+  /// Which round of ten is on screen.
+  ///
+  /// Starts where the last visit left off and moves on as it opens, so coming
+  /// back tomorrow shows ten different friends rather than the same ten
+  /// forever. "רענון רעיונות" moves it by hand.
+  late int _batch = NewIdeaRotation.cursor;
+
+  @override
+  void initState() {
+    super.initState();
+    // Recorded on the way in rather than on the way out: a matchmaker who
+    // closes the app from this screen has still seen this round.
+    NewIdeaRotation.setCursor(_batch + 1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final MatchRepository matchRepository = context.watch<MatchRepository>();
 
-    final List<NewIdeaSuggestion> ideas = NewIdeaSuggestions.build(
-      people: personRepository.getAll(),
-      matches: matchRepository.getAll(),
-      dismissedFor: SuggestionDismissals.dismissedFor,
+    final List<List<NewIdeaSuggestion>> rounds = NewIdeaSuggestions.batches(
+      NewIdeaSuggestions.build(
+        people: personRepository.getAll(),
+        matches: matchRepository.getAll(),
+        dismissedFor: SuggestionDismissals.dismissedFor,
+      ),
     );
+    final List<NewIdeaSuggestion> ideas = rounds.isEmpty
+        ? const <NewIdeaSuggestion>[]
+        : rounds[_batch % rounds.length];
+    final bool hasMoreRounds = rounds.length > 1;
 
     return Scaffold(
       appBar: AppBar(title: const Text('רעיונות שהמאגר מציע לך')),
@@ -43,11 +64,14 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
             ? _EmptyState(theme: theme)
             : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
-                itemCount: ideas.length + 1,
+                itemCount: ideas.length + (hasMoreRounds ? 2 : 1),
                 separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (BuildContext context, int index) {
                   if (index == 0) {
-                    return _Intro(count: ideas.length);
+                    return const _Intro();
+                  }
+                  if (index > ideas.length) {
+                    return _RefreshButton(onPressed: () => _nextBatch(rounds));
                   }
                   final NewIdeaSuggestion idea = ideas[index - 1];
                   return _IdeaCard(
@@ -60,6 +84,12 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
               ),
       ),
     );
+  }
+
+  /// Another ten. Wraps at the end rather than emptying the screen.
+  void _nextBatch(List<List<NewIdeaSuggestion>> rounds) {
+    setState(() => _batch = (_batch + 1) % rounds.length);
+    NewIdeaRotation.setCursor(_batch + 1);
   }
 
   Future<void> _openIdea(NewIdeaSuggestion idea) async {
@@ -118,21 +148,49 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
   /// sitting at the top of the other's, and the same pair would come back round
   /// as a fresh suggestion the moment the scan started from the other side.
   Future<void> _skipIdea(NewIdeaSuggestion idea) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     await SuggestionDismissals.dismiss(idea.male.id, idea.female.id);
     await SuggestionDismissals.dismiss(idea.female.id, idea.male.id);
     if (!mounted) {
       return;
     }
-    // The card leaving the list is the whole confirmation: a bar across the
-    // bottom for a dismissal the matchmaker just chose is in the way.
     setState(() {});
+
+    // Two seconds and a way back. The dismissal is permanent — the pair never
+    // returns as a suggestion — which is exactly why a mis-tap on a button
+    // sitting beside "פתיחת רעיון" needs an answer that is not "go and find
+    // the two of them and undo it by hand".
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('הרעיון הוסר מהרשימה'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'ביטול',
+            onPressed: () => _restoreIdea(idea),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _restoreIdea(NewIdeaSuggestion idea) async {
+    await SuggestionDismissals.restore(idea.male.id, idea.female.id);
+    await SuggestionDismissals.restore(idea.female.id, idea.male.id);
+    if (mounted) {
+      setState(() {});
+    }
   }
 }
 
+/// One line saying what this list is, and nothing about how long it is.
+///
+/// "המאגר מציע לך 40 רעיונות" was a number nobody could use: it was not a
+/// queue to get through, it changed every time a card was edited, and its only
+/// real effect was to make ten cards feel like the start of a chore.
 class _Intro extends StatelessWidget {
-  const _Intro({required this.count});
-
-  final int count;
+  const _Intro();
 
   @override
   Widget build(BuildContext context) {
@@ -167,18 +225,41 @@ class _Intro extends StatelessWidget {
                     height: 1.3,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '$count רעיונות חדשים שעוד לא נפתחו',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.3,
-                  ),
-                ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "רענון רעיונות" — the next ten.
+///
+/// At the bottom of the list rather than in the app bar: it is the answer to
+/// "I have read these ten", and that question is asked at the end of them.
+class _RefreshButton extends StatelessWidget {
+  const _RefreshButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('רענון רעיונות'),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(46),
+          foregroundColor: theme.brightness == Brightness.dark
+              ? theme.colorScheme.primary
+              : AppColors.primaryDark,
+          shape: const StadiumBorder(),
+        ),
       ),
     );
   }

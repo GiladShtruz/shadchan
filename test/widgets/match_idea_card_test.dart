@@ -337,13 +337,12 @@ void main() {
     );
   });
 
-  testWidgets('a candidate with no number is offered a pencil, not WhatsApp', (
+  testWidgets('a candidate with no number is offered nothing at all', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final List<String> completed = <String>[];
     await tester.pumpWidget(
       wrap(
         MatchIdeaCard(
@@ -365,7 +364,7 @@ void main() {
           ),
           onTap: () {},
           onOpenPersonWhatsApp: (_) {},
-          onCompletePersonCard: (Person p) => completed.add(p.id),
+          onCompletePersonCard: (_) {},
         ),
       ),
     );
@@ -373,11 +372,11 @@ void main() {
 
     // One WhatsApp icon, for the side that has a number.
     expect(find.byType(FaIcon), findsOneWidget);
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
-
-    await tester.tap(find.byIcon(Icons.edit_outlined));
-    await tester.pump();
-    expect(completed, <String>['male']);
+    // And nothing on the other corner. The pencil that used to sit there was a
+    // different action wearing the messaging button's place — somebody
+    // reaching for the corner of a face means to message that person, and an
+    // empty corner says "no number" more plainly than an editor does.
+    expect(find.byIcon(Icons.edit_outlined), findsNothing);
   });
 
   testWidgets('a landline is offered SMS rather than WhatsApp', (

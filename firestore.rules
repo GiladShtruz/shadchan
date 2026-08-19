@@ -180,7 +180,14 @@ service cloud.firestore {
                             && request.auth.uid == uid
                             && request.resource.data.name is string
                             && request.resource.data.name.size() <= 80
-                            && request.resource.data.hidden is bool;
+                            && request.resource.data.hidden is bool
+                            // The matchmaker's own picture, drawn beside their
+                            // name on the board. A URL and nothing else; the
+                            // file itself lives under the same uid in Storage
+                            // and is governed by `storage.rules`.
+                            && (!('photoUrl' in request.resource.data)
+                                || (request.resource.data.photoUrl is string
+                                    && request.resource.data.photoUrl.size() <= 500));
 
       // Erasure, from the button on "פרטיות והמאגר שלי". Split out because a
       // delete carries no `request.resource`, so the field checks above would
@@ -259,6 +266,53 @@ service cloud.firestore {
       // it — the same trap `communityMembers` fell into.
       allow delete: if isSignedIn()
                     && resource.data.authorUid == request.auth.uid;
+    }
+
+    // --- "שלחו מזל טוב" ----------------------------------------------------
+    //
+    // Addressed post between two matchmakers, and the narrowest collection in
+    // this database.
+    //
+    // **A message is readable only by the person it was sent to.** Not by the
+    // sender, not by anybody else, and there is no query anywhere that could
+    // list somebody else's. That single rule is what lets these documents carry
+    // a proposal id at all: it is meaningless without the recipient's own
+    // database, and nobody but the recipient can ever read it.
+    //
+    // **Nothing about a candidate may be in here.** The sender is answering an
+    // announcement that says "a couple got married" and knows no more than
+    // that; what they write is a bracha and their own name.
+    //
+    // **The recipient empties their own postbox.** The app files each message
+    // into the local journal and then deletes it, so this collection holds only
+    // undelivered post and never becomes a history of who said what to whom.
+    match /communityMazelTov/{messageId} {
+      function isSignedIn() {
+        return request.auth != null
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+
+      allow read: if isSignedIn() && resource.data.toUid == request.auth.uid;
+
+      // Create only — a bracha cannot be edited after it is sent, which is
+      // what makes "who wrote this" answerable at all.
+      allow create: if isSignedIn()
+                    && request.resource.data.fromUid == request.auth.uid
+                    && request.resource.data.toUid is string
+                    && request.resource.data.toUid != request.auth.uid
+                    && request.resource.data.matchId is string
+                    && request.resource.data.matchId.size() > 0
+                    && request.resource.data.matchId.size() <= 64
+                    && request.resource.data.fromName is string
+                    && request.resource.data.fromName.size() <= 80
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 200;
+
+      allow update: if false;
+
+      // The recipient clears their own, once it is safely in their journal.
+      allow delete: if isSignedIn() && resource.data.toUid == request.auth.uid;
     }
 
     // Anything not named above is closed. Without this, a path added later

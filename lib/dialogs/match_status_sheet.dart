@@ -5,6 +5,7 @@ import 'package:shadchan/dialogs/match_outcome_dialog.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -121,11 +122,15 @@ abstract final class MatchStatusSheet {
         if (alreadyMarried || !context.mounted) {
           return;
         }
+        final CommunityProvider community = context.read<CommunityProvider>();
         await EngagementFlow.celebrate(
           context,
+          matchId: match.id,
           firstNameA: male?.firstName ?? '',
           firstNameB: female?.firstName ?? '',
           matchmakerName: context.read<UserProfileProvider>().name ?? '',
+          shareName: !community.isHidden,
+          private: community.isPrivate,
         );
       case MatchStatus.idea:
       case MatchStatus.checking:

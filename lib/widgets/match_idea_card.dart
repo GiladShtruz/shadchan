@@ -602,10 +602,16 @@ class _CardActionBar extends StatelessWidget {
 /// photo, in the card's own surface colour so it reads as resting on the face
 /// rather than punched through it.
 ///
-/// What it *is* depends on the number behind it — WhatsApp, SMS, or a pencil
-/// when there is no number at all. A name added straight into a proposal from
-/// outside the database has nothing but a name, and this used to offer to
-/// WhatsApp them anyway.
+/// What it *is* depends on the number behind it — WhatsApp, or SMS. With no
+/// number at all there is **nothing**: the disc is not drawn, and the corner of
+/// the photo is left alone.
+///
+/// It used to fall back to a pencil that opened the card for editing. That is a
+/// different action wearing the same button in the same place — a matchmaker
+/// reaching for the corner of a face expects to message that person, and on the
+/// one side that cannot be messaged they got an editor instead. Editing a card
+/// is a tap on the card away, and an empty corner says "no number here" more
+/// clearly than any icon could.
 class _SideContactButton extends StatelessWidget {
   const _SideContactButton({
     required this.person,
@@ -615,12 +621,19 @@ class _SideContactButton extends StatelessWidget {
 
   final Person person;
   final VoidCallback onOpenWhatsApp;
+
+  /// Kept for the callers that still pass it; nothing here uses it now that a
+  /// person with no number gets no button. Removing it would touch four call
+  /// sites for no gain.
   final VoidCallback onCompleteCard;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ContactChannel channel = ContactChannels.forPerson(person);
+    if (channel == ContactChannel.none) {
+      return const SizedBox.shrink();
+    }
 
     final ({Widget icon, VoidCallback onTap}) control = switch (channel) {
       ContactChannel.whatsapp => (
@@ -639,14 +652,8 @@ class _SideContactButton extends StatelessWidget {
         ),
         onTap: () => ContactChannels.openSms(person.phone),
       ),
-      ContactChannel.none => (
-        icon: Icon(
-          Icons.edit_outlined,
-          size: 16,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        onTap: onCompleteCard,
-      ),
+      // Unreachable: handled above, before the disc is built at all.
+      ContactChannel.none => (icon: const SizedBox.shrink(), onTap: () {}),
     };
 
     return Material(

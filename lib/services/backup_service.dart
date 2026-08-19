@@ -294,6 +294,11 @@ class BackupService {
       'text': note.text,
       'createdAt': note.createdAt.toIso8601String(),
       'isAutomatic': note.isAutomatic,
+      // Written even when null so a restored journal keeps the difference
+      // between a line the matchmaker wrote and a "מזל טוב" another matchmaker
+      // sent them. Losing that would turn somebody's good wishes into an
+      // anonymous note in their own handwriting.
+      'mazelTovFrom': note.mazelTovFrom,
     };
   }
 
@@ -442,6 +447,7 @@ class BackupService {
       text: _string(json['text']) ?? '',
       createdAt: _date(json['createdAt']) ?? DateTime.now(),
       isAutomatic: _bool(json['isAutomatic']),
+      mazelTovFrom: _string(json['mazelTovFrom']),
     );
   }
 

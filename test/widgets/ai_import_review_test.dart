@@ -125,7 +125,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('בחור'));
+    await tester.tap(find.text('זכר'));
     await tester.pumpAndSettle();
 
     expect(find.text('דורשים תשומת לב'), findsNothing);

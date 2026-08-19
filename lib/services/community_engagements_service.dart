@@ -14,6 +14,7 @@ class CommunityEngagement {
     this.firstNames = '',
     this.matchmakerName = '',
     this.photoUrl = '',
+    this.matchId = '',
   });
 
   static CommunityEngagement? fromDocument(
@@ -33,6 +34,7 @@ class CommunityEngagement {
       firstNames: ((data['firstNames'] as String?) ?? '').trim(),
       matchmakerName: ((data['matchmakerName'] as String?) ?? '').trim(),
       photoUrl: ((data['photoUrl'] as String?) ?? '').trim(),
+      matchId: ((data['matchId'] as String?) ?? '').trim(),
     );
   }
 
@@ -46,6 +48,20 @@ class CommunityEngagement {
 
   final String matchmakerName;
   final String photoUrl;
+
+  /// The author's own id for the proposal, carried so a congratulation can be
+  /// delivered into the journal of the couple it is about.
+  ///
+  /// **It says nothing about anybody.** It is a uuid generated on the author's
+  /// phone, meaningless without their database, and it is the only thing that
+  /// makes "שלחו מזל טוב" possible without inventing a messaging system with
+  /// threads and identities in it. Empty when the author is not accepting
+  /// congratulations, which is what hides the button.
+  final String matchId;
+
+  /// Whether anybody can be congratulated for this. Both halves are needed: an
+  /// author to address and a proposal to file it under.
+  bool get canBeCongratulated => authorUid.isNotEmpty && matchId.isNotEmpty;
 
   /// Whether this carries anything about anybody. An anonymous record is a
   /// timestamp and nothing else, and reads as "somebody, somewhere".
@@ -104,7 +120,16 @@ abstract final class CommunityEngagementsService {
   ///
   /// Returns null when there is no account or the write failed — good news is
   /// never worth an error in front of somebody who is having a good day.
-  static Future<String?> record() async {
+  /// [matchId] is the author's own proposal id, written so other matchmakers
+  /// can send a "מזל טוב" back to the right couple's journal. [matchmakerName]
+  /// is written only when the caller has established that this matchmaker
+  /// publishes their name at all — the announcement is anonymous otherwise,
+  /// and the button on it still works, because a message is addressed by uid
+  /// rather than by name.
+  static Future<String?> record({
+    String matchId = '',
+    String matchmakerName = '',
+  }) async {
     final User? user = await _account();
     if (user == null) {
       return null;
@@ -120,8 +145,9 @@ abstract final class CommunityEngagementsService {
         // anonymous record and a published one is the same document with
         // different values in it, and the rules can check one set of fields.
         'firstNames': '',
-        'matchmakerName': '',
+        'matchmakerName': matchmakerName.trim(),
         'photoUrl': '',
+        'matchId': matchId.trim(),
       });
       return doc.id;
     } catch (_) {

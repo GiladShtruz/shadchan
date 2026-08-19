@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/match_migrations.dart';
 import 'package:shadchan/services/person_migrations.dart';
 import 'package:shadchan/models/match_contact.dart';
@@ -73,6 +74,21 @@ Future<void> _bootstrap() async {
   await Hive.openBox<dynamic>('settings');
   mark('boxes_open');
 
+  // Where a tapped "יש לך הודעות מזל טוב!" goes. Set before `initialize`,
+  // which delivers a tap that launched the app the moment it is ready — wiring
+  // this afterwards would drop exactly the tap that matters most.
+  //
+  // `go` rather than `push`: the notification is the start of a journey, and
+  // there may be no stack behind it on a cold start.
+  NotificationService.onOpenMatch = (String matchId) {
+    // After a frame, never during one. A tap that launched the app is
+    // delivered inside `initialize`, before `runApp` — navigating from there
+    // would run the router's redirect against a widget tree that does not
+    // exist yet. One frame later everything it reads is in place.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppRouter.router.go('/matches/$matchId');
+    });
+  };
   await NotificationService.initialize();
   // Pushed a week out on every launch, so it can only ever reach someone who
   // has not opened the app in that time.
@@ -133,12 +149,13 @@ Widget _buildApp() {
                   ProfileStatus.mazelTov,
                   causedByMatchId: matchId,
                 ))
-            ..markPersonAvailable = ((String personId, String matchId) =>
-                personRepository.updateProfileStatus(
-                  personId,
-                  ProfileStatus.available,
-                  causedByMatchId: matchId,
-                ))
+            ..restorePersonStatus =
+                ((String personId, ProfileStatus status, String matchId) =>
+                    personRepository.updateProfileStatus(
+                      personId,
+                      status,
+                      causedByMatchId: matchId,
+                    ))
             ..logPersonEvent = personRepository.logEvent;
           return matchRepository;
         },

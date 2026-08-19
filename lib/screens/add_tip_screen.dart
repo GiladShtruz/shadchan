@@ -27,6 +27,16 @@ class _AddTipScreenState extends State<AddTipScreen> {
   final TextEditingController _author = TextEditingController();
   bool _sending = false;
 
+  /// True once "שליחה לאישור" has been pressed with something still missing.
+  ///
+  /// **The button is never disabled.** It used to grey itself out until the tip
+  /// was ten characters long and the name two — both perfectly reasonable
+  /// rules, and neither of them written anywhere on the screen. Somebody who
+  /// filled in both fields and wrote a short tip was left pressing a dead
+  /// button with nothing to read. Pressing it now either sends, or says in red
+  /// exactly what is short.
+  bool _showErrors = false;
+
   @override
   void initState() {
     super.initState();
@@ -48,12 +58,36 @@ class _AddTipScreenState extends State<AddTipScreen> {
     super.dispose();
   }
 
+  /// The shortest tip worth sending to every other matchmaker in the app.
+  static const int minTipLength = 10;
+
+  /// A name, not an initial.
+  static const int minNameLength = 2;
+
   bool get _canSend =>
-      !_sending &&
-      _tip.text.trim().length >= 10 &&
-      _author.text.trim().length >= 2;
+      _tip.text.trim().length >= minTipLength &&
+      _author.text.trim().length >= minNameLength;
+
+  String? get _nameError =>
+      !_showErrors || _author.text.trim().length >= minNameLength
+      ? null
+      : 'צריך למלא שם';
+
+  String? get _tipError =>
+      !_showErrors || _tip.text.trim().length >= minTipLength
+      ? null
+      : 'הטיפ קצר מדי — כדאי לכתוב לפחות $minTipLength תווים';
 
   Future<void> _send() async {
+    if (!_canSend) {
+      setState(() => _showErrors = true);
+      FocusScope.of(context).unfocus();
+      return;
+    }
+    await _submit();
+  }
+
+  Future<void> _submit() async {
     final TipsProvider tips = context.read<TipsProvider>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
@@ -99,18 +133,17 @@ class _AddTipScreenState extends State<AddTipScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: <Widget>[
-            _Intro(theme: theme),
-            const SizedBox(height: 16),
             if (!canContribute)
               _SignInNotice(theme: theme)
             else ...<Widget>[
               TextField(
                 controller: _author,
                 textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'שם פרטי ושם משפחה',
                   helperText: 'השם יופיע בקטן מתחת לטיפ',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  errorText: _nameError,
                 ),
               ),
               const SizedBox(height: 14),
@@ -120,18 +153,19 @@ class _AddTipScreenState extends State<AddTipScreen> {
                 maxLines: 8,
                 maxLength: TipsService.maxLength,
                 textInputAction: TextInputAction.newline,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'הטיפ שלך',
                   hintText: 'משהו קצר שלמדת ושיכול לעזור לשדכן אחר',
                   alignLabelWithHint: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  errorText: _tipError,
                 ),
               ),
               const SizedBox(height: 4),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _canSend ? _send : null,
+                  onPressed: _sending ? null : _send,
                   style: FilledButton.styleFrom(
                     backgroundColor: theme.brightness == Brightness.dark
                         ? theme.colorScheme.primary
@@ -167,44 +201,6 @@ class _AddTipScreenState extends State<AddTipScreen> {
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _Intro extends StatelessWidget {
-  const _Intro({required this.theme});
-
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool dark = theme.brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: dark
-            ? theme.colorScheme.primary.withValues(alpha: 0.14)
-            : AppColors.primaryLight.withValues(alpha: 0.5),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(
-            Icons.lightbulb_rounded,
-            color: dark ? theme.colorScheme.primary : AppColors.primaryDark,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'הטיפים בעמוד הבית נכתבים על ידי שדכנים. אחרי שליחה הטיפ עובר '
-              'אישור, ומשם הוא מצטרף לטיפים שכל השדכנים רואים.',
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-            ),
-          ),
-        ],
       ),
     );
   }

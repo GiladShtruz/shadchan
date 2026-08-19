@@ -6,9 +6,13 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/screens/match_detail_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_suggestions.dart';
+import 'package:shadchan/utils/match_suggestion_utils.dart';
+import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -81,6 +85,7 @@ class _ThinkScreenState extends State<ThinkScreen> {
       limit: 60,
     );
     final List<_ThinkRow> rows = _withOccasionalStranger(suggestions, people);
+    final _MatchLookup lookup = _MatchLookup(people: people, matches: matches);
 
     return Scaffold(
       backgroundColor: ProfilePalette.canvas(theme),
@@ -108,18 +113,68 @@ class _ThinkScreenState extends State<ThinkScreen> {
             : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
                 itemCount: rows.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 6),
                 itemBuilder: (BuildContext context, int index) {
                   final _ThinkRow row = rows[index];
                   return _PersonThought(
                     person: row.person,
                     reason: row.reason,
+                    candidates: lookup.topFor(row.person),
                     onTap: () => ThinkScreen.openPerson(context, row.person.id),
+                    onCandidate: (Person candidate) =>
+                        _considerPair(row.person, candidate),
                   );
                 },
               ),
       ),
     );
+  }
+
+  /// The two cards facing each other, and a proposal if the matchmaker agrees.
+  ///
+  /// The same comparison the suggestions list and "רעיונות חדשים" open, so a
+  /// pair considered from here goes through exactly the route it would
+  /// anywhere else.
+  Future<void> _considerPair(Person person, Person candidate) async {
+    final MatchRepository matchRepository = context.read<MatchRepository>();
+    final MatchIdea? existing = matchRepository.findExisting(
+      person.id,
+      candidate.id,
+    );
+    if (existing != null) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) =>
+              MatchDetailScreen(matchId: existing.id),
+        ),
+      );
+      return;
+    }
+
+    final bool? open = await openMatchComparison(
+      context,
+      source: person,
+      candidate: candidate,
+    );
+    if (open != true || !mounted) {
+      return;
+    }
+    final MatchIdea? created = await matchRepository.create(
+      person.gender == Gender.male ? person.id : candidate.id,
+      person.gender == Gender.male ? candidate.id : person.id,
+    );
+    if (created == null || !mounted) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            MatchDetailScreen(matchId: created.id, autoPromptWhatsApp: true),
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   /// Every so often, someone with no particular reason at all.
@@ -175,16 +230,90 @@ class _ThinkRow {
   final String reason;
 }
 
+/// Who each friend could go with, worked out once for the whole screen.
+///
+/// **Built once and cached per person**, because the naive version is a scan of
+/// the whole database inside a list builder — sixty rows times a few hundred
+/// friends, re-run on every scroll frame. The answer for one person does not
+/// change while the screen is open, so it is computed the first time a row
+/// asks for it and kept.
+class _MatchLookup {
+  _MatchLookup({required this.people, required this.matches});
+
+  /// Three, and no more. The point of this screen is to move quickly over many
+  /// friends; a fourth face is another thing to weigh up on a row that is meant
+  /// to be read in a second. "התאמות נוספות" opens the full list.
+  static const int shown = 3;
+
+  final List<Person> people;
+  final List<MatchIdea> matches;
+
+  final Map<String, List<Person>> _cache = <String, List<Person>>{};
+
+  List<Person> topFor(Person person) {
+    return _cache.putIfAbsent(person.id, () {
+      if (person.gender == Gender.unknown) {
+        return const <Person>[];
+      }
+      final Set<String> alreadyPaired = <String>{
+        for (final MatchIdea match in matches)
+          if (match.personAId == person.id)
+            match.personBId
+          else if (match.personBId == person.id)
+            match.personAId,
+      };
+      final Set<String> dismissed = SuggestionDismissals.dismissedFor(
+        person.id,
+      );
+
+      final List<Person> candidates =
+          people
+              .where(
+                (Person other) =>
+                    other.id != person.id &&
+                    !alreadyPaired.contains(other.id) &&
+                    !dismissed.contains(other.id) &&
+                    !other.profileStatus.pausesMatches &&
+                    MatchSuggestionUtils.matchesOwnPreferences(
+                      source: person,
+                      candidate: other,
+                    ),
+              )
+              .toList()
+            // The card edited most recently first, matching the order the full
+            // matches list uses — the same people in the same order, just fewer.
+            ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
+
+      return candidates.take(shown).toList();
+    });
+  }
+}
+
+/// One friend, one thought, and the two or three people they could go with.
+///
+/// **Almost a single line, on purpose.** The screen exists to be scrolled
+/// through: a card per friend that takes a fifth of the screen turns "think
+/// about your friends" into eight friends and a lot of scrolling. The reason
+/// is one ellipsized line beside the name, the candidates are three faces, and
+/// everything else is one tap away.
 class _PersonThought extends StatelessWidget {
   const _PersonThought({
     required this.person,
     required this.reason,
+    required this.candidates,
     required this.onTap,
+    required this.onCandidate,
   });
 
   final Person person;
   final String reason;
+
+  /// At most [_MatchLookup.shown]. Empty for a friend with nobody to pair them
+  /// with yet, and the row simply has no faces on it.
+  final List<Person> candidates;
+
   final VoidCallback onTap;
+  final ValueChanged<Person> onCandidate;
 
   @override
   Widget build(BuildContext context) {
@@ -192,19 +321,20 @@ class _PersonThought extends StatelessWidget {
 
     return Material(
       color: ProfilePalette.surface(theme),
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
           child: Row(
             children: <Widget>[
-              PersonAvatar(person: person, radius: 24),
-              const SizedBox(width: 12),
+              PersonAvatar(person: person, radius: 19),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
                       person.fullName.trim(),
@@ -215,15 +345,41 @@ class _PersonThought extends StatelessWidget {
                         color: ProfilePalette.text(theme),
                       ),
                     ),
-                    const SizedBox(height: 3),
                     Text(
                       reason,
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
                         color: ProfilePalette.muted(theme),
-                        height: 1.35,
+                        height: 1.3,
                       ),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              for (final Person candidate in candidates)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 4),
+                  child: Tooltip(
+                    message: candidate.fullName.trim(),
+                    child: InkResponse(
+                      onTap: () => onCandidate(candidate),
+                      radius: 22,
+                      child: PersonAvatar(person: candidate, radius: 15),
+                    ),
+                  ),
+                ),
+              IconButton(
+                tooltip: 'התאמות נוספות',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                onPressed: onTap,
+                icon: Icon(
+                  Icons.more_horiz_rounded,
+                  size: 20,
+                  color: ProfilePalette.muted(theme),
                 ),
               ),
             ],

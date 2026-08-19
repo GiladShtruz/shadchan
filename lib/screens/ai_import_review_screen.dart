@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/dialogs/imported_banner.dart';
 import 'package:shadchan/services/community_profile_store.dart';
-import 'package:shadchan/widgets/app_toast.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/parsed_person.dart';
@@ -134,10 +134,17 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
     // way past. A small import gets the ordinary confirmation instead, and
     // neither ever runs beside the other.
     CommunityProfileStore.noteBulkImport(added);
-    if (added < CommunityProfileStore.bulkImportNoticeFrom) {
-      AppToast.show(context, 'נוספו $added אנשים למאגר', emoji: '🎉');
+    // A banner in the middle of the screen rather than a toast along the
+    // bottom. Adding forty people is the biggest single thing that happens in
+    // this app, and it used to be acknowledged by a strip that had faded
+    // before anybody's eyes reached it.
+    await ImportedBanner.show(context, added: added);
+    if (!mounted) {
+      return;
     }
-    context.go('/people');
+    // Straight onto the people who were just added, and nothing else. See
+    // `PeopleScreen.importBatchId`.
+    context.go('/people?batch=$batchId');
   }
 
   @override
@@ -581,13 +588,18 @@ class _DraftCard extends StatelessWidget {
                 child: SegmentedButton<Gender>(
                   showSelectedIcon: false,
                   segments: const <ButtonSegment<Gender>>[
+                    // The same two words the profile form and every filter in
+                    // the app use. "בחור / בחורה" read as a question about the
+                    // person rather than as the two answers to it, and beside
+                    // the line above — "לא ברור אם זה בחור או בחורה" — the
+                    // buttons looked like a repetition of the question.
                     ButtonSegment<Gender>(
                       value: Gender.male,
-                      label: Text('בחור'),
+                      label: Text('זכר'),
                     ),
                     ButtonSegment<Gender>(
                       value: Gender.female,
-                      label: Text('בחורה'),
+                      label: Text('נקבה'),
                     ),
                   ],
                   selected: draft.gender == null

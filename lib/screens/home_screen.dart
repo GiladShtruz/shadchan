@@ -35,6 +35,7 @@ import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/home_activity_block.dart';
+import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
 import 'package:shadchan/widgets/home_panels.dart';
@@ -508,6 +509,10 @@ class _HomeScreenState extends State<HomeScreen> {
             onAddTip: () => context.push('/profile/tips'),
           ),
         ),
+
+        // Last on the page, under everything, where an invitation belongs when
+        // it is not urgent and must never be in the way.
+        block(const HomeCommunityLink()),
 
         SliverToBoxAdapter(
           child: SizedBox(

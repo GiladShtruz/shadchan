@@ -50,6 +50,21 @@ class NotificationService {
         iOS: _iosMatchDetails,
       );
 
+  static const AndroidNotificationDetails _androidMazelTovDetails =
+      AndroidNotificationDetails(
+        'mazel_tov',
+        'הודעות מזל טוב',
+        channelDescription: 'ברכות משדכנים אחרים על חתונה',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+
+  static const NotificationDetails _mazelTovNotificationDetails =
+      NotificationDetails(
+        android: _androidMazelTovDetails,
+        iOS: _iosMatchDetails,
+      );
+
   /// Reminders are picked as a plain date, which would otherwise fire at
   /// midnight. They go out at this hour of the reminder day instead.
   static const int _reminderHour = 9;
@@ -79,13 +94,23 @@ class NotificationService {
     );
 
     try {
-      await _plugin.initialize(settings);
+      await _plugin.initialize(
+        settings,
+        onDidReceiveNotificationResponse: (NotificationResponse response) =>
+            _handleTap(response.payload),
+      );
       await _plugin
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >()
           ?.requestNotificationsPermission();
       _isInitialized = true;
+      // A tap that *launched* the app is not delivered to the callback above —
+      // the plugin was not listening yet when it happened. It is waiting here
+      // instead, and without this the one notification in the app that has
+      // somewhere to go would do nothing on a cold start, which is the most
+      // likely way it is ever tapped.
+      await _handleLaunchTap();
     } catch (error, stackTrace) {
       _isInitialized = false;
       debugPrint('NotificationService.initialize failed: $error\n$stackTrace');
@@ -223,6 +248,71 @@ class NotificationService {
   }
 
   static const int _returnInvitationId = 40001;
+
+  // --- "יש לך הודעות מזל טוב!" ----------------------------------------------
+
+  /// Where a tapped notification should take the reader, as a payload string.
+  ///
+  /// A prefix and an id rather than a route, so the routing decision stays in
+  /// one place ([_handleTap]) and a payload written by an older version of the
+  /// app can be recognised or ignored by a newer one.
+  static const String _matchPayloadPrefix = 'match:';
+
+  /// Ids 50000-59999 belong to this. Kept out of the reminder ranges, which are
+  /// cancelled wholesale on every reschedule — a congratulation is not a
+  /// reminder and must not be swept away with them.
+  static const int _mazelTovIdBase = 50000;
+
+  /// What a tapped notification does. Set by the app so this service does not
+  /// have to know the router exists.
+  static void Function(String matchId)? onOpenMatch;
+
+  /// "יש לך הודעות מזל טוב!" — one per wedding, however many arrived.
+  ///
+  /// Shown immediately rather than scheduled: the messages are already in the
+  /// journal by the time this is called, so the notification is a pointer at
+  /// something that has happened, not a plan to say something later. The caller
+  /// ([MazelTovInbox]) owns the "once per proposal" rule.
+  static Future<void> showMazelTov(String matchId) async {
+    if (!_isInitialized || matchId.isEmpty) {
+      return;
+    }
+    try {
+      await _plugin.show(
+        _mazelTovIdBase + (matchId.hashCode.abs() % 10000),
+        'יש לך הודעות מזל טוב!',
+        'שדכנים מהקהילה שלחו לך ברכה על הזוג שהתחתן',
+        _mazelTovNotificationDetails,
+        payload: '$_matchPayloadPrefix$matchId',
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'NotificationService.showMazelTov failed: $error\n$stackTrace',
+      );
+    }
+  }
+
+  static Future<void> _handleLaunchTap() async {
+    try {
+      final NotificationAppLaunchDetails? details = await _plugin
+          .getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp ?? false) {
+        _handleTap(details?.notificationResponse?.payload);
+      }
+    } catch (_) {
+      // Nothing to open. Never worth an error on startup.
+    }
+  }
+
+  static void _handleTap(String? payload) {
+    if (payload == null || !payload.startsWith(_matchPayloadPrefix)) {
+      return;
+    }
+    final String matchId = payload.substring(_matchPayloadPrefix.length);
+    if (matchId.isNotEmpty) {
+      onOpenMatch?.call(matchId);
+    }
+  }
 
   static tz.TZDateTime _atHour(tz.TZDateTime day, int hour) {
     return tz.TZDateTime(tz.local, day.year, day.month, day.day, hour);
