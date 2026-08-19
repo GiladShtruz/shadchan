@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
@@ -710,13 +709,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     // celebration rather than following it — one word about the moment, not
     // two. Below it, nothing has changed.
     CommunityProfileStore.noteBulkImport(addedCount);
-    if (await BulkImportNoteDialog.maybeShow(context)) {
-      return;
+    if (addedCount < CommunityProfileStore.bulkImportNoticeFrom) {
+      ContactsAddedCelebration.show(context, count: addedCount);
     }
-    if (!mounted) {
-      return;
-    }
-    await ContactsAddedCelebration.show(context, count: addedCount);
   }
 
   /// Continues from the quick details into the full card, and finishes on the

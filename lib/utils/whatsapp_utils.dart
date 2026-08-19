@@ -1,5 +1,6 @@
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -135,8 +136,14 @@ abstract final class WhatsAppUtils {
       return false;
     }
 
+    // Credited like every other way a card leaves the app. This one is the
+    // easiest to forget — it never touches `ShareUtils` — and it is the path a
+    // card most often travels: straight into the chat of the person being
+    // proposed to.
     return launchUrl(
-      Uri.https('wa.me', '/$phone', <String, String>{'text': text}),
+      Uri.https('wa.me', '/$phone', <String, String>{
+        'text': CommunityLinks.creditCard(text),
+      }),
       mode: LaunchMode.externalApplication,
     );
   }

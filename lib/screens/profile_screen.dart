@@ -1,38 +1,24 @@
 import 'dart:async';
 import 'dart:io';
-// `intl` also exports a `TextDirection`, so the framework's one is qualified.
-import 'dart:ui' as ui;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/app_menu_sheet.dart';
-import 'package:shadchan/dialogs/backup_import_feedback.dart';
+import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
-import 'package:shadchan/providers/match_repository.dart';
-import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
-import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/services/account_service.dart';
-import 'package:shadchan/services/backup_service.dart';
-import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
-import 'package:shadchan/services/excel_export_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/share_utils.dart';
-import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/person_photo_editor.dart';
-import 'package:shadchan/widgets/section_header.dart';
+import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// "הפרופיל שלי" — the matchmaker's own page, and the one place the app's
 /// settings live. The home screen used to carry a gear icon; it now carries the
@@ -46,21 +32,11 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  bool _isExporting = false;
-
   /// Whether the personal card preview is showing its full text.
   bool _personalCardExpanded = false;
-  bool _isExportingExcel = false;
-  bool _isImporting = false;
-
-  bool get _busy => _isExporting || _isExportingExcel || _isImporting;
 
   @override
   Widget build(BuildContext context) {
-    final PersonRepository personRepo = context.watch<PersonRepository>();
-    final MatchRepository matchRepo = context.watch<MatchRepository>();
-    final ThemeModeProvider themeModeProvider = context
-        .watch<ThemeModeProvider>();
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final AccountProvider account = context.watch<AccountProvider>();
     final SyncProvider sync = context.watch<SyncProvider>();
@@ -84,134 +60,105 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onEditCard: () => _editPersonalCard(profile),
           onShareCard: () => _sharePersonalCard(profile),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
       ],
-      const SectionHeader(title: 'תצוגה'),
-      _ThemeCard(themeModeProvider: themeModeProvider),
-      const SizedBox(height: 24),
-      const SectionHeader(title: 'המאגר שלי'),
-      Card(
-        child: ListTile(
-          leading: const Icon(Icons.style_outlined),
-          title: const Text('סגנונות דתיים'),
-          subtitle: const Text('אילו סגנונות יופיעו באפליקציה'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/profile/religious-levels'),
-        ),
+
+      // Everything below is one row per subject and a screen behind it. The
+      // page used to carry nine headings and every option in the app at once,
+      // which meant the two things people actually come here for — the backup
+      // and the account — were somewhere in the middle of forty rows.
+      SettingsGroup(
+        title: 'התאמה אישית',
+        children: <Widget>[
+          SettingsRow(
+            icon: Icons.palette_outlined,
+            title: 'תצוגה וערכת נושא',
+            onTap: () => context.push('/profile/appearance'),
+          ),
+          SettingsRow(
+            icon: Icons.style_outlined,
+            title: 'סגנונות דתיים',
+            onTap: () => context.push('/profile/religious-levels'),
+          ),
+        ],
       ),
-      const SizedBox(height: 24),
-      // Tips are read on the home screen and written here. The admin entry
-      // only appears for the reviewing account; the rules refuse the queue to
-      // anyone else regardless of what the app chooses to draw.
-      const SectionHeader(title: 'טיפים לשדכנים'),
-      Card(
-        child: Column(
-          children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.lightbulb_outline),
-              title: const Text('הוספת טיפ'),
-              subtitle: const Text('טיפ משלך, שיוצג לשדכנים אחרים לאחר אישור'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push('/profile/tips'),
+      SettingsGroup(
+        title: 'המאגר והנתונים שלי',
+        children: <Widget>[
+          SettingsRow(
+            icon: Icons.folder_outlined,
+            title: 'גיבוי, ייצוא ופרטיות',
+            subtitle: 'גיבוי בענן, שחזור, ייצוא לאקסל וייבוא',
+            onTap: () => context.push('/profile/data'),
+          ),
+        ],
+      ),
+      SettingsGroup(
+        title: 'קהילה ושיתוף',
+        children: <Widget>[
+          if (CommunityLinks.hasUpdatesGroup)
+            SettingsRow(
+              icon: Icons.groups_outlined,
+              title: 'קבוצת העדכונים',
+              subtitle: CommunityPromptsStore.isInUpdatesGroup
+                  ? 'סימנת שאתם כבר בקבוצה'
+                  : null,
+              // The dialog rather than the link: it is the only place that can
+              // hear "אני כבר בקבוצה", which is the one answer that stops the
+              // reminders.
+              onTap: () => UpdatesGroupDialog.show(context),
             ),
-            if (account.isTipsAdmin) ...<Widget>[
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.verified_outlined),
-                title: const Text('אישור טיפים'),
-                subtitle: const Text('טיפים שנשלחו וממתינים לבדיקה'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push('/profile/tips-review'),
-              ),
-            ],
-          ],
-        ),
+          SettingsRow(
+            icon: Icons.ios_share_outlined,
+            title: 'שיתוף האפליקציה עם חבר',
+            onTap: shareTheApp,
+          ),
+          SettingsRow(
+            icon: Icons.lightbulb_outline,
+            title: 'טיפים לשדכנים',
+            onTap: () => context.push('/profile/tips-list'),
+          ),
+          SettingsRow(
+            icon: Icons.edit_note_outlined,
+            title: 'הוספת טיפ',
+            onTap: () => context.push('/profile/tips'),
+          ),
+          if (account.isTipsAdmin)
+            SettingsRow(
+              icon: Icons.verified_outlined,
+              title: 'אישור טיפים',
+              onTap: () => context.push('/profile/tips-review'),
+            ),
+        ],
       ),
-      const SizedBox(height: 24),
-      // One place for everything that connects the matchmaker to the people
-      // behind the app. The three most useful of these are also on the top
-      // bar's three-dots menu, which is the short way in — this is the full
-      // list, and the only home any of it has.
-      const SectionHeader(title: 'קהילה, עזרה ומשוב'),
-      _CommunityCard(isSupportAdmin: account.isSupportAdmin),
-      const SizedBox(height: 24),
-      const SectionHeader(title: 'החשבון שלי'),
-      _AccountCard(
+      SettingsGroup(
+        title: 'עזרה ומשוב',
+        children: <Widget>[
+          SettingsRow(
+            icon: Icons.support_agent_outlined,
+            title: 'עזרה, תקלות ויצירת קשר',
+            onTap: () => context.push('/profile/help'),
+          ),
+        ],
+      ),
+      _AccountGroup(
         account: account,
-        onSignIn: () => _signIn(account, sync, personRepo, matchRepo, profile),
+        onSignIn: () => context.push('/sign-in'),
         onSignOut: () => _confirmSignOut(account, sync),
       ),
-      const SizedBox(height: 24),
-      const SectionHeader(title: 'גיבוי בענן'),
-      _CloudBackupCard(
-        account: account,
-        sync: sync,
-        onBackUpNow: () => _backUpNow(sync, personRepo, matchRepo, profile),
-        onRestore: () => _confirmRestore(sync, personRepo, matchRepo, profile),
-      ),
-      const SizedBox(height: 24),
-      const SectionHeader(title: 'גיבוי לקובץ'),
-      Card(
-        child: Column(
+      if (account.isSupportAdmin)
+        SettingsGroup(
+          title: 'ניהול',
           children: <Widget>[
-            ListTile(
-              leading: _isExporting
-                  ? const _TileSpinner()
-                  : const Icon(Icons.upload_file),
-              title: const Text('ייצוא נתונים'),
-              enabled: !_busy,
-              onTap: _busy ? null : () => _exportData(personRepo, matchRepo),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: _isExportingExcel
-                  ? const _TileSpinner()
-                  : const Icon(Icons.table_chart_outlined),
-              title: const Text('ייצוא לאקסל'),
-              enabled: !_busy,
-              onTap: _busy ? null : () => _exportExcel(personRepo, matchRepo),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: _isImporting
-                  ? const _TileSpinner()
-                  : const Icon(Icons.download),
-              title: const Text('ייבוא נתונים'),
-              enabled: !_busy,
-              onTap: _busy ? null : () => _importData(personRepo, matchRepo),
+            SettingsRow(
+              icon: Icons.admin_panel_settings_outlined,
+              title: 'מסך ניהול',
+              subtitle: 'פניות, "מה חדש" ומנהלי מערכת',
+              onTap: () => context.push('/support/admin'),
             ),
           ],
         ),
-      ),
-      const SizedBox(height: 24),
-      const SectionHeader(title: 'מידע'),
-      Card(
-        child: Column(
-          children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text('מדיניות פרטיות'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push('/privacy-policy'),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.people),
-              title: Text('מספר אנשים: ${personRepo.count}'),
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.favorite),
-              title: Text('מספר הצעות: ${matchRepo.count}'),
-            ),
-            const Divider(height: 1),
-            const ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text('גרסה: 1.0.0'),
-            ),
-          ],
-        ),
-      ),
+      const _SettingsFooter(),
     ];
 
     return Scaffold(
@@ -355,45 +302,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await ShareUtils.shareText(card, photoPaths: photos);
   }
 
-  // --- The Google account -------------------------------------------------
-
-  Future<void> _signIn(
-    AccountProvider account,
-    SyncProvider sync,
-    PersonRepository personRepo,
-    MatchRepository matchRepo,
-    UserProfileProvider userProfile,
-  ) async {
-    final AccountSignInResult result = await account.signIn();
-    if (!mounted) {
-      return;
-    }
-    if (result.outcome == AccountSignInOutcome.failure) {
-      _showSnackBar(result.message!, details: result.details);
-      return;
-    }
-    if (result.outcome == AccountSignInOutcome.canceled &&
-        result.details != null) {
-      // A cancellation the platform reported rather than one the user obviously
-      // made: on Android a release build whose signing certificate is unknown to
-      // the Firebase project shows the whole account list and then comes back
-      // here, indistinguishable from a dismissed sheet until you read the text.
-      _showSnackBar('ההתחברות לא הושלמה.', details: result.details);
-      return;
-    }
-    if (result.outcome == AccountSignInOutcome.success) {
-      // The first backup runs now rather than at the next app open, so the
-      // section directly below stops saying "עדיין לא גובה" while the person
-      // who just connected the account is still looking at it.
-      unawaited(
-        sync.sync(
-          personRepo: personRepo,
-          matchRepo: matchRepo,
-          profile: userProfile,
-        ),
-      );
-    }
-  }
+  // --- The account --------------------------------------------------------
 
   /// Asks first, and says what is actually lost. Signing out is not
   /// destructive here — the database is in Hive either way — and saying so is
@@ -433,387 +342,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // account's backup missing everything the old one happened to hold.
     await sync.forget();
   }
-
-  // --- The cloud backup ---------------------------------------------------
-
-  Future<void> _backUpNow(
-    SyncProvider sync,
-    PersonRepository personRepo,
-    MatchRepository matchRepo,
-    UserProfileProvider profile,
-  ) async {
-    final CloudSyncResult result = await sync.sync(
-      personRepo: personRepo,
-      matchRepo: matchRepo,
-      profile: profile,
-    );
-    if (!mounted) {
-      return;
-    }
-    // Success is silent — the card's own "גובה לפני רגע" line already says it,
-    // and a snackbar for every tap of a button whose result is visible above it
-    // is the kind of confirmation this app removed everywhere else.
-    final String? message = switch (result) {
-      CloudSyncResult.success || CloudSyncResult.upToDate => null,
-      CloudSyncResult.skipped => 'צריך להתחבר לחשבון Google כדי לגבות',
-      CloudSyncResult.notPermitted => 'אין הרשאה לגבות. יש לפנות לתמיכה.',
-      CloudSyncResult.empty || CloudSyncResult.failed =>
-        'הגיבוי לא הושלם. יש לוודא חיבור לאינטרנט ולנסות שוב.',
-    };
-    if (message != null) {
-      _showSnackBar(message);
-    }
-  }
-
-  /// Restore asks first, because it is the one action here that changes the
-  /// database. What it does *not* do is overwrite: the merge is additive and
-  /// skips ids that already exist, and the dialog says so — someone restoring
-  /// onto a phone that already has people needs to know their work is not
-  /// about to be replaced.
-  Future<void> _confirmRestore(
-    SyncProvider sync,
-    PersonRepository personRepo,
-    MatchRepository matchRepo,
-    UserProfileProvider profile,
-  ) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('שחזור מהענן?'),
-          content: const Text(
-            'נוסיף למאגר שבמכשיר את כל מי שנמצא בגיבוי ועדיין לא אצלך, וגם '
-            'נשלים פרטים חסרים בפרופיל שלך. כרטיסים ופרטים שכבר קיימים כאן '
-            'יישארו בדיוק כפי שהם.',
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('שחזור'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true) {
-      return;
-    }
-
-    final CloudRestoreOutcome outcome = await sync.restore(
-      personRepo: personRepo,
-      matchRepo: matchRepo,
-      profile: profile,
-    );
-    if (!mounted) {
-      return;
-    }
-
-    final ImportResult? result = outcome.result;
-    if (result != null) {
-      await BackupImportFeedback.showResultDialog(context, result);
-      return;
-    }
-    _showSnackBar(switch (outcome.status) {
-      CloudSyncResult.empty => 'אין עדיין גיבוי בענן',
-      CloudSyncResult.skipped => 'צריך להתחבר לחשבון Google כדי לשחזר',
-      CloudSyncResult.notPermitted => 'אין הרשאה לשחזר. יש לפנות לתמיכה.',
-      _ => 'השחזור לא הושלם. יש לוודא חיבור לאינטרנט ולנסות שוב.',
-    });
-  }
-
-  // --- Backup and restore -------------------------------------------------
-
-  Future<void> _exportData(
-    PersonRepository personRepo,
-    MatchRepository matchRepo,
-  ) async {
-    setState(() => _isExporting = true);
-
-    try {
-      final File backupFile = await BackupService.exportData(
-        personRepo,
-        matchRepo,
-      );
-      await BackupService.shareBackup(backupFile);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      _showSnackBar('לא הצלחנו לייצא את הנתונים');
-    } finally {
-      if (mounted) {
-        setState(() => _isExporting = false);
-      }
-    }
-  }
-
-  Future<void> _importData(
-    PersonRepository personRepo,
-    MatchRepository matchRepo,
-  ) async {
-    setState(() => _isImporting = true);
-
-    try {
-      final FilePickerResult? pickerResult = await FilePicker.platform
-          .pickFiles(
-            type: FileType.custom,
-            allowedExtensions: const <String>['json'],
-          );
-
-      final String? selectedPath = pickerResult?.files.single.path;
-      if (selectedPath == null || selectedPath.isEmpty) {
-        return;
-      }
-
-      final ImportResult result = await BackupService.importData(
-        File(selectedPath),
-        personRepo,
-        matchRepo,
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      await BackupImportFeedback.showResultDialog(context, result);
-    } on FormatException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      BackupImportFeedback.showImportError(
-        context,
-        error,
-        fallbackMessage: 'לא הצלחנו לייבא את הנתונים',
-      );
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      BackupImportFeedback.showImportError(
-        context,
-        Exception(),
-        fallbackMessage: 'לא הצלחנו לייבא את הנתונים',
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isImporting = false);
-      }
-    }
-  }
-
-  Future<void> _exportExcel(
-    PersonRepository personRepo,
-    MatchRepository matchRepo,
-  ) async {
-    setState(() => _isExportingExcel = true);
-
-    try {
-      final File excelFile = await ExcelExportService.exportData(
-        personRepo,
-        matchRepo,
-      );
-      await ExcelExportService.shareExport(excelFile);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      _showSnackBar('לא הצלחנו לייצא לאקסל');
-    } finally {
-      if (mounted) {
-        setState(() => _isExportingExcel = false);
-      }
-    }
-  }
-
-  /// [details] adds a "פרטים" action carrying the untranslated platform error.
-  /// It is behind a button rather than in the message because it is written for
-  /// whoever has to fix it, not for whoever hit it.
-  void _showSnackBar(String message, {String? details}) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: details == null
-              ? const Duration(seconds: 4)
-              : const Duration(seconds: 10),
-          action: details == null
-              ? null
-              : SnackBarAction(
-                  label: 'פרטים',
-                  onPressed: () => _showErrorDetails(details),
-                ),
-        ),
-      );
-  }
-
-  /// The raw error, selectable and copyable, so it can be pasted into a message
-  /// to us instead of retyped from a photograph of the screen.
-  Future<void> _showErrorDetails(String details) async {
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final ThemeData theme = Theme.of(dialogContext);
-        return AlertDialog(
-          title: const Text('פרטים טכניים'),
-          content: SingleChildScrollView(
-            child: SelectableText(
-              details,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-                height: 1.4,
-              ),
-              textDirection: ui.TextDirection.ltr,
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: details));
-                Navigator.of(dialogContext).pop();
-                _showSnackBar('הפרטים הועתקו');
-              },
-              child: const Text('העתקה'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('סגירה'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 }
 
-/// "קהילה, עזרה ומשוב": the updates group, sharing the app, the one report
-/// form, the help centre, the privacy explanation and the way to write to us.
+/// The account group: connected, or the clearest invitation in the settings to
+/// connect one.
 ///
-/// Ordered by who each row is for. The first two give something to the
-/// matchmaker's own circle; the middle two are what they need when something
-/// goes wrong or is unclear; the last two are about their own data and about
-/// reaching a person. The administrator console is drawn last and only for the
-/// accounts that can open it.
-class _CommunityCard extends StatelessWidget {
-  const _CommunityCard({required this.isSupportAdmin});
-
-  final bool isSupportAdmin;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    Widget row({
-      required IconData icon,
-      required String title,
-      String? subtitle,
-      required VoidCallback onTap,
-    }) {
-      return ListTile(
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: subtitle == null ? null : Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      );
-    }
-
-    return Card(
-      child: Column(
-        children: <Widget>[
-          if (CommunityLinks.hasUpdatesGroup) ...<Widget>[
-            row(
-              icon: Icons.groups_outlined,
-              title: 'קבוצת העדכונים',
-              subtitle: CommunityPromptsStore.isInUpdatesGroup
-                  ? 'סימנת שאתם כבר בקבוצה'
-                  : 'קבוצה שקטה — רק המנהלים מפרסמים בה',
-              // The dialog rather than the link: it is the only place that can
-              // hear "אני כבר בקבוצה", which is the one answer that stops the
-              // reminders.
-              onTap: () => UpdatesGroupDialog.show(context),
-            ),
-            const Divider(height: 1),
-          ],
-          row(
-            icon: Icons.ios_share_outlined,
-            title: 'שיתוף האפליקציה עם חבר',
-            subtitle: 'הודעה מוכנה עם קישור להורדה',
-            onTap: shareTheApp,
-          ),
-          const Divider(height: 1),
-          row(
-            icon: Icons.forum_outlined,
-            title: 'שליחת תקלה / רעיון לשיפור',
-            subtitle: 'טופס אחד לכל פנייה, עם אפשרות לצרף תמונה',
-            onTap: () => context.push('/support/report'),
-          ),
-          const Divider(height: 1),
-          row(
-            icon: Icons.help_outline_rounded,
-            title: 'עזרה והדרכה',
-            onTap: () => context.push('/support/help'),
-          ),
-          const Divider(height: 1),
-          row(
-            icon: Icons.insights_outlined,
-            title: 'הפעילות והקהילה',
-            subtitle: 'הפעולות שלך, הקהילה, היעד השבועי והדירוג',
-            onTap: () => context.push('/activity'),
-          ),
-          const Divider(height: 1),
-          // The leaderboard opt-out lives here as well as on the board itself.
-          // A privacy control that exists only where the thing it controls is
-          // drawn is one that has to be hunted for later.
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: HideFromLeaderboardTile(dense: true),
-          ),
-          const Divider(height: 1),
-          row(
-            icon: Icons.lock_outline_rounded,
-            title: 'פרטיות והמאגר שלי',
-            onTap: () => context.push('/support/privacy'),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.mail_outline_rounded),
-            title: const Text('כתבו לנו במייל'),
-            subtitle: Text(
-              CommunityLinks.supportEmail,
-              style: theme.textTheme.bodySmall,
-            ),
-            onTap: () => CommunityLinks.openSupportEmail(),
-          ),
-          if (isSupportAdmin) ...<Widget>[
-            const Divider(height: 1),
-            row(
-              icon: Icons.admin_panel_settings_outlined,
-              title: 'מסך ניהול',
-              subtitle: 'פניות, "מה חדש" ומנהלי מערכת',
-              onTap: () => context.push('/support/admin'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// The Google account: connected, or an invitation to connect one.
-///
-/// Written as three plain states rather than one clever tile, because the
-/// unavailable state is the one that has to explain itself — a device with no
-/// network gets a sentence saying so instead of a button that fails when
-/// tapped.
-class _AccountCard extends StatelessWidget {
-  const _AccountCard({
+/// Signed out it is deliberately the most prominent thing on the page after the
+/// profile itself — a filled button and one sentence — because it is the only
+/// row here that protects everything the others act on. Signed in it collapses
+/// to the address and a quiet way out.
+class _AccountGroup extends StatelessWidget {
+  const _AccountGroup({
     required this.account,
     required this.onSignIn,
     required this.onSignOut,
@@ -829,175 +368,128 @@ class _AccountCard extends StatelessWidget {
 
     if (account.isSignedIn) {
       final String? email = account.email;
-      return Card(
-        child: Column(
-          children: <Widget>[
-            ListTile(
-              leading: _AccountAvatar(
-                photoUrl: account.photoUrl,
-                displayName: account.displayName ?? email,
-              ),
-              title: Text(
-                account.displayName ?? email ?? 'מחובר',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: email == null
-                  ? null
-                  : Text(email, maxLines: 1, overflow: TextOverflow.ellipsis),
+      return SettingsGroup(
+        title: 'חשבון',
+        children: <Widget>[
+          SettingsRow(
+            icon: Icons.account_circle_outlined,
+            leadingOverride: _AccountAvatar(
+              photoUrl: account.photoUrl,
+              displayName: account.displayName ?? email,
             ),
-            const Divider(height: 1),
-            ListTile(
-              leading: account.isBusy
-                  ? const _TileSpinner()
-                  : Icon(Icons.logout, color: theme.colorScheme.error),
-              title: Text(
-                'יציאה מהחשבון',
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
-              enabled: !account.isBusy,
-              onTap: account.isBusy ? null : onSignOut,
-            ),
-          ],
-        ),
+            title: account.displayName ?? email ?? 'מחובר',
+            subtitle: email,
+          ),
+          SettingsRow(
+            icon: Icons.logout,
+            leadingOverride: account.isBusy ? const SettingsSpinner() : null,
+            title: 'יציאה מהחשבון',
+            destructive: true,
+            enabled: !account.isBusy,
+            trailing: const SizedBox.shrink(),
+            onTap: onSignOut,
+          ),
+        ],
       );
     }
 
     if (!account.isFirebaseReady) {
-      return Card(
-        child: ListTile(
-          leading: const Icon(Icons.cloud_off_outlined),
-          title: const Text('החיבור לחשבון אינו זמין כרגע'),
-          subtitle: const Text('יש לוודא חיבור לאינטרנט ולנסות שוב מאוחר יותר'),
-          enabled: false,
-        ),
+      return const SettingsGroup(
+        title: 'חשבון',
+        children: <Widget>[
+          SettingsRow(
+            icon: Icons.cloud_off_outlined,
+            title: 'החיבור לחשבון אינו זמין כרגע',
+            subtitle: 'יש לוודא חיבור לאינטרנט ולנסות שוב מאוחר יותר',
+            enabled: false,
+          ),
+        ],
       );
     }
 
-    return Card(
-      child: ListTile(
-        leading: account.isBusy
-            ? const _TileSpinner()
-            : const FaIcon(FontAwesomeIcons.google, size: 20),
-        title: const Text('התחברות עם Google'),
-        subtitle: const Text('כדי שנוכל לגבות את המאגר ולשחזר אותו במכשיר חדש'),
-        enabled: !account.isBusy,
-        onTap: account.isBusy ? null : onSignIn,
-      ),
+    return SettingsGroup(
+      title: 'חשבון',
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              FilledButton(
+                onPressed: onSignIn,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                child: const Text('התחברות לחשבון'),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'התחברות מאפשרת לגבות את המאגר, לשחזר אותו במכשיר חדש ולהיות '
+                'חלק מקהילת השדכנים.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// The cloud backup: whether it is on, when it last ran, and the two things
-/// that can be done to it.
-///
-/// Signed out, it is a single explanatory line and nothing else. Offering
-/// `גיבוי עכשיו` to someone with no account would be a button whose only
-/// possible outcome is an error, and the account section directly above is
-/// already the answer.
-class _CloudBackupCard extends StatelessWidget {
-  const _CloudBackupCard({
-    required this.account,
-    required this.sync,
-    required this.onBackUpNow,
-    required this.onRestore,
-  });
+/// The three lines at the foot of the settings, in the smallest type on the
+/// page. Nobody comes here for them, and everybody expects to find them here.
+class _SettingsFooter extends StatelessWidget {
+  const _SettingsFooter();
 
-  final AccountProvider account;
-  final SyncProvider sync;
-  final VoidCallback onBackUpNow;
-  final VoidCallback onRestore;
+  /// Kept beside the two links rather than in an "מידע" card of its own, which
+  /// is what it used to have.
+  static const String version = '1.0.0';
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final TextStyle? style = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
-    if (!account.isSignedIn) {
-      return Card(
-        child: ListTile(
-          leading: const Icon(Icons.cloud_off_outlined),
-          title: const Text('הגיבוי בענן כבוי'),
-          subtitle: const Text(
-            'אחרי התחברות לחשבון Google המאגר יגובה אוטומטית, ואפשר יהיה '
-            'לשחזר אותו במכשיר חדש',
-          ),
-        ),
-      );
-    }
-
-    final bool busy = sync.isSyncing || sync.isRestoring;
-
-    return Card(
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 24),
       child: Column(
         children: <Widget>[
-          ListTile(
-            leading: sync.isSyncing
-                ? const _TileSpinner()
-                : Icon(
-                    Icons.cloud_done_outlined,
-                    color: theme.colorScheme.primary,
-                  ),
-            title: const Text('גיבוי אוטומטי פעיל'),
-            subtitle: Text(_statusLine(sync)),
-            trailing: busy
-                ? null
-                : IconButton(
-                    onPressed: onBackUpNow,
-                    icon: const Icon(Icons.refresh),
-                    tooltip: 'גיבוי עכשיו',
-                  ),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            children: <Widget>[
+              TextButton(
+                onPressed: () => context.push('/privacy-policy'),
+                style: _linkStyle,
+                child: Text('תנאי שימוש', style: style),
+              ),
+              Text('·', style: style),
+              TextButton(
+                onPressed: () => context.push('/privacy-policy'),
+                style: _linkStyle,
+                child: Text('מדיניות פרטיות', style: style),
+              ),
+            ],
           ),
-          const Divider(height: 1),
-          ListTile(
-            leading: sync.isRestoring
-                ? const _TileSpinner()
-                : const Icon(Icons.cloud_download_outlined),
-            title: const Text('שחזור מהענן'),
-            subtitle: const Text('הוספת הכרטיסים מהגיבוי למאגר שבמכשיר'),
-            enabled: !busy,
-            onTap: busy ? null : onRestore,
-          ),
+          const SizedBox(height: 2),
+          Text('גרסה $version', style: style),
         ],
       ),
     );
   }
 
-  /// Says when, not whether. A failed attempt still reports the last good
-  /// backup alongside it, because "נסינו ולא הצלחנו" without a date leaves
-  /// someone unable to tell a hiccup from a month of silence.
-  static String _statusLine(SyncProvider sync) {
-    if (sync.isSyncing) {
-      return 'מגבה עכשיו…';
-    }
-    final DateTime? at = sync.lastSyncedAt;
-    final String when = at == null ? 'עדיין לא גובה' : 'גובה ${_relative(at)}';
-    return switch (sync.lastResult) {
-      CloudSyncResult.failed ||
-      CloudSyncResult.notPermitted => '$when · הניסיון האחרון נכשל',
-      _ => when,
-    };
-  }
-
-  static String _relative(DateTime at) {
-    final Duration ago = DateTime.now().difference(at);
-    if (ago.inMinutes < 1) {
-      return 'לפני רגע';
-    }
-    if (ago.inHours < 1) {
-      return 'לפני ${ago.inMinutes} דקות';
-    }
-    if (ago.inHours < 24) {
-      return ago.inHours == 1 ? 'לפני שעה' : 'לפני ${ago.inHours} שעות';
-    }
-    final int days = ago.inDays;
-    if (days == 1) {
-      return 'אתמול';
-    }
-    if (days < 30) {
-      return 'לפני $days ימים';
-    }
-    return 'ב-${DateFormat('d.M.yyyy').format(at)}';
-  }
+  static final ButtonStyle _linkStyle = TextButton.styleFrom(
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    minimumSize: Size.zero,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
 }
 
 /// The Google profile picture, falling back to the initial and then to a
@@ -1032,19 +524,6 @@ class _AccountAvatar extends StatelessWidget {
                 color: theme.colorScheme.onPrimaryContainer,
               ),
             ),
-    );
-  }
-}
-
-class _TileSpinner extends StatelessWidget {
-  const _TileSpinner();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 24,
-      height: 24,
-      child: CircularProgressIndicator(strokeWidth: 2.5),
     );
   }
 }
@@ -1622,94 +1101,6 @@ class _PersonalCardEditorSheetState extends State<_PersonalCardEditorSheet> {
 }
 
 /// The theme picker, moved here from the old settings screen unchanged.
-class _ThemeCard extends StatelessWidget {
-  const _ThemeCard({required this.themeModeProvider});
-
-  final ThemeModeProvider themeModeProvider;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            // The mode icons ride along with the title instead of inside the
-            // segments, which had no room for them; the active one lights up
-            // so the row still says which mode is on.
-            Row(
-              children: <Widget>[
-                Text('ערכת נושא', style: theme.textTheme.titleMedium),
-                const Spacer(),
-                for (final (ThemeMode mode, IconData icon) entry
-                    in <(ThemeMode, IconData)>[
-                      (ThemeMode.system, Icons.brightness_auto_outlined),
-                      (ThemeMode.light, Icons.light_mode_outlined),
-                      (ThemeMode.dark, Icons.dark_mode_outlined),
-                    ])
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(start: 10),
-                    child: Icon(
-                      entry.$2,
-                      size: 20,
-                      color: themeModeProvider.themeMode == entry.$1
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant.withValues(
-                              alpha: 0.45,
-                            ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SegmentedButton<ThemeMode>(
-              // A third of the card is not enough for an icon, a checkmark
-              // and 'אוטומטי' side by side - that is what pushed the last
-              // letter onto a second line. Labels only, and a scale-down
-              // guard so a large system font shrinks the text instead of
-              // wrapping or clipping it.
-              showSelectedIcon: false,
-              style: SegmentedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
-              segments: const <ButtonSegment<ThemeMode>>[
-                ButtonSegment<ThemeMode>(
-                  value: ThemeMode.system,
-                  label: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('אוטומטי', maxLines: 1, softWrap: false),
-                  ),
-                ),
-                ButtonSegment<ThemeMode>(
-                  value: ThemeMode.light,
-                  label: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('בהיר', maxLines: 1, softWrap: false),
-                  ),
-                ),
-                ButtonSegment<ThemeMode>(
-                  value: ThemeMode.dark,
-                  label: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('כהה', maxLines: 1, softWrap: false),
-                  ),
-                ),
-              ],
-              selected: <ThemeMode>{themeModeProvider.themeMode},
-              onSelectionChanged: (Set<ThemeMode> selection) {
-                themeModeProvider.setThemeMode(selection.first);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// The matchmaker's own photo, drawn the same way wherever it appears: the home
 /// app bar, and the head of this screen. Falls back to the initial of their
 /// name, and to a plain person icon when there is no name either.

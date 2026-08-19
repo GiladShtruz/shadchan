@@ -163,6 +163,83 @@ abstract final class AccountService {
     return buffer.toString();
   }
 
+  /// Whether "המשך עם Apple" may be drawn at all.
+  ///
+  /// **iOS and macOS only, deliberately.** Apple's own flow exists there and
+  /// needs nothing but the entitlement. On Android, `signInWithProvider` falls
+  /// back to Apple's *web* flow, which needs a Services ID and a return URL
+  /// registered in the Apple Developer portal and in the Firebase console —
+  /// and until they are, the button opens a browser that ends on
+  /// `invalid_client`. A button that cannot work is worse than no button, so
+  /// Android is offered Google alone. Turning it on later is this getter plus
+  /// the console work, and nothing else in the app.
+  ///
+  /// It is also the reason iOS *must* keep this: App Store review requires
+  /// Sign in with Apple wherever a third-party sign-in is offered.
+  static bool get isAppleAvailable => Platform.isIOS || Platform.isMacOS;
+
+  /// Opens Apple's sign-in sheet and attaches the account to the Firebase user.
+  ///
+  /// Goes through `AppleAuthProvider` rather than a dedicated plugin so there
+  /// is no extra dependency, no Podfile change and one code path on both Apple
+  /// platforms. `email` and `name` are asked for because Apple only ever hands
+  /// them over on the *first* authorisation for a given app; not asking means
+  /// never being able to.
+  ///
+  /// Never throws, for the same reason [signInWithGoogle] does not: every
+  /// caller is a button.
+  static Future<AccountSignInResult> signInWithApple() async {
+    await FirebaseBootstrap.ensureReady();
+    if (!FirebaseBootstrap.isReady) {
+      return const AccountSignInResult.failure(
+        'לא הצלחנו להתחבר. יש לוודא חיבור לאינטרנט ולנסות שוב.',
+      );
+    }
+    if (!isAppleAvailable) {
+      return const AccountSignInResult.failure(
+        'התחברות עם Apple אינה נתמכת במכשיר הזה.',
+      );
+    }
+
+    try {
+      final AppleAuthProvider provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      await _attachProviderToFirebase(provider);
+      return const AccountSignInResult.success();
+    } on FirebaseAuthException catch (error) {
+      final String details = _describe(
+        'apple',
+        error.code,
+        error.message,
+        null,
+      );
+      debugPrint('ACCOUNT apple sign-in failed: $details');
+      // Apple's own sheet reports a dismissal as a cancelled web/native flow.
+      // It is the user's answer, not a failure, and must stay silent.
+      if (error.code == 'canceled' ||
+          error.code == 'web-context-canceled' ||
+          error.code == 'user-cancelled') {
+        return AccountSignInResult.canceled(details);
+      }
+      return AccountSignInResult.failure(
+        _appleMessage(error.code),
+        details: details,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('ACCOUNT apple sign-in failed: $error\n$stackTrace');
+      return AccountSignInResult.failure(
+        'לא הצלחנו להתחבר. כדאי לנסות שוב.',
+        details: _describe(
+          'unexpected',
+          error.runtimeType.toString(),
+          '$error',
+          null,
+        ),
+      );
+    }
+  }
+
   /// Upgrades the anonymous account in place when it can, and falls back to a
   /// plain sign-in when it cannot.
   ///
@@ -187,6 +264,28 @@ abstract final class AccountService {
         rethrow;
       }
       await FirebaseAuth.instance.signInWithCredential(credential);
+    }
+  }
+
+  /// The provider-flow twin of [_attachToFirebase], with the same rule: the
+  /// anonymous uid is upgraded in place where it can be, and abandoned in
+  /// favour of an existing account where it cannot.
+  static Future<void> _attachProviderToFirebase(AuthProvider provider) async {
+    final User? current = FirebaseAuth.instance.currentUser;
+    if (current == null || !current.isAnonymous) {
+      await FirebaseAuth.instance.signInWithProvider(provider);
+      return;
+    }
+
+    try {
+      await current.linkWithProvider(provider);
+    } on FirebaseAuthException catch (error) {
+      if (error.code != 'credential-already-in-use' &&
+          error.code != 'email-already-in-use' &&
+          error.code != 'provider-already-linked') {
+        rethrow;
+      }
+      await FirebaseAuth.instance.signInWithProvider(provider);
     }
   }
 
@@ -220,6 +319,17 @@ abstract final class AccountService {
         'ההתחברות עם Google אינה זמינה כרגע.',
       GoogleSignInExceptionCode.uiUnavailable =>
         'לא הצלחנו לפתוח את מסך ההתחברות. כדאי לנסות שוב.',
+      _ => 'לא הצלחנו להתחבר. כדאי לנסות שוב.',
+    };
+  }
+
+  static String _appleMessage(String code) {
+    return switch (code) {
+      'account-exists-with-different-credential' =>
+        'לכתובת הזו כבר יש חשבון עם דרך התחברות אחרת.',
+      'network-request-failed' => 'אין חיבור לאינטרנט. יש להתחבר ולנסות שוב.',
+      'operation-not-allowed' => 'ההתחברות עם Apple עדיין לא הופעלה בפרויקט.',
+      'user-disabled' => 'החשבון הזה חסום.',
       _ => 'לא הצלחנו להתחבר. כדאי לנסות שוב.',
     };
   }

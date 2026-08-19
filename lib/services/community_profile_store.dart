@@ -4,9 +4,9 @@ import 'package:shadchan/utils/community_period.dart';
 
 /// The matchmaker's own community state, on this device.
 ///
-/// Three unrelated-looking things live here because they share one property:
-/// each of them decides whether the app is allowed to *say* something, and each
-/// of them must survive being asked the same question twice in a session.
+/// The unrelated-looking things here share one property: each of them decides
+/// whether the app is allowed to *say* something, and each must survive being
+/// asked the same question twice in a session.
 ///
 /// The opt-out is kept locally as well as in Firestore. It is the setting a
 /// user is most likely to change and immediately expect to see honoured, and a
@@ -15,23 +15,16 @@ import 'package:shadchan/utils/community_period.dart';
 abstract final class CommunityProfileStore {
   static const String _hiddenKey = 'community.hiddenFromLeaderboard';
   static const String _consentKey = 'community.leaderboardConsentAnswered';
+  static const String _achievementsKey = 'community.achievementsSeen';
+  static const String _achievementsBaselinedKey = 'community.achievementsBase';
   static const String _bestWeekKey = 'community.bestWeek';
   static const String _bestWeekAtKey = 'community.bestWeekKey';
-  static const String _recordCelebratedKey = 'community.recordCelebratedWeek';
-  static const String _achievementsKey = 'community.achievementsSeen';
   static const String _pendingBulkImportKey = 'community.pendingBulkImport';
-
-  /// An import of more than this many friends at once still counts towards
-  /// every total — it was real work — but is not allowed to *set* the personal
-  /// weekly record. A record nobody can ever beat is not encouragement.
-  static const int bulkImportRecordLimit = 30;
 
   /// From this many friends in one import, the app says something about it.
   ///
-  /// Lower than [bulkImportRecordLimit] and unrelated to it — the two numbers
-  /// answer different questions. This one is "was that enough of a moment to be
-  /// worth a word?"; the other is "was that too much to be a record?". Ten is
-  /// where a list stops being a few friends and starts being a database.
+  /// Ten is where a list stops being a few friends and starts being a database.
+  /// Below it the import screen has already said everything worth saying.
   static const int bulkImportNoticeFrom = 10;
 
   static Box<dynamic>? get _box =>
@@ -91,8 +84,15 @@ abstract final class CommunityProfileStore {
     _write(_hiddenKey, hidden);
   }
 
-  // --- The personal weekly record ------------------------------------------
+  // --- The personal weekly best --------------------------------------------
 
+  /// The highest weekly score this device has ever recorded, in activity
+  /// points.
+  ///
+  /// **It is a line, not an event.** It used to raise a "שיא שבועי חדש!!!"
+  /// dialog the next time the app opened, which is both an interruption and a
+  /// day late; it now sits quietly inside "הפעילות שלך", where somebody looking
+  /// at their own numbers will see it at the moment they are interested.
   static int get bestWeek {
     final Object? raw = _read(_bestWeekKey);
     if (raw is int) {
@@ -101,40 +101,23 @@ abstract final class CommunityProfileStore {
     return raw is String ? int.tryParse(raw) ?? 0 : 0;
   }
 
-  /// Which week set the standing record, so the current week beating itself
-  /// over and over is one record rather than forty.
+  /// Which week set the standing record, so "השבוע הזה הוא השיא" can be told
+  /// apart from "השיא נקבע פעם".
   static String get bestWeekKey {
     final Object? raw = _read(_bestWeekAtKey);
     return raw is String ? raw : '';
   }
 
-  /// Records [actions] as this week's total and reports whether it is a new
-  /// personal best worth saying something about.
+  /// Records [points] as this week's total when it beats the standing best.
   ///
-  /// Returns false when the record was merely extended inside the same week —
-  /// the number is kept, but a matchmaker is congratulated once per week, not
-  /// once per friend added after the moment they passed their old best.
-  static bool recordWeek(int actions, {String? weekKey}) {
-    final String key = weekKey ?? CommunityPeriods.weekKey();
-    final int previous = bestWeek;
-    if (actions <= previous) {
-      return false;
+  /// Nothing is announced and nothing is returned: whoever wants to say
+  /// something about the record reads [bestWeek] and decides for themselves.
+  static void recordWeek(int points, {String? weekKey}) {
+    if (points <= bestWeek) {
+      return;
     }
-
-    final bool sameWeekAsRecord = bestWeekKey == key;
-    _write(_bestWeekKey, actions);
-    _write(_bestWeekAtKey, key);
-
-    if (sameWeekAsRecord || previous == 0) {
-      // Either this week already holds the record, or there was no record to
-      // beat — a first week is a beginning, not an achievement.
-      return false;
-    }
-    if (_read(_recordCelebratedKey) == key) {
-      return false;
-    }
-    _write(_recordCelebratedKey, key);
-    return true;
+    _write(_bestWeekKey, points);
+    _write(_bestWeekAtKey, weekKey ?? CommunityPeriods.weekKey());
   }
 
   // --- The note after a large import ----------------------------------------
@@ -189,4 +172,18 @@ abstract final class CommunityProfileStore {
     final Set<String> next = seenAchievements..add(id);
     _write(_achievementsKey, next.join(','));
   }
+
+  /// Whether this install has already written down which milestones it had
+  /// *before* the app started congratulating people at the moment they happen.
+  ///
+  /// Without it, a matchmaker with three hundred friends would open the update
+  /// and be congratulated on two hundred — a milestone they passed months ago,
+  /// announced because the app had never been asked to notice it. The baseline
+  /// runs once, marks everything already reached as seen, and says nothing.
+  static bool get hasBaselinedAchievements =>
+      _read(_achievementsBaselinedKey) == true ||
+      _read(_achievementsBaselinedKey) == 'true';
+
+  static void markAchievementsBaselined() =>
+      _write(_achievementsBaselinedKey, true);
 }

@@ -58,6 +58,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   final TextEditingController _age = TextEditingController();
   final TextEditingController _height = TextEditingController();
   final TextEditingController _city = TextEditingController();
+  final TextEditingController _phone = TextEditingController();
   final TextEditingController _description = TextEditingController();
   final TextEditingController _prefMinAge = TextEditingController();
   final TextEditingController _prefMaxAge = TextEditingController();
@@ -76,6 +77,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           _age,
           _height,
           _city,
+          _phone,
           _description,
           _prefMinAge,
           _prefMaxAge,
@@ -147,6 +149,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       _age,
       _height,
       _city,
+      _phone,
       _description,
       _prefMinAge,
       _prefMaxAge,
@@ -171,6 +174,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _age.text = person.age?.toString() ?? '';
     _height.text = person.heightCm?.toString() ?? '';
     _city.text = person.city ?? '';
+    _phone.text = person.phone ?? '';
     _description.text = person.description ?? '';
     _contactName.text = person.inquiryContactName ?? '';
     _contactPhone.text = person.inquiryContactPhone ?? '';
@@ -282,6 +286,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       ..setManualAge(_number(_age))
       ..heightCm = _number(_height)
       ..city = _text(_city)
+      ..phone = _text(_phone)
       ..region = _region
       ..maritalStatus = _maritalStatus
       ..religiousLevel = _religiousLevel
@@ -749,6 +754,12 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           ),
           const SizedBox(height: 16),
           _field(controller: _city, label: 'עיר או יישוב'),
+          const SizedBox(height: 16),
+          // The candidate's *own* number. The card used to offer only the
+          // "איש קשר להעברת הצעות" phone further down, so a person created
+          // from "הוספת שם מחוץ למאגר" — who arrives with nothing but a name —
+          // had no way to be given one at all.
+          _field(controller: _phone, label: 'טלפון', phone: true),
           const SizedBox(height: 16),
           _label(theme, 'אזור בארץ'),
           const SizedBox(height: 6),
@@ -1335,7 +1346,6 @@ class _PhotoGallery extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final List<String> rest = paths.length > 1 ? paths.sublist(1) : <String>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1386,37 +1396,36 @@ class _PhotoGallery extends StatelessWidget {
             ),
           ],
         ),
-        if (rest.isNotEmpty) ...<Widget>[
+        // The strip carries **every** photo, the main one included, and it is
+        // the only place the order is set. Two things were wrong before.
+        //
+        // The main photo was not in it, so no photo in the strip could ever be
+        // promoted to the face of the card — the one reorder anybody actually
+        // wants. And each thumbnail wrapped a `GestureDetector` with its own
+        // `onLongPress` for deleting *inside* the drag listener, so the inner
+        // detector won the long press in the gesture arena and the drag never
+        // started. Deleting has its own button on the thumbnail now, and the
+        // long press does the one thing it is advertised to do.
+        if (paths.length > 1) ...<Widget>[
           const SizedBox(height: 12),
           SizedBox(
-            height: 84,
+            height: 92,
             child: ReorderableListView.builder(
               scrollDirection: Axis.horizontal,
               buildDefaultDragHandles: false,
-              itemCount: rest.length,
-              // Index 0 is the main photo above, so the strip's indices are
-              // shifted by one on the way back out.
-              onReorder: (int oldIndex, int newIndex) =>
-                  onReorder(oldIndex + 1, newIndex + 1),
+              itemCount: paths.length,
+              onReorder: onReorder,
               itemBuilder: (BuildContext context, int index) {
-                final int realIndex = index + 1;
                 return Padding(
-                  key: ValueKey<String>(rest[index]),
+                  key: ValueKey<String>(paths[index]),
                   padding: const EdgeInsetsDirectional.only(end: 8),
                   child: ReorderableDelayedDragStartListener(
                     index: index,
-                    child: GestureDetector(
-                      onTap: () => onOpen(realIndex),
-                      onLongPress: () => onLongPress(realIndex),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: _photoOrPlaceholder(
-                          context,
-                          rest[index],
-                          width: 68,
-                          height: 84,
-                        ),
-                      ),
+                    child: _PhotoThumb(
+                      path: paths[index],
+                      isPrimary: index == 0,
+                      onTap: () => onOpen(index),
+                      onRemove: () => onLongPress(index),
                     ),
                   ),
                 );
@@ -1425,7 +1434,8 @@ class _PhotoGallery extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'לחיצה פותחת לעריכה · לחיצה ארוכה גוררת או מוחקת',
+            'לחיצה פותחת לעריכה · לחיצה ארוכה וגרירה משנה את הסדר · '
+            'הראשונה היא תמונת הכרטיסייה',
             style: theme.textTheme.bodySmall?.copyWith(
               color: ProfilePalette.muted(theme),
             ),
@@ -1457,6 +1467,83 @@ class _PhotoGallery extends StatelessWidget {
       height: height,
       fit: BoxFit.cover,
       cacheWidth: (width * 3).round(),
+    );
+  }
+}
+
+/// One photo in the reorder strip: tap to edit, long-press to drag, and a
+/// small × of its own to remove it.
+class _PhotoThumb extends StatelessWidget {
+  const _PhotoThumb({
+    required this.path,
+    required this.isPrimary,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final String path;
+  final bool isPrimary;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return SizedBox(
+      width: 68,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              GestureDetector(
+                onTap: onTap,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: _PhotoGallery._photoOrPlaceholder(
+                    context,
+                    path,
+                    width: 68,
+                    height: 76,
+                  ),
+                ),
+              ),
+              PositionedDirectional(
+                top: -6,
+                end: -6,
+                child: Material(
+                  color: theme.colorScheme.surface,
+                  shape: CircleBorder(
+                    side: BorderSide(color: theme.colorScheme.outlineVariant),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onRemove,
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Icon(
+                        Icons.close,
+                        size: 13,
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (isPrimary)
+            Text(
+              'ראשית',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: ProfilePalette.accent(theme),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

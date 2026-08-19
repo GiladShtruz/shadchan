@@ -33,6 +33,8 @@ import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
+import 'package:shadchan/utils/contact_channel.dart';
+import 'package:shadchan/widgets/contact_channel_button.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/person_photo_carousel.dart';
@@ -341,9 +343,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               },
               onEditingDone: () => setState(() => _editingDetails = false),
             ),
+            if (person.hidden)
+              _OutsideDatabaseBanner(
+                person: person,
+                onAdd: () => _admitToDatabase(context, person),
+              ),
             _ProfileInlineActions(
+              person: person,
               whatsappLabel: _firstNameOr(person, 'WhatsApp'),
               onWhatsApp: () => _openWhatsAppMessage(context, person),
+              onSms: () => ContactChannels.openSms(person.phone),
+              onCompleteCard: () => setState(() => _editingDetails = true),
               onMatches: () => _openSuggestions(context, person),
               onAddProposal: () => _openAddProposal(context, person),
             ),
@@ -433,6 +443,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final DateTime? date = choice?.date;
     if (date != null) {
       await personRepository.setPersonReminder(person.id, date);
+    }
+  }
+
+  Future<void> _admitToDatabase(BuildContext context, Person person) async {
+    await context.read<PersonRepository>().admitToDatabase(person.id);
+    if (context.mounted) {
+      _showSnackBar(context, 'הכרטיסייה נוספה למאגר שלך');
     }
   }
 
@@ -692,6 +709,7 @@ class _ProfileSummaryHeader extends StatefulWidget {
 class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
   late final TextEditingController _nameController = TextEditingController();
   late final TextEditingController _ageController = TextEditingController();
+  late final TextEditingController _phoneController = TextEditingController();
   ReligiousLevel? _religiousLevel;
   String? _religiousLevelOther;
   List<String> _photoPaths = <String>[];
@@ -720,6 +738,7 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
     _discardNewPhotos();
     _nameController.dispose();
     _ageController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -727,6 +746,7 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
     _discardNewPhotos();
     _nameController.text = widget.person.fullName;
     _ageController.text = widget.person.age?.toString() ?? '';
+    _phoneController.text = widget.person.phone ?? '';
     _religiousLevel = widget.person.religiousLevel;
     _religiousLevelOther = widget.person.religiousLevelOther;
     _photoPaths = List<String>.from(widget.person.photosPaths);
@@ -740,21 +760,24 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
     _newPhotoPaths.clear();
   }
 
+  /// Adds photos from the avatar circle. They go to the **front**, so the one
+  /// just chosen becomes the face on the card — but nothing already there is
+  /// dropped.
+  ///
+  /// This used to pick one photo and overwrite the first slot, which quietly
+  /// deleted the existing profile picture: the only way to add a photo without
+  /// losing one was the extended editor, and nothing on this control said so.
   Future<void> _pickPrimaryPhoto() async {
-    final String? path = await PhotoPickerService.pickSinglePhoto(
+    final List<String> paths = await PhotoPickerService.pickPhotos(
       context,
-      namePrefix: widget.person.id,
+      personId: widget.person.id,
     );
-    if (path == null || !mounted) {
+    if (paths.isEmpty || !mounted) {
       return;
     }
-    _discardNewPhotos();
     setState(() {
-      _newPhotoPaths.add(path);
-      _photoPaths = <String>[
-        path,
-        if (_photoPaths.length > 1) ..._photoPaths.skip(1),
-      ];
+      _newPhotoPaths.addAll(paths);
+      _photoPaths = <String>[...paths, ..._photoPaths];
     });
   }
 
@@ -779,10 +802,12 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
         .split(RegExp(r'\s+'))
         .where((String part) => part.isNotEmpty)
         .toList();
+    final String phone = _phoneController.text.trim();
     widget.person
       ..firstName = parts.first
       ..lastName = parts.skip(1).join(' ')
       ..setManualAge(age)
+      ..phone = phone.isEmpty ? null : phone
       ..religiousLevel = _religiousLevel
       ..religiousLevelOther = _religiousLevelOther
       ..photosPaths = List<String>.from(_photoPaths);
@@ -919,7 +944,7 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
                             child: IconButton(
                               onPressed: _saving ? null : _pickPrimaryPhoto,
                               icon: const Icon(Icons.add, color: Colors.white),
-                              tooltip: 'החלפת תמונת הפרופיל',
+                              tooltip: 'הוספת תמונות',
                               visualDensity: VisualDensity.compact,
                             ),
                           ),
@@ -1078,6 +1103,37 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
                     color: _profileMutedColor(theme),
                   ),
                 ),
+              // The phone belongs to the quick edit, not only to the full card.
+              // Someone created from "הוספת שם מחוץ למאגר" arrives with a name
+              // and nothing else, and this is the editor they land in — without
+              // it there was no way to give them a number at all, so the app
+              // kept offering to message a person it could not reach.
+              if (widget.editing) ...<Widget>[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: 200,
+                  child: TextField(
+                    key: ValueKey<String>('quick-phone-${widget.person.id}'),
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: _profileMutedColor(theme),
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: 'טלפון',
+                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                        color: _profileMutedColor(theme),
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: const UnderlineInputBorder(),
+                      focusedBorder: const UnderlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 2),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               _ProfileStatusSwitcher(
                 status: widget.person.profileStatus,
@@ -1099,33 +1155,121 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
   }
 }
 
+/// Shown on a card that is not in המאגר שלי yet — the state
+/// "הוספת שם מחוץ למאגר" leaves a person in when the matchmaker answers
+/// "לא עכשיו".
+///
+/// It exists because that state was previously invisible *and* permanent: the
+/// card worked, it could be put in a proposal, and it simply never appeared in
+/// any list. Filling in a detail now admits it on its own; this says so, and
+/// offers the one tap for somebody who wants it in with nothing filled at all.
+class _OutsideDatabaseBanner extends StatelessWidget {
+  const _OutsideDatabaseBanner({required this.person, required this.onAdd});
+
+  final Person person;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color accent = AppColors.genderAccent(
+      person.gender,
+      dark: theme.brightness == Brightness.dark,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: accent.withValues(alpha: 0.30)),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.person_add_alt_outlined, size: 20, color: accent),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'הכרטיסייה הזו עדיין לא במאגר שלך. היא תתווסף אליו '
+                'ברגע שיתמלא בה פרט כלשהו.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: _profileTextColor(theme),
+                  height: 1.35,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: onAdd,
+              style: TextButton.styleFrom(foregroundColor: accent),
+              child: const Text('הוספה למאגר'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The profile's three primary actions, placed in the scrolling content so the
 /// app-level bottom navigation remains the only persistent bottom bar.
 class _ProfileInlineActions extends StatelessWidget {
   const _ProfileInlineActions({
+    required this.person,
     required this.whatsappLabel,
     required this.onWhatsApp,
+    required this.onSms,
+    required this.onCompleteCard,
     required this.onMatches,
     required this.onAddProposal,
   });
 
+  final Person person;
   final String whatsappLabel;
   final VoidCallback onWhatsApp;
+  final VoidCallback onSms;
+  final VoidCallback onCompleteCard;
   final VoidCallback onMatches;
   final VoidCallback onAddProposal;
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    // The first action follows the number, not the app's favourite messenger.
+    final ({Widget icon, String label, VoidCallback onTap, Color? ink})
+    messaging = switch (ContactChannels.forPerson(person)) {
+      ContactChannel.whatsapp => (
+        icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 21),
+        label: whatsappLabel,
+        onTap: onWhatsApp,
+        ink: _whatsappGreen,
+      ),
+      ContactChannel.sms => (
+        icon: const Icon(Icons.sms_outlined, size: 21),
+        label: 'הודעה',
+        onTap: onSms,
+        ink: theme.colorScheme.primary,
+      ),
+      ContactChannel.none => (
+        icon: const Icon(Icons.edit_outlined, size: 20),
+        label: 'השלמת פרטים',
+        onTap: onCompleteCard,
+        ink: null,
+      ),
+    };
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: Row(
         children: <Widget>[
           Expanded(
             child: _ProfileActionButton(
-              icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 21),
-              label: whatsappLabel,
-              onPressed: onWhatsApp,
-              foregroundColor: _whatsappGreen,
+              icon: messaging.icon,
+              label: messaging.label,
+              onPressed: messaging.onTap,
+              foregroundColor: messaging.ink,
             ),
           ),
           const SizedBox(width: 8),
@@ -2074,8 +2218,6 @@ class _OpenProposalRow extends StatelessWidget {
     final String otherName = otherPerson?.fullName.trim().isNotEmpty == true
         ? otherPerson!.fullName.trim()
         : 'אדם נמחק';
-    final bool hasWhatsApp =
-        PhoneUtils.toWhatsAppNumber(otherPerson?.phone) != null;
 
     return Material(
       color: Colors.transparent,
@@ -2099,19 +2241,17 @@ class _OpenProposalRow extends StatelessWidget {
               const SizedBox(width: 8),
               _StatusChip(status: match.status),
               const SizedBox(width: 4),
-              IconButton(
-                onPressed: hasWhatsApp && otherPerson != null
-                    ? () => _openWhatsApp(context, otherPerson!)
-                    : null,
-                icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
-                tooltip: 'WhatsApp עם $otherName',
-                color: _whatsappGreen,
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints.tightFor(
-                  width: 38,
-                  height: 38,
+              if (otherPerson != null)
+                ContactChannelButton(
+                  person: otherPerson!,
+                  size: 18,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 38,
+                    height: 38,
+                  ),
+                  onWhatsApp: () => _openWhatsApp(context, otherPerson!),
+                  onEdit: () => context.push('/people/${otherPerson!.id}/edit'),
                 ),
-              ),
             ],
           ),
         ),

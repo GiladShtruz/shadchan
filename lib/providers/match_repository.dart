@@ -271,11 +271,45 @@ class MatchRepository extends ChangeNotifier {
         createdAt: now,
         isAutomatic: true,
       );
+    } else if (previous == MatchStatus.dating) {
+      // The mirror of the branch above: the couple who were out are not a
+      // couple any more, so the "תפוס" this proposal put on both cards comes
+      // back off. Only this proposal's own doing is undone — a side who is
+      // "בהפסקה", already "מזל טוב", or out with somebody else is left alone.
+      await _releaseFromDating(match);
     }
 
     _recordActivity(matchId, HomeActivityAction.changedStatus);
     notifyListeners();
     _refreshNotifications();
+  }
+
+  /// Puts both sides of a proposal that has left "יוצאים" back to "פנוי".
+  ///
+  /// The guard is the whole point. "תפוס" is not owned by one proposal: the
+  /// matchmaker can set it by hand, and somebody can be out with a second
+  /// candidate. So a side is only freed when they are still "תפוס" *and* no
+  /// other proposal of theirs is dating; anything else is somebody else's
+  /// decision to undo.
+  Future<void> _releaseFromDating(MatchIdea match) async {
+    for (final String personId in <String>[match.personAId, match.personBId]) {
+      if (resolvePerson?.call(personId)?.profileStatus != ProfileStatus.busy) {
+        continue;
+      }
+      if (_isDatingElsewhere(personId, excludingMatchId: match.id)) {
+        continue;
+      }
+      await markPersonAvailable?.call(personId, match.id);
+    }
+  }
+
+  bool _isDatingElsewhere(String personId, {required String excludingMatchId}) {
+    return _matchBox.values.any(
+      (MatchIdea other) =>
+          other.id != excludingMatchId &&
+          other.status == MatchStatus.dating &&
+          (other.personAId == personId || other.personBId == personId),
+    );
   }
 
   /// Marks a person as "תפוס". Wired to [PersonRepository] in `main.dart`.
@@ -287,6 +321,11 @@ class MatchRepository extends ChangeNotifier {
 
   /// Marks both people as "מזל טוב" when the proposal becomes a wedding.
   Future<void> Function(String personId, String matchId)? markPersonMazelTov;
+
+  /// Marks a person as "פנוי" again. Called only through [_releaseFromDating],
+  /// which owns the decision about whether freeing them is this proposal's to
+  /// make.
+  Future<void> Function(String personId, String matchId)? markPersonAvailable;
 
   /// Records a history event on a person. Wired to
   /// [PersonRepository.logEvent] in `main.dart` so proposal outcomes are logged

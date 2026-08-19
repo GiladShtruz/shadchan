@@ -1,26 +1,29 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
-import 'package:shadchan/dialogs/engagement_dialogs.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/services/community_engagements_service.dart';
-import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
+import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/support_service.dart';
-import 'package:shadchan/utils/community_achievements.dart';
-import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/enums.dart';
 
-/// Decides whether the app has anything to say on this launch, and says at most
-/// one of it.
+/// Decides whether the app has anything to say **on this launch**, and says at
+/// most one of it.
 ///
-/// Three things compete for the same moment — a published "מה חדש?", a rating
-/// request, an invitation to the updates group — and the point of putting them
-/// behind one gate is that they can never stack. A user who opens the app and
-/// dismisses three dialogs in a row has been handed a beta, and this whole
-/// layer is supposed to read as a finished product.
+/// **Only things that genuinely belong to a launch are still here.** A consent
+/// question, a rating request, an invitation to the updates group, a published
+/// "מה חדש?", and one reminder for somebody working without an account. Every
+/// one of those is a thing to read or answer, which is what a dialog is for.
+///
+/// Milestones, the note after a large import and "מזל טוב! זוג חדש התארס" used
+/// to be here too, and none of them belonged: they are not about this launch,
+/// they are about something that happened. Milestones are now a toast at the
+/// moment they are earned (`AchievementWatcher`), and the engagement is a card
+/// on the home screen (`HomeEngagementCard`). Nothing is stored up to be
+/// popped later.
 ///
 /// **Nothing here brings Firebase up.** The two local prompts need no network
 /// and run immediately; the announcement is a Firestore read, and it waits for
@@ -45,10 +48,9 @@ abstract final class CommunityPromptGate {
     BuildContext context, {
     required PersonRepository people,
     required MatchRepository matches,
-    required int actions,
-    bool newWeeklyRecord = false,
-    int weeklyRecord = 0,
+    required CommunityMemberCounts counts,
     bool needsLeaderboardConsent = false,
+    bool isSignedIn = true,
   }) {
     if (_shownThisLaunch) {
       return;
@@ -59,86 +61,66 @@ abstract final class CommunityPromptGate {
     // this matchmaker is published under their name until it is answered, so
     // every launch that goes past without asking is a launch spent counting
     // somebody who was never told they were being counted.
-    if (needsLeaderboardConsent) {
+    // Only a signed-in matchmaker is ever published, so only a signed-in
+    // matchmaker has this to answer. Asking somebody who is not in the
+    // community whether their name may appear in it is a question about
+    // nothing.
+    if (isSignedIn && needsLeaderboardConsent) {
       LeaderboardConsentDialog.show(context);
       return;
     }
 
-    // A large import that was never acknowledged — because the app was closed
-    // between the save and the celebration — is said here instead of an
-    // achievement, and not beside one. It goes ahead of the milestones on
-    // purpose: it describes what the matchmaker actually did, and the round
-    // numbers it crossed are the less interesting half of the same event.
-    _showBulkImportNoteThen(context, () {
-      _maybeAchievement(
-        context,
-        people: people,
-        matches: matches,
-        actions: actions,
-        newWeeklyRecord: newWeeklyRecord,
-        weeklyRecord: weeklyRecord,
-      );
-    });
+    _maybeAsk(
+      context,
+      people: people,
+      matches: matches,
+      counts: counts,
+      isSignedIn: isSignedIn,
+    );
   }
 
-  /// Shows the pending import note if there is one; otherwise runs [next].
-  static Future<void> _showBulkImportNoteThen(
-    BuildContext context,
-    VoidCallback next,
-  ) async {
-    if (await BulkImportNoteDialog.maybeShow(context)) {
-      return;
-    }
-    if (context.mounted) {
-      next();
-    }
-  }
-
-  static void _maybeAchievement(
+  static void _maybeAsk(
     BuildContext context, {
     required PersonRepository people,
     required MatchRepository matches,
-    required int actions,
-    required bool newWeeklyRecord,
-    required int weeklyRecord,
+    required CommunityMemberCounts counts,
+    required bool isSignedIn,
   }) {
-    // A milestone the matchmaker reached goes first. It is the only one of the
-    // four that is *about them* — the other three are the app asking for
-    // something or announcing something — and it is the only one that is gone
-    // for good once shown.
-    final Achievement? achievement = CommunityAchievements.firstUnseen(
-      friends: people.databaseCount,
-      ideas: matches.getAll().length,
-      actions: actions,
-      couples: CommunityCounts.build(
-        people: people.getAll(),
-        matches: matches.getAll(),
-        matchStatusEvents: matches.getAllStatusEvents(),
-        events: people.getAllEvents(),
-      ).couples,
-      newWeeklyRecord: newWeeklyRecord,
-      weeklyRecord: weeklyRecord,
-      seen: CommunityProfileStore.seenAchievements,
-    );
-    if (achievement != null) {
-      AchievementDialog.show(context, achievement);
-      return;
-    }
+    // The pacing figure for everything below is the all-time score, which is
+    // the same "כל הזמנים" number the home block shows. It is handed in rather
+    // than recomputed here: it costs a walk of every ledger in the app, and the
+    // caller has just done it.
+    final int points = counts.allTime.points;
 
     if (CommunityPromptsStore.shouldAskForRating(
-      actions: actions,
+      actions: points,
       earned: _hasEarnedRatingPrompt(people: people, matches: matches),
     )) {
-      RateAppDialog.show(context, actions: actions);
+      RateAppDialog.show(context, actions: points);
       return;
     }
 
-    if (CommunityPromptsStore.shouldOfferUpdatesGroup(actions)) {
-      UpdatesGroupDialog.show(context, actions: actions);
+    if (CommunityPromptsStore.shouldOfferUpdatesGroup(points)) {
+      UpdatesGroupDialog.show(context, actions: points);
       return;
     }
 
-    _whenFirebaseReady(() => _maybeFromTheNetwork(context));
+    // Last, and only for somebody who chose to work locally. It sits at the
+    // bottom of the order because it is the only prompt here that asks for
+    // something the matchmaker has already declined once — everything above it
+    // is either their own good news or a question they have not been asked.
+    final int friends = people.databaseCount;
+    if (!isSignedIn && SignInPromptStore.shouldRemind(friends)) {
+      SignInReminderDialog.show(context, friends: friends);
+      return;
+    }
+
+    // A signed-out device has no community to read from, and every call below
+    // would be refused by `CommunityService`'s own account check anyway.
+    if (!isSignedIn) {
+      return;
+    }
+    _whenFirebaseReady(() => _maybeAnnouncement(context));
   }
 
   /// Runs [action] as soon as Firebase is up — now, if it already is.
@@ -163,27 +145,6 @@ abstract final class CommunityPromptGate {
     }
 
     FirebaseBootstrap.readyListenable.addListener(listener);
-  }
-
-  /// The two things that need the network, still at most one of them.
-  ///
-  /// A new couple goes ahead of a published note. One is somebody's good news
-  /// and the other is the app talking about itself, and if only one of them can
-  /// be said this launch it should not be the app.
-  static Future<void> _maybeFromTheNetwork(BuildContext context) async {
-    final CommunityEngagement? engagement =
-        await CommunityEngagementsService.latestUnseen(
-          seenId: CommunityPromptsStore.seenEngagementId,
-        );
-    if (engagement != null) {
-      if (context.mounted) {
-        await MazelTovDialog.show(context, engagement);
-      }
-      return;
-    }
-    if (context.mounted) {
-      await _maybeAnnouncement(context);
-    }
   }
 
   /// Shows the newest published note if this device has not seen it.

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -66,21 +65,12 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
     final int added = _session?.addedThisSession ?? 0;
     if (added > 1) {
       // Past the notice threshold this whole session counts as one large
-      // import and gets the community note instead of the celebration — never
-      // both, which is the entire point of routing it through the same store.
+      // import: it is recorded here and announced once by `AchievementWatcher`,
+      // which also silences the milestones it crossed. Below the threshold the
+      // ordinary confirmation says it, and neither ever runs beside the other.
       CommunityProfileStore.noteBulkImport(added);
-      if (!await BulkImportNoteDialog.maybeShow(context)) {
-        if (!mounted) {
-          return;
-        }
-        await ContactsAddedCelebration.show(
-          context,
-          count: added,
-          footnote: 'אפשר להשלים את הפרטים שלהם ממסך הבית.',
-        );
-      }
-      if (!mounted) {
-        return;
+      if (added < CommunityProfileStore.bulkImportNoticeFrom) {
+        ContactsAddedCelebration.show(context, count: added);
       }
     }
     _leave();

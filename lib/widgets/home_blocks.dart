@@ -94,9 +94,18 @@ class _NextActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool urgent = action.kind == HomeActionKind.reminderDue;
-    final Color accent = urgent ? AppColors.secondary : _leadTone(theme);
-
     final bool dark = theme.brightness == Brightness.dark;
+    // A card about one person wears that person's own accent, the way their
+    // row in המאגר שלי and their profile do. Before this every card was the
+    // app's stone blue, so a card about a woman was drawn in the men's colour
+    // — and the sentence on it read "אין לו" as well. The couple cards and the
+    // two habit prompts have no single person to belong to, so they keep the
+    // page's lead tone; an urgent reminder overrides everything.
+    final Color accent = urgent
+        ? AppColors.secondary
+        : (action.isPerson && action.person != null
+              ? AppColors.genderAccent(action.person!.gender, dark: dark)
+              : _leadTone(theme));
 
     return SizedBox(
       width: homeIsNarrow(context) ? 134 : HomeConfig.nextActionCardWidth,
@@ -323,222 +332,6 @@ class HomeOpenIdeaBubble extends StatelessWidget {
   }
 }
 
-// --- הפעילות שלך ------------------------------------------------------------
-
-/// All three windows at once: this week, this Hebrew month, and everything ever.
-///
-/// **Not tabs.** The card used to carry three chips that swapped one number
-/// between them, which meant the only way to know whether a quiet week sat
-/// inside a good year was to tap twice and hold both figures in your head. Seen
-/// together they say something none of them says alone, and the comparison is
-/// the encouraging part: "3 this week" reads very differently next to "412 ever".
-///
-/// A little warmer than the rest of the page — a soft tinted ground and one
-/// short line of encouragement — and no further. The breakdown by kind of
-/// action, the chart and the months all live one tap away, on a screen someone
-/// opened *to look at numbers*.
-class HomeActivityPanel extends StatelessWidget {
-  const HomeActivityPanel({
-    super.key,
-    required this.week,
-    required this.month,
-    required this.allTime,
-    required this.onOpen,
-  });
-
-  final int week;
-  final int month;
-  final int allTime;
-  final VoidCallback onOpen;
-
-  /// One short line, and never a comparative or a reproach. A quiet week is
-  /// answered with an invitation rather than a tally, because there is no
-  /// amount of matchmaking that counts as "not enough".
-  String get _encouragement =>
-      week > 0 ? 'עוד פעולה וניפגש בחופה' : 'כל פעולה מקדמת עוד רעיון';
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color lead = _leadTone(theme);
-
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: lead.withValues(alpha: 0.22)),
-            gradient: LinearGradient(
-              begin: AlignmentDirectional.topStart,
-              end: AlignmentDirectional.bottomEnd,
-              colors: <Color>[
-                lead.withValues(alpha: dark ? 0.14 : 0.07),
-                theme.colorScheme.surface,
-              ],
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(14, 12, 12, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      'הפעולות שעשית בשביל החברים שלך',
-                      // Three, not two: the heading is a whole sentence now,
-                      // and at 1.5× system text on a 320px phone it needs the
-                      // third line rather than an ellipsis through it.
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        height: 1.25,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.chevron_right,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(
-                      child: _ActivityFigure(
-                        label: 'השבוע',
-                        value: week,
-                        accent: lead,
-                      ),
-                    ),
-                    _FigureDivider(color: lead.withValues(alpha: 0.18)),
-                    Expanded(
-                      child: _ActivityFigure(
-                        label: 'החודש',
-                        value: month,
-                        accent: lead,
-                      ),
-                    ),
-                    _FigureDivider(color: lead.withValues(alpha: 0.18)),
-                    Expanded(
-                      child: _ActivityFigure(
-                        label: 'כל הזמנים',
-                        value: allTime,
-                        accent: lead,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.auto_awesome_rounded,
-                    size: 13,
-                    color: lead.withValues(alpha: 0.85),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _encouragement,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                        color: lead,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One of the three figures: the number over its window's name.
-class _ActivityFigure extends StatelessWidget {
-  const _ActivityFigure({
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  final String label;
-  final int value;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        // A four-figure all-time count at 1.5× system text is wider than a
-        // third of a 320px phone, so the number scales down inside its column
-        // rather than wrapping or clipping.
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            '$value',
-            maxLines: 1,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w900,
-              height: 1,
-              color: accent,
-            ),
-          ),
-        ),
-        const SizedBox(height: 5),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            maxLines: 1,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _FigureDivider extends StatelessWidget {
-  const _FigureDivider({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 6),
-      color: color,
-    );
-  }
-}
-
 // --- טיפ לשדכן --------------------------------------------------------------
 
 /// One tip, and who wrote it.
@@ -641,7 +434,11 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: ink.withValues(alpha: dark ? 0.30 : 0.16)),
+        // Deeper than it was, but still a hairline: a fractional border width
+        // leaves the page inside a fractional number of pixels wide, and the
+        // carousel's viewport then rounds its way into building a second page
+        // it never shows.
+        border: Border.all(color: ink.withValues(alpha: dark ? 0.38 : 0.26)),
         gradient: LinearGradient(
           begin: AlignmentDirectional.topStart,
           end: AlignmentDirectional.bottomEnd,
@@ -654,44 +451,61 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
         ),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: ink.withValues(alpha: dark ? 0.06 : 0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
+            color: ink.withValues(alpha: dark ? 0.10 : 0.14),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Stack(
         children: <Widget>[
-          // Exactly one decorative mark, low in the corner and very faint. The
-          // scattered leaf and heart the previous version carried competed with
-          // the sentence, which is the only thing here worth reading.
-          PositionedDirectional(
-            end: -10,
-            bottom: -14,
-            child: Icon(
-              Icons.eco_rounded,
-              size: 78,
-              color: ink.withValues(alpha: dark ? 0.06 : 0.07),
-            ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(
-                  'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: ink,
-                  ),
+                // The bulb leads the block rather than trailing the
+                // sentence. It used to be an emoji appended to the tip text,
+                // which is the one place a mark cannot be relied on: a device
+                // without a colour emoji font drew a blank box at the end of
+                // every tip, and even where it rendered it read as a typo in
+                // somebody's sentence. Drawn as an icon in its own tinted
+                // disc it is part of the card's furniture — the thing that
+                // says "this box is advice" before a word of it is read.
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: ink.withValues(alpha: dark ? 0.24 : 0.14),
+                      ),
+                      child: Icon(
+                        Icons.lightbulb_rounded,
+                        size: 18,
+                        color: ink,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: ink,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 // A fixed height so the block does not jump between a short tip
                 // and a long one as the pages turn.
                 SizedBox(
-                  height: homeScaled(context, 96),
+                  height: homeScaled(context, 112),
                   child: PageView.builder(
                     controller: _controller,
                     onPageChanged: (int page) {
@@ -729,22 +543,28 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
                   ),
                 ],
                 if (widget.onAddTip != null) ...<Widget>[
-                  const SizedBox(height: 4),
-                  // Under the tip rather than beside the heading: it answers
-                  // the tip that was just read, and a heading is not the place
-                  // to put a thing to do.
-                  Center(
-                    child: TextButton.icon(
+                  const SizedBox(height: 2),
+                  // Deliberately quiet, and off to the reading edge rather than
+                  // centred under the tip. It used to be a bold, centred button
+                  // the width of the card, which made the last thing the eye
+                  // landed on a request rather than the sentence somebody wrote
+                  // — the block is for reading a tip, and contributing one is
+                  // an afterthought that should look like one.
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
                       onPressed: widget.onAddTip,
                       style: TextButton.styleFrom(
-                        foregroundColor: ink,
+                        foregroundColor: theme.colorScheme.onSurfaceVariant,
                         visualDensity: VisualDensity.compact,
-                        textStyle: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        textStyle: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      icon: const Icon(Icons.send_outlined, size: 16),
-                      label: const Text('שליחת טיפ'),
+                      child: const Text('שליחת טיפ'),
                     ),
                   ),
                 ],
@@ -776,14 +596,20 @@ class _TipPage extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
         Flexible(
+          // The sentence carries no mark of its own any more: the bulb sits
+          // in the block's heading, where it belongs to the card rather than
+          // to whatever somebody happened to write. Set a size up from the
+          // rest of the page as well — this is the one block that exists to
+          // be read, and body-small advice on a large card reads as a
+          // footnote.
           child: Text(
             tip.text,
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
+            style: theme.textTheme.bodyLarge?.copyWith(
               height: 1.5,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
           ),
@@ -795,8 +621,7 @@ class _TipPage extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 11,
+            style: theme.textTheme.labelMedium?.copyWith(
               fontWeight: FontWeight.w700,
               color: ink.withValues(alpha: 0.85),
             ),
@@ -806,6 +631,11 @@ class _TipPage extends StatelessWidget {
     );
   }
 }
+
+/// The one mark on a tip. A bulb rather than a leaf or a heart: it is the only
+/// emoji in the app that has to read as "here is an idea" at 14px, in one
+/// glyph, on both platforms' fonts.
+const String tipMark = '💡';
 
 const Color _tipInk = Color(0xFF5C84A3);
 const Color _tipInkDm = Color(0xFF9DBED6);

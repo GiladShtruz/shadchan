@@ -70,6 +70,7 @@ void main() {
       female: person('female', 'שרה', Gender.female, ProfileStatus.onBreak),
       onTap: () {},
       onOpenPersonWhatsApp: (_) {},
+      onCompletePersonCard: (_) {},
       onPersonStatusPicked: onStatus,
       onQuickAction: onAction,
     );
@@ -125,6 +126,7 @@ void main() {
           female: person('female', 'שרה', Gender.female, ProfileStatus.busy),
           onTap: () {},
           onOpenPersonWhatsApp: (Person person) => opened.add(person.id),
+          onCompletePersonCard: (_) {},
           onQuickAction: (_) {},
         ),
       ),
@@ -201,6 +203,7 @@ void main() {
           ),
           onTap: () {},
           onOpenPersonWhatsApp: (_) {},
+          onCompletePersonCard: (_) {},
         ),
       ),
     );
@@ -297,5 +300,120 @@ void main() {
     await tester.pump();
 
     expect(find.text('עדכון סטטוס'), findsNothing);
+  });
+
+  testWidgets('the three quick actions are drawn as peers, not a winner', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(wrap(card(onAction: (_) {})));
+    await tester.pump();
+    await tester.tap(find.text('עדכון סטטוס'));
+    await tester.pumpAndSettle();
+
+    // "מתחילים לצאת" used to be filled and raised, which read as the status
+    // the proposal was already in rather than one of three things to do.
+    final List<Material> tiles = <Material>[
+      for (final String label in <String>[
+        'העברה להמתנה',
+        'מתחילים לצאת',
+        'סגירת הצעה',
+      ])
+        tester.widget<Material>(
+          find
+              .ancestor(of: find.text(label), matching: find.byType(Material))
+              .first,
+        ),
+    ];
+
+    expect(tiles.map((Material m) => m.elevation), everyElement(0.0));
+    // Same shape and the same weight of tint on all three; only the hue moves.
+    expect(
+      tiles.map((Material m) => m.color!.a).toSet(),
+      hasLength(1),
+      reason: 'all three tiles should carry the same tint strength',
+    );
+  });
+
+  testWidgets('a candidate with no number is offered a pencil, not WhatsApp', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final List<String> completed = <String>[];
+    await tester.pumpWidget(
+      wrap(
+        MatchIdeaCard(
+          match: match(),
+          // Exactly what "הוספת שם מחוץ למאגר" produces on one side.
+          male: Person(
+            id: 'male',
+            firstName: 'דוד',
+            lastName: '',
+            gender: Gender.male,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          female: person(
+            'female',
+            'שרה',
+            Gender.female,
+            ProfileStatus.available,
+          ),
+          onTap: () {},
+          onOpenPersonWhatsApp: (_) {},
+          onCompletePersonCard: (Person p) => completed.add(p.id),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // One WhatsApp icon, for the side that has a number.
+    expect(find.byType(FaIcon), findsOneWidget);
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pump();
+    expect(completed, <String>['male']);
+  });
+
+  testWidgets('a landline is offered SMS rather than WhatsApp', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      wrap(
+        MatchIdeaCard(
+          match: match(),
+          male: Person(
+            id: 'male',
+            firstName: 'דוד',
+            lastName: '',
+            gender: Gender.male,
+            phone: '03-1234567',
+            createdAt: now,
+            updatedAt: now,
+          ),
+          female: person(
+            'female',
+            'שרה',
+            Gender.female,
+            ProfileStatus.available,
+          ),
+          onTap: () {},
+          onOpenPersonWhatsApp: (_) {},
+          onCompletePersonCard: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(FaIcon), findsOneWidget);
+    expect(find.byIcon(Icons.sms_outlined), findsOneWidget);
   });
 }

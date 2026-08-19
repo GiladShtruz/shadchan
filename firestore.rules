@@ -158,9 +158,15 @@ service cloud.firestore {
     //
     // The one place in this database where a user's own row is readable by
     // other users, and the exception is deliberate and narrow. A member
-    // document holds a name the matchmaker typed about *themselves* and four
-    // counters. It holds nothing about a candidate: no person, no proposal, no
-    // note, no photo, no phone number — those never leave `users/{uid}`.
+    // document holds a name the matchmaker typed about *themselves* and a row
+    // of counters — an activity score per window, and how many friends, ideas,
+    // couples and engagements are behind it. It holds nothing about a
+    // candidate: no person, no proposal, no note, no photo, no phone number —
+    // those never leave `users/{uid}`.
+    //
+    // `communityGoals` used to sit below this: a shared weekly target the
+    // community aimed at. The feature was removed, and its rule with it, so
+    // the collection is closed by the catch-all at the bottom.
     //
     // Read is open to any signed-in device because it has to be: the
     // leaderboard is a sorted query and the community totals are `sum()` /
@@ -253,16 +259,6 @@ service cloud.firestore {
       // it — the same trap `communityMembers` fell into.
       allow delete: if isSignedIn()
                     && resource.data.authorUid == request.auth.uid;
-    }
-
-    // The shared weekly target. No personal data at all — a number the whole
-    // community aims at, and the total it actually reached. Any signed-in
-    // client may create the week's target (the first one to look computes it
-    // inside a transaction) and may add its own finished week to `actual` on
-    // rollover, which is an increment rather than a value it chooses.
-    match /communityGoals/{weekKey} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
     }
 
     // Anything not named above is closed. Without this, a path added later

@@ -27,9 +27,15 @@ import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/reminders_screen.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/religious_levels_settings_screen.dart';
+import 'package:shadchan/screens/settings_appearance_screen.dart';
+import 'package:shadchan/screens/settings_data_screen.dart';
+import 'package:shadchan/screens/settings_help_screen.dart';
+import 'package:shadchan/screens/sign_in_screen.dart';
 import 'package:shadchan/screens/stat_detail_screen.dart';
+import 'package:shadchan/screens/tips_list_screen.dart';
 import 'package:shadchan/screens/whatsapp_message_settings_screen.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
+import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 
@@ -76,16 +82,40 @@ bool shouldShowBottomNavigationBar(String path) {
   }.contains(segments.last);
 }
 
+/// One navigator per shell branch, so the bottom bar can reach into a branch's
+/// own stack. See [_AppShell.build] for why it has to.
+final List<GlobalKey<NavigatorState>> _branchNavigatorKeys =
+    <GlobalKey<NavigatorState>>[
+      GlobalKey<NavigatorState>(debugLabel: 'branch-home'),
+      GlobalKey<NavigatorState>(debugLabel: 'branch-people'),
+      GlobalKey<NavigatorState>(debugLabel: 'branch-matches'),
+      GlobalKey<NavigatorState>(debugLabel: 'branch-dashboard'),
+    ];
+
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/home',
     redirect: (BuildContext context, GoRouterState state) {
       final bool isOnboarded = context.read<UserProfileProvider>().isOnboarded;
       final bool atWelcome = state.uri.path == '/welcome';
+      final bool atSignIn = state.uri.path == '/sign-in';
 
       if (!isOnboarded) {
         return atWelcome ? null : '/welcome';
       }
+
+      // The one-time invitation to connect an account, between the profile and
+      // the app. It is gated on a **local flag**, never on the account itself:
+      // this runs on the first frame, and asking Firebase who is signed in
+      // would drag `initializeApp`, App Check and the auth restore onto the
+      // cold start. `SignInScreen` steps aside by itself when the answer turns
+      // out to be "already signed in".
+      if (!SignInPromptStore.hasAnswered) {
+        return atSignIn ? null : '/sign-in';
+      }
+      // Answered once, and still reachable: "התחברות" on the community areas
+      // pushes the same screen. It is not bounced back here, because a screen
+      // somebody asked for should open.
       if (atWelcome) {
         return '/home';
       }
@@ -101,6 +131,12 @@ abstract final class AppRouter {
         path: '/welcome',
         builder: (BuildContext context, GoRouterState state) {
           return const OnboardingScreen();
+        },
+      ),
+      GoRoute(
+        path: '/sign-in',
+        builder: (BuildContext context, GoRouterState state) {
+          return const SignInScreen();
         },
       ),
       StatefulShellRoute.indexedStack(
@@ -119,6 +155,7 @@ abstract final class AppRouter {
             },
         branches: <StatefulShellBranch>[
           StatefulShellBranch(
+            navigatorKey: _branchNavigatorKeys[0],
             routes: <RouteBase>[
               GoRoute(
                 path: '/home',
@@ -134,6 +171,7 @@ abstract final class AppRouter {
             ],
           ),
           StatefulShellBranch(
+            navigatorKey: _branchNavigatorKeys[1],
             routes: <RouteBase>[
               GoRoute(
                 path: '/people',
@@ -245,6 +283,7 @@ abstract final class AppRouter {
             ],
           ),
           StatefulShellBranch(
+            navigatorKey: _branchNavigatorKeys[2],
             routes: <RouteBase>[
               GoRoute(
                 path: '/matches',
@@ -296,6 +335,7 @@ abstract final class AppRouter {
             ],
           ),
           StatefulShellBranch(
+            navigatorKey: _branchNavigatorKeys[3],
             routes: <RouteBase>[
               GoRoute(
                 path: '/dashboard',
@@ -315,6 +355,32 @@ abstract final class AppRouter {
           return const ProfileScreen();
         },
         routes: <RouteBase>[
+          // The settings are one short page and five screens behind it. Each of
+          // these used to be a card on `/profile` itself.
+          GoRoute(
+            path: 'appearance',
+            builder: (BuildContext context, GoRouterState state) {
+              return const SettingsAppearanceScreen();
+            },
+          ),
+          GoRoute(
+            path: 'data',
+            builder: (BuildContext context, GoRouterState state) {
+              return const SettingsDataScreen();
+            },
+          ),
+          GoRoute(
+            path: 'help',
+            builder: (BuildContext context, GoRouterState state) {
+              return const SettingsHelpScreen();
+            },
+          ),
+          GoRoute(
+            path: 'tips-list',
+            builder: (BuildContext context, GoRouterState state) {
+              return const TipsListScreen();
+            },
+          ),
           GoRoute(
             path: 'religious-levels',
             builder: (BuildContext context, GoRouterState state) {
@@ -458,8 +524,7 @@ class _AppShell extends StatelessWidget {
               type: BottomNavigationBarType.fixed,
               currentIndex: selectedIndex,
               // Tapping a tab always returns to that area's primary screen.
-              onTap: (int index) =>
-                  navigationShell.goBranch(index, initialLocation: true),
+              onTap: (int index) => _goToBranchRoot(index, navigationShell),
               items: const <BottomNavigationBarItem>[
                 BottomNavigationBarItem(
                   icon: Icon(Icons.home_outlined),
@@ -480,5 +545,31 @@ class _AppShell extends StatelessWidget {
             )
           : null,
     );
+  }
+
+  /// Returns a tab to its primary screen — including out of any screen that was
+  /// pushed onto the branch imperatively.
+  ///
+  /// `goBranch(initialLocation: true)` alone is not enough, and the bug it left
+  /// is worth writing down. A branch's `Navigator` holds two kinds of route:
+  /// the declarative `Page`s go_router builds from the location, and anything
+  /// a screen pushed itself with `Navigator.push` — which several flows do
+  /// (`ThinkScreen.open`, `openSuggestionsFor`, `openExtendedPersonEditor`).
+  /// Resetting the location only rewrites the first kind; an imperative route
+  /// sits on top of them and stays there. The location said `/home`, the bar
+  /// drew "בית" as selected, and the screen never changed — most visibly from
+  /// "עוצרים רגע לחשוב על החברים", which is reached that way.
+  ///
+  /// So the imperative routes are popped first, down to the last declarative
+  /// page — never past it, which is what would tear a branch's own pages out
+  /// from under go_router.
+  static void _goToBranchRoot(
+    int index,
+    StatefulNavigationShell navigationShell,
+  ) {
+    _branchNavigatorKeys[index].currentState?.popUntil(
+      (Route<dynamic> route) => route.settings is Page || route.isFirst,
+    );
+    navigationShell.goBranch(index, initialLocation: true);
   }
 }

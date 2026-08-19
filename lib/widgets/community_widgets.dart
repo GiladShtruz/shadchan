@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/services/community_service.dart';
+import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_period.dart';
 
 /// The building blocks of the community surfaces.
 ///
 /// One rule runs through all of them: **a number is not a trophy.** The figures
-/// are set in the page's own type at the page's own weight, the meter is the
-/// brand blue rather than a colour that means "score", and exactly one place in
-/// the whole feature draws a gold anything — first place on the leaderboard.
-/// The feeling being aimed at is "there is a community here doing a great deal
-/// for its friends", not "you are winning".
+/// are set in the page's own type at the page's own weight, and exactly one
+/// place in the whole feature draws a gold anything — first place on the
+/// leaderboard. The feeling being aimed at is "there is a community here doing
+/// a great deal for its friends", not "you are winning".
 
 Color communityLead(ThemeData theme) => theme.brightness == Brightness.dark
     ? theme.colorScheme.primary
@@ -22,10 +23,19 @@ Color communityLead(ThemeData theme) => theme.brightness == Brightness.dark
 /// The one card shape the community surfaces use — the same bordered, softly
 /// tinted surface the rest of the home page wears.
 class CommunityCard extends StatelessWidget {
-  const CommunityCard({super.key, required this.child, this.title});
+  const CommunityCard({
+    super.key,
+    required this.child,
+    this.title,
+    this.trailing,
+  });
 
   final Widget child;
   final String? title;
+
+  /// A quiet link on the heading row — "לפי חודשים ›" and the like. Never a
+  /// second heading and never a button.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -52,11 +62,18 @@ class CommunityCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (heading != null) ...<Widget>[
-            Text(
-              heading,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    heading,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                ?trailing,
+              ],
             ),
             const SizedBox(height: 10),
           ],
@@ -67,7 +84,7 @@ class CommunityCard extends StatelessWidget {
   }
 }
 
-/// The week / month / all-time switch.
+/// The day / week / month / all-time switch.
 class CommunityPeriodTabs extends StatelessWidget {
   const CommunityPeriodTabs({
     super.key,
@@ -75,6 +92,15 @@ class CommunityPeriodTabs extends StatelessWidget {
     required this.onChanged,
     required this.periods,
   });
+
+  /// The three windows every personal and community figure offers. "היום" is
+  /// left out on purpose: a day is a real unit for a leaderboard, which resets,
+  /// and a noisy one for a total that is trying to say how things are going.
+  static const List<CommunityPeriod> weekMonthAllTime = <CommunityPeriod>[
+    CommunityPeriod.week,
+    CommunityPeriod.month,
+    CommunityPeriod.allTime,
+  ];
 
   final CommunityPeriod selected;
   final ValueChanged<CommunityPeriod> onChanged;
@@ -227,27 +253,267 @@ class CommunitySmallFigure extends StatelessWidget {
   }
 }
 
-/// The goal meter. Past the target it keeps its full bar and changes tone
-/// rather than stopping — the week does not end at 100%.
-class CommunityMeter extends StatelessWidget {
-  const CommunityMeter({super.key, required this.progress, this.over = false});
+/// One line of "what happened", as a label with its number at the end.
+///
+/// **A row, not a tile.** Six of these as cards would be six boxes competing
+/// with each other and with the headline above them; as a short list they read
+/// as one paragraph of figures, which is what they are.
+class CommunityStatLine extends StatelessWidget {
+  const CommunityStatLine({
+    super.key,
+    required this.label,
+    required this.value,
+    this.icon,
+  });
 
-  final double progress;
-  final bool over;
+  final String label;
+  final int value;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = over ? AppColors.statusDating : communityLead(theme);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: LinearProgressIndicator(
-        value: progress,
-        minHeight: 9,
-        backgroundColor: theme.colorScheme.outlineVariant,
-        valueColor: AlwaysStoppedAnimation<Color>(tone),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: <Widget>[
+          if (icon != null) ...<Widget>[
+            Icon(icon, size: 15, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 2,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            CommunityFigure.format(value),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+/// "איך הפעילות נספרת?" — the scoring method, said once and in full.
+///
+/// A sheet rather than a permanent block of small print. The rule matters the
+/// first time somebody wonders about it and never again, and a table of weights
+/// sitting under every figure turns a workspace into a rulebook.
+class ActivityScoringSheet extends StatelessWidget {
+  const ActivityScoringSheet({super.key});
+
+  static Future<void> show(BuildContext context) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext context) => const ActivityScoringSheet(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              ActivityPoints.howItIsCountedTitle,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'שיטת הניקוד:',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            for (final String line in ActivityPoints.scoringLines)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Container(
+                        width: 5,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: communityLead(theme),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        line,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 14),
+            for (final String note in ActivityPoints.scoringNotes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  note,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The one-line way into [ActivityScoringSheet].
+class ActivityScoringLink extends StatelessWidget {
+  const ActivityScoringLink({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => ActivityScoringSheet.show(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              Icons.help_outline_rounded,
+              size: 14,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            // Flexible rather than intrinsic: at 1.5x system text the line is
+            // wider than a 320px phone's card, and a link that overflows is
+            // the one thing on this block nobody would report.
+            Flexible(
+              child: Text(
+                ActivityPoints.howItIsCountedTitle,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  decoration: TextDecoration.underline,
+                  decorationColor: theme.colorScheme.outlineVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The invitation a matchmaker who has not connected an account sees where the
+/// community's figures would be.
+///
+/// **It says what is missing, not that something is locked.** Their own numbers
+/// are right beside it and keep working; the community is simply a thing they
+/// are not part of yet, and one sentence and one button is the whole of what
+/// the app has to say about it. There is no second nudge, no badge and no
+/// counter of what they are missing out on.
+class CommunitySignInCard extends StatelessWidget {
+  const CommunitySignInCard({
+    super.key,
+    required this.title,
+    required this.body,
+    this.compact = false,
+  });
+
+  /// The form for the home block, where this sits inside a card that is
+  /// already carrying the matchmaker's own figures.
+  const CommunitySignInCard.joinTheCommunity({Key? key})
+    : this(
+        key: key,
+        title: 'הצטרפו לקהילת השדכנים',
+        body:
+            'התחברו כדי לראות את פעילות הקהילה, להשתתף בדירוג ולסנכרן את המאגר '
+            'בין מכשירים.',
+        compact: true,
+      );
+
+  /// The form for the activity screen, standing in for the two community
+  /// sections a signed-out reader cannot see.
+  const CommunitySignInCard.communityIsForMembers({Key? key})
+    : this(
+        key: key,
+        title: 'הקהילה זמינה למשתמשים מחוברים',
+        body:
+            'התחברו כדי לראות את פעילות קהילת השדכנים, להשתתף בדירוג ולשמור את '
+            'הפעילות שלכם בין מכשירים.',
+      );
+
+  final String title;
+  final String body;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          style:
+              (compact
+                      ? theme.textTheme.bodyMedium
+                      : theme.textTheme.titleSmall)
+                  ?.copyWith(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          body,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FilledButton(
+            onPressed: () => context.push('/sign-in'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+            ),
+            child: const Text('התחברות'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -322,7 +588,7 @@ class CommunityRankRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            CommunityFigure.format(entry.actions),
+            CommunityFigure.format(entry.points),
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w800,
               color: lead,
@@ -334,66 +600,22 @@ class CommunityRankRow extends StatelessWidget {
   }
 }
 
-/// "להסתיר אותי מהדירוג", with the sentence that explains what it means.
+/// **"להסתיר אותי מהדירוג" was removed from the app, and this note is what is
+/// left of it.**
 ///
-/// It is drawn in three places — the home block, this screen and the settings —
-/// on purpose. A privacy control that only exists in a settings screen is a
-/// privacy control most people never find, and this one has to be found *at the
-/// moment somebody notices their name on a public list*, which is not while
-/// they are looking at the settings.
+/// The mechanism underneath is intact and still matters: `CommunityProfileStore
+/// .isHidden` is true until `LeaderboardConsentDialog` has been answered, so a
+/// name is never published before somebody agrees to it, and
+/// `CommunityService.publish` still writes an empty name for a hidden member.
+/// What is gone is the *toggle* — the way to change that answer afterwards.
 ///
-/// **It is always shown, at every community size.** An earlier plan was to
-/// reveal it only past two hundred active matchmakers, on the theory that
-/// hiding in a small group is conspicuous. That plan belonged to a design where
-/// appearing was the default and this toggle was the only way out. It is not
-/// the design that shipped: `LeaderboardConsentDialog` asks once, before a name
-/// has ever been published, and until it is answered nothing identifying is
-/// written to the server at all. So this tile is not an escape hatch — it is
-/// where an answered question is changed later, and there is no community size
-/// at which somebody should be unable to change their answer.
-class HideFromLeaderboardTile extends StatelessWidget {
-  const HideFromLeaderboardTile({super.key, this.dense = false});
-
-  /// The compact form used inside a card that is already busy.
-  final bool dense;
-
-  static const String explanation =
-      'כשמסתירים, השם שלך לא מופיע לאף אחד בדירוג — וגם המיקום האישי שלך לא '
-      'יוצג לך. הפעילות שלך ממשיכה להיספר בנתוני הקהילה, בלי שם.';
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final CommunityProvider community = context.watch<CommunityProvider>();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          dense: dense,
-          value: community.isHidden,
-          onChanged: (bool value) => community.setHidden(value),
-          title: Text(
-            'להסתיר אותי מהדירוג',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          subtitle: dense ? null : Text(explanation),
-        ),
-        if (dense)
-          Text(
-            explanation,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.4,
-            ),
-          ),
-      ],
-    );
-  }
-}
+/// The consequence is worth writing down, because it is a real one and it was
+/// a product decision rather than an oversight: somebody who said yes can no
+/// longer say no. The only remaining way off the board is
+/// [DeleteCommunityDataTile] on "פרטיות והמאגר שלי", which deletes the whole
+/// member document. Restoring the toggle means putting this widget back in the
+/// activity screen and the privacy page; nothing in the service layer has to
+/// change.
 
 /// "מחיקת הנתונים שלי מהקהילה" — the erasure path.
 ///

@@ -15,6 +15,7 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/reminders_bell_button.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
 enum PeopleSortOption { alphabetical, ageAscending, newest, recentlyUpdated }
@@ -86,6 +87,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
         title: const Text('המאגר שלי'),
         centerTitle: true,
         actions: <Widget>[
+          // The same bell, in the same slot, as בית and רעיונות. It leads the
+          // group so the three screens agree on where it is; adding people is
+          // this screen's own action and follows it, with the button in the
+          // thumb's corner carrying most of that traffic anyway.
+          const RemindersBellButton(),
           IconButton(
             tooltip: 'הוספת אנשי קשר',
             icon: const Icon(Icons.add),

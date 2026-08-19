@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
+import 'package:shadchan/widgets/achievement_watcher.dart';
 import 'package:shadchan/widgets/app_update_prompt.dart';
 import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
@@ -43,9 +44,14 @@ class App extends StatelessWidget {
           child: AppUpdatePrompt(
             enabled: checkForUpdates,
             child: CloudSyncScheduler(
-              child: IncomingBackupImportListener(
-                child: IncomingSharedProfileListener(
-                  child: child ?? const SizedBox.shrink(),
+              // Above the router rather than on a screen: a milestone is
+              // earned wherever the matchmaker happens to be working, and this
+              // has to be watching from all of them.
+              child: AchievementWatcher(
+                child: IncomingBackupImportListener(
+                  child: IncomingSharedProfileListener(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
             ),

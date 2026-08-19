@@ -22,12 +22,13 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/contact_channel_button.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
@@ -290,6 +291,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
               ),
               const SizedBox(height: 12),
               _UpdateProposalCard(
+                currentStatus: match.status,
                 actions: _proposalActions(
                   context,
                   matchRepository,
@@ -428,8 +430,9 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       );
   }
 
-  /// The three ways a proposal moves on, in reading order: the two quiet ones
-  /// on the sides and the one that matters — "יוצאים" — in the middle.
+  /// The ways a proposal can move on, in reading order. They are peers: the
+  /// card that lays them out draws them identically, and the status the
+  /// proposal is already in is shown by that card's own chip.
   List<_ProposalAction> _proposalActions(
     BuildContext context,
     MatchRepository repository,
@@ -437,13 +440,12 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     _MatchSituation situation,
   ) {
     // Named for the act, not the state: "יוצאים" read as a label describing
-    // where the proposal already is, which is exactly the confusion the filled
-    // treatment below is there to remove.
+    // where the proposal already is, which is exactly the confusion this card
+    // keeps having to design its way out of.
     final _ProposalAction dating = _ProposalAction(
       label: 'מתחילים לצאת',
       icon: Icons.celebration_outlined,
       tone: _ActionTone.go,
-      emphasized: true,
       onTap: () => repository.updateStatus(match.id, MatchStatus.dating),
     );
     final _ProposalAction close = _ProposalAction(
@@ -495,7 +497,6 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
             label: 'חתונה',
             icon: Icons.celebration_outlined,
             tone: _ActionTone.go,
-            emphasized: true,
             onTap: () => _markMarried(context, repository, match),
           ),
         ];
@@ -507,7 +508,6 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
             label: 'פתיחה מחדש',
             icon: Icons.refresh_rounded,
             tone: _ActionTone.go,
-            emphasized: true,
             onTap: () => repository.updateStatus(match.id, MatchStatus.idea),
           ),
         ];
@@ -1547,8 +1547,7 @@ class _CandidateSide extends StatelessWidget {
       if (current?.religiousLevelLabel.isNotEmpty ?? false)
         current!.religiousLevelLabel,
     ];
-    final bool hasPhone =
-        current != null && PhoneUtils.toWhatsAppNumber(current.phone) != null;
+    final ContactChannel channel = ContactChannels.forPerson(current);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1610,28 +1609,16 @@ class _CandidateSide extends StatelessWidget {
         ),
         if (current != null) ...<Widget>[
           const SizedBox(height: 6),
-          Tooltip(
-            message: 'WhatsApp עם ${current.firstName}',
-            child: Material(
-              color: const Color(0xFF25D366).withValues(alpha: 0.12),
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: hasPhone ? () => onWhatsApp(current, other) : null,
-                child: Padding(
-                  padding: const EdgeInsets.all(7),
-                  child: FaIcon(
-                    FontAwesomeIcons.whatsapp,
-                    size: 17,
-                    color: hasPhone
-                        ? const Color(0xFF25D366)
-                        : theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.5,
-                          ),
-                  ),
-                ),
-              ),
-            ),
+          // WhatsApp, SMS, or — for a name added straight into this proposal
+          // from outside the database, with no number at all — the one thing
+          // that helps: a way into their card to add one. It used to be a
+          // WhatsApp disc in every case, greyed out and inert on exactly the
+          // person who needed something done about it.
+          _CandidateContactDisc(
+            channel: channel,
+            person: current,
+            onWhatsApp: () => onWhatsApp(current, other),
+            onCompleteCard: () => onOpenProfile(current),
           ),
           const SizedBox(height: 7),
           // The person's global availability — not a per-proposal state.
@@ -1685,6 +1672,76 @@ class _CandidateSide extends StatelessWidget {
 
 /// The proposal's derived state — read from the two people's availability, the
 /// proposal status and the reminders. Nothing here is stored separately.
+/// The small round messaging control under a candidate's photo.
+class _CandidateContactDisc extends StatelessWidget {
+  const _CandidateContactDisc({
+    required this.channel,
+    required this.person,
+    required this.onWhatsApp,
+    required this.onCompleteCard,
+  });
+
+  final ContactChannel channel;
+  final Person person;
+  final VoidCallback onWhatsApp;
+  final VoidCallback onCompleteCard;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String name = person.firstName.trim().isEmpty
+        ? person.fullName.trim()
+        : person.firstName.trim();
+
+    final ({String tooltip, Color ink, Widget icon, VoidCallback onTap})
+    control = switch (channel) {
+      ContactChannel.whatsapp => (
+        tooltip: 'WhatsApp עם $name',
+        ink: kWhatsAppGreen,
+        icon: const FaIcon(
+          FontAwesomeIcons.whatsapp,
+          size: 17,
+          color: kWhatsAppGreen,
+        ),
+        onTap: onWhatsApp,
+      ),
+      ContactChannel.sms => (
+        tooltip: 'הודעה ל$name',
+        ink: theme.colorScheme.primary,
+        icon: Icon(
+          Icons.sms_outlined,
+          size: 17,
+          color: theme.colorScheme.primary,
+        ),
+        onTap: () => ContactChannels.openSms(person.phone),
+      ),
+      ContactChannel.none => (
+        tooltip: 'השלמת הכרטיסייה של $name',
+        ink: theme.colorScheme.onSurfaceVariant,
+        icon: Icon(
+          Icons.edit_outlined,
+          size: 17,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        onTap: onCompleteCard,
+      ),
+    };
+
+    return Tooltip(
+      message: control.tooltip,
+      child: Material(
+        color: control.ink.withValues(alpha: 0.12),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: control.onTap,
+          child: Padding(padding: const EdgeInsets.all(7), child: control.icon),
+        ),
+      ),
+    );
+  }
+}
+
 class _MatchSituation {
   const _MatchSituation({
     required this.line,
@@ -1719,7 +1776,6 @@ class _ProposalAction {
     required this.icon,
     required this.tone,
     required this.onTap,
-    this.emphasized = false,
   });
 
   final String label;
@@ -1727,9 +1783,6 @@ class _ProposalAction {
   final IconData icon;
   final _ActionTone tone;
   final VoidCallback onTap;
-
-  /// The one action that leads — bigger, and the only one with a frame.
-  final bool emphasized;
 
   Color get ink {
     switch (tone) {
@@ -1937,12 +1990,19 @@ class _ReminderCard extends StatelessWidget {
   }
 }
 
-/// "עדכון הצעה": one area, three ways on. The pastel traffic light is the only
-/// colour here — the middle action leads, the two beside it stay quiet.
+/// "עדכון הצעה": one area, and every way on drawn the same.
+///
+/// The card's own header carries the status the proposal is *in*; the tiles
+/// below it are only the moves available from there, so none of them is
+/// dressed up as the answer.
 class _UpdateProposalCard extends StatelessWidget {
-  const _UpdateProposalCard({required this.actions});
+  const _UpdateProposalCard({
+    required this.actions,
+    required this.currentStatus,
+  });
 
   final List<_ProposalAction> actions;
+  final MatchStatus currentStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -1964,11 +2024,20 @@ class _UpdateProposalCard extends StatelessWidget {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-            child: Text(
-              'עדכון הצעה',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+            child: Row(
+              children: <Widget>[
+                Text(
+                  'עדכון הצעה',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // The only mark of a chosen state in this card. It is what the
+                // tiles below used to imply by being coloured in, and it says
+                // it plainly instead.
+                _CurrentStatusChip(status: currentStatus),
+              ],
             ),
           ),
           IntrinsicHeight(
@@ -1977,10 +2046,7 @@ class _UpdateProposalCard extends StatelessWidget {
               children: <Widget>[
                 for (int i = 0; i < actions.length; i++) ...<Widget>[
                   if (i > 0) const SizedBox(width: 8),
-                  Expanded(
-                    flex: actions[i].emphasized ? 12 : 9,
-                    child: _ActionTile(action: actions[i]),
-                  ),
+                  Expanded(child: _ActionTile(action: actions[i])),
                 ],
               ],
             ),
@@ -2001,37 +2067,30 @@ class _ActionTile extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color ink = action.ink;
-    final bool lead = action.emphasized;
 
-    // The leading action is **filled and raised**; the other two are quiet
-    // tinted tiles. The previous version gave the leader a slightly stronger
-    // wash of the same tint plus a border, which is exactly how this app draws
-    // a *selected* chip — so every new proposal looked as though the couple
-    // were already out. A solid button with a shadow and white text cannot be
-    // mistaken for a state: nothing else in the app that reports a status is
-    // filled and lifted off the surface.
-    final Color surface = lead
-        ? ink
-        : ink.withValues(alpha: dark ? 0.18 : 0.09);
-    final Color label = lead ? Colors.white : ink;
-
+    // Every move is drawn the same: same size, same weight, same quiet tint of
+    // its own tone. Only the tone and the icon separate them, and a tone is a
+    // hint about the direction of the move — not a claim that one of them has
+    // already happened.
+    //
+    // Two earlier versions gave the middle action a stronger treatment: first
+    // a heavier wash plus a border (which is how this app draws a *selected*
+    // chip), then a filled, raised button. Both still read as "this is where
+    // the proposal is" rather than "this is one of three things you can do".
+    // The status now has its own chip in the card header, so no tile has to
+    // carry that job.
     return Material(
-      color: surface,
+      color: ink.withValues(alpha: dark ? 0.18 : 0.09),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
-      elevation: lead ? 3 : 0,
-      shadowColor: ink.withValues(alpha: 0.5),
       child: InkWell(
         onTap: action.onTap,
         child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 6,
-            vertical: lead ? 14 : 11,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              Icon(action.icon, size: lead ? 24 : 20, color: label),
+              Icon(action.icon, size: 22, color: ink),
               const SizedBox(height: 7),
               // The label is the whole tile. A phrase that does not fit the
               // tile's width wraps onto a second line instead of being cut.
@@ -2039,18 +2098,45 @@ class _ActionTile extends StatelessWidget {
                 action.label,
                 maxLines: 2,
                 textAlign: TextAlign.center,
-                style:
-                    (lead
-                            ? theme.textTheme.titleSmall
-                            : theme.textTheme.labelMedium)
-                        ?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: label,
-                          height: 1.2,
-                        ),
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: ink,
+                  height: 1.2,
+                ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The proposal's current status, shown once, beside the card title.
+class _CurrentStatusChip extends StatelessWidget {
+  const _CurrentStatusChip({required this.status});
+
+  final MatchStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color ink = AppColors.statusColor(status.name);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: ink.withValues(
+          alpha: theme.brightness == Brightness.dark ? 0.22 : 0.12,
+        ),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: ink.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        status.displayName,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: ink,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

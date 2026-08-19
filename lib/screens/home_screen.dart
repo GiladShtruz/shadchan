@@ -3,12 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
-import 'package:shadchan/dialogs/app_menu_sheet.dart';
+import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/board_add_sheet.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
-import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -16,13 +16,13 @@ import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/think_screen.dart';
-import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/tips_service.dart';
-import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
+import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -34,12 +34,14 @@ import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/home_activity_block.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
-import 'package:shadchan/widgets/home_community_taster.dart';
+import 'package:shadchan/widgets/home_engagement_card.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/reminders_bell_button.dart';
 
 /// The landing screen: a calm workspace rather than a dashboard.
 ///
@@ -97,8 +99,8 @@ class _HomeScreenState extends State<HomeScreen> {
   ///
   /// Deferred to after the first frame so the home screen is on screen behind
   /// whatever appears, and gated so at most one of the three ever does. The
-  /// action count it is paced by is the same "כל הזמנים" figure the activity
-  /// panel below shows.
+  /// figure it is paced by is the same "כל הזמנים" score the activity block
+  /// below shows.
   void _scheduleCommunityPrompts() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -106,30 +108,20 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       final PersonRepository people = context.read<PersonRepository>();
       final MatchRepository matches = context.read<MatchRepository>();
-      final ActivityTotals totals = ActivityStats.totals(
-        people: people.getAll(),
-        matches: matches.getAll(),
-        matchStatusEvents: matches.getAllStatusEvents(),
-        events: people.getAllEvents(),
-        recordBulkImportLimit: CommunityProfileStore.bulkImportRecordLimit,
-      );
-      // Asked once, here, rather than by whoever happens to look at the store:
-      // the answer is "has the record just been broken", and it is only true
-      // the first time anybody asks. `weekForRecord`, not `week`: an import of
-      // three hundred friends counts everywhere in the app, and sets no record.
-      final bool record = CommunityProfileStore.recordWeek(
-        totals.weekForRecord,
-      );
       CommunityPromptGate.maybeShow(
         context,
         people: people,
         matches: matches,
-        actions: totals.allTime,
-        newWeeklyRecord: record,
-        weeklyRecord: CommunityProfileStore.bestWeek,
+        counts: CommunityCounts.build(
+          people: people.getAll(),
+          matches: matches.getAll(),
+          matchStatusEvents: matches.getAllStatusEvents(),
+          excludedFromDating: DatingCountExclusions.all(),
+        ),
         needsLeaderboardConsent: context
             .read<CommunityProvider>()
             .needsLeaderboardConsent,
+        isSignedIn: context.read<AccountProvider>().isSignedIn,
       );
     });
   }
@@ -245,14 +237,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       actions: <Widget>[
-        // Only ever the matchmaker's own reminders. A bell that is always there
-        // with nothing behind it is an unanswered notification.
-        if (_hasAnyReminder(context))
-          IconButton(
-            tooltip: 'תזכורות',
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () => RemindersPanel.show(context),
-          ),
+        // The same bell, in the same slot, as המאגר שלי and רעיונות.
+        const RemindersBellButton(),
         IconButton(
           tooltip: 'חיפוש',
           icon: const Icon(Icons.search),
@@ -262,23 +248,8 @@ class _HomeScreenState extends State<HomeScreen> {
         // overflow menu is looked for. Everything on it also lives in the
         // settings; this is the short way to it, and the only place in the app
         // where "how do I get help" is answered without finding them first.
-        IconButton(
-          tooltip: 'תפריט',
-          icon: const Icon(Icons.more_vert),
-          onPressed: () => AppMenuSheet.show(context),
-        ),
+        const AppMenuButton(),
       ],
-    );
-  }
-
-  /// True when the matchmaker has set a reminder of their own — on a person or
-  /// on a proposal. Nothing else in the app creates one.
-  bool _hasAnyReminder(BuildContext context) {
-    if (PersonReminders.all().isNotEmpty) {
-      return true;
-    }
-    return context.read<MatchRepository>().getAll().any(
-      (MatchIdea match) => match.reminderDate != null,
     );
   }
 
@@ -287,38 +258,40 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return AppBar(
       automaticallyImplyLeading: false,
-      titleSpacing: 8,
-      // Centered inside the banner, capped in width so it never sits under the
-      // search icon that stays visible in the actions.
-      title: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 260),
-          child: SizedBox(
-            height: 42,
-            child: TextField(
-              controller: _searchController,
-              autofocus: true,
-              textAlign: TextAlign.center,
-              textAlignVertical: TextAlignVertical.center,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                isDense: true,
-                filled: true,
-                fillColor: theme.colorScheme.surface,
-                hintText: 'חיפוש במאגר שלך',
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: BorderSide.none,
-                ),
-                suffixIcon: hasText
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 20),
-                        tooltip: 'ניקוי',
-                        onPressed: _searchController.clear,
-                      )
-                    : null,
+      titleSpacing: 0,
+      // The field takes the whole banner between the two edges rather than a
+      // fixed 260px centred inside the title slot. Centring inside that slot
+      // never looked centred: the slot itself is off-centre, because the close
+      // button in `actions` eats one end of the bar and nothing balances it at
+      // the other. A field that simply spans the row has no centre to get
+      // wrong, and it is as wide as the cards underneath it.
+      title: Padding(
+        padding: const EdgeInsetsDirectional.only(start: 12),
+        child: SizedBox(
+          height: 44,
+          child: TextField(
+            controller: _searchController,
+            autofocus: true,
+            textAlignVertical: TextAlignVertical.center,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: theme.colorScheme.surface,
+              hintText: 'חיפוש במאגר שלך',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide.none,
               ),
+              suffixIcon: hasText
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 20),
+                      tooltip: 'ניקוי',
+                      onPressed: _searchController.clear,
+                    )
+                  : null,
             ),
           ),
         ),
@@ -326,14 +299,18 @@ class _HomeScreenState extends State<HomeScreen> {
       actions: <Widget>[
         IconButton(
           tooltip: 'סגירת חיפוש',
-          icon: const Icon(Icons.search),
-          onPressed: () {
-            _searchController.clear();
-            setState(() => _searchVisible = false);
-          },
+          icon: const Icon(Icons.close),
+          onPressed: _closeSearch,
         ),
       ],
     );
+  }
+
+  /// Leaves search entirely: the results, the bar, and the keyboard.
+  void _closeSearch() {
+    FocusScope.of(context).unfocus();
+    _searchController.clear();
+    setState(() => _searchVisible = false);
   }
 
   // --- Home body ----------------------------------------------------------
@@ -384,13 +361,6 @@ class _HomeScreenState extends State<HomeScreen> {
       matches: allMatches,
       personById: personRepository.getById,
       personReminder: PersonReminders.forPerson,
-    );
-
-    final ActivityTotals totals = ActivityStats.totals(
-      people: allPeople,
-      matches: allMatches,
-      matchStatusEvents: matchRepository.getAllStatusEvents(),
-      events: personRepository.getAllEvents(),
     );
 
     // At most one encouragement card, picked by what the database actually
@@ -520,22 +490,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-        // 9. What has been done — the week, the month and everything ever, side
-        // by side. Everything behind them is a tap away rather than on the
-        // workspace.
-        block(
-          HomeActivityPanel(
-            week: totals.week,
-            month: totals.month,
-            allTime: totals.allTime,
-            onOpen: () => context.push('/stats/month'),
-          ),
-        ),
+        // 9. What has been done — the matchmaker's own score beside the
+        // community's, in one window at a time. Two numbers and a switch;
+        // the breakdown, the chart and the leaderboard are all one tap away on
+        // a screen somebody opened *to look at numbers*.
+        block(HomeActivityBlock(onOpen: () => context.push('/activity'))),
 
-        // And the same week seen from outside: what everybody else did. Four
-        // small figures and a meter — the leaderboard, the other windows and
-        // the couples are all on the screen this opens.
-        block(HomeCommunityTaster(onOpen: () => context.push('/activity'))),
+        // Somebody else's good news, for one launch. It draws nothing at all
+        // when there is none, which is nearly always.
+        block(const HomeEngagementCard()),
 
         // 10. The community's tip.
         block(
@@ -613,6 +576,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Live results over the home page, capped at half the screen height so the
   /// page underneath stays visible.
+  ///
+  /// The page underneath is *dimmed* and takes a tap to leave. Before that the
+  /// results simply floated over a fully live home page, so there was no edge
+  /// to the search and no way out of it except the button in the bar — a tap
+  /// on the page behind went to whatever card happened to be under the finger.
   Widget _buildSearchPanel(ThemeData theme, PersonRepository repository) {
     final String query = _searchController.text.trim().toLowerCase();
     if (query.isEmpty) {
@@ -628,52 +596,65 @@ class _HomeScreenState extends State<HomeScreen> {
               a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
         );
 
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        child: Material(
-          elevation: 6,
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          clipBehavior: Clip.antiAlias,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.5,
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _closeSearch,
+            child: ColoredBox(
+              color: theme.colorScheme.scrim.withValues(alpha: 0.32),
             ),
-            child: people.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 24,
-                    ),
-                    child: Text(
-                      'לא נמצאו תוצאות',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                    shrinkWrap: true,
-                    itemCount: people.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final Person person = people[index];
-                      return PersonListCard(
-                        person: person,
-                        heroEnabled: false,
-                        onTap: () => context.push('/people/${person.id}'),
-                        onToggleFavorite: () =>
-                            repository.toggleFavorite(person.id),
-                        onOpenWhatsApp: () => _openWhatsApp(person),
-                      );
-                    },
-                  ),
           ),
         ),
-      ),
+        Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Material(
+              elevation: 6,
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.5,
+                ),
+                child: people.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 24,
+                        ),
+                        child: Text(
+                          'לא נמצאו תוצאות',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                        shrinkWrap: true,
+                        itemCount: people.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final Person person = people[index];
+                          return PersonListCard(
+                            person: person,
+                            heroEnabled: false,
+                            onTap: () => context.push('/people/${person.id}'),
+                            onToggleFavorite: () =>
+                                repository.toggleFavorite(person.id),
+                            onOpenWhatsApp: () => _openWhatsApp(person),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

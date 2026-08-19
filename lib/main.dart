@@ -133,6 +133,12 @@ Widget _buildApp() {
                   ProfileStatus.mazelTov,
                   causedByMatchId: matchId,
                 ))
+            ..markPersonAvailable = ((String personId, String matchId) =>
+                personRepository.updateProfileStatus(
+                  personId,
+                  ProfileStatus.available,
+                  causedByMatchId: matchId,
+                ))
             ..logPersonEvent = personRepository.logEvent;
           return matchRepository;
         },

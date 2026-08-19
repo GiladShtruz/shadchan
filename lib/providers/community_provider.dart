@@ -7,20 +7,22 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/community_period.dart';
+import 'package:shadchan/utils/dating_history.dart';
 
 /// The community layer as the screens see it.
 ///
 /// It owns two things and deliberately no more: **this device's own counts**,
 /// which are recomputed locally and cost nothing, and **when to publish them**,
-/// which is twice a session. Everything shared — totals, leaderboard, goal —
-/// is read straight from [CommunityService], which does its own caching; there
-/// is no second copy of it here to go stale.
+/// which is twice a session. Everything shared — the community totals and the
+/// leaderboard — is read straight from [CommunityService], which does its own
+/// caching; there is no second copy of it here to go stale.
 ///
 /// [myCounts] is available with no network at all. That is the point: the home
-/// taster and the personal side of the activity screen work on a plane, and
-/// only the community column waits for anything.
+/// block and the personal side of the activity screen work on a plane, and only
+/// the community column waits for anything.
 class CommunityProvider extends ChangeNotifier {
   CommunityProvider();
 
@@ -78,16 +80,13 @@ class CommunityProvider extends ChangeNotifier {
       people: people.getAll(),
       matches: matches.getAll(),
       matchStatusEvents: matches.getAllStatusEvents(),
-      events: people.getAllEvents(),
-      recordBulkImportLimit: CommunityProfileStore.bulkImportRecordLimit,
+      excludedFromDating: DatingCountExclusions.all(),
     );
     _counts = counts;
-
-    // The record is kept whatever happens to the network — it is a personal
-    // number and has no business depending on Firestore. It is judged on
-    // `weekForRecord` rather than `week`: a single import of hundreds counts
-    // everywhere else, but may not set a personal best nobody could beat.
-    CommunityProfileStore.recordWeek(counts.weekForRecord);
+    // A personal number, kept whatever happens to the network. Nothing is
+    // announced: `CommunityProfileStore.bestWeek` is read by the activity
+    // screen, which is where somebody looking at their own figures will see it.
+    CommunityProfileStore.recordWeek(counts.week.points);
     notifyListeners();
 
     if (_publishing || !FirebaseBootstrap.isReady) {
@@ -136,6 +135,11 @@ class CommunityProvider extends ChangeNotifier {
     unawaited(CommunityService.setHidden(hidden, name: _name));
   }
 
-  /// This device's count for [period], or zero before the first refresh.
-  int myActions(CommunityPeriod period) => _counts?.forPeriod(period) ?? 0;
+  /// This device's own breakdown for [period] — zeroes before the first
+  /// refresh, which is what a brand-new install genuinely has.
+  ActivityBreakdown myBreakdown(CommunityPeriod period) =>
+      _counts?.forPeriod(period) ?? ActivityBreakdown.empty;
+
+  /// This device's score for [period], or zero before the first refresh.
+  int myPoints(CommunityPeriod period) => myBreakdown(period).points;
 }

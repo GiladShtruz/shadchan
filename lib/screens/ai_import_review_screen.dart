@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/community_profile_store.dart';
+import 'package:shadchan/widgets/app_toast.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/parsed_person.dart';
@@ -129,21 +129,13 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
       return;
     }
 
-    // Recorded before it is shown, so an import that finishes as the app is
-    // killed is still acknowledged on the next launch — and so the milestones
-    // this import crossed are pre-empted by it there rather than arriving
-    // beside it. See `CommunityPromptGate`.
+    // Recorded rather than announced here: `AchievementWatcher` says it once,
+    // a moment later, and silences the milestones this import crossed on the
+    // way past. A small import gets the ordinary confirmation instead, and
+    // neither ever runs beside the other.
     CommunityProfileStore.noteBulkImport(added);
-    final bool celebrated = await BulkImportNoteDialog.maybeShow(context);
-    if (!mounted) {
-      return;
-    }
-    // The snackbar and the note say the same thing; a small import gets the
-    // snackbar, a large one gets the note, and neither ever gets both.
-    if (!celebrated) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('נוספו $added אנשים למאגר')));
+    if (added < CommunityProfileStore.bulkImportNoticeFrom) {
+      AppToast.show(context, 'נוספו $added אנשים למאגר', emoji: '🎉');
     }
     context.go('/people');
   }

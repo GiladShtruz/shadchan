@@ -58,10 +58,12 @@ class PrivacyOverviewScreen extends StatelessWidget {
           icon: Icons.leaderboard_outlined,
           title: 'מה כן נראה לשדכנים אחרים',
           body:
-              'רק שני דברים: השם שרשמת בפרופיל, ומספר הפעולות שעשית. זה מה '
-              'שמרכיב את נתוני הקהילה ואת הדירוג.\n'
-              'אפשר להסתיר את עצמך מהדירוג בכל רגע — בעמוד הפעילות או '
-              'בהגדרות. הפעילות ממשיכה להיספר בסך הכולל של הקהילה, בלי שם.',
+              'רק שני דברים: השם שרשמת בפרופיל, ומספר נקודות הפעילות '
+              'שצברת. זה מה שמרכיב את נתוני הקהילה ואת הדירוג.\n'
+              'כל זה קורה רק אם התחברת עם חשבון. בלי התחברות שום נתון '
+              'שלך לא נשלח לקהילה, ולא תופיע בדירוג.\n'
+              'אם החלטת שאינך רוצה להופיע יותר, אפשר למחוק את נתוני הקהילה '
+              'שלך לגמרי — הכפתור נמצא בתחתית העמוד הזה.',
         ),
         (
           icon: Icons.favorite_outline_rounded,
@@ -129,10 +131,11 @@ class PrivacyOverviewScreen extends StatelessWidget {
                 body: point.body.forGender(gender),
               ),
             const SizedBox(height: 4),
-            // The two controls that act on what this page describes, rather
-            // than only describing it.
-            const HideFromLeaderboardTile(dense: true),
-            const SizedBox(height: 8),
+            // The one control that acts on what this page describes rather than
+            // only describing it. "להסתיר אותי מהדירוג" used to sit beside it;
+            // it was removed from the app by product decision, so **this is now
+            // the only way to take a published name back down** and it has to
+            // stay exactly where somebody looking for it would look.
             const DeleteCommunityDataTile(),
             const SizedBox(height: 14),
             SizedBox(

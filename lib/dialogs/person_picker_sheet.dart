@@ -128,6 +128,11 @@ class PersonPickerSheet extends StatefulWidget {
 /// "waiting for details" state, which would quietly leave them out of every
 /// list and suggestion. Someone left outside the database stays hidden, and
 /// keeps the review flag that asks them for their details over WhatsApp.
+///
+/// "Outside the database" is not permanent, though it used to be. The card
+/// joins המאגר שלי as soon as it carries a real detail — see
+/// [PersonRepository.update] — or straight away from the banner on its own
+/// profile.
 Future<Person?> _persistNewPerson(
   BuildContext context,
   _NewPersonChoice choice,

@@ -9,5 +9,15 @@
 		<array>
 			<string>group.com.gilad.shadchan</string>
 		</array>
+		<!-- Sign in with Apple. Required by App Store review wherever a
+		     third-party sign-in (Google) is offered, and what makes
+		     AppleAuthProvider use Apple's own sheet rather than a web flow.
+		     It also has to be enabled for this App ID in the Apple Developer
+		     portal, and the Apple provider switched on in the Firebase
+		     console — neither of which lives in this repository. -->
+		<key>com.apple.developer.applesignin</key>
+		<array>
+			<string>Default</string>
+		</array>
 	</dict>
 </plist>

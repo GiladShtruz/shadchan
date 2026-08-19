@@ -97,14 +97,25 @@ class AccountProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<AccountSignInResult> signIn() async {
+  /// Whether "המשך עם Apple" may be drawn. See
+  /// [AccountService.isAppleAvailable] for why it is not everywhere.
+  bool get isAppleAvailable => AccountService.isAppleAvailable;
+
+  Future<AccountSignInResult> signIn() =>
+      _signIn(AccountService.signInWithGoogle);
+
+  Future<AccountSignInResult> signInWithApple() =>
+      _signIn(AccountService.signInWithApple);
+
+  Future<AccountSignInResult> _signIn(
+    Future<AccountSignInResult> Function() attempt,
+  ) async {
     if (_isBusy) {
       return const AccountSignInResult.canceled();
     }
     _setBusy(true);
     try {
-      final AccountSignInResult result =
-          await AccountService.signInWithGoogle();
+      final AccountSignInResult result = await attempt();
       _refreshUser();
       return result;
     } finally {

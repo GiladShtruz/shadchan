@@ -42,6 +42,14 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   Person? _personB;
   bool _didApplyPreSelection = false;
 
+  /// True from the moment "הוספת הצעה" is tapped until this screen is gone.
+  ///
+  /// Creating the proposal notifies [MatchRepository], and this screen watches
+  /// it, so it rebuilds — with the brand new proposal now answering
+  /// [_existingMatch]. Without this flag the duplicate warning flashes on
+  /// every successful creation, in the frames before the router leaves.
+  bool _isCreating = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -113,9 +121,14 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
     // Watched so a person edited mid-flow refreshes their card here.
     context.watch<PersonRepository>();
 
-    final MatchIdea? existingMatch = _existingMatch(matchRepository);
+    final MatchIdea? existingMatch = _isCreating
+        ? null
+        : _existingMatch(matchRepository);
     final bool canCreate =
-        _personA != null && _personB != null && existingMatch == null;
+        _personA != null &&
+        _personB != null &&
+        existingMatch == null &&
+        !_isCreating;
 
     // The suggestions shortcut only makes sense while one side is still open.
     final Person? suggestionSource = _personA == null && _personB != null
@@ -280,11 +293,17 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       personB,
     );
     final MatchRepository matchRepository = context.read<MatchRepository>();
+    setState(() => _isCreating = true);
     final MatchIdea? newMatch = await matchRepository.create(
       orderedPeople.male.id,
       orderedPeople.female.id,
     );
     if (newMatch == null) {
+      // `create` only refuses when the pair really is already there, so the
+      // warning is true again and the screen goes back to showing it.
+      if (mounted) {
+        setState(() => _isCreating = false);
+      }
       return;
     }
 

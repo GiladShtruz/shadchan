@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/widgets/contact_channel_button.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 /// A compact row for one person: avatar, name, age + religious level, a
-/// favorite toggle and a WhatsApp shortcut.
+/// favorite toggle and a messaging shortcut — WhatsApp, SMS, or a pencil,
+/// whichever the person's number allows. See [ContactChannelButton].
 ///
 /// The card itself stays on the light surface colour; gender is conveyed only
 /// by the leading accent bar and the avatar tint, so the list reads calm even
@@ -19,6 +19,7 @@ class PersonListCard extends StatelessWidget {
     required this.onTap,
     this.onToggleFavorite,
     this.onOpenWhatsApp,
+    this.onCompleteCard,
     this.onOpenMatches,
     this.onLongPress,
     this.heroEnabled = true,
@@ -33,6 +34,10 @@ class PersonListCard extends StatelessWidget {
   final VoidCallback? onToggleFavorite;
   final VoidCallback? onOpenWhatsApp;
 
+  /// Where the messaging button goes when there is no number to message. Left
+  /// null on a row that has no editor behind it, which simply drops the button.
+  final VoidCallback? onCompleteCard;
+
   /// When set, the heart button opens this person's match suggestions instead
   /// of toggling the favorite flag (favoriting stays available from the
   /// long-press menu).
@@ -44,7 +49,6 @@ class PersonListCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final bool hasPhone = PhoneUtils.toWhatsAppNumber(person.phone) != null;
     final Color accent = AppColors.genderAccent(person.gender, dark: dark);
 
     final List<String> details = <String>[
@@ -163,17 +167,10 @@ class PersonListCard extends StatelessWidget {
                     onPressed: onToggleFavorite,
                   ),
                 if (onOpenWhatsApp != null)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    tooltip: hasPhone ? 'וואטסאפ' : 'אין מספר טלפון תקין',
-                    icon: FaIcon(
-                      FontAwesomeIcons.whatsapp,
-                      size: 20,
-                      color: hasPhone
-                          ? const Color(0xFF25D366)
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                    onPressed: hasPhone ? onOpenWhatsApp : null,
+                  ContactChannelButton(
+                    person: person,
+                    onWhatsApp: onOpenWhatsApp!,
+                    onEdit: onCompleteCard,
                   ),
                 const SizedBox(width: 4),
               ],

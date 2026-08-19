@@ -6,7 +6,6 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/models/match_status_event.dart';
-import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
@@ -49,7 +48,6 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
 
     final List<MatchStatusEvent> matchStatusEvents = matchRepository
         .getAllStatusEvents();
-    final List<PersonEvent> events = personRepository.getAllEvents();
     final Set<String> excludedFromDating = DatingCountExclusions.all();
 
     final List<MonthPeriod> periods = MonthlyStats.buildPeriods(
@@ -85,16 +83,16 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
       people: people,
       matches: matches,
       matchStatusEvents: matchStatusEvents,
-      events: events,
+      excludedFromDating: excludedFromDating,
     );
-    final int actionsInMonth = ActivityStats.countBetween(
+    final int pointsInMonth = ActivityStats.breakdownBetween(
       start: periods[selected].start,
       end: periods[selected].end,
       people: people,
       matches: matches,
       matchStatusEvents: matchStatusEvents,
-      events: events,
-    );
+      excludedFromDating: excludedFromDating,
+    ).points;
 
     return Scaffold(
       appBar: AppBar(title: const Text('הפעילות שלך'), centerTitle: true),
@@ -104,7 +102,7 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
           children: <Widget>[
             _MonthHeader(
               monthLabel: periods[selected].label,
-              actions: actionsInMonth,
+              points: pointsInMonth,
               isCurrentMonth: selected == 0,
             ),
             const SizedBox(height: 16),
@@ -181,7 +179,7 @@ class _ActivityChart extends StatelessWidget {
     final int peak = bars.fold<int>(
       0,
       (int max, ActivityBucket bucket) =>
-          bucket.count > max ? bucket.count : max,
+          bucket.points > max ? bucket.points : max,
     );
 
     return Container(
@@ -203,7 +201,7 @@ class _ActivityChart extends StatelessWidget {
                   children: <Widget>[
                     Expanded(
                       child: Text(
-                        'פעולות לפי חודשים',
+                        'נקודות פעילות לפי חודשים',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w900,
                         ),
@@ -221,7 +219,7 @@ class _ActivityChart extends StatelessWidget {
                       child: Text(
                         ActivityStats.grade(
                           selectedBar >= 0 && selectedBar < bars.length
-                              ? bars[selectedBar].count
+                              ? bars[selectedBar].points
                               : 0,
                         ),
                         style: theme.textTheme.labelSmall?.copyWith(
@@ -236,7 +234,7 @@ class _ActivityChart extends StatelessWidget {
                 // What counts, said plainly. A note is deliberately absent from
                 // this list — writing something down is thinking, not doing.
                 Text(
-                  'נספרות הוספת חבר, פתיחת רעיון ועדכון סטטוס של חבר/רעיון. '
+                  '${ActivityPoints.shortExplanation}. '
                   'לחיצה על חודש תציג את הנתונים שלו למעלה.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -287,7 +285,7 @@ class _Bar extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color blue = MonthlyStatsScreen._blue;
-    final double factor = peak == 0 ? 0 : bucket.count / peak;
+    final double factor = peak == 0 ? 0 : bucket.points / peak;
 
     return InkWell(
       onTap: onTap,
@@ -297,7 +295,7 @@ class _Bar extends StatelessWidget {
         child: Column(
           children: <Widget>[
             Text(
-              '${bucket.count}',
+              '${bucket.points}',
               style: theme.textTheme.labelSmall?.copyWith(
                 fontWeight: selected ? FontWeight.w900 : FontWeight.w500,
                 color: selected ? blue : theme.colorScheme.onSurfaceVariant,
@@ -345,12 +343,12 @@ class _Bar extends StatelessWidget {
 class _MonthHeader extends StatelessWidget {
   const _MonthHeader({
     required this.monthLabel,
-    required this.actions,
+    required this.points,
     required this.isCurrentMonth,
   });
 
   final String monthLabel;
-  final int actions;
+  final int points;
 
   /// Past months are described in the past tense; there is nothing left to
   /// encourage about a month that is over.
@@ -362,14 +360,14 @@ class _MonthHeader extends StatelessWidget {
     final Color blue = MonthlyStatsScreen._blue;
 
     final String line;
-    if (actions == 0) {
+    if (points == 0) {
       line = isCurrentMonth
           ? 'חודש חדש, דף חדש — קדימה לעבודה!'
-          : 'בחודש הזה לא נרשמו פעולות.';
+          : 'בחודש הזה לא נרשמה פעילות.';
     } else if (isCurrentMonth) {
-      line = 'כל הכבוד! כבר עשית $actions פעולות טובות החודש עבור החברים שלך!';
+      line = 'כל הכבוד! כבר צברת $points נקודות פעילות החודש עבור החברים שלך!';
     } else {
-      line = 'בחודש הזה עשית $actions פעולות עבור החברים שלך.';
+      line = 'בחודש הזה צברת $points נקודות פעילות עבור החברים שלך.';
     }
 
     return Container(

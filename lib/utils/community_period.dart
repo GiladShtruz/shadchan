@@ -20,19 +20,39 @@ enum CommunityPeriod {
     }
   }
 
-  /// The field on a member document holding this window's count.
-  String get actionsField {
+  /// The prefix every one of this window's fields on a member document is
+  /// written with: `weekActions`, `weekFriends`, `weekCouples` and so on.
+  ///
+  /// One prefix rather than five getters full of switch statements, and the
+  /// four `*Actions` names are the ones that already existed — renaming them to
+  /// `*Points` would have meant four new composite indexes and a window in
+  /// which every leaderboard in the wild returned nothing.
+  String get fieldPrefix {
     switch (this) {
       case CommunityPeriod.day:
-        return 'dayActions';
+        return 'day';
       case CommunityPeriod.week:
-        return 'weekActions';
+        return 'week';
       case CommunityPeriod.month:
-        return 'monthActions';
+        return 'month';
       case CommunityPeriod.allTime:
-        return 'allActions';
+        return 'all';
     }
   }
+
+  /// The field holding this window's weighted activity points.
+  ///
+  /// Still called `*Actions` on the server. It held a flat count of actions
+  /// until the scoring was weighted; the name is the one thing about it that
+  /// did not change, because it is the field four composite indexes sort by.
+  String get actionsField => '${fieldPrefix}Actions';
+
+  /// The four real events behind the points, each summed on its own so the
+  /// community area can show what actually happened rather than only a score.
+  String get friendsField => '${fieldPrefix}Friends';
+  String get ideasField => '${fieldPrefix}Ideas';
+  String get couplesField => '${fieldPrefix}Couples';
+  String get engagementsField => '${fieldPrefix}Engagements';
 
   /// The field holding the window this document's count belongs to, so a
   /// member who has not opened the app since last week is not still sitting at
@@ -109,11 +129,6 @@ abstract final class CommunityPeriods {
     ).subtract(Duration(days: daysSinceSunday));
     return 'W${sunday.year}-${_two(sunday.month)}-${_two(sunday.day)}';
   }
-
-  /// The key for the week before [at]'s — what this week's goal is calculated
-  /// from.
-  static String previousWeekKey([DateTime? at]) =>
-      weekKey((at ?? now()).subtract(const Duration(days: 7)));
 
   static String keyFor(CommunityPeriod period, [DateTime? at]) {
     switch (period) {

@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
-import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
+import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/community_achievements.dart';
 import 'package:shadchan/utils/community_links.dart';
 
 /// The three things the app occasionally asks for or announces, and the rules
@@ -26,6 +26,55 @@ import 'package:shadchan/utils/community_links.dart';
 /// WhatsApp, and this app never learns what happened there — so only the
 /// explicit "אני כבר בקבוצה" stops the reminders. Anything else means the
 /// invitation comes back in another hundred actions.
+/// "כבר בנית מאגר משמעותי" — the one reminder a matchmaker who skipped signing
+/// in ever gets, and the pacing that keeps it one.
+///
+/// **It is about their database, not about the account.** Somebody who declined
+/// once has heard the pitch; repeating it is nagging. What has changed since
+/// then is that they now have something worth losing, and that — not the
+/// feature list — is the only new thing worth saying.
+///
+/// Paced in friends rather than in days by [SignInPromptStore], and it rides
+/// the same one-prompt-per-launch gate as everything else the app says on its
+/// own, at the bottom of the order.
+abstract final class SignInReminderDialog {
+  static const String title = 'כבר בנית מאגר משמעותי';
+
+  static const String message =
+      'כדאי להתחבר כדי לגבות אותו ולשמור עליו גם אם תחליף מכשיר.';
+
+  static Future<void> show(BuildContext context, {required int friends}) async {
+    SignInPromptStore.markReminded(friends);
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final ThemeData theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: const Text(title),
+          content: Text(
+            message,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('לא עכשיו'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                dialogContext.push('/sign-in');
+              },
+              child: const Text('התחברות'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 abstract final class UpdatesGroupDialog {
   /// [actions] is the running action count when the app raised this by itself,
   /// and null when the matchmaker opened it from the settings or the menu —
@@ -176,108 +225,11 @@ abstract final class LeaderboardConsentDialog {
   }
 }
 
-/// A milestone, acknowledged and got out of the way.
-///
-/// A small dialog rather than a full-screen celebration, and a short cheer
-/// rather than a paragraph. This fires at ten friends and at fifty and at a
-/// hundred — anything grander would be exhausting by the third time, and the
-/// thing being celebrated is somebody else's work, not the app's.
-///
-/// **There is no button to press.** Being congratulated and then made to
-/// acknowledge the congratulation is a chore; this closes by itself after a
-/// few seconds, or on a tap anywhere.
-abstract final class AchievementDialog {
-  static const Duration _visibleFor = Duration(seconds: 4);
-
-  static Future<void> show(
-    BuildContext context,
-    Achievement achievement,
-  ) async {
-    CommunityProfileStore.markSeen(achievement.id);
-    await _celebrate(context, achievement.title, achievement.body);
-  }
-
-  /// The shape both congratulations wear — this one and the note after a large
-  /// import. Shared so the two can never be told apart by their chrome, only by
-  /// their words, and so neither grows a button the other lacks.
-  static Future<void> _celebrate(
-    BuildContext context,
-    String title,
-    String body,
-  ) async {
-    Timer? autoClose;
-
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final ThemeData theme = Theme.of(dialogContext);
-        final bool dark = theme.brightness == Brightness.dark;
-        final Color tone = dark
-            ? theme.colorScheme.primary
-            : AppColors.primaryDark;
-
-        void close() {
-          if (dialogContext.mounted) {
-            Navigator.of(dialogContext).pop();
-          }
-        }
-
-        // Guarded against a rebuild of the route starting a second timer.
-        autoClose ??= Timer(_visibleFor, close);
-
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: close,
-          child: AlertDialog(
-            title: Row(
-              children: <Widget>[
-                Icon(Icons.celebration_rounded, size: 22, color: tone),
-                const SizedBox(width: 8),
-                Expanded(child: Text(title)),
-              ],
-            ),
-            content: Text(
-              body,
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-            ),
-            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-          ),
-        );
-      },
-    );
-
-    autoClose?.cancel();
-  }
-}
-
-/// The note after a large import.
-///
-/// **It exists to stop two celebrations landing on the same second.** An import
-/// of three hundred cards crosses the friend milestone, the action milestone
-/// and very possibly the weekly record all at once, and a matchmaker who has
-/// just done a good afternoon's work should be told that — once, in one
-/// sentence about the thing they actually did — rather than handed a queue of
-/// dialogs about round numbers. So this is checked *before* the achievements in
-/// [CommunityPromptGate] and returns true when it spoke, and the milestones it
-/// pre-empted stay unseen for a quieter day.
-abstract final class BulkImportNoteDialog {
-  /// Shows the pending note if there is one, and reports whether it did.
-  static Future<bool> maybeShow(BuildContext context) async {
-    final int added = CommunityProfileStore.pendingBulkImport;
-    if (added < CommunityProfileStore.bulkImportNoticeFrom) {
-      return false;
-    }
-    // Cleared before the await, not after: a second caller reaching this while
-    // the dialog is on screen must find nothing rather than queue another one.
-    CommunityProfileStore.clearPendingBulkImport();
-    await AchievementDialog._celebrate(
-      context,
-      'המאגר שלך גדל!',
-      CommunityAchievements.bulkImportMessage(added),
-    );
-    return true;
-  }
-}
+/// Milestones and the note after a large import used to live here, as two
+/// dialogs sharing one `_celebrate` helper. **Both are gone.** They are said
+/// now by `AchievementWatcher`, as a toast, at the moment they happen rather
+/// than on the next launch — see `lib/widgets/app_toast.dart` for why a
+/// congratulation is the one thing that must never take the screen.
 
 /// "מה חדש?" — one published note, shown once per device and never again.
 abstract final class WhatsNewDialog {

@@ -104,6 +104,43 @@ abstract final class CommunityLinks {
     }
   }
 
+  /// The line every card carries out of the app with it.
+  ///
+  /// **A card leaves this app more often than a person does.** A candidate's
+  /// details are forwarded from matchmaker to matchmaker, pasted into groups and
+  /// screenshotted, and every one of those hops used to lose the fact that it
+  /// came from here. One line at the foot of the card is the only marketing in
+  /// the product, and it rides on the thing people already wanted to send.
+  ///
+  /// Kept short and factual on purpose: a card is somebody's shidduch, not an
+  /// advertising surface, and a paragraph under it would be read as spam by the
+  /// person it was forwarded to — see [shareMessage] for the *invitation*,
+  /// which is a different thing said in a different voice.
+  static String get sharedCardCredit =>
+      'שותף מ"שדכן" - יומן אישי לניהול הצעות.\n'
+      'להורדה: $downloadUrl';
+
+  /// [card] with [sharedCardCredit] under it, separated by a blank line so it
+  /// reads as a footer rather than as the last sentence of the card.
+  ///
+  /// Returns the credit alone for an empty card — a card with no text but with
+  /// photos is still a card being shared, and the photos are the content. It is
+  /// the caller's job not to share nothing at all.
+  ///
+  /// Never appends twice. A description that already carries the credit is one
+  /// somebody pasted back in after receiving it, and a card ending in two
+  /// identical footers is worse than one ending in none.
+  static String creditCard(String card) {
+    final String trimmed = card.trim();
+    if (trimmed.contains(sharedCardCredit)) {
+      return trimmed;
+    }
+    if (trimmed.isEmpty) {
+      return sharedCardCredit;
+    }
+    return '$trimmed\n\n$sharedCardCredit';
+  }
+
   /// The invitation, exactly as the matchmaker sends it.
   ///
   /// Written as one voice speaking to a friend rather than as marketing copy —

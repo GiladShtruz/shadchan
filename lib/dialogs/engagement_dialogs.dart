@@ -3,8 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shadchan/services/community_engagements_service.dart';
-import 'package:shadchan/services/community_prompts_store.dart';
-import 'package:shadchan/utils/app_colors.dart';
 
 /// The two halves of "מזל טוב! זוג חדש התארס!": the note everybody sees, and
 /// the decision the one matchmaker who was there gets to make about it.
@@ -69,111 +67,10 @@ abstract final class EngagementFlow {
 /// Small, warm and gone in a few seconds — the same shape as the achievement
 /// note, because it is the same kind of moment. There is no button and there is
 /// nowhere to tap through to: this is news, not a screen.
-abstract final class MazelTovDialog {
-  static const Duration _visibleFor = Duration(seconds: 5);
-
-  static Future<void> show(
-    BuildContext context,
-    CommunityEngagement engagement,
-  ) async {
-    // Marked before it is drawn. A dialog the user dismissed in half a second
-    // has still been shown, and showing it again next launch would be worse
-    // than missing it once.
-    CommunityPromptsStore.markEngagementSeen(engagement.id);
-
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) =>
-          _MazelTovBody(engagement: engagement, visibleFor: _visibleFor),
-    );
-  }
-}
-
-class _MazelTovBody extends StatefulWidget {
-  const _MazelTovBody({required this.engagement, required this.visibleFor});
-
-  final CommunityEngagement engagement;
-  final Duration visibleFor;
-
-  @override
-  State<_MazelTovBody> createState() => _MazelTovBodyState();
-}
-
-class _MazelTovBodyState extends State<_MazelTovBody> {
-  @override
-  void initState() {
-    super.initState();
-    Future<void>.delayed(widget.visibleFor, () {
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color tone = dark ? theme.colorScheme.primary : AppColors.primaryDark;
-    final CommunityEngagement engagement = widget.engagement;
-
-    // The anonymous line is the default and by far the common one. It names
-    // nobody on purpose: the good news travels, the couple does not.
-    final String body = engagement.isNamed
-        ? '${engagement.firstNames} התארסו!'
-        : 'עוד בית נבנה בעם ישראל. שנשמע רק בשורות טובות!';
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.of(context).pop(),
-      child: AlertDialog(
-        title: Row(
-          children: <Widget>[
-            Text('💍', style: theme.textTheme.titleLarge),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('מזל טוב! זוג חדש התארס!')),
-          ],
-        ),
-        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            if (engagement.photoUrl.isNotEmpty) ...<Widget>[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.network(
-                  engagement.photoUrl,
-                  height: 160,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  // A photo that will not load must not leave a broken box in
-                  // the middle of somebody's good news.
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
-              ),
-              const SizedBox(height: 14),
-            ],
-            Text(
-              body,
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-            ),
-            if (engagement.matchmakerName.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                'שודך על ידי ${engagement.matchmakerName}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: tone,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
+/// `MazelTovDialog` used to live here: somebody else's engagement, announced by
+/// taking over the screen on the next launch. It is `HomeEngagementCard` now —
+/// a card on the home page for one launch, read when the eye reaches it. The
+/// news was always worth carrying; the interruption never was.
 
 /// The offer to say more than "a couple", made once, to the one person who
 /// could possibly have the right to make it.

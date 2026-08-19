@@ -50,7 +50,10 @@ abstract final class CommunityAchievements {
     500,
   ];
 
-  static const List<int> actionMilestones = <int>[
+  /// Weighted activity points, not a count of actions — a couple is worth five
+  /// of these and an engagement fifty, so the ladder climbs a little faster
+  /// than it used to for a matchmaker whose proposals are working.
+  static const List<int> pointMilestones = <int>[
     50,
     100,
     250,
@@ -77,8 +80,6 @@ abstract final class CommunityAchievements {
     70,
   ];
 
-  static const String weeklyRecordId = 'record.week';
-
   /// The highest milestone of [milestones] that [value] has reached, or null.
   static int? reached(List<int> milestones, int value) {
     int? best;
@@ -103,13 +104,15 @@ abstract final class CommunityAchievements {
   ///
   /// Ordered by what a matchmaker would most want to hear. A couple who started
   /// dating outranks a round number of friends every time.
+  ///
+  /// The `actions.*` ids are unchanged from when the last rung counted flat
+  /// actions, so a matchmaker already congratulated on "500 פעולות" is not
+  /// congratulated again on "500 נקודות פעילות".
   static Achievement? firstUnseen({
     required int friends,
     required int ideas,
-    required int actions,
+    required int points,
     required int couples,
-    required bool newWeeklyRecord,
-    required int weeklyRecord,
     required Set<String> seen,
   }) {
     final List<Achievement> candidates = <Achievement>[
@@ -117,34 +120,28 @@ abstract final class CommunityAchievements {
         Achievement(
           id: 'couples.$milestone',
           title: milestone == 1
-              ? 'הזוג הראשון שלך יצא!!!'
-              : 'הגעת ל־$milestone זוגות!!!',
+              ? 'הזוג הראשון שלך יצא לדרך'
+              : 'איזה יופי! $milestone זוגות כבר יצאו בזכותך',
           body: milestone == 1 ? 'איזה כיף. כל הכבוד!' : 'מדהים. ממשיכים!',
-        ),
-      if (newWeeklyRecord)
-        Achievement(
-          id: '$weeklyRecordId.$weeklyRecord',
-          title: 'שיא שבועי חדש!!!',
-          body: '$weeklyRecord פעולות השבוע. וואו!',
         ),
       if (reached(ideaMilestones, ideas) case final int milestone)
         Achievement(
           id: 'ideas.$milestone',
           title: milestone == 1
-              ? 'הרעיון הראשון שלך!!!'
-              : 'הגעת ל־$milestone רעיונות!!!',
+              ? 'הרעיון הראשון שלך יצא לדרך'
+              : 'איזה יופי! $milestone רעיונות כבר מאחוריך',
           body: milestone == 1 ? 'יצאת לדרך. בהצלחה!' : 'כל הכבוד!',
         ),
       if (reached(friendMilestones, friends) case final int milestone)
         Achievement(
           id: 'friends.$milestone',
-          title: 'הגעת ל־$milestone חברים במאגר!!!',
+          title: '$milestone חברים כבר במאגר שלך',
           body: 'יפה מאוד, המאגר שלך גדל!',
         ),
-      if (reached(actionMilestones, actions) case final int milestone)
+      if (reached(pointMilestones, points) case final int milestone)
         Achievement(
           id: 'actions.$milestone',
-          title: 'הגעת ל־$milestone פעולות!!!',
+          title: 'איזה יופי! $milestone נקודות פעילות כבר מאחוריך',
           body: 'איזה יופי. ממשיכים ככה!',
         ),
     ];
@@ -165,5 +162,5 @@ abstract final class CommunityAchievements {
   /// because after an import of three hundred cards "הגעת ל־200 חברים" is the
   /// less interesting of the two facts.
   static String bulkImportMessage(int added) =>
-      'הוספת עכשיו $added חברים למאגר – כל הכבוד! המאגר שלך ממש גדל.';
+      '$added חברים נוספו למאגר · המאגר שלך ממש גדל!';
 }

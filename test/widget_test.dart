@@ -78,6 +78,10 @@ void main() {
     await settings.put('userName', 'בודק');
     await settings.put('userGender', 'male');
     await settings.put('userIsSingle', false);
+    // And the one-time sign-in invitation as answered, for the same reason:
+    // it sits between onboarding and the app, so without this every test here
+    // would open on it. The gate itself is covered by `sign_in_gate_test.dart`.
+    await settings.put('signIn.promptAnswered', 'true');
   });
 
   setUp(() async {
@@ -167,13 +171,13 @@ void main() {
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(find.text('החשבון שלי'), 200);
+    await tester.scrollUntilVisible(find.text('חשבון'), 200);
     await tester.pumpAndSettle();
 
     // Without Firebase there is no sign-in button to offer — a tap could only
-    // fail — so the tile says why instead of pretending to work.
+    // fail — so the row says why instead of pretending to work.
     expect(find.text('החיבור לחשבון אינו זמין כרגע'), findsOneWidget);
-    expect(find.text('התחברות עם Google'), findsNothing);
+    expect(find.text('התחברות לחשבון'), findsNothing);
     expect(find.text('יציאה מהחשבון'), findsNothing);
     expect(
       tester
@@ -396,7 +400,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.byTooltip('בחירת סגנון דתי'), findsOneWidget);
-      expect(find.byTooltip('החלפת תמונת הפרופיל'), findsOneWidget);
+      expect(find.byTooltip('הוספת תמונות'), findsOneWidget);
       expect(find.byType(PersonPhotoEditor), findsNothing);
       await tester.tap(find.byTooltip('בחירת סגנון דתי'));
       await tester.pumpAndSettle();
@@ -481,8 +485,12 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final DateTime now = DateTime(2026, 7, 27);
+    // The number matters: the viewer's messaging action follows it. A mobile
+    // number keeps the WhatsApp button this test looks for; without one the
+    // bar would (correctly) show no chat action at all.
     final Person profile = Person(
       id: 'card-viewer-person',
+      phone: '0501111111',
       firstName: 'הלל',
       lastName: 'אבולעפיה',
       gender: Gender.male,
@@ -687,7 +695,7 @@ void main() {
       find.byKey(const ValueKey<String>('quick-name-quick-edit-route-person')),
       findsOneWidget,
     );
-    expect(find.byTooltip('החלפת תמונת הפרופיל'), findsOneWidget);
+    expect(find.byTooltip('הוספת תמונות'), findsOneWidget);
     expect(find.byTooltip('בחירת סגנון דתי'), findsOneWidget);
     expect(find.byTooltip('שמירת עריכה מהירה'), findsOneWidget);
   });
@@ -1159,12 +1167,17 @@ void main() {
     WidgetTester tester,
   ) async {
     final DateTime now = DateTime(2026, 7, 27);
+    // Both sides carry a number, so the pair card draws WhatsApp discs. A
+    // candidate with no number now gets a pencil there instead — a second
+    // `Icons.edit_outlined` on the page, which is the icon this test is
+    // counting to find the journal's own.
     final Person male = _testPerson(
       id: 'edit-male',
       firstName: 'הלל',
       lastName: 'אבולעפיה',
       gender: Gender.male,
       age: 27,
+      phone: '0501111111',
       now: now,
     );
     final Person female = _testPerson(
@@ -1173,6 +1186,7 @@ void main() {
       lastName: 'לוי',
       gender: Gender.female,
       age: 25,
+      phone: '0522222222',
       now: now,
     );
     final MatchIdea match = _testMatch(
@@ -1429,6 +1443,7 @@ void main() {
                   female: female1,
                   onTap: () {},
                   onOpenPersonWhatsApp: (_) {},
+                  onCompletePersonCard: (_) {},
                 ),
                 const SizedBox(height: 8),
                 MatchIdeaCard(
@@ -1442,6 +1457,7 @@ void main() {
                   female: female2,
                   onTap: () {},
                   onOpenPersonWhatsApp: (_) {},
+                  onCompletePersonCard: (_) {},
                 ),
               ],
             ),

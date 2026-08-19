@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
@@ -103,8 +104,10 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
                 ? '${_currentIndex + 1}/${photoPaths.length}'
                 : null,
             showActions: true,
+            channel: ContactChannels.forPerson(person),
             onShare: () => ShareUtils.sharePerson(person),
             onWhatsApp: () => _openWhatsApp(person),
+            onSms: () => ContactChannels.openSms(person.phone),
           ),
           if (photoPaths.length > 1)
             Positioned(
@@ -164,15 +167,23 @@ class _TopBar extends StatelessWidget {
     required this.title,
     required this.counter,
     required this.showActions,
+    required this.channel,
     required this.onShare,
     required this.onWhatsApp,
+    required this.onSms,
   });
 
   final String title;
   final String? counter;
   final bool showActions;
+
+  /// Which messaging app this person's number can actually reach. A card with
+  /// no number at all gets no messaging button here — this bar has no card
+  /// editor to send anybody to.
+  final ContactChannel channel;
   final VoidCallback onShare;
   final VoidCallback onWhatsApp;
+  final VoidCallback onSms;
 
   @override
   Widget build(BuildContext context) {
@@ -229,15 +240,26 @@ class _TopBar extends StatelessWidget {
                         ),
                         tooltip: 'שיתוף כרטיס',
                       ),
-                      IconButton(
-                        onPressed: onWhatsApp,
-                        icon: const FaIcon(
-                          FontAwesomeIcons.whatsapp,
-                          color: Colors.white,
-                          size: 20,
+                      if (channel == ContactChannel.whatsapp)
+                        IconButton(
+                          onPressed: onWhatsApp,
+                          icon: const FaIcon(
+                            FontAwesomeIcons.whatsapp,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          tooltip: 'פתיחת שיחה ב-WhatsApp',
+                        )
+                      else if (channel == ContactChannel.sms)
+                        IconButton(
+                          onPressed: onSms,
+                          icon: const Icon(
+                            Icons.sms_outlined,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          tooltip: 'שליחת הודעה',
                         ),
-                        tooltip: 'פתיחת שיחה ב-WhatsApp',
-                      ),
                     ],
                     if (counter != null && (!narrow || !showActions))
                       Container(

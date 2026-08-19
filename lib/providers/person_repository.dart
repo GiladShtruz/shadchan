@@ -287,6 +287,46 @@ class PersonRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether a card holds anything the matchmaker actually typed, beyond the
+  /// name and gender every card is created with.
+  ///
+  /// Deliberately generous: a phone number alone is a usable contact, and so is
+  /// an age alone. The question this answers is "is this still an empty
+  /// placeholder", not "is this card complete" — [getPending] is what tracks
+  /// the second one.
+  static bool hasDetailsBeyondName(Person person) {
+    return (person.phone ?? '').trim().isNotEmpty ||
+        person.age != null ||
+        person.heightCm != null ||
+        (person.city ?? '').trim().isNotEmpty ||
+        (person.description ?? '').trim().isNotEmpty ||
+        person.region != null ||
+        person.maritalStatus != null ||
+        person.religiousLevel != null ||
+        person.photosPaths.isNotEmpty ||
+        (person.inquiryContactName ?? '').trim().isNotEmpty ||
+        (person.inquiryContactPhone ?? '').trim().isNotEmpty;
+  }
+
+  /// Puts a card that was created outside the database into it, on the
+  /// matchmaker's say-so rather than because a field was filled in.
+  Future<void> admitToDatabase(String id) async {
+    final Person? person = getById(id);
+    if (person == null || !person.hidden) {
+      return;
+    }
+
+    person
+      ..hidden = false
+      ..needsReview = false
+      ..updatedAt = DateTime.now();
+    await person.save();
+    _recordActivity(person.id, HomeActivityAction.createdPerson);
+    notifyListeners();
+    await onPersonStatusChanged?.call(person.id);
+    _refreshBirthdayNotificationsInBackground();
+  }
+
   Future<void> add(Person person) async {
     await _box.put(person.id, person);
     _recordActivity(person.id, HomeActivityAction.createdPerson);
@@ -322,6 +362,16 @@ class PersonRepository extends ChangeNotifier {
   Future<void> update(Person person) async {
     person.updatedAt = DateTime.now();
     person.needsReview = false;
+    // A card created by "הוספת שם מחוץ למאגר" is kept out of המאגר שלי on
+    // purpose while it is nothing but a name and a gender. What was missing was
+    // the way back in: `hidden` was set once at creation and no flow ever
+    // cleared it, so a card the matchmaker went on to fill in stayed invisible
+    // for good. It joins the database the moment it carries a real detail —
+    // and [admitToDatabase] is there for the matchmaker who wants it in
+    // before that.
+    if (person.hidden && hasDetailsBeyondName(person)) {
+      person.hidden = false;
+    }
     await person.save();
     _recordActivity(person.id, HomeActivityAction.editedDetails);
     if (!person.profileStatus.pausesMatches) {

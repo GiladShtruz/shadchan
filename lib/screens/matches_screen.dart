@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -11,6 +10,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
+import 'package:shadchan/widgets/reminders_bell_button.dart';
 
 /// Live proposals can be seen together or through one focused state. Archive
 /// remains a deliberate destination and is never mixed into "הכול".
@@ -124,15 +124,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
           onPressed: () => context.push('/matches/add'),
         ),
         actions: <Widget>[
-          IconButton(
-            tooltip: 'תזכורות',
-            icon: Badge.count(
-              count: dueReminders.length,
-              isLabelVisible: dueReminders.isNotEmpty,
-              child: const Icon(Icons.notifications_outlined),
-            ),
-            onPressed: () => RemindersPanel.show(context),
-          ),
+          // The same bell, in the same slot, as בית and המאגר שלי.
+          const RemindersBellButton(),
           IconButton(
             tooltip: _searchVisible ? 'סגירת חיפוש' : 'חיפוש',
             icon: Icon(_searchVisible ? Icons.close : Icons.search),
@@ -436,6 +429,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
       onTap: () => context.push('/matches/${match.id}'),
       onOpenPersonWhatsApp: (Person person) =>
           _openWhatsApp(person, identical(person, male) ? female : male),
+      onCompletePersonCard: (Person person) =>
+          context.push('/people/${person.id}/edit'),
       // Everything a matchmaker does after a round of phone calls — this one is
       // on a break, that one is out, close that one — is now doable from the
       // list. Opening a proposal to change one word was the reason statuses

@@ -9,6 +9,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
@@ -497,14 +498,28 @@ class PersonReminderCard extends StatelessWidget {
               _ReminderActions(
                 onDelete: () => _markHandled(context),
                 onSnooze: () => _snooze(context),
-                extra: TextButton.icon(
-                  onPressed: () => _openWhatsApp(context),
-                  icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
-                  label: const Text('WhatsApp'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                // Nothing at all when there is no number: this row is a
+                // reminder to act, and offering a chat that cannot open is
+                // worse than offering nothing.
+                extra: switch (ContactChannels.forPerson(person)) {
+                  ContactChannel.whatsapp => TextButton.icon(
+                    onPressed: () => _openWhatsApp(context),
+                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
+                    label: const Text('WhatsApp'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ),
-                ),
+                  ContactChannel.sms => TextButton.icon(
+                    onPressed: () => ContactChannels.openSms(person.phone),
+                    icon: const Icon(Icons.sms_outlined, size: 16),
+                    label: const Text('הודעה'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  ContactChannel.none => null,
+                },
               ),
             ],
           ),

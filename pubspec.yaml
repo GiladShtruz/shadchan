@@ -1,8 +1,8 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-#version: 1.0.18+42
-version: 1.0.0+1
+version: 1.0.18+44
+#version: 1.0.0+1
 
 environment:
   sdk: ^3.11.0
@@ -28,7 +28,6 @@ dependencies:
   timezone: ^0.10.1
   flutter_timezone: ^5.0.2
   file_picker: ^8.1.6
-  flutter_native_splash: ^2.4.1
   flutter_contacts: ^2.0.2
   kosher_dart: ^2.0.16
   flutter_card_swiper: ^7.0.2
@@ -108,14 +107,20 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
   remove_alpha_ios: true
 
-flutter_native_splash:
-  color: "#F7F0E4"
-  image: "assets/icon/splash_logo.png"
-  color_dark: "#211D17"
-  image_dark: "assets/icon/splash_logo.png"
-  android_12:
-    color: "#F7F0E4"
-    color_dark: "#211D17"
+# The splash screen itself is not generated at build time — flutter_native_splash
+# was run once and its output (LaunchScreen storyboard + LaunchBackground assets
+# on iOS, launch_background.xml + styles on Android) is committed. The package was
+# dropped because it breaks Flutter's Swift Package Manager resolution on CI; put
+# it back, with the config block below, if the splash artwork needs regenerating.
+#
+# flutter_native_splash:
+#   color: "#F7F0E4"
+#   image: "assets/icon/splash_logo.png"
+#   color_dark: "#211D17"
+#   image_dark: "assets/icon/splash_logo.png"
+#   android_12:
+#     color: "#F7F0E4"
+#     color_dark: "#211D17"
 
 flutter:
   uses-material-design: true

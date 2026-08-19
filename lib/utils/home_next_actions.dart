@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// What kind of thing "הפעולות הבאות שלך" is asking for.
 ///
@@ -319,7 +320,7 @@ abstract final class HomeNextActions {
             kind: HomeActionKind.noIdeas,
             person: person,
             title: name,
-            reason: 'אין לו כרגע אף רעיון פתוח',
+            reason: 'אין {לו|לה} כרגע אף רעיון פתוח'.forPerson(person),
             overdueDays: ageDays,
           ),
         );

@@ -232,64 +232,6 @@ void main() {
     expect(find.text('יאיר & שושנה'), findsOneWidget);
   });
 
-  testWidgets('the activity card shows all three windows at once', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    int opened = 0;
-
-    await tester.pumpWidget(
-      wrap(
-        HomeActivityPanel(
-          week: 6,
-          month: 21,
-          allTime: 348,
-          onOpen: () => opened++,
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('הפעולות שעשית בשביל החברים שלך'), findsOneWidget);
-
-    // Not tabs: the three figures and their three captions are all on screen
-    // together, so a quiet week can be read against a good year without tapping.
-    for (final String label in <String>['השבוע', 'החודש', 'כל הזמנים']) {
-      expect(find.text(label), findsOneWidget, reason: label);
-    }
-    for (final String figure in <String>['6', '21', '348']) {
-      expect(find.text(figure), findsOneWidget, reason: figure);
-    }
-
-    // A gentle line, and never a reproach.
-    expect(find.text('עוד פעולה וניפגש בחופה'), findsOneWidget);
-    expect(opened, 0);
-
-    // The whole card is the way into the numbers.
-    await tester.tap(find.text('הפעולות שעשית בשביל החברים שלך'));
-    await tester.pump();
-    expect(opened, 1);
-  });
-
-  testWidgets('a quiet week is answered with an invitation, not a tally', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(
-      wrap(HomeActivityPanel(week: 0, month: 0, allTime: 0, onOpen: () {})),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('כל פעולה מקדמת עוד רעיון'), findsOneWidget);
-    expect(find.text('עוד פעולה וניפגש בחופה'), findsNothing);
-  });
-
   testWidgets('the tip carousel credits its author and follows gender', (
     WidgetTester tester,
   ) async {
@@ -312,11 +254,16 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('טיפ לשדכנית'), findsOneWidget);
     expect(find.text('טיפ לשדכן'), findsNothing);
+    // The tip is the sentence and nothing else: the bulb is an icon in the
+    // block's heading now, not an emoji glued to somebody's words.
     expect(find.text('אנשים משתנים.'), findsOneWidget);
+    expect(find.byIcon(Icons.lightbulb_rounded), findsOneWidget);
     // The author's name rides under the tip, small and quiet.
     expect(find.text('רבקה לוי'), findsOneWidget);
     // Tips are read here and written from the settings; no compose entry.
     expect(find.byIcon(Icons.add_circle_outline), findsNothing);
+    // And no watermark behind the sentence: exactly one mark, after the words.
+    expect(find.byIcon(Icons.eco_rounded), findsNothing);
 
     // Swiping moves to the next tip rather than reloading the same one.
     await tester.drag(find.byType(PageView), const Offset(-300, 0));
@@ -467,13 +414,6 @@ void main() {
                 onOpen: (_) {},
               ),
               const SizedBox(height: 14),
-              HomeActivityPanel(
-                week: 7,
-                month: 43,
-                allTime: 1284,
-                onOpen: () {},
-              ),
-              const SizedBox(height: 14),
               const HomeTipCarousel(
                 tips: <HomeTip>[
                   HomeTip(
@@ -495,8 +435,6 @@ void main() {
       expect(tester.takeException(), isNull);
       for (final String label in <String>[
         'ממשיכים לשמור על קשר עד החתונה! :)',
-        'הפעולות שעשית בשביל החברים שלך',
-        'כל הזמנים',
         'מרים בת־אברהם',
       ]) {
         expect(find.text(label), findsOneWidget, reason: label);

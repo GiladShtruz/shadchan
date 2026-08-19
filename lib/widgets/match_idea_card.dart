@@ -4,7 +4,9 @@ import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/contact_channel_button.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 
@@ -19,6 +21,7 @@ class MatchIdeaCard extends StatefulWidget {
     required this.female,
     required this.onTap,
     required this.onOpenPersonWhatsApp,
+    required this.onCompletePersonCard,
     this.onPersonStatusPicked,
     this.onQuickAction,
     this.showStatusTag = false,
@@ -35,6 +38,12 @@ class MatchIdeaCard extends StatefulWidget {
   /// means — the choice between chatting and sending a card names both people,
   /// and both people belong to the screen, not to this widget.
   final void Function(Person person) onOpenPersonWhatsApp;
+
+  /// Opens one candidate's card so a missing phone number can be added. Used
+  /// in place of the messaging button for somebody who has no number at all —
+  /// typically a name added straight into a proposal from outside the
+  /// database.
+  final void Function(Person person) onCompletePersonCard;
 
   /// Sets one side's availability from the chip under their name. Null leaves
   /// the chip as a plain label.
@@ -170,6 +179,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                                 gender: Gender.female,
                                 onStatusPicked: widget.onPersonStatusPicked,
                                 onOpenWhatsApp: widget.onOpenPersonWhatsApp,
+                                onCompleteCard: widget.onCompletePersonCard,
                               ),
                             ),
                             _Middle(status: match.status),
@@ -179,6 +189,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                                 gender: Gender.male,
                                 onStatusPicked: widget.onPersonStatusPicked,
                                 onOpenWhatsApp: widget.onOpenPersonWhatsApp,
+                                onCompleteCard: widget.onCompletePersonCard,
                               ),
                             ),
                           ],
@@ -254,12 +265,14 @@ class _Side extends StatelessWidget {
     required this.gender,
     required this.onStatusPicked,
     required this.onOpenWhatsApp,
+    required this.onCompleteCard,
   });
 
   final Person? person;
   final Gender gender;
   final void Function(Person person, ProfileStatus status)? onStatusPicked;
   final void Function(Person person) onOpenWhatsApp;
+  final void Function(Person person) onCompleteCard;
 
   @override
   Widget build(BuildContext context) {
@@ -304,8 +317,10 @@ class _Side extends StatelessWidget {
               PositionedDirectional(
                 bottom: -4,
                 start: -6,
-                child: _SideWhatsAppButton(
-                  onTap: () => onOpenWhatsApp(current),
+                child: _SideContactButton(
+                  person: current,
+                  onOpenWhatsApp: () => onOpenWhatsApp(current),
+                  onCompleteCard: () => onCompleteCard(current),
                 ),
               ),
           ],
@@ -481,9 +496,9 @@ class _StatusPicker extends StatelessWidget {
 /// open once to find out what is in it.
 ///
 /// Closed, it is a single line and the card grows by about the height of a
-/// chip. Open, it is the same actions the proposal screen offers, weighted the
-/// same way: "מתחילים לצאת" filled and leading, unmistakably a button rather
-/// than a badge saying where the couple already are.
+/// chip. Open, it is the same actions the proposal screen offers, drawn the
+/// same way: three peers, none of them dressed as a status. The card's
+/// `_StatusTag` is what says where the couple already are.
 class _CardActionBar extends StatelessWidget {
   const _CardActionBar({
     required this.open,
@@ -583,17 +598,56 @@ class _CardActionBar extends StatelessWidget {
   }
 }
 
-/// One side's WhatsApp control: a small disc sitting on the corner of their
+/// One side's messaging control: a small disc sitting on the corner of their
 /// photo, in the card's own surface colour so it reads as resting on the face
 /// rather than punched through it.
-class _SideWhatsAppButton extends StatelessWidget {
-  const _SideWhatsAppButton({required this.onTap});
+///
+/// What it *is* depends on the number behind it — WhatsApp, SMS, or a pencil
+/// when there is no number at all. A name added straight into a proposal from
+/// outside the database has nothing but a name, and this used to offer to
+/// WhatsApp them anyway.
+class _SideContactButton extends StatelessWidget {
+  const _SideContactButton({
+    required this.person,
+    required this.onOpenWhatsApp,
+    required this.onCompleteCard,
+  });
 
-  final VoidCallback onTap;
+  final Person person;
+  final VoidCallback onOpenWhatsApp;
+  final VoidCallback onCompleteCard;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final ContactChannel channel = ContactChannels.forPerson(person);
+
+    final ({Widget icon, VoidCallback onTap}) control = switch (channel) {
+      ContactChannel.whatsapp => (
+        icon: const FaIcon(
+          FontAwesomeIcons.whatsapp,
+          size: 16,
+          color: kWhatsAppGreen,
+        ),
+        onTap: onOpenWhatsApp,
+      ),
+      ContactChannel.sms => (
+        icon: Icon(
+          Icons.sms_outlined,
+          size: 16,
+          color: theme.colorScheme.primary,
+        ),
+        onTap: () => ContactChannels.openSms(person.phone),
+      ),
+      ContactChannel.none => (
+        icon: Icon(
+          Icons.edit_outlined,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        onTap: onCompleteCard,
+      ),
+    };
 
     return Material(
       color: theme.colorScheme.surface,
@@ -602,15 +656,8 @@ class _SideWhatsAppButton extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.all(6),
-          child: FaIcon(
-            FontAwesomeIcons.whatsapp,
-            size: 16,
-            color: Color(0xFF25D366),
-          ),
-        ),
+        onTap: control.onTap,
+        child: Padding(padding: const EdgeInsets.all(6), child: control.icon),
       ),
     );
   }
@@ -637,15 +684,16 @@ class _QuickActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final bool lead = action == MatchQuickAction.dating;
     final Color ink = _ink;
 
+    // All three are drawn identically — see `_ActionTile` on the proposal
+    // screen, which this deliberately mirrors. Filling "מתחילים לצאת" made it
+    // look like the status the proposal was already in, and the card's own
+    // `_StatusTag` is the one place that says where it actually is.
     return Material(
-      color: lead ? ink : ink.withValues(alpha: dark ? 0.18 : 0.09),
+      color: ink.withValues(alpha: dark ? 0.18 : 0.09),
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
-      elevation: lead ? 2 : 0,
-      shadowColor: ink.withValues(alpha: 0.5),
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -653,7 +701,7 @@ class _QuickActionButton extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(action.icon, size: 17, color: lead ? Colors.white : ink),
+              Icon(action.icon, size: 17, color: ink),
               const SizedBox(height: 4),
               FittedBox(
                 fit: BoxFit.scaleDown,
@@ -662,7 +710,7 @@ class _QuickActionButton extends StatelessWidget {
                   maxLines: 1,
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: lead ? Colors.white : ink,
+                    color: ink,
                   ),
                 ),
               ),
