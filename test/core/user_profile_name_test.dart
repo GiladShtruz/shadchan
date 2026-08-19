@@ -124,7 +124,7 @@ void main() {
 
   test('the welcome says what the app is, without overselling it', () {
     final IntroPage first = IntroScreens.pages.first;
-    expect(first.body, 'לשדכנים, ולכל מי שחושב מדי פעם על החברים שלו.');
+    expect(first.body, 'לשדכנים, ולכל מי שחושב על החברים שלו.');
 
     final IntroPage second = IntroScreens.pages[1];
     // A journal, not a database: what it holds is a train of thought about

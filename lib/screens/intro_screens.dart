@@ -41,7 +41,7 @@ class IntroScreens extends StatefulWidget {
     IntroPage(
       icon: Icons.favorite_rounded,
       title: 'האפליקציה הזו נבנתה בשבילך',
-      body: 'לשדכנים, ולכל מי שחושב מדי פעם על החברים שלו.',
+      body: 'לשדכנים, ולכל מי שחושב על החברים שלו.',
     ),
     IntroPage(
       icon: Icons.folder_shared_outlined,

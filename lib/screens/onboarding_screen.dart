@@ -30,6 +30,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _saving = false;
   bool _loadedExistingProfile = false;
 
+  /// True once the button has been pressed with something still missing.
+  ///
+  /// **The button is never disabled.** A dead button explains nothing: someone
+  /// who filled in a first name and stopped is left pressing a grey rectangle
+  /// with no idea what the app is waiting for. Pressing it always does
+  /// something — either it continues, or it says in red exactly which answer is
+  /// missing and scrolls it into view. Nothing turns red before the first
+  /// press, so nobody is scolded for a form they have not finished typing.
+  bool _showErrors = false;
+
+  /// Anchors for scrolling the first missing answer into view.
+  final GlobalKey _firstNameKey = GlobalKey();
+  final GlobalKey _lastNameKey = GlobalKey();
+  final GlobalKey _maritalStatusKey = GlobalKey();
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -114,23 +129,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               // full. Asking once, plainly, beats guessing later where one name
               // ends and the other begins.
               TextField(
+                key: _firstNameKey,
                 controller: _firstNameController,
                 textInputAction: TextInputAction.next,
                 textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'שם פרטי',
-                  prefixIcon: Icon(Icons.person_outline),
+                  prefixIcon: const Icon(Icons.person_outline),
+                  errorText: _missingFirstName ? 'צריך למלא שם פרטי' : null,
                 ),
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 12),
               TextField(
+                key: _lastNameKey,
                 controller: _lastNameController,
                 textInputAction: TextInputAction.done,
                 textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'שם משפחה',
-                  prefixIcon: Icon(Icons.badge_outlined),
+                  prefixIcon: const Icon(Icons.badge_outlined),
+                  errorText: _missingLastName ? 'צריך למלא שם משפחה' : null,
                 ),
                 onChanged: (_) => setState(() {}),
               ),
@@ -156,7 +175,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 },
               ),
               const SizedBox(height: 24),
-              Text('מה המצב האישי שלך?', style: theme.textTheme.titleMedium),
+              Text(
+                key: _maritalStatusKey,
+                'מה המצב האישי שלך?',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: _missingMaritalStatus ? theme.colorScheme.error : null,
+                ),
+              ),
               const SizedBox(height: 8),
               SegmentedButton<bool>(
                 segments: <ButtonSegment<bool>>[
@@ -182,6 +207,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 },
               ),
               const SizedBox(height: 8),
+              if (_missingMaritalStatus)
+                Text(
+                  'צריך לבחור מצב אישי',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
               Text(
                 'למשתמשים רווקים תופיע בפרופיל אפשרות לשמור ולשתף כרטיס אישי.',
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -191,7 +225,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
               const SizedBox(height: 32),
               FilledButton(
-                onPressed: _canContinue && !_saving ? _continue : null,
+                onPressed: _saving ? null : _continue,
                 child: _saving
                     ? const SizedBox(
                         width: 20,
@@ -212,7 +246,47 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _lastNameController.text.trim().isNotEmpty &&
       _selectedIsSingle != null;
 
+  bool get _missingFirstName =>
+      _showErrors && _firstNameController.text.trim().isEmpty;
+
+  bool get _missingLastName =>
+      _showErrors && _lastNameController.text.trim().isEmpty;
+
+  bool get _missingMaritalStatus => _showErrors && _selectedIsSingle == null;
+
+  /// The topmost unanswered question, so the red mark is one somebody can see.
+  GlobalKey? get _firstMissingKey {
+    if (_firstNameController.text.trim().isEmpty) {
+      return _firstNameKey;
+    }
+    if (_lastNameController.text.trim().isEmpty) {
+      return _lastNameKey;
+    }
+    if (_selectedIsSingle == null) {
+      return _maritalStatusKey;
+    }
+    return null;
+  }
+
   Future<void> _continue() async {
+    if (!_canContinue) {
+      final GlobalKey? missing = _firstMissingKey;
+      setState(() => _showErrors = true);
+      // The keyboard would otherwise cover the answer being pointed at.
+      FocusScope.of(context).unfocus();
+      HapticFeedback.mediumImpact();
+      final BuildContext? target = missing?.currentContext;
+      if (target != null) {
+        await Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+          alignment: 0.2,
+        );
+      }
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       await context.read<UserProfileProvider>().saveProfile(

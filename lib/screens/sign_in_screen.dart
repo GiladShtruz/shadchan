@@ -186,23 +186,26 @@ class _SignInScreenState extends State<SignInScreen> {
                     ),
                   ),
                   const SizedBox(height: 28),
-                  _ProviderButton(
-                    icon: Icons.account_circle_outlined,
-                    label: 'המשך עם Google',
-                    busy: account.isBusy,
-                    onPressed: () => _signIn(account.signIn),
-                  ),
-                  // Apple only where Apple's own flow exists. See
+                  // Apple only where Apple's own flow exists, and first when it
+                  // does: an iPhone already has an Apple account signed in, so
+                  // it is the one-tap answer there, and Apple's guidelines put
+                  // their button above the alternatives. See
                   // `AccountService.isAppleAvailable`.
                   if (account.isAppleAvailable) ...<Widget>[
-                    const SizedBox(height: 10),
                     _ProviderButton(
                       icon: Icons.apple,
                       label: 'המשך עם Apple',
                       busy: account.isBusy,
                       onPressed: () => _signIn(account.signInWithApple),
                     ),
+                    const SizedBox(height: 10),
                   ],
+                  _ProviderButton(
+                    icon: Icons.account_circle_outlined,
+                    label: 'המשך עם Google',
+                    busy: account.isBusy,
+                    onPressed: () => _signIn(account.signIn),
+                  ),
                   const SizedBox(height: 18),
                   // Quieter than the two above, and still a real, reachable
                   // way out. A skip that has to be hunted for is a dark

@@ -142,19 +142,8 @@ void main() {
       find.text('למשתמשים רווקים תופיע בפרופיל אפשרות לשמור ולשתף כרטיס אישי.'),
       findsOneWidget,
     );
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'יאללה, מתחילים!'),
-          )
-          .onPressed,
-      isNull,
-    );
-
-    await tester.ensureVisible(find.text('רווק'));
-    await tester.pump();
-    await tester.runAsync(() => tester.tap(find.text('רווק')));
-    await tester.pump();
+    // The button is never dead: it is pressable with the answer missing, and
+    // pressing it says what is missing rather than doing nothing.
     expect(
       tester
           .widget<FilledButton>(
@@ -163,6 +152,53 @@ void main() {
           .onPressed,
       isNotNull,
     );
+    expect(find.text('צריך לבחור מצב אישי'), findsNothing);
+
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'יאללה, מתחילים!'),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'יאללה, מתחילים!'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('צריך לבחור מצב אישי'), findsOneWidget);
+    // Still on the form; nothing was saved.
+    expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('רווק'));
+    await tester.pump();
+    await tester.runAsync(() => tester.tap(find.text('רווק')));
+    await tester.pump();
+    expect(find.text('צריך לבחור מצב אישי'), findsNothing);
+  });
+
+  testWidgets('Onboarding marks a missing name in red instead of blocking', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    await tester.runAsync(() => settings.delete('userIsSingle'));
+    await tester.runAsync(() => settings.put('userSeenIntro', true));
+    AppRouter.router.go('/onboarding');
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    // Only half the name — the case that used to leave the matchmaker pressing
+    // a grey button with no explanation.
+    await tester.enterText(find.widgetWithText(TextField, 'שם פרטי'), 'רבקה');
+    await tester.pump();
+
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'יאללה, מתחילים!'),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'יאללה, מתחילים!'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('צריך למלא שם משפחה'), findsOneWidget);
+    expect(find.text('צריך למלא שם פרטי'), findsNothing);
+
+    await tester.enterText(find.widgetWithText(TextField, 'שם משפחה'), 'כהן');
+    await tester.pump();
+    expect(find.text('צריך למלא שם משפחה'), findsNothing);
   });
 
   testWidgets('The account section explains itself when Firebase is down', (
