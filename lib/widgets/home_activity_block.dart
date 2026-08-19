@@ -41,6 +41,14 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
   final Map<CommunityPeriod, CommunityTotals> _totals =
       <CommunityPeriod, CommunityTotals>{};
 
+  /// Whether the last look at [AccountProvider] said there was an account.
+  ///
+  /// The block is built before Firebase has finished restoring the session, so
+  /// the first read of every window happens with no account and comes back
+  /// unresolved. Watching this is how the community column fills itself in a
+  /// moment later instead of sitting on "0" until the next launch.
+  bool _wasSignedIn = false;
+
   @override
   void initState() {
     super.initState();
@@ -48,11 +56,16 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
   }
 
   Future<void> _load(CommunityPeriod period) async {
-    if (_totals.containsKey(period)) {
+    // A window that actually came back is never asked for again; one that did
+    // not — no account yet, no network — always is. Storing an unresolved zero
+    // as though it were an answer is what used to leave a live community
+    // showing "0" for the whole session. See [CommunityTotals.resolved].
+    if (_totals[period]?.resolved ?? false) {
       return;
     }
     // Cheap and harmless without an account — `CommunityService` refuses an
-    // anonymous uid and answers with zeroes rather than reaching the network.
+    // anonymous uid and answers with an unresolved zero rather than reaching
+    // the network.
     final CommunityTotals totals = await CommunityService.totals(period);
     if (mounted) {
       setState(() => _totals[period] = totals);
@@ -70,6 +83,15 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
     final CommunityProvider community = context.watch<CommunityProvider>();
     final bool signedIn = context.watch<AccountProvider>().isSignedIn;
     final CommunityTotals? totals = _totals[_period];
+
+    // Firebase resolves the session a moment after launch, so the read fired
+    // from `initState` usually happened with no account at all. This is the
+    // rebuild that follows; asking again here is what fills the community
+    // column in instead of leaving it on "0" until the next launch.
+    if (signedIn && !_wasSignedIn) {
+      _wasSignedIn = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load(_period));
+    }
 
     return CommunityCard(
       child: Column(

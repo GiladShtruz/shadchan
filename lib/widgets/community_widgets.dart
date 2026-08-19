@@ -617,6 +617,81 @@ class CommunityRankRow extends StatelessWidget {
 /// activity screen and the privacy page; nothing in the service layer has to
 /// change.
 
+/// "שמור על הפרטיות שלי" — the one switch that stops anything being shared.
+///
+/// **It is a switch and not a screen of choices.** A matchmaker who does not
+/// want their work counted alongside everybody else's is not asking to
+/// configure which halves of it are counted; they are asking for one thing, and
+/// splitting it into "hide my name" and "hide my numbers" and "hide me from the
+/// board" would be three ways to get it half right. On means nothing about them
+/// leaves the device.
+///
+/// **Everything personal keeps working, and the copy says so.** The figures,
+/// the chart, the milestones and the weekly best are all computed here from the
+/// records on this phone; so is the ability to read what the community did.
+/// What is given up is being *in* the totals and on the board. Said plainly,
+/// because a privacy switch whose consequences are vague gets left alone by the
+/// people who most wanted it.
+class PrivateModeTile extends StatelessWidget {
+  const PrivateModeTile({super.key});
+
+  static const String title = 'שמור על הפרטיות שלי';
+
+  static const String explanation =
+      'הפעילות שלך לא תישלח לקהילה: לא ייספרו הנתונים שלך בסך הפעילות של '
+      'הקהילה והשם שלך לא יופיע בדירוג. כל המספרים, הגרפים ואבני הדרך שלך '
+      'ימשיכו לעבוד כרגיל במכשיר, ותוכל להמשיך לראות את פעילות הקהילה.';
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final CommunityProvider community = context.watch<CommunityProvider>();
+
+    return SwitchListTile.adaptive(
+      contentPadding: EdgeInsets.zero,
+      value: community.isPrivate,
+      onChanged: (bool value) => _set(context, value),
+      secondary: Icon(
+        community.isPrivate
+            ? Icons.shield_moon_outlined
+            : Icons.shield_outlined,
+        size: 22,
+        color: communityLead(theme),
+      ),
+      title: Text(
+        title,
+        style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        explanation,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1.4,
+        ),
+      ),
+      isThreeLine: true,
+    );
+  }
+
+  Future<void> _set(BuildContext context, bool private) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    // Turning it on also deletes whatever is already on the server; see
+    // `CommunityProvider.setPrivate`.
+    await context.read<CommunityProvider>().setPrivate(private);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            private
+                ? 'מעכשיו הפעילות שלך נשארת אצלך בלבד.'
+                : 'הפעילות שלך נספרת שוב בנתוני הקהילה.',
+          ),
+        ),
+      );
+  }
+}
+
 /// "מחיקת הנתונים שלי מהקהילה" — the erasure path.
 ///
 /// Uninstalling the app does not remove the member document; nothing on the

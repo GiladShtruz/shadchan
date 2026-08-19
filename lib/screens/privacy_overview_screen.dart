@@ -62,8 +62,9 @@ class PrivacyOverviewScreen extends StatelessWidget {
               'שצברת. זה מה שמרכיב את נתוני הקהילה ואת הדירוג.\n'
               'כל זה קורה רק אם התחברת עם חשבון. בלי התחברות שום נתון '
               'שלך לא נשלח לקהילה, ולא תופיע בדירוג.\n'
-              'אם החלטת שאינך רוצה להופיע יותר, אפשר למחוק את נתוני הקהילה '
-              'שלך לגמרי — הכפתור נמצא בתחתית העמוד הזה.',
+              'אם אינך רוצה לשתף בכלל, אפשר להדליק בתחתית העמוד '
+              'הזה את "שמור על הפרטיות שלי" — ואז שום נתון שלך לא נשלח לקהילה. '
+              'אפשר גם למחוק לגמרי את נתוני הקהילה שכבר נשלחו, באותו מקום.',
         ),
         (
           icon: Icons.favorite_outline_rounded,
@@ -131,8 +132,12 @@ class PrivacyOverviewScreen extends StatelessWidget {
                 body: point.body.forGender(gender),
               ),
             const SizedBox(height: 4),
-            // The one control that acts on what this page describes rather than
-            // only describing it. "להסתיר אותי מהדירוג" used to sit beside it;
+            // The two controls that act on what this page describes rather than
+            // only describing it: the switch that stops anything being shared
+            // from here on, and the button that removes what already was.
+            const PrivateModeTile(),
+            const SizedBox(height: 4),
+            // "להסתיר אותי מהדירוג" used to sit beside it;
             // it was removed from the app by product decision, so **this is now
             // the only way to take a published name back down** and it has to
             // stay exactly where somebody looking for it would look.

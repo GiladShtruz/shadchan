@@ -14,6 +14,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/backup_service.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/excel_export_service.dart';
+import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// "המאגר והנתונים שלי" — everything that can be done to the database itself,
@@ -61,6 +62,15 @@ class _SettingsDataScreenState extends State<SettingsDataScreen> {
                   icon: Icons.lock_outline_rounded,
                   title: 'פרטיות והמאגר שלי',
                   onTap: () => context.push('/support/privacy'),
+                ),
+                // The switch itself rather than a row that opens the page it
+                // lives on. Somebody who came to the settings looking for
+                // "don't share my activity" should find the thing, not a
+                // signpost to it — and it sits directly under the privacy row
+                // so the page it belongs to is still one tap away.
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: PrivateModeTile(),
                 ),
                 SettingsRow(
                   icon: Icons.people_outline,

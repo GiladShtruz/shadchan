@@ -99,6 +99,26 @@ abstract final class CommunityAchievements {
     return best;
   }
 
+  /// The next rung of [milestones] above [value], or null at the top.
+  ///
+  /// The mirror of [reached], and it exists for the same screen: "אבני דרך" on
+  /// the activity page draws where somebody is *between* two rungs, and a
+  /// progress bar with no next rung is a bar with no meaning. Couples keep
+  /// climbing in tens past the end of the written ladder, exactly as [reached]
+  /// reads them, so the one ladder that never runs out never shows an empty
+  /// bar either.
+  static int? next(List<int> milestones, int value) {
+    for (final int milestone in milestones) {
+      if (value < milestone) {
+        return milestone;
+      }
+    }
+    if (identical(milestones, coupleMilestones)) {
+      return (value ~/ 10 + 1) * 10;
+    }
+    return null;
+  }
+
   /// The one achievement to show now: the most significant thing that has
   /// happened and has not been shown yet, or null when there is nothing.
   ///

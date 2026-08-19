@@ -8,28 +8,39 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/activity_stats.dart';
+import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/community_achievements.dart';
 import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 
-/// "הפעילות והנתונים" — everything the app counts, on one screen, in the order
-/// a matchmaker cares about it.
+/// "הפעילות שלי" — everything the app counts, on one screen, in the order a
+/// matchmaker cares about it.
 ///
-/// **The hierarchy is the design.** הנתונים שלי → הפעילות שלי → פעילות הקהילה →
-/// הדירוג. It opens on four real numbers about real people the reader helped,
-/// and only then turns them into a score; the community comes after that, and
-/// the competitive part comes last. Reversed — leaderboard first — the same
-/// figures read as a game with matchmaking as its scoring mechanism, which is
-/// the one thing this screen must not feel like.
+/// **The hierarchy is the design.** ההישג → הנתונים → אבני הדרך → הקצב →
+/// פעילות הקהילה → הדירוג. It opens by naming the best thing that has happened
+/// in this database, in a sentence rather than a figure, and only then turns
+/// the work into counts, ladders and a score. The community comes after all of
+/// that, and the competitive part comes last. Reversed — leaderboard first —
+/// the same figures read as a game with matchmaking as its scoring mechanism,
+/// which is the one thing this screen must not feel like.
+///
+/// **Warm, and never loud.** The page is allowed to say תודה and to notice a
+/// milestone, because a matchmaker who married two people off deserves better
+/// than a number in a grey box. What it is not allowed to do is celebrate
+/// *nothing*: every congratulation here is attached to something that actually
+/// happened, an empty database is greeted with an invitation rather than
+/// confetti, and the only gold on the page is still first place on the board.
 ///
 /// The personal half needs no network at all. Only the community half waits —
 /// and for a matchmaker who has not connected an account there is no community
-/// half at all. Their own two cards are unchanged, and where the totals and the
+/// half at all. Their own cards are unchanged, and where the totals and the
 /// board would be there is one invitation. That is the whole of the gate: their
 /// own history is theirs whether or not they ever sign in.
 class CommunityActivityScreen extends StatefulWidget {
@@ -46,12 +57,49 @@ class CommunityActivityScreen extends StatefulWidget {
 class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
   CommunityPeriod _minePeriod = CommunityPeriod.week;
 
+  /// Bumped on every refresh, and handed to the two cards that read the
+  /// network. Changing a child's key rebuilds it from `initState`, which is
+  /// what makes "אני מרענן" mean a genuinely fresh read rather than the same
+  /// cached figures drawn again.
+  int _liveGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Not during the opening frame: this recomputes the local ledgers, writes
+    // this device's counters and then reads the community back.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  /// Recount, republish, re-read — in that order, which is the only order that
+  /// can show the truth.
+  ///
+  /// **This is what fixed "פעילות הקהילה: 0".** The community figure is a sum
+  /// over what every device has published, and this device publishes at app
+  /// open and app pause — so a matchmaker who opened the app, added twenty
+  /// friends and came straight here was reading a total that did not yet
+  /// contain their own morning, out of a process cache that would not be asked
+  /// again for minutes. Publishing first and forcing the read afterwards means
+  /// the number on screen includes the work that was done a moment ago, and
+  /// pulling down does it again.
+  Future<void> _refresh() async {
+    await context.read<CommunityProvider>().refresh(
+      people: context.read<PersonRepository>(),
+      matches: context.read<MatchRepository>(),
+      profile: context.read<UserProfileProvider>(),
+    );
+    if (mounted) {
+      setState(() => _liveGeneration++);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final CommunityProvider community = context.watch<CommunityProvider>();
     final bool signedIn = context.watch<AccountProvider>().isSignedIn;
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final MatchRepository matchRepository = context.watch<MatchRepository>();
+    final UserProfileProvider profile = context.watch<UserProfileProvider>();
 
     final List<Person> people = personRepository.getAll();
     final List<MatchIdea> matches = matchRepository.getAll();
@@ -80,29 +128,206 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('הפעילות שלי'), centerTitle: true),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-          children: <Widget>[
-            _MyNumbersCard(breakdown: everything),
-            const SizedBox(height: 16),
-            _MyActivityCard(
-              period: _minePeriod,
-              onPeriod: (CommunityPeriod period) =>
-                  setState(() => _minePeriod = period),
-              points: community.myPoints(_minePeriod),
-              bars: bars,
-            ),
-            const SizedBox(height: 16),
-            if (signedIn) ...<Widget>[
-              const _CommunityActivityCard(),
-              const SizedBox(height: 16),
-              const _LeaderboardCard(),
-            ] else
-              const CommunityCard(
-                child: CommunitySignInCard.communityIsForMembers(),
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+            children: <Widget>[
+              _CelebrationHeader(
+                breakdown: everything,
+                firstName: profile.firstName ?? profile.name ?? '',
               ),
+              const SizedBox(height: 16),
+              _MyNumbersCard(breakdown: everything),
+              const SizedBox(height: 16),
+              _MilestonesCard(breakdown: everything),
+              const SizedBox(height: 16),
+              _MyActivityCard(
+                period: _minePeriod,
+                onPeriod: (CommunityPeriod period) =>
+                    setState(() => _minePeriod = period),
+                points: community.myPoints(_minePeriod),
+                bars: bars,
+              ),
+              const SizedBox(height: 16),
+              if (signedIn) ...<Widget>[
+                _CommunityActivityCard(
+                  key: ValueKey<int>(_liveGeneration),
+                  private: community.isPrivate,
+                ),
+                const SizedBox(height: 16),
+                _LeaderboardCard(key: ValueKey<int>(-1 - _liveGeneration)),
+              ] else
+                const CommunityCard(
+                  child: CommunitySignInCard.communityIsForMembers(),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The palette the four kinds of work are drawn in.
+///
+/// Brand tones the app already wears — the stone blue, the amber, the olive and
+/// the copper — one per kind of act, so a wedding is never the same colour as a
+/// contact import. Lightened in the dark theme, where the saturated originals
+/// are too dark to read as ink on their own wash.
+Color _tone(Color base, ThemeData theme) =>
+    theme.brightness == Brightness.dark
+    ? Color.lerp(base, Colors.white, 0.45)!
+    : base;
+
+const Color _friendsTone = AppColors.primaryDark;
+const Color _ideasTone = AppColors.statusChecking;
+const Color _couplesTone = AppColors.statusDating;
+const Color _weddingsTone = AppColors.secondary;
+
+// --- 0. The one sentence worth opening on ------------------------------------
+
+/// The header: who this is, and the best true thing that can be said about it.
+///
+/// **The headline is derived, never generic.** "כל הכבוד!" over an empty
+/// database is the app congratulating somebody for installing it, which is
+/// worth less than nothing; the line here names the highest real thing that has
+/// happened — a wedding if there was one, otherwise a couple, otherwise an
+/// idea, otherwise a friend — and when there is genuinely nothing yet it says
+/// so warmly and points at the first step.
+class _CelebrationHeader extends StatelessWidget {
+  const _CelebrationHeader({required this.breakdown, required this.firstName});
+
+  final ActivityBreakdown breakdown;
+  final String firstName;
+
+  ({IconData icon, Color tone, String headline, String body}) get _story {
+    if (breakdown.engagements > 0) {
+      return (
+        icon: Icons.diamond_outlined,
+        tone: _weddingsTone,
+        headline: breakdown.engagements == 1
+            ? 'בית אחד כבר קם בזכותך'
+            : '${breakdown.engagements} בתים כבר קמו בזכותך',
+        body:
+            'מאחורי כל אחד מהם היו מחשבה, טלפונים והרבה סבלנות. '
+            'אין הרבה דברים בעולם ששווים את זה.',
+      );
+    }
+    if (breakdown.couples > 0) {
+      return (
+        icon: Icons.favorite_rounded,
+        tone: _couplesTone,
+        headline: breakdown.couples == 1
+            ? 'זוג אחד כבר יצא לדרך בזכותך'
+            : '${breakdown.couples} זוגות כבר יצאו לדרך בזכותך',
+        body:
+            'כל זוג כזה התחיל ממחשבה שלך על שני אנשים. '
+            'שיהיה בשעה טובה.',
+      );
+    }
+    if (breakdown.ideas > 0) {
+      return (
+        icon: Icons.lightbulb_outline_rounded,
+        tone: _ideasTone,
+        headline: breakdown.ideas == 1
+            ? 'הרעיון הראשון שלך כבר בדרך'
+            : '${breakdown.ideas} רעיונות כבר יצאו מהראש שלך אל המציאות',
+        body:
+            'לא כל רעיון מגיע לחופה, אבל בלי הרעיונות שום דבר לא קורה. '
+            'ממשיכים.',
+      );
+    }
+    if (breakdown.friends > 0) {
+      return (
+        icon: Icons.people_alt_outlined,
+        tone: _friendsTone,
+        headline: breakdown.friends == 1
+            ? 'החבר הראשון שלך במאגר'
+            : '${breakdown.friends} חברים כבר במאגר שלך',
+        body:
+            'כל שם כאן הוא אדם אמיתי שמחכה לרעיון הנכון. '
+            'עכשיו מתחיל החלק המעניין.',
+      );
+    }
+    return (
+      icon: Icons.auto_awesome_outlined,
+      tone: _friendsTone,
+      headline: 'הכול מתחיל מחבר אחד',
+      body:
+          'מוסיפים חבר, פותחים רעיון — והמספרים בעמוד הזה מתחילים לספר סיפור.',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final ({IconData icon, Color tone, String headline, String body}) story =
+        _story;
+    final Color tone = _tone(story.tone, theme);
+    final String name = firstName.trim();
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: tone.withValues(alpha: 0.28)),
+        gradient: LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: <Color>[
+            tone.withValues(alpha: dark ? 0.20 : 0.14),
+            theme.colorScheme.surface,
           ],
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 46,
+                height: 46,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: tone.withValues(alpha: dark ? 0.22 : 0.16),
+                ),
+                child: Icon(story.icon, size: 24, color: tone),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  name.isEmpty ? 'הפעילות שלך' : 'שלום, $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            story.headline,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            story.body,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.55,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -125,7 +350,7 @@ class _MyNumbersCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CommunityCard(
-      title: 'הנתונים שלך',
+      title: 'הדרך שלך עד היום',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -135,32 +360,42 @@ class _MyNumbersCard extends StatelessWidget {
                 child: _NumberTile(
                   value: breakdown.friends,
                   label: 'חברים שהוספת',
+                  icon: Icons.people_alt_outlined,
+                  tone: _friendsTone,
                   metric: MonthlyStatMetric.people,
                 ),
               ),
+              const SizedBox(width: 10),
               Expanded(
                 child: _NumberTile(
                   value: breakdown.ideas,
                   label: 'רעיונות שפתחת',
+                  icon: Icons.lightbulb_outline_rounded,
+                  tone: _ideasTone,
                   metric: MonthlyStatMetric.ideas,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           Row(
             children: <Widget>[
               Expanded(
                 child: _NumberTile(
                   value: breakdown.couples,
                   label: 'זוגות שהוצאת לדייט',
+                  icon: Icons.favorite_outline_rounded,
+                  tone: _couplesTone,
                   metric: MonthlyStatMetric.dating,
                 ),
               ),
+              const SizedBox(width: 10),
               Expanded(
                 child: _NumberTile(
                   value: breakdown.engagements,
                   label: 'חתונות/אירוסין',
+                  icon: Icons.diamond_outlined,
+                  tone: _weddingsTone,
                   metric: MonthlyStatMetric.weddings,
                 ),
               ),
@@ -173,15 +408,23 @@ class _MyNumbersCard extends StatelessWidget {
 }
 
 /// One of the four, and the way into the records behind it.
+///
+/// A tile with its own tint rather than a figure in a row: four counts of four
+/// different things, drawn identically, read as one table of numbers, and the
+/// wedding count deserves not to look like the contact count.
 class _NumberTile extends StatelessWidget {
   const _NumberTile({
     required this.value,
     required this.label,
+    required this.icon,
+    required this.tone,
     required this.metric,
   });
 
   final int value;
   final String label;
+  final IconData icon;
+  final Color tone;
 
   /// Which list of records this number opens. The drill-downs already exist on
   /// the monthly stats screen and are the honest answer to "which ones?".
@@ -189,18 +432,224 @@ class _NumberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color ink = _tone(tone, theme);
+
     return InkWell(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(16),
       onTap: () => context.push('/stats/month/${metric.name}'),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-        child: CommunitySmallFigure(value: value, label: label),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: ink.withValues(alpha: dark ? 0.14 : 0.10),
+          border: Border.all(color: ink.withValues(alpha: 0.20)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(icon, size: 18, color: ink),
+            const SizedBox(height: 8),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                CommunityFigure.format(value),
+                maxLines: 1,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  height: 1.05,
+                  color: ink,
+                ),
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 2,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.25,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// --- 2. הפעילות שלך ---------------------------------------------------------
+// --- 2. אבני דרך -------------------------------------------------------------
+
+/// The ladders, and where the matchmaker stands on each of them.
+///
+/// **The same ladders the app already congratulates people on**
+/// ([CommunityAchievements]), drawn instead of announced. A milestone dialog is
+/// a moment and then it is gone; this is the place somebody can come back to
+/// and see that eleven more friends is a round number, which is a far better
+/// use of the same four lists.
+///
+/// **Nothing here is a target set by the app.** The next rung is stated, not
+/// demanded — no streaks, no "you are behind", no comparison with anybody —
+/// because the only thing worse than an app that ignores good work is one that
+/// nags about it.
+class _MilestonesCard extends StatelessWidget {
+  const _MilestonesCard({required this.breakdown});
+
+  final ActivityBreakdown breakdown;
+
+  @override
+  Widget build(BuildContext context) {
+    return CommunityCard(
+      title: 'אבני דרך',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _MilestoneRow(
+            icon: Icons.people_alt_outlined,
+            tone: _friendsTone,
+            label: 'חברים במאגר',
+            value: breakdown.friends,
+            ladder: CommunityAchievements.friendMilestones,
+            unit: 'חברים',
+          ),
+          _MilestoneRow(
+            icon: Icons.lightbulb_outline_rounded,
+            tone: _ideasTone,
+            label: 'רעיונות שנפתחו',
+            value: breakdown.ideas,
+            ladder: CommunityAchievements.ideaMilestones,
+            unit: 'רעיונות',
+          ),
+          _MilestoneRow(
+            icon: Icons.favorite_outline_rounded,
+            tone: _couplesTone,
+            label: 'זוגות שיצאו לדרך',
+            value: breakdown.couples,
+            ladder: CommunityAchievements.coupleMilestones,
+            unit: 'זוגות',
+          ),
+          _MilestoneRow(
+            icon: Icons.local_fire_department_outlined,
+            tone: _weddingsTone,
+            label: 'נקודות פעילות',
+            value: breakdown.points,
+            ladder: CommunityAchievements.pointMilestones,
+            unit: 'נקודות',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MilestoneRow extends StatelessWidget {
+  const _MilestoneRow({
+    required this.icon,
+    required this.tone,
+    required this.label,
+    required this.value,
+    required this.ladder,
+    required this.unit,
+  });
+
+  final IconData icon;
+  final Color tone;
+  final String label;
+  final int value;
+  final List<int> ladder;
+
+  /// The word after the number in "עוד 7 חברים".
+  final String unit;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color ink = _tone(tone, theme);
+    final int? reached = CommunityAchievements.reached(ladder, value);
+    final int? next = CommunityAchievements.next(ladder, value);
+
+    // From the rung just passed to the one ahead, so a bar that has just been
+    // reset by a milestone starts empty rather than nearly full.
+    final int floor = reached ?? 0;
+    final double progress = next == null || next <= floor
+        ? 1
+        : ((value - floor) / (next - floor)).clamp(0.0, 1.0);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 16, color: ink),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (reached != null) ...<Widget>[
+                Icon(
+                  Icons.workspace_premium_outlined,
+                  size: 14,
+                  color: ink.withValues(alpha: 0.9),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  CommunityFigure.format(reached),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                CommunityFigure.format(value),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: ink.withValues(alpha: 0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                ink.withValues(alpha: 0.85),
+              ),
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            next == null
+                ? 'עברת את כל אבני הדרך כאן. מרשים.'
+                : 'עוד ${CommunityFigure.format(next - value)} $unit '
+                      'ל־${CommunityFigure.format(next)}',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- 3. הקצב שלך ------------------------------------------------------------
 
 class _MyActivityCard extends StatelessWidget {
   const _MyActivityCard({
@@ -220,7 +669,7 @@ class _MyActivityCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return CommunityCard(
-      title: 'הפעילות שלך',
+      title: 'הקצב שלך',
       trailing: TextButton(
         onPressed: () => context.push('/stats/month'),
         style: TextButton.styleFrom(
@@ -239,9 +688,20 @@ class _MyActivityCard extends StatelessWidget {
             periods: CommunityPeriodTabs.weekMonthAllTime,
           ),
           const SizedBox(height: 14),
-          CommunityFigure(
-            value: points,
-            label: 'נקודות פעילות ${period.label}',
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: CommunityFigure(
+                  value: points,
+                  label: 'נקודות פעילות ${period.label}',
+                ),
+              ),
+              const SizedBox(width: 8),
+              // One generous word for the window, from the same scale the
+              // monthly screen uses. Never comparative and never negative —
+              // see `ActivityStats.grade`.
+              _GradeChip(points: points),
+            ],
           ),
           const _WeeklyBestLine(),
           const SizedBox(height: 16),
@@ -255,6 +715,35 @@ class _MyActivityCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "קצב יפה" — the word beside the figure.
+class _GradeChip extends StatelessWidget {
+  const _GradeChip({required this.points});
+
+  final int points;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color lead = communityLead(theme);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: lead.withValues(alpha: 0.14),
+        border: Border.all(color: lead.withValues(alpha: 0.24)),
+      ),
+      child: Text(
+        ActivityStats.grade(points),
+        style: theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: lead,
+        ),
       ),
     );
   }
@@ -280,28 +769,38 @@ class _WeeklyBestLine extends StatelessWidget {
 
     final bool isThisWeek =
         CommunityProfileStore.bestWeekKey == CommunityPeriods.weekKey();
+    final Color lead = communityLead(theme);
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            Icons.trending_up_rounded,
-            size: 16,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: lead.withValues(alpha: 0.09),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(
               isThisWeek
-                  ? 'שיא חדש השבוע! $best נקודות'
-                  : 'השיא השבועי שלך: $best נקודות',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                  ? Icons.celebration_outlined
+                  : Icons.trending_up_rounded,
+              size: 16,
+              color: lead,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isThisWeek
+                    ? 'שיא חדש השבוע! $best נקודות'
+                    : 'השיא השבועי שלך: $best נקודות',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: isThisWeek ? FontWeight.w800 : FontWeight.w600,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -393,10 +892,15 @@ class _ActivityChart extends StatelessWidget {
   }
 }
 
-// --- 3. פעילות הקהילה -------------------------------------------------------
+// --- 4. פעילות הקהילה -------------------------------------------------------
 
 class _CommunityActivityCard extends StatefulWidget {
-  const _CommunityActivityCard();
+  const _CommunityActivityCard({super.key, required this.private});
+
+  /// Whether this matchmaker has switched sharing off. It changes nothing about
+  /// what is *read* — the community's figures are theirs to look at either way
+  /// — and adds one line saying their own work is not part of the sum.
+  final bool private;
 
   @override
   State<_CommunityActivityCard> createState() => _CommunityActivityCardState();
@@ -412,21 +916,35 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
   @override
   void initState() {
     super.initState();
-    _load(_period);
+    // Straight past the process cache: this widget is rebuilt from scratch
+    // whenever the screen refreshes, and a refresh that redraws the same
+    // cached numbers is not a refresh.
+    _load(_period, force: true);
   }
 
-  Future<void> _load(CommunityPeriod period) async {
-    if (_totals.containsKey(period)) {
+  Future<void> _load(CommunityPeriod period, {bool force = false}) async {
+    // A window whose figures came back is not asked for again; one that never
+    // resolved — no account yet, no network — always is. That distinction is
+    // what stops an unlucky first read from freezing the card on zeroes for
+    // the rest of the session. See [CommunityTotals.resolved].
+    if (!force && (_totals[period]?.resolved ?? false)) {
       return;
     }
     setState(() => _loading = true);
-    final CommunityTotals totals = await CommunityService.totals(period);
+    final CommunityTotals totals = await CommunityService.totals(
+      period,
+      forceRefresh: force,
+    );
     // The human sentence is always about the week, whichever window is on
     // screen: "השבוע יצאו 6 זוגות" is news, and "מאז ומעולם יצאו 6 זוגות" is a
     // statistic.
     final CommunityTotals week = period == CommunityPeriod.week
         ? totals
-        : _week ?? await CommunityService.totals(CommunityPeriod.week);
+        : _week ??
+              await CommunityService.totals(
+                CommunityPeriod.week,
+                forceRefresh: force,
+              );
     if (!mounted) {
       return;
     }
@@ -447,7 +965,7 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
     final ThemeData theme = Theme.of(context);
     final CommunityTotals? totals = _totals[_period];
     final CommunityTotals? week = _week;
-    final String? highlight = week == null
+    final String? highlight = week == null || !week.resolved
         ? null
         : CommunityHighlight.forWeek(
             week,
@@ -522,6 +1040,43 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
               label: 'שדכנים פעילים',
               value: totals?.activeMatchmakers ?? 0,
             ),
+            // A read that never left the device says so, instead of passing
+            // itself off as a community that did nothing.
+            if (totals != null && !totals.resolved) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                'לא הצלחנו לטעון את נתוני הקהילה כרגע. אפשר למשוך את המסך '
+                'למטה כדי לנסות שוב.',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+            ],
+            if (widget.private) ...<Widget>[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    Icons.shield_moon_outlined,
+                    size: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '"שמור על הפרטיות שלי" פעיל, ולכן הפעילות שלך לא נכללת '
+                      'במספרים האלה.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ],
       ),
@@ -529,10 +1084,10 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
   }
 }
 
-// --- 4. דירוג השדכנים -------------------------------------------------------
+// --- 5. דירוג השדכנים -------------------------------------------------------
 
 class _LeaderboardCard extends StatefulWidget {
-  const _LeaderboardCard();
+  const _LeaderboardCard({super.key});
 
   @override
   State<_LeaderboardCard> createState() => _LeaderboardCardState();
@@ -546,16 +1101,17 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(force: true);
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool force = false}) async {
     setState(() => _loading = true);
     final CommunityProvider community = context.read<CommunityProvider>();
     final CommunityLeaderboard board = await CommunityService.leaderboard(
       _period,
       includeMe: !community.isHidden,
       myPoints: community.myPoints(_period),
+      forceRefresh: force,
     );
     if (mounted) {
       setState(() {
@@ -596,7 +1152,10 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Text(
-                'עוד לא נרשמה פעילות בתקופה הזאת.',
+                board != null && !board.resolved
+                    ? 'לא הצלחנו לטעון את הדירוג כרגע. אפשר למשוך את המסך '
+                          'למטה כדי לנסות שוב.'
+                    : 'עוד לא נרשמה פעילות בתקופה הזאת.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -605,7 +1164,16 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
           else ...<Widget>[
             for (int i = 0; i < board.top.length; i++)
               CommunityRankRow(place: i + 1, entry: board.top[i]),
-            if (community.isHidden) ...<Widget>[
+            if (community.isPrivate) ...<Widget>[
+              const SizedBox(height: 10),
+              Text(
+                '"שמור על הפרטיות שלי" פעיל, ולכן אינך מופיע בדירוג.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+            ] else if (community.isHidden) ...<Widget>[
               const SizedBox(height: 10),
               Text(
                 'הסתרת את עצמך מהדירוג, ולכן גם המיקום שלך לא מוצג.',

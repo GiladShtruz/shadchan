@@ -20,6 +20,7 @@ abstract final class CommunityProfileStore {
   static const String _bestWeekKey = 'community.bestWeek';
   static const String _bestWeekAtKey = 'community.bestWeekKey';
   static const String _pendingBulkImportKey = 'community.pendingBulkImport';
+  static const String _privateKey = 'community.privateMode';
 
   /// From this many friends in one import, the app says something about it.
   ///
@@ -83,6 +84,30 @@ abstract final class CommunityProfileStore {
     _write(_consentKey, true);
     _write(_hiddenKey, hidden);
   }
+
+  // --- "שמור על הפרטיות שלי" -------------------------------------------------
+
+  /// Whether this matchmaker has asked for nothing at all to be shared.
+  ///
+  /// **Wider than [isHidden], and the difference is the point.** Hidden keeps
+  /// the *name* out of the shared collection while the counters still go up and
+  /// still add to what the community did. Private stops the publish itself: no
+  /// name, no counters, nothing against this uid on the server, and the row
+  /// that was already there is deleted when the switch is turned on.
+  ///
+  /// Everything the app does for its own user carries on untouched — the
+  /// personal figures, the chart, the milestones, the weekly best — because all
+  /// of them are computed on the device from the device's own records. What is
+  /// given up is being counted in the community totals and appearing on the
+  /// leaderboard; what is kept is reading both.
+  ///
+  /// Off by default. Turning a privacy switch on for somebody is not a
+  /// courtesy — it is deciding for them — and the community column of an app
+  /// where nobody publishes is an empty room.
+  static bool get isPrivate =>
+      _read(_privateKey) == true || _read(_privateKey) == 'true';
+
+  static void setPrivate(bool private) => _write(_privateKey, private);
 
   // --- The personal weekly best --------------------------------------------
 

@@ -28,6 +28,7 @@ class CommunityProvider extends ChangeNotifier {
 
   CommunityMemberCounts? _counts;
   bool _hidden = CommunityProfileStore.isHidden;
+  bool _private = CommunityProfileStore.isPrivate;
   bool _publishing = false;
   bool _pulledHidden = false;
   String _name = '';
@@ -36,8 +37,46 @@ class CommunityProvider extends ChangeNotifier {
   CommunityMemberCounts? get myCounts => _counts;
 
   /// Whether the matchmaker has taken themselves off the leaderboard — or has
-  /// simply not been asked yet, which counts the same way.
-  bool get isHidden => _hidden;
+  /// simply not been asked yet, or has switched sharing off altogether, all of
+  /// which come to the same thing here: no name of theirs on the board.
+  bool get isHidden => _hidden || _private;
+
+  /// Whether "שמור על הפרטיות שלי" is on — nothing about this matchmaker is
+  /// published to the community at all. See [CommunityProfileStore.isPrivate].
+  bool get isPrivate => _private;
+
+  /// Turns sharing off, or back on.
+  ///
+  /// **Turning it on deletes what is already there.** A switch that only stops
+  /// *future* writes would leave this week's counters and a name sitting in a
+  /// collection every installed copy of the app can read, which is not what
+  /// anybody who reaches for a privacy switch is asking for. Turning it back on
+  /// republishes immediately from the counts already in hand, so the matchmaker
+  /// does not have to close the app to rejoin.
+  Future<void> setPrivate(bool private) async {
+    if (_private == private) {
+      return;
+    }
+    _private = private;
+    CommunityProfileStore.setPrivate(private);
+    CommunityService.invalidate();
+    notifyListeners();
+
+    if (private) {
+      await CommunityService.deleteMyData();
+      return;
+    }
+    final CommunityMemberCounts? counts = _counts;
+    if (counts != null) {
+      await CommunityService.publish(
+        counts: counts,
+        name: _name,
+        hidden: _hidden,
+      );
+      CommunityService.invalidate();
+      notifyListeners();
+    }
+  }
 
   /// Whether the one-time "may your name appear on the leaderboard?" question
   /// still needs asking.
@@ -89,7 +128,10 @@ class CommunityProvider extends ChangeNotifier {
     CommunityProfileStore.recordWeek(counts.week.points);
     notifyListeners();
 
-    if (_publishing || !FirebaseBootstrap.isReady) {
+    // Nothing leaves the device for somebody who asked for nothing to. The
+    // counts above were still computed, because every personal figure in the
+    // app is drawn from them and none of that is anybody else's business.
+    if (_private || _publishing || !FirebaseBootstrap.isReady) {
       return;
     }
     _publishing = true;

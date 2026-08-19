@@ -55,8 +55,18 @@ class CommunityTotals {
     required this.ideas,
     required this.couples,
     required this.engagements,
+    this.resolved = true,
   });
 
+  /// "We do not know", not "the community did nothing".
+  ///
+  /// **The difference is the whole reason this class carries a flag.** A read
+  /// that never left the device — no account yet, Firebase still starting, no
+  /// network — used to come back as a row of zeroes indistinguishable from a
+  /// real answer, and every caller cached it and stopped asking. That is how a
+  /// live community of matchmakers showed up as "0" and stayed there for the
+  /// rest of the session. Anything built from this constant is a placeholder to
+  /// be asked again, and callers must never store it as an answer.
   static const CommunityTotals empty = CommunityTotals(
     points: 0,
     activeMatchmakers: 0,
@@ -64,7 +74,12 @@ class CommunityTotals {
     ideas: 0,
     couples: 0,
     engagements: 0,
+    resolved: false,
   );
+
+  /// True when these figures actually came back from the server — including a
+  /// genuine, hard-won zero.
+  final bool resolved;
 
   /// The community's weighted activity points.
   final int points;
@@ -104,14 +119,20 @@ class CommunityLeaderboard {
     required this.myRank,
     required this.myPoints,
     required this.activeMatchmakers,
+    this.resolved = true,
   });
 
+  /// The same "we do not know" [CommunityTotals.empty] is — see there.
   static const CommunityLeaderboard empty = CommunityLeaderboard(
     top: <CommunityRankEntry>[],
     myRank: null,
     myPoints: 0,
     activeMatchmakers: 0,
+    resolved: false,
   );
+
+  /// True when this board actually came back from the server.
+  final bool resolved;
 
   final List<CommunityRankEntry> top;
 
@@ -163,7 +184,12 @@ abstract final class CommunityService {
   /// Long enough that moving between the home screen and the activity screen
   /// never costs a second round of reads; short enough that a matchmaker who
   /// adds twenty friends sees the community figure move within the session.
-  static const Duration _freshFor = Duration(minutes: 10);
+  ///
+  /// Three minutes rather than the ten it was: the activity screen forces a
+  /// read of its own on every open, so this window now only has to cover the
+  /// home block being rebuilt, and a community figure that is a quarter of an
+  /// hour old on the landing page reads as a broken feature.
+  static const Duration _freshFor = Duration(minutes: 3);
 
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
@@ -326,10 +352,13 @@ abstract final class CommunityService {
   /// happens on app open, so without it everybody who merely *opened* the app
   /// today would be counted as active — which is the same trap the leaderboard
   /// fell into before it got the same filter.
-  static Future<CommunityTotals> totals(CommunityPeriod period) async {
+  static Future<CommunityTotals> totals(
+    CommunityPeriod period, {
+    bool forceRefresh = false,
+  }) async {
     final String cacheKey = period.name;
     final _Cached<CommunityTotals>? cached = _totalsCache[cacheKey];
-    if (cached != null && cached.isFresh) {
+    if (!forceRefresh && cached != null && cached.isFresh) {
       return cached.value;
     }
     if (await _account() == null) {
@@ -399,10 +428,11 @@ abstract final class CommunityService {
     CommunityPeriod period, {
     required bool includeMe,
     required int myPoints,
+    bool forceRefresh = false,
   }) async {
     final String cacheKey = '${period.name}:$includeMe:$myPoints';
     final _Cached<CommunityLeaderboard>? cached = _boardCache[cacheKey];
-    if (cached != null && cached.isFresh) {
+    if (!forceRefresh && cached != null && cached.isFresh) {
       return cached.value;
     }
     final User? user = await _account();
@@ -457,7 +487,10 @@ abstract final class CommunityService {
 
       // Cached, and usually already in hand: the community area above the board
       // asked for the same window a moment ago.
-      final CommunityTotals window = await totals(period);
+      final CommunityTotals window = await totals(
+        period,
+        forceRefresh: forceRefresh,
+      );
 
       final CommunityLeaderboard result = CommunityLeaderboard(
         top: rows,
