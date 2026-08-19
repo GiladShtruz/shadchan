@@ -75,6 +75,8 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-08-19: `assets/logo9.png` is now the source artwork for the app launcher icon on Android and iOS. The three generated sources under `assets/icon/` were re-derived from it: the standard icon bleeds the rounded source's edge colours through its white outer corners, while Android keeps a separate softly reconstructed background and a transparent foreground scaled into the adaptive safe zone. `flutter_launcher_icons` was re-run; the splash artwork was intentionally left unchanged because this request only changed the installed app icon.
+
 - 2026-08-19: **Every card that leaves the app now carries one line saying where it came from.** `CommunityLinks.sharedCardCredit` — "שותף מ\"שדכן\" - יומן אישי לניהול הצעות." and the store link — appended by `CommunityLinks.creditCard`, which puts a blank line between the card and the footer so it reads as a footer rather than as the card's last sentence.
 
   **There are three ways a card leaves, and all three go through it.** `ShareUtils.sharePerson` (a candidate's card to the OS share sheet), `ShareUtils.shareText` (the matchmaker's own card, with its photo gallery) and — the one that is easy to miss, because it never touches `ShareUtils` — `WhatsAppUtils.sendCardTo`, which drops one side of a proposal straight into the other side's chat. That last is probably the commonest path a card actually travels. A footer riding on two of the three would be worse than none: the missing one is the case somebody notices.

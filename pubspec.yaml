@@ -94,8 +94,8 @@ dev_dependencies:
   build_runner: ^2.4.13
   flutter_launcher_icons: ^0.14.3
 
-# Icon sources live in assets/icon/ and are derived from assets/logo8.png:
-# app_icon.png is the artwork bled out to a full square (logo8.png has white
+# Icon sources live in assets/icon/ and are derived from assets/logo9.png:
+# app_icon.png is the artwork bled out to a full square (logo9.png has white
 # rounded corners, which both platforms would render as white nubs under their
 # own mask), and the adaptive pair keeps the cards inside Android's safe zone
 # so the circular/squircle masks can't clip them.
