@@ -18,6 +18,13 @@ import 'package:shadchan/utils/community_links.dart';
 /// that was never built. Whoever reads the report can tell the difference; the
 /// person hitting the problem should not have to.
 ///
+/// What it *does* carry is one optional row of chips saying what kind of thing
+/// this is. That is not a fork in the flow — the same box, the same button, and
+/// leaving it alone is a real answer that files the report under "ללא סיווג".
+/// It exists because the feedback console is worked through by kind, and a
+/// label the sender gave costs one tap and is right more often than any guess
+/// made later.
+///
 /// The three facts that make a report actionable — which phone, which OS, which
 /// build — are attached automatically and shown before sending, so nobody has to
 /// go and look them up and nobody has to wonder what went along with their
@@ -40,6 +47,10 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
   );
 
   DeviceFacts _facts = DeviceFacts.unknown;
+
+  /// Unanswered until the sender taps a chip, and unanswered is allowed.
+  SupportReportKind _kind = SupportReportKind.unsorted;
+
   String? _screenshotPath;
   bool _sending = false;
   bool _sent = false;
@@ -97,6 +108,7 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
       text: _text.text,
       authorName: profile.name ?? '',
       facts: _facts,
+      kind: _kind,
       screenshot: path == null ? null : File(path),
     );
     if (!mounted) {
@@ -153,6 +165,12 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
                 children: <Widget>[
                   _Intro(theme: theme),
                   const SizedBox(height: 16),
+                  _KindPicker(
+                    selected: _kind,
+                    onChanged: (SupportReportKind kind) =>
+                        setState(() => _kind = kind),
+                  ),
+                  const SizedBox(height: 14),
                   TextField(
                     controller: _text,
                     minLines: 6,
@@ -247,6 +265,52 @@ class _Intro extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "על מה מדובר?" — one optional row, never a required step.
+///
+/// The chips are a toggle rather than a radio group: tapping the selected one
+/// again clears it, so a sender who guessed and changed their mind can go back
+/// to saying nothing.
+class _KindPicker extends StatelessWidget {
+  const _KindPicker({required this.selected, required this.onChanged});
+
+  final SupportReportKind selected;
+  final ValueChanged<SupportReportKind> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'על מה מדובר? (לא חובה)',
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: <Widget>[
+            for (final SupportReportKind kind in SupportReportKind.values)
+              ChoiceChip(
+                label: Text(kind.label),
+                selected: selected == kind,
+                showCheckmark: false,
+                onSelected: (_) => onChanged(
+                  selected == kind ? SupportReportKind.unsorted : kind,
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

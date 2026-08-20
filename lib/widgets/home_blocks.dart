@@ -349,6 +349,17 @@ class HomeTip {
 /// tip to run out of. It advances itself every seven seconds; a manual swipe
 /// restarts that clock rather than fighting it, so the card never moves under a
 /// finger that is using it.
+///
+/// **The card is sized to its sentence.** It used to stand a third taller than
+/// anything it ever held, which on a page of otherwise tight blocks read as an
+/// empty box with a line of text floating in it. The frame is now as small as a
+/// two-line tip needs, and what fills the space that is left is warmth rather
+/// than air: a soft coloured wash in the corner, the paper tone, the bulb in
+/// its disc.
+///
+/// **"לשליחת טיפ" is outside the frame**, under it, in footnote type. Inside,
+/// it was the last thing the eye landed on and turned a card for reading into a
+/// card asking for something.
 class HomeTipCarousel extends StatefulWidget {
   const HomeTipCarousel({
     super.key,
@@ -427,10 +438,10 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
       return const SizedBox.shrink();
     }
 
-    return Container(
+    final Widget card = Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
         // Deeper than it was, but still a hairline: a fractional border width
         // leaves the page inside a fractional number of pixels wide, and the
         // carousel's viewport then rounds its way into building a second page
@@ -456,8 +467,25 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
       ),
       child: Stack(
         children: <Widget>[
+          // The warm corner. Nothing is written on it and nothing sits inside
+          // it — it is there so the card reads as a small, friendly piece of
+          // paper rather than as an outlined rectangle with a sentence in it.
+          PositionedDirectional(
+            top: -26,
+            start: -22,
+            child: Container(
+              width: 92,
+              height: 92,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.secondary.withValues(
+                  alpha: dark ? 0.10 : 0.09,
+                ),
+              ),
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -473,8 +501,8 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
                 Row(
                   children: <Widget>[
                     Container(
-                      width: 30,
-                      height: 30,
+                      width: 26,
+                      height: 26,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
@@ -482,27 +510,35 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
                       ),
                       child: Icon(
                         Icons.lightbulb_rounded,
-                        size: 18,
+                        size: 15,
                         color: ink,
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
-                        style: theme.textTheme.titleMedium?.copyWith(
+                        style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w900,
                           color: ink,
                         ),
                       ),
                     ),
+                    // One small warm mark at the far edge, balancing the bulb.
+                    Icon(
+                      Icons.favorite_rounded,
+                      size: 13,
+                      color: AppColors.secondary.withValues(alpha: 0.45),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 // A fixed height so the block does not jump between a short tip
-                // and a long one as the pages turn.
+                // and a long one as the pages turn. Measured from what a tip
+                // actually is — two or three lines — rather than rounded up to
+                // something comfortable.
                 SizedBox(
-                  height: homeScaled(context, 112),
+                  height: homeScaled(context, 74),
                   child: PageView.builder(
                     controller: _controller,
                     onPageChanged: (int page) {
@@ -539,37 +575,49 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
                     ],
                   ),
                 ],
-                if (widget.onAddTip != null) ...<Widget>[
-                  const SizedBox(height: 2),
-                  // Deliberately quiet, and off to the reading edge rather than
-                  // centred under the tip. It used to be a bold, centred button
-                  // the width of the card, which made the last thing the eye
-                  // landed on a request rather than the sentence somebody wrote
-                  // — the block is for reading a tip, and contributing one is
-                  // an afterthought that should look like one.
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton(
-                      onPressed: widget.onAddTip,
-                      style: TextButton.styleFrom(
-                        foregroundColor: theme.colorScheme.onSurfaceVariant,
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        textStyle: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      child: const Text('שליחת טיפ'),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
         ],
       ),
+    );
+
+    if (widget.onAddTip == null) {
+      return card;
+    }
+
+    // Outside the frame, under it, in footnote type: reading somebody else's
+    // tip is the moment a matchmaker is most likely to think of their own, so
+    // the way in has to be there — and it has to be the quietest thing on the
+    // block, because the block is for reading.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        card,
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            onPressed: widget.onAddTip,
+            icon: Icon(
+              Icons.edit_outlined,
+              size: 14,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.onSurfaceVariant,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            label: const Text('לשליחת טיפ'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -601,24 +649,24 @@ class _TipPage extends StatelessWidget {
           // footnote.
           child: Text(
             tip.text,
-            maxLines: 4,
+            maxLines: 3,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              height: 1.5,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.45,
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
           ),
         ),
         if (author != null && author.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             author,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: theme.textTheme.labelMedium?.copyWith(
+            style: theme.textTheme.labelSmall?.copyWith(
               fontWeight: FontWeight.w700,
               color: ink.withValues(alpha: 0.85),
             ),

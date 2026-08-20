@@ -100,6 +100,36 @@ enum MonthlyStatMetric {
     }
   }
 
+  /// The same line, for the drill-down opened from an all-time figure.
+  ///
+  /// The monthly wording ("בחודש הזה") is not merely imprecise there — it names
+  /// a window the list on screen is not filtered by, which is exactly how a
+  /// number and its explanation come to disagree.
+  String get allTimeExplanation {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return 'כל רעיון שפתחת מאז ומעולם, לפי תאריך הפתיחה שלו.';
+      case MonthlyStatMetric.people:
+        return 'כל חבר שהוספת למאגר מאז ומעולם.';
+      case MonthlyStatMetric.dating:
+      case MonthlyStatMetric.weddings:
+        return explanation;
+    }
+  }
+
+  /// The empty line for that same drill-down.
+  String get allTimeEmptyLine {
+    switch (this) {
+      case MonthlyStatMetric.ideas:
+        return 'עוד לא פתחת רעיונות';
+      case MonthlyStatMetric.people:
+        return 'עוד לא הוספת חברים למאגר';
+      case MonthlyStatMetric.dating:
+      case MonthlyStatMetric.weddings:
+        return emptyLine;
+    }
+  }
+
   /// True for the two figures that count the whole history rather than one
   /// month — they carry no month in their heading and no "מהחודש שעבר" chip,
   /// because there is no previous month for them to have moved from.

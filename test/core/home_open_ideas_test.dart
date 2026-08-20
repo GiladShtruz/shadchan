@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
@@ -53,12 +54,29 @@ List<HomeOpenIdea> build(
   List<MatchIdea> matches, {
   Map<String, Person> people = const <String, Person>{},
   Set<String> alerting = const <String>{},
+  Map<String, DateTime> reopenedAt = const <String, DateTime>{},
 }) {
   return HomeOpenIdeas.build(
     matches: matches,
     personById: (String id) => people[id] ?? person(id: id),
     isAlerting: (MatchIdea match) => alerting.contains(match.id),
     isDue: _isDue,
+    reopenedAt: reopenedAt,
+  );
+}
+
+MatchStatusEvent statusEvent({
+  required String matchId,
+  required MatchStatus? from,
+  required MatchStatus to,
+  int daysAgo = 1,
+}) {
+  return MatchStatusEvent(
+    id: '$matchId-$daysAgo-${to.name}',
+    matchId: matchId,
+    fromStatus: from,
+    toStatus: to,
+    createdAt: _now.subtract(Duration(days: daysAgo)),
   );
 }
 
@@ -139,6 +157,61 @@ void main() {
       ideas.firstWhere((HomeOpenIdea i) => i.match.id == 'seen').alerting,
       isFalse,
     );
+  });
+
+  test('a reopened proposal leads the row behind the due reminders', () {
+    final List<HomeOpenIdea> ideas = build(
+      <MatchIdea>[
+        idea(id: 'newest', createdDaysAgo: 0),
+        idea(id: 'reopened', createdDaysAgo: 40),
+        idea(id: 'due', createdDaysAgo: 50, reminder: _now),
+        idea(id: 'plain', createdDaysAgo: 5),
+      ],
+      reopenedAt: <String, DateTime>{
+        'reopened': _now.subtract(const Duration(days: 2)),
+      },
+    );
+
+    expect(ideas.map((HomeOpenIdea i) => i.match.id), <String>[
+      'due',
+      'reopened',
+      'newest',
+      'plain',
+    ]);
+  });
+
+  test('coming back to an open status counts as reopening, recently', () {
+    final Map<String, DateTime> reopened = HomeOpenIdeas.reopenedFromEvents(
+      statusEvents: <MatchStatusEvent>[
+        statusEvent(
+          matchId: 'off-hold',
+          from: MatchStatus.unavailable,
+          to: MatchStatus.idea,
+          daysAgo: 3,
+        ),
+        statusEvent(
+          matchId: 'reconsidered',
+          from: MatchStatus.rejected,
+          to: MatchStatus.checking,
+          daysAgo: 1,
+        ),
+        statusEvent(
+          matchId: 'moved-along',
+          from: MatchStatus.idea,
+          to: MatchStatus.checking,
+          daysAgo: 1,
+        ),
+        statusEvent(
+          matchId: 'long-ago',
+          from: MatchStatus.unavailable,
+          to: MatchStatus.idea,
+          daysAgo: 200,
+        ),
+      ],
+      now: _now,
+    );
+
+    expect(reopened.keys.toSet(), <String>{'off-hold', 'reconsidered'});
   });
 
   test('the row is capped when a limit is given', () {

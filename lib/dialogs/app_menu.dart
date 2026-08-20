@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
+import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/utils/community_links.dart';
 
 /// What the overflow menu can do.
-enum AppMenuAction { settings, updatesGroup, share, report, help, contact }
+enum AppMenuAction {
+  settings,
+  updatesGroup,
+  share,
+  report,
+  help,
+  contact,
+  feedbackCenter,
+}
 
 /// The three-dots menu in the top banner.
 ///
@@ -34,7 +44,17 @@ class AppMenuButton extends StatelessWidget {
       // past the edge of the screen.
       constraints: const BoxConstraints(minWidth: 220),
       onSelected: (AppMenuAction action) => _run(context, action),
+      // Read rather than watched, and read *here* — inside `itemBuilder`, which
+      // runs when the menu is opened. Watching `AccountProvider` from the bar
+      // itself would create it on the first frame, which is exactly what puts
+      // Firebase back on the startup path.
       itemBuilder: (BuildContext context) => <PopupMenuEntry<AppMenuAction>>[
+        if (context.read<AccountProvider>().isSupportAdmin)
+          _item(
+            AppMenuAction.feedbackCenter,
+            Icons.inbox_outlined,
+            'מרכז הפידבק',
+          ),
         _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
         if (CommunityLinks.hasUpdatesGroup)
           _item(
@@ -88,6 +108,8 @@ class AppMenuButton extends StatelessWidget {
         context.push('/support/help');
       case AppMenuAction.contact:
         CommunityLinks.openSupportEmail();
+      case AppMenuAction.feedbackCenter:
+        context.push('/support/admin');
     }
   }
 }

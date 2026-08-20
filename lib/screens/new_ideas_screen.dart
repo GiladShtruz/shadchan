@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/match_detail_screen.dart';
@@ -28,7 +30,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
   ///
   /// Starts where the last visit left off and moves on as it opens, so coming
   /// back tomorrow shows ten different friends rather than the same ten
-  /// forever. "רענון רעיונות" moves it by hand.
+  /// forever. "לרעיונות נוספים" moves it by hand.
   late int _batch = NewIdeaRotation.cursor;
 
   @override
@@ -71,7 +73,9 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
                     return const _Intro();
                   }
                   if (index > ideas.length) {
-                    return _RefreshButton(onPressed: () => _nextBatch(rounds));
+                    return _MoreIdeasButton(
+                      onPressed: () => _nextBatch(rounds),
+                    );
                   }
                   final NewIdeaSuggestion idea = ideas[index - 1];
                   return _IdeaCard(
@@ -92,7 +96,32 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     NewIdeaRotation.setCursor(_batch + 1);
   }
 
-  Future<void> _openIdea(NewIdeaSuggestion idea) async {
+  /// Opens a real proposal for the pair, after asking.
+  ///
+  /// [confirm] is false only when the matchmaker has *already* answered the
+  /// same question: the side-by-side comparison ends in "לפתוח רעיון?" of its
+  /// own, and asking twice in a row about the same two people reads as the app
+  /// not having heard the first answer.
+  Future<void> _openIdea(NewIdeaSuggestion idea, {bool confirm = true}) async {
+    if (confirm) {
+      final bool go = await ConfirmDialog.show(
+        context,
+        title:
+            'לפתוח רעיון בין ${_shortName(idea.female)} '
+            'ל־${_shortName(idea.male)}?',
+        message:
+            'הרעיון ייפתח ברשימת הרעיונות שלך, ותוכלו להתקדם איתו משם. '
+            'אפשר לסגור אותו בכל שלב.',
+        confirmText: 'פתיחת רעיון',
+      );
+      if (!go || !mounted) {
+        return;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
     final MatchRepository matchRepository = context.read<MatchRepository>();
     final NavigatorState navigator = Navigator.of(context);
     final MatchIdea? match = await matchRepository.create(
@@ -134,7 +163,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
       candidate: idea.male,
     );
     if (open == true && mounted) {
-      await _openIdea(idea);
+      await _openIdea(idea, confirm: false);
     }
   }
 
@@ -156,16 +185,16 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     }
     setState(() {});
 
-    // Two seconds and a way back. The dismissal is permanent — the pair never
-    // returns as a suggestion — which is exactly why a mis-tap on a button
-    // sitting beside "פתיחת רעיון" needs an answer that is not "go and find
-    // the two of them and undo it by hand".
+    // A small banner for three seconds, with a way back. The dismissal is
+    // permanent — the pair never returns as a suggestion — which is exactly why
+    // a mis-tap on a button sitting beside "פתיחת רעיון" needs an answer that
+    // is not "go and find the two of them and undo it by hand".
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: const Text('הרעיון הוסר מהרשימה'),
-          duration: const Duration(seconds: 2),
+          content: const Text('הרעיון הוסר'),
+          duration: const Duration(seconds: 3),
           behavior: SnackBarBehavior.floating,
           action: SnackBarAction(
             label: 'ביטול',
@@ -234,12 +263,14 @@ class _Intro extends StatelessWidget {
   }
 }
 
-/// "רענון רעיונות" — the next ten.
+/// "לרעיונות נוספים" — the next ten.
 ///
 /// At the bottom of the list rather than in the app bar: it is the answer to
-/// "I have read these ten", and that question is asked at the end of them.
-class _RefreshButton extends StatelessWidget {
-  const _RefreshButton({required this.onPressed});
+/// "I have read these ten", and that question is asked at the end of them. It
+/// is worded as *more* rather than as a refresh, because nothing is being
+/// reloaded — the list moves on to pairs that have not been shown yet.
+class _MoreIdeasButton extends StatelessWidget {
+  const _MoreIdeasButton({required this.onPressed});
 
   final VoidCallback onPressed;
 
@@ -251,8 +282,8 @@ class _RefreshButton extends StatelessWidget {
       padding: const EdgeInsets.only(top: 6),
       child: OutlinedButton.icon(
         onPressed: onPressed,
-        icon: const Icon(Icons.refresh_rounded, size: 18),
-        label: const Text('רענון רעיונות'),
+        icon: const Icon(Icons.add_rounded, size: 18),
+        label: const Text('לרעיונות נוספים'),
         style: OutlinedButton.styleFrom(
           minimumSize: const Size.fromHeight(46),
           foregroundColor: theme.brightness == Brightness.dark
@@ -368,6 +399,14 @@ class _IdeaCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The name used in the confirmation question: a first name where there is one,
+/// because "לפתוח רעיון בין רבקה ל־יוסי?" is a sentence and the same question
+/// with two full names is a form.
+String _shortName(Person person) {
+  final String first = person.firstName.trim();
+  return first.isNotEmpty ? first : person.fullName.trim();
 }
 
 class _EmptyState extends StatelessWidget {

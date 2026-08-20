@@ -6,7 +6,7 @@ import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 
-/// "הפעילות" on the home screen: your score, the community's, one window at a
+/// "נתונים" on the home screen: your score, the community's, one window at a
 /// time.
 ///
 /// **Two numbers and nothing else.** No leaderboard, no chart, no breakdown, no
@@ -106,7 +106,11 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
               children: <Widget>[
                 Expanded(
                   child: Text(
-                    'הפעילות',
+                    // "נתונים" rather than "הפעילות": what is under the heading
+                    // is two figures and the way into the charts, and the block
+                    // sat directly above a page that says "הפעילות שלך" — the
+                    // same word twice, meaning two different things.
+                    'נתונים',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w900,
                     ),

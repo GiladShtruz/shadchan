@@ -447,6 +447,10 @@ abstract final class AppRouter {
                 metric: MonthlyStatMetric.byName(
                   state.pathParameters['metric'],
                 )!,
+                // "הנתונים שלך" counts everything that ever happened and links
+                // here with `?window=all`, so the list it opens is the list
+                // behind the number that was pressed rather than this month's.
+                allTime: state.uri.queryParameters['window'] == 'all',
               );
             },
           ),

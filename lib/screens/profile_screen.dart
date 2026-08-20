@@ -63,6 +63,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 22),
       ],
 
+      // The feedback console, for the handful of accounts that have one, at the
+      // very top. It used to be the last group on the page, below the account —
+      // which is where somebody puts a screen they never intend to open, and
+      // the tips waiting for approval sat on a *different* row further up. One
+      // entry, first, so what users sent is never further away than the profile
+      // picture.
+      if (account.isSupportAdmin)
+        SettingsGroup(
+          title: 'ניהול',
+          children: <Widget>[
+            SettingsRow(
+              icon: Icons.inbox_outlined,
+              title: 'מרכז הפידבק',
+              subtitle: 'טיפים לאישור, פניות, הערות ותקלות',
+              onTap: () => context.push('/support/admin'),
+            ),
+          ],
+        ),
+
       // Everything below is one row per subject and a screen behind it. The
       // page used to carry nine headings and every option in the app at once,
       // which meant the two things people actually come here for — the backup
@@ -123,12 +142,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: 'הוספת טיפ',
             onTap: () => context.push('/profile/tips'),
           ),
-          if (account.isTipsAdmin)
-            SettingsRow(
-              icon: Icons.verified_outlined,
-              title: 'אישור טיפים',
-              onTap: () => context.push('/profile/tips-review'),
-            ),
         ],
       ),
       SettingsGroup(
@@ -146,18 +159,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         onSignIn: () => context.push('/sign-in'),
         onSignOut: () => _confirmSignOut(account, sync),
       ),
-      if (account.isSupportAdmin)
-        SettingsGroup(
-          title: 'ניהול',
-          children: <Widget>[
-            SettingsRow(
-              icon: Icons.admin_panel_settings_outlined,
-              title: 'מסך ניהול',
-              subtitle: 'פניות, "מה חדש" ומנהלי מערכת',
-              onTap: () => context.push('/support/admin'),
-            ),
-          ],
-        ),
       const _SettingsFooter(),
     ];
 

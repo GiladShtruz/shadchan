@@ -348,7 +348,9 @@ class _HomeScreenState extends State<HomeScreen> {
       isAlerting: (MatchIdea match) =>
           ReminderAlerts.isAlerting(match.id, match.reminderDate),
       isDue: ReminderAlerts.isDue,
-      limit: HomeConfig.openIdeasInRow,
+      reopenedAt: HomeOpenIdeas.reopenedFromEvents(
+        statusEvents: matchRepository.getAllStatusEvents(),
+      ),
     );
 
     final int friends = personRepository.databaseCount;
@@ -467,13 +469,9 @@ class _HomeScreenState extends State<HomeScreen> {
           matchRepository: matchRepository,
         ),
 
-        // 6. רעיונות פתוחים — the proposals with an actual reason to be looked
-        // at again today.
-        if (stage.showsIdeaAreas)
-          _OpenIdeasSection(
-            ideas: openIdeas,
-            personRepository: personRepository,
-          ),
+        // 6. רעיונות פתוחים — every proposal that is open right now, with the
+        // ones asking for something today at the head of the row.
+        _OpenIdeasSection(ideas: openIdeas, personRepository: personRepository),
 
         // 7. The emotional anchor, and the only block on the page wearing
         // colour. Drawn only while there is somebody to celebrate.
@@ -1067,14 +1065,16 @@ class _BoardCardMenu extends StatelessWidget {
   }
 }
 
-// --- רעיונות שכדאי לחזור אליהם ----------------------------------------------
+// --- רעיונות פתוחים ---------------------------------------------------------
 
-/// Not the list of open proposals — that is what the proposals screen is for.
+/// Every proposal that is open right now, in one horizontal row.
 ///
-/// Only the ones with a reason to be looked at again today: a reminder that has
-/// come due, or an idea that has not moved in weeks. A row of every open
-/// proposal is a list to scroll past; a row of the two that are actually asking
-/// for something is a row that gets used.
+/// The row used to hold only the proposals with a reason to be looked at again
+/// today — a due reminder, or an idea that had not moved in weeks — which meant
+/// that on most days the one place on the home screen that answers "what is
+/// open?" was not drawn at all. It is a fixed part of the screen now, and the
+/// urgency lives in the *order*: due reminders and reopened proposals lead,
+/// then the rest, newest first.
 class _OpenIdeasSection extends StatelessWidget {
   const _OpenIdeasSection({
     required this.ideas,
@@ -1084,20 +1084,10 @@ class _OpenIdeasSection extends StatelessWidget {
   final List<HomeOpenIdea> ideas;
   final PersonRepository personRepository;
 
-  /// An idea nobody has moved for this long is worth surfacing again.
-  static const int _staleAfterDays = HomeConfig.openIdeaStaleAfterDays;
-
   @override
   Widget build(BuildContext context) {
-    final DateTime now = DateTime.now();
-    final List<HomeOpenIdea> worthReturningTo = ideas.where((
-      HomeOpenIdea idea,
-    ) {
-      return idea.alerting ||
-          now.difference(idea.match.updatedAt).inDays >= _staleAfterDays;
-    }).toList();
-
-    if (worthReturningTo.isEmpty) {
+    final List<HomeOpenIdea> openIdeas = ideas;
+    if (openIdeas.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
@@ -1128,12 +1118,12 @@ class _OpenIdeasSection extends StatelessWidget {
                 children: <Widget>[
                   for (
                     int index = 0;
-                    index < worthReturningTo.length;
+                    index < openIdeas.length;
                     index++
                   ) ...<Widget>[
                     if (index > 0) const SizedBox(width: 2),
                     () {
-                      final HomeOpenIdea idea = worthReturningTo[index];
+                      final HomeOpenIdea idea = openIdeas[index];
                       final Person? a = personRepository.getById(
                         idea.match.personAId,
                       );

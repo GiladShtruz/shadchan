@@ -4,24 +4,35 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/services/tips_service.dart';
 
-/// The approval queue for community tips.
+/// The approval queue for community tips, as a panel.
+///
+/// A tip written by a matchmaker is **never** shown to anybody else until it is
+/// approved here: it is created `pending`, the rotation only ever queries
+/// approved tips, and `firestore.rules` refuses a client that tries to publish
+/// straight into it. So this queue is the one gate between "somebody wrote a
+/// tip" and "every matchmaker reads it", and it lives inside the feedback
+/// console beside the reports rather than on a screen of its own.
 ///
 /// Deliberately plain: approve or reject, nothing else. There is no reason
 /// field, no editing and no version history, because a tip is two sentences —
 /// a rejected one is rewritten, not negotiated.
 ///
-/// The screen is only *offered* to the administrator's account; every write it
-/// makes is separately checked in `firestore.rules` against the same verified
-/// address, so reaching this page some other way produces a list of buttons
-/// that all fail.
-class TipsAdminScreen extends StatefulWidget {
-  const TipsAdminScreen({super.key});
+/// The panel is only *drawn* for an administrator; every write it makes is
+/// separately checked in `firestore.rules` against the same verified address,
+/// so reaching it some other way produces a list of buttons that all fail.
+class PendingTipsReview extends StatefulWidget {
+  const PendingTipsReview({
+    super.key,
+    this.padding = const EdgeInsets.fromLTRB(16, 16, 16, 28),
+  });
+
+  final EdgeInsetsGeometry padding;
 
   @override
-  State<TipsAdminScreen> createState() => _TipsAdminScreenState();
+  State<PendingTipsReview> createState() => _PendingTipsReviewState();
 }
 
-class _TipsAdminScreenState extends State<TipsAdminScreen> {
+class _PendingTipsReviewState extends State<PendingTipsReview> {
   @override
   void initState() {
     super.initState();
@@ -49,6 +60,54 @@ class _TipsAdminScreenState extends State<TipsAdminScreen> {
     final TipsProvider tips = context.watch<TipsProvider>();
     final AccountProvider account = context.watch<AccountProvider>();
 
+    if (!account.isTipsAdmin) {
+      return const _Message(text: 'החשבון המחובר אינו חשבון הניהול.');
+    }
+    if (tips.pending.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => context.read<TipsProvider>().refreshPending(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: <Widget>[
+            _Message(
+              text: tips.isBusy ? 'טוען…' : 'אין כרגע טיפים שממתינים לאישור.',
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => context.read<TipsProvider>().refreshPending(),
+      child: ListView.separated(
+        padding: widget.padding,
+        itemCount: tips.pending.length + 1,
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        itemBuilder: (BuildContext context, int index) {
+          if (index == 0) {
+            return _WaitingBanner(count: tips.pending.length, theme: theme);
+          }
+          final CommunityTip tip = tips.pending[index - 1];
+          return _PendingTipCard(
+            tip: tip,
+            onApprove: () => _review(tip, TipStatus.approved),
+            onReject: () => _review(tip, TipStatus.rejected),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The standalone screen, kept for the settings row and the old route. It is
+/// the same panel with a bar over it.
+class TipsAdminScreen extends StatelessWidget {
+  const TipsAdminScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final TipsProvider tips = context.watch<TipsProvider>();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('אישור טיפים'),
@@ -61,27 +120,48 @@ class _TipsAdminScreenState extends State<TipsAdminScreen> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: !account.isTipsAdmin
-            ? _Message(theme: theme, text: 'החשבון המחובר אינו חשבון הניהול.')
-            : tips.pending.isEmpty
-            ? _Message(
-                theme: theme,
-                text: tips.isBusy ? 'טוען…' : 'אין כרגע טיפים שממתינים לאישור.',
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                itemCount: tips.pending.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (BuildContext context, int index) {
-                  final CommunityTip tip = tips.pending[index];
-                  return _PendingTipCard(
-                    tip: tip,
-                    onApprove: () => _review(tip, TipStatus.approved),
-                    onReject: () => _review(tip, TipStatus.rejected),
-                  );
-                },
+      body: const SafeArea(child: PendingTipsReview()),
+    );
+  }
+}
+
+/// "יש טיפים שממתינים לאישור" — the alert the queue raises the moment somebody
+/// sends one, so the console says what is waiting before it is scrolled.
+class _WaitingBanner extends StatelessWidget {
+  const _WaitingBanner({required this.count, required this.theme});
+
+  final int count;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: theme.colorScheme.primary.withValues(alpha: 0.12),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.notifications_active_outlined,
+            size: 20,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              count == 1
+                  ? 'טיפ אחד ממתין לאישור. עד שיאושר הוא לא מוצג לאף שדכן.'
+                  : '$count טיפים ממתינים לאישור. עד שיאושרו הם לא מוצגים '
+                        'לאף שדכן.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                height: 1.35,
               ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -152,22 +232,21 @@ class _PendingTipCard extends StatelessWidget {
 }
 
 class _Message extends StatelessWidget {
-  const _Message({required this.theme, required this.text});
+  const _Message({required this.text});
 
-  final ThemeData theme;
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.all(28),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodyLarge?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );

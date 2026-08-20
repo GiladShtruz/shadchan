@@ -2,21 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/tips_provider.dart';
+import 'package:shadchan/screens/tips_admin_screen.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 
-/// The internal console: every report that came in, the "מה חדש?" notes that go
-/// out, and who else is allowed to see either.
+/// מרכז הפידבק — the one place everything users send arrives.
+///
+/// **One screen, because it is one job.** Feedback used to land in two
+/// unrelated places: the tips waiting for approval on a settings row of their
+/// own, and everything else in a console reached from the bottom of the profile
+/// page. Nobody triages across two screens they have to remember to visit, so
+/// the tips queue moved in here beside the reports, and the whole thing is
+/// reached from the app's overflow menu.
+///
+/// Four tabs:
+/// * **פידבק** — every report, grouped by what it is about: המלצות ורעיונות,
+///   הערות ותיקונים, תקלות ובאגים.
+/// * **טיפים** — the approval queue. A tip reaches other matchmakers only from
+///   here.
+/// * **מה חדש** — the notes that go back out.
+/// * **מנהלים** — who else may see any of it.
 ///
 /// Drawn only for an administrator, and that is a *display* gate — every read
 /// and write behind it is refused by `firestore.rules` for anybody else, so a
 /// patched client gets a screen full of permission errors rather than a screen
 /// full of other people's reports.
-///
-/// Three tabs rather than three screens: they are one job. Somebody opening
-/// this is triaging, and answering a report often ends in publishing a note
-/// about the fix.
 class SupportAdminScreen extends StatefulWidget {
   const SupportAdminScreen({super.key});
 
@@ -31,7 +43,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
 
     if (!account.isSupportAdmin) {
       return Scaffold(
-        appBar: AppBar(title: const Text('ניהול'), centerTitle: true),
+        appBar: AppBar(title: const Text('מרכז הפידבק'), centerTitle: true),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 32),
@@ -44,17 +56,25 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
       );
     }
 
+    // The tip queue's own count rides on the tab label, so "somebody sent a
+    // tip" is visible from the moment the screen opens rather than after the
+    // third tab is found.
+    final int waitingTips = context.watch<TipsProvider>().pending.length;
+
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('ניהול'),
+          title: const Text('מרכז הפידבק'),
           centerTitle: true,
-          bottom: const TabBar(
+          bottom: TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: <Widget>[
-              Tab(text: 'פניות'),
-              Tab(text: 'מה חדש'),
-              Tab(text: 'מנהלים'),
+              const Tab(text: 'פידבק'),
+              Tab(text: waitingTips == 0 ? 'טיפים' : 'טיפים ($waitingTips)'),
+              const Tab(text: 'מה חדש'),
+              const Tab(text: 'מנהלים'),
             ],
           ),
         ),
@@ -62,6 +82,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
           child: TabBarView(
             children: <Widget>[
               _ReportsTab(),
+              PendingTipsReview(),
               _AnnouncementsTab(),
               _AdminsTab(),
             ],
@@ -86,6 +107,13 @@ class _ReportsTabState extends State<_ReportsTab> {
 
   /// Null means "everything"; otherwise only this status.
   SupportReportStatus? _filter;
+
+  /// Null means "every kind"; otherwise only הצעות, הערות or תקלות.
+  ///
+  /// A second axis rather than a second tab, because the two questions a
+  /// triager asks — "what is still new?" and "what kind of thing is this?" —
+  /// are asked together, and tabs cannot be crossed with each other.
+  SupportReportKind? _kind;
 
   @override
   void initState() {
@@ -126,20 +154,57 @@ class _ReportsTabState extends State<_ReportsTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final List<SupportReport> shown = _filter == null
-        ? all
-        : all.where((SupportReport r) => r.status == _filter).toList();
+    final List<SupportReport> shown = all
+        .where((SupportReport r) => _filter == null || r.status == _filter)
+        .where((SupportReport r) => _kind == null || r.kind == _kind)
+        .toList();
+
+    // The counts are of what the *other* filter already left standing, so the
+    // two rows agree with each other instead of each describing a different
+    // list.
+    final List<SupportReport> byKind = all
+        .where((SupportReport r) => _kind == null || r.kind == _kind)
+        .toList();
+    final List<SupportReport> byStatus = all
+        .where((SupportReport r) => _filter == null || r.status == _filter)
+        .toList();
+    final int waiting = all
+        .where((SupportReport r) => r.status == SupportReportStatus.isNew)
+        .length;
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: <Widget>[
+          if (waiting > 0) ...<Widget>[
+            _WaitingReportsBanner(count: waiting, theme: theme),
+            const SizedBox(height: 12),
+          ],
           Wrap(
             spacing: 8,
             children: <Widget>[
               _StatusFilterChip(
-                label: 'הכול (${all.length})',
+                label: 'כל הסוגים (${byStatus.length})',
+                selected: _kind == null,
+                onTap: () => setState(() => _kind = null),
+              ),
+              for (final SupportReportKind kind in SupportReportKind.values)
+                _StatusFilterChip(
+                  label:
+                      '${kind.pluralLabel} '
+                      '(${byStatus.where((SupportReport r) => r.kind == kind).length})',
+                  selected: _kind == kind,
+                  onTap: () => setState(() => _kind = kind),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: <Widget>[
+              _StatusFilterChip(
+                label: 'הכול (${byKind.length})',
                 selected: _filter == null,
                 onTap: () => setState(() => _filter = null),
               ),
@@ -148,7 +213,7 @@ class _ReportsTabState extends State<_ReportsTab> {
                 _StatusFilterChip(
                   label:
                       '${status.label} '
-                      '(${all.where((SupportReport r) => r.status == status).length})',
+                      '(${byKind.where((SupportReport r) => r.status == status).length})',
                   selected: _filter == status,
                   onTap: () => setState(() => _filter = status),
                 ),
@@ -175,6 +240,46 @@ class _ReportsTabState extends State<_ReportsTab> {
               ),
               const SizedBox(height: 10),
             ],
+        ],
+      ),
+    );
+  }
+}
+
+/// "יש פניות חדשות" — the same alert the tips queue raises, for the same
+/// reason: what arrived should be visible before the list is scrolled.
+class _WaitingReportsBanner extends StatelessWidget {
+  const _WaitingReportsBanner({required this.count, required this.theme});
+
+  final int count;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: AppColors.secondary.withValues(alpha: 0.14),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.mark_email_unread_outlined,
+            size: 20,
+            color: AppColors.secondary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              count == 1
+                  ? 'פנייה אחת חדשה ממתינה לטיפול.'
+                  : '$count פניות חדשות ממתינות לטיפול.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -250,6 +355,26 @@ class _ReportCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (report.kind != SupportReportKind.unsorted) ...<Widget>[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    report.kind.label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
