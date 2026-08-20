@@ -75,6 +75,24 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-08-20: **The top of the home screen was redesigned.** Four changes, one idea: the bar stops being a bar, and the page starts with the person rather than with chrome.
+
+  **The bar sits on the page.** `backgroundColor: theme.scaffoldBackgroundColor`, no tint, no scrolled-under elevation — on the theme's blue-grey strip the new bordered squares read as white chips floating on a coloured band. Right (RTL `leading`) is the profile photograph, still the only way into the matchmaker's own page; the middle is `ShadchanWordmark`; the left is three `HomeBarButton` squares which, read left to right, are menu, bell, search. That order is `actions: [search, bell, menu]` — the actions row lays out from the right in RTL, so the first entry is the innermost.
+
+  **`assets/logo_mark.png` is new, and it is white on purpose.** Derived from `assets/icon/app_icon_foreground.png` with the adaptive-icon padding cropped to the alpha bounding box and squared. `ShadchanLogo` tints it with a `srcIn` `ColorFiltered`, so one file serves both themes and the mark can never fall out of step with the palette. **Do not "fix" the colour in the file** — recolouring it would break the tint.
+
+  ⚠️ **The bar is sized to fit a 320px phone and there is very little slack.** An `AppBar`'s title slot is whatever the leading and the actions leave behind, so every pixel added to `HomeBarButton.size` (36), the gaps (6), `leadingWidth` (54) or `titleSpacing` (8) comes straight out of the wordmark. It overflowed at 40/8/60/16 in `widget_test.dart`, which pumps the whole app at 320px. `ShadchanWordmark` wraps itself in a `FittedBox(scaleDown)` as the backstop.
+
+  **The greeting moved out of the bar and onto the page** (`HomeGreeting`, the first block in the sliver list). In the bar it was one ellipsized line sharing 56px with a photograph and three icons; it is `headlineSmall` now, with the first name in the warm accent, and **nothing drawn around it** — a test asserts there is no `Card`, `Material` or `DecoratedBox` inside it.
+
+  **`HomeThinkBanner` is a card with a picture, not a tinted strip.** Painted paper, the title, one line saying why it is worth doing, and a real button ("למי אפשר לחשוב יחד?"). The illustration is `assets/home_add_idea.jpg` — deliberately the same picture as the "הוספת רעיון" card, because the two are the same act at two moments. It drops the picture below 300px of card or above 1.3x text, and the button label is a `FittedBox` so the question never wraps.
+
+  **`HomeHeroBand` lost its button.** "רעיונות שהמאגר מציע לך" is now one wide row that opens `/ideas/new`: a filled sparkle badge, the title, a line under it, the couple, a chevron. The full-width `FilledButton` it carried put a primary-coloured control directly above the two add cards, which are the page's real primary controls. Note the chevron is `Icons.chevron_right_rounded` — Material's directional icons mirror themselves, so in this RTL app that is the one that points left.
+
+  The two add cards and everything below them are untouched.
+
+  Verified with `dart format`, `flutter analyze` (only the 7 pre-existing issues) and all 430 `flutter test` tests (3 new), plus a rendered PNG of the rebuilt header in both themes. **Unverified:** not seen on a device.
+
 - 2026-08-20: **Five changes that all come back to the same thing: a screen should say what is true, and say it where it is asked.**
 
   **"רעיונות פתוחים" is a permanent row again.** It used to draw only the proposals with a reason to be looked at *today* — a due reminder, or nothing moved in three weeks — which meant that on most days the one place on the home screen that answers "what is open?" was not drawn at all, and the `HomeStage` gate hid it below ten friends on top of that. `HomeOpenIdeas.build` now takes every open proposal with no limit, and the urgency lives in the ordering: due reminders first, then proposals that were **reopened** (`HomeOpenIdeas.reopenedFromEvents`, read off `MatchStatusEvent` — coming back to `idea`/`checking` from anywhere else, within 30 days), then the rest newest-first. `HomeConfig.openIdeasInRow` was deleted rather than raised: a truncated answer to "what is open" is a wrong one. The card, the wave and the horizontal scroll are untouched.

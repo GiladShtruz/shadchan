@@ -126,6 +126,13 @@ flutter:
   uses-material-design: true
   assets:
     - assets/match_icon.png
+    # The app's own mark, alone and on nothing — derived from
+    # `assets/icon/app_icon_foreground.png` with the adaptive-icon padding
+    # cropped away. Deliberately white: the home bar tints it with a `srcIn`
+    # filter, so one file serves the light and the dark theme, and the mark
+    # sits directly on the page rather than inside a coloured tile the way the
+    # launcher icon does.
+    - assets/logo_mark.png
     # The two home entry cards. Cropped out of a single source illustration to
     # the picture alone — the label the artwork had drawn into it is Flutter
     # text now, so it scales, reads aloud and can be reworded. JPEG rather than

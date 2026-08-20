@@ -31,13 +31,17 @@ const Color _celebrationGold = Color(0xFFD4A34B);
 
 /// "רעיונות שהמאגר מציע לך" — the pairs the database worked out on its own.
 ///
-/// It sits near the top of the page now, above the two add actions, which is
-/// exactly why it stopped being a banner. It used to carry a three-stop
-/// gradient, a hand-drawn heart trail and a large pair of portraits; at the top
-/// of the screen that read as decoration to scroll past rather than as an
-/// offer. What is left is the page's ordinary bordered surface with a soft tint
-/// — the same shape the activity card wears — one line of type, one button and
-/// one small mark. Nothing here is drawn that does not lead somewhere.
+/// **One wide row that opens a screen, and nothing else.** It carried a title,
+/// a full-width filled button and a pair of portraits, which made three things
+/// to look at for one destination — and put a primary-coloured button near the
+/// top of a page whose two loudest controls are the add cards directly under
+/// it. What is left is the shape the rest of the page uses for "there is more
+/// of this elsewhere": a mark, a line, a line under it, and a chevron. The
+/// whole row is the tap target, so nothing inside it has to be one.
+///
+/// The couple stays. It is the one thing on the row that says at a glance what
+/// kind of thing is behind it, and it costs no height the two lines of type do
+/// not already take.
 class HomeHeroBand extends StatelessWidget {
   const HomeHeroBand({super.key, required this.onShowIdeas});
 
@@ -52,88 +56,92 @@ class HomeHeroBand extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
-        final bool narrow = constraints.maxWidth < 410 || textScale > 1.2;
-        return Container(
+        // The portraits are the first thing to go: they are decoration, and the
+        // two lines of type are the row.
+        final bool showCouple = constraints.maxWidth >= 340 && textScale <= 1.3;
+
+        return Material(
+          color: dark
+              ? theme.colorScheme.surfaceContainerHighest
+              : theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: lead.withValues(alpha: 0.22)),
-            gradient: LinearGradient(
-              begin: AlignmentDirectional.topStart,
-              end: AlignmentDirectional.bottomEnd,
-              colors: <Color>[
-                lead.withValues(alpha: dark ? 0.14 : 0.07),
-                theme.colorScheme.surface,
-              ],
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              narrow ? 12 : 16,
-              narrow ? 13 : 15,
-              narrow ? 12 : 16,
-              narrow ? 13 : 15,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      // Named for what it is: pairs the database worked out on
-                      // its own, not ideas the matchmaker opened.
-                      Text(
-                        'רעיונות שהמאגר מציע לך',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontSize: narrow ? 15 : 17,
-                          fontWeight: FontWeight.w800,
-                          height: 1.25,
-                        ),
-                      ),
-                      SizedBox(height: narrow ? 9 : 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: onShowIdeas,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: lead,
-                            foregroundColor: theme.colorScheme.onPrimary,
-                            padding: EdgeInsets.symmetric(
-                              horizontal: narrow ? 10 : 18,
-                              vertical: narrow ? 9 : 11,
-                            ),
-                            shape: const StadiumBorder(),
-                            textStyle: theme.textTheme.labelLarge?.copyWith(
-                              fontSize: narrow ? 11.5 : null,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              Icon(Icons.auto_awesome, size: narrow ? 15 : 18),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    'הצגת רעיונות חדשים',
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+          child: InkWell(
+            onTap: onShowIdeas,
+            child: Ink(
+              padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: lead.withValues(alpha: 0.18)),
+                gradient: LinearGradient(
+                  begin: AlignmentDirectional.topStart,
+                  end: AlignmentDirectional.bottomEnd,
+                  colors: <Color>[
+                    lead.withValues(alpha: dark ? 0.14 : 0.06),
+                    dark
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : theme.colorScheme.surface,
+                  ],
                 ),
-                SizedBox(width: narrow ? 8 : 12),
-                _HeroCouple(compact: narrow),
-              ],
+              ),
+              child: Row(
+                children: <Widget>[
+                  // The mark: filled and in the brand blue, so the row reads as
+                  // the app offering something rather than as a list item.
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: lead,
+                    ),
+                    child: Icon(
+                      Icons.auto_awesome,
+                      size: 22,
+                      color: theme.colorScheme.onPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        // Named for what it is: pairs the database worked out
+                        // on its own, not ideas the matchmaker opened.
+                        Text(
+                          'רעיונות שהמאגר מציע לך',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'זוגות חדשים שיכולים להתאים לחברים שלך',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (showCouple) ...<Widget>[
+                    const SizedBox(width: 8),
+                    const _HeroCouple(compact: true),
+                  ],
+                  // `chevron_right` and not `chevron_left`: Material's
+                  // directional icons mirror themselves, so in this RTL app
+                  // this is the one that points the way the page is going.
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 26,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
             ),
           ),
         );

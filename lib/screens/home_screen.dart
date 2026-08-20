@@ -35,6 +35,7 @@ import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/home_activity_block.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
@@ -201,55 +202,61 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- AppBars ------------------------------------------------------------
 
+  /// The home bar: the matchmaker at one end, the app's name in the middle, the
+  /// three controls at the other.
+  ///
+  /// **The greeting is not in here any more.** It used to share this 56px strip
+  /// with a photograph and three icons, which left it one ellipsized line of
+  /// bar-sized type — and meant the app never said its own name anywhere inside
+  /// itself. The greeting now opens the page below (see [HomeGreeting]), at the
+  /// size a greeting deserves, and the bar carries the logo instead.
+  ///
+  /// The photograph is `leading`, which in RTL is the right-hand end, and it is
+  /// still the only way into the matchmaker's own page — where every setting
+  /// lives, so the bar carries no gear.
   AppBar _buildGreetingAppBar(ThemeData theme, UserProfileProvider profile) {
     final Gender? gender = profile.gender;
-    // The first name and nothing else. A greeting is how someone is spoken to,
-    // not how they are filed — "בוקר טוב, רבקה כהן־שטרן" is a form letter, and
-    // a surname in the bar also crowds out the reminders and search icons on a
-    // narrow phone.
-    final String name = profile.firstName ?? '{שדכן|שדכנית}'.forGender(gender);
-    final TimeOfDay now = TimeOfDay.fromDateTime(DateTime.now());
 
     return AppBar(
-      titleSpacing: 16,
-      centerTitle: false,
-      // The photo is the way into the matchmaker's own page, which is also
-      // where every setting lives — so the bar carries no gear.
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          // First child sits at the start edge, which in RTL is the right.
-          UserProfileAvatar(
-            photoPath: profile.photoPath,
-            gender: gender,
-            name: profile.name,
-            radius: 17,
-            showEditBadge: profile.photoPath == null,
-            onTap: () => context.push('/profile'),
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              '${_timeOfDayGreeting(now)}, $name',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
+      // The bar is the page, not a band across the top of it. Everything in it
+      // — a photograph, a wordmark and three bordered squares — is drawn to be
+      // read against the app's own paper; on the theme's blue-grey strip the
+      // squares became white chips floating on a coloured bar, which is the one
+      // thing the design is not.
+      backgroundColor: theme.scaffoldBackgroundColor,
+      foregroundColor: theme.colorScheme.onSurface,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      leadingWidth: 54,
+      titleSpacing: 8,
+      leading: Center(
+        child: UserProfileAvatar(
+          photoPath: profile.photoPath,
+          gender: gender,
+          name: profile.name,
+          radius: 18,
+          showEditBadge: profile.photoPath == null,
+          onTap: () => context.push('/profile'),
+        ),
       ),
+      centerTitle: true,
+      title: const ShadchanWordmark(),
+      // In RTL the actions group sits at the left of the bar and lays out from
+      // the right, so the first entry here is the innermost of the three. Read
+      // left to right on screen they are menu, bell, search — the order they
+      // are drawn in the design, with the overflow menu in the far corner where
+      // a phone's overflow menu is looked for.
       actions: <Widget>[
-        // The same bell, in the same slot, as המאגר שלי and רעיונות.
-        const RemindersBellButton(),
-        IconButton(
-          tooltip: 'חיפוש',
+        HomeBarButton(
           icon: const Icon(Icons.search),
+          tooltip: 'חיפוש',
           onPressed: () => setState(() => _searchVisible = true),
         ),
-        // Last in the row, which in RTL is the far left — where a phone's
-        // overflow menu is looked for. Everything on it also lives in the
-        // settings; this is the short way to it, and the only place in the app
-        // where "how do I get help" is answered without finding them first.
-        const AppMenuButton(),
+        const SizedBox(width: 6),
+        const RemindersBellButton(boxed: true),
+        const SizedBox(width: 6),
+        const AppMenuButton(boxed: true),
+        const SizedBox(width: 8),
       ],
     );
   }
@@ -319,7 +326,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHome() {
     final MatchRepository matchRepository = context.watch<MatchRepository>();
     final PersonRepository personRepository = context.watch<PersonRepository>();
-    final Gender? userGender = context.watch<UserProfileProvider>().gender;
+    final UserProfileProvider userProfile = context
+        .watch<UserProfileProvider>();
+    final Gender? userGender = userProfile.gender;
     final HomeBoardStore board = HomeBoardStore.instance;
 
     if (board.takeFocusRequest()) {
@@ -409,9 +418,26 @@ class _HomeScreenState extends State<HomeScreen> {
     //
     // A block with nothing in it is not drawn at all rather than shown as an
     // empty box — an empty screen teaches that the app is empty.
+    // The first name and nothing else. A greeting is how someone is spoken to,
+    // not how they are filed — "בוקר טוב, רבקה כהן־שטרן" is a form letter.
+    final String greetingName =
+        userProfile.firstName ?? '{שדכן|שדכנית}'.forGender(userGender);
+
     return CustomScrollView(
       controller: _homeScrollController,
       slivers: <Widget>[
+        // 0. The greeting. On the page rather than in the bar, with nothing
+        // drawn around it.
+        block(
+          HomeGreeting(
+            greeting: _timeOfDayGreeting(
+              TimeOfDay.fromDateTime(DateTime.now()),
+            ),
+            name: greetingName,
+          ),
+          top: 6,
+        ),
+
         // A brand-new matchmaker lands on the real home screen with one
         // welcoming card on it, not on a wizard that has to be got through.
         if (friends == 0)

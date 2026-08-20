@@ -6,9 +6,11 @@ import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/home_next_actions.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/home_stage_panels.dart';
 
 /// The redesigned home page is a hierarchy of differently shaped blocks. These
 /// cover the two things that can silently break on a phone: a block that does
@@ -76,7 +78,10 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('רעיונות שהמאגר מציע לך'), findsOneWidget);
-    expect(find.text('הצגת רעיונות חדשים'), findsOneWidget);
+    // One wide row that opens a screen: a title, a line under it and a chevron.
+    // The full-width filled button it used to carry is gone on purpose.
+    expect(find.text('זוגות חדשים שיכולים להתאים לחברים שלך'), findsOneWidget);
+    expect(find.byType(FilledButton), findsNothing);
     expect(find.text('הוספת חברים'), findsOneWidget);
     expect(find.text('הוספת רעיון'), findsOneWidget);
 
@@ -446,6 +451,92 @@ void main() {
     });
   }
 
+  testWidgets('the greeting is spoken on the page, not framed in a card', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(const HomeGreeting(greeting: 'צהריים טובים', name: 'יצחק')),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    // One line, two spans: the greeting in the page's ink and the name in the
+    // warm accent.
+    final RichText line = tester.widget<RichText>(
+      find.descendant(
+        of: find.byType(HomeGreeting),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(line.text.toPlainText(), 'צהריים טובים, יצחק');
+
+    // Nothing is drawn around it — that is the whole point of moving it out of
+    // the app bar.
+    for (final Type chrome in <Type>[Card, Material, DecoratedBox]) {
+      expect(
+        find.descendant(
+          of: find.byType(HomeGreeting),
+          matching: find.byType(chrome),
+        ),
+        findsNothing,
+        reason: '$chrome',
+      );
+    }
+  });
+
+  testWidgets('the think block is an invitation with a picture and a button', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    int opened = 0;
+    await tester.pumpWidget(
+      wrap(HomeThinkBanner(onTap: () => opened++), width: 390),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('עוצרים רגע לחשוב על החברים'), findsOneWidget);
+    expect(
+      find.text('כל רעיון קטן יכול להיות החיבור המיוחד שייבנה חיים.'),
+      findsOneWidget,
+    );
+    expect(find.text('למי אפשר לחשוב יחד?'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+
+    // The button and the card behind it open the same page.
+    await tester.tap(find.text('למי אפשר לחשוב יחד?'));
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  testWidgets('the think block drops its picture before its words', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      wrap(HomeThinkBanner(onTap: () {}), width: 320, textScale: 1.5),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    // At 1.5x the illustration is gone and every line still fits.
+    expect(find.byType(Image), findsNothing);
+    for (final String label in <String>[
+      'עוצרים רגע לחשוב על החברים',
+      'כל רעיון קטן יכול להיות החיבור המיוחד שייבנה חיים.',
+      'למי אפשר לחשוב יחד?',
+    ]) {
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        find.text(label),
+      );
+      expect(paragraph.didExceedMaxLines, isFalse, reason: label);
+    }
+  });
+
   testWidgets('an open idea reads as a bubble on the wave, not a white box', (
     WidgetTester tester,
   ) async {
@@ -517,7 +608,7 @@ void main() {
         expect(tester.takeException(), isNull);
         for (final String label in <String>[
           'רעיונות שהמאגר מציע לך',
-          'הצגת רעיונות חדשים',
+          'זוגות חדשים שיכולים להתאים לחברים שלך',
           'הוספת חברים',
           'הוספת רעיון',
         ]) {
