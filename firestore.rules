@@ -48,21 +48,38 @@ service cloud.firestore {
       }
     }
 
+    // Who may run the feedback console — and, with it, approve a tip. The root
+    // address is written here, and everybody else is a document in
+    // `supportAdmins` keyed by their own address, which is the whole point:
+    // adding a reviewer must not need a new build of the app. `email_verified`
+    // closes the door on an unverified address claiming to be one of them, and
+    // `get` with a default is used because an anonymous token carries no email
+    // field at all.
+    function supportEmail() {
+      return request.auth != null
+          && request.auth.token.get('email_verified', false) == true
+             ? request.auth.token.get('email', '').lower()
+             : '';
+    }
+
+    function isSupportAdmin() {
+      return supportEmail() != ''
+          && (supportEmail() == 'yitz292@gmail.com'
+              || exists(/databases/$(database)/documents/supportAdmins/$(supportEmail())));
+    }
+
     // The one deliberately shared collection in the app: tips written by a
     // matchmaker for every other matchmaker. Nothing about a candidate is in
     // here — the only personal field is the author's own name, which they put
     // there themselves.
     match /tips/{tipId} {
-      // The administrator, decided on the server. `token.email` is written by
-      // the identity provider, not by the client, and `email_verified` closes
-      // the door on an unverified address claiming to be this one. `get` with a
-      // default is used because an anonymous token carries no email at all, and
-      // reading an absent field is an error rather than a false.
+      // Who may approve a tip: exactly the people who may open the feedback
+      // console, because approving tips is one of the things done there. That
+      // is the root address plus whoever is listed in `supportAdmins` — decided
+      // on the server from a verified token, never from the client. See
+      // `isSupportAdmin()` above.
       function isAdmin() {
-        return request.auth != null
-            && request.auth.token.get('email_verified', false) == true
-            && request.auth.token.get('email', '').lower()
-                 == 'yitz292@gmail.com';
+        return isSupportAdmin();
       }
 
       function isSignedIn() {
@@ -96,25 +113,6 @@ service cloud.firestore {
     }
 
     // --- Support -----------------------------------------------------------
-    //
-    // Who may run the support console. The root address is written here, and
-    // everybody else is a document in `supportAdmins` keyed by their own
-    // address — which is the whole point: adding a reviewer must not need a new
-    // build of the app. `email_verified` closes the door on an unverified
-    // address claiming to be one of them, and `get` with a default is used
-    // because an anonymous token carries no email field at all.
-    function supportEmail() {
-      return request.auth != null
-          && request.auth.token.get('email_verified', false) == true
-             ? request.auth.token.get('email', '').lower()
-             : '';
-    }
-
-    function isSupportAdmin() {
-      return supportEmail() != ''
-          && (supportEmail() == 'yitz292@gmail.com'
-              || exists(/databases/$(database)/documents/supportAdmins/$(supportEmail())));
-    }
 
     // Problem reports and improvement ideas.
     //
@@ -135,7 +133,13 @@ service cloud.firestore {
                     && request.resource.data.text.size() > 0
                     && request.resource.data.text.size() <= 3000
                     && request.resource.data.authorName is string
-                    && request.resource.data.authorName.size() <= 80;
+                    && request.resource.data.authorName.size() <= 80
+                    // Optional, and only ever one of the four labels the form
+                    // offers — a free-text field here would be a way to write
+                    // unvalidated strings into the console.
+                    && (!('kind' in request.resource.data)
+                        || request.resource.data.kind in
+                             ['idea', 'note', 'bug', 'unsorted']);
     }
 
     // The administrator list itself. Readable by a signed-in device so the app

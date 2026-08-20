@@ -7,7 +7,10 @@ abstract final class HomeConfig {
 
   /// How many cards each of the computed rows offers before the user has to
   /// open the full screen.
-  static const int openIdeasInRow = 15;
+  ///
+  /// "רעיונות פתוחים" is deliberately not on this list: it carries every open
+  /// proposal, because it is the home screen's answer to "what is open right
+  /// now" and a truncated answer to that is a wrong one.
   static const int worthThinkingCount = 12;
   static const int datingCouplesInRow = 15;
   static const int recentActionsInRow = 12;

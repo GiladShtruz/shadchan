@@ -140,9 +140,12 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    // The header greets by first name and says the one true thing there is to
-    // say about a database with nothing in it.
-    expect(find.text('שלום, רבקה'), findsOneWidget);
+    // The header opens with a warm word and the first name, and says the one
+    // true thing there is to say about a database with nothing in it. An empty
+    // database is welcomed rather than congratulated, so the opener is not
+    // "כל הכבוד".
+    expect(find.text('טוב שבאת! רבקה'), findsOneWidget);
+    expect(find.textContaining('כל הכבוד'), findsNothing);
     expect(find.text('הכול מתחיל מחבר אחד'), findsOneWidget);
     // Nothing here claims an achievement that has not happened.
     expect(find.textContaining('בזכותך'), findsNothing);
@@ -283,13 +286,13 @@ void main() {
 /// time one is reworded.
 String _openingLine(WidgetTester tester) {
   const List<String> shapes = <String>[
-    'עשית השבוע',
+    'נקודות פעילות השבוע',
     'הוספת השבוע',
     'פתחת השבוע',
     'החודש כבר',
     'לדרך בזכותך',
     'בזכותך',
-    'סומכים עליך',
+    'כבר במאגר שלך',
   ];
   return tester
       .widgetList<Text>(find.byType(Text))

@@ -38,6 +38,68 @@ enum SupportReportStatus {
   }
 }
 
+/// What a report is about, as the person sending it would describe it.
+///
+/// **A label on one form, not four forms.** Splitting the form asks the
+/// reporter to classify their problem before they have described it, and the
+/// answer is wrong often enough to matter. A single optional row of chips costs
+/// the reporter one tap they may skip, and it is what turns the console from a
+/// pile of messages into an inbox that can be worked through by kind — which is
+/// the whole reason it exists.
+///
+/// [unsorted] is the default and a real answer: it means nobody said, and the
+/// person triaging reads the words and decides.
+enum SupportReportKind {
+  /// "היה עוזר אם…" — a feature, a suggestion, a request.
+  idea,
+
+  /// A wording fix, a wrong detail, a small correction.
+  note,
+
+  /// Something is broken.
+  bug,
+
+  /// No answer given.
+  unsorted;
+
+  static SupportReportKind byName(String? name) {
+    for (final SupportReportKind kind in SupportReportKind.values) {
+      if (kind.name == name) {
+        return kind;
+      }
+    }
+    return SupportReportKind.unsorted;
+  }
+
+  /// What the reporter is offered on the form.
+  String get label {
+    switch (this) {
+      case SupportReportKind.idea:
+        return 'המלצה או רעיון';
+      case SupportReportKind.note:
+        return 'הערה או תיקון';
+      case SupportReportKind.bug:
+        return 'תקלה טכנית';
+      case SupportReportKind.unsorted:
+        return 'משהו אחר';
+    }
+  }
+
+  /// What the console calls the group.
+  String get pluralLabel {
+    switch (this) {
+      case SupportReportKind.idea:
+        return 'המלצות ורעיונות';
+      case SupportReportKind.note:
+        return 'הערות ותיקונים';
+      case SupportReportKind.bug:
+        return 'תקלות ובאגים';
+      case SupportReportKind.unsorted:
+        return 'ללא סיווג';
+    }
+  }
+}
+
 /// One thing a matchmaker told the developers — a fault or an idea, on purpose
 /// not split into two forms.
 ///
@@ -56,6 +118,7 @@ class SupportReport {
     required this.appVersion,
     required this.status,
     required this.createdAt,
+    this.kind = SupportReportKind.unsorted,
     this.imageUrl,
   });
 
@@ -73,6 +136,10 @@ class SupportReport {
   final String appVersion;
   final SupportReportStatus status;
   final DateTime createdAt;
+
+  /// What the reporter said it is about. Absent on every report written before
+  /// the chips existed, which reads back as [SupportReportKind.unsorted].
+  final SupportReportKind kind;
 
   /// A screenshot, if one was attached.
   final String? imageUrl;
@@ -95,6 +162,7 @@ class SupportReport {
       os: (data['os'] as String?) ?? '',
       appVersion: (data['appVersion'] as String?) ?? '',
       status: SupportReportStatus.byName(data['status'] as String?),
+      kind: SupportReportKind.byName(data['kind'] as String?),
       createdAt: createdAt is Timestamp
           ? createdAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),
@@ -191,6 +259,7 @@ abstract final class SupportService {
     required String text,
     required String authorName,
     required DeviceFacts facts,
+    SupportReportKind kind = SupportReportKind.unsorted,
     File? screenshot,
   }) async {
     final User? user = await _requireAccount();
@@ -223,6 +292,7 @@ abstract final class SupportService {
         'os': facts.os,
         'appVersion': facts.appVersion,
         'status': SupportReportStatus.isNew.name,
+        'kind': kind.name,
         'createdAt': FieldValue.serverTimestamp(),
         'imageUrl': ?imageUrl,
       });

@@ -27,6 +27,14 @@ import 'package:shadchan/widgets/person_avatar.dart';
 ///
 /// There is no session here either: no timer, no "5 people left", no progress.
 /// Thinking about one person and closing the screen is a complete use of it.
+///
+/// **One friend per card, with the answer under the question.** Each card puts
+/// one person's face and name at the top, says in one line why they are worth a
+/// thought today, and then shows the three people the database thinks could
+/// suit them — a face and a name each, in one compact row. Tapping one opens
+/// the two cards facing each other; "לכל ההתאמות" opens the rest. The card is
+/// held to two short rows on purpose: the screen is for running an eye over
+/// many friends, so nothing on it is allowed to grow with its content.
 class ThinkScreen extends StatefulWidget {
   const ThinkScreen({super.key});
 
@@ -113,7 +121,7 @@ class _ThinkScreenState extends State<ThinkScreen> {
             : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
                 itemCount: rows.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 6),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (BuildContext context, int index) {
                   final _ThinkRow row = rows[index];
                   return _PersonThought(
@@ -241,8 +249,9 @@ class _MatchLookup {
   _MatchLookup({required this.people, required this.matches});
 
   /// Three, and no more. The point of this screen is to move quickly over many
-  /// friends; a fourth face is another thing to weigh up on a row that is meant
-  /// to be read in a second. "התאמות נוספות" opens the full list.
+  /// friends; a fourth face is another thing to weigh up on a card that is
+  /// meant to be read in a second, and three chips are what fits across a
+  /// narrow phone beside "לכל ההתאמות", which opens the full list.
   static const int shown = 3;
 
   final List<Person> people;
@@ -289,13 +298,20 @@ class _MatchLookup {
   }
 }
 
-/// One friend, one thought, and the two or three people they could go with.
+/// One friend to think about, and the three people they could go with.
 ///
-/// **Almost a single line, on purpose.** The screen exists to be scrolled
-/// through: a card per friend that takes a fifth of the screen turns "think
-/// about your friends" into eight friends and a lot of scrolling. The reason
-/// is one ellipsized line beside the name, the candidates are three faces, and
-/// everything else is one tap away.
+/// **One person is the subject of the card, not one row of a list.** The photo
+/// and the name lead it and are the largest thing on it; under them is the one
+/// sentence saying why this friend is worth a thought *today*; under that, the
+/// three matches the database found, each as a small chip with a face and a
+/// name; and at the end, the way into all of them.
+///
+/// **Still sized to be scrolled through.** The screen exists to move an eye
+/// over many friends, so the card is two short rows and never more: the name is
+/// one line, the reason is one line, the matches are one line of chips. Nothing
+/// here grows with its content — a long name and a long reason are clamped, not
+/// given a second line, because a card that is tall for one friend is a card
+/// that shows six friends where it could show ten.
 class _PersonThought extends StatelessWidget {
   const _PersonThought({
     required this.person,
@@ -309,10 +325,14 @@ class _PersonThought extends StatelessWidget {
   final String reason;
 
   /// At most [_MatchLookup.shown]. Empty for a friend with nobody to pair them
-  /// with yet, and the row simply has no faces on it.
+  /// with yet, and the card says so in a line instead of drawing empty chips.
   final List<Person> candidates;
 
+  /// Opens every possible match for this friend — the name, the photo and
+  /// "לכל ההתאמות" all lead here, because they are all asking the same
+  /// question.
   final VoidCallback onTap;
+
   final ValueChanged<Person> onCandidate;
 
   @override
@@ -321,71 +341,164 @@ class _PersonThought extends StatelessWidget {
 
     return Material(
       color: ProfilePalette.surface(theme),
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-          child: Row(
-            children: <Widget>[
-              PersonAvatar(person: person, radius: 19),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      person.fullName.trim(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: ProfilePalette.text(theme),
-                      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            // The friend: face, name, and the reason this is the moment.
+            InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Row(
+                children: <Widget>[
+                  PersonAvatar(person: person, radius: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          person.fullName.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            height: 1.15,
+                            color: ProfilePalette.text(theme),
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          reason,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: ProfilePalette.muted(theme),
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      reason,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // The matches, and the way to the rest of them, on one line.
+            Row(
+              children: <Widget>[
+                if (candidates.isEmpty)
+                  Expanded(
+                    child: Text(
+                      'עוד לא נמצאו התאמות מתאימות במאגר',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: ProfilePalette.muted(theme),
-                        height: 1.3,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              for (final Person candidate in candidates)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: Tooltip(
-                    message: candidate.fullName.trim(),
-                    child: InkResponse(
-                      onTap: () => onCandidate(candidate),
-                      radius: 22,
-                      child: PersonAvatar(person: candidate, radius: 15),
+                  )
+                else
+                  for (final Person candidate in candidates)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsetsDirectional.only(end: 6),
+                        child: _CandidateChip(
+                          person: candidate,
+                          onTap: () => onCandidate(candidate),
+                        ),
+                      ),
                     ),
+                _AllMatchesButton(onTap: onTap),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One possible match: a face and a name, small enough that three of them fit
+/// across a narrow phone.
+///
+/// Tapping it opens the two cards facing each other — the same comparison
+/// "רעיונות חדשים" and the matches list open, so a pair considered from here
+/// goes through exactly the route it would anywhere else.
+class _CandidateChip extends StatelessWidget {
+  const _CandidateChip({required this.person, required this.onTap});
+
+  final Person person;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String first = person.firstName.trim().isNotEmpty
+        ? person.firstName.trim()
+        : person.fullName.trim();
+
+    return Material(
+      color: ProfilePalette.canvas(theme),
+      borderRadius: BorderRadius.circular(999),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(3, 3, 8, 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              PersonAvatar(person: person, radius: 12),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  first,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: ProfilePalette.text(theme),
                   ),
-                ),
-              IconButton(
-                tooltip: 'התאמות נוספות',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                onPressed: onTap,
-                icon: Icon(
-                  Icons.more_horiz_rounded,
-                  size: 20,
-                  color: ProfilePalette.muted(theme),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// "לכל ההתאמות" — small, last, and never competing with the three faces
+/// beside it.
+class _AllMatchesButton extends StatelessWidget {
+  const _AllMatchesButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: ProfilePalette.muted(theme),
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      child: const Text('לכל ההתאמות'),
     );
   }
 }

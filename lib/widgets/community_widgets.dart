@@ -247,12 +247,17 @@ class CommunitySmallFigure extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 3),
+        // The label carries as much weight as the number does. On the home
+        // screen these two labels — "הפעילות שלך" and "פעילות הקהילה" — are the
+        // only thing that says *what* the block is about, and in footnote grey
+        // they were quieter than the "איך הפעילות נמדדת?" link underneath them.
         Text(
           label,
           maxLines: 2,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w800,
             height: 1.25,
           ),
         ),

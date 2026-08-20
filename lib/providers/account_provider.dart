@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/support_service.dart';
-import 'package:shadchan/services/tips_service.dart';
 
 /// Who is signed in, for the screens that have to say so.
 ///
@@ -65,21 +64,25 @@ class AccountProvider extends ChangeNotifier {
   /// photo.
   String? get email => _google?.email ?? _user?.email;
 
-  /// Whether this is the account that reviews community tips.
+  /// Whether this is an account that reviews community tips.
+  ///
+  /// The same people who may open the feedback console, because approving a tip
+  /// is one of the things done there — `firestore.rules` asks exactly the same
+  /// question of the verified token.
+  bool get isTipsAdmin => isSupportAdmin;
+
+  /// Whether this account may open the feedback console.
+  ///
+  /// This cannot be answered from a constant: the whole point of the console is
+  /// that administrators are added by address without a new build, so the
+  /// answer lives in Firestore and is re-read whenever the signed-in user
+  /// changes. Until that read returns it is false, which shows one settings row
+  /// a moment late rather than showing it to the wrong person.
   ///
   /// A display gate only. The rule that actually matters is in
   /// `firestore.rules`, which checks the same verified address on the server —
   /// flipping this in a patched client buys a screen full of buttons that every
   /// write refuses.
-  bool get isTipsAdmin => isSignedIn && TipsService.isAdminEmail(email);
-
-  /// Whether this account may open the support console.
-  ///
-  /// Unlike [isTipsAdmin] this cannot be answered from a constant: the whole
-  /// point of the console is that administrators are added by address without a
-  /// new build, so the answer lives in Firestore and is re-read whenever the
-  /// signed-in user changes. Until that read returns it is false, which shows
-  /// one settings row a moment late rather than showing it to the wrong person.
   bool get isSupportAdmin => _isSupportAdmin;
 
   bool _isSupportAdmin = false;

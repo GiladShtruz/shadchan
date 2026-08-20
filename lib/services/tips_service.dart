@@ -120,13 +120,16 @@ class CommunityTip {
 /// they chose to put there.
 ///
 /// Approval is enforced in `firestore.rules`, not here. A client-side check
-/// decides what to draw; the rules decide what may be written, and only the
-/// administrator's account can move a tip out of `pending`.
+/// decides what to draw; the rules decide what may be written, and only a
+/// feedback-console administrator can move a tip out of `pending` — which is
+/// what keeps an unreviewed tip out of every other matchmaker's rotation.
 abstract final class TipsService {
   static const String _collection = 'tips';
 
-  /// The one account allowed to approve tips. Mirrored in `firestore.rules` —
-  /// this constant only decides whether the tools are *drawn*.
+  /// The root reviewer's address. Approval is no longer this address alone —
+  /// the feedback console's administrator list decides, and `firestore.rules`
+  /// asks that list — but the root address is on it by construction and cannot
+  /// be removed, so there is always a way back in.
   static const String adminEmail = 'yitz292@gmail.com';
 
   /// A tip has to fit on the home screen and be readable in one breath.

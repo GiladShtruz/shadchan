@@ -187,12 +187,18 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
   }
 }
 
-/// The palette the four kinds of work are drawn in.
+/// The tone one card wears at a time.
 ///
 /// Brand tones the app already wears — the stone blue, the amber, the olive and
-/// the copper — one per kind of act, so a wedding is never the same colour as a
-/// contact import. Lightened in the dark theme, where the saturated originals
-/// are too dark to read as ink on their own wash.
+/// the copper. Lightened in the dark theme, where the saturated originals are
+/// too dark to read as ink on their own wash.
+///
+/// **One at a time is the whole rule.** These are used by the opening card,
+/// which shows exactly one story and takes its colour from it. "הנתונים שלך"
+/// below deliberately does *not* use them: four saturated tints in a
+/// two-by-two grid read as four unrelated widgets borrowed from four different
+/// apps, however carefully each one was picked. That card wears one warm wash
+/// for all four figures — see [_numbersWash].
 Color _tone(Color base, ThemeData theme) => theme.brightness == Brightness.dark
     ? Color.lerp(base, Colors.white, 0.45)!
     : base;
@@ -202,7 +208,31 @@ const Color _ideasTone = AppColors.statusChecking;
 const Color _couplesTone = AppColors.statusDating;
 const Color _weddingsTone = AppColors.secondary;
 
+/// The one warm wash every tile on "הנתונים שלך" sits on: the app's own cream,
+/// which is the background of half the screens in it.
+Color _numbersWash(ThemeData theme) => theme.brightness == Brightness.dark
+    ? AppColors.secondaryDarkDm.withValues(alpha: 0.10)
+    : AppColors.secondaryLight.withValues(alpha: 0.55);
+
+/// Its outline, and the ink the four figures are written in.
+Color _numbersEdge(ThemeData theme) => theme.brightness == Brightness.dark
+    ? AppColors.secondaryDarkDm.withValues(alpha: 0.24)
+    : AppColors.secondary.withValues(alpha: 0.26);
+
+Color _numbersInk(ThemeData theme) => theme.brightness == Brightness.dark
+    ? AppColors.secondaryDarkDm
+    : AppColors.secondaryInk;
+
 // --- 0. The one sentence worth opening on ------------------------------------
+
+/// One warm opener, one true sentence about the work, and one line under it.
+typedef _ActivityStory = ({
+  IconData icon,
+  Color tone,
+  String opener,
+  String headline,
+  String body,
+});
 
 /// The header: a warm, true sentence about what this matchmaker has been doing.
 ///
@@ -221,6 +251,14 @@ const Color _weddingsTone = AppColors.secondary;
 /// **Nothing is ever congratulated into existence.** Each line carries the
 /// condition that makes it true, and a database with nothing in it falls
 /// through to an invitation rather than to praise for having installed an app.
+/// The opener follows the same rule: "כל הכבוד!!" belongs to a week that
+/// actually had something in it, and an empty database is welcomed instead.
+///
+/// **It opens with a word, not with a filing label.** The top line used to read
+/// "שלום, רבקה", which is how a form letter starts and says nothing about the
+/// page it heads. It is now the opener that belongs to whichever story was
+/// picked, with the first name after it, and the sentence under it says what
+/// the praise is for.
 class _CelebrationHeader extends StatelessWidget {
   const _CelebrationHeader({
     required this.week,
@@ -241,18 +279,19 @@ class _CelebrationHeader extends StatelessWidget {
   /// Ordered from the most immediate to the most enduring, so a quiet week
   /// falls back to the month and then to what the whole database has done —
   /// but the cursor may pick any of them, because all of them are true.
-  List<({IconData icon, Color tone, String headline, String body})>
-  get _candidates {
-    final List<({IconData icon, Color tone, String headline, String body})>
-    lines = <({IconData icon, Color tone, String headline, String body})>[];
+  List<_ActivityStory> get _candidates {
+    final List<_ActivityStory> lines = <_ActivityStory>[];
 
     if (week.points > 0) {
       lines.add((
         icon: Icons.auto_awesome_rounded,
         tone: _friendsTone,
-        headline:
-            'כל הכבוד! עשית השבוע ${week.points} פעולות '
-            'כדי לחשוב על החברים שלך',
+        opener: 'כל הכבוד!!',
+        // Points, and called points. The figure is weighted — a wedding is
+        // worth fifty of it — so describing it as "פעולות" was the one place on
+        // this screen where a number was given a name it does not have, and it
+        // is the same number the card below shows under "נקודות פעילות השבוע".
+        headline: 'כבר ${week.points} נקודות פעילות השבוע',
         body: 'זה בדיוק מה שמזיז דברים. ממשיכים.',
       ));
     }
@@ -260,6 +299,7 @@ class _CelebrationHeader extends StatelessWidget {
       lines.add((
         icon: Icons.person_add_alt_1_outlined,
         tone: _friendsTone,
+        opener: 'איזה יופי!',
         headline: week.friends == 1
             ? 'הוספת השבוע עוד חבר למאגר'
             : 'הוספת השבוע ${week.friends} חברים למאגר',
@@ -270,6 +310,7 @@ class _CelebrationHeader extends StatelessWidget {
       lines.add((
         icon: Icons.lightbulb_outline_rounded,
         tone: _ideasTone,
+        opener: 'כל הכבוד!!',
         headline: week.ideas == 1
             ? 'פתחת השבוע רעיון חדש'
             : 'פתחת השבוע ${week.ideas} רעיונות',
@@ -280,14 +321,16 @@ class _CelebrationHeader extends StatelessWidget {
       lines.add((
         icon: Icons.calendar_month_outlined,
         tone: _ideasTone,
+        opener: 'קצב יפה!',
         headline: 'החודש כבר ${month.points} נקודות פעילות',
-        body: 'קצב יפה. תודה על כל מחשבה שהולכת לחברים שלך.',
+        body: 'תודה על כל מחשבה שהולכת לחברים שלך.',
       ));
     }
     if (allTime.couples > 0) {
       lines.add((
         icon: Icons.favorite_rounded,
         tone: _couplesTone,
+        opener: 'תודה!',
         headline: allTime.couples == 1
             ? 'זוג אחד כבר יצא לדרך בזכותך'
             : '${allTime.couples} זוגות כבר יצאו לדרך בזכותך',
@@ -298,6 +341,7 @@ class _CelebrationHeader extends StatelessWidget {
       lines.add((
         icon: Icons.diamond_outlined,
         tone: _weddingsTone,
+        opener: 'מזל טוב!!',
         headline: allTime.engagements == 1
             ? 'בית אחד כבר קם בזכותך'
             : '${allTime.engagements} בתים כבר קמו בזכותך',
@@ -308,20 +352,26 @@ class _CelebrationHeader extends StatelessWidget {
       lines.add((
         icon: Icons.people_alt_outlined,
         tone: _friendsTone,
-        headline: '${allTime.friends} חברים סומכים עליך',
+        opener: 'יש על מי לסמוך!',
+        headline: allTime.friends == 1
+            ? 'חבר אחד כבר במאגר שלך'
+            : '${allTime.friends} חברים כבר במאגר שלך',
         body: 'תמיד שווה לעצור רגע ולחשוב על אחד מהם.',
       ));
     }
     return lines;
   }
 
-  ({IconData icon, Color tone, String headline, String body}) get _story {
-    final List<({IconData icon, Color tone, String headline, String body})>
-    lines = _candidates;
+  _ActivityStory get _story {
+    final List<_ActivityStory> lines = _candidates;
     if (lines.isEmpty) {
       return (
         icon: Icons.auto_awesome_outlined,
         tone: _friendsTone,
+        // Nothing has happened yet, so nothing is congratulated. The opener is
+        // a welcome instead — praise for having installed an app is the one
+        // thing this screen must never say.
+        opener: 'טוב שבאת!',
         headline: 'הכול מתחיל מחבר אחד',
         body:
             'מוסיפים חבר, פותחים רעיון — והמספרים בעמוד הזה מתחילים לספר סיפור.',
@@ -334,8 +384,7 @@ class _CelebrationHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final ({IconData icon, Color tone, String headline, String body}) story =
-        _story;
+    final _ActivityStory story = _story;
     final Color tone = _tone(story.tone, theme);
     final String name = firstName.trim();
 
@@ -369,14 +418,18 @@ class _CelebrationHeader extends StatelessWidget {
                 child: Icon(story.icon, size: 24, color: tone),
               ),
               const SizedBox(width: 12),
+              // A greeting, not a filing label. "שלום, רבקה" is how a form
+              // letter opens; the screen is about what somebody did, so it
+              // opens by saying so — and the sentence under it names what it
+              // is about.
               Expanded(
                 child: Text(
-                  name.isEmpty ? 'הפעילות שלך' : 'שלום, $name',
+                  name.isEmpty ? story.opener : '${story.opener} $name',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onSurfaceVariant,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: tone,
                   ),
                 ),
               ),
@@ -413,6 +466,16 @@ class _CelebrationHeader extends StatelessWidget {
 /// rather than here. There is no week/month switch either: a couple you married
 /// last year is still a couple you married, and a matchmaker looking at their
 /// own history should not have to choose a window to see it.
+///
+/// **One warm wash, four figures.** The tiles used to carry a colour each — the
+/// stone blue, the amber, the olive and the copper — which put four saturated
+/// tints in a two-by-two grid and made the calmest card on the screen the
+/// loudest thing on it. The tint is now the app's own cream on all four, and
+/// what tells them apart is the icon and the word, as everywhere else.
+///
+/// **Each tile opens its own records, over its own window.** They are all-time
+/// figures, so the drill-down is asked for all time too; it used to open this
+/// Hebrew month's list under an all-time number.
 class _MyNumbersCard extends StatelessWidget {
   const _MyNumbersCard({required this.breakdown});
 
@@ -432,7 +495,6 @@ class _MyNumbersCard extends StatelessWidget {
                   value: breakdown.friends,
                   label: 'חברים שהוספת',
                   icon: Icons.people_alt_outlined,
-                  tone: _friendsTone,
                   metric: MonthlyStatMetric.people,
                 ),
               ),
@@ -442,7 +504,6 @@ class _MyNumbersCard extends StatelessWidget {
                   value: breakdown.ideas,
                   label: 'רעיונות שפתחת',
                   icon: Icons.lightbulb_outline_rounded,
-                  tone: _ideasTone,
                   metric: MonthlyStatMetric.ideas,
                 ),
               ),
@@ -456,7 +517,6 @@ class _MyNumbersCard extends StatelessWidget {
                   value: breakdown.couples,
                   label: 'זוגות שהוצאת לדייט',
                   icon: Icons.favorite_outline_rounded,
-                  tone: _couplesTone,
                   metric: MonthlyStatMetric.dating,
                 ),
               ),
@@ -464,9 +524,8 @@ class _MyNumbersCard extends StatelessWidget {
               Expanded(
                 child: _NumberTile(
                   value: breakdown.engagements,
-                  label: 'חתונות/אירוסין',
+                  label: 'חתונות',
                   icon: Icons.diamond_outlined,
-                  tone: _weddingsTone,
                   metric: MonthlyStatMetric.weddings,
                 ),
               ),
@@ -488,34 +547,35 @@ class _NumberTile extends StatelessWidget {
     required this.value,
     required this.label,
     required this.icon,
-    required this.tone,
     required this.metric,
   });
 
   final int value;
   final String label;
   final IconData icon;
-  final Color tone;
 
   /// Which list of records this number opens. The drill-downs already exist on
   /// the monthly stats screen and are the honest answer to "which ones?".
+  ///
+  /// Opened with `?window=all`, because the figure over it is all-time. Without
+  /// it the screen answers with this Hebrew month's records, which is a
+  /// different question and a different number.
   final MonthlyStatMetric metric;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = _tone(tone, theme);
+    final Color ink = _numbersInk(theme);
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: () => context.push('/stats/month/${metric.name}'),
+      onTap: () => context.push('/stats/month/${metric.name}?window=all'),
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: ink.withValues(alpha: dark ? 0.14 : 0.10),
-          border: Border.all(color: ink.withValues(alpha: 0.20)),
+          color: _numbersWash(theme),
+          border: Border.all(color: _numbersEdge(theme)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -541,6 +601,7 @@ class _NumberTile extends StatelessWidget {
               maxLines: 2,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
                 height: 1.25,
               ),
             ),
@@ -770,7 +831,7 @@ class _MonthSheet extends StatelessWidget {
             ),
             CommunityStatLine(
               icon: Icons.diamond_outlined,
-              label: 'אירוסין/חתונות',
+              label: 'חתונות',
               value: breakdown.engagements,
             ),
             if (breakdown.points == 0) ...<Widget>[
@@ -1020,7 +1081,7 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
             ),
             CommunityStatLine(
               icon: Icons.diamond_outlined,
-              label: 'אירוסין/חתונות',
+              label: 'חתונות',
               value: totals?.engagements ?? 0,
             ),
             CommunityStatLine(

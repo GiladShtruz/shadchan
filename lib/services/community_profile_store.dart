@@ -182,16 +182,30 @@ abstract final class CommunityProfileStore {
     return raw is String ? raw : '';
   }
 
-  /// Records [points] as this week's total when it beats the standing best.
+  /// Records [points] as this week's total when it beats the standing best —
+  /// **or whenever the standing best is this week's own figure.**
+  ///
+  /// That second clause is not a detail. A high-water mark that only ever goes
+  /// up is right for a record set in some past week, and wrong for the week
+  /// currently running: a matchmaker who reached 15 on Sunday and then deleted
+  /// a record that was counted would be shown "שיא חדש השבוע! 15 נקודות"
+  /// directly above a card reading 9. The record for a *finished* week cannot
+  /// change; the record for the week in progress is simply this week's score,
+  /// and it has to be able to come down.
   ///
   /// Nothing is announced and nothing is returned: whoever wants to say
   /// something about the record reads [bestWeek] and decides for themselves.
   static void recordWeek(int points, {String? weekKey}) {
-    if (points <= bestWeek) {
+    final String key = weekKey ?? CommunityPeriods.weekKey();
+    final bool recordIsThisWeek = bestWeekKey == key;
+    if (points <= bestWeek && !recordIsThisWeek) {
+      return;
+    }
+    if (points == bestWeek && recordIsThisWeek) {
       return;
     }
     _write(_bestWeekKey, points);
-    _write(_bestWeekAtKey, weekKey ?? CommunityPeriods.weekKey());
+    _write(_bestWeekAtKey, key);
   }
 
   // --- The note after a large import ----------------------------------------

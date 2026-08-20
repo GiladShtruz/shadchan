@@ -1,11 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
+import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 
 /// What the overflow menu can do.
-enum AppMenuAction { settings, updatesGroup, share, report, help, contact }
+enum AppMenuAction {
+  settings,
+  updatesGroup,
+  share,
+  report,
+  help,
+  contact,
+  feedbackCenter,
+}
 
 /// The three-dots menu in the top banner.
 ///
@@ -21,20 +33,39 @@ enum AppMenuAction { settings, updatesGroup, share, report, help, contact }
 /// it. Losing the subtitles is the price, and none of them said anything the
 /// row's own title did not.
 class AppMenuButton extends StatelessWidget {
-  const AppMenuButton({super.key});
+  const AppMenuButton({super.key, this.boxed = false});
+
+  /// Draws the trigger as one of the home bar's rounded squares instead of a
+  /// bare icon button, and as a hamburger rather than three dots — in a row of
+  /// boxed controls the vertical dots read as a cropped icon.
+  final bool boxed;
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<AppMenuAction>(
       tooltip: 'תפריט',
-      icon: const Icon(Icons.more_vert),
+      icon: boxed ? const _BoxedMenuIcon() : const Icon(Icons.more_vert),
+      // The boxed trigger draws its own square, so the icon button's default
+      // 48px splash box would sit on top of it.
+      padding: EdgeInsets.zero,
+      iconSize: boxed ? HomeBarButton.size : null,
       position: PopupMenuPosition.under,
       // The corner it hangs from is the corner it was tapped in. Without this
       // Material centres the popup on the button, which on a phone pushes it
       // past the edge of the screen.
       constraints: const BoxConstraints(minWidth: 220),
       onSelected: (AppMenuAction action) => _run(context, action),
+      // Read rather than watched, and read *here* — inside `itemBuilder`, which
+      // runs when the menu is opened. Watching `AccountProvider` from the bar
+      // itself would create it on the first frame, which is exactly what puts
+      // Firebase back on the startup path.
       itemBuilder: (BuildContext context) => <PopupMenuEntry<AppMenuAction>>[
+        if (context.read<AccountProvider>().isSupportAdmin)
+          _item(
+            AppMenuAction.feedbackCenter,
+            Icons.inbox_outlined,
+            'מרכז הפידבק',
+          ),
         _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
         if (CommunityLinks.hasUpdatesGroup)
           _item(
@@ -88,7 +119,44 @@ class AppMenuButton extends StatelessWidget {
         context.push('/support/help');
       case AppMenuAction.contact:
         CommunityLinks.openSupportEmail();
+      case AppMenuAction.feedbackCenter:
+        context.push('/support/admin');
     }
+  }
+}
+
+/// The hamburger inside the home bar's rounded square.
+///
+/// Drawn rather than delegated to [HomeBarButton] because the tap belongs to
+/// the `PopupMenuButton` around it — the menu has to hang from this box, and a
+/// button inside a button would swallow that.
+class _BoxedMenuIcon extends StatelessWidget {
+  const _BoxedMenuIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
+    return Container(
+      width: HomeBarButton.size,
+      height: HomeBarButton.size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: dark
+            ? theme.colorScheme.surfaceContainerHighest
+            : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.9),
+        ),
+      ),
+      child: Icon(
+        Icons.menu_rounded,
+        size: 20,
+        color: dark ? theme.colorScheme.onSurface : AppColors.primaryInk,
+      ),
+    );
   }
 }
 

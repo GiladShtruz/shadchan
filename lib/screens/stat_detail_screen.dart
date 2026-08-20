@@ -6,6 +6,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
@@ -23,9 +24,23 @@ import 'package:shadchan/widgets/person_avatar.dart';
 /// can be edited, and taking a couple out of it has to redraw the list it was
 /// just removed from.
 class StatDetailScreen extends StatefulWidget {
-  const StatDetailScreen({super.key, required this.metric});
+  const StatDetailScreen({
+    super.key,
+    required this.metric,
+    this.allTime = false,
+  });
 
   final MonthlyStatMetric metric;
+
+  /// Whether the number that opened this screen was an all-time figure.
+  ///
+  /// **This exists because the two callers count different windows.** The
+  /// monthly stats screen shows this Hebrew month and opens the month's
+  /// records; "הנתונים שלך" on the activity screen shows everything that ever
+  /// happened, and used to open the *month's* records under it — so a tile
+  /// reading 42 opened a list of four. The window travels with the tap now, and
+  /// the list is always the list behind the number that was pressed.
+  final bool allTime;
 
   /// How many Hebrew months back the per-metric trend reaches. Matches the
   /// stats screen's own window.
@@ -85,6 +100,17 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
     );
     final MonthPeriod current = periods.first;
 
+    // "כל הזמנים" runs from the app's own beginning to the end of today, which
+    // is the window `ActivityStats` counts an all-time figure over — the same
+    // bounds, so the list here and the number that opened it are the same
+    // arithmetic rather than two readings of it.
+    final DateTime windowStart = widget.allTime
+        ? ActivityStats.beginningOfTime
+        : current.start;
+    final DateTime windowEnd = widget.allTime
+        ? ActivityStats.endOfToday()
+        : current.end;
+
     final List<DatingCoupleRecord> couples = metric == MonthlyStatMetric.dating
         ? DatingHistory.all(
             matches: allMatches,
@@ -92,14 +118,31 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
             excludedMatchIds: excludedFromDating,
           )
         : const <DatingCoupleRecord>[];
-    final List<MatchIdea> matches = metric == MonthlyStatMetric.dating
-        ? const <MatchIdea>[]
-        : MonthlyStats.matchesFor(metric, current, allMatches);
-    final List<Person> people = MonthlyStats.peopleFor(
-      metric,
-      current,
-      allPeople,
-    );
+    final List<MatchIdea> matches = switch (metric) {
+      MonthlyStatMetric.dating => const <MatchIdea>[],
+      // Every proposal ever opened, deduplicated exactly as the score counts
+      // them.
+      MonthlyStatMetric.ideas when widget.allTime => ActivityStats.countedIdeas(
+        start: windowStart,
+        end: windowEnd,
+        matches: allMatches,
+      ),
+      _ => MonthlyStats.matchesFor(metric, current, allMatches),
+    };
+    // The monthly list keeps `MonthlyStats`' own rule, because the number over
+    // it on the stats screen is counted by that rule; the all-time list uses
+    // `ActivityStats`, because the number over it on "הנתונים שלך" is counted
+    // by *that* one. Each list is the list behind the figure that opened it,
+    // which is the only property that matters here.
+    final List<Person> people = !widget.allTime
+        ? MonthlyStats.peopleFor(metric, current, allPeople)
+        : metric == MonthlyStatMetric.people
+        ? ActivityStats.countedFriends(
+            start: windowStart,
+            end: windowEnd,
+            people: allPeople,
+          )
+        : const <Person>[];
     final int count = switch (metric) {
       MonthlyStatMetric.people => people.length,
       MonthlyStatMetric.dating => couples.length,
@@ -117,10 +160,15 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: <Widget>[
-            _Headline(metric: metric, count: count, monthLabel: current.label),
+            _Headline(
+              metric: metric,
+              count: count,
+              monthLabel: current.label,
+              allTime: widget.allTime,
+            ),
             const SizedBox(height: 20),
             if (count == 0)
-              _EmptyLine(metric: metric)
+              _EmptyLine(metric: metric, allTime: widget.allTime)
             else ...<Widget>[
               Row(
                 children: <Widget>[
@@ -196,11 +244,13 @@ class _Headline extends StatelessWidget {
     required this.metric,
     required this.count,
     required this.monthLabel,
+    required this.allTime,
   });
 
   final MonthlyStatMetric metric;
   final int count;
   final String monthLabel;
+  final bool allTime;
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +293,7 @@ class _Headline extends StatelessWidget {
                 Text(
                   // A history carries no month: naming one would say the
                   // figure belongs to it.
-                  metric.isAllTime
+                  metric.isAllTime || allTime
                       ? metric.title
                       : '${metric.title} · $monthLabel',
                   style: theme.textTheme.titleSmall?.copyWith(
@@ -252,7 +302,7 @@ class _Headline extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  metric.explanation,
+                  allTime ? metric.allTimeExplanation : metric.explanation,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     height: 1.35,
@@ -268,9 +318,10 @@ class _Headline extends StatelessWidget {
 }
 
 class _EmptyLine extends StatelessWidget {
-  const _EmptyLine({required this.metric});
+  const _EmptyLine({required this.metric, this.allTime = false});
 
   final MonthlyStatMetric metric;
+  final bool allTime;
 
   @override
   Widget build(BuildContext context) {
@@ -287,7 +338,7 @@ class _EmptyLine extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            metric.emptyLine,
+            allTime ? metric.allTimeEmptyLine : metric.emptyLine,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,

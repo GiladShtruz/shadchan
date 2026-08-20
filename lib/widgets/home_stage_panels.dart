@@ -270,14 +270,23 @@ class HomeImportInvite extends StatelessWidget {
   }
 }
 
-/// The invitation into the continuous "think about someone" view. Warm rather
-/// than urgent — it is an offer to sit and think, not a queue with a count.
+/// "עוצרים רגע לחשוב על החברים" — the invitation into the continuous
+/// think-about-someone view, and the warmest thing on the home screen.
 ///
-/// It opens the page now, above the two add actions, so it wears the same
-/// bordered surface with a soft tint that the block under it wears. The only
-/// thing separating the two is the accent: this one is warm, the ideas card is
-/// the brand blue. Two adjacent blocks in two different visual languages was
-/// the loudest thing about the old top of this screen.
+/// **A card with a picture in it, not a banner with an icon on it.** It was one
+/// tinted strip with a small glyph and the word "מתחילים" — legible, and
+/// completely interchangeable with the six other tinted strips the page has had
+/// at one time or another. This is the one block on the home screen that is an
+/// invitation rather than a control, so it is allowed to look like one: painted
+/// paper, a line saying why it is worth doing, and a real button.
+///
+/// **The illustration is the notepad from "הוספת רעיון".** Deliberately the
+/// same picture: this block and that card are the same act at two moments — the
+/// thought, and writing it down — and one visual language across both is what
+/// makes the page feel drawn rather than assembled.
+///
+/// It drops the picture entirely below 300px of card or above 1.3x text, where
+/// keeping it would leave the sentence three words wide.
 class HomeThinkBanner extends StatelessWidget {
   const HomeThinkBanner({super.key, required this.onTap});
 
@@ -291,69 +300,150 @@ class HomeThinkBanner extends StatelessWidget {
         ? AppColors.secondaryDarkDm
         : AppColors.secondaryInk;
 
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Ink(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accent.withValues(alpha: 0.22)),
-            gradient: LinearGradient(
-              begin: AlignmentDirectional.topStart,
-              end: AlignmentDirectional.bottomEnd,
-              colors: <Color>[
-                accent.withValues(alpha: dark ? 0.16 : 0.09),
-                theme.colorScheme.surface,
-              ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool showPicture =
+            constraints.maxWidth >= 300 && textScale <= 1.3;
+        // Held down deliberately: the button under the sentence has to keep
+        // "למי אפשר לחשוב יחד?" on one line, and every pixel the picture takes
+        // comes out of the column that has to hold it.
+        final double pictureWidth = (constraints.maxWidth * 0.30).clamp(
+          88.0,
+          116.0,
+        );
+
+        return Material(
+          color: dark ? theme.colorScheme.surface : AppColors.surface,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: accent.withValues(alpha: 0.20)),
+                gradient: LinearGradient(
+                  begin: AlignmentDirectional.topEnd,
+                  end: AlignmentDirectional.bottomStart,
+                  colors: <Color>[
+                    accent.withValues(alpha: dark ? 0.15 : 0.08),
+                    dark ? theme.colorScheme.surface : AppColors.surface,
+                  ],
+                ),
+              ),
+              child: Stack(
+                children: <Widget>[
+                  // One outlined heart in the far corner. The card's only
+                  // decoration, and the reason it reads as paper somebody wrote
+                  // on rather than as a panel.
+                  PositionedDirectional(
+                    top: 10,
+                    end: 12,
+                    child: Icon(
+                      Icons.favorite_border_rounded,
+                      size: 17,
+                      color: accent.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Text(
+                                // A statement, not a question. The block is an
+                                // open door, and a question mark on the home
+                                // screen asks for an answer the matchmaker did
+                                // not come here to give.
+                                'עוצרים רגע לחשוב על החברים',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.22,
+                                  color: dark
+                                      ? theme.colorScheme.onSurface
+                                      : accent,
+                                ),
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                'כל רעיון קטן יכול להיות החיבור המיוחד '
+                                'שייבנה חיים.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  height: 1.45,
+                                ),
+                              ),
+                              const SizedBox(height: 13),
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: FilledButton.icon(
+                                  onPressed: onTap,
+                                  icon: const Icon(
+                                    Icons.people_alt_outlined,
+                                    size: 17,
+                                  ),
+                                  // Scaled down rather than wrapped. The
+                                  // label is a question, and a question
+                                  // broken across two lines inside a pill
+                                  // reads as two half-sentences; at 1.5x
+                                  // system text on a 320px phone there is no
+                                  // room for it at full size and no room to
+                                  // wrap it either.
+                                  label: const FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      'למי אפשר לחשוב יחד?',
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: dark
+                                        ? AppColors.secondaryDarkDm
+                                        : AppColors.secondary,
+                                    foregroundColor: dark
+                                        ? AppColors.onSecondary
+                                        : AppColors.surface,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                                    shape: const StadiumBorder(),
+                                    textStyle: theme.textTheme.labelMedium
+                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (showPicture) ...<Widget>[
+                          const SizedBox(width: 10),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.asset(
+                              'assets/home_add_idea.jpg',
+                              width: pictureWidth,
+                              height: pictureWidth,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          child: Row(
-            children: <Widget>[
-              Icon(Icons.self_improvement_outlined, color: accent),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  // A statement, not a question. The banner is an open door,
-                  // and a question mark on the home screen asks for an answer
-                  // the matchmaker did not come here to give.
-                  'עוצרים רגע לחשוב על החברים',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: dark ? theme.colorScheme.onSurface : accent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // A word rather than a chevron in a circle. The whole banner is
-              // the tap target, so the mark on the end is only there to say
-              // that it opens something — and a filled round arrow says it in
-              // the voice of a system control, next to a line that is an
-              // invitation to sit and think.
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: dark ? 0.20 : 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  'מתחילים',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

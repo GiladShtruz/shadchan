@@ -58,7 +58,7 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('הפעילות'), findsOneWidget);
+    expect(find.text('נתונים'), findsOneWidget);
     expect(find.text('הפעילות שלך'), findsOneWidget);
     // No account in a widget test, so the community column is the invitation
     // rather than a figure. See the signed-out test below.
@@ -75,7 +75,7 @@ void main() {
     expect(find.textContaining('יעד'), findsNothing);
     expect(find.byType(LinearProgressIndicator), findsNothing);
 
-    await tester.tap(find.text('הפעילות'));
+    await tester.tap(find.text('נתונים'));
     await tester.pump();
     expect(opened, 1);
   });

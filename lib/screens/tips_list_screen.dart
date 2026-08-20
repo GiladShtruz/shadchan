@@ -54,7 +54,7 @@ class TipsListScreen extends StatelessWidget {
                   child: TextButton.icon(
                     onPressed: () => context.push('/profile/tips'),
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text('שליחת טיפ משלך'),
+                    label: const Text('לשליחת טיפ משלך'),
                   ),
                 ),
               );

@@ -4,6 +4,7 @@ import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/person_reminders.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 
 /// The bell, drawn the same way in the same slot on all three main screens.
 ///
@@ -18,7 +19,16 @@ import 'package:shadchan/utils/person_reminders.dart';
 /// has actually come due — reminders on people as well as on proposals, since
 /// the panel behind it lists both.
 class RemindersBellButton extends StatelessWidget {
-  const RemindersBellButton({super.key});
+  const RemindersBellButton({super.key, this.boxed = false});
+
+  /// Draws the bell as one of the home bar's rounded squares instead of a bare
+  /// icon button.
+  ///
+  /// A flag rather than a second widget, because the thing worth having in one
+  /// place is [_dueCount] — a bell that counted differently from the panel it
+  /// opens is the bug this widget was written to end, and two copies of the
+  /// count is how that comes back.
+  final bool boxed;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +36,19 @@ class RemindersBellButton extends StatelessWidget {
     // number off the bell without the screen being rebuilt for another reason.
     final MatchRepository matches = context.watch<MatchRepository>();
     final int due = _dueCount(matches);
+
+    if (boxed) {
+      return HomeBarButton(
+        tooltip: 'תזכורות',
+        showDot: due > 0,
+        onPressed: () => RemindersPanel.show(context),
+        icon: Icon(
+          due > 0
+              ? Icons.notifications_active_rounded
+              : Icons.notifications_outlined,
+        ),
+      );
+    }
 
     return IconButton(
       tooltip: 'תזכורות',

@@ -171,6 +171,77 @@ abstract final class ActivityStats {
     };
   }
 
+  /// The friends counted as added inside `[start, end)`, newest first.
+  ///
+  /// Deduplicated by name *and day*, which covers three cases at once: an
+  /// import run twice, a contact added twice by hand, and a record deleted and
+  /// immediately re-added — that last one comes back with a new id, so an
+  /// id-based check would miss it entirely.
+  ///
+  /// An import of thirty new friends is thirty entries. That is the intended
+  /// answer: thirty real people entered the database, and the only thing this
+  /// rule takes out is the duplicates that never actually arrived.
+  ///
+  /// This is the list *and* the number: [breakdownBetween] counts it, and the
+  /// drill-down screen shows it.
+  static List<Person> countedFriends({
+    required DateTime start,
+    required DateTime end,
+    required List<Person> people,
+  }) {
+    final Set<String> seen = <String>{};
+    final List<Person> found = <Person>[];
+    for (final Person person in people) {
+      if (person.hidden ||
+          person.createdAt.isBefore(start) ||
+          !person.createdAt.isBefore(end)) {
+        continue;
+      }
+      if (seen.add('${_nameKey(person)}:${_dayKey(person.createdAt)}')) {
+        found.add(person);
+      }
+    }
+    found.sort((Person a, Person b) => b.createdAt.compareTo(a.createdAt));
+    return found;
+  }
+
+  /// The proposals counted as opened inside `[start, end)`, newest first.
+  ///
+  /// Keyed by the pair rather than by the proposal id, for the same
+  /// delete-and-reopen reason [countedFriends] is keyed by name.
+  static List<MatchIdea> countedIdeas({
+    required DateTime start,
+    required DateTime end,
+    required List<MatchIdea> matches,
+  }) {
+    final Set<String> seen = <String>{};
+    final List<MatchIdea> found = <MatchIdea>[];
+    for (final MatchIdea match in matches) {
+      if (match.createdAt.isBefore(start) || !match.createdAt.isBefore(end)) {
+        continue;
+      }
+      final List<String> pair = <String>[match.personAId, match.personBId]
+        ..sort();
+      if (seen.add('${pair.join('|')}:${_dayKey(match.createdAt)}')) {
+        found.add(match);
+      }
+    }
+    found.sort(
+      (MatchIdea a, MatchIdea b) => b.createdAt.compareTo(a.createdAt),
+    );
+    return found;
+  }
+
+  /// The end of "today" as every all-time count here uses it: tomorrow's
+  /// midnight, so an event recorded a minute ago is inside the window.
+  static DateTime endOfToday([DateTime? now]) {
+    final DateTime at = now ?? DateTime.now();
+    return DateTime(at.year, at.month, at.day).add(const Duration(days: 1));
+  }
+
+  /// Where every all-time count in the app starts.
+  static final DateTime beginningOfTime = DateTime(2000);
+
   /// The four events inside `[start, end)`.
   ///
   /// [datingCouples] lets a caller counting several windows over the same data
@@ -189,44 +260,21 @@ abstract final class ActivityStats {
   }) {
     bool inRange(DateTime at) => !at.isBefore(start) && at.isBefore(end);
 
-    // Everything below is counted through this set, so the same act can never
-    // be worth two. It exists because the figure is not private any more: it
-    // feeds the community total and the leaderboard, and a number anybody can
-    // inflate by adding the same person twice is not worth showing to others.
-    final Set<String> counted = <String>{};
-    bool once(String key) => counted.add(key);
-
-    // A friend added. Deduplicated by name *and day*, which covers three cases
-    // at once: an import run twice, a contact added twice by hand, and a record
-    // deleted and immediately re-added — that last one comes back with a new
-    // id, so an id-based check would miss it entirely.
-    //
-    // An import of thirty new friends is thirty points. That is the intended
-    // answer: thirty real people entered the database, and the only thing this
-    // rule takes out is the duplicates that never actually arrived.
-    int friends = 0;
-    for (final Person person in people) {
-      if (person.hidden || !inRange(person.createdAt)) {
-        continue;
-      }
-      if (once('person:${_nameKey(person)}:${_dayKey(person.createdAt)}')) {
-        friends++;
-      }
-    }
-
-    // An idea opened. Keyed by the pair rather than by the proposal id, for the
-    // same delete-and-reopen reason.
-    int ideas = 0;
-    for (final MatchIdea match in matches) {
-      if (!inRange(match.createdAt)) {
-        continue;
-      }
-      final List<String> pair = <String>[match.personAId, match.personBId]
-        ..sort();
-      if (once('idea:${pair.join('|')}:${_dayKey(match.createdAt)}')) {
-        ideas++;
-      }
-    }
+    // The friends and the ideas are counted by listing them, through the same
+    // two functions the drill-down screens read. That is not indirection for
+    // its own sake: a number and the list behind it that are produced by two
+    // pieces of code drift, and "42 חברים שהוספת" opening a list of 39 is the
+    // one thing about a statistics screen nobody forgives.
+    final int friends = countedFriends(
+      start: start,
+      end: end,
+      people: people,
+    ).length;
+    final int ideas = countedIdeas(
+      start: start,
+      end: end,
+      matches: matches,
+    ).length;
 
     // Couples, from the same history the rest of the app counts them with — so
     // "זוגות שהתחילו לצאת" on the stats screen and the five points here can
@@ -275,8 +323,8 @@ abstract final class ActivityStats {
   }) {
     final DateTime at = now ?? DateTime.now();
     return breakdownBetween(
-      start: DateTime(2000),
-      end: DateTime(at.year, at.month, at.day).add(const Duration(days: 1)),
+      start: beginningOfTime,
+      end: endOfToday(at),
       people: people,
       matches: matches,
       matchStatusEvents: matchStatusEvents,
