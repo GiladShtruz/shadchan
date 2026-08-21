@@ -27,6 +27,7 @@ import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/personal_card_screen.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -242,23 +243,26 @@ void main() {
     // The personal status is a quiet line under the name, not a titled section.
     expect(find.text('מצב אישי'), findsNothing);
     expect(find.textContaining('· שינוי'), findsOneWidget);
-    expect(find.text('הכרטיס שלך'), findsNothing);
-    expect(find.text('יצירת הכרטיס'), findsNothing);
+    // The card is one row on the profile now, and a married matchmaker has no
+    // row at all.
+    expect(find.text('כרטיס השידוכים שלי'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userIsSingle', true));
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
-    expect(find.text('הכרטיס שלך'), findsOneWidget);
-    expect(
-      find.text(
-        'כאן אפשר לשמור את הכרטיס שלך, כדי לשתף אותו בקלות בכל פעם שצריך.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('יצירת הכרטיס'), findsOneWidget);
+    expect(find.text('כרטיס השידוכים שלי'), findsOneWidget);
+    expect(find.text('עוד לא מילאת אותו — אפשר למלא עכשיו'), findsOneWidget);
 
-    await tester.tap(find.text('יצירת הכרטיס'));
+    // What that row opens: the card's own page, in its empty state.
+    await tester.pumpWidget(
+      _buildProfileTestApp(home: const PersonalCardScreen()),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('עוד לא מילאת את הכרטיס שלך'), findsOneWidget);
+    expect(find.text('מילוי הכרטיס שלי'), findsOneWidget);
+
+    await tester.tap(find.text('מילוי הכרטיס שלי'));
     await tester.pumpAndSettle();
     expect(find.text('עריכת הכרטיס האישי'), findsOneWidget);
     expect(find.text('הוספת תמונות'), findsOneWidget);
@@ -742,9 +746,13 @@ void main() {
     expect(find.byTooltip('שמירת עריכה מהירה'), findsOneWidget);
   });
 
-  testWidgets('Match detail shows one derived state and compact pair actions', (
+  testWidgets('A link to one proposal lands on the list, with it on top', (
     WidgetTester tester,
   ) async {
+    // There is no proposal screen any more. `/matches/:id` is still a route,
+    // because a dozen places point at it — a notification, a reminder row, a
+    // home card — and it now renders the list with that proposal lifted to the
+    // front, carrying everything the page used to.
     final DateTime now = DateTime(2026, 7, 27);
     final Person male = _testPerson(
       id: 'detail-male',
@@ -781,28 +789,29 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('פרטי רעיון'), findsOneWidget);
     expect(find.text('הלל אבולעפיה'), findsOneWidget);
     expect(find.text('כרמל לוי'), findsOneWidget);
-    // One derived line, and the three ways on in a single area.
-    expect(find.text('פתוחה · יאללה לקדם'), findsOneWidget);
-    expect(find.text('עדכון הצעה'), findsOneWidget);
-    // Named for the act rather than the state, so the tile cannot be read as a
-    // label saying where the proposal already is.
-    expect(find.text('מתחילים לצאת'), findsOneWidget);
-    expect(find.text('יוצאים'), findsNothing);
-    expect(find.text('העברה להמתנה'), findsOneWidget);
-    expect(find.text('סגירת הצעה'), findsOneWidget);
-    expect(find.text('סטטוס הצעה'), findsNothing);
-    expect(find.text('איפה זה עומד?'), findsNothing);
-    expect(find.textContaining('עודכן'), findsNothing);
-    // The action tiles carry their label and nothing else.
-    expect(find.text('נחזור אליה בהמשך'), findsNothing);
-    expect(find.text('הם התחילו לצאת'), findsNothing);
-    expect(find.text('הצעה לא מתאימה'), findsNothing);
+    // The status is on the card itself now, in the word a matchmaker uses.
+    expect(find.text('פתוח'), findsOneWidget);
     // A candidate's city is not part of the proposal card.
     expect(find.textContaining('ירושלים'), findsNothing);
 
+    // Everything the proposal screen offered is behind one folded line.
+    expect(find.text('פעולות'), findsOneWidget);
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('יאללה לקדם!'), findsOneWidget);
+    // Named for the act rather than the state, so a tile cannot be read as a
+    // label saying where the proposal already is.
+    expect(find.text('מתחילים לצאת'), findsOneWidget);
+    expect(find.text('העברה להמתנה'), findsOneWidget);
+    expect(find.text('סגירת הצעה'), findsOneWidget);
+    expect(find.text('הוספת תזכורת'), findsOneWidget);
+    expect(find.text('הוספת איש קשר'), findsOneWidget);
+    expect(find.text('יומן ההצעה'), findsOneWidget);
+
+    // Each side's availability is still changeable in place.
     await tester.tap(find.text('פנוי').first);
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('תפוס'), findsOneWidget);
@@ -812,6 +821,13 @@ void main() {
   testWidgets('Ideas default to all live states and celebrate dating couples', (
     WidgetTester tester,
   ) async {
+    // Room for the four live cards. Every card carries a status band of its own
+    // now, so three of them no longer fit in the 600 points the default test
+    // surface has — and the width is kept generous so the names stay whole
+    // rather than falling back to first names, which is what this asserts on.
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final DateTime now = DateTime(2026, 8, 2);
     final List<Person> people = <Person>[
       _testPerson(
@@ -920,21 +936,27 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('הכול'), findsOneWidget);
+    // All five categories are buttons on one row — none of them off the edge
+    // behind a scroll that gives no sign it can be scrolled.
+    expect(find.text('הכל'), findsOneWidget);
     expect(find.text('פתוחים'), findsOneWidget);
-    expect(find.text('בהמתנה'), findsOneWidget);
-    expect(find.text('יוצאים'), findsOneWidget);
+    expect(find.text('בהמתנה'), findsWidgets); // the button, and the card
+    expect(find.text('נסגרו'), findsOneWidget);
     // The name and the age are two spans now, so the age can hold its ground
     // while a long name gives way — see match_idea_card_test.dart.
     expect(find.text('פתוח אחד'), findsOneWidget);
     expect(find.text('ממתין אחד'), findsOneWidget);
-    expect(find.text('✨ יוצאים יחד ✨'), findsOneWidget);
+    // Every live card says where its proposal stands, and the couple who are
+    // out say it louder.
+    expect(find.text('✨ יוצאים ✨'), findsOneWidget);
     expect(find.text('ארכיון אחד'), findsNothing);
 
-    await tester.tap(find.text('✨ יוצאים יחד ✨'));
+    // Tapping a proposal compares the two candidates rather than opening a
+    // page of its own.
+    await tester.tap(find.text('פתוח אחד'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('איזה כיף — הם יוצאים!'), findsOneWidget);
+    expect(find.text('השוואת כרטיסים'), findsOneWidget);
   });
 
   testWidgets('New ideas uses the matching explanation and rejection wording', (
@@ -1013,60 +1035,7 @@ void main() {
     expect(color!.computeLuminance(), lessThan(0.3));
   });
 
-  testWidgets('The pair card WhatsApp button offers chat or the other card', (
-    WidgetTester tester,
-  ) async {
-    final DateTime now = DateTime(2026, 7, 27);
-    final Person male = _testPerson(
-      id: 'wa-male',
-      firstName: 'נדיב',
-      lastName: 'אלמליח',
-      gender: Gender.male,
-      age: 25,
-      now: now,
-      phone: '0501234567',
-      description: 'הכרטיס של נדיב',
-    );
-    final Person female = _testPerson(
-      id: 'wa-female',
-      firstName: 'נהרה',
-      lastName: 'בלטמן',
-      gender: Gender.female,
-      age: 23,
-      now: now,
-      phone: '0507654321',
-      description: 'הכרטיס של נהרה',
-    );
-    final MatchIdea match = _testMatch(
-      id: 'wa-match',
-      personAId: male.id,
-      personBId: female.id,
-      now: now,
-    );
-    await tester.runAsync(() async {
-      await Hive.box<Person>('people').put(male.id, male);
-      await Hive.box<Person>('people').put(female.id, female);
-      await Hive.box<MatchIdea>('matches').put(match.id, match);
-    });
-
-    await tester.pumpWidget(_buildTestApp());
-    await tester.pump();
-    AppRouter.router.go('/matches/${match.id}');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    // Three WhatsApp glyphs: one on each candidate, and the proposal-level
-    // button on the "יאללה לקדם" row under them.
-    expect(find.byType(FaIcon), findsNWidgets(3));
-    // The first belongs to the woman's side.
-    await tester.tap(find.byType(FaIcon).first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('פתיחת שיחה עם נהרה'), findsOneWidget);
-    expect(find.text('שליחת הכרטיס של נדיב אל נהרה'), findsOneWidget);
-  });
-
-  testWidgets('The "יאללה לקדם" row opens both chats and both cards at once', (
+  testWidgets('Each side of a proposal offers its chat or the other card', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
@@ -1111,43 +1080,47 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The prompt and the way to act on it are on the same line.
-    expect(find.text('פתוחה · יאללה לקדם'), findsOneWidget);
-    await tester.tap(find.text('וואטסאפ'));
+    // One WhatsApp glyph per side, on that side's own face.
+    expect(find.byType(FaIcon), findsNWidgets(2));
+    // In RTL the first child sits on the right, and that side is the woman's.
+    await tester.tap(find.byType(FaIcon).first);
     await tester.pumpAndSettle();
 
-    // One sheet, both candidates, both cards — no picking a side first.
     expect(find.text('פתיחת שיחה עם נהרה'), findsOneWidget);
     expect(find.text('שליחת הכרטיס של נדיב אל נהרה'), findsOneWidget);
-    expect(find.text('פתיחת שיחה עם נדיב'), findsOneWidget);
-    expect(find.text('שליחת הכרטיס של נהרה אל נדיב'), findsOneWidget);
+    // A card is its photos as much as its words, and the line says so.
+    expect(find.text('הטקסט וכל התמונות של הכרטיס'), findsOneWidget);
   });
 
-  testWidgets('Match detail keeps full names and visible proposal actions', (
+  testWidgets('"יאללה לקדם!" opens both chats and both cards at once', (
     WidgetTester tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(360, 780));
+    await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final DateTime now = DateTime(2026, 7, 27);
     final Person male = _testPerson(
-      id: 'wide-male',
-      firstName: 'יצחק',
-      lastName: 'ברגר מסינגר',
+      id: 'promote-male',
+      firstName: 'נדיב',
+      lastName: 'לוי',
       gender: Gender.male,
       age: 27,
       now: now,
+      phone: '0501234567',
+      description: 'כרטיס של נדיב',
     );
     final Person female = _testPerson(
-      id: 'wide-female',
-      firstName: 'אדל',
-      lastName: 'ביטון קלרמן',
+      id: 'promote-female',
+      firstName: 'נהרה',
+      lastName: 'כהן',
       gender: Gender.female,
       age: 25,
       now: now,
+      phone: '0509876543',
+      description: 'כרטיס של נהרה',
     );
     final MatchIdea match = _testMatch(
-      id: 'wide-match',
+      id: 'promote-match',
       personAId: male.id,
       personBId: female.id,
       now: now,
@@ -1164,34 +1137,24 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // Both names render in full instead of being cut after the first line.
-    for (final String name in <String>['יצחק ברגר מסינגר', 'אדל ביטון קלרמן']) {
-      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
-        find.text(name),
-      );
-      expect(paragraph.didExceedMaxLines, isFalse, reason: name);
-    }
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('יאללה לקדם!'));
+    await tester.pumpAndSettle();
 
-    // The reminder is its own clear area; the related contact stays a quiet
-    // line until one is actually added.
-    expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('נזכיר לך לחזור אליה בזמן הנכון'), findsOneWidget);
-    expect(find.text('איש קשר שקשור להצעה'), findsOneWidget);
-
-    // The journal no longer has a button that only focuses the note field.
-    await tester.dragUntilVisible(
-      find.text('יומן ההצעה'),
-      find.byType(ListView).first,
-      const Offset(0, -120),
-    );
-    await tester.pump();
-    expect(find.text('יומן ההצעה'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'הוספת הערה'), findsNothing);
+    // One sheet, both candidates, both cards — no picking a side first.
+    expect(find.text('פתיחת שיחה עם נהרה'), findsOneWidget);
+    expect(find.text('שליחת הכרטיס של נדיב אל נהרה'), findsOneWidget);
+    expect(find.text('פתיחת שיחה עם נדיב'), findsOneWidget);
+    expect(find.text('שליחת הכרטיס של נהרה אל נדיב'), findsOneWidget);
   });
 
-  testWidgets('Tapping a journal note opens one edit/delete dialog', (
+  testWidgets('The journal is a chat that writes itself, and stays editable', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final DateTime now = DateTime(2026, 7, 27);
     final Person male = _testPerson(
       id: 'note-male',
@@ -1215,18 +1178,29 @@ void main() {
       personBId: female.id,
       now: now,
     );
-    final MatchNote note = MatchNote(
+    final MatchNote written = MatchNote(
       id: 'note-1',
       matchId: match.id,
       text: 'דיברנו בטלפון',
       createdAt: now,
       isAutomatic: false,
     );
+    // What the app files by itself. Every action on a proposal writes one of
+    // these, so the journal answers "where does this stand?" without anybody
+    // having to have kept notes.
+    final MatchNote recorded = MatchNote(
+      id: 'note-2',
+      matchId: match.id,
+      text: 'ההצעה עברה להמתנה',
+      createdAt: now.add(const Duration(hours: 1)),
+      isAutomatic: true,
+    );
     await tester.runAsync(() async {
       await Hive.box<Person>('people').put(male.id, male);
       await Hive.box<Person>('people').put(female.id, female);
       await Hive.box<MatchIdea>('matches').put(match.id, match);
-      await Hive.box<MatchNote>('match_notes').put(note.id, note);
+      await Hive.box<MatchNote>('match_notes').put(written.id, written);
+      await Hive.box<MatchNote>('match_notes').put(recorded.id, recorded);
     });
 
     await tester.pumpWidget(_buildTestApp());
@@ -1235,115 +1209,39 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.dragUntilVisible(
-      find.text('דיברנו בטלפון'),
-      find.byType(ListView).first,
-      const Offset(0, -120),
-    );
-    await tester.pump();
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('יומן ההצעה'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('דיברנו בטלפון'), findsOneWidget);
+    expect(find.textContaining('ההצעה עברה להמתנה'), findsOneWidget);
+    // A composer, because the journal is a conversation and not a log.
+    expect(find.text('מה קרה עם ההצעה?'), findsOneWidget);
+
+    // Every line is the matchmaker's to reword or remove — the automatic ones
+    // included. The app only starts the sentences.
     await tester.tap(find.text('דיברנו בטלפון'));
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
 
-    // Everything for the note lives in this one dialog.
-    expect(find.text('הערה ביומן'), findsOneWidget);
+    expect(find.text('שורה ביומן'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'מחיקה'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'ביטול'), findsOneWidget);
-
-    // The note text itself is editable right there, and one tap closes it.
     final Finder dialogField = find.descendant(
       of: find.byType(AlertDialog),
       matching: find.byType(TextField),
     );
-    expect(tester.widget<TextField>(dialogField).controller?.text, note.text);
-    expect(find.widgetWithText(FilledButton, 'שמירה'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(dialogField).controller?.text,
+      written.text,
+    );
 
     await tester.tap(find.widgetWithText(TextButton, 'ביטול'));
-    await tester.pump(const Duration(milliseconds: 350));
-
-    expect(find.text('הערה ביומן'), findsNothing);
-    expect(Hive.box<MatchNote>('match_notes').get(note.id)?.text, note.text);
-  });
-
-  testWidgets('Journal edit mode toggles between the pencil and the X', (
-    WidgetTester tester,
-  ) async {
-    final DateTime now = DateTime(2026, 7, 27);
-    // Both sides carry a number, so the pair card draws WhatsApp discs. A
-    // candidate with no number now gets a pencil there instead — a second
-    // `Icons.edit_outlined` on the page, which is the icon this test is
-    // counting to find the journal's own.
-    final Person male = _testPerson(
-      id: 'edit-male',
-      firstName: 'הלל',
-      lastName: 'אבולעפיה',
-      gender: Gender.male,
-      age: 27,
-      phone: '0501111111',
-      now: now,
+    await tester.pumpAndSettle();
+    expect(find.text('שורה ביומן'), findsNothing);
+    expect(
+      Hive.box<MatchNote>('match_notes').get(written.id)?.text,
+      written.text,
     );
-    final Person female = _testPerson(
-      id: 'edit-female',
-      firstName: 'כרמל',
-      lastName: 'לוי',
-      gender: Gender.female,
-      age: 25,
-      phone: '0522222222',
-      now: now,
-    );
-    final MatchIdea match = _testMatch(
-      id: 'edit-match',
-      personAId: male.id,
-      personBId: female.id,
-      now: now,
-    );
-    final MatchNote note = MatchNote(
-      id: 'edit-note-1',
-      matchId: match.id,
-      text: 'דיברנו בטלפון',
-      createdAt: now,
-      isAutomatic: false,
-    );
-    await tester.runAsync(() async {
-      await Hive.box<Person>('people').put(male.id, male);
-      await Hive.box<Person>('people').put(female.id, female);
-      await Hive.box<MatchIdea>('matches').put(match.id, match);
-      await Hive.box<MatchNote>('match_notes').put(note.id, note);
-    });
-
-    await tester.pumpWidget(_buildTestApp());
-    await tester.pump();
-    AppRouter.router.go('/matches/${match.id}');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    await tester.dragUntilVisible(
-      find.text('דיברנו בטלפון'),
-      find.byType(ListView).first,
-      const Offset(0, -120),
-    );
-    await tester.pump();
-
-    // Out of edit mode: a pencil, no checkboxes.
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
-    expect(find.byType(Checkbox), findsNothing);
-
-    // A long press on a note enters edit mode with that note selected.
-    await tester.longPress(find.text('דיברנו בטלפון'));
-    await tester.pump(const Duration(milliseconds: 350));
-
-    expect(find.byType(Checkbox), findsOneWidget);
-    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
-    expect(find.text('מחיקת הערה אחת'), findsOneWidget);
-
-    // The pencil became an X, and it closes edit mode.
-    expect(find.byIcon(Icons.edit_outlined), findsNothing);
-    expect(find.byTooltip('סיום עריכה'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('סיום עריכה'));
-    await tester.pump(const Duration(milliseconds: 350));
-
-    expect(find.byType(Checkbox), findsNothing);
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
   });
 
   testWidgets('Closing the details-message dialog does not break the overlay', (
@@ -1675,7 +1573,7 @@ Widget _buildTestApp() {
   );
 }
 
-Widget _buildProfileTestApp() {
+Widget _buildProfileTestApp({Widget? home}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<PersonRepository>(
@@ -1717,10 +1615,10 @@ Widget _buildProfileTestApp() {
         create: (_) => CommunityProvider(),
       ),
     ],
-    child: const MaterialApp(
+    child: MaterialApp(
       home: Directionality(
         textDirection: TextDirection.rtl,
-        child: ProfileScreen(),
+        child: home ?? const ProfileScreen(),
       ),
     ),
   );

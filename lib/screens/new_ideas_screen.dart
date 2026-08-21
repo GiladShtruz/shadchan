@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/screens/match_detail_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
@@ -123,7 +123,6 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
       return;
     }
     final MatchRepository matchRepository = context.read<MatchRepository>();
-    final NavigatorState navigator = Navigator.of(context);
     final MatchIdea? match = await matchRepository.create(
       idea.male.id,
       idea.female.id,
@@ -139,15 +138,19 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
         );
       return;
     }
-    // This screen sits outside the navigation shell, and `/matches/:id` lives
-    // inside one of its branches — routing to it from here left the shell
-    // unbuilt and drew a blank page. The proposal is pushed as a plain page
-    // instead, which also means closing it returns to this list.
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            MatchDetailScreen(matchId: match.id, autoPromptWhatsApp: true),
-      ),
+    // A proposal has no page of its own any more — see the `/matches/:id`
+    // redirect in `AppRouter`. What the pushed page was actually for from
+    // here is the half of "opening an idea" that gets forgotten: telling
+    // somebody about it. So that is what happens, in place, and this list
+    // stays where it is.
+    if (!mounted) {
+      return;
+    }
+    await MatchQuickActions.promote(
+      context,
+      match,
+      female: idea.female,
+      male: idea.male,
     );
     if (mounted) {
       setState(() {});

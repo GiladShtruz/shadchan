@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:hive/hive.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -126,26 +129,62 @@ abstract final class WhatsAppUtils {
     );
   }
 
-  /// Opens a chat with [recipient] carrying [card]'s saved send-card text —
-  /// used to send one side of a proposal the other side's card. Returns false
-  /// when the recipient has no valid number or the card has nothing saved.
+  /// Sends [card]'s saved card — **its text and every one of its photos** — to
+  /// [recipient]. Returns false when the recipient has no valid number and the
+  /// card has nothing worth sending.
+  ///
+  /// **A card is its photos as much as its words**, and this path used to drop
+  /// them. It built a `wa.me` link, which can carry text and nothing else, so
+  /// the one route a card travels most often — straight into the chat of the
+  /// person being proposed to — was the one route that arrived without a face.
+  /// Everywhere else in the app a card leaves through [ShareUtils], with the
+  /// gallery attached.
+  ///
+  /// So it now splits on whether there is anything to attach:
+  ///
+  /// * **photos** → the system share sheet, carrying the text and the whole
+  ///   gallery. WhatsApp is one tap inside it, and the recipient is picked
+  ///   there; no share API can hand files to one named chat, and arriving with
+  ///   the photos is worth the extra tap;
+  /// * **text only** → the direct chat, exactly as before. There is nothing to
+  ///   attach, so there is no reason to make anybody pick a contact twice.
   static Future<bool> sendCardTo(Person recipient, Person card) async {
-    final String? phone = PhoneUtils.toWhatsAppNumber(recipient.phone);
     final String text = (card.description ?? '').trim();
-    if (phone == null || text.isEmpty) {
+    final List<String> photos = card.photosPaths
+        .where((String path) => File(path).existsSync())
+        .toList();
+    if (text.isEmpty && photos.isEmpty) {
       return false;
     }
 
-    // Credited like every other way a card leaves the app. This one is the
-    // easiest to forget — it never touches `ShareUtils` — and it is the path a
-    // card most often travels: straight into the chat of the person being
-    // proposed to.
+    // Credited like every other way a card leaves the app.
+    final String message = CommunityLinks.creditCard(text);
+
+    if (photos.isNotEmpty) {
+      await Share.shareXFiles(
+        photos.map((String path) => XFile(path)).toList(),
+        text: message,
+      );
+      return true;
+    }
+
+    final String? phone = PhoneUtils.toWhatsAppNumber(recipient.phone);
+    if (phone == null) {
+      return false;
+    }
     return launchUrl(
-      Uri.https('wa.me', '/$phone', <String, String>{
-        'text': CommunityLinks.creditCard(text),
-      }),
+      Uri.https('wa.me', '/$phone', <String, String>{'text': message}),
       mode: LaunchMode.externalApplication,
     );
+  }
+
+  /// Whether [card] has anything to send at all — text, photos, or both.
+  static bool hasSendableCard(Person? card) {
+    if (card == null) {
+      return false;
+    }
+    return (card.description ?? '').trim().isNotEmpty ||
+        card.photosPaths.any((String path) => File(path).existsSync());
   }
 
   static String currentOnboardingMessage() {

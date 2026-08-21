@@ -176,6 +176,33 @@ enum MatchStatus {
         return false;
     }
   }
+
+  /// Where the proposal stands, in the four words a matchmaker actually uses:
+  /// פתוח / בהמתנה / יוצאים / נסגרה — and חתונה, which is the one ending
+  /// nobody would want filed under "נסגרה".
+  ///
+  /// **Coarser than [displayName], on purpose.** The stored statuses draw
+  /// distinctions the database needs and a person scanning a list does not:
+  /// "רעיון" and "בבדיקה" are both a proposal that is open, and "נדחה" and
+  /// "יצאו" are both one that is over. This is the label the card wears, so
+  /// that the status is legible at a glance from across the list rather than
+  /// being a word you have to stop and interpret.
+  String get stateLabel {
+    switch (this) {
+      case MatchStatus.idea:
+      case MatchStatus.checking:
+        return 'פתוח';
+      case MatchStatus.unavailable:
+        return 'בהמתנה';
+      case MatchStatus.dating:
+        return 'יוצאים';
+      case MatchStatus.rejected:
+      case MatchStatus.dated:
+        return 'נסגרה';
+      case MatchStatus.married:
+        return 'חתונה';
+    }
+  }
 }
 
 /// Logical groups for the proposals screen tabs. These are derived from a

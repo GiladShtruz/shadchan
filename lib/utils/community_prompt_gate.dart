@@ -3,20 +3,28 @@ import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/support_service.dart';
+import 'package:shadchan/utils/community_milestones.dart';
+import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// Decides whether the app has anything to say **on this launch**, and says at
 /// most one of it.
 ///
-/// **Only things that genuinely belong to a launch are still here.** A consent
-/// question, a rating request, an invitation to the updates group, a published
-/// "מה חדש?", and one reminder for somebody working without an account. Every
-/// one of those is a thing to read or answer, which is what a dialog is for.
+/// **Only things that genuinely belong to a launch are still here.** A rating
+/// request, an invitation to the updates group, a published "מה חדש?", and one
+/// reminder for somebody working without an account. Every one of those is a
+/// thing to read or answer, which is what a dialog is for.
+///
+/// The leaderboard consent question used to lead this list and is gone: a
+/// matchmaker now joins the community under their own name by default, and the
+/// way out is a switch on "פרטיות והמאגר שלי" rather than a dialog on first
+/// launch — see [CommunityProfileStore.isHidden].
 ///
 /// Milestones, the note after a large import and "מזל טוב! זוג חדש התארס" used
 /// to be here too, and none of them belonged: they are not about this launch,
@@ -49,26 +57,12 @@ abstract final class CommunityPromptGate {
     required PersonRepository people,
     required MatchRepository matches,
     required CommunityMemberCounts counts,
-    bool needsLeaderboardConsent = false,
     bool isSignedIn = true,
   }) {
     if (_shownThisLaunch) {
       return;
     }
     _shownThisLaunch = true;
-
-    // Consent comes before everything, including the good news. Nothing about
-    // this matchmaker is published under their name until it is answered, so
-    // every launch that goes past without asking is a launch spent counting
-    // somebody who was never told they were being counted.
-    // Only a signed-in matchmaker is ever published, so only a signed-in
-    // matchmaker has this to answer. Asking somebody who is not in the
-    // community whether their name may appear in it is a question about
-    // nothing.
-    if (isSignedIn && needsLeaderboardConsent) {
-      LeaderboardConsentDialog.show(context);
-      return;
-    }
 
     _maybeAsk(
       context,
@@ -120,7 +114,22 @@ abstract final class CommunityPromptGate {
     if (!isSignedIn) {
       return;
     }
-    _whenFirebaseReady(() => _maybeAnnouncement(context));
+    _whenFirebaseReady(() => _maybeCommunityNews(context));
+  }
+
+  /// The published note first, and the community's own milestone only if there
+  /// was no note.
+  ///
+  /// Two things that both want the screen, in the order they expire: a "מה
+  /// חדש?" is about this release and is stale in a week, while a milestone the
+  /// community has crossed is still true on the next launch. Nothing is
+  /// queued — if both are waiting, the milestone simply comes tomorrow.
+  static Future<void> _maybeCommunityNews(BuildContext context) async {
+    final bool announced = await _maybeAnnouncement(context);
+    if (announced || !context.mounted) {
+      return;
+    }
+    await _maybeCommunityMilestone(context);
   }
 
   /// Runs [action] as soon as Firebase is up — now, if it already is.
@@ -147,15 +156,56 @@ abstract final class CommunityPromptGate {
     FirebaseBootstrap.readyListenable.addListener(listener);
   }
 
-  /// Shows the newest published note if this device has not seen it.
-  static Future<void> _maybeAnnouncement(BuildContext context) async {
+  /// Shows the newest published note if this device has not seen it, and
+  /// answers whether it did.
+  static Future<bool> _maybeAnnouncement(BuildContext context) async {
     final Announcement? note = await SupportService.fetchLatestAnnouncement();
     if (note == null ||
         note.id == CommunityPromptsStore.seenAnnouncementId ||
         !context.mounted) {
-      return;
+      return false;
     }
     await WhatsNewDialog.show(context, note);
+    return true;
+  }
+
+  /// Celebrates a milestone the *community* has just crossed — a thousand
+  /// ideas, a hundred couples.
+  ///
+  /// **The first look is always silent.** A device that has never checked
+  /// writes down everything already reached and shows nothing: the community's
+  /// all-time figures are large and mostly historic, so announcing them on a
+  /// fresh install would be congratulating somebody for arriving. Only a rung
+  /// crossed after that is ever shown, and only one of them.
+  ///
+  /// An unresolved read — no network, rules refused, no account — is "we do not
+  /// know" and is left alone entirely, including for the baseline. Baselining
+  /// against a row of zeroes would mark nothing as seen and then announce every
+  /// ladder at once on the next launch that worked.
+  static Future<void> _maybeCommunityMilestone(BuildContext context) async {
+    final CommunityTotals allTime = await CommunityService.totals(
+      CommunityPeriod.allTime,
+    );
+    if (!allTime.resolved || !context.mounted) {
+      return;
+    }
+
+    if (!CommunityProfileStore.hasBaselinedCommunityMilestones) {
+      for (final String id in CommunityMilestones.reachedIds(allTime)) {
+        CommunityProfileStore.markCommunityMilestoneSeen(id);
+      }
+      CommunityProfileStore.markCommunityMilestonesBaselined();
+      return;
+    }
+
+    final CommunityMilestone? milestone = CommunityMilestones.firstUnseen(
+      allTime: allTime,
+      seen: CommunityProfileStore.seenCommunityMilestones,
+    );
+    if (milestone == null || !context.mounted) {
+      return;
+    }
+    await CommunityMilestoneDialog.show(context, milestone);
   }
 
   /// Whether something good has happened yet: a first couple who started

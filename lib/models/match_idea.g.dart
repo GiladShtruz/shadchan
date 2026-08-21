@@ -35,13 +35,15 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       relatedContacts: fields[13] == null
           ? []
           : (fields[13] as List).cast<MatchContact>(),
+      lastShareLabel: fields[14] as String?,
+      lastShareAt: fields[15] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, MatchIdea obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -69,7 +71,11 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       ..writeByte(12)
       ..write(obj.progressOther)
       ..writeByte(13)
-      ..write(obj.relatedContacts);
+      ..write(obj.relatedContacts)
+      ..writeByte(14)
+      ..write(obj.lastShareLabel)
+      ..writeByte(15)
+      ..write(obj.lastShareAt);
   }
 
   @override

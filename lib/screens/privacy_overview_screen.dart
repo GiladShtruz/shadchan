@@ -62,9 +62,12 @@ class PrivacyOverviewScreen extends StatelessWidget {
           'שצברת. זה מה שמרכיב את נתוני הקהילה ואת הדירוג.\n'
           'כל זה קורה רק אם התחברת עם חשבון. בלי התחברות שום נתון '
           'שלך לא נשלח לקהילה, ולא תופיע בדירוג.\n'
-          'אם אינך רוצה לשתף בכלל, אפשר להדליק בתחתית העמוד '
-          'הזה את "שמור על הפרטיות שלי" — ואז שום נתון שלך לא נשלח לקהילה. '
-          'אפשר גם למחוק לגמרי את נתוני הקהילה שכבר נשלחו, באותו מקום.',
+          'כברירת מחדל השם שלך מופיע בדירוג. מי שמעדיף להישאר אנונימי '
+          'יכול לכבות בתחתית העמוד הזה את "להופיע בקהילה בשם שלי" — '
+          'הפעילות עדיין נספרת בסך הכולל של הקהילה, אבל בלי שם.\n'
+          'ואם אינך רוצה לשתף בכלל, אפשר להדליק שם את "שמור על הפרטיות '
+          'שלי" — ואז שום נתון שלך לא נשלח לקהילה. אפשר גם למחוק לגמרי '
+          'את נתוני הקהילה שכבר נשלחו, באותו מקום.',
     ),
     (
       icon: Icons.favorite_outline_rounded,
@@ -142,15 +145,14 @@ class PrivacyOverviewScreen extends StatelessWidget {
                 body: point.body.forGender(gender),
               ),
             const SizedBox(height: 4),
-            // The two controls that act on what this page describes rather than
-            // only describing it: the switch that stops anything being shared
-            // from here on, and the button that removes what already was.
+            // The narrow question first — may my name be shown — then the
+            // wide one that makes it moot, then the erasure of what already
+            // went. Read top to bottom they are three steps of the same
+            // decision rather than three unrelated switches.
+            const LeaderboardNameTile(),
+            const SizedBox(height: 4),
             const PrivateModeTile(),
             const SizedBox(height: 4),
-            // "להסתיר אותי מהדירוג" used to sit beside it;
-            // it was removed from the app by product decision, so **this is now
-            // the only way to take a published name back down** and it has to
-            // stay exactly where somebody looking for it would look.
             const DeleteCommunityDataTile(),
             const SizedBox(height: 14),
             SizedBox(

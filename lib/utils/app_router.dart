@@ -9,7 +9,6 @@ import 'package:shadchan/screens/ai_import_screen.dart';
 import 'package:shadchan/screens/onboarding_screen.dart';
 import 'package:shadchan/screens/create_match_screen.dart';
 import 'package:shadchan/screens/incoming_shared_profile_screen.dart';
-import 'package:shadchan/screens/match_detail_screen.dart';
 import 'package:shadchan/screens/matches_screen.dart';
 import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
@@ -25,6 +24,7 @@ import 'package:shadchan/screens/monthly_stats_screen.dart';
 import 'package:shadchan/screens/new_ideas_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/reminders_screen.dart';
+import 'package:shadchan/screens/personal_card_screen.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/religious_levels_settings_screen.dart';
 import 'package:shadchan/screens/settings_appearance_screen.dart';
@@ -303,6 +303,10 @@ abstract final class AppRouter {
                     key: ValueKey<String>('matches:${state.uri}'),
                     initialShowArchived: archived,
                     initialStatuses: statuses,
+                    focusMatchId: q['focus'],
+                    promptShareForMatchId: q['justCreated'] == 'true'
+                        ? q['focus']
+                        : null,
                   );
                 },
                 routes: <RouteBase>[
@@ -320,17 +324,34 @@ abstract final class AppRouter {
                       );
                     },
                   ),
+                  // **A proposal has no page of its own any more.**
+                  //
+                  // Everything that page held — the status moves, a reminder, a
+                  // related contact, the journal — is on the card in the list,
+                  // behind "פעולות", and the one thing left that wanted a
+                  // screen (the two candidates side by side) is a sheet the
+                  // card opens.
+                  //
+                  // The *route* stays, because twenty places point at it: a
+                  // notification, a reminder row, a home card, a freshly
+                  // created proposal — including notifications already sitting
+                  // in an Android tray from an older build. What it renders now
+                  // is the list itself, with that one proposal lifted to the
+                  // top and lit up, which is the honest answer to "take me to
+                  // this proposal" once the proposal lives in the list.
                   GoRoute(
                     path: ':id',
                     builder: (BuildContext context, GoRouterState state) {
                       final String matchId = state.pathParameters['id']!;
-                      // The WhatsApp prompt only auto-opens the first time a
-                      // proposal is created, not when revisiting it from a list.
+                      // The share sheet only auto-opens the first time a
+                      // proposal is created, not when revisiting it from a
+                      // list.
                       final bool justCreated =
                           state.uri.queryParameters['justCreated'] == 'true';
-                      return MatchDetailScreen(
-                        matchId: matchId,
-                        autoPromptWhatsApp: justCreated,
+                      return MatchesScreen(
+                        key: ValueKey<String>('match:$matchId'),
+                        focusMatchId: matchId,
+                        promptShareForMatchId: justCreated ? matchId : null,
                       );
                     },
                   ),
@@ -356,9 +377,23 @@ abstract final class AppRouter {
       GoRoute(
         path: '/profile',
         builder: (BuildContext context, GoRouterState state) {
-          return const ProfileScreen();
+          // `?section=settings` lands on the settings group rather than at the
+          // top of the page. The top banner's menu offers "הגדרות", and the
+          // settings are a group on this page rather than a screen of their
+          // own — see [ProfileScreen.focusSettings].
+          return ProfileScreen(
+            focusSettings: state.uri.queryParameters['section'] == 'settings',
+          );
         },
         routes: <RouteBase>[
+          // The matchmaker's own shidduch card, for a single user: shown in
+          // full with שיתוף and עריכה, or an invitation to write a first one.
+          GoRoute(
+            path: 'card',
+            builder: (BuildContext context, GoRouterState state) {
+              return const PersonalCardScreen();
+            },
+          ),
           // The settings are one short page and five screens behind it. Each of
           // these used to be a card on `/profile` itself.
           GoRoute(

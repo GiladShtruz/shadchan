@@ -21,6 +21,8 @@ class MatchIdea extends HiveObject {
     this.progress,
     this.progressOther,
     this.relatedContacts = const <MatchContact>[],
+    this.lastShareLabel,
+    this.lastShareAt,
   });
 
   @HiveField(0)
@@ -76,4 +78,21 @@ class MatchIdea extends HiveObject {
   /// records written before the field existed.
   @HiveField(13, defaultValue: <MatchContact>[])
   List<MatchContact> relatedContacts;
+
+  /// What the last card sent out of this proposal was, in the words the card
+  /// itself says: "הכרטיס של שרה נשלח לדוד".
+  ///
+  /// **This is the whole state behind "יאללה לקדם!".** The row over the status
+  /// actions is a prompt while it is null and a report once it is not, which
+  /// is the difference between a proposal nobody has touched and one that is
+  /// out with somebody and waiting for an answer. Storing the sentence rather
+  /// than an enum of ways-to-share is deliberate: what a matchmaker wants to
+  /// read a week later is who got what, and that is a sentence.
+  @HiveField(14)
+  String? lastShareLabel;
+
+  /// When [lastShareLabel] happened, so the row can say "לפני שבוע" rather
+  /// than only what was sent.
+  @HiveField(15)
+  DateTime? lastShareAt;
 }

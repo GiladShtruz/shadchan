@@ -37,9 +37,10 @@ class CommunityProvider extends ChangeNotifier {
   /// This device's own figures, or null before the first refresh.
   CommunityMemberCounts? get myCounts => _counts;
 
-  /// Whether the matchmaker has taken themselves off the leaderboard — or has
-  /// simply not been asked yet, or has switched sharing off altogether, all of
-  /// which come to the same thing here: no name of theirs on the board.
+  /// Whether the matchmaker has taken themselves off the leaderboard, or has
+  /// switched sharing off altogether — both come to the same thing here: no
+  /// name of theirs on the board. Neither is the default; a matchmaker appears
+  /// under their name until they ask not to.
   bool get isHidden => _hidden || _private;
 
   /// Whether "שמור על הפרטיות שלי" is on — nothing about this matchmaker is
@@ -79,27 +80,12 @@ class CommunityProvider extends ChangeNotifier {
     }
   }
 
-  /// Whether the one-time "may your name appear on the leaderboard?" question
-  /// still needs asking.
-  bool get needsLeaderboardConsent =>
-      !CommunityProfileStore.hasAnsweredLeaderboardConsent;
-
-  /// Records the answer and pushes it straight to the server, so a "no" takes
-  /// effect without waiting for the next publish.
-  Future<void> answerLeaderboardConsent({required bool hidden}) async {
-    CommunityProfileStore.answerLeaderboardConsent(hidden: hidden);
-    _hidden = hidden;
-    CommunityService.invalidate();
-    notifyListeners();
-    await CommunityService.setHidden(hidden, name: _name);
-  }
-
   /// Erases this account's row from the shared collection.
   ///
   /// Hidden first, then deleted: the next publish will recreate the row, and it
   /// must not recreate it with a name in it.
   Future<bool> deleteMyCommunityData() async {
-    CommunityProfileStore.answerLeaderboardConsent(hidden: true);
+    CommunityProfileStore.setHidden(true);
     _hidden = true;
     notifyListeners();
     return CommunityService.deleteMyData();

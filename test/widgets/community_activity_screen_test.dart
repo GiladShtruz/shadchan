@@ -260,6 +260,34 @@ void main() {
     });
   });
 
+  group('anonymity in the community', () {
+    testWidgets('is off by default, and stays the matchmaker to decide', (
+      WidgetTester tester,
+    ) async {
+      // **The default flipped, and this is the guard on it.** The app used to
+      // treat "has not answered the consent dialog yet" as "hide me", so a
+      // fresh install was anonymous until somebody answered a question asked
+      // before they had seen what the community was. A matchmaker now joins
+      // under their own name, the way they would join any other list, and the
+      // one switch that takes them out lives on "פרטיות והמאגר שלי".
+      expect(CommunityProfileStore.isHidden, isFalse);
+
+      final CommunityProvider community = CommunityProvider();
+      expect(community.isHidden, isFalse);
+
+      await tester.runAsync(() => community.setHidden(true));
+      expect(community.isHidden, isTrue);
+      expect(CommunityProfileStore.isHidden, isTrue);
+
+      // And it is reversible — which the old opt-out was not: once the consent
+      // question had been answered "yes" there was no way back except deleting
+      // the whole member document.
+      await tester.runAsync(() => community.setHidden(false));
+      expect(community.isHidden, isFalse);
+      expect(CommunityProfileStore.isHidden, isFalse);
+    });
+  });
+
   group('a read that never happened', () {
     test('is not the same as a community that did nothing', () {
       expect(CommunityTotals.empty.resolved, isFalse);

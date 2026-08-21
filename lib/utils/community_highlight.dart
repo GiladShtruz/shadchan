@@ -54,6 +54,54 @@ abstract final class CommunityHighlight {
     return lines[seed.abs() % lines.length];
   }
 
+  /// The short lines the home screen's "מה קורה בקהילה עכשיו" rotates through.
+  ///
+  /// **A list rather than one pick, because this surface moves.** The activity
+  /// screen shows a single sentence chosen for the day and holds still while
+  /// somebody reads it; the home banner is a small live area that turns over
+  /// every few seconds, so it needs everything that is true right now, in the
+  /// order worth hearing it.
+  ///
+  /// **Today first, then the week.** "18 רעיונות נפתחו היום" is news; the same
+  /// figure for the week is background. The engagement is the exception and
+  /// leads whatever else is true — it is the only line here that is somebody's
+  /// life rather than somebody's activity.
+  ///
+  /// The lines are short on purpose: this is one line of a banner, at whatever
+  /// text size the phone is set to, and a sentence that wraps to three lines
+  /// makes the banner jump every time it turns over.
+  ///
+  /// Both windows come from figures the caller has already fetched, so this
+  /// costs no reads.
+  static List<String> pulseLines({
+    required CommunityTotals day,
+    required CommunityTotals week,
+  }) {
+    return <String>[
+      if (week.engagements > 0)
+        week.engagements == 1
+            ? 'מזל טוב! זוג נוסף התארס 🎉'
+            : 'מזל טוב! ${week.engagements} זוגות התארסו השבוע 🎉',
+      if (day.ideas > 0)
+        day.ideas == 1
+            ? 'רעיון חדש נפתח היום'
+            : '${day.ideas} רעיונות נפתחו היום',
+      if (week.couples > 0)
+        week.couples == 1
+            ? 'זוג אחד התחיל לצאת השבוע'
+            : '${week.couples} זוגות התחילו לצאת השבוע',
+      if (day.friends > 0)
+        day.friends == 1
+            ? 'חבר חדש נוסף למאגרים היום'
+            : '${day.friends} חברים חדשים נוספו היום',
+      if (day.activeMatchmakers > 1)
+        '${day.activeMatchmakers} שדכנים פעילים היום',
+      if (week.ideas > 0 && day.ideas == 0) '${week.ideas} רעיונות נפתחו השבוע',
+      if (week.friends > 0 && day.friends == 0)
+        '${week.friends} חברים חדשים נוספו השבוע',
+    ];
+  }
+
   /// A stable-per-day seed. Not the date itself, so a caller does not have to
   /// know or care how the rotation is spread.
   static int seedFor(DateTime at) =>

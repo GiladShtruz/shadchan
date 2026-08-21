@@ -24,7 +24,7 @@ abstract final class PersonWhatsAppMenu {
     required Person person,
     Person? other,
   }) async {
-    final bool otherHasCard = (other?.description ?? '').trim().isNotEmpty;
+    final bool otherHasCard = WhatsAppUtils.hasSendableCard(other);
     if (!otherHasCard || other == null) {
       return WhatsAppUtils.openChat(person);
     }
@@ -63,6 +63,7 @@ abstract final class PersonWhatsAppMenu {
                   color: theme.colorScheme.primary,
                 ),
                 title: Text('שליחת הכרטיס של $otherName אל $name'),
+                subtitle: const Text('הטקסט וכל התמונות של הכרטיס'),
                 onTap: () => Navigator.of(sheetContext).pop(true),
               ),
               const SizedBox(height: 8),
@@ -115,12 +116,11 @@ abstract final class MatchWhatsAppSheet {
   static bool _hasPhone(Person? person) =>
       (person?.phone ?? '').trim().isNotEmpty;
 
-  static bool _hasCard(Person? person) =>
-      (person?.description ?? '').trim().isNotEmpty;
+  static bool _hasCard(Person? person) => WhatsAppUtils.hasSendableCard(person);
 
-  /// Returns false when something was chosen and could not be opened, so the
-  /// caller can say so. Dismissing is not a failure.
-  static Future<bool> open(
+  /// Returns what happened, so the proposal can write it down. Dismissing the
+  /// sheet is [MatchShareResult.nothing] — not a failure, and not a share.
+  static Future<MatchShareResult> open(
     BuildContext context, {
     required Person? female,
     required Person? male,
@@ -154,6 +154,7 @@ abstract final class MatchWhatsAppSheet {
                   color: theme.colorScheme.primary,
                 ),
                 title: Text('שליחת הכרטיס של ${_firstName(other)} אל $name'),
+                subtitle: const Text('הטקסט וכל התמונות של הכרטיס'),
                 onTap: () => Navigator.of(
                   sheetContext,
                 ).pop(_WhatsAppChoice(person: person, other: other)),
@@ -172,7 +173,10 @@ abstract final class MatchWhatsAppSheet {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                subtitle: const Text('שיחה מהירה, או שליחת הכרטיס של הצד השני'),
+                subtitle: const Text(
+                  'שיחה מהירה, או שליחת הכרטיס של הצד השני — '
+                  'הטקסט וכל התמונות',
+                ),
               ),
               ...rowsFor(female, male),
               ...rowsFor(male, female),
@@ -184,13 +188,47 @@ abstract final class MatchWhatsAppSheet {
     );
 
     if (choice == null) {
-      return true;
+      return MatchShareResult.nothing;
     }
     final Person? other = choice.other;
-    return other == null
-        ? WhatsAppUtils.openChat(choice.person)
-        : WhatsAppUtils.sendCardTo(choice.person, other);
+    final String name = _firstName(choice.person);
+    if (other == null) {
+      final bool opened = await WhatsAppUtils.openChat(choice.person);
+      return MatchShareResult(
+        opened: opened,
+        label: opened ? 'נפתחה שיחה עם $name' : null,
+      );
+    }
+    final bool sent = await WhatsAppUtils.sendCardTo(choice.person, other);
+    return MatchShareResult(
+      opened: sent,
+      label: sent ? 'הכרטיס של ${_firstName(other)} נשלח ל$name' : null,
+    );
   }
+}
+
+/// What one trip through [MatchWhatsAppSheet] came to.
+///
+/// **A share is worth recording and a dismissal is not**, and the two used to
+/// be indistinguishable: the sheet answered `true` both when a card went out
+/// and when the matchmaker changed their mind, because all the caller did with
+/// the answer was decide whether to apologise. Now the proposal's own row and
+/// its journal both read this, so "nothing happened" has to be its own answer.
+class MatchShareResult {
+  const MatchShareResult({required this.opened, this.label});
+
+  /// Nothing was chosen. Not a failure — there is nothing to apologise for —
+  /// and nothing to write down either.
+  static const MatchShareResult nothing = MatchShareResult(opened: true);
+
+  /// False only when something was chosen and could not be opened.
+  final bool opened;
+
+  /// What went out, in the words the proposal will show and file: "הכרטיס של
+  /// שרה נשלח לדוד". Null when nothing did.
+  final String? label;
+
+  bool get shared => label != null;
 }
 
 /// What was picked: whom to message, and whose card to send them (or none).

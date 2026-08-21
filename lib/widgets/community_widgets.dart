@@ -665,22 +665,82 @@ class _RankAvatar extends StatelessWidget {
   }
 }
 
-/// **"להסתיר אותי מהדירוג" was removed from the app, and this note is what is
-/// left of it.**
+/// "להופיע בקהילה בשם שלי" — the anonymity switch, back on the privacy page.
 ///
-/// The mechanism underneath is intact and still matters: `CommunityProfileStore
-/// .isHidden` is true until `LeaderboardConsentDialog` has been answered, so a
-/// name is never published before somebody agrees to it, and
-/// `CommunityService.publish` still writes an empty name for a hidden member.
-/// What is gone is the *toggle* — the way to change that answer afterwards.
+/// **A matchmaker is in the community under their own name by default.** There
+/// used to be a launch dialog asking permission, and until it was answered the
+/// name was withheld; the question arrived before anybody had seen what the
+/// community even was, and the board it fed stayed half empty. So the default
+/// is the ordinary one — you appear — and this is the switch that takes you
+/// back out.
 ///
-/// The consequence is worth writing down, because it is a real one and it was
-/// a product decision rather than an oversight: somebody who said yes can no
-/// longer say no. The only remaining way off the board is
-/// [DeleteCommunityDataTile] on "פרטיות והמאגר שלי", which deletes the whole
-/// member document. Restoring the toggle means putting this widget back in the
-/// activity screen and the privacy page; nothing in the service layer has to
-/// change.
+/// **It hides the name, not the work.** Off, the counters still travel and
+/// still add to what the community did together; only the name and picture
+/// stop being attached to them. Somebody who wants the counters to stop too is
+/// asking for the switch below this one, [PrivateModeTile], and the copy on
+/// both says which is which.
+class LeaderboardNameTile extends StatelessWidget {
+  const LeaderboardNameTile({super.key});
+
+  static const String title = 'להופיע בקהילה בשם שלי';
+
+  static const String explanation =
+      'השם והתמונה שרשמת בפרופיל יופיעו לשדכנים אחרים בדירוג הקהילה. '
+      'אם תכבה, הפעילות שלך עדיין תיספר בסך הכולל של הקהילה — אבל בלי שם, '
+      'ולא תופיע בדירוג.';
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final CommunityProvider community = context.watch<CommunityProvider>();
+    // Nothing at all is published in private mode, so the name question is
+    // already answered and the switch says so rather than pretending to be
+    // live.
+    final bool locked = community.isPrivate;
+    final bool visible = !community.isHidden;
+
+    return SwitchListTile.adaptive(
+      contentPadding: EdgeInsets.zero,
+      value: visible,
+      onChanged: locked ? null : (bool value) => _set(context, value),
+      secondary: Icon(
+        visible ? Icons.badge_outlined : Icons.visibility_off_outlined,
+        size: 22,
+        color: communityLead(theme),
+      ),
+      title: Text(
+        title,
+        style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        locked
+            ? 'כרגע "שמור על הפרטיות שלי" פעיל, ולכן שום דבר לא נשלח לקהילה.'
+            : explanation,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1.4,
+        ),
+      ),
+      isThreeLine: true,
+    );
+  }
+
+  Future<void> _set(BuildContext context, bool visible) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    await context.read<CommunityProvider>().setHidden(!visible);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            visible
+                ? 'השם שלך יופיע בדירוג הקהילה.'
+                : 'מעכשיו הפעילות שלך נספרת בלי שם.',
+          ),
+        ),
+      );
+  }
+}
 
 /// "שמור על הפרטיות שלי" — the one switch that stops anything being shared.
 ///

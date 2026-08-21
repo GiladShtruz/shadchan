@@ -9,7 +9,6 @@ import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/account_provider.dart';
-import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/tips_provider.dart';
@@ -37,6 +36,7 @@ import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/home_activity_block.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
+import 'package:shadchan/widgets/home_community_pulse.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
 import 'package:shadchan/widgets/home_panels.dart';
@@ -120,9 +120,6 @@ class _HomeScreenState extends State<HomeScreen> {
           matchStatusEvents: matches.getAllStatusEvents(),
           excludedFromDating: DatingCountExclusions.all(),
         ),
-        needsLeaderboardConsent: context
-            .read<CommunityProvider>()
-            .needsLeaderboardConsent,
         isSignedIn: context.read<AccountProvider>().isSignedIn,
       );
     });
@@ -515,7 +512,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-        // 9. What has been done — the matchmaker's own score beside the
+        // 9. The community, live: what it did today, and the one target it is
+        // working towards together this week. The only block on the page that
+        // moves on its own, and the only one that is about other people —
+        // which is exactly why it sits directly above the numbers, where the
+        // page turns from "your work" to "everybody's".
+        block(HomeCommunityPulse(onOpen: () => context.push('/activity'))),
+
+        // 10. What has been done — the matchmaker's own score beside the
         // community's, in one window at a time. Two numbers and a switch;
         // the breakdown, the chart and the leaderboard are all one tap away on
         // a screen somebody opened *to look at numbers*.
@@ -525,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // when there is none, which is nearly always.
         block(const HomeEngagementCard()),
 
-        // 10. The community's tip.
+        // 11. The community's tip.
         block(
           HomeTipCarousel(
             tips: _tips(context),

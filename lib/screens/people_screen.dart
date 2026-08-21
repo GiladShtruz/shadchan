@@ -6,6 +6,7 @@ import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -283,6 +284,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       .toggleFavorite(person.id),
                   onOpenMatches: () => _openMatchSuggestions(context, person),
                   onOpenWhatsApp: () => _openWhatsApp(context, person),
+                  // The same call the proposal cards make, so a status set from
+                  // here moves the person's open proposals to "בהמתנה" and asks
+                  // when to look again exactly as it does anywhere else.
+                  onStatusPicked: (Person person, ProfileStatus status) =>
+                      MatchQuickActions.setPersonStatus(
+                        context,
+                        person,
+                        status,
+                      ),
                 );
               },
             ),

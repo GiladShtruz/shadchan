@@ -19,7 +19,7 @@ enum AppMenuAction {
   feedbackCenter,
 }
 
-/// The three-dots menu in the top banner.
+/// The menu behind the hamburger in the top banner.
 ///
 /// Everything on it also lives in the settings — this is the short way, not a
 /// second home for any of it. It is the one place in the app where "how do I
@@ -28,10 +28,17 @@ enum AppMenuAction {
 ///
 /// **A popup anchored to the button, not a bottom sheet.** It was a sheet, on
 /// the theory that six rows with icons is a sheet's shape. That was the wrong
-/// read of the gesture: a sheet is what a *page* opens, and three dots in a
-/// corner are a control — the menu belongs to the button and should come out of
-/// it. Losing the subtitles is the price, and none of them said anything the
-/// row's own title did not.
+/// read of the gesture: a sheet is what a *page* opens, and a control in a
+/// corner is a control — the menu belongs to the button and should come out of
+/// it.
+///
+/// **Two groups, one line between them.** The first row opens this app's own
+/// settings; everything under the divider reaches a person — reporting
+/// something, passing the app on, the community group, the guide, an email.
+/// Six identical rows in one column is a list to read; two short groups is a
+/// menu to glance at. The rows carry their icon in a tinted square rather than
+/// bare, which is what stops a column of thin grey glyphs from reading as
+/// disabled.
 class AppMenuButton extends StatelessWidget {
   const AppMenuButton({super.key, this.boxed = false});
 
@@ -42,6 +49,8 @@ class AppMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
     return PopupMenuButton<AppMenuAction>(
       tooltip: 'תפריט',
       icon: boxed ? const _BoxedMenuIcon() : const Icon(Icons.more_vert),
@@ -53,32 +62,43 @@ class AppMenuButton extends StatelessWidget {
       // The corner it hangs from is the corner it was tapped in. Without this
       // Material centres the popup on the button, which on a phone pushes it
       // past the edge of the screen.
-      constraints: const BoxConstraints(minWidth: 220),
+      constraints: const BoxConstraints(minWidth: 236, maxWidth: 300),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      color: theme.colorScheme.surface,
+      elevation: 3,
       onSelected: (AppMenuAction action) => _run(context, action),
       // Read rather than watched, and read *here* — inside `itemBuilder`, which
       // runs when the menu is opened. Watching `AccountProvider` from the bar
       // itself would create it on the first frame, which is exactly what puts
       // Firebase back on the startup path.
       itemBuilder: (BuildContext context) => <PopupMenuEntry<AppMenuAction>>[
-        if (context.read<AccountProvider>().isSupportAdmin)
+        if (context
+            .read<AccountProvider>()
+            .isSupportAdmin) ...<PopupMenuEntry<AppMenuAction>>[
           _item(
             AppMenuAction.feedbackCenter,
             Icons.inbox_outlined,
             'מרכז הפידבק',
           ),
+          const PopupMenuDivider(height: 9),
+        ],
         _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
-        if (CommunityLinks.hasUpdatesGroup)
-          _item(
-            AppMenuAction.updatesGroup,
-            Icons.groups_outlined,
-            'קבוצת העדכונים',
-          ),
-        _item(AppMenuAction.share, Icons.ios_share_outlined, 'שיתוף האפליקציה'),
+        const PopupMenuDivider(height: 9),
         _item(
           AppMenuAction.report,
           Icons.forum_outlined,
           'שליחת תקלה או רעיון',
         ),
+        _item(AppMenuAction.share, Icons.ios_share_outlined, 'שיתוף האפליקציה'),
+        if (CommunityLinks.hasUpdatesGroup)
+          _item(
+            AppMenuAction.updatesGroup,
+            Icons.groups_outlined,
+            'הצטרפות לקבוצת הקהילה',
+          ),
         _item(AppMenuAction.help, Icons.help_outline_rounded, 'עזרה והדרכה'),
         _item(AppMenuAction.contact, Icons.mail_outline_rounded, 'יצירת קשר'),
       ],
@@ -92,20 +112,18 @@ class AppMenuButton extends StatelessWidget {
   ) {
     return PopupMenuItem<AppMenuAction>(
       value: value,
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 20),
-          const SizedBox(width: 12),
-          Flexible(child: Text(label)),
-        ],
-      ),
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 13),
+      child: _MenuRow(icon: icon, label: label),
     );
   }
 
   static void _run(BuildContext context, AppMenuAction action) {
     switch (action) {
       case AppMenuAction.settings:
-        context.push('/profile');
+        // Straight to the settings group inside the profile, not to the top of
+        // the profile page — see [ProfileScreen.focusSettings].
+        context.push('/profile?section=settings');
       case AppMenuAction.updatesGroup:
         // The dialog rather than the link, because the link alone has no way of
         // hearing "אני כבר בקבוצה" — and that is the only answer that stops the
@@ -122,6 +140,48 @@ class AppMenuButton extends StatelessWidget {
       case AppMenuAction.feedbackCenter:
         context.push('/support/admin');
     }
+  }
+}
+
+/// One row of the menu: the icon in a soft square, the label beside it.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color ink = dark ? theme.colorScheme.primary : AppColors.primaryDark;
+
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: ink.withValues(alpha: dark ? 0.20 : 0.10),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, size: 17, color: ink),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              height: 1.25,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

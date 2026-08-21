@@ -22,6 +22,7 @@ class PersonListCard extends StatelessWidget {
     this.onCompleteCard,
     this.onOpenMatches,
     this.onLongPress,
+    this.onStatusPicked,
     this.heroEnabled = true,
   });
 
@@ -43,6 +44,17 @@ class PersonListCard extends StatelessWidget {
   /// long-press menu).
   final VoidCallback? onOpenMatches;
   final VoidCallback? onLongPress;
+
+  /// Changes this person's availability from the pill on the row itself.
+  ///
+  /// **The status was already sitting there and was already the thing being
+  /// read** — every row in המאגר שלי leads with it — but changing it meant
+  /// opening the profile, finding the control and coming back. That is four
+  /// taps for one word, done a dozen times after a round of phone calls, and it
+  /// is exactly the cost that makes people stop keeping statuses up to date.
+  /// Null leaves the pill as a plain label, which is what a picker row wants.
+  final void Function(Person person, ProfileStatus status)? onStatusPicked;
+
   final bool heroEnabled;
 
   @override
@@ -107,9 +119,9 @@ class PersonListCard extends StatelessWidget {
                         // name before it happens to be.
                         Row(
                           children: <Widget>[
-                            ProfileStatusTag(
-                              status: person.profileStatus,
-                              compact: true,
+                            _StatusPill(
+                              person: person,
+                              onStatusPicked: onStatusPicked,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -145,6 +157,18 @@ class PersonListCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                // The messaging button first and the heart after it, so in
+                // RTL the heart is always the outermost control on the row.
+                // The other way round it was the *messaging* button that held
+                // the edge — and that button is the one that disappears, for
+                // anybody with no number at all, which left the heart jumping
+                // between two positions down a single list.
+                if (onOpenWhatsApp != null)
+                  ContactChannelButton(
+                    person: person,
+                    onWhatsApp: onOpenWhatsApp!,
+                    onEdit: onCompleteCard,
+                  ),
                 if (onOpenMatches != null)
                   IconButton(
                     visualDensity: VisualDensity.compact,
@@ -166,18 +190,69 @@ class PersonListCard extends StatelessWidget {
                     ),
                     onPressed: onToggleFavorite,
                   ),
-                if (onOpenWhatsApp != null)
-                  ContactChannelButton(
-                    person: person,
-                    onWhatsApp: onOpenWhatsApp!,
-                    onEdit: onCompleteCard,
-                  ),
                 const SizedBox(width: 4),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The status pill on a row, and the menu behind it when there is one.
+///
+/// The pill keeps its fixed width whether or not it can be tapped, so a list
+/// where some rows are editable and some are not still lines up.
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.person, required this.onStatusPicked});
+
+  final Person person;
+  final void Function(Person person, ProfileStatus status)? onStatusPicked;
+
+  /// What a matchmaker may set by hand. "מזל טוב" is left out: the app writes
+  /// that itself when a proposal ends in a wedding.
+  static const List<ProfileStatus> _selectable = <ProfileStatus>[
+    ProfileStatus.available,
+    ProfileStatus.busy,
+    ProfileStatus.onBreak,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final void Function(Person, ProfileStatus)? picked = onStatusPicked;
+    final Widget tag = ProfileStatusTag(
+      status: person.profileStatus,
+      compact: true,
+    );
+    if (picked == null) {
+      return tag;
+    }
+
+    return PopupMenuButton<ProfileStatus>(
+      tooltip: 'שינוי סטטוס',
+      position: PopupMenuPosition.under,
+      padding: EdgeInsets.zero,
+      onSelected: (ProfileStatus status) => picked(person, status),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<ProfileStatus>>[
+        for (final ProfileStatus status in _selectable)
+          PopupMenuItem<ProfileStatus>(
+            value: status,
+            child: Row(
+              children: <Widget>[
+                ProfileStatusTag(status: status),
+                const Spacer(),
+                if (status == person.profileStatus)
+                  Icon(
+                    Icons.check,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+              ],
+            ),
+          ),
+      ],
+      child: tag,
     );
   }
 }

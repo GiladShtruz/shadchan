@@ -24,7 +24,7 @@ class MatchIdeaCard extends StatefulWidget {
     required this.onCompletePersonCard,
     this.onPersonStatusPicked,
     this.onQuickAction,
-    this.showStatusTag = false,
+    this.onPromote,
     this.compact = false,
     this.highlighted = false,
   });
@@ -50,10 +50,14 @@ class MatchIdeaCard extends StatefulWidget {
   final void Function(Person person, ProfileStatus status)?
   onPersonStatusPicked;
 
-  /// Runs one of the proposal's own actions. Null hides the quick-action row.
+  /// Runs one of the proposal's own actions. Null hides the action panel.
   final ValueChanged<MatchQuickAction>? onQuickAction;
 
-  final bool showStatusTag;
+  /// "יאללה לקדם!" — sends one of the two cards out. Null on a proposal there
+  /// is nothing to promote about (archived, or a couple already dating), which
+  /// simply drops the row.
+  final VoidCallback? onPromote;
+
   final bool compact;
 
   /// A proposal the matchmaker asked to be reminded about today: the card wears
@@ -65,12 +69,13 @@ class MatchIdeaCard extends StatefulWidget {
 }
 
 class _MatchIdeaCardState extends State<MatchIdeaCard> {
-  /// The action row is closed at rest and opens in place.
+  /// The action panel is closed at rest and opens in place.
   ///
-  /// Three buttons per card, always open, would turn a scrollable list of
+  /// Six buttons per card, always open, would turn a scrollable list of
   /// proposals into a wall of controls — and most of the time the matchmaker is
   /// reading the list, not acting on it. Closed it costs one slim bar; open it
-  /// is exactly the same three actions the proposal screen offers.
+  /// is everything the proposal screen used to offer, which is why there is no
+  /// proposal screen any more.
   bool _actionsOpen = false;
 
   MatchIdea get match => widget.match;
@@ -202,23 +207,16 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                     ),
                   ],
                 ),
+                _StatusBanner(status: match.status),
                 _CardActionBar(
                   open: _actionsOpen,
-                  dating: dating,
-                  // An archived proposal has no status left worth setting, but
-                  // there is still every reason to message the people in it —
-                  // which is why the chat button does not live inside the part
-                  // that disappears.
-                  showStatusToggle:
-                      widget.onQuickAction != null && !match.status.isArchived,
+                  status: match.status,
+                  shareLabel: match.lastShareLabel,
                   onToggle: () => setState(() => _actionsOpen = !_actionsOpen),
                   onAction: widget.onQuickAction,
+                  onPromote: widget.onPromote,
                 ),
-                _Footer(
-                  match: match,
-                  showStatusTag: widget.showStatusTag,
-                  compact: widget.compact,
-                ),
+                _Footer(match: match, compact: widget.compact),
               ],
             ),
           ),
@@ -481,118 +479,264 @@ class _StatusPicker extends StatelessWidget {
   }
 }
 
-/// The bar under the pair: the proposal's own status actions, folded behind one
-/// line.
+/// Where the proposal stands, said once and said plainly.
 ///
-/// **No chat button here.** It used to carry one, opening a sheet that asked
-/// which of the two people was meant — a question the card had already made the
-/// reader ask by putting a single icon under two faces. Each side owns its own
-/// button now, on its own photo, and this bar is left doing the one thing that
-/// belongs to the proposal rather than to a person.
+/// **The status is the first thing a matchmaker looks for and it used to be
+/// the hardest thing on the card to find.** It appeared only in the archive
+/// and in search results, behind a `showStatusTag` flag, so the ordinary list
+/// — the one people actually work from — showed a pair of faces and left the
+/// state of the proposal to be inferred from the colour of a heart. It is now
+/// a band across the card, in every list, always.
 ///
-/// **"עדכון סטטוס", not "פעולות מהירות".** The row behind it does exactly one
-/// thing — move the proposal from one status to another — and a label that
-/// says so is the difference between a control people use and a drawer people
-/// open once to find out what is in it.
+/// One coarse word rather than the stored status: see [MatchStatus.stateLabel].
+class _StatusBanner extends StatelessWidget {
+  const _StatusBanner({required this.status});
+
+  final MatchStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = AppColors.statusColor(status.name);
+    final bool dating = status == MatchStatus.dating;
+    final bool wedding = status == MatchStatus.married;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: dating || wedding ? 0.20 : 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.42)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Text(status.icon, style: const TextStyle(fontSize: 13)),
+            const SizedBox(width: 6),
+            Text(
+              wedding
+                  ? '${status.stateLabel} 🎉'
+                  : dating
+                  ? '✨ ${status.stateLabel} ✨'
+                  : status.stateLabel,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The panel under the pair: everything a proposal can have done to it, folded
+/// behind one line.
 ///
-/// Closed, it is a single line and the card grows by about the height of a
-/// chip. Open, it is the same actions the proposal screen offers, drawn the
-/// same way: three peers, none of them dressed as a status. The card's
-/// `_StatusTag` is what says where the couple already are.
+/// **"פעולות", not "עדכון סטטוס".** The bar used to open onto three status
+/// buttons and nothing else, and the label said so honestly. It now opens onto
+/// the whole of what the proposal screen used to be — the card going out, the
+/// three status moves, a reminder, a contact, the journal — because there is no
+/// proposal screen left to hold them. A drawer with six things in it needs a
+/// name that covers six things.
+///
+/// **The order is the order of the work.** Sending the card is what a
+/// matchmaker does first and does most, so it is the widest control and it sits
+/// on top; the status moves are what they do when an answer comes back; the
+/// tools are what they reach for occasionally. Closed, all of it costs one
+/// slim line.
 class _CardActionBar extends StatelessWidget {
   const _CardActionBar({
     required this.open,
-    required this.dating,
-    required this.showStatusToggle,
+    required this.status,
+    required this.shareLabel,
     required this.onToggle,
     required this.onAction,
+    required this.onPromote,
   });
 
   final bool open;
+  final MatchStatus status;
 
-  /// A couple who are already out are not offered "מתחילים לצאת" again.
-  final bool dating;
-
-  /// False for an archived proposal, which has no status left worth setting.
-  final bool showStatusToggle;
+  /// What the last card sent out of this proposal was, or null if none has
+  /// been. See [MatchIdea.lastShareLabel].
+  final String? shareLabel;
 
   final VoidCallback onToggle;
   final ValueChanged<MatchQuickAction>? onAction;
-
-  List<MatchQuickAction> get _actions => dating
-      ? <MatchQuickAction>[MatchQuickAction.close]
-      : MatchQuickAction.values;
+  final VoidCallback? onPromote;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ValueChanged<MatchQuickAction>? action = onAction;
+    if (action == null) {
+      return const SizedBox(height: 6);
+    }
+
+    final List<MatchQuickAction> statusActions =
+        MatchQuickAction.statusActionsFor(status);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       child: Column(
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: showStatusToggle
-                    ? InkWell(
-                        onTap: onToggle,
-                        borderRadius: BorderRadius.circular(999),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              Text(
-                                open ? 'סגירת עדכון סטטוס' : 'עדכון סטטוס',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              Icon(
-                                open
-                                    ? Icons.keyboard_arrow_up_rounded
-                                    : Icons.keyboard_arrow_down_rounded,
-                                size: 18,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : const SizedBox(height: 34),
+          InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(999),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    open ? 'סגירת פעולות' : 'פעולות',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Icon(
+                    open
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             alignment: Alignment.topCenter,
-            child: open && showStatusToggle && action != null
+            child: open
                 ? Padding(
                     padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
+                    child: Column(
                       children: <Widget>[
-                        for (final MatchQuickAction quickAction in _actions)
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 3,
-                              ),
-                              child: _QuickActionButton(
-                                action: quickAction,
-                                onTap: () => action(quickAction),
-                              ),
-                            ),
+                        if (onPromote != null) ...<Widget>[
+                          _PromoteRow(
+                            shareLabel: shareLabel,
+                            onTap: onPromote!,
                           ),
+                          const SizedBox(height: 6),
+                        ],
+                        _ActionRow(actions: statusActions, onTap: action),
+                        const SizedBox(height: 6),
+                        _ActionRow(
+                          actions: MatchQuickAction.toolActions,
+                          onTap: action,
+                        ),
                       ],
                     ),
                   )
                 : const SizedBox(width: double.infinity),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({required this.actions, required this.onTap});
+
+  final List<MatchQuickAction> actions;
+  final ValueChanged<MatchQuickAction> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        for (final MatchQuickAction action in actions)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: _QuickActionButton(
+                action: action,
+                onTap: () => onTap(action),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// "יאללה לקדם!" — and, once a card has gone out, what went where.
+///
+/// **One row that changes its mind, rather than two controls.** Before anything
+/// has been sent this is a prompt: the proposal exists and nobody has been told
+/// about it, which is the single most common thing wrong with a matchmaker's
+/// list. After a card goes out it becomes the answer to the question the prompt
+/// was asking — "רעיון בבדיקה", and underneath it who received what. The
+/// button never stops working, because a card usually goes to both sides and
+/// often more than once.
+class _PromoteRow extends StatelessWidget {
+  const _PromoteRow({required this.shareLabel, required this.onTap});
+
+  final String? shareLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final String? sent = shareLabel;
+    final bool waiting = sent != null;
+    final Color ink = waiting ? AppColors.statusChecking : kWhatsAppGreen;
+
+    return Material(
+      color: ink.withValues(alpha: dark ? 0.18 : 0.10),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+          child: Row(
+            children: <Widget>[
+              FaIcon(FontAwesomeIcons.whatsapp, size: 19, color: ink),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      waiting ? 'רעיון בבדיקה' : 'יאללה לקדם!',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: ink,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      sent ?? 'שליחת כרטיס לחברים',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_left_rounded,
+                size: 20,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -676,14 +820,26 @@ class _QuickActionButton extends StatelessWidget {
   final MatchQuickAction action;
   final VoidCallback onTap;
 
-  Color get _ink {
+  /// One hue per action. The status moves keep the traffic-light reading they
+  /// have always had — amber waits, green goes, red stops — and the tools are
+  /// deliberately outside that language: they change nothing about where the
+  /// proposal stands, so colouring them like a status would be a lie about
+  /// what pressing them does.
+  Color _ink(ThemeData theme) {
     switch (action) {
       case MatchQuickAction.waiting:
         return AppColors.statusChecking;
       case MatchQuickAction.dating:
+      case MatchQuickAction.married:
         return AppColors.statusDating;
       case MatchQuickAction.close:
         return AppColors.statusRejected;
+      case MatchQuickAction.reopen:
+        return AppColors.statusIdea;
+      case MatchQuickAction.reminder:
+      case MatchQuickAction.contact:
+      case MatchQuickAction.journal:
+        return theme.colorScheme.onSurfaceVariant;
     }
   }
 
@@ -691,12 +847,11 @@ class _QuickActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = _ink;
+    final Color ink = _ink(theme);
 
-    // All three are drawn identically — see `_ActionTile` on the proposal
-    // screen, which this deliberately mirrors. Filling "מתחילים לצאת" made it
-    // look like the status the proposal was already in, and the card's own
-    // `_StatusTag` is the one place that says where it actually is.
+    // Every tile in a row is drawn identically; only the hue moves. Filling
+    // "מתחילים לצאת" made it look like the status the proposal was already in,
+    // and `_StatusBanner` is the one place that says where it actually is.
     return Material(
       color: ink.withValues(alpha: dark ? 0.18 : 0.09),
       borderRadius: BorderRadius.circular(12),
@@ -777,106 +932,36 @@ class _Middle extends StatelessWidget {
   }
 }
 
+/// What is left under the actions: the reason a waiting proposal is waiting.
+///
+/// The status tag used to live here, drawn only in the archive and in search
+/// results. It is now `_StatusBanner`, above the actions and on every card, so
+/// this is down to one line — and it draws nothing at all when there is no
+/// reason to draw.
 class _Footer extends StatelessWidget {
-  const _Footer({
-    required this.match,
-    required this.showStatusTag,
-    required this.compact,
-  });
+  const _Footer({required this.match, required this.compact});
 
   final MatchIdea match;
-  final bool showStatusTag;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String? waitingReason = match.waitingReason?.trim();
-
-    final bool hasWaitingReason =
-        waitingReason != null && waitingReason.isNotEmpty;
-    final bool dating = match.status == MatchStatus.dating;
-    // Reminders no longer surface on the card — they live on the detail screen.
-    if (!showStatusTag && !hasWaitingReason && !dating) {
-      return const SizedBox.shrink();
+    final String reason = (match.waitingReason ?? '').trim();
+    if (reason.isEmpty) {
+      return SizedBox(height: compact ? 6 : 2);
     }
 
     return Padding(
       padding: EdgeInsets.fromLTRB(14, 0, 14, compact ? 10 : 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (showStatusTag || dating)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: dating
-                  ? const _DatingTag()
-                  : _StatusTag(status: match.status),
-            ),
-          if (hasWaitingReason) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              waitingReason,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _DatingTag extends StatelessWidget {
-  const _DatingTag();
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color color = AppColors.statusDating;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.softGreen.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.45)),
-      ),
-      child: Text(
-        '✨ יוצאים יחד ✨',
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusTag extends StatelessWidget {
-  const _StatusTag({required this.status});
-
-  final MatchStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color color = AppColors.statusColor(status.name);
-    final bool celebrate = status == MatchStatus.married;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: celebrate ? 0.2 : 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        celebrate ? '🎉 ${status.displayName}' : status.displayName,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: Text(
+          reason,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

@@ -2,11 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/screens/match_detail_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -150,11 +150,14 @@ class _ThinkScreenState extends State<ThinkScreen> {
       candidate.id,
     );
     if (existing != null) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (BuildContext context) =>
-              MatchDetailScreen(matchId: existing.id),
-        ),
+      // The pair already has a proposal, so there is nothing to decide — only
+      // the two cards to read against each other, which is what the proposal
+      // screen was mostly used for before it was folded into the list.
+      await openMatchComparison(
+        context,
+        source: person,
+        candidate: candidate,
+        showOpenIdeaAction: false,
       );
       return;
     }
@@ -174,11 +177,11 @@ class _ThinkScreenState extends State<ThinkScreen> {
     if (created == null || !mounted) {
       return;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            MatchDetailScreen(matchId: created.id, autoPromptWhatsApp: true),
-      ),
+    await MatchQuickActions.promote(
+      context,
+      created,
+      female: person.gender == Gender.male ? candidate : person,
+      male: person.gender == Gender.male ? person : candidate,
     );
     if (mounted) {
       setState(() {});

@@ -272,6 +272,8 @@ class BackupService {
             },
           )
           .toList(),
+      'lastShareLabel': match.lastShareLabel,
+      'lastShareAt': match.lastShareAt?.toIso8601String(),
       'createdAt': match.createdAt.toIso8601String(),
       'updatedAt': match.updatedAt.toIso8601String(),
     };
@@ -398,6 +400,8 @@ class BackupService {
       progress: _enumByName(MatchProgress.values, json['progress']),
       progressOther: _string(json['progressOther']),
       relatedContacts: _matchContacts(json['relatedContacts']),
+      lastShareLabel: _string(json['lastShareLabel']),
+      lastShareAt: _date(json['lastShareAt']),
       createdAt: _date(json['createdAt']) ?? now,
       updatedAt: _date(json['updatedAt']) ?? now,
     );

@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
+import 'package:shadchan/utils/community_milestones.dart';
 
 /// The three things the app occasionally asks for or announces, and the rules
 /// about when it is allowed to.
@@ -168,68 +168,124 @@ abstract final class RateAppDialog {
   }
 }
 
-/// The one-time question: may your name appear on the leaderboard?
-///
-/// **It is asked before anything is published, not after.** The community layer
-/// arrived in an update, and everybody already using the app entered their name
-/// for a private diary — publishing it to every other user on the strength of
-/// that consent, and offering an opt-out afterwards, is not the same thing as
-/// asking. Until this is answered the member document carries no name at all,
-/// only counters against a uid.
-///
-/// Both answers are real answers and neither is styled as the right one. It is
-/// dismissible, and dismissing it means "not yet": the question comes back next
-/// launch, and until then nothing is published.
-abstract final class LeaderboardConsentDialog {
-  static Future<void> show(BuildContext context) async {
-    final CommunityProvider community = context.read<CommunityProvider>();
-
-    final bool? show = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final ThemeData theme = Theme.of(dialogContext);
-        return AlertDialog(
-          title: const Text('הצטרפות לקהילת השדכנים'),
-          content: SingleChildScrollView(
-            child: Text(
-              'הוספנו אזור קהילה: כמה פעולות עשו כל השדכנים יחד, כמה מהם היו '
-              'פעילים השבוע, ודירוג של עשרת הפעילים ביותר.\n\n'
-              'הפעילות שלך נספרת בסך הכולל בכל מקרה, בלי שם. השאלה היחידה היא '
-              'אם השם שרשמת בפרופיל יופיע בדירוג לשדכנים אחרים.\n\n'
-              'שום פרט על החברים שלך לא נשלח לשום מקום — לא שם, לא גיל, לא '
-              'טלפון ולא הערה. אפשר לשנות את הבחירה בכל רגע בהגדרות.',
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-            ),
-          ),
-          actionsOverflowButtonSpacing: 4,
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('בלי השם שלי'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('אפשר להציג את שמי'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (show == null) {
-      // Dismissed rather than answered. Nothing is recorded, nothing is
-      // published, and the question is asked again next launch.
-      return;
-    }
-    await community.answerLeaderboardConsent(hidden: !show);
-  }
-}
-
 /// Milestones and the note after a large import used to live here, as two
 /// dialogs sharing one `_celebrate` helper. **Both are gone.** They are said
 /// now by `AchievementWatcher`, as a toast, at the moment they happen rather
 /// than on the next launch — see `lib/widgets/app_toast.dart` for why a
 /// congratulation is the one thing that must never take the screen.
+
+/// "הקהילה הגיעה ל־1,000 רעיונות" — the community's own good news, once.
+///
+/// **A small festive screen, and very rarely.** The rungs are far apart, a
+/// device says nothing about anything it was already past when it first looked,
+/// and this rides the same one-prompt-per-launch gate as everything else the
+/// app raises by itself — see [CommunityMilestones] for all three. Somebody who
+/// uses the app every day should meet this a handful of times a year and be
+/// pleased each time.
+///
+/// **Nobody is congratulated.** The community reached it; the reader is part of
+/// the community. There is no "thanks to you", no figure of their own beside
+/// it, and one button that says nothing more than "ממשיכים".
+abstract final class CommunityMilestoneDialog {
+  static Future<void> show(
+    BuildContext context,
+    CommunityMilestone milestone,
+  ) async {
+    CommunityProfileStore.markCommunityMilestoneSeen(milestone.id);
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final ThemeData theme = Theme.of(dialogContext);
+        final bool dark = theme.brightness == Brightness.dark;
+        final Color lead = dark
+            ? theme.colorScheme.primary
+            : AppColors.primaryDark;
+
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: AlignmentDirectional.topStart,
+                end: AlignmentDirectional.bottomEnd,
+                colors: <Color>[
+                  lead.withValues(alpha: dark ? 0.24 : 0.14),
+                  theme.colorScheme.surface,
+                ],
+              ),
+            ),
+            child: Stack(
+              children: <Widget>[
+                // The warm corner the tip card and the community cards wear,
+                // so the moment looks like it belongs to this app rather than
+                // to a confetti library.
+                PositionedDirectional(
+                  top: -40,
+                  start: -34,
+                  child: Container(
+                    width: 128,
+                    height: 128,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.secondary.withValues(
+                        alpha: dark ? 0.12 : 0.10,
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 30, 24, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(
+                        milestone.emoji,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 46),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        milestone.title,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        milestone.body,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(46),
+                        ),
+                        child: const Text('ממשיכים'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
 /// "מה חדש?" — one published note, shown once per device and never again.
 abstract final class WhatsNewDialog {

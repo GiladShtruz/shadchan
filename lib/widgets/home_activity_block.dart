@@ -9,12 +9,14 @@ import 'package:shadchan/widgets/community_widgets.dart';
 /// "נתונים" on the home screen: your score, the community's, one window at a
 /// time.
 ///
-/// **Two numbers and nothing else.** No leaderboard, no chart, no breakdown, no
-/// shared target — those all live one tap away on a screen somebody opened *to
-/// look at numbers*, and a home screen that leads with a scoreboard has stopped
-/// being a workspace. What is left is the one comparison worth putting on the
-/// landing page: "12 השבוע" says very little on its own and a great deal beside
-/// "1,842 בקהילה".
+/// **Two numbers and nothing else.** No leaderboard, no chart, no breakdown —
+/// those all live one tap away on a screen somebody opened *to look at
+/// numbers*, and a home screen that leads with a scoreboard has stopped being a
+/// workspace. (The week's shared target is not a number about the reader at
+/// all; it belongs to `HomeCommunityPulse`, the block directly above this one.)
+///
+/// What is left is the one comparison worth putting on the landing page: "12
+/// השבוע" says very little on its own and a great deal beside "1,842 בקהילה".
 ///
 /// Your own figure needs no network and is drawn on the first frame. The
 /// community column fills in when the read lands rather than holding a spinner

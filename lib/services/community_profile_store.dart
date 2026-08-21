@@ -14,7 +14,6 @@ import 'package:shadchan/utils/community_period.dart';
 /// on the leaderboard would flash them on and off.
 abstract final class CommunityProfileStore {
   static const String _hiddenKey = 'community.hiddenFromLeaderboard';
-  static const String _consentKey = 'community.leaderboardConsentAnswered';
   static const String _achievementsKey = 'community.achievementsSeen';
   static const String _achievementsBaselinedKey = 'community.achievementsBase';
   static const String _bestWeekKey = 'community.bestWeek';
@@ -24,6 +23,11 @@ abstract final class CommunityProfileStore {
   static const String _avatarPathKey = 'community.avatarLocalPath';
   static const String _avatarUrlKey = 'community.avatarUrl';
   static const String _greetingKey = 'community.greetingCursor';
+  static const String _weekSnapshotKey = 'community.weekSnapshot';
+  static const String _prevWeekSnapshotKey = 'community.prevWeekSnapshot';
+  static const String _communityMilestonesKey = 'community.sharedMilestones';
+  static const String _communityMilestonesBaseKey =
+      'community.sharedMilestonesBase';
 
   /// From this many friends in one import, the app says something about it.
   ///
@@ -53,40 +57,19 @@ abstract final class CommunityProfileStore {
 
   // --- Hidden from the leaderboard -----------------------------------------
 
-  /// Whether the matchmaker has been asked, once, whether their name may
-  /// appear on the leaderboard.
+  /// True when the matchmaker asked to stay off the leaderboard.
   ///
-  /// This exists because the feature arrived in an update. Everybody using the
-  /// app registered their name for a private diary, and publishing it to every
-  /// other user on the strength of that is not something an opt-out after the
-  /// fact repairs. Until this is true the answer is treated as "no".
-  static bool get hasAnsweredLeaderboardConsent =>
-      _read(_consentKey) == true || _read(_consentKey) == 'true';
-
-  /// True when the name must be kept out of the shared collection — either
-  /// because it was hidden, or because nobody has asked yet.
-  ///
-  /// The unasked case is the important one: a name is *not written at all*
-  /// until it has been agreed to, so a matchmaker who never answers leaves
-  /// nothing identifying on the server, only counters against a uid.
+  /// **False by default, and that is a deliberate change.** The app used to
+  /// treat "has not been asked yet" as "no", which meant a launch dialog on
+  /// every fresh install and a community board that was empty until people
+  /// answered a question they had no context for. A matchmaker now appears in
+  /// the community the way they appear in any other list they joined, and the
+  /// one switch that takes them back out lives on "פרטיות והמאגר שלי" — see
+  /// [isPrivate] for the wider one next to it.
   static bool get isHidden =>
-      !hasAnsweredLeaderboardConsent ||
-      _read(_hiddenKey) == true ||
-      _read(_hiddenKey) == 'true';
+      _read(_hiddenKey) == true || _read(_hiddenKey) == 'true';
 
-  /// Records the answer to the one-time question. Passing [hidden] false is
-  /// what puts the name on the board.
-  static void answerLeaderboardConsent({required bool hidden}) {
-    _write(_consentKey, true);
-    _write(_hiddenKey, hidden);
-  }
-
-  static void setHidden(bool hidden) {
-    // Reaching the toggle at all means the question has been answered, however
-    // it was reached.
-    _write(_consentKey, true);
-    _write(_hiddenKey, hidden);
-  }
+  static void setHidden(bool hidden) => _write(_hiddenKey, hidden);
 
   // --- "שמור על הפרטיות שלי" -------------------------------------------------
 
@@ -274,4 +257,151 @@ abstract final class CommunityProfileStore {
 
   static void markAchievementsBaselined() =>
       _write(_achievementsBaselinedKey, true);
+
+  // --- What the community did last week -------------------------------------
+
+  /// The community's own figures for one week, as this device last saw them.
+  ///
+  /// **This is how "בשבוע שעבר הגענו ל־X" is answered at all.** A member
+  /// document holds one week's counters and rolls them over on the next write,
+  /// so the moment a new week starts there is nothing on the server that adds
+  /// up to what the community did in the week before — the figure exists only
+  /// while the week is running. Rather than write a second collection of
+  /// weekly summaries (a document every client would have to be trusted to
+  /// update correctly, and a rules change to go with it), each device simply
+  /// remembers the last community total it read, and keeps the previous week's
+  /// when the key rolls over.
+  ///
+  /// The cost of that is honest and worth stating: the record is **the figure
+  /// this phone last saw**, so a matchmaker who did not open the app after
+  /// Tuesday remembers Tuesday's number as the week's. It is a target to beat,
+  /// not an audited statistic, and an understated one only makes the challenge
+  /// easier — never wrong in the direction that matters.
+  static CommunityWeekSnapshot? get communityWeek =>
+      CommunityWeekSnapshot.decode(_read(_weekSnapshotKey));
+
+  /// The last *completed* week this device saw, or null on a device that has
+  /// only ever been open in one week.
+  static CommunityWeekSnapshot? get previousCommunityWeek =>
+      CommunityWeekSnapshot.decode(_read(_prevWeekSnapshotKey));
+
+  /// Records what the community has done in [weekKey] so far.
+  ///
+  /// Within one week the figures only ever climb — a member's counters roll
+  /// forward, they do not come back — so a reading lower than one already
+  /// stored is a partial answer (a scan that hit its cap, a member who deleted
+  /// records) and the higher figure is kept. When the key changes, whatever was
+  /// stored becomes the previous week's record in the same write.
+  static void recordCommunityWeek({
+    required String weekKey,
+    required int friends,
+    required int ideas,
+    required int couples,
+  }) {
+    final CommunityWeekSnapshot? stored = communityWeek;
+    if (stored != null && stored.weekKey != weekKey) {
+      _write(_prevWeekSnapshotKey, stored.encode());
+      _write(
+        _weekSnapshotKey,
+        CommunityWeekSnapshot(
+          weekKey: weekKey,
+          friends: friends,
+          ideas: ideas,
+          couples: couples,
+        ).encode(),
+      );
+      return;
+    }
+    final CommunityWeekSnapshot next = CommunityWeekSnapshot(
+      weekKey: weekKey,
+      friends: stored == null || friends > stored.friends
+          ? friends
+          : stored.friends,
+      ideas: stored == null || ideas > stored.ideas ? ideas : stored.ideas,
+      couples: stored == null || couples > stored.couples
+          ? couples
+          : stored.couples,
+    );
+    _write(_weekSnapshotKey, next.encode());
+  }
+
+  // --- The community's own milestones ---------------------------------------
+
+  /// Which shared milestones — "הקהילה הגיעה ל־1,000 רעיונות" and the like —
+  /// this device has already celebrated.
+  static Set<String> get seenCommunityMilestones {
+    final Object? raw = _read(_communityMilestonesKey);
+    if (raw is! String || raw.isEmpty) {
+      return <String>{};
+    }
+    return raw.split(',').where((String id) => id.isNotEmpty).toSet();
+  }
+
+  static void markCommunityMilestoneSeen(String id) {
+    final Set<String> next = seenCommunityMilestones..add(id);
+    _write(_communityMilestonesKey, next.join(','));
+  }
+
+  /// Whether this device has written down which community milestones were
+  /// already passed before it ever looked.
+  ///
+  /// The same reasoning as [hasBaselinedAchievements], and it matters more
+  /// here: the community's all-time figures are large and mostly historic, so
+  /// without a baseline every fresh install would open to a celebration of
+  /// something that happened long before it was installed. The first resolved
+  /// read marks everything reached as seen and says nothing; only a rung
+  /// crossed *afterwards* is ever announced.
+  static bool get hasBaselinedCommunityMilestones =>
+      _read(_communityMilestonesBaseKey) == true ||
+      _read(_communityMilestonesBaseKey) == 'true';
+
+  static void markCommunityMilestonesBaselined() =>
+      _write(_communityMilestonesBaseKey, true);
+}
+
+/// One week of community figures as a device saw them, small enough to live in
+/// a single settings string.
+///
+/// Encoded as `weekKey|friends|ideas|couples` rather than as JSON because every
+/// value in this store is written through [persistHomeSetting], which takes a
+/// string — and four fields with one shape do not need a parser that can fail
+/// in interesting ways.
+class CommunityWeekSnapshot {
+  const CommunityWeekSnapshot({
+    required this.weekKey,
+    required this.friends,
+    required this.ideas,
+    required this.couples,
+  });
+
+  final String weekKey;
+  final int friends;
+  final int ideas;
+  final int couples;
+
+  String encode() => '$weekKey|$friends|$ideas|$couples';
+
+  /// Null for anything that is not a snapshot this class wrote — an empty box,
+  /// a value from an older version, a half-written string.
+  static CommunityWeekSnapshot? decode(Object? raw) {
+    if (raw is! String) {
+      return null;
+    }
+    final List<String> parts = raw.split('|');
+    if (parts.length != 4 || parts.first.isEmpty) {
+      return null;
+    }
+    final int? friends = int.tryParse(parts[1]);
+    final int? ideas = int.tryParse(parts[2]);
+    final int? couples = int.tryParse(parts[3]);
+    if (friends == null || ideas == null || couples == null) {
+      return null;
+    }
+    return CommunityWeekSnapshot(
+      weekKey: parts.first,
+      friends: friends,
+      ideas: ideas,
+      couples: couples,
+    );
+  }
 }

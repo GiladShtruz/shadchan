@@ -192,10 +192,18 @@ class MatchRepository extends ChangeNotifier {
       updatedAt: now,
     );
 
-    // No automatic "opened" journal note — the journal stays a personal
-    // free-notes chat. The opening is still recorded on each candidate's
-    // history timeline.
     await _matchBox.put(match.id, match);
+    // The journal opens with the proposal. It used to start empty on purpose,
+    // back when it was only a place for the matchmaker's own free notes; it is
+    // now the proposal's whole record — every status move, reminder, contact
+    // and card sent is filed here — and a record whose first line is missing
+    // reads as though the proposal appeared from nowhere.
+    await _createNote(
+      matchId: match.id,
+      text: 'הרעיון נפתח',
+      createdAt: now,
+      isAutomatic: true,
+    );
 
     final Person? Function(String)? resolve = resolvePerson;
     // The fallback only stands in for a record that vanished between the
@@ -231,7 +239,17 @@ class MatchRepository extends ChangeNotifier {
     _refreshNotifications();
   }
 
-  Future<void> updateStatus(String matchId, MatchStatus newStatus) async {
+  /// Moves a proposal to [newStatus].
+  ///
+  /// [journal] is false only for a caller that writes a fuller line of its own
+  /// — [recordOutcome] knows *who* ended the proposal and why, and "ההצעה
+  /// נסגרה" directly above "ההצעה נדחתה (מי: שרה)" says the same thing twice
+  /// and dates it twice.
+  Future<void> updateStatus(
+    String matchId,
+    MatchStatus newStatus, {
+    bool journal = true,
+  }) async {
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -307,9 +325,54 @@ class MatchRepository extends ChangeNotifier {
       await _releaseFromDating(match);
     }
 
+    // Every other move is written down too. The journal is the proposal's
+    // whole history now that there is no screen of its own to read it from —
+    // see [addNote] — and a status that changed with no line under it is the
+    // one gap a matchmaker notices, because it is the change they most want to
+    // be able to date afterwards. The three transitions above write their own,
+    // warmer sentence; this covers the rest.
+    if (journal &&
+        newStatus != MatchStatus.dating &&
+        newStatus != MatchStatus.married &&
+        previous != newStatus) {
+      await _createNote(
+        matchId: matchId,
+        text: _statusLine(from: previous, to: newStatus),
+        createdAt: now,
+        isAutomatic: true,
+      );
+    }
+
     _recordActivity(matchId, HomeActivityAction.changedStatus);
     notifyListeners();
     _refreshNotifications();
+  }
+
+  /// How a plain status move reads in the journal.
+  ///
+  /// Named for the destination rather than written as "X ← Y": the line is read
+  /// in a list that is already in order, so where it came from is the line
+  /// above it, and a sentence beats an arrow.
+  static String _statusLine({
+    required MatchStatus from,
+    required MatchStatus to,
+  }) {
+    switch (to) {
+      case MatchStatus.idea:
+        return from.isArchived ? 'ההצעה נפתחה מחדש' : 'ההצעה חזרה להיות פתוחה';
+      case MatchStatus.checking:
+        return 'ההצעה בבדיקה';
+      case MatchStatus.unavailable:
+        return 'ההצעה עברה להמתנה';
+      case MatchStatus.rejected:
+        return 'ההצעה נסגרה';
+      case MatchStatus.dated:
+        return 'יצאו ולא המשיכו';
+      case MatchStatus.dating:
+      case MatchStatus.married:
+        // Both write their own line at the call site, in warmer words.
+        return to.displayName;
+    }
   }
 
   /// Puts both sides of a proposal that has left "יוצאים" back where they were.
@@ -402,11 +465,82 @@ class MatchRepository extends ChangeNotifier {
     // app except the notification, which prints `reminderNote ?? '...'` and so
     // fired with an empty body.
     final String trimmedNote = (note ?? '').trim();
+    final DateTime? previous = match.reminderDate;
+    final DateTime now = DateTime.now();
     match
       ..reminderDate = date
       ..reminderNote = date == null || trimmedNote.isEmpty ? null : trimmedNote
-      ..updatedAt = DateTime.now();
+      ..updatedAt = now;
     await match.save();
+
+    // Setting a reminder is a decision about the proposal, so it is filed like
+    // one. Clearing it is the same decision in reverse and is worth a line for
+    // the same reason: six months on, "handled it" and "gave up on it" look
+    // identical unless the journal says which.
+    if (date != previous) {
+      await _createNote(
+        matchId: matchId,
+        text: date == null
+            ? 'התזכורת בוטלה'
+            : 'נקבעה תזכורת ל־${_journalDate(date)}'
+                  '${trimmedNote.isEmpty ? '' : ' — $trimmedNote'}',
+        createdAt: now,
+        isAutomatic: true,
+      );
+    }
+    notifyListeners();
+    _refreshNotifications();
+  }
+
+  /// A date as the journal writes it: dd.MM.yyyy, the same shape everywhere.
+  static String _journalDate(DateTime date) {
+    final String day = date.day.toString().padLeft(2, '0');
+    final String month = date.month.toString().padLeft(2, '0');
+    return '$day.$month.${date.year}';
+  }
+
+  /// Records that a card went out of this proposal — the "יאללה לקדם!" row.
+  ///
+  /// **Two things happen at once, and they belong together.** The proposal
+  /// remembers what was last sent, which is what turns that row from a prompt
+  /// into a report; and the journal gains the line, because the whole point of
+  /// the journal is that a matchmaker can see what has actually been done.
+  ///
+  /// The status moves to "בבדיקה" only from "רעיון" — a proposal that is
+  /// waiting, out, or closed is not put back into circulation by somebody
+  /// forwarding a card from it.
+  Future<void> recordCardShared(String matchId, String label) async {
+    final MatchIdea? match = getById(matchId);
+    final String trimmed = label.trim();
+    if (match == null || trimmed.isEmpty) {
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    final MatchStatus previous = match.status;
+    match
+      ..lastShareLabel = trimmed
+      ..lastShareAt = now
+      ..updatedAt = now;
+    if (previous == MatchStatus.idea) {
+      match.status = MatchStatus.checking;
+    }
+    await match.save();
+    if (match.status != previous) {
+      await _logStatusChange(
+        matchId: matchId,
+        from: previous,
+        to: match.status,
+        at: now,
+      );
+    }
+    await _createNote(
+      matchId: matchId,
+      text: trimmed,
+      createdAt: now,
+      isAutomatic: true,
+    );
+    _recordActivity(matchId, HomeActivityAction.changedStatus);
     notifyListeners();
     _refreshNotifications();
   }
@@ -450,9 +584,12 @@ class MatchRepository extends ChangeNotifier {
     );
     await _createNote(
       matchId: matchId,
-      text: trimmedReason.isEmpty
-          ? 'ההצעה עברה להמתנה'
-          : 'ההצעה בהמתנה — $trimmedReason',
+      text: <String>[
+        trimmedReason.isEmpty
+            ? 'ההצעה עברה להמתנה'
+            : 'ההצעה בהמתנה — $trimmedReason',
+        if (checkAgainOn != null) 'לבדוק שוב ב־${_journalDate(checkAgainOn)}',
+      ].join(' · '),
       createdAt: now,
       isAutomatic: true,
     );
@@ -514,8 +651,9 @@ class MatchRepository extends ChangeNotifier {
     final String trimmedNote = (note ?? '').trim();
     final bool dated = newStatus == MatchStatus.dated;
 
-    // Move the status first (writes its own "סטטוס שונה" journal line).
-    await updateStatus(matchId, newStatus);
+    // Move the status first. Its own generic line is suppressed: the summary
+    // written just below names who ended it and why, and dates the same act.
+    await updateStatus(matchId, newStatus, journal: false);
 
     // A human-readable summary line for the proposal journal.
     final String who = switch (party) {
@@ -689,10 +827,20 @@ class MatchRepository extends ChangeNotifier {
     if (match == null) {
       return;
     }
+    final DateTime now = DateTime.now();
     match
       ..relatedContacts = <MatchContact>[...match.relatedContacts, contact]
-      ..updatedAt = DateTime.now();
+      ..updatedAt = now;
     await match.save();
+    await _createNote(
+      matchId: matchId,
+      text:
+          'נוסף איש קשר להצעה: ${contact.name}'
+          '${(contact.description ?? '').trim().isEmpty ? '' : ' '
+                    '(${contact.description!.trim()})'}',
+      createdAt: now,
+      isAutomatic: true,
+    );
     notifyListeners();
   }
 
@@ -701,12 +849,20 @@ class MatchRepository extends ChangeNotifier {
     if (match == null || index < 0 || index >= match.relatedContacts.length) {
       return;
     }
+    final MatchContact removed = match.relatedContacts[index];
     final List<MatchContact> updated = <MatchContact>[...match.relatedContacts]
       ..removeAt(index);
+    final DateTime now = DateTime.now();
     match
       ..relatedContacts = updated
-      ..updatedAt = DateTime.now();
+      ..updatedAt = now;
     await match.save();
+    await _createNote(
+      matchId: matchId,
+      text: 'הוסר איש קשר מההצעה: ${removed.name}',
+      createdAt: now,
+      isAutomatic: true,
+    );
     notifyListeners();
   }
 
@@ -904,6 +1060,9 @@ class MatchRepository extends ChangeNotifier {
         text: note.text,
         createdAt: note.createdAt,
         isAutomatic: note.isAutomatic,
+        // Restored *as it was*. Dropping this turned an undone delete of a
+        // congratulation into an ordinary journal line with nobody behind it.
+        mazelTovFrom: note.mazelTovFrom,
       ),
     );
     notifyListeners();

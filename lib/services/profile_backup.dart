@@ -27,6 +27,7 @@ abstract final class ProfileBackup {
       'firstName': profile.firstName,
       'lastName': profile.lastName,
       'gender': profile.gender?.name,
+      'about': profile.about,
       'isSingle': profile.isSingle,
       'hasMaritalStatus': profile.hasMaritalStatus,
       'photo': photoPath == null
@@ -101,6 +102,12 @@ abstract final class ProfileBackup {
       filled++;
     } else if (!profile.hasMaritalStatus && _bool(json['isSingle']) != null) {
       await profile.setIsSingle(_bool(json['isSingle'])!);
+      filled++;
+    }
+
+    // The one line about themselves, filled only when this phone has none.
+    if (profile.about == null && _string(json['about']) != null) {
+      await profile.setAbout(_string(json['about']));
       filled++;
     }
 

@@ -34,6 +34,7 @@ class UserProfileProvider extends ChangeNotifier {
   static const String _genderKey = 'userGender';
   static const String _photoPathKey = 'userPhotoPath';
   static const String _isSingleKey = 'userIsSingle';
+  static const String _aboutKey = 'userAbout';
   static const String _personalCardKey = 'userPersonalCard';
   static const String _personalCardPhotosKey = 'userPersonalCardPhotos';
   static const String _tipAuthorNameKey = 'userTipAuthorName';
@@ -102,6 +103,30 @@ class UserProfileProvider extends ChangeNotifier {
   String? get photoPath {
     final String? value = (_box.get(_photoPathKey) as String?)?.trim();
     return (value == null || value.isEmpty) ? null : value;
+  }
+
+  /// One short line the matchmaker wrote about themselves — "אוהב לחבר בין
+  /// אנשים", "עוסקת בשידוכים בעיקר במגזר הדתי־לאומי בגילאי 25–30".
+  ///
+  /// **Optional, and it stays optional.** It is asked once during sign-up, with
+  /// examples rather than an explanation, and skipping it costs nothing: null
+  /// here simply means the profile shows a name and a photograph, which is what
+  /// it showed before this existed. Nothing in the app is gated on it and it is
+  /// never published to the community — it is on the matchmaker's own page, for
+  /// the matchmaker.
+  String? get about {
+    final String? value = (_box.get(_aboutKey) as String?)?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> setAbout(String? value) async {
+    final String trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty) {
+      await _box.delete(_aboutKey);
+    } else {
+      await _box.put(_aboutKey, trimmed);
+    }
+    notifyListeners();
   }
 
   /// Whether onboarding (or a later profile edit) recorded the user's personal
@@ -185,6 +210,7 @@ class UserProfileProvider extends ChangeNotifier {
     required bool isSingle,
     String? lastName,
     String? photoPath,
+    String? about,
   }) async {
     final String trimmedFirst = name.trim();
     final String trimmedLast = (lastName ?? '').trim();
@@ -207,6 +233,17 @@ class UserProfileProvider extends ChangeNotifier {
       await _box.put(_photoPathKey, photoPath.trim());
     }
     await _box.put(_isSingleKey, isSingle);
+    // Omitted rather than cleared when the caller has nothing to say about it:
+    // a restore path that only knows name and gender must not wipe a line the
+    // matchmaker wrote.
+    if (about != null) {
+      final String trimmedAbout = about.trim();
+      if (trimmedAbout.isEmpty) {
+        await _box.delete(_aboutKey);
+      } else {
+        await _box.put(_aboutKey, trimmedAbout);
+      }
+    }
     notifyListeners();
   }
 

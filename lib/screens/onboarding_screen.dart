@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/about_me_sheet.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -24,6 +25,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _aboutController = TextEditingController();
   Gender _selectedGender = Gender.male;
   bool? _selectedIsSingle;
   String? _photoPath;
@@ -57,6 +59,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     // one joined value, so re-opening this screen never loses a surname.
     _firstNameController.text = profile.firstName ?? '';
     _lastNameController.text = profile.lastName ?? '';
+    _aboutController.text = profile.about ?? '';
     _selectedGender = profile.gender ?? Gender.male;
     _photoPath = profile.photoPath;
     _selectedIsSingle = profile.hasMaritalStatus ? profile.isSingle : null;
@@ -66,6 +69,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void dispose() {
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _aboutController.dispose();
     super.dispose();
   }
 
@@ -223,6 +227,44 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   height: 1.35,
                 ),
               ),
+              const SizedBox(height: 28),
+              // The one optional answer, and the last one, so nothing required
+              // sits below something that can be skipped. The examples do the
+              // explaining — see [AboutMe].
+              Row(
+                children: <Widget>[
+                  Text(AboutMe.label, style: theme.textTheme.titleMedium),
+                  const SizedBox(width: 6),
+                  Text(
+                    '(לא חובה)',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _aboutController,
+                minLines: 2,
+                maxLines: 3,
+                maxLength: 140,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: AboutMe.placeholder,
+                  prefixIcon: Icon(Icons.format_quote_rounded),
+                  alignLabelWithHint: true,
+                ),
+              ),
+              AboutMeExamples(
+                gender: _selectedGender,
+                onPick: (String example) => setState(() {
+                  _aboutController.text = example;
+                  _aboutController.selection = TextSelection.collapsed(
+                    offset: example.length,
+                  );
+                }),
+              ),
               const SizedBox(height: 32),
               FilledButton(
                 onPressed: _saving ? null : _continue,
@@ -295,6 +337,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         gender: _selectedGender,
         isSingle: _selectedIsSingle!,
         photoPath: _photoPath,
+        about: _aboutController.text,
       );
       if (!mounted) {
         return;

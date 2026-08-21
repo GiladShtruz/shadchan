@@ -1,10 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/about_me_sheet.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
@@ -16,33 +15,81 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
-import 'package:shadchan/utils/share_utils.dart';
-import 'package:shadchan/widgets/person_photo_editor.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// "הפרופיל שלי" — the matchmaker's own page, and the one place the app's
 /// settings live. The home screen used to carry a gear icon; it now carries the
 /// user's photo, and everything that was behind the gear is here, under the
 /// person it belongs to.
+///
+/// **The page reads top to bottom as "me, then my settings, then the extras".**
+/// Who I am — the photograph, the name, the line I wrote about myself — then
+/// the account that protects all of it, then my own card if I have one, then
+/// the settings, then the handful of things that are neither: the community
+/// group, passing the app on, the tips. Nothing in the settings group *does*
+/// anything on its own; every row there opens a screen. That is what makes the
+/// group scannable, and it is why "שיתוף האפליקציה" — which fires the share
+/// sheet on the spot — sits under "פעולות נוספות" instead.
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.focusSettings = false});
+
+  /// Opens the page with the settings group scrolled into view.
+  ///
+  /// The top banner's menu offers "הגדרות", and the settings are a group on
+  /// this page rather than a screen of their own — so the menu has to be able
+  /// to land on the group, not merely on the page that contains it. Anything
+  /// else makes the shortest route to the settings the one that drops somebody
+  /// at the top of a page and asks them to scroll.
+  final bool focusSettings;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  /// Whether the personal card preview is showing its full text.
-  bool _personalCardExpanded = false;
+  /// The anchor [ProfileScreen.focusSettings] scrolls to.
+  final GlobalKey _settingsKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusSettings) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSettings());
+    }
+  }
+
+  Future<void> _scrollToSettings() async {
+    final BuildContext? target = _settingsKey.currentContext;
+    if (target == null || !mounted) {
+      return;
+    }
+    await Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      // Not flush with the top: the group's own heading has to come with it,
+      // and a heading pinned to the very first pixel reads as cut off.
+      alignment: 0.05,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final AccountProvider account = context.watch<AccountProvider>();
     final SyncProvider sync = context.watch<SyncProvider>();
+    final bool hasCard =
+        (profile.personalCard ?? '').trim().isNotEmpty ||
+        profile.personalCardPhotos.isNotEmpty;
 
     final List<Widget> sections = <Widget>[
-      _ProfileHeader(profile: profile, onEditPhoto: () => _editPhoto(profile)),
+      // 1. Who this is: the photograph, the full name, and the one line they
+      // wrote about themselves.
+      _ProfileHeader(
+        profile: profile,
+        onEditPhoto: () => _editPhoto(profile),
+        onEditAbout: () => _editAbout(profile),
+      ),
       const SizedBox(height: 6),
       // The answer was already given during sign-up. All that is left here is a
       // quiet way back to it if it ever changes — not a section of its own.
@@ -50,25 +97,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
         profile: profile,
         onChangeRequested: () => _changePersonalStatus(profile),
       ),
-      const SizedBox(height: 18),
-      if (profile.isSingle) ...<Widget>[
-        _PersonalCardCard(
-          profile: profile,
-          expanded: _personalCardExpanded,
-          onToggleExpanded: () =>
-              setState(() => _personalCardExpanded = !_personalCardExpanded),
-          onEditCard: () => _editPersonalCard(profile),
-          onShareCard: () => _sharePersonalCard(profile),
-        ),
-        const SizedBox(height: 22),
-      ],
+      const SizedBox(height: 20),
 
-      // The feedback console, for the handful of accounts that have one, at the
-      // very top. It used to be the last group on the page, below the account —
-      // which is where somebody puts a screen they never intend to open, and
-      // the tips waiting for approval sat on a *different* row further up. One
-      // entry, first, so what users sent is never further away than the profile
-      // picture.
+      // 2. The account, immediately under the person it belongs to. It used to
+      // be the last group on the page, which put the one row that protects
+      // everything else below every row it protects.
+      _AccountGroup(
+        account: account,
+        onSignIn: () => context.push('/sign-in'),
+        onSignOut: () => _confirmSignOut(account, sync),
+      ),
+
+      // 3. A single matchmaker's own card — one row, and a page behind it. The
+      // card used to be previewed here in full, above the settings, whether or
+      // not there was anything in it.
+      if (profile.isSingle)
+        SettingsGroup(
+          title: 'הכרטיס שלי',
+          children: <Widget>[
+            SettingsRow(
+              icon: Icons.badge_outlined,
+              title: 'כרטיס השידוכים שלי',
+              subtitle: hasCard
+                  ? 'צפייה, שיתוף ועריכה'
+                  : 'עוד לא מילאת אותו — אפשר למלא עכשיו',
+              onTap: () => context.push('/profile/card'),
+            ),
+          ],
+        ),
+
+      // The feedback console, for the handful of accounts that have one. It
+      // used to be the last group on the page — which is where somebody puts a
+      // screen they never intend to open — and the tips waiting for approval
+      // sat on a *different* row further up. One entry, above the settings, so
+      // what users sent is never far from the top of the page.
       if (account.isSupportAdmin)
         SettingsGroup(
           title: 'ניהול',
@@ -82,43 +144,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
 
-      // Everything below is one row per subject and a screen behind it. The
-      // page used to carry nine headings and every option in the app at once,
-      // which meant the two things people actually come here for — the backup
-      // and the account — were somewhere in the middle of forty rows.
-      SettingsGroup(
-        title: 'התאמה אישית',
-        children: <Widget>[
-          SettingsRow(
-            icon: Icons.palette_outlined,
-            title: 'תצוגה וערכת נושא',
-            onTap: () => context.push('/profile/appearance'),
-          ),
-          SettingsRow(
-            icon: Icons.style_outlined,
-            title: 'סגנונות דתיים',
-            onTap: () => context.push('/profile/religious-levels'),
-          ),
-        ],
+      // 4. The settings themselves: one row per subject, one screen behind
+      // each. Everything here opens something; nothing here toggles anything.
+      KeyedSubtree(
+        key: _settingsKey,
+        child: SettingsGroup(
+          title: 'הגדרות',
+          children: <Widget>[
+            SettingsRow(
+              icon: Icons.palette_outlined,
+              title: 'תצוגה וערכת נושא',
+              onTap: () => context.push('/profile/appearance'),
+            ),
+            SettingsRow(
+              icon: Icons.style_outlined,
+              title: 'עריכת סגנונות דתיים',
+              onTap: () => context.push('/profile/religious-levels'),
+            ),
+            SettingsRow(
+              icon: Icons.folder_outlined,
+              title: 'גיבוי וייצוא',
+              subtitle: 'גיבוי בענן, שחזור, ייצוא לאקסל וייבוא',
+              onTap: () => context.push('/profile/data'),
+            ),
+            // Its own row rather than a line inside the backup screen. Privacy
+            // is the subject somebody comes looking for by name, and a subject
+            // nobody finds is a promise nobody reads.
+            SettingsRow(
+              icon: Icons.lock_outline_rounded,
+              title: 'פרטיות',
+              onTap: () => context.push('/support/privacy'),
+            ),
+            SettingsRow(
+              icon: Icons.help_outline_rounded,
+              title: 'עזרה ושאלות נפוצות',
+              onTap: () => context.push('/support/help'),
+            ),
+            SettingsRow(
+              icon: Icons.forum_outlined,
+              title: 'דיווח תקלות ויצירת קשר',
+              onTap: () => context.push('/profile/help'),
+            ),
+          ],
+        ),
       ),
+
+      // 5. Everything that is not a setting: the group, the invitation to pass
+      // the app on, and what other matchmakers wrote.
       SettingsGroup(
-        title: 'המאגר והנתונים שלי',
-        children: <Widget>[
-          SettingsRow(
-            icon: Icons.folder_outlined,
-            title: 'גיבוי, ייצוא ופרטיות',
-            subtitle: 'גיבוי בענן, שחזור, ייצוא לאקסל וייבוא',
-            onTap: () => context.push('/profile/data'),
-          ),
-        ],
-      ),
-      SettingsGroup(
-        title: 'קהילה ושיתוף',
+        title: 'פעולות נוספות',
         children: <Widget>[
           if (CommunityLinks.hasUpdatesGroup)
             SettingsRow(
               icon: Icons.groups_outlined,
-              title: 'קבוצת העדכונים',
+              title: 'הצטרפות לקבוצת העדכונים',
               subtitle: CommunityPromptsStore.isInUpdatesGroup
                   ? 'סימנת שאתם כבר בקבוצה'
                   : null,
@@ -130,34 +209,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SettingsRow(
             icon: Icons.ios_share_outlined,
             title: 'שיתוף האפליקציה עם חבר',
+            trailing: const SizedBox.shrink(),
             onTap: shareTheApp,
           ),
           SettingsRow(
-            icon: Icons.lightbulb_outline,
+            icon: Icons.auto_stories_outlined,
             title: 'טיפים לשדכנים',
             onTap: () => context.push('/profile/tips-list'),
           ),
-          SettingsRow(
-            icon: Icons.edit_note_outlined,
-            title: 'הוספת טיפ',
-            onTap: () => context.push('/profile/tips'),
-          ),
         ],
-      ),
-      SettingsGroup(
-        title: 'עזרה ומשוב',
-        children: <Widget>[
-          SettingsRow(
-            icon: Icons.support_agent_outlined,
-            title: 'עזרה, תקלות ויצירת קשר',
-            onTap: () => context.push('/profile/help'),
-          ),
-        ],
-      ),
-      _AccountGroup(
-        account: account,
-        onSignIn: () => context.push('/sign-in'),
-        onSignOut: () => _confirmSignOut(account, sync),
       ),
       const _SettingsFooter(),
     ];
@@ -228,6 +288,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await profile.setPhotoPath(path);
   }
 
+  // --- The line about themselves ------------------------------------------
+
+  /// Always reachable, whether or not sign-up left anything here — which is the
+  /// other half of "the field is optional": somebody who skipped it has to be
+  /// able to find it later, and somebody who wrote it in a hurry has to be able
+  /// to change it.
+  Future<void> _editAbout(UserProfileProvider profile) async {
+    final String? about = await AboutMeSheet.show(
+      context,
+      initialText: profile.about ?? '',
+      gender: profile.gender,
+    );
+    if (about == null) {
+      return;
+    }
+    await profile.setAbout(about);
+  }
+
   // --- Personal status ----------------------------------------------------
 
   /// Offered from the quiet line under the name. Changing to married hides the
@@ -263,44 +341,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     await profile.setIsSingle(isSingle);
-  }
-
-  // --- The personal card --------------------------------------------------
-
-  Future<void> _editPersonalCard(UserProfileProvider profile) async {
-    final List<String> initialPhotos = profile.personalCardPhotos;
-    final _PersonalCardDraft? draft =
-        await showModalBottomSheet<_PersonalCardDraft>(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          showDragHandle: true,
-          builder: (BuildContext sheetContext) {
-            return _PersonalCardEditorSheet(
-              initialText: profile.personalCard ?? '',
-              initialPhotos: initialPhotos,
-            );
-          },
-        );
-    if (draft == null) {
-      return;
-    }
-    await profile.setPersonalCardContent(
-      text: draft.text,
-      photoPaths: draft.photos,
-    );
-    PhotoPickerService.deletePhotoFiles(
-      initialPhotos.where((String path) => !draft.photos.contains(path)),
-    );
-  }
-
-  Future<void> _sharePersonalCard(UserProfileProvider profile) async {
-    final String card = profile.personalCard ?? '';
-    final List<String> photos = profile.personalCardPhotos;
-    if (card.isEmpty && photos.isEmpty) {
-      return;
-    }
-    await ShareUtils.shareText(card, photoPaths: photos);
   }
 
   // --- The account --------------------------------------------------------
@@ -345,13 +385,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-/// The account group: connected, or the clearest invitation in the settings to
-/// connect one.
-///
-/// Signed out it is deliberately the most prominent thing on the page after the
-/// profile itself — a filled button and one sentence — because it is the only
-/// row here that protects everything the others act on. Signed in it collapses
-/// to the address and a quiet way out.
 class _AccountGroup extends StatelessWidget {
   const _AccountGroup({
     required this.account,
@@ -529,23 +562,42 @@ class _AccountAvatar extends StatelessWidget {
   }
 }
 
-/// The photo, the name and one gendered line of welcome.
+/// The photograph and the full name, and under them the one line the
+/// matchmaker wrote about themselves.
+///
+/// **The name is the full name, not the greeting name.** The home screen greets
+/// by the first name alone, which is how people are spoken to; this is the
+/// matchmaker's own page, which is how they are *identified*, and a page headed
+/// "רבקה" tells its owner nothing they did not know.
+///
+/// The line under it has three states and they are all one row: what they
+/// wrote, an invitation to write something when they skipped it during sign-up,
+/// and — for a profile with no photograph — the note about the photograph,
+/// which is worth saying exactly once and only while it is still true. Tapping
+/// the row always opens the editor.
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.profile, required this.onEditPhoto});
+  const _ProfileHeader({
+    required this.profile,
+    required this.onEditPhoto,
+    required this.onEditAbout,
+  });
 
   final UserProfileProvider profile;
   final VoidCallback onEditPhoto;
+  final VoidCallback onEditAbout;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Gender? gender = profile.gender;
+    final String? about = profile.about;
 
     return Column(
       children: <Widget>[
         UserProfileAvatar(
           photoPath: profile.photoPath,
           gender: gender,
+          name: profile.name,
           radius: 46,
           onTap: onEditPhoto,
           showEditBadge: true,
@@ -553,20 +605,51 @@ class _ProfileHeader extends StatelessWidget {
         const SizedBox(height: 12),
         Text(
           profile.name ?? '{שדכן|שדכנית}'.forGender(gender),
+          textAlign: TextAlign.center,
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w800,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          profile.photoPath == null
-              ? 'אפשר להוסיף תמונה — היא תופיע בראש עמוד הבית'
-              : 'תודה {שאתה חושב|שאת חושבת} על החברים שלך'.forGender(gender),
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        const SizedBox(height: 6),
+        InkWell(
+          onTap: onEditAbout,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Flexible(
+                  child: Text(
+                    about ?? '${AboutMe.label} · הוספה',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.45,
+                      fontStyle: about == null ? null : FontStyle.italic,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  about == null ? Icons.add_rounded : Icons.edit_outlined,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
           ),
         ),
+        if (profile.photoPath == null) ...<Widget>[
+          const SizedBox(height: 2),
+          Text(
+            'אפשר להוסיף תמונה — היא תופיע בראש עמוד הבית',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -607,501 +690,6 @@ class _PersonalStatusLine extends StatelessWidget {
   }
 }
 
-/// The matchmaker's own card, at the top of their page and only when they are
-/// single.
-///
-/// It is a preview, not an editor: the text alone, four lines of it, with the
-/// two things anyone ever wants to do with it — change it, send it — as icons
-/// in the corner. Anything more would make a card that has to be scrolled past
-/// on the way to the settings underneath.
-class _PersonalCardCard extends StatelessWidget {
-  const _PersonalCardCard({
-    required this.profile,
-    required this.expanded,
-    required this.onToggleExpanded,
-    required this.onEditCard,
-    required this.onShareCard,
-  });
-
-  final UserProfileProvider profile;
-  final bool expanded;
-  final VoidCallback onToggleExpanded;
-  final VoidCallback onEditCard;
-  final VoidCallback onShareCard;
-
-  /// Roughly how many lines fit in the collapsed preview.
-  static const int _previewLines = 4;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String card = (profile.personalCard ?? '').trim();
-    final List<String> photos = profile.personalCardPhotos;
-    final bool hasCard = card.isNotEmpty || photos.isNotEmpty;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 8, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    'הכרטיס שלך',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                if (hasCard) ...<Widget>[
-                  IconButton(
-                    onPressed: onEditCard,
-                    icon: const Icon(Icons.edit_outlined, size: 20),
-                    tooltip: 'עריכת הכרטיס',
-                    visualDensity: VisualDensity.compact,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  IconButton(
-                    onPressed: onShareCard,
-                    icon: const Icon(Icons.ios_share, size: 20),
-                    tooltip: 'שיתוף הכרטיס',
-                    visualDensity: VisualDensity.compact,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
-              ],
-            ),
-            if (!hasCard) ...<Widget>[
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 8),
-                child: Text(
-                  'כאן אפשר לשמור את הכרטיס שלך, כדי לשתף אותו בקלות בכל פעם '
-                  'שצריך.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.45,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: onEditCard,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('יצירת הכרטיס'),
-                  ),
-                ),
-              ),
-            ] else ...<Widget>[
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 8),
-                child: Text(
-                  card.isEmpty ? 'הכרטיס שלך שמור כאן.' : card,
-                  maxLines: expanded ? null : _previewLines,
-                  overflow: expanded
-                      ? TextOverflow.clip
-                      : TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-                ),
-              ),
-              if (_isLong(card))
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: TextButton(
-                    onPressed: onToggleExpanded,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      textStyle: theme.textTheme.bodySmall,
-                    ),
-                    child: Text(expanded ? 'הצג פחות' : 'הצג עוד'),
-                  ),
-                ),
-              if (photos.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 12),
-                _PersonalCardPhotos(photos: photos),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Cheap stand-in for "does not fit in the preview": either it already has
-  /// more lines than the preview shows, or it is long enough to wrap past it.
-  static bool _isLong(String card) {
-    return '\n'.allMatches(card).length >= _previewLines || card.length > 180;
-  }
-}
-
-/// Every photo saved on the personal card, laid out under its text.
-///
-/// The card used to show its text and nothing else, so the only way to find out
-/// which photos were attached — or how many — was to open the editor. That is
-/// the wrong moment to discover it: this card exists to be *shared*, the photos
-/// go with it, and nobody should have to send it once to learn what it sends.
-/// They are all here, in the order they will go out in, with the first one
-/// marked because that is the one that leads.
-class _PersonalCardPhotos extends StatelessWidget {
-  const _PersonalCardPhotos({required this.photos});
-
-  final List<String> photos;
-
-  static const double _thumbSize = 74;
-
-  Future<void> _open(BuildContext context, int index) {
-    return showDialog<void>(
-      context: context,
-      barrierColor: Colors.black87,
-      builder: (BuildContext dialogContext) =>
-          _PersonalCardPhotoViewer(photos: photos, initialIndex: index),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsetsDirectional.only(end: 8),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                Icons.photo_library_outlined,
-                size: 15,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  photos.length == 1
-                      ? 'תמונה אחת תישלח יחד עם הכרטיס'
-                      : '${photos.length} תמונות יישלחו יחד עם הכרטיס',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: _thumbSize,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            // Flush with the card's text on the start edge; the trailing gap is
-            // the card's own padding.
-            padding: const EdgeInsetsDirectional.only(end: 8),
-            itemCount: photos.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (BuildContext context, int index) {
-              return _PersonalCardThumb(
-                path: photos[index],
-                isFirst: index == 0,
-                size: _thumbSize,
-                onTap: () => _open(context, index),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _PersonalCardThumb extends StatelessWidget {
-  const _PersonalCardThumb({
-    required this.path,
-    required this.isFirst,
-    required this.size,
-    required this.onTap,
-  });
-
-  final String path;
-  final bool isFirst;
-  final double size;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return SizedBox.square(
-      dimension: size,
-      child: Material(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              Image.file(
-                File(path),
-                fit: BoxFit.cover,
-                // A photo whose file has gone is shown as a gap rather than as
-                // a red error box on the matchmaker's own profile.
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.broken_image_outlined,
-                  size: 22,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (isFirst)
-                PositionedDirectional(
-                  start: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    color: Colors.black54,
-                    child: const Text(
-                      'ראשית',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The photos at full size, swipeable, on a dark ground.
-class _PersonalCardPhotoViewer extends StatelessWidget {
-  const _PersonalCardPhotoViewer({
-    required this.photos,
-    required this.initialIndex,
-  });
-
-  final List<String> photos;
-  final int initialIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog.fullscreen(
-      backgroundColor: Colors.transparent,
-      child: Stack(
-        children: <Widget>[
-          Positioned.fill(
-            child: PageView.builder(
-              controller: PageController(initialPage: initialIndex),
-              itemCount: photos.length,
-              itemBuilder: (BuildContext context, int index) {
-                return InteractiveViewer(
-                  minScale: 1,
-                  maxScale: 4,
-                  child: Center(
-                    child: Image.file(File(photos[index]), fit: BoxFit.contain),
-                  ),
-                );
-              },
-            ),
-          ),
-          PositionedDirectional(
-            top: MediaQuery.paddingOf(context).top + 8,
-            end: 8,
-            child: IconButton(
-              onPressed: () => Navigator.of(context).pop(),
-              tooltip: 'סגירה',
-              icon: const Icon(Icons.close, color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PersonalCardDraft {
-  const _PersonalCardDraft({required this.text, required this.photos});
-
-  final String text;
-  final List<String> photos;
-}
-
-class _PersonalCardEditorSheet extends StatefulWidget {
-  const _PersonalCardEditorSheet({
-    required this.initialText,
-    required this.initialPhotos,
-  });
-
-  final String initialText;
-  final List<String> initialPhotos;
-
-  @override
-  State<_PersonalCardEditorSheet> createState() =>
-      _PersonalCardEditorSheetState();
-}
-
-class _PersonalCardEditorSheetState extends State<_PersonalCardEditorSheet> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initialText,
-  );
-  late final List<String> _photos = List<String>.of(widget.initialPhotos);
-  final Set<String> _newPhotos = <String>{};
-  bool _submitted = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    if (!_submitted) {
-      PhotoPickerService.deletePhotoFiles(_newPhotos);
-    }
-    super.dispose();
-  }
-
-  Future<void> _addPhotos() async {
-    final List<String> added = await PhotoPickerService.pickPhotos(
-      context,
-      personId: 'my_personal_card',
-    );
-    if (!mounted || added.isEmpty) {
-      return;
-    }
-    setState(() {
-      _photos.addAll(added);
-      _newPhotos.addAll(added);
-    });
-  }
-
-  void _setPrimary(int index) {
-    if (index <= 0 || index >= _photos.length) {
-      return;
-    }
-    setState(() {
-      final String path = _photos.removeAt(index);
-      _photos.insert(0, path);
-    });
-  }
-
-  void _removePhoto(int index) {
-    final String removed = _photos.removeAt(index);
-    if (_newPhotos.remove(removed)) {
-      PhotoPickerService.deletePhotoFiles(<String>[removed]);
-    }
-    setState(() {});
-  }
-
-  void _reorderPhotos(int oldIndex, int newIndex) {
-    setState(() {
-      if (newIndex > oldIndex) {
-        newIndex -= 1;
-      }
-      final String path = _photos.removeAt(oldIndex);
-      _photos.insert(newIndex, path);
-    });
-  }
-
-  void _save() {
-    _submitted = true;
-    Navigator.of(context).pop(
-      _PersonalCardDraft(
-        text: _controller.text.trim(),
-        photos: List<String>.unmodifiable(_photos),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
-
-    return FractionallySizedBox(
-      heightFactor: 0.92,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, keyboard + 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              'עריכת הכרטיס האישי',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'אפשר לשמור טקסט חופשי, להוסיף כמה תמונות שרוצים ולסדר אותן.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Expanded(
-              child: ListView(
-                children: <Widget>[
-                  TextField(
-                    controller: _controller,
-                    minLines: 6,
-                    maxLines: 12,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      labelText: 'הטקסט שלי',
-                      hintText: 'אפשר לכתוב או להדביק כאן את הכרטיס שלך',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  PersonPhotoEditor(
-                    photoPaths: _photos,
-                    onAddPhoto: _addPhotos,
-                    onSetPrimary: _setPrimary,
-                    onRemove: _removePhoto,
-                    onReorder: _reorderPhotos,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('ביטול'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _save,
-                    icon: const Icon(Icons.save_outlined, size: 18),
-                    label: const Text('שמירת הכרטיס'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The theme picker, moved here from the old settings screen unchanged.
 /// The matchmaker's own photo, drawn the same way wherever it appears: the home
 /// app bar, and the head of this screen. Falls back to the initial of their
 /// name, and to a plain person icon when there is no name either.
