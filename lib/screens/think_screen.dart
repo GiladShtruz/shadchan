@@ -307,11 +307,11 @@ class _MatchLookup {
 /// and the name lead it and are the largest thing on it; under them is the one
 /// sentence saying why this friend is worth a thought *today*; under that, the
 /// three matches the database found, each as a small chip with a face and a
-/// name; and at the end, the way into all of them.
+/// full name over two lines; and at the end, the way into all of them.
 ///
 /// **Still sized to be scrolled through.** The screen exists to move an eye
 /// over many friends, so the card is two short rows and never more: the name is
-/// one line, the reason is one line, the matches are one line of chips. Nothing
+/// one line, the reason is one line, the matches are one row of chips. Nothing
 /// here grows with its content — a long name and a long reason are clamped, not
 /// given a second line, because a card that is tall for one friend is a card
 /// that shows six friends where it could show ten.
@@ -442,30 +442,36 @@ class _CandidateChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String first = person.firstName.trim().isNotEmpty
-        ? person.firstName.trim()
-        : person.fullName.trim();
+    // First name *and* surname. A database has four people called אסתר in it
+    // by the time it is useful, and a chip that only says "אסתר" asks the
+    // matchmaker to tap it to find out which one is being suggested.
+    final String name = person.fullName.trim().isNotEmpty
+        ? person.fullName.trim()
+        : person.firstName.trim();
 
     return Material(
       color: ProfilePalette.canvas(theme),
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(3, 3, 8, 3),
+          padding: const EdgeInsetsDirectional.fromSTEB(6, 5, 6, 5),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              PersonAvatar(person: person, radius: 12),
+              PersonAvatar(person: person, radius: 13),
               const SizedBox(width: 6),
               Flexible(
+                // Two lines, so "שם פרטי שם משפחה" fits three across a narrow
+                // phone without either half being cut to an ellipsis.
                 child: Text(
-                  first,
-                  maxLines: 1,
+                  name,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    height: 1.15,
                     color: ProfilePalette.text(theme),
                   ),
                 ),

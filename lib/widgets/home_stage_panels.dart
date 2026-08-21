@@ -278,12 +278,14 @@ class HomeImportInvite extends StatelessWidget {
 /// completely interchangeable with the six other tinted strips the page has had
 /// at one time or another. This is the one block on the home screen that is an
 /// invitation rather than a control, so it is allowed to look like one: painted
-/// paper, a line saying why it is worth doing, and a real button.
+/// paper, and a real button.
 ///
-/// **The illustration is the notepad from "הוספת רעיון".** Deliberately the
-/// same picture: this block and that card are the same act at two moments — the
-/// thought, and writing it down — and one visual language across both is what
-/// makes the page feel drawn rather than assembled.
+/// **Its illustration is people, not paper.** It used to borrow the notepad
+/// from "הוספת רעיון", which put the same picture in two places a thumb apart
+/// and made the two blocks read as one repeated thing. This card is about
+/// thinking of *people*, so it draws people: two little profile cards leaning
+/// against each other with a heart between them, in the same warm vintage
+/// palette the notepad is painted in.
 ///
 /// It drops the picture entirely below 300px of card or above 1.3x text, where
 /// keeping it would leave the sentence three words wide.
@@ -305,12 +307,11 @@ class HomeThinkBanner extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool showPicture =
             constraints.maxWidth >= 300 && textScale <= 1.3;
-        // Held down deliberately: the button under the sentence has to keep
-        // "למי אפשר לחשוב יחד?" on one line, and every pixel the picture takes
-        // comes out of the column that has to hold it.
-        final double pictureWidth = (constraints.maxWidth * 0.30).clamp(
-          88.0,
-          116.0,
+        // Held down deliberately: the block is two lines and a pill tall now,
+        // and every pixel the picture takes is a pixel the card grows by.
+        final double pictureWidth = (constraints.maxWidth * 0.24).clamp(
+          72.0,
+          92.0,
         );
 
         return Material(
@@ -332,118 +333,234 @@ class HomeThinkBanner extends StatelessWidget {
                   ],
                 ),
               ),
-              child: Stack(
-                children: <Widget>[
-                  // One outlined heart in the far corner. The card's only
-                  // decoration, and the reason it reads as paper somebody wrote
-                  // on rather than as a panel.
-                  PositionedDirectional(
-                    top: 10,
-                    end: 12,
-                    child: Icon(
-                      Icons.favorite_border_rounded,
-                      size: 17,
-                      color: accent.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: <Widget>[
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(
-                                // A statement, not a question. The block is an
-                                // open door, and a question mark on the home
-                                // screen asks for an answer the matchmaker did
-                                // not come here to give.
-                                'עוצרים רגע לחשוב על החברים',
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.22,
-                                  color: dark
-                                      ? theme.colorScheme.onSurface
-                                      : accent,
-                                ),
-                              ),
-                              const SizedBox(height: 7),
-                              Text(
-                                'כל רעיון קטן יכול להיות החיבור המיוחד '
-                                'שייבנה חיים.',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  height: 1.45,
-                                ),
-                              ),
-                              const SizedBox(height: 13),
-                              Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: FilledButton.icon(
-                                  onPressed: onTap,
-                                  icon: const Icon(
-                                    Icons.people_alt_outlined,
-                                    size: 17,
-                                  ),
-                                  // Scaled down rather than wrapped. The
-                                  // label is a question, and a question
-                                  // broken across two lines inside a pill
-                                  // reads as two half-sentences; at 1.5x
-                                  // system text on a 320px phone there is no
-                                  // room for it at full size and no room to
-                                  // wrap it either.
-                                  label: const FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      'למי אפשר לחשוב יחד?',
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: dark
-                                        ? AppColors.secondaryDarkDm
-                                        : AppColors.secondary,
-                                    foregroundColor: dark
-                                        ? AppColors.onSecondary
-                                        : AppColors.surface,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 10,
-                                    ),
-                                    shape: const StadiumBorder(),
-                                    textStyle: theme.textTheme.labelMedium
-                                        ?.copyWith(fontWeight: FontWeight.w800),
-                                  ),
-                                ),
-                              ),
-                            ],
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            // A statement, not a question. The block is an
+                            // open door, and a question mark on the home
+                            // screen asks for an answer the matchmaker did
+                            // not come here to give.
+                            'עוצרים רגע לחשוב על החברים',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
+                              color: dark
+                                  ? theme.colorScheme.onSurface
+                                  : accent,
+                            ),
                           ),
-                        ),
-                        if (showPicture) ...<Widget>[
-                          const SizedBox(width: 10),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: Image.asset(
-                              'assets/home_add_idea.jpg',
-                              width: pictureWidth,
-                              height: pictureWidth,
-                              fit: BoxFit.cover,
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: FilledButton.icon(
+                              onPressed: onTap,
+                              icon: const Icon(
+                                Icons.people_alt_outlined,
+                                size: 17,
+                              ),
+                              // Scaled down rather than wrapped. The
+                              // label is a question, and a question
+                              // broken across two lines inside a pill
+                              // reads as two half-sentences; at 1.5x
+                              // system text on a 320px phone there is no
+                              // room for it at full size and no room to
+                              // wrap it either.
+                              label: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  'על מי חושבים עכשיו?',
+                                  maxLines: 1,
+                                ),
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: dark
+                                    ? AppColors.secondaryDarkDm
+                                    : AppColors.secondary,
+                                foregroundColor: dark
+                                    ? AppColors.onSecondary
+                                    : AppColors.surface,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                shape: const StadiumBorder(),
+                                textStyle: theme.textTheme.labelMedium
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
                             ),
                           ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+                    if (showPicture) ...<Widget>[
+                      const SizedBox(width: 10),
+                      _ThinkPeopleArt(size: pictureWidth, accent: accent),
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// The card's illustration: two profile cards leaning towards each other with
+/// a heart where they meet.
+///
+/// Drawn here rather than shipped as an image so it takes the warm vintage
+/// palette from the theme in both light and dark, and so it can never be
+/// confused with the notepad photograph "הוספת רעיון" uses.
+class _ThinkPeopleArt extends StatelessWidget {
+  const _ThinkPeopleArt({required this.size, required this.accent});
+
+  final double size;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color paper = dark
+        ? Color.alphaBlend(accent.withValues(alpha: 0.16), theme.colorScheme.surface)
+        : AppColors.surface;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Semantics(
+        excludeSemantics: true,
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            // The two cards, tilted a few degrees apart, the front one warmer
+            // and slightly larger so the pair reads as two people rather than
+            // as one card with a shadow.
+            Transform.translate(
+              offset: Offset(-size * 0.13, -size * 0.04),
+              child: Transform.rotate(
+                angle: -0.16,
+                child: _ProfileCardArt(
+                  width: size * 0.50,
+                  height: size * 0.66,
+                  paper: paper,
+                  accent: accent,
+                  alpha: 0.55,
+                ),
+              ),
+            ),
+            Transform.translate(
+              offset: Offset(size * 0.14, size * 0.05),
+              child: Transform.rotate(
+                angle: 0.14,
+                child: _ProfileCardArt(
+                  width: size * 0.52,
+                  height: size * 0.70,
+                  paper: paper,
+                  accent: accent,
+                  alpha: 0.85,
+                ),
+              ),
+            ),
+            // The heart sits where the two cards overlap: the whole point of
+            // the picture in one small mark.
+            PositionedDirectional(
+              top: size * 0.04,
+              start: size * 0.34,
+              child: Icon(
+                Icons.favorite_rounded,
+                size: size * 0.24,
+                color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One little profile card in the illustration: a head, and two ruled lines
+/// where a name would be.
+class _ProfileCardArt extends StatelessWidget {
+  const _ProfileCardArt({
+    required this.width,
+    required this.height,
+    required this.paper,
+    required this.accent,
+    required this.alpha,
+  });
+
+  final double width;
+  final double height;
+  final Color paper;
+  final Color accent;
+  final double alpha;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color ink = accent.withValues(alpha: alpha);
+
+    return Container(
+      width: width,
+      height: height,
+      padding: EdgeInsets.symmetric(horizontal: width * 0.14),
+      decoration: BoxDecoration(
+        color: paper,
+        borderRadius: BorderRadius.circular(width * 0.20),
+        border: Border.all(color: ink.withValues(alpha: alpha * 0.55)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: accent.withValues(alpha: 0.10),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Container(
+            width: width * 0.34,
+            height: width * 0.34,
+            decoration: BoxDecoration(color: ink, shape: BoxShape.circle),
+          ),
+          SizedBox(height: height * 0.09),
+          _ArtRule(width: width * 0.62, color: ink),
+          SizedBox(height: height * 0.06),
+          _ArtRule(width: width * 0.42, color: ink.withValues(alpha: alpha * 0.6)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArtRule extends StatelessWidget {
+  const _ArtRule({required this.width, required this.color});
+
+  final double width;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 3,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
     );
   }
 }

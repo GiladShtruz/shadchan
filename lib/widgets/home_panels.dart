@@ -270,8 +270,11 @@ class HomeActionCards extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(
           context,
         ).scale(1).clamp(1, 1.8);
-        final double bandHeight = (narrow ? 54.0 : 60.0) * textScale;
-        final double artHeight = (constraints.maxWidth * 0.42).clamp(104, 172);
+        final double bandHeight = (narrow ? 46.0 : 50.0) * textScale;
+        // Squatter than square on purpose: at 0.42 of the row each tile was a
+        // tall upright rectangle and the two of them took most of a phone
+        // screen before anything else on the page got a turn.
+        final double artHeight = (constraints.maxWidth * 0.30).clamp(84, 128);
 
         return SizedBox(
           height: artHeight + bandHeight,
