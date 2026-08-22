@@ -242,7 +242,8 @@ class _HomeScreenState extends State<HomeScreen> {
       // the right, so the first entry here is the innermost of the three. Read
       // left to right on screen they are menu, bell, search — the order they
       // are drawn in the design, with the overflow menu in the far corner where
-      // a phone's overflow menu is looked for.
+      // a phone's overflow menu is looked for — unframed, hard against the
+      // edge, with the boxed bell and search reading as the pair beside it.
       actions: <Widget>[
         HomeBarButton(
           icon: const Icon(Icons.search),
@@ -251,9 +252,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(width: 6),
         const RemindersBellButton(boxed: true),
-        const SizedBox(width: 6),
+        const SizedBox(width: 2),
         const AppMenuButton(boxed: true),
-        const SizedBox(width: 8),
+        const SizedBox(width: 2),
       ],
     );
   }

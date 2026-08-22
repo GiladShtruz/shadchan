@@ -724,6 +724,14 @@ class PersonRepository extends ChangeNotifier {
     await _noteBox?.put(note.id, note);
   }
 
+  bool containsEventId(String id) {
+    return _eventBox?.containsKey(id) ?? false;
+  }
+
+  Future<void> addImportedEvent(PersonEvent event) async {
+    await _eventBox?.put(event.id, event);
+  }
+
   int _sortByFirstName(Person a, Person b) {
     return a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase());
   }

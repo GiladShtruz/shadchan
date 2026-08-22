@@ -281,10 +281,10 @@ abstract final class CommunityService {
     }
 
     try {
-      await _db.collection(membersCollection).doc(user.uid).set(<String, Object?>{
-        ...row,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _db.collection(membersCollection).doc(user.uid).set(
+        <String, Object?>{...row, 'updatedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
       // Remembered only after the server took it. A write that failed must be
       // retried by the next publish, not skipped because we already decided it
       // had happened.
@@ -302,7 +302,9 @@ abstract final class CommunityService {
   /// account in the app at once.
   static String _fingerprintOf(Map<String, Object?> row) {
     final List<String> keys = row.keys.toList()..sort();
-    return <String>[for (final String key in keys) '$key=${row[key]}'].join('|');
+    return <String>[
+      for (final String key in keys) '$key=${row[key]}',
+    ].join('|');
   }
 
   static Map<String, Object?> _fieldsFor(
@@ -624,9 +626,19 @@ abstract final class CommunityService {
           isEqualTo: CommunityPeriods.keyFor(period),
         );
       }
+      // One more than the cap, so a community that has outgrown the scan can
+      // be recognised rather than quietly half-counted. See below.
       final QuerySnapshot<Map<String, dynamic>> snapshot = await query
-          .limit(_scanLimit)
+          .limit(_scanLimit + 1)
           .get();
+      if (snapshot.docs.length > _scanLimit) {
+        // There are more members in this window than this fallback can read,
+        // so anything it added up would be a fraction of the community
+        // presented as the whole of it. "פעילות הקהילה" is a real figure or it
+        // is nothing; [CommunityTotals.empty] is the unresolved placeholder,
+        // so the card says it could not load rather than showing a fraction.
+        return CommunityTotals.empty;
+      }
 
       int points = 0;
       int active = 0;

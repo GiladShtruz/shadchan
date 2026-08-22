@@ -14,10 +14,21 @@ import 'package:shadchan/utils/dating_history.dart';
 /// what makes a double publish harmless, a restored backup correct, and a
 /// deleted record actually disappear from the total.
 ///
-/// **The windows here are Gregorian**, unlike the Hebrew months the activity
-/// chart is drawn in. Two matchmakers' months have to be the same month before
+/// **One set of windows for the whole app.** The day and the week are Israel's
+/// calendar day and the Sunday-to-Saturday week that turns over at midnight on
+/// מוצאי שבת; the month is the *Hebrew* month, from one Rosh Chodesh to the
+/// next, which is the month the activity chart and the stats screen have always
+/// been drawn in. Two matchmakers' months have to be the same month before
 /// their numbers can be added together, and "החודש" on a screen that puts your
-/// figure beside the community's has to mean one thing.
+/// figure beside the community's has to mean one thing — the same one thing it
+/// means on the chart underneath it.
+///
+/// **The four windows nest, and they are counted the same way.** Every figure
+/// comes out of one call to [ActivityStats.breakdownBetween] over one range, so
+/// a narrower window can never report more of something than a wider window
+/// that contains it. The only case where the week is not inside the month is
+/// the week Rosh Chodesh falls in — where "השבוע" honestly does reach back
+/// into the previous month, and saying so is more accurate than trimming it.
 abstract final class CommunityCounts {
   static CommunityMemberCounts build({
     required List<Person> people,

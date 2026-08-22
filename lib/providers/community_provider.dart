@@ -101,7 +101,10 @@ class CommunityProvider extends ChangeNotifier {
     required MatchRepository matches,
     required UserProfileProvider profile,
   }) async {
-    _name = profile.name ?? '';
+    // First name *and* surname. The board is a list of people, and one word
+    // is not enough to tell two of them apart once the community is bigger
+    // than a handful — see [UserProfileProvider.fullName].
+    _name = profile.fullName ?? '';
     _photoPath = profile.photoPath;
     final CommunityMemberCounts counts = CommunityCounts.build(
       people: people.getAll(),

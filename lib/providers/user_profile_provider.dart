@@ -91,6 +91,25 @@ class UserProfileProvider extends ChangeNotifier {
     return parts.sublist(1).join(' ');
   }
 
+  /// First name and surname, joined — the form the leaderboard shows.
+  ///
+  /// Composed from the two parts rather than read off the joined key, so a
+  /// surname that was added later can never be missing from what goes out to
+  /// the community while the older joined value sits in the box unchanged.
+  /// Falls back to [name] for an install that has only ever had one.
+  String? get fullName {
+    final String first = (firstName ?? '').trim();
+    final String last = (lastName ?? '').trim();
+    final String joined = <String>[
+      first,
+      last,
+    ].where((String part) => part.isNotEmpty).join(' ');
+    if (joined.isNotEmpty) {
+      return joined;
+    }
+    return name;
+  }
+
   Gender? get gender {
     final String? value = _box.get(_genderKey) as String?;
     return switch (value) {

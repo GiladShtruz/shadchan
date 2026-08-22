@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
@@ -117,13 +118,25 @@ class _SignInScreenState extends State<SignInScreen> {
   /// was already in the account is deleted either. A matchmaker who had a
   /// database here and a database there ends up with both.
   ///
+  /// **And then the community, in the same breath.** Publishing used to wait
+  /// for the next app open, which meant a matchmaker who had been using the app
+  /// for months and signed in this morning appeared in the community with no
+  /// history and nowhere on the board — the one moment they are most likely to
+  /// go and look. The counts are recomputed from the local ledgers, so this
+  /// publish carries everything they did before they had an account, and it is
+  /// deliberately after the restore: a database that has just gained records
+  /// from the account should be counted with them.
+  ///
   /// Unawaited on purpose: this is a backup, and the matchmaker should be on
-  /// the home screen while it happens rather than watching a spinner.
+  /// the home screen while it happens rather than watching a spinner. Every
+  /// provider is read *before* the first `await` for the same reason — this
+  /// outlives the screen that started it.
   Future<void> _adoptLocalData() async {
     final SyncProvider sync = context.read<SyncProvider>();
     final PersonRepository people = context.read<PersonRepository>();
     final MatchRepository matches = context.read<MatchRepository>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
+    final CommunityProvider community = context.read<CommunityProvider>();
 
     await sync.restore(
       personRepo: people,
@@ -131,6 +144,7 @@ class _SignInScreenState extends State<SignInScreen> {
       profile: profile,
     );
     await sync.sync(personRepo: people, matchRepo: matches, profile: profile);
+    await community.refresh(people: people, matches: matches, profile: profile);
   }
 
   Future<void> _continueWithout() async {

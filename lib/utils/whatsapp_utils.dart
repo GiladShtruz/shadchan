@@ -32,6 +32,17 @@ abstract final class WhatsAppUtils {
 תרצי לשלוח לי כרטיס שלך ותמונה?
 ואם מתאים לך, אפשר גם לכתוב לי בהודעה נפרדת כמה מילים על מה את מחפשת, כדי שאוכל לדייק יותר בהצעות.''';
 
+  /// The wording used when one message is going out to several friends at once
+  /// and they are not all the same gender.
+  ///
+  /// Neither gendered form can be sent to a mixed group without addressing half
+  /// of it wrongly, so this says the same thing with no gendered verb in it.
+  /// A friend picked on their own still gets the form written for them.
+  static const String _detailsRequestNeutral = '''
+היי! אני חושב על חברים לשידוכים ואשמח לחשוב גם עליך 😊
+אפשר לקבל כרטיס שלך ותמונה?
+ואם מתאים, אפשר גם לכתוב לי בהודעה נפרדת כמה מילים על מה שמחפשים, כדי שאוכל לדייק יותר בהצעות.''';
+
   /// The gendered default request-details text (no custom override applied).
   static String defaultDetailsRequestMessage(Gender gender) {
     return gender == Gender.female
@@ -85,6 +96,41 @@ abstract final class WhatsAppUtils {
       }),
       mode: LaunchMode.externalApplication,
     );
+  }
+
+  /// The one request-details message to send to [people] together.
+  ///
+  /// A saved custom text wins, exactly as it does for a single friend. With no
+  /// custom text, an all-female or all-male group gets the form written for it
+  /// and a mixed group gets [_detailsRequestNeutral].
+  static String detailsRequestMessageFor(List<Person> people) {
+    if (hasCustomDetailsRequestMessage()) {
+      return currentDetailsRequestMessage(Gender.unknown);
+    }
+    final bool anyFemale = people.any(
+      (Person person) => person.gender == Gender.female,
+    );
+    final bool anyOther = people.any(
+      (Person person) => person.gender != Gender.female,
+    );
+    if (anyFemale && anyOther) {
+      return _detailsRequestNeutral;
+    }
+    return anyFemale ? _detailsRequestFemale : _detailsRequestMale;
+  }
+
+  /// Hands the request-details message to the system share sheet so it can go
+  /// to several friends in one send.
+  ///
+  /// **Why the share sheet and not a chat link.** `wa.me` addresses exactly one
+  /// number; asking six friends for their details through it means opening
+  /// WhatsApp six times and coming back to the app in between. WhatsApp's own
+  /// share target lets every one of those six chats be ticked on one screen and
+  /// sent with one button — which is the whole point of picking six friends
+  /// first. The recipients are chosen inside WhatsApp; the app's part is the
+  /// message and the list of who it is for.
+  static Future<void> shareDetailsRequest(List<Person> people) {
+    return Share.share(detailsRequestMessageFor(people));
   }
 
   static Uri? buildChatUri(Person person, {String? onboardingMessage}) {

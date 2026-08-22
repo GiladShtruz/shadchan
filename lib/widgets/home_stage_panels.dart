@@ -280,17 +280,20 @@ class HomeImportInvite extends StatelessWidget {
 /// invitation rather than a control, so it is allowed to look like one: painted
 /// paper, a title, and a real button.
 ///
-/// **Its own illustration, no longer the notepad.** It used to reuse the
-/// picture from "הוספת רעיון", and on a page where that card sits a few
-/// centimetres below it the two read as the same thing twice. What this block
-/// asks for is not writing something down — it is holding people in mind — so
-/// it gets people: two little profile cards leaning on each other with a heart
-/// between them, drawn in the same warm paper-and-copper palette as the
-/// photographs beside it so the page still looks drawn rather than assembled.
+/// **Its own illustration: somebody thinking, over a cup of coffee.** It used
+/// to reuse the notepad from "הוספת רעיון", and then a pair of profile
+/// cards — but a pair of cards is what a *match* looks like, and this block is
+/// not about a pair, it is about the minute before one. A figure sitting with a
+/// coffee and a thought rising off it is what the block actually asks for, and
+/// it is drawn in the same warm paper-and-copper palette as the photographs
+/// beside it so the page still looks drawn rather than assembled.
 ///
-/// **Kept short.** Title, button, picture — nothing else. The sentence under
-/// the title was true and cost the block a third of its height on a page whose
-/// whole job is to get out of the way, so it is gone.
+/// **Kept short, and one line high in the title.** Title, button, picture —
+/// nothing else, the title scaled to stay on a single line rather than wrapping
+/// into a two-line heading that pushed the card taller than anything around it.
+/// The sentence under the title and the heart in the corner are both gone for
+/// the same reason: on a page whose whole job is to get out of the way, this
+/// block is an invitation, not a poster.
 ///
 /// It drops the picture entirely below 300px of card or above 1.3x text, where
 /// keeping it would leave the title three words wide.
@@ -341,96 +344,88 @@ class HomeThinkBanner extends StatelessWidget {
                   ],
                 ),
               ),
-              child: Stack(
-                children: <Widget>[
-                  // One outlined heart in the far corner. The card's only
-                  // decoration, and the reason it reads as paper somebody wrote
-                  // on rather than as a panel.
-                  PositionedDirectional(
-                    top: 8,
-                    end: 10,
-                    child: Icon(
-                      Icons.favorite_border_rounded,
-                      size: 15,
-                      color: accent.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: <Widget>[
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(
-                                // A statement, not a question. The block is an
-                                // open door, and a question mark on the home
-                                // screen asks for an answer the matchmaker did
-                                // not come here to give.
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          // One line, always. Wrapped across two it was the
+                          // tallest heading on the page and it turned the
+                          // card into a block of text; scaled down to fit,
+                          // it stays a title.
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                // A statement, not a question. The block is
+                                // an open door, and a question mark on the
+                                // home screen asks for an answer the
+                                // matchmaker did not come here to give.
                                 'עוצרים רגע לחשוב על החברים',
+                                maxLines: 1,
+                                softWrap: false,
                                 style: theme.textTheme.titleLarge?.copyWith(
-                                  fontSize: 19,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w900,
-                                  height: 1.2,
+                                  height: 1.15,
                                   color: dark
                                       ? theme.colorScheme.onSurface
                                       : accent,
                                 ),
                               ),
-                              const SizedBox(height: 9),
-                              Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: FilledButton.icon(
-                                  onPressed: onTap,
-                                  icon: const Icon(
-                                    Icons.people_alt_outlined,
-                                    size: 17,
-                                  ),
-                                  // Scaled down rather than wrapped. The
-                                  // label is a question, and a question
-                                  // broken across two lines inside a pill
-                                  // reads as two half-sentences; at 1.5x
-                                  // system text on a 320px phone there is no
-                                  // room for it at full size and no room to
-                                  // wrap it either.
-                                  label: const FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      'על מי חושבים עכשיו?',
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: dark
-                                        ? AppColors.secondaryDarkDm
-                                        : AppColors.secondary,
-                                    foregroundColor: dark
-                                        ? AppColors.onSecondary
-                                        : AppColors.surface,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 8,
-                                    ),
-                                    shape: const StadiumBorder(),
-                                    textStyle: theme.textTheme.labelMedium
-                                        ?.copyWith(fontWeight: FontWeight.w800),
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
-                        if (showPicture) ...<Widget>[
-                          const SizedBox(width: 10),
-                          _ThinkPeopleArt(size: pictureWidth, accent: accent),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: FilledButton(
+                              onPressed: onTap,
+                              // Scaled down rather than wrapped. The
+                              // label is a question, and a question
+                              // broken across two lines inside a pill
+                              // reads as two half-sentences; at 1.5x
+                              // system text on a 320px phone there is no
+                              // room for it at full size and no room to
+                              // wrap it either. No glyph beside it either:
+                              // the picture on the card already says what
+                              // this is, and the symbol only made the pill
+                              // wider.
+                              style: FilledButton.styleFrom(
+                                backgroundColor: dark
+                                    ? AppColors.secondaryDarkDm
+                                    : AppColors.secondary,
+                                foregroundColor: dark
+                                    ? AppColors.onSecondary
+                                    : AppColors.surface,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                shape: const StadiumBorder(),
+                                textStyle: theme.textTheme.labelMedium
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                              child: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('על מי חושבים עכשיו?', maxLines: 1),
+                              ),
+                            ),
+                          ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+                    if (showPicture) ...<Widget>[
+                      const SizedBox(width: 10),
+                      _ThinkingArt(size: pictureWidth, accent: accent),
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -440,19 +435,24 @@ class HomeThinkBanner extends StatelessWidget {
   }
 }
 
-/// Two little profile cards with a heart between them — the picture for
+/// Somebody sitting with a coffee, thinking — the picture for
 /// "עוצרים רגע לחשוב על החברים".
 ///
 /// **Drawn, not photographed.** Every other picture on this page is a painted
-/// asset, and there is no painted asset for *thinking about people*; the two
-/// that exist are a notepad and a group of friends, and both already belong to
-/// a card of their own further down the page. Drawing it here costs nothing to
-/// ship, follows the text size and the theme on its own, and keeps the block to
-/// the palette of the photographs next to it — warm paper, a copper line, the
-/// stone blue of the app — so it reads as one more piece of the same vintage
-/// set rather than as an icon that wandered in.
-class _ThinkPeopleArt extends StatelessWidget {
-  const _ThinkPeopleArt({required this.size, required this.accent});
+/// asset, and there is no painted asset for *stopping to think*. Drawing it
+/// here costs nothing to ship, follows the text size and the theme on its own,
+/// and keeps the block to the palette of the photographs next to it — warm
+/// paper, a copper line, the stone blue of the app — so it reads as one more
+/// piece of the same vintage set rather than as an icon that wandered in.
+///
+/// **A person and a cup, not a pair of profile cards.** Two cards with a heart
+/// between them is what a *match* looks like, and this block is about the
+/// minute before one: one person, chin on hand, over a coffee that is still
+/// steaming. Everything is one stroke weight and flat fills — the tell of a
+/// generated illustration is fussy shading and too many little flourishes, so
+/// there are five shapes here and no gradients.
+class _ThinkingArt extends StatelessWidget {
+  const _ThinkingArt({required this.size, required this.accent});
 
   final double size;
   final Color accent;
@@ -465,175 +465,183 @@ class _ThinkPeopleArt extends StatelessWidget {
     return SizedBox.square(
       dimension: size,
       child: CustomPaint(
-        painter: _ThinkPeoplePainter(
+        painter: _ThinkingPainter(
           paper: dark
               ? Color.alphaBlend(
                   Colors.white.withValues(alpha: 0.07),
                   theme.colorScheme.surface,
                 )
               : AppColors.surface,
-          wash: dark
-              ? AppColors.primaryDarkDm.withValues(alpha: 0.22)
-              : AppColors.softBlue,
           line: accent.withValues(alpha: dark ? 0.55 : 0.45),
-          ink: dark
-              ? AppColors.secondaryDarkDm.withValues(alpha: 0.85)
-              : AppColors.secondary,
-          heart: dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
+          figure: dark
+              ? AppColors.primaryDarkDm.withValues(alpha: 0.85)
+              : AppColors.primaryDark,
+          brew: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
         ),
         // The picture is decoration for a block whose title already says what
-        // it is; a screen reader announcing "two profile cards" here would only
-        // be reading the wallpaper out loud.
+        // it is; a screen reader announcing "a person with a cup of coffee"
+        // here would only be reading the wallpaper out loud.
         isComplex: false,
       ),
     );
   }
 }
 
-class _ThinkPeoplePainter extends CustomPainter {
-  const _ThinkPeoplePainter({
+class _ThinkingPainter extends CustomPainter {
+  const _ThinkingPainter({
     required this.paper,
-    required this.wash,
     required this.line,
-    required this.ink,
-    required this.heart,
+    required this.figure,
+    required this.brew,
   });
 
-  /// The face of a card.
+  /// The face of the cup.
   final Color paper;
-
-  /// The tint on the card behind, so the two do not merge into one shape.
-  final Color wash;
 
   /// The drawn outline — one weight for the whole picture, the way the painted
   /// assets beside it are outlined.
   final Color line;
 
-  /// The name bars and the shoulders.
-  final Color ink;
+  /// The person.
+  final Color figure;
 
-  final Color heart;
+  /// The coffee, and the thought rising off it.
+  final Color brew;
 
   @override
   void paint(Canvas canvas, Size size) {
     final double u = size.width / 100;
     final Paint stroke = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2 * u
+      ..strokeWidth = 2.4 * u
+      ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..color = line;
 
-    // The card behind, leaning one way.
-    _card(
-      canvas,
-      u: u,
-      center: Offset(38 * u, 46 * u),
-      turns: -0.055,
-      fill: wash,
-      stroke: stroke,
-      ink: ink.withValues(alpha: 0.35),
-    );
-    // The card in front, leaning the other, overlapping it by a third — two
-    // people standing close enough to be one thought.
-    _card(
-      canvas,
-      u: u,
-      center: Offset(62 * u, 54 * u),
-      turns: 0.05,
-      fill: paper,
-      stroke: stroke,
-      ink: ink.withValues(alpha: 0.7),
-    );
-    _heart(canvas, u: u, center: Offset(50 * u, 22 * u));
+    _thought(canvas, u: u, stroke: stroke);
+    _person(canvas, u: u, stroke: stroke);
+    _table(canvas, u: u);
+    _cup(canvas, u: u, stroke: stroke);
   }
 
-  /// One profile card: a rounded rectangle, a head, shoulders, and two bars
-  /// where a name would be.
-  void _card(
-    Canvas canvas, {
-    required double u,
-    required Offset center,
-    required double turns,
-    required Color fill,
-    required Paint stroke,
-    required Color ink,
-  }) {
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(turns * 3.14159 * 2);
-
-    final Rect rect = Rect.fromCenter(
-      center: Offset.zero,
-      width: 46 * u,
-      height: 58 * u,
-    );
-    final RRect card = RRect.fromRectAndRadius(rect, Radius.circular(9 * u));
-    canvas.drawRRect(card, Paint()..color = fill);
-    canvas.drawRRect(card, stroke);
-
-    // Head and shoulders, the way a passport photo sits on a card.
-    final Paint figure = Paint()..color = ink;
-    canvas.drawCircle(Offset(0, -14 * u), 8 * u, figure);
-    canvas.drawArc(
-      Rect.fromCenter(center: Offset(0, 8 * u), width: 30 * u, height: 30 * u),
-      3.14159,
-      3.14159,
-      true,
-      figure,
-    );
-
-    // Two bars for the name, the lower one short, as a real name reads.
-    final Paint bar = Paint()..color = ink.withValues(alpha: 0.45);
-    for (final ({double width, double y}) row in <({double width, double y})>[
-      (width: 26 * u, y: 17 * u),
-      (width: 16 * u, y: 24 * u),
-    ]) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(
-            center: Offset(0, row.y),
-            width: row.width,
-            height: 4 * u,
-          ),
-          Radius.circular(2 * u),
-        ),
-        bar,
-      );
-    }
-    canvas.restore();
+  /// Two small rings drifting up off the head. The one piece of the picture
+  /// that says *thinking* rather than *sitting*.
+  void _thought(Canvas canvas, {required double u, required Paint stroke}) {
+    canvas.drawCircle(Offset(14 * u, 20 * u), 4.5 * u, stroke);
+    canvas.drawCircle(Offset(6 * u, 9 * u), 2.4 * u, stroke);
   }
 
-  /// The small heart over the seam between the two cards — the only reason
-  /// they are next to each other.
-  void _heart(Canvas canvas, {required double u, required Offset center}) {
-    final Path path = Path()
-      ..moveTo(center.dx, center.dy + 9 * u)
-      ..cubicTo(
-        center.dx - 13 * u,
-        center.dy,
-        center.dx - 8 * u,
-        center.dy - 11 * u,
-        center.dx,
-        center.dy - 4 * u,
-      )
-      ..cubicTo(
-        center.dx + 8 * u,
-        center.dy - 11 * u,
-        center.dx + 13 * u,
-        center.dy,
-        center.dx,
-        center.dy + 9 * u,
-      )
+  /// A head and a pair of shoulders, outlined.
+  ///
+  /// **Two shapes and no arm.** The obvious drawing of somebody thinking is
+  /// chin-on-hand — and at 80 pixels, in one flat colour, a hand touching a
+  /// chin is a lump: every attempt at it read as a blob with a bump. The
+  /// thought rising off the head says *thinking* on its own, and two clean
+  /// shapes beside a cup of coffee is a picture rather than a puzzle.
+  ///
+  /// Outlined in the same copper as the cup, so the whole illustration is one
+  /// weight of line around flat fills — the look of the painted assets beside
+  /// it, and the opposite of a soft-shaded generated image.
+  void _person(Canvas canvas, {required double u, required Paint stroke}) {
+    final Paint body = Paint()..color = figure;
+
+    // Shoulders, cut off by the table rather than floating above it. The
+    // corners are rounded well short of a half-circle: a dome reads as a hill,
+    // and what makes a bust a person is a short flat top with a shoulder
+    // falling away on each side.
+    final RRect torso = RRect.fromLTRBAndCorners(
+      8 * u,
+      42 * u,
+      58 * u,
+      92 * u,
+      topLeft: Radius.circular(16 * u),
+      topRight: Radius.circular(16 * u),
+    );
+    canvas.drawRRect(torso, body);
+    canvas.drawRRect(torso, stroke);
+
+    // The head sits *on* the shoulders rather than above them — a gap between
+    // the two is the difference between a person and a balloon. The outline is
+    // what keeps the two shapes apart where they meet.
+    canvas.drawCircle(Offset(33 * u, 26 * u), 13 * u, body);
+    canvas.drawCircle(Offset(33 * u, 26 * u), 13 * u, stroke);
+  }
+
+  /// The tabletop: one bar across the bottom, drawn after the figure so the
+  /// person sits behind it.
+  void _table(Canvas canvas, {required double u}) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(2 * u, 84 * u, 96 * u, 6 * u),
+        Radius.circular(3 * u),
+      ),
+      Paint()..color = brew.withValues(alpha: 0.7),
+    );
+  }
+
+  /// The cup on the table, with two curls of steam.
+  void _cup(Canvas canvas, {required double u, required Paint stroke}) {
+    // A tapered body — wider at the rim than at the base, which is the whole
+    // difference between a cup and a box.
+    final Path cup = Path()
+      ..moveTo(60 * u, 58 * u)
+      ..lineTo(86 * u, 58 * u)
+      ..lineTo(82.5 * u, 80 * u)
+      ..quadraticBezierTo(82 * u, 84 * u, 78.5 * u, 84 * u)
+      ..lineTo(67.5 * u, 84 * u)
+      ..quadraticBezierTo(64 * u, 84 * u, 63.5 * u, 80 * u)
       ..close();
-    canvas.drawPath(path, Paint()..color = heart);
+    canvas.drawPath(cup, Paint()..color = paper);
+    canvas.drawPath(cup, stroke);
+
+    // The coffee itself, a band just under the rim.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(63 * u, 60 * u, 20 * u, 5.5 * u),
+        Radius.circular(2.5 * u),
+      ),
+      Paint()..color = brew,
+    );
+
+    // The handle, on the outer side so it never crowds the figure.
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(87 * u, 68 * u),
+        width: 15 * u,
+        height: 17 * u,
+      ),
+      -1.3,
+      2.6,
+      false,
+      stroke,
+    );
+
+    // Steam: two short waves, the second shorter, so it reads as rising rather
+    // than as a pair of brackets.
+    final Paint wisp = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2 * u
+      ..strokeCap = StrokeCap.round
+      ..color = brew.withValues(alpha: 0.65);
+    canvas.drawPath(
+      Path()
+        ..moveTo(71 * u, 52 * u)
+        ..quadraticBezierTo(67 * u, 45 * u, 71 * u, 38 * u),
+      wisp,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(80 * u, 52 * u)
+        ..quadraticBezierTo(76 * u, 46 * u, 80 * u, 41 * u),
+      wisp,
+    );
   }
 
   @override
-  bool shouldRepaint(_ThinkPeoplePainter old) {
+  bool shouldRepaint(_ThinkingPainter old) {
     return old.paper != paper ||
-        old.wash != wash ||
         old.line != line ||
-        old.ink != ink ||
-        old.heart != heart;
+        old.figure != figure ||
+        old.brew != brew;
   }
 }

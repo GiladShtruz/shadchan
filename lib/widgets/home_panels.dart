@@ -86,23 +86,11 @@ class HomeHeroBand extends StatelessWidget {
               ),
               child: Row(
                 children: <Widget>[
-                  // The mark: filled and in the brand blue, so the row reads as
-                  // the app offering something rather than as a list item.
-                  Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: lead,
-                    ),
-                    child: Icon(
-                      Icons.auto_awesome,
-                      size: 22,
-                      color: theme.colorScheme.onPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+                  // No second mark at the head of the row. The blue disc with
+                  // the sparkle said "the app has something for you"; the
+                  // couple at the other end says the same thing and says what
+                  // kind of something, so the disc was one symbol too many for
+                  // a row that is two lines of type.
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

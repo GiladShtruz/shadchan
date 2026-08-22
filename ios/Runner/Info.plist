@@ -111,6 +111,15 @@
 		<string>כדי לצלם תמונה ולהוסיף אותה לכרטיס האישי</string>
 		<key>NSContactsUsageDescription</key>
 		<string>כדי לייבא אנשים במהירות מתוך אנשי הקשר שלך</string>
+		<!-- The app has no location feature at all, and permission_handler's
+		     location strategy is compiled out in ios/Podfile
+		     (PERMISSION_LOCATION=0). A linked pod still references CoreLocation,
+		     and App Store Connect flags the reference with no purpose string
+		     (ITMS-90683) whether or not the app ever calls it — the same
+		     situation as NSCameraUsageDescription above. Nothing in the app can
+		     reach this prompt, so the string is never actually shown. -->
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>האפליקציה אינה עושה שימוש במיקום ולא תבקש אותו</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>כדי לבחור תמונה מהגלריה ולהוסיף אותה לכרטיס האישי</string>
 		<key>UIApplicationSceneManifest</key>

@@ -56,6 +56,12 @@ abstract final class CloudSyncService {
     'personNotes',
     'matches',
     'matchNotes',
+    // The two history ledgers. Added when signing out began deleting the local
+    // database: until then they were deliberately local-only, on the grounds
+    // that a trail of changes is worthless without the records it describes.
+    // That held only while the records could not go anywhere.
+    'personEvents',
+    'matchStatusEvents',
   ];
 
   /// Firestore refuses a batch of more than 500 operations.
@@ -192,6 +198,15 @@ abstract final class CloudSyncService {
     }
     for (final note in matchRepo.getAllNotes()) {
       records['matchNotes/${note.id}'] = BackupService.matchNoteToJson(note);
+    }
+    for (final event in personRepo.getAllEvents()) {
+      records['personEvents/${event.id}'] = BackupService.personEventToJson(
+        event,
+      );
+    }
+    for (final event in matchRepo.getAllStatusEvents()) {
+      records['matchStatusEvents/${event.id}'] =
+          BackupService.matchStatusEventToJson(event);
     }
 
     return records;
@@ -332,6 +347,8 @@ abstract final class CloudSyncService {
       'personNotes': count('personNotes/'),
       'matches': count('matches/'),
       'matchNotes': count('matchNotes/'),
+      'personEvents': count('personEvents/'),
+      'matchStatusEvents': count('matchStatusEvents/'),
       'profile': records.containsKey(ProfileBackup.documentPath),
     }, SetOptions(merge: true));
   }
@@ -438,9 +455,7 @@ abstract final class CloudSyncService {
       if (token == null) {
         return;
       }
-      page = await root.list(
-        ListOptions(maxResults: 100, pageToken: token),
-      );
+      page = await root.list(ListOptions(maxResults: 100, pageToken: token));
     }
   }
 
@@ -479,9 +494,20 @@ abstract final class CloudSyncService {
         root,
         'matchNotes',
       );
+      final List<Map<String, dynamic>> personEvents = await _readAll(
+        root,
+        'personEvents',
+      );
+      final List<Map<String, dynamic>> matchStatusEvents = await _readAll(
+        root,
+        'matchStatusEvents',
+      );
 
       final Map<String, dynamic>? profileJson = await _readProfile(root);
 
+      // The event stores are deliberately not part of this test. A backup that
+      // holds nothing but history describes records that are not there, and
+      // "there is nothing to restore" is the right answer for it.
       if (people.isEmpty &&
           personNotes.isEmpty &&
           matches.isEmpty &&
@@ -498,6 +524,8 @@ abstract final class CloudSyncService {
           'personNotes': personNotes,
           'matches': matches,
           'matchNotes': matchNotes,
+          'personEvents': personEvents,
+          'matchStatusEvents': matchStatusEvents,
         },
         personRepo,
         matchRepo,

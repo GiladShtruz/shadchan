@@ -104,7 +104,6 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
     final bool signedIn = context.watch<AccountProvider>().isSignedIn;
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final MatchRepository matchRepository = context.watch<MatchRepository>();
-    final UserProfileProvider profile = context.watch<UserProfileProvider>();
 
     final List<Person> people = personRepository.getAll();
     final List<MatchIdea> matches = matchRepository.getAll();
@@ -142,7 +141,6 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
                 week: community.myBreakdown(CommunityPeriod.week),
                 month: community.myBreakdown(CommunityPeriod.month),
                 allTime: everything,
-                firstName: profile.firstName ?? profile.name ?? '',
                 cursor: _greetingCursor,
               ),
               const SizedBox(height: 16),
@@ -257,21 +255,20 @@ typedef _ActivityStory = ({
 /// **It opens with a word, not with a filing label.** The top line used to read
 /// "שלום, רבקה", which is how a form letter starts and says nothing about the
 /// page it heads. It is now the opener that belongs to whichever story was
-/// picked, with the first name after it, and the sentence under it says what
-/// the praise is for.
+/// picked — and the name is not appended to it either: "יש על מי לסמוך!" is
+/// spoken to whoever is reading, and a name dropped into the same slot every
+/// visit turned it back into a mail merge.
 class _CelebrationHeader extends StatelessWidget {
   const _CelebrationHeader({
     required this.week,
     required this.month,
     required this.allTime,
-    required this.firstName,
     required this.cursor,
   });
 
   final ActivityBreakdown week;
   final ActivityBreakdown month;
   final ActivityBreakdown allTime;
-  final String firstName;
   final int cursor;
 
   /// Every sentence that is true right now, in the order they were written.
@@ -353,10 +350,13 @@ class _CelebrationHeader extends StatelessWidget {
         icon: Icons.people_alt_outlined,
         tone: _friendsTone,
         opener: 'יש על מי לסמוך!',
+        // Phrased as something waiting rather than something owned. "כבר
+        // במאגר שלך" is a receipt for work already done; the database is only
+        // worth anything when somebody thinks about who is in it.
         headline: allTime.friends == 1
-            ? 'חבר אחד כבר במאגר שלך'
-            : '${allTime.friends} חברים כבר במאגר שלך',
-        body: 'תמיד שווה לעצור רגע ולחשוב על אחד מהם.',
+            ? 'חבר אחד שלך מחכה לרעיונות שלך!'
+            : '${allTime.friends} חברים שלך מחכים לרעיונות שלך!',
+        body: '',
       ));
     }
     return lines;
@@ -386,7 +386,6 @@ class _CelebrationHeader extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
     final _ActivityStory story = _story;
     final Color tone = _tone(story.tone, theme);
-    final String name = firstName.trim();
 
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
@@ -418,13 +417,14 @@ class _CelebrationHeader extends StatelessWidget {
                 child: Icon(story.icon, size: 24, color: tone),
               ),
               const SizedBox(width: 12),
-              // A greeting, not a filing label. "שלום, רבקה" is how a form
-              // letter opens; the screen is about what somebody did, so it
-              // opens by saying so — and the sentence under it names what it
-              // is about.
+              // The exclamation on its own, with no name after it. "יש על מי
+              // לסמוך!" and "כל הכבוד, זה מדהים" are said to the person
+              // reading them — appending their name turns a spoken line into a
+              // mail-merge field, and it read as one: the name always landed
+              // in the same slot, on every visit, whatever the sentence was.
               Expanded(
                 child: Text(
-                  name.isEmpty ? story.opener : '${story.opener} $name',
+                  story.opener,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -443,14 +443,18 @@ class _CelebrationHeader extends StatelessWidget {
               height: 1.25,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            story.body,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              height: 1.55,
-              color: theme.colorScheme.onSurfaceVariant,
+          // A story whose headline says the whole thing carries no second
+          // line, and an empty one would leave a hole under the sentence.
+          if (story.body.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              story.body,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                height: 1.55,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -485,6 +489,10 @@ class _MyNumbersCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return CommunityCard(
       title: 'הנתונים שלך',
+      // The warm side of the page: these four figures are this matchmaker's
+      // own record, and the card now carries the same cream its tiles do
+      // rather than sitting them on a blue panel that fights them.
+      surface: CommunitySurface.warm,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -638,6 +646,9 @@ class _MyActivityCard extends StatelessWidget {
 
     return CommunityCard(
       title: 'הקצב שלך',
+      // Plain paper. The chart, the period tabs and the grade chip bring their
+      // own colour; a wash behind them only made the bars harder to read.
+      surface: CommunitySurface.plain,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -666,11 +677,20 @@ class _MyActivityCard extends StatelessWidget {
           const SizedBox(height: 16),
           _ActivityChart(bars: bars, onTapMonth: onMonth),
           const SizedBox(height: 10),
-          Text(
-            ActivityPoints.shortExplanation,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.4,
+          // One line, scaled to fit. It is a legend, not a paragraph: broken
+          // over two lines the three clauses stopped reading as one scale and
+          // started reading as a note somebody appended to the chart.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              ActivityPoints.shortExplanation,
+              maxLines: 1,
+              softWrap: false,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -1178,6 +1198,9 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
 
     return CommunityCard(
       title: 'דירוג השדכנים',
+      // Plain as well, so the one gold row at the top is the only colour on it
+      // — which is the whole point of a board.
+      surface: CommunitySurface.plain,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

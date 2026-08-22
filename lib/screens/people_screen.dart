@@ -13,6 +13,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
@@ -72,6 +73,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// natural order; `false` reverses it ("עולה" / "יורד").
   bool _sortAscending = true;
 
+  /// Who is ticked for a joint "בקשת פרטים" — null when the screen is not in
+  /// selection mode at all.
+  ///
+  /// Entered from one person's long-press menu and never from a tap, so the
+  /// list keeps behaving exactly as it always has until somebody deliberately
+  /// asks for the multi-select.
+  Set<String>? _detailsSelection;
+
   @override
   void initState() {
     super.initState();
@@ -107,34 +116,49 @@ class _PeopleScreenState extends State<PeopleScreen> {
         .getPendingContactDrafts();
     final List<Person> visiblePeople = _getVisiblePeople(personRepository);
 
+    final Set<String>? selection = _detailsSelection;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('המאגר שלי'),
-        centerTitle: true,
-        actions: <Widget>[
-          // The same bell, in the same slot, as בית and רעיונות. It leads the
-          // group so the three screens agree on where it is; adding people is
-          // this screen's own action and follows it, with the button in the
-          // thumb's corner carrying most of that traffic anyway.
-          const RemindersBellButton(),
-          IconButton(
-            tooltip: 'הוספת אנשי קשר',
-            icon: const Icon(Icons.add),
-            onPressed: () => AddPeopleDialog.show(context),
-          ),
-        ],
-      ),
+      appBar: selection != null
+          ? _buildSelectionAppBar(selection)
+          : AppBar(
+              title: const Text('המאגר שלי'),
+              centerTitle: true,
+              actions: <Widget>[
+                // The same bell, in the same slot, as בית and רעיונות. It leads
+                // the group so the three screens agree on where it is; adding
+                // people is this screen's own action and follows it, with the
+                // button in the thumb's corner carrying most of that traffic
+                // anyway.
+                const RemindersBellButton(),
+                IconButton(
+                  tooltip: 'הוספת אנשי קשר',
+                  icon: const Icon(Icons.add),
+                  onPressed: () => AddPeopleDialog.show(context),
+                ),
+              ],
+            ),
       // Adding a friend is the whole point of this screen, so it gets the
       // thumb's corner as well as the app bar. The icon in the bar stays: it is
       // where someone who already knows the app looks, and the two open exactly
       // the same sheet.
-      floatingActionButton: FloatingActionButton(
-        // `endFloat` in RTL is the bottom-left corner — the same place the
-        // messaging apps everyone already uses put theirs.
-        tooltip: 'הוספת חברים',
-        onPressed: () => AddPeopleDialog.show(context),
-        child: const Icon(Icons.add),
-      ),
+      //
+      // While friends are being ticked the corner carries the send button
+      // instead. A second bar across the bottom would have stacked on top of
+      // the app's own tab bar, which is already down there.
+      floatingActionButton: selection != null
+          ? FloatingActionButton.extended(
+              onPressed: _sendDetailsRequests,
+              icon: const Icon(Icons.send_rounded),
+              label: const Text('שליחת בקשה'),
+            )
+          : FloatingActionButton(
+              // `endFloat` in RTL is the bottom-left corner — the same place
+              // the messaging apps everyone already uses put theirs.
+              tooltip: 'הוספת חברים',
+              onPressed: () => AddPeopleDialog.show(context),
+              child: const Icon(Icons.add),
+            ),
       // Only the search row is fixed; the banner, gender tabs and the list all
       // scroll together as one page.
       body: Column(
@@ -275,6 +299,18 @@ class _PeopleScreenState extends State<PeopleScreen> {
               itemCount: visiblePeople.length,
               itemBuilder: (BuildContext context, int index) {
                 final Person person = visiblePeople[index];
+                final Set<String>? selection = _detailsSelection;
+                if (selection != null) {
+                  return PersonListCard(
+                    person: person,
+                    selected: selection.contains(person.id),
+                    // A tap ticks instead of opening, and a long press does the
+                    // same: while a group is being put together there is no
+                    // second meaning for either gesture.
+                    onTap: () => _toggleDetailsSelection(person),
+                    onLongPress: () => _toggleDetailsSelection(person),
+                  );
+                }
                 return PersonListCard(
                   person: person,
                   onTap: () => context.push('/people/${person.id}'),
@@ -784,6 +820,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.chat_outlined),
+                title: const Text('בקשת פרטים בוואטסאפ'),
+                subtitle: const Text('אפשר לסמן עוד חברים ולשלוח לכולם יחד'),
+                onTap: () {
+                  Navigator.of(bottomSheetContext).pop();
+                  _startDetailsSelection(person);
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.delete_outline),
                 title: const Text('מחיקה'),
                 textColor: Theme.of(context).colorScheme.error,
@@ -804,6 +849,129 @@ class _PeopleScreenState extends State<PeopleScreen> {
         );
       },
     );
+  }
+
+  // --- Joint "בקשת פרטים" ---------------------------------------------------
+
+  /// The bar shown while friends are being ticked: how many, and the way out.
+  AppBar _buildSelectionAppBar(Set<String> selection) {
+    return AppBar(
+      leading: IconButton(
+        tooltip: 'ביטול',
+        icon: const Icon(Icons.close),
+        onPressed: () => setState(() => _detailsSelection = null),
+      ),
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            selection.length == 1
+                ? 'נבחר חבר אחד'
+                : 'נבחרו ${selection.length} חברים',
+          ),
+          Text(
+            'בקשת פרטים בהודעת וואטסאפ אחת',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+        ],
+      ),
+      centerTitle: true,
+    );
+  }
+
+  /// Long-press → "בקשת פרטים בוואטסאפ": the person who was pressed is already
+  /// ticked, and the list turns into a picker for anybody else.
+  void _startDetailsSelection(Person person) {
+    setState(() => _detailsSelection = <String>{person.id});
+  }
+
+  void _toggleDetailsSelection(Person person) {
+    final Set<String>? selection = _detailsSelection;
+    if (selection == null) {
+      return;
+    }
+    setState(() {
+      if (!selection.remove(person.id)) {
+        selection.add(person.id);
+      }
+      // Unticking the last one leaves the picker rather than stranding an empty
+      // bar with nothing to send.
+      if (selection.isEmpty) {
+        _detailsSelection = null;
+      }
+    });
+  }
+
+  /// Sends the request to everybody who was ticked.
+  ///
+  /// One friend goes straight into their own chat with their own gendered
+  /// wording, exactly as the button on their profile does. Several go through
+  /// the share sheet, where WhatsApp takes every chat that was ticked at once —
+  /// no chat link can carry more than one number, and opening WhatsApp once per
+  /// friend is the thing this whole selection exists to avoid.
+  ///
+  /// Anybody without a usable number is dropped and named, rather than being
+  /// silently counted as asked.
+  Future<void> _sendDetailsRequests() async {
+    final Set<String>? selection = _detailsSelection;
+    if (selection == null || selection.isEmpty) {
+      return;
+    }
+    final PersonRepository repository = context.read<PersonRepository>();
+    final List<Person> chosen = <Person>[
+      for (final String id in selection)
+        if (repository.getById(id) case final Person person) person,
+    ];
+    final List<Person> reachable = chosen
+        .where(
+          (Person person) => PhoneUtils.toWhatsAppNumber(person.phone) != null,
+        )
+        .toList();
+    final int unreachable = chosen.length - reachable.length;
+
+    if (reachable.isEmpty) {
+      _showSnackBar('אין מספר טלפון תקין לאף אחד מהחברים שנבחרו');
+      return;
+    }
+
+    // Stamped before leaving for WhatsApp, while this route is still fully
+    // active — the same reason the single-person path persists first.
+    for (final Person person in reachable) {
+      await repository.touch(person.id);
+    }
+    if (!mounted) {
+      return;
+    }
+
+    if (reachable.length == 1) {
+      final bool launched = await WhatsAppUtils.openDetailsRequest(
+        reachable.first,
+      );
+      if (!launched && mounted) {
+        _showSnackBar('לא הצלחנו לפתוח את WhatsApp');
+        return;
+      }
+    } else {
+      await WhatsAppUtils.shareDetailsRequest(reachable);
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() => _detailsSelection = null);
+    if (unreachable > 0) {
+      _showSnackBar(
+        unreachable == 1
+            ? 'חבר אחד נותר בחוץ — אין לו מספר טלפון תקין'
+            : '$unreachable חברים נותרו בחוץ — אין להם מספר טלפון תקין',
+      );
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<bool> _confirmDelete(BuildContext context, Person person) async {

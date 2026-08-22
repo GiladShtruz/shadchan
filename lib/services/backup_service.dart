@@ -11,6 +11,8 @@ import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_event.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -48,6 +50,11 @@ class BackupService {
       'personNotes': personRepo.getAllNotes().map(personNoteToJson).toList(),
       'matches': matchRepo.getAll().map(matchToJson).toList(),
       'matchNotes': matchRepo.getAllNotes().map(matchNoteToJson).toList(),
+      'personEvents': personRepo.getAllEvents().map(personEventToJson).toList(),
+      'matchStatusEvents': matchRepo
+          .getAllStatusEvents()
+          .map(matchStatusEventToJson)
+          .toList(),
     };
   }
 
@@ -123,6 +130,7 @@ class BackupService {
     int matchesAdded = 0;
     int notesAdded = 0;
     int skipped = 0;
+    int eventsAdded = 0;
 
     for (final Map<String, dynamic> item in _records(decoded['people'])) {
       final Person? person = _tryParse(() => personFromJson(item));
@@ -171,6 +179,39 @@ class BackupService {
       notesAdded++;
     }
 
+    // The two history ledgers, last: both are keyed to records that had to be
+    // in place first. An event whose person or proposal did not survive the
+    // import is dropped rather than restored — it describes something that is
+    // no longer there, and the history screen would have nothing to draw it
+    // against.
+    for (final Map<String, dynamic> item in _records(decoded['personEvents'])) {
+      final PersonEvent? event = _tryParse(() => personEventFromJson(item));
+      if (event == null ||
+          !personRepo.containsId(event.personId) ||
+          personRepo.containsEventId(event.id)) {
+        skipped++;
+        continue;
+      }
+      await personRepo.addImportedEvent(event);
+      eventsAdded++;
+    }
+
+    for (final Map<String, dynamic> item in _records(
+      decoded['matchStatusEvents'],
+    )) {
+      final MatchStatusEvent? event = _tryParse(
+        () => matchStatusEventFromJson(item),
+      );
+      if (event == null ||
+          !matchRepo.containsMatchId(event.matchId) ||
+          matchRepo.containsStatusEventId(event.id)) {
+        skipped++;
+        continue;
+      }
+      await matchRepo.addImportedStatusEvent(event);
+      eventsAdded++;
+    }
+
     await personRepo.finishImport();
     await matchRepo.finishImport();
 
@@ -179,6 +220,7 @@ class BackupService {
       matchesAdded: matchesAdded,
       notesAdded: notesAdded,
       skipped: skipped,
+      eventsAdded: eventsAdded,
     );
   }
 
@@ -276,6 +318,43 @@ class BackupService {
       'lastShareAt': match.lastShareAt?.toIso8601String(),
       'createdAt': match.createdAt.toIso8601String(),
       'updatedAt': match.updatedAt.toIso8601String(),
+    };
+  }
+
+  /// One line of a person's history feed.
+  ///
+  /// **These used to be left out of the backup on purpose**, on the grounds
+  /// that the trail of how a record reached its current state is worthless
+  /// without the records it describes, and that it is the fastest-growing
+  /// thing in the database. Both are still true — and both were arguments
+  /// about a database that is never deleted. Once signing out removes the
+  /// local copy, "only a local ledger" stops being a safe thing to say: the
+  /// history feed on every profile and every figure on the activity screen are
+  /// built from these two stores, and losing them silently resets a
+  /// matchmaker's entire record of their own work.
+  static Map<String, Object?> personEventToJson(PersonEvent event) {
+    return <String, Object?>{
+      'id': event.id,
+      'personId': event.personId,
+      'type': event.type.name,
+      'text': event.text,
+      'createdAt': event.createdAt.toIso8601String(),
+      'relatedPersonId': event.relatedPersonId,
+      'relatedMatchId': event.relatedMatchId,
+    };
+  }
+
+  /// One recorded move of a proposal from one status to another — the ledger
+  /// `ActivityStats` counts from, and through it the community counters. See
+  /// [personEventToJson] for why it is in the backup now.
+  static Map<String, Object?> matchStatusEventToJson(MatchStatusEvent event) {
+    return <String, Object?>{
+      'id': event.id,
+      'matchId': event.matchId,
+      'fromStatus': event.fromStatus?.name,
+      'toStatus': event.toStatus.name,
+      'createdAt': event.createdAt.toIso8601String(),
+      'automatic': event.automatic,
     };
   }
 
@@ -438,6 +517,53 @@ class BackupService {
     );
   }
 
+  static PersonEvent? personEventFromJson(Map<String, dynamic> json) {
+    final String? id = _string(json['id']);
+    final String? personId = _string(json['personId']);
+    if (id == null || personId == null) {
+      return null;
+    }
+
+    return PersonEvent(
+      id: id,
+      personId: personId,
+      // An event whose kind is not recognised is still real history and still
+      // worth showing, so it degrades to a plain note rather than being
+      // dropped — the same leniency every other record here gets.
+      type:
+          _enumByName(PersonEventType.values, json['type']) ??
+          PersonEventType.note,
+      text: _string(json['text']) ?? '',
+      createdAt: _date(json['createdAt']) ?? DateTime.now(),
+      relatedPersonId: _string(json['relatedPersonId']),
+      relatedMatchId: _string(json['relatedMatchId']),
+    );
+  }
+
+  /// Returns null when the destination status cannot be read — unlike every
+  /// other field here it has no sensible default. `fromStatus` does: it is
+  /// already nullable on the model.
+  static MatchStatusEvent? matchStatusEventFromJson(Map<String, dynamic> json) {
+    final String? id = _string(json['id']);
+    final String? matchId = _string(json['matchId']);
+    final MatchStatus? toStatus = _enumByName(
+      MatchStatus.values,
+      json['toStatus'],
+    );
+    if (id == null || matchId == null || toStatus == null) {
+      return null;
+    }
+
+    return MatchStatusEvent(
+      id: id,
+      matchId: matchId,
+      fromStatus: _enumByName(MatchStatus.values, json['fromStatus']),
+      toStatus: toStatus,
+      createdAt: _date(json['createdAt']) ?? DateTime.now(),
+      automatic: _bool(json['automatic']),
+    );
+  }
+
   static MatchNote? matchNoteFromJson(Map<String, dynamic> json) {
     final String? id = _string(json['id']);
     final String? matchId = _string(json['matchId']);
@@ -589,10 +715,19 @@ class ImportResult {
     required this.matchesAdded,
     required this.notesAdded,
     required this.skipped,
+    this.eventsAdded = 0,
   });
 
   final int peopleAdded;
   final int matchesAdded;
   final int notesAdded;
   final int skipped;
+
+  /// History lines restored — person events and status events together.
+  ///
+  /// Defaulted rather than required, because every screen that reports an
+  /// import counts people, proposals and notes, and none of them has anything
+  /// to say about the history behind them. It is here so a restore can be
+  /// checked rather than assumed.
+  final int eventsAdded;
 }

@@ -42,6 +42,18 @@ service cloud.firestore {
         allow read, write: if isOwner();
       }
 
+      // The two history ledgers behind the profile history feeds and the
+      // activity figures. Local-only until signing out began deleting the
+      // local database — at which point "it is only a local ledger" stopped
+      // being true, and losing them would have silently reset a matchmaker's
+      // whole record of their own work.
+      match /personEvents/{eventId} {
+        allow read, write: if isOwner();
+      }
+      match /matchStatusEvents/{eventId} {
+        allow read, write: if isOwner();
+      }
+
       // The matchmaker's own profile — one document, `main`.
       match /profile/{documentId} {
         allow read, write: if isOwner();
@@ -245,9 +257,11 @@ service cloud.firestore {
                 && data[field] <= 10000000);
       }
 
-      // A period key — `2026-08-21`, `W2026-08-16`, `2026-08`. Compared for
-      // equality only, so the only thing worth checking is that it is a short
-      // string rather than a document's worth of text.
+      // A period key — `2026-08-21` for the day, `W2026-08-16` for the week
+      // (its Sunday, the midnight מוצאי שבת turns over on), and `H5786-11` for
+      // the month, which is the Hebrew one from Rosh Chodesh to Rosh Chodesh.
+      // Compared for equality only, so the only thing worth checking is that
+      // it is a short string rather than a document's worth of text.
       function periodKey(data, field) {
         return !(field in data)
             || (data[field] is string && data[field].size() <= 16);

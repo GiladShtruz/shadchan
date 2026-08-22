@@ -140,11 +140,12 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    // The header opens with a warm word and the first name, and says the one
-    // true thing there is to say about a database with nothing in it. An empty
-    // database is welcomed rather than congratulated, so the opener is not
-    // "כל הכבוד".
-    expect(find.text('טוב שבאת! רבקה'), findsOneWidget);
+    // The header opens with a warm word — and with the word alone, no name
+    // appended — and says the one true thing there is to say about a database
+    // with nothing in it. An empty database is welcomed rather than
+    // congratulated, so the opener is not "כל הכבוד".
+    expect(find.text('טוב שבאת!'), findsOneWidget);
+    expect(find.textContaining('רבקה'), findsNothing);
     expect(find.textContaining('כל הכבוד'), findsNothing);
     expect(find.text('הכול מתחיל מחבר אחד'), findsOneWidget);
     // Nothing here claims an achievement that has not happened.

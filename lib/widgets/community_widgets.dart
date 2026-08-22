@@ -24,12 +24,36 @@ Color communityLead(ThemeData theme) => theme.brightness == Brightness.dark
 
 /// The one card shape the community surfaces use — the same bordered, softly
 /// tinted surface the rest of the home page wears.
+/// The surface a [CommunityCard] is drawn on.
+///
+/// **Why a page needs more than one.** Every card on "הפעילות שלי" used to be
+/// the same pale blue panel, one under the other, and a column of five
+/// identical tinted boxes reads as wallpaper: nothing on it is more or less
+/// important than anything else, and the eye has no reason to stop anywhere.
+/// These three are the same design language wearing three weights — the blue
+/// belongs to the community, the cream to the matchmaker's own record, and the
+/// plain surface to whatever is mostly chart or list and wants nothing behind
+/// it at all.
+enum CommunitySurface {
+  /// The stone-blue wash. The app's community colour, so it is kept for the
+  /// cards that are genuinely about everybody.
+  tinted,
+
+  /// The warm cream the profile screens use — the matchmaker's own side.
+  warm,
+
+  /// Plain paper with a hairline edge, for cards whose content already carries
+  /// colour of its own.
+  plain,
+}
+
 class CommunityCard extends StatelessWidget {
   const CommunityCard({
     super.key,
     required this.child,
     this.title,
     this.trailing,
+    this.surface = CommunitySurface.tinted,
   });
 
   final Widget child;
@@ -39,16 +63,18 @@ class CommunityCard extends StatelessWidget {
   /// second heading and never a button.
   final Widget? trailing;
 
+  final CommunitySurface surface;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color lead = communityLead(theme);
     final String? heading = title;
+    final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
-      decoration: BoxDecoration(
+    final BoxDecoration decoration = switch (surface) {
+      CommunitySurface.tinted => BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: lead.withValues(alpha: 0.22)),
         gradient: LinearGradient(
@@ -60,6 +86,23 @@ class CommunityCard extends StatelessWidget {
           ],
         ),
       ),
+      CommunitySurface.warm => BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: dark
+            ? AppColors.secondaryDarkDm.withValues(alpha: 0.10)
+            : AppColors.secondaryLight.withValues(alpha: 0.55),
+        border: Border.all(color: warm.withValues(alpha: dark ? 0.24 : 0.26)),
+      ),
+      CommunitySurface.plain => BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: theme.colorScheme.surface,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
+      decoration: decoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

@@ -44,9 +44,12 @@ enum AppMenuAction {
 class AppMenuButton extends StatelessWidget {
   const AppMenuButton({super.key, this.boxed = false});
 
-  /// Draws the trigger as one of the home bar's rounded squares instead of a
-  /// bare icon button, and as an info glyph rather than three dots — in a row
-  /// of boxed controls the vertical dots read as a cropped icon.
+  /// Trims the trigger down to the bare three dots at the bar's outer edge:
+  /// no rounded square, no border. The frame and the info glyph made the menu
+  /// look like a third notification control sitting beside the bell and the
+  /// search; the overflow dots are what a phone's menu is looked for, and with
+  /// nothing drawn behind them the eye reads the boxed pair as the group and
+  /// the dots as the corner.
   final bool boxed;
 
   @override
@@ -55,9 +58,9 @@ class AppMenuButton extends StatelessWidget {
 
     return PopupMenuButton<AppMenuAction>(
       tooltip: 'תפריט',
-      icon: boxed ? const _BoxedMenuIcon() : const Icon(Icons.more_vert),
-      // The boxed trigger draws its own square, so the icon button's default
-      // 48px splash box would sit on top of it.
+      icon: boxed ? const _BarMenuIcon() : const Icon(Icons.more_vert),
+      // The bar trigger sizes itself, so the icon button's default 48px splash
+      // box would spill past it and off the edge of the bar.
       padding: EdgeInsets.zero,
       iconSize: boxed ? HomeBarButton.size : null,
       position: PopupMenuPosition.under,
@@ -208,30 +211,22 @@ class _MenuRow extends StatelessWidget {
 /// Drawn rather than delegated to [HomeBarButton] because the tap belongs to
 /// the `PopupMenuButton` around it — the menu has to hang from this box, and a
 /// button inside a button would swallow that.
-class _BoxedMenuIcon extends StatelessWidget {
-  const _BoxedMenuIcon();
+class _BarMenuIcon extends StatelessWidget {
+  const _BarMenuIcon();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
 
-    return Container(
+    // Still laid out on the bar button's square so the three controls keep a
+    // common baseline and tap target — only nothing is painted behind it.
+    return SizedBox(
       width: HomeBarButton.size,
       height: HomeBarButton.size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: dark
-            ? theme.colorScheme.surfaceContainerHighest
-            : theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.9),
-        ),
-      ),
       child: Icon(
-        Icons.info_outline_rounded,
-        size: 20,
+        Icons.more_vert,
+        size: 22,
         color: dark ? theme.colorScheme.onSurface : AppColors.primaryInk,
       ),
     );

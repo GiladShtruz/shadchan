@@ -342,6 +342,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 });
               },
               onEditingDone: () => setState(() => _editingDetails = false),
+              onExtendedEdit: () async {
+                setState(() {
+                  _editingDetails = false;
+                  _editingFullCard = false;
+                });
+                await _openCardEditPage(context);
+              },
             ),
             if (person.hidden)
               _OutsideDatabaseBanner(
@@ -693,6 +700,7 @@ class _ProfileSummaryHeader extends StatefulWidget {
     required this.onStatusChanged,
     required this.onEdit,
     required this.onEditingDone,
+    required this.onExtendedEdit,
   });
 
   final Person person;
@@ -701,6 +709,7 @@ class _ProfileSummaryHeader extends StatefulWidget {
   final ValueChanged<ProfileStatus> onStatusChanged;
   final VoidCallback onEdit;
   final VoidCallback onEditingDone;
+  final VoidCallback onExtendedEdit;
 
   @override
   State<_ProfileSummaryHeader> createState() => _ProfileSummaryHeaderState();
@@ -709,7 +718,6 @@ class _ProfileSummaryHeader extends StatefulWidget {
 class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
   late final TextEditingController _nameController = TextEditingController();
   late final TextEditingController _ageController = TextEditingController();
-  late final TextEditingController _phoneController = TextEditingController();
   ReligiousLevel? _religiousLevel;
   String? _religiousLevelOther;
   List<String> _photoPaths = <String>[];
@@ -738,7 +746,6 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
     _discardNewPhotos();
     _nameController.dispose();
     _ageController.dispose();
-    _phoneController.dispose();
     super.dispose();
   }
 
@@ -746,7 +753,6 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
     _discardNewPhotos();
     _nameController.text = widget.person.fullName;
     _ageController.text = widget.person.age?.toString() ?? '';
-    _phoneController.text = widget.person.phone ?? '';
     _religiousLevel = widget.person.religiousLevel;
     _religiousLevelOther = widget.person.religiousLevelOther;
     _photoPaths = List<String>.from(widget.person.photosPaths);
@@ -802,12 +808,10 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
         .split(RegExp(r'\s+'))
         .where((String part) => part.isNotEmpty)
         .toList();
-    final String phone = _phoneController.text.trim();
     widget.person
       ..firstName = parts.first
       ..lastName = parts.skip(1).join(' ')
       ..setManualAge(age)
-      ..phone = phone.isEmpty ? null : phone
       ..religiousLevel = _religiousLevel
       ..religiousLevelOther = _religiousLevelOther
       ..photosPaths = List<String>.from(_photoPaths);
@@ -1103,34 +1107,20 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
                     color: _profileMutedColor(theme),
                   ),
                 ),
-              // The phone belongs to the quick edit, not only to the full card.
-              // Someone created from "הוספת שם מחוץ למאגר" arrives with a name
-              // and nothing else, and this is the editor they land in — without
-              // it there was no way to give them a number at all, so the app
-              // kept offering to message a person it could not reach.
+              // Everything the quick edit does not cover — phone included —
+              // lives one tap away in the full card editor. Offering it right
+              // here as well as in the top-left menu means the matchmaker who
+              // opened this editor to change a detail it does not hold never
+              // has to go looking for where that detail lives.
               if (widget.editing) ...<Widget>[
                 const SizedBox(height: 8),
-                SizedBox(
-                  width: 200,
-                  child: TextField(
-                    key: ValueKey<String>('quick-phone-${widget.person.id}'),
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: _profileMutedColor(theme),
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: 'טלפון',
-                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                        color: _profileMutedColor(theme),
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: const UnderlineInputBorder(),
-                      focusedBorder: const UnderlineInputBorder(),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 2),
-                    ),
+                TextButton.icon(
+                  onPressed: _saving ? null : widget.onExtendedEdit,
+                  icon: const Icon(Icons.edit_note_outlined, size: 18),
+                  label: const Text('עריכה מורחבת'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: _profileMutedColor(theme),
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
               ],
@@ -2307,6 +2297,11 @@ abstract final class _MatchPreviewSheet {
     required Person candidate,
     bool showOpenIdeaAction = true,
   }) {
+    // Taken before the dialog goes up, so closing the comparison and opening a
+    // profile is one gesture on the navigator the caller lives in rather than
+    // on the dialog's own route.
+    final NavigatorState navigator = Navigator.of(context);
+
     return showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -2349,12 +2344,24 @@ abstract final class _MatchPreviewSheet {
                     ],
                   ),
                 ),
-                Expanded(child: _MatchPreviewHalf(person: source)),
+                Expanded(
+                  child: _MatchPreviewHalf(
+                    person: source,
+                    onOpenProfile: () =>
+                        _openProfile(dialogContext, navigator, source.id),
+                  ),
+                ),
                 Divider(
                   height: 1,
                   color: _profileMutedColor(theme).withValues(alpha: 0.2),
                 ),
-                Expanded(child: _MatchPreviewHalf(person: candidate)),
+                Expanded(
+                  child: _MatchPreviewHalf(
+                    person: candidate,
+                    onOpenProfile: () =>
+                        _openProfile(dialogContext, navigator, candidate.id),
+                  ),
+                ),
                 if (showOpenIdeaAction)
                   SafeArea(
                     top: false,
@@ -2380,14 +2387,44 @@ abstract final class _MatchPreviewSheet {
       },
     );
   }
+
+  /// Closes the comparison and lands on that person's own card.
+  ///
+  /// Popped first and pushed second, rather than pushing the profile over the
+  /// dialog: a page under a dialog is a page nobody can scroll, and coming back
+  /// from the profile should return to the list the comparison was opened from
+  /// — not to a comparison of two cards that has already been answered.
+  static void _openProfile(
+    BuildContext dialogContext,
+    NavigatorState navigator,
+    String personId,
+  ) {
+    Navigator.of(dialogContext).pop();
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            PersonDetailScreen(personId: personId),
+      ),
+    );
+  }
 }
 
 /// One half of the match preview: a person's photos, name, summary and their
 /// full send-card text, scrolling on its own.
+///
+/// **The whole half is a way into that person's card.** While two people are
+/// side by side, the question that comes up most is "רגע, מי זה?" — and until
+/// this was tappable the only answer was to close the comparison, find the
+/// person in a list and open them, by which point the pair being weighed up was
+/// gone. Tapping anywhere on a half now closes the comparison and opens that
+/// person; the chevron by the name says so without adding a control.
 class _MatchPreviewHalf extends StatelessWidget {
-  const _MatchPreviewHalf({required this.person});
+  const _MatchPreviewHalf({required this.person, required this.onOpenProfile});
 
   final Person person;
+
+  /// Opens [person]'s profile. Both halves have one — either side is a door.
+  final VoidCallback onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -2397,67 +2434,82 @@ class _MatchPreviewHalf extends StatelessWidget {
         .where((String path) => File(path).existsSync())
         .toList();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              PersonAvatar(person: person, radius: 26),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      person.fullName.trim(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: _profileTextColor(theme),
-                        fontWeight: FontWeight.w800,
+    return GestureDetector(
+      // Opaque so a tap on the padding — the empty space either side of the
+      // text — counts too, and `behavior` rather than an `InkWell` so the
+      // photo carousel inside keeps its own swipe.
+      behavior: HitTestBehavior.opaque,
+      onTap: onOpenProfile,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                PersonAvatar(person: person, radius: 26),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        person.fullName.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: _profileTextColor(theme),
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _personSummary(person),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: _profileMutedColor(theme),
+                      const SizedBox(height: 2),
+                      Text(
+                        _personSummary(person),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: _profileMutedColor(theme),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                // `chevron_right` and not `chevron_left`: Material's directional
+                // icons mirror themselves, so in this RTL app this is the one
+                // that points the way the tap goes.
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: _profileMutedColor(theme),
+                ),
+              ],
+            ),
+            if (photos.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              // Whole photo, never cropped or stretched — this is the view where
+              // the two candidates are weighed against each other, so what the
+              // photo actually shows matters more than a tidy rectangle. All of
+              // the person's photos are swipeable here.
+              PersonPhotoCarousel(
+                photosPaths: photos,
+                height: 220,
+                fit: BoxFit.contain,
+                borderRadius: BorderRadius.circular(16),
+                backgroundColor: _profileWarmSurfaceColor(theme),
               ),
             ],
-          ),
-          if (photos.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
-            // Whole photo, never cropped or stretched — this is the view where
-            // the two candidates are weighed against each other, so what the
-            // photo actually shows matters more than a tidy rectangle. All of
-            // the person's photos are swipeable here.
-            PersonPhotoCarousel(
-              photosPaths: photos,
-              height: 220,
-              fit: BoxFit.contain,
-              borderRadius: BorderRadius.circular(16),
-              backgroundColor: _profileWarmSurfaceColor(theme),
+            Text(
+              description.isEmpty ? 'אין עדיין כרטיס לשליחה' : description,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: description.isEmpty
+                    ? _profileMutedColor(theme)
+                    : _profileTextColor(theme),
+                height: 1.5,
+              ),
             ),
           ],
-          const SizedBox(height: 12),
-          Text(
-            description.isEmpty ? 'אין עדיין כרטיס לשליחה' : description,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: description.isEmpty
-                  ? _profileMutedColor(theme)
-                  : _profileTextColor(theme),
-              height: 1.5,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

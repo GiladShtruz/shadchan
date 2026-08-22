@@ -24,6 +24,7 @@ class PersonListCard extends StatelessWidget {
     this.onLongPress,
     this.onStatusPicked,
     this.heroEnabled = true,
+    this.selected,
   });
 
   final Person person;
@@ -57,11 +58,22 @@ class PersonListCard extends StatelessWidget {
 
   final bool heroEnabled;
 
+  /// Null on an ordinary row. Non-null puts the row into selection mode: a tick
+  /// box replaces the trailing controls and the card is tinted when it is on.
+  ///
+  /// The buttons go rather than sit beside the tick because in selection mode
+  /// the whole row means one thing — "this one too" — and a WhatsApp button
+  /// that leaves the app in the middle of picking six people is a trap, not a
+  /// shortcut.
+  final bool? selected;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color accent = AppColors.genderAccent(person.gender, dark: dark);
+    final bool selecting = selected != null;
+    final bool isSelected = selected ?? false;
 
     final List<String> details = <String>[
       if (person.age != null) person.age!.toString(),
@@ -71,7 +83,12 @@ class PersonListCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: theme.colorScheme.surface,
+        color: isSelected
+            ? Color.alphaBlend(
+                theme.colorScheme.primary.withValues(alpha: dark ? 0.22 : 0.10),
+                theme.colorScheme.surface,
+              )
+            : theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
@@ -80,7 +97,12 @@ class PersonListCard extends StatelessWidget {
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
+              border: Border.all(
+                color: isSelected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant,
+                width: isSelected ? 1.5 : 1,
+              ),
             ),
             child: Row(
               children: <Widget>[
@@ -163,33 +185,47 @@ class PersonListCard extends StatelessWidget {
                 // the edge — and that button is the one that disappears, for
                 // anybody with no number at all, which left the heart jumping
                 // between two positions down a single list.
-                if (onOpenWhatsApp != null)
-                  ContactChannelButton(
-                    person: person,
-                    onWhatsApp: onOpenWhatsApp!,
-                    onEdit: onCompleteCard,
-                  ),
-                if (onOpenMatches != null)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'התאמות',
-                    icon: Icon(Icons.favorite_border, color: accent),
-                    onPressed: onOpenMatches,
-                  )
-                else if (onToggleFavorite != null)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    tooltip: person.isFavorite
-                        ? 'הסרה ממועדפים'
-                        : 'הוספה למועדפים',
-                    icon: Icon(
-                      person.isFavorite
-                          ? Icons.favorite
-                          : Icons.favorite_border,
-                      color: person.isFavorite ? AppColors.favorite : accent,
+                if (selecting)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(
+                      isSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked,
+                      color: isSelected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outline,
                     ),
-                    onPressed: onToggleFavorite,
-                  ),
+                  )
+                else ...<Widget>[
+                  if (onOpenWhatsApp != null)
+                    ContactChannelButton(
+                      person: person,
+                      onWhatsApp: onOpenWhatsApp!,
+                      onEdit: onCompleteCard,
+                    ),
+                  if (onOpenMatches != null)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'התאמות',
+                      icon: Icon(Icons.favorite_border, color: accent),
+                      onPressed: onOpenMatches,
+                    )
+                  else if (onToggleFavorite != null)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: person.isFavorite
+                          ? 'הסרה ממועדפים'
+                          : 'הוספה למועדפים',
+                      icon: Icon(
+                        person.isFavorite
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        color: person.isFavorite ? AppColors.favorite : accent,
+                      ),
+                      onPressed: onToggleFavorite,
+                    ),
+                ],
                 const SizedBox(width: 4),
               ],
             ),

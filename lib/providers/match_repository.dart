@@ -1076,6 +1076,14 @@ class MatchRepository extends ChangeNotifier {
     await _noteBox.put(note.id, note);
   }
 
+  bool containsStatusEventId(String id) {
+    return _statusEventBox?.containsKey(id) ?? false;
+  }
+
+  Future<void> addImportedStatusEvent(MatchStatusEvent event) async {
+    await _statusEventBox?.put(event.id, event);
+  }
+
   Future<void> finishImport() async {
     notifyListeners();
   }

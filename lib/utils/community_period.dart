@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/hebrew_date_utils.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 /// The four windows the activity screen and the leaderboard switch between.
@@ -107,17 +108,38 @@ abstract final class CommunityPeriods {
     return '${t.year}-${_two(t.month)}-${_two(t.day)}';
   }
 
+  /// The Hebrew month, written as its year and month number.
+  ///
+  /// **Rosh Chodesh, not the first of January's calendar.** "החודש" in this app
+  /// means the Hebrew month everywhere else — the activity chart is drawn in
+  /// Hebrew months, and the stats screen lists records by them — so the
+  /// community's month had no business being the Gregorian one. Two matchmakers
+  /// comparing "החודש" now mean the same thirty days as each other *and* as
+  /// their own charts.
+  ///
+  /// Prefixed `H` so it can never be confused with the Gregorian keys written
+  /// before this, which simply stop matching: a member's monthly figure rolls
+  /// over at the next publish, exactly as it does at any month boundary.
+  ///
+  /// Falls back to the Gregorian month only when the Hebrew conversion fails,
+  /// which is the same fallback [HebrewDateUtils.hebrewMonthStart] takes.
   static String monthKey([DateTime? at]) {
     final DateTime t = at ?? now();
-    return '${t.year}-${_two(t.month)}';
+    final ({int year, int month, int day})? hebrew =
+        HebrewDateUtils.fromGregorian(t);
+    if (hebrew == null) {
+      return '${t.year}-${_two(t.month)}';
+    }
+    return 'H${hebrew.year}-${_two(hebrew.month)}';
   }
 
   /// The Sunday-based week, written as the date of its first day.
   ///
-  /// Sunday rather than ISO's Monday because the Israeli working week starts
-  /// there, and this is a Hebrew app whose users' week does too. Written as the
-  /// date rather than as a number so it needs no year-boundary special case and
-  /// can be read by a person looking at the database.
+  /// **The week turns over at midnight on מוצאי שבת** — which is Sunday 00:00,
+  /// Israel time. Sunday rather than ISO's Monday because that is when the week
+  /// starts for the people this app is written for. Written as the date rather
+  /// than as a number so it needs no year-boundary special case and can be read
+  /// by a person looking at the database.
   static String weekKey([DateTime? at]) {
     final DateTime t = at ?? now();
     // DateTime.weekday is 1 = Monday … 7 = Sunday, so Sunday is 0 days back.
@@ -151,13 +173,18 @@ abstract final class CommunityPeriods {
       case CommunityPeriod.day:
         return DateTime(t.year, t.month, t.day);
       case CommunityPeriod.week:
+        // Sunday at 00:00 — midnight on מוצאי שבת, which is where the week
+        // turns over for the people this app is written for.
         return DateTime(
           t.year,
           t.month,
           t.day,
         ).subtract(Duration(days: t.weekday % 7));
       case CommunityPeriod.month:
-        return DateTime(t.year, t.month);
+        // Rosh Chodesh. The counterpart of [monthKey]: the key says which
+        // month a figure belongs to and this says where that month began, so
+        // the two can never describe different windows.
+        return HebrewDateUtils.hebrewMonthStart(t);
       case CommunityPeriod.allTime:
         return null;
     }

@@ -311,13 +311,13 @@ class _MatchLookup {
 /// matches the database found, each as a small card with a face and a full
 /// name.
 ///
-/// **Still sized to be scrolled through.** The screen exists to move an eye
-/// over many friends, so the card is two short rows and never more: the name is
-/// one line, the reason is one line, the matches are one row of tiles. The
-/// friend's name and the reason are clamped rather than wrapped, because a card
-/// that is tall for one friend is a card that shows six friends where it could
-/// show ten; the only thing allowed a second line is a match's own name, which
-/// is the one piece of text on the card that has to be read exactly.
+/// **Still sized to be scrolled through — but the reason is never cut.** The
+/// screen exists to move an eye over many friends, so the name is one line and
+/// the matches are one row of tiles. The reason is the exception: it is the
+/// sentence that answers "why am I looking at this person", and clamped to one
+/// line it was regularly ellipsized mid-clause, which turns the answer into a
+/// riddle. It wraps to as many lines as it needs; the couple of pixels that
+/// costs on some cards buys the only text on the card nobody can do without.
 class _PersonThought extends StatelessWidget {
   const _PersonThought({
     required this.person,
@@ -378,14 +378,17 @@ class _PersonThought extends StatelessWidget {
                             color: ProfilePalette.text(theme),
                           ),
                         ),
-                        const SizedBox(height: 1),
+                        const SizedBox(height: 2),
+                        // The whole sentence, however many lines it takes.
+                        // Clamped to one line it was routinely cut mid-clause
+                        // — "יש במאגר 7 אנשים שעשויים…" — and the reason this
+                        // person is on the screen at all is the one thing on
+                        // the card that has to be read, not guessed at.
                         Text(
                           reason,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: ProfilePalette.muted(theme),
-                            height: 1.3,
+                            height: 1.35,
                           ),
                         ),
                       ],

@@ -499,9 +499,9 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('עוצרים רגע לחשוב על החברים'), findsOneWidget);
     expect(find.text('על מי חושבים עכשיו?'), findsOneWidget);
-    // Its own drawn picture — two profile cards and a heart — and not the
-    // notepad photograph from "הוספת רעיון" that it used to borrow. Sharing
-    // that asset put the same image twice on one screen.
+    // Its own drawn picture — somebody sitting with a coffee, thinking — and
+    // not the notepad photograph from "הוספת רעיון" that it used to borrow.
+    // Sharing that asset put the same image twice on one screen.
     expect(find.byType(Image), findsNothing);
     expect(
       find.descendant(
