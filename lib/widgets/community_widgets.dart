@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -877,6 +879,105 @@ class DeleteCommunityDataTile extends StatelessWidget {
             deleted
                 ? 'נתוני הקהילה שלך נמחקו.'
                 : 'לא הצלחנו למחוק כרגע. כדאי לנסות שוב כשיש חיבור לאינטרנט.',
+          ),
+        ),
+      );
+  }
+}
+
+/// "מחיקת הגיבוי בענן" — erases the copy of the database on the server.
+///
+/// **Sits beside [DeleteCommunityDataTile] because the two are not the same
+/// erasure, and the difference is the whole reason this exists.** That one
+/// removes a row of counters and a name the matchmaker chose to publish about
+/// themselves. This one removes the friends: their names, their telephone
+/// numbers, the notes written about their shidduchim, and their faces — people
+/// who are not users of this app, never agreed to anything, and have no way of
+/// knowing a copy is held anywhere.
+///
+/// Until now the screen said that a cloud backup could be deleted *by asking*,
+/// which meant an email to the developer and a manual pass through the Firebase
+/// console. The least sensitive data in the system had a button and the most
+/// sensitive one did not.
+///
+/// Shown only to an account that could have a backup at all: a matchmaker who
+/// never connected an account has nothing on the server, and offering to delete
+/// it would imply there was something up there.
+class DeleteCloudBackupTile extends StatelessWidget {
+  const DeleteCloudBackupTile({super.key});
+
+  static const String explanation =
+      'מוחק מהשרת את כל מה שגובה בענן — החברים, ההערות, ההצעות והתמונות. '
+      'המאגר בטלפון שלך נשאר בדיוק כמו שהוא ואפשר להמשיך לעבוד רגיל. '
+      'אם תישאר מחובר, הגיבוי הבא יעלה את המאגר לענן מחדש.';
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    // Nothing to delete without a durable account — see `CloudSyncService`,
+    // which refuses to write a backup under an anonymous uid in the first
+    // place.
+    if (!context.watch<AccountProvider>().isSignedIn) {
+      return const SizedBox.shrink();
+    }
+    final bool busy = context.watch<SyncProvider>().isDeleting;
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      enabled: !busy,
+      leading: busy
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          : Icon(Icons.cloud_off_outlined, color: theme.colorScheme.error),
+      title: Text(
+        'מחיקת הגיבוי בענן',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: theme.colorScheme.error,
+        ),
+      ),
+      subtitle: Text(explanation),
+      isThreeLine: true,
+      onTap: busy ? null : () => _confirm(context),
+    );
+  }
+
+  Future<void> _confirm(BuildContext context) async {
+    final SyncProvider sync = context.read<SyncProvider>();
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'למחוק את הגיבוי בענן?',
+      message: explanation,
+      confirmText: 'מחיקה',
+      isDestructive: true,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    final bool deleted = await sync.deleteBackup();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            deleted
+                // Said plainly, and only when it is true. A deletion reported
+                // wrongly is worse than one that did not happen.
+                ? 'הגיבוי בענן נמחק. המאגר בטלפון שלך לא השתנה.'
+                : 'לא הצלחנו למחוק את הגיבוי כרגע. כדאי לנסות שוב כשיש '
+                      'חיבור טוב לאינטרנט.',
           ),
         ),
       );

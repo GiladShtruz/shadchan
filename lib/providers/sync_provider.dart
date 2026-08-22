@@ -28,11 +28,16 @@ class SyncProvider extends ChangeNotifier {
 
   bool _isSyncing = false;
   bool _isRestoring = false;
+  bool _isDeleting = false;
   CloudSyncResult? _lastResult;
 
   bool get isSyncing => _isSyncing;
 
   bool get isRestoring => _isRestoring;
+
+  /// Whether an erasure is in flight, so the tile can disable itself rather
+  /// than let a second tap start a second pass over the same tree.
+  bool get isDeleting => _isDeleting;
 
   /// When the last successful sync committed, or null if there has never been
   /// one on this device under this account.
@@ -95,6 +100,33 @@ class SyncProvider extends ChangeNotifier {
       return outcome;
     } finally {
       _isRestoring = false;
+      notifyListeners();
+    }
+  }
+
+  /// Erases the cloud backup — every record, the profile and every photo —
+  /// leaving the database on this phone untouched.
+  ///
+  /// The ledger is cleared whatever the outcome. It is a record of what is
+  /// believed to be in the cloud, and after this it is wrong either way: on
+  /// success nothing is up there any more, and on a partial failure it no
+  /// longer describes what survived. Clearing it costs one full re-upload if
+  /// the matchmaker stays signed in, and prevents the far worse alternative —
+  /// a ledger that says a deleted record is still backed up, so the next sync
+  /// never sends it and the backup silently has a hole in it.
+  Future<bool> deleteBackup() async {
+    if (_isDeleting || !_enabled) {
+      return false;
+    }
+    _isDeleting = true;
+    notifyListeners();
+    try {
+      final bool deleted = await CloudSyncService.deleteBackup();
+      await _state.clear();
+      _lastResult = null;
+      return deleted;
+    } finally {
+      _isDeleting = false;
       notifyListeners();
     }
   }

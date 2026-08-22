@@ -124,19 +124,17 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
     final bool dark = theme.brightness == Brightness.dark;
     final Color tone = dark ? theme.colorScheme.primary : AppColors.primaryDark;
 
-    // Who it happened to. The matchmaker's name is on the record only when they
-    // publish it at all; without one the line still says everything that
+    // Who did it. The matchmaker's name is on the record only if they were
+    // asked and said yes; without one the line still says everything that
     // matters, and the button under it still works — a bracha is addressed by
     // account, not by name.
     final String headline = engagement.matchmakerName.isEmpty
         ? 'מזל טוב! לאחד השדכנים בקהילה התחתן זוג 🎉'
         : 'מזל טוב! לשדכן ${engagement.matchmakerName} התחתן זוג 🎉';
 
-    // The anonymous line is the default and by far the common one. It names
-    // nobody on purpose: the good news travels, the couple does not.
-    final String body = engagement.isNamed
-        ? '${engagement.firstNames} התחתנו!'
-        : 'עוד בית נבנה בעם ישראל. שנשמע רק בשורות טובות!';
+    // The one line there is. It names nobody on purpose, and there is no other
+    // version of it: the good news travels, the couple does not.
+    const String body = 'עוד בית נבנה בעם ישראל. שנשמע רק בשורות טובות!';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
@@ -163,33 +161,7 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
             ),
           ),
           const SizedBox(height: 8),
-          if (engagement.photoUrl.isNotEmpty) ...<Widget>[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.network(
-                engagement.photoUrl,
-                height: 150,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                // A photo that will not load must not leave a broken box in the
-                // middle of somebody's good news.
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
           Text(body, style: theme.textTheme.bodyMedium?.copyWith(height: 1.45)),
-          if (engagement.isNamed &&
-              engagement.matchmakerName.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              'שודך על ידי ${engagement.matchmakerName}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: tone,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
           if (engagement.canBeCongratulated) ...<Widget>[
             const SizedBox(height: 12),
             Align(

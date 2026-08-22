@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/activity_stats.dart';
@@ -248,32 +249,60 @@ abstract final class CommunityService {
       return;
     }
 
+    final Map<String, Object?> row = <String, Object?>{
+      // A hidden matchmaker's name is not stored, not merely not shown. The
+      // difference matters: this collection is readable by every installed
+      // copy of the app, so "we keep it but hide it" would be a promise the
+      // database itself contradicts. What is left against the uid is a row
+      // of numbers.
+      'name': hidden ? '' : name.trim(),
+      // A face travels further than a name, so it follows the same rule and
+      // is cleared by the same write. See [uploadAvatar].
+      'photoUrl': hidden ? '' : photoUrl.trim(),
+      'hidden': hidden,
+      for (final CommunityPeriod period in CommunityPeriod.values) ...{
+        if (period.keyField case final String key)
+          key: CommunityPeriods.keyFor(period),
+        ..._fieldsFor(period, counts.forPeriod(period)),
+      },
+    };
+
+    // Nothing moved since the last successful publish, so there is nothing to
+    // say. The row is rebuilt from the local ledgers every time rather than
+    // incremented, which is what makes this comparison sound: an identical map
+    // means an identical document, and writing it again would change nothing
+    // but `updatedAt` — a field nothing in the app reads.
+    //
+    // The period keys are part of the fingerprint, so a window rolling over at
+    // midnight publishes exactly as it always did.
+    final String fingerprint = '${user.uid}|${_fingerprintOf(row)}';
+    if (CommunityProfileStore.publishedFingerprint == fingerprint) {
+      return;
+    }
+
     try {
-      await _db.collection(membersCollection).doc(user.uid).set(
-        <String, Object?>{
-          // A hidden matchmaker's name is not stored, not merely not shown. The
-          // difference matters: this collection is readable by every installed
-          // copy of the app, so "we keep it but hide it" would be a promise the
-          // database itself contradicts. What is left against the uid is a row
-          // of numbers.
-          'name': hidden ? '' : name.trim(),
-          // A face travels further than a name, so it follows the same rule and
-          // is cleared by the same write. See [uploadAvatar].
-          'photoUrl': hidden ? '' : photoUrl.trim(),
-          'hidden': hidden,
-          for (final CommunityPeriod period in CommunityPeriod.values) ...{
-            if (period.keyField case final String key)
-              key: CommunityPeriods.keyFor(period),
-            ..._fieldsFor(period, counts.forPeriod(period)),
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      await _db.collection(membersCollection).doc(user.uid).set(<String, Object?>{
+        ...row,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      // Remembered only after the server took it. A write that failed must be
+      // retried by the next publish, not skipped because we already decided it
+      // had happened.
+      CommunityProfileStore.rememberPublished(fingerprint);
     } catch (_) {
       // A community figure is never worth an error in front of somebody who
       // came here to do matchmaking.
     }
+  }
+
+  /// The row as one comparable string, keys sorted.
+  ///
+  /// Sorted because the map is built by a loop over an enum inside a literal,
+  /// and a reordering there would otherwise look like a change to every
+  /// account in the app at once.
+  static String _fingerprintOf(Map<String, Object?> row) {
+    final List<String> keys = row.keys.toList()..sort();
+    return <String>[for (final String key in keys) '$key=${row[key]}'].join('|');
   }
 
   static Map<String, Object?> _fieldsFor(
@@ -336,6 +365,13 @@ abstract final class CommunityService {
       }
     } catch (_) {
       // Left to the next publish, which writes both fields too.
+    } finally {
+      // This row no longer matches the one [publish] last fingerprinted —
+      // whether the write above landed or not. Forgetting it is what stops the
+      // next publish from deciding there is nothing to send, which on the
+      // failure path is the difference between "retried in a moment" and
+      // "silently never".
+      CommunityProfileStore.forgetPublished();
     }
   }
 
@@ -413,6 +449,9 @@ abstract final class CommunityService {
     }
     try {
       await _db.collection(membersCollection).doc(user.uid).delete();
+      // The row is gone, so the next publish must write a whole one rather
+      // than recognise its own fingerprint and send nothing.
+      CommunityProfileStore.forgetPublished();
       invalidate();
       return true;
     } catch (_) {
@@ -427,6 +466,26 @@ abstract final class CommunityService {
   static final Map<String, _Cached<CommunityLeaderboard>> _boardCache =
       <String, _Cached<CommunityLeaderboard>>{};
 
+  /// The windows whose aggregate query has been shown to work in this process.
+  ///
+  /// **What stops the fallback scan from becoming the normal path.** A missing
+  /// composite index and a genuinely quiet window are indistinguishable from
+  /// the client — both come back as zero — so [totals] checks a zero against a
+  /// direct read before believing it. The trouble is that "quiet" is the
+  /// ordinary state of `day` every morning: without this, every matchmaker who
+  /// opened the app before anybody had done anything paid a 400-document scan,
+  /// again every three minutes, for the true answer zero.
+  ///
+  /// So the check is asked once per window per launch rather than every time.
+  /// A window is trusted the moment its aggregate returns something, or the
+  /// moment a scan agrees that it returns nothing; after that a zero is taken
+  /// at face value and costs the two aggregate reads it should.
+  ///
+  /// Deliberately *not* cleared by [invalidate]: whether the index exists is a
+  /// property of the project, not of the figures, and it cannot change while
+  /// the app is running.
+  static final Set<String> _aggregatesTrusted = <String>{};
+
   /// Drops every cached figure, so the next read goes to the network. Called
   /// after publishing this device's own counts, which is the one moment the
   /// numbers are known to have moved.
@@ -434,6 +493,10 @@ abstract final class CommunityService {
     _totalsCache.clear();
     _boardCache.clear();
   }
+
+  /// Test seam: forgets that the aggregate queries were ever shown to work.
+  @visibleForTesting
+  static void resetAggregateTrust() => _aggregatesTrusted.clear();
 
   /// One window's community figures.
   ///
@@ -499,18 +562,31 @@ abstract final class CommunityService {
         engagements: snapshots[1].getSum(period.engagementsField)?.round() ?? 0,
       );
       if (!result.isEmpty) {
+        // The query works in this project, whatever it answers next time.
+        _aggregatesTrusted.add(cacheKey);
         _totalsCache[cacheKey] = _Cached<CommunityTotals>(result);
         return result;
       }
       // Aggregates said nothing. That is *usually* the truth — but it is also
       // exactly what a missing composite index looks like from here, so the
-      // zero is checked against a direct read before it is believed.
+      // zero is checked against a direct read before it is believed. Once.
+      if (_aggregatesTrusted.contains(cacheKey)) {
+        _totalsCache[cacheKey] = _Cached<CommunityTotals>(result);
+        return result;
+      }
     } catch (_) {
       // And so is a failure. Both roads lead to the scan below.
     }
 
     final CommunityTotals scanned = await _totalsByScan(period);
     if (scanned.resolved) {
+      // The scan agreed there is nothing here, so the aggregate was telling
+      // the truth and need not be second-guessed again this launch. A scan
+      // that found figures the aggregate missed says the opposite — the index
+      // is missing — so the window stays untrusted and keeps scanning.
+      if (scanned.isEmpty) {
+        _aggregatesTrusted.add(cacheKey);
+      }
       _totalsCache[cacheKey] = _Cached<CommunityTotals>(scanned);
       return scanned;
     }

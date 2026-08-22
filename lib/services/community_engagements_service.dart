@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 
 /// One couple's good news, as the community sees it.
@@ -11,9 +8,7 @@ class CommunityEngagement {
     required this.id,
     required this.authorUid,
     required this.at,
-    this.firstNames = '',
     this.matchmakerName = '',
-    this.photoUrl = '',
     this.matchId = '',
   });
 
@@ -31,9 +26,7 @@ class CommunityEngagement {
       id: doc.id,
       authorUid: (data['authorUid'] as String?) ?? '',
       at: at.toDate(),
-      firstNames: ((data['firstNames'] as String?) ?? '').trim(),
       matchmakerName: ((data['matchmakerName'] as String?) ?? '').trim(),
-      photoUrl: ((data['photoUrl'] as String?) ?? '').trim(),
       matchId: ((data['matchId'] as String?) ?? '').trim(),
     );
   }
@@ -42,12 +35,9 @@ class CommunityEngagement {
   final String authorUid;
   final DateTime at;
 
-  /// "יעל ואבי" — first names only, and only when the couple agreed. Empty on
-  /// an anonymous record, which is the default and the common case.
-  final String firstNames;
-
+  /// The matchmaker's own name, and the only name this record can ever carry.
+  /// Empty unless they were asked and said yes — see [attachMatchmakerName].
   final String matchmakerName;
-  final String photoUrl;
 
   /// The author's own id for the proposal, carried so a congratulation can be
   /// delivered into the journal of the couple it is about.
@@ -62,39 +52,36 @@ class CommunityEngagement {
   /// Whether anybody can be congratulated for this. Both halves are needed: an
   /// author to address and a proposal to file it under.
   bool get canBeCongratulated => authorUid.isNotEmpty && matchId.isNotEmpty;
-
-  /// Whether this carries anything about anybody. An anonymous record is a
-  /// timestamp and nothing else, and reads as "somebody, somewhere".
-  bool get isNamed => firstNames.isNotEmpty;
 }
 
 /// "מזל טוב! זוג חדש התארס!"
 ///
-/// **This is the first thing in the app that can put a real candidate's name
-/// and face onto a server other people read**, and the whole design is shaped
-/// by keeping that door as narrow as it can be while still opening.
+/// **Nothing about either member of the couple ever reaches this server.** Not
+/// a name, not a first name, not a photograph, not an age. The app once offered
+/// to publish the couple's first names and a picture with their permission; the
+/// feature was removed, because "with their permission" rests on one person
+/// ticking a box about two other people who are not users, never agreed to
+/// anything, and would have no way of knowing. The announcement is worth having
+/// and the identification never was.
 ///
-/// 1. **The default record is anonymous, and it is the only one written
-///    automatically.** Marking a proposal as a wedding writes a document
-///    carrying a timestamp and the matchmaker's own uid — no name, no photo, no
-///    proposal id, nothing about either candidate. That is what every other
-///    user is shown: *a* couple got engaged.
+/// What a record carries:
 ///
-/// 2. **Names and a photo are a second, separate, deliberate act.** They are
-///    only ever written by [publish], which refuses to run without
-///    `coupleApproved`, and the screen that calls it makes the matchmaker tick
-///    that box themselves. First names only — a full name is an identification,
-///    a first name is an announcement.
+/// 1. **A wedding happened.** A timestamp, the matchmaker's uid, and their own
+///    proposal id so a bracha can be delivered back. That is what every other
+///    user is shown: *a* couple got married.
+///
+/// 2. **The matchmaker's own name, if they said yes.** Written only by
+///    [attachMatchmakerName], only after [MatchmakerNameDialog] asked, and
+///    asked afresh for every wedding — appearing on a leaderboard is a standing
+///    preference and this is one sentence on one day.
 ///
 /// 3. **Nothing here is an archive.** Reads are capped at [freshFor], so a
 ///    record stops being shown a week after it was written whether or not
 ///    anybody deletes it, and there is no screen anywhere in the app that lists
-///    past engagements. The feature is a passing "מזל טוב", not a public
-///    register of who married whom.
+///    past weddings.
 ///
-/// 4. **The matchmaker can take it back.** [withdraw] deletes the document and
-///    the photo with it, which is the only honest answer to a couple who
-///    changed their mind after saying yes.
+/// 4. **The name can be taken back.** [detachMatchmakerName] removes it and
+///    leaves the anonymous announcement standing.
 abstract final class CommunityEngagementsService {
   static const String collection = 'communityEngagements';
 
@@ -103,8 +90,20 @@ abstract final class CommunityEngagementsService {
   /// that nothing here is ever a history.
   static const Duration freshFor = Duration(days: 7);
 
-  /// The ceiling the rules also enforce. First names, not full ones.
-  static const int maxNamesLength = 80;
+  /// How long a record is kept at all, before Firestore's own TTL sweep
+  /// removes it.
+  ///
+  /// **Because [freshFor] only stopped the app from *showing* a record — it
+  /// never deleted one.** No screen in the app lists past weddings, so every
+  /// document older than a week was data nobody could reach and nobody would
+  /// ever look at, kept for ever against a matchmaker's uid. Keeping what you
+  /// have stopped using is exactly what data minimisation forbids, and it also
+  /// meant this collection only ever grew.
+  ///
+  /// Four times [freshFor] rather than exactly it, so a record is deleted well
+  /// after the last device could still have wanted it — a phone with a slow
+  /// clock or a long sleep must never watch a record vanish mid-read.
+  static const Duration retainFor = Duration(days: 28);
 
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
@@ -121,15 +120,14 @@ abstract final class CommunityEngagementsService {
   /// Returns null when there is no account or the write failed — good news is
   /// never worth an error in front of somebody who is having a good day.
   /// [matchId] is the author's own proposal id, written so other matchmakers
-  /// can send a "מזל טוב" back to the right couple's journal. [matchmakerName]
-  /// is written only when the caller has established that this matchmaker
-  /// publishes their name at all — the announcement is anonymous otherwise,
-  /// and the button on it still works, because a message is addressed by uid
-  /// rather than by name.
-  static Future<String?> record({
-    String matchId = '',
-    String matchmakerName = '',
-  }) async {
+  /// can send a "מזל טוב" back to the right couple's journal.
+  ///
+  /// **The record carries no name.** It used to take the matchmaker's name
+  /// whenever they were visible on the leaderboard, which meant the
+  /// "anonymous" announcement went out reading "X made a match" without anybody
+  /// having been asked. The name is now attached afterwards, and only by
+  /// [attachMatchmakerName], and only after the matchmaker says yes.
+  static Future<String?> record({String matchId = ''}) async {
     final User? user = await _account();
     if (user == null) {
       return null;
@@ -141,12 +139,22 @@ abstract final class CommunityEngagementsService {
       await doc.set(<String, Object?>{
         'authorUid': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
-        // Written explicitly rather than left absent so that the shape of an
-        // anonymous record and a published one is the same document with
-        // different values in it, and the rules can check one set of fields.
-        'firstNames': '',
-        'matchmakerName': matchmakerName.trim(),
-        'photoUrl': '',
+        // When Firestore's TTL sweep should delete this record. A date the
+        // client computes rather than a server sentinel, because a TTL policy
+        // deletes a document *at* the moment its chosen field names — so the
+        // field has to hold the expiry, not the birthday. Pointing a policy at
+        // `createdAt` would delete every record the instant it was written.
+        //
+        // A phone with a badly wrong clock therefore writes a badly wrong
+        // expiry. The rules refuse one in the past, and the consequence of the
+        // remaining cases is a record that lingers or goes early — never
+        // anybody else's data, and never a record that outlives its author's
+        // ability to delete it.
+        'expiresAt': Timestamp.fromDate(DateTime.now().toUtc().add(retainFor)),
+        // Written explicitly rather than left absent so that every record in
+        // the collection has the same shape and the rules can check one set of
+        // fields.
+        'matchmakerName': '',
         'matchId': matchId.trim(),
       });
       return doc.id;
@@ -155,50 +163,27 @@ abstract final class CommunityEngagementsService {
     }
   }
 
-  /// Whether this device may put names to a couple at all.
+  /// Puts the matchmaker's own name on a record made by [record].
   ///
-  /// A durable account, for the same reason writing a tip needs one: an
-  /// anonymous uid dies with the install, and two people's names published
-  /// under one could never afterwards be withdrawn by the person who put them
-  /// there. The rules refuse it too; this is what stops the app *offering* it.
-  static Future<bool> canPublishNames() async {
-    final User? user = await _account();
-    return user != null && !user.isAnonymous;
-  }
-
-  /// Adds the couple's first names, the matchmaker's name and an optional photo
-  /// to a record made by [record].
+  /// Asked of everybody who reaches a wedding, and never assumed: being visible
+  /// on the leaderboard is a standing preference about a list of names, and
+  /// this is one sentence about one couple on one day.
   ///
-  /// [coupleApproved] is not a formality and not a default. It is false unless
-  /// the matchmaker has ticked the box themselves, and this returns false
-  /// without writing anything when it is — the same check the security rules
-  /// make, made here too so a bug cannot reach the network.
-  static Future<bool> publish({
+  /// A durable account is required because a name published under a uid that
+  /// dies with the install can never afterwards be taken down by the person who
+  /// put it there.
+  static Future<bool> attachMatchmakerName({
     required String engagementId,
-    required String firstNames,
     required String matchmakerName,
-    required bool coupleApproved,
-    File? photo,
   }) async {
     final User? user = await _account();
-    if (user == null || user.isAnonymous || !coupleApproved) {
+    final String name = matchmakerName.trim();
+    if (user == null || user.isAnonymous || name.isEmpty) {
       return false;
     }
-    final String names = firstNames.trim();
-    if (names.isEmpty || names.length > maxNamesLength) {
-      return false;
-    }
-
     try {
-      final String photoUrl = photo == null
-          ? ''
-          : await _uploadPhoto(user.uid, engagementId, photo) ?? '';
-
       await _db.collection(collection).doc(engagementId).set(<String, Object?>{
-        'firstNames': names,
-        'matchmakerName': matchmakerName.trim(),
-        'photoUrl': photoUrl,
-        'coupleApproved': true,
+        'matchmakerName': name,
       }, SetOptions(merge: true));
       return true;
     } catch (_) {
@@ -206,42 +191,36 @@ abstract final class CommunityEngagementsService {
     }
   }
 
-  /// Deletes the record and its photo. Used when a couple changes its mind.
-  static Future<bool> withdraw(String engagementId) async {
+  /// Whether this device may put a name on a record at all.
+  ///
+  /// A durable account, for the same reason writing a tip needs one: an
+  /// anonymous uid dies with the install, and a name published under one could
+  /// never afterwards be withdrawn by the person who put it there. The rules
+  /// refuse it too; this is what stops the app *asking*.
+  static Future<bool> canBeNamed() async {
+    final User? user = await _account();
+    return user != null && !user.isAnonymous;
+  }
+
+  /// Takes the matchmaker's name back off a record, leaving the announcement
+  /// itself standing.
+  ///
+  /// The record is worth keeping either way — the community heard that a couple
+  /// got married, and that was never the part anybody could regret. What can be
+  /// regretted is having said "yes, say it was me", so that is the only part
+  /// this removes.
+  static Future<bool> detachMatchmakerName(String engagementId) async {
     final User? user = await _account();
     if (user == null) {
       return false;
     }
     try {
-      await _db.collection(collection).doc(engagementId).delete();
-      // Best effort, and after the document: the record being gone is what the
-      // couple asked for, and an orphaned file nobody has a URL to is a smaller
-      // failure than a document that outlives its deletion.
-      try {
-        await _photoRef(user.uid, engagementId).delete();
-      } catch (_) {}
+      await _db.collection(collection).doc(engagementId).set(<String, Object?>{
+        'matchmakerName': '',
+      }, SetOptions(merge: true));
       return true;
     } catch (_) {
       return false;
-    }
-  }
-
-  static Reference _photoRef(String uid, String engagementId) =>
-      FirebaseStorage.instance.ref('$collection/$uid/$engagementId.jpg');
-
-  static Future<String?> _uploadPhoto(
-    String uid,
-    String engagementId,
-    File photo,
-  ) async {
-    try {
-      final Reference ref = _photoRef(uid, engagementId);
-      await ref.putFile(photo, SettableMetadata(contentType: 'image/jpeg'));
-      return await ref.getDownloadURL();
-    } catch (_) {
-      // A published couple with no picture is still a published couple. The
-      // names go up either way rather than the whole thing failing on a photo.
-      return null;
     }
   }
 

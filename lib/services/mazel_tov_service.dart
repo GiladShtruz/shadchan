@@ -76,6 +76,19 @@ abstract final class MazelTovService {
   /// one from costing a hundred reads on every launch.
   static const int inboxLimit = 30;
 
+  /// How long an *uncollected* message is kept before Firestore's TTL sweep
+  /// removes it.
+  ///
+  /// The postbox is emptied by its recipient, which handles every message that
+  /// reaches somebody. It does nothing for a message sent to a matchmaker who
+  /// never opens the app again — that one sat here for ever, addressed to a
+  /// person who will not come for it, in a collection whose whole point is
+  /// that it holds only undelivered post.
+  ///
+  /// Three months is far longer than anybody's idea of "away", and short
+  /// enough that this never becomes a record of who wished whom well.
+  static const Duration retainFor = Duration(days: 90);
+
   /// The ready-made lines, for the matchmaker who wants to say the usual thing
   /// and get on with their day. Tapping one sends it; there is no second step.
   static const List<String> suggestions = <String>[
@@ -131,6 +144,10 @@ abstract final class MazelTovService {
         'matchId': matchId,
         'text': message,
         'createdAt': FieldValue.serverTimestamp(),
+        // See [retainFor], and the note on the same field in
+        // `CommunityEngagementsService.record` for why this is a client-side
+        // date rather than a server sentinel.
+        'expiresAt': Timestamp.fromDate(DateTime.now().toUtc().add(retainFor)),
       });
       return true;
     } catch (_) {
@@ -177,9 +194,28 @@ abstract final class MazelTovService {
     if (user == null) {
       return;
     }
-    for (final String id in ids) {
+    final List<String> pending = ids.toList();
+    if (pending.isEmpty) {
+      return;
+    }
+    // One batch rather than a round trip per message. A wedding can collect a
+    // dozen brachot, and deleting them one at a time meant a dozen sequential
+    // requests on the launch that collected them — over whatever connection
+    // the phone happens to have, at the moment the app is starting up.
+    //
+    // Chunked at Firestore's own ceiling, though [inboxLimit] means one batch
+    // in practice. A batch that fails leaves every message in it on the
+    // server, which is exactly what the per-message version did too: they are
+    // already in the journal, already remembered by id, and skipped rather
+    // than filed twice on the next drain.
+    for (int start = 0; start < pending.length; start += 450) {
+      final int end = start + 450 > pending.length ? pending.length : start + 450;
       try {
-        await _db.collection(collection).doc(id).delete();
+        final WriteBatch batch = _db.batch();
+        for (final String id in pending.sublist(start, end)) {
+          batch.delete(_db.collection(collection).doc(id));
+        }
+        await batch.commit();
       } catch (_) {
         // Left for the next drain.
       }

@@ -45,6 +45,19 @@ import 'package:shadchan/services/sync_state_store.dart';
 abstract final class CloudSyncService {
   static const String _photosField = 'photos';
 
+  /// The four record collections under `users/{uid}`, named in one place.
+  ///
+  /// Listed rather than discovered because Firestore cannot enumerate the
+  /// subcollections of a document from a client — so an erasure that missed
+  /// one would leave it behind silently, for ever. A fifth collection added
+  /// later has to be added here too, which is the point.
+  static const List<String> _syncedCollections = <String>[
+    'people',
+    'personNotes',
+    'matches',
+    'matchNotes',
+  ];
+
   /// Firestore refuses a batch of more than 500 operations.
   static const int _batchLimit = 450;
 
@@ -114,15 +127,31 @@ abstract final class CloudSyncService {
 
       await _writeDocuments(uid, records, changed, removed);
       await _syncPhotos(uid, records, previous, current);
-      await _writeMeta(uid, records);
+
+      // The ledger before and after, compared once. It is the only thing that
+      // knows about *every* kind of change: `changed` and `removed` cover the
+      // documents, and the photo pass adds and drops entries of its own — a
+      // re-cropped photo keeps its basename, so the person's document is
+      // untouched and the upload showed up nowhere in the two lists above.
+      //
+      // Two things hang off it. The meta document is only written when
+      // something actually reached the cloud, which takes an unconditional
+      // write per app open *and* per app close off every account in the app —
+      // four writes a day for a database nobody touched. And a sync that
+      // uploaded nothing but a photo now reports `success` rather than
+      // `upToDate`, which is what Settings tells the matchmaker.
+      final bool uploadedSomething = !mapEquals(previous, current);
+      if (uploadedSomething) {
+        await _writeMeta(uid, records);
+      }
       await state.commit(current);
 
       debugPrint(
         'CLOUD_SYNC uploaded ${changed.length}, removed ${removed.length}',
       );
-      return changed.isEmpty && removed.isEmpty
-          ? CloudSyncResult.upToDate
-          : CloudSyncResult.success;
+      return uploadedSomething
+          ? CloudSyncResult.success
+          : CloudSyncResult.upToDate;
     } on FirebaseException catch (error) {
       debugPrint('CLOUD_SYNC failed: ${error.code} ${error.message}');
       return error.code == 'permission-denied'
@@ -230,17 +259,26 @@ abstract final class CloudSyncService {
     }
 
     for (final String name in referenced) {
+      final String key = 'photos/$name';
       final File file = File(
         '${photosDirectory.path}${Platform.pathSeparator}$name',
       );
       if (!file.existsSync()) {
+        // Still referenced by a person, but gone from this phone — a restore
+        // whose download failed, or a file the OS reclaimed. Whatever is in
+        // the cloud is now the *only* copy, so the ledger entry is carried
+        // forward to keep the delete pass below away from it. Dropping the key
+        // here is what used to make a missing local file delete the backup of
+        // itself.
+        if (previous[key] case final String kept) {
+          current[key] = kept;
+        }
         continue;
       }
       // Length and mtime together: the photo editor rewrites a file in place,
       // and a crop that happens to land on the same byte count still moves the
       // timestamp.
       final FileStat stat = file.statSync();
-      final String key = 'photos/$name';
       final String fingerprint =
           '${stat.size}:${stat.modified.millisecondsSinceEpoch}';
       current[key] = fingerprint;
@@ -251,7 +289,18 @@ abstract final class CloudSyncService {
         await root.child(name).putFile(file);
       } catch (error) {
         debugPrint('CLOUD_SYNC photo upload failed for $name: $error');
-        current.remove(key);
+        // The *old* fingerprint, not none at all. Forgetting the key entirely
+        // sent the photo to the delete pass below, so a phone that lost its
+        // connection midway through re-uploading an edited photo destroyed the
+        // copy it had successfully backed up before — a transient network
+        // failure losing a face for good. Keeping the stale fingerprint
+        // protects that copy and still differs from the file on disk, so the
+        // next sync retries the upload.
+        if (previous[key] case final String kept) {
+          current[key] = kept;
+        } else {
+          current.remove(key);
+        }
       }
     }
 
@@ -285,6 +334,114 @@ abstract final class CloudSyncService {
       'matchNotes': count('matchNotes/'),
       'profile': records.containsKey(ProfileBackup.documentPath),
     }, SetOptions(merge: true));
+  }
+
+  // --- Erasure ------------------------------------------------------------
+
+  /// Deletes this account's whole cloud backup — every record, the profile,
+  /// and every photo file.
+  ///
+  /// **The database on this phone is not touched.** Somebody asking to delete
+  /// their backup is asking for the copy on the server to be gone, not to lose
+  /// their own work; the app carries on exactly as it did before it was ever
+  /// connected to an account, and the next sync simply uploads everything
+  /// again unless they sign out first.
+  ///
+  /// Why it exists at all: this is the only permanent copy of other people's
+  /// names, telephone numbers, religious level and private notes — people who
+  /// are not users of this app, never agreed to anything, and have no way of
+  /// knowing it is here. `communityMembers` has had a delete button since the
+  /// beginning, and that row is nothing but counters; the sensitive half of
+  /// the system had no way to be erased short of writing to the developer.
+  ///
+  /// Deliberately unlike the rest of this class, it **reports its failures**.
+  /// A sync that quietly fails is retried in a minute and costs nothing, but
+  /// somebody who has just been told their data is gone must never be told it
+  /// wrongly — so a partial deletion answers false and the caller says to try
+  /// again.
+  static Future<bool> deleteBackup() async {
+    final String? uid = await _requireAccount();
+    if (uid == null) {
+      return false;
+    }
+
+    try {
+      final DocumentReference<Map<String, dynamic>> root = _root(uid);
+
+      // The records first, then the root document. In that order, an
+      // interruption leaves a root document describing a tree that is already
+      // gone — which the next sync corrects — rather than orphaned records
+      // under no root, which nothing would ever visit again.
+      for (final String collection in _syncedCollections) {
+        await _deleteCollection(root.collection(collection));
+      }
+      await _deleteCollection(
+        root.collection(ProfileBackup.documentPath.split('/').first),
+      );
+      await _deletePhotos(uid);
+      await root.delete();
+      return true;
+    } on FirebaseException catch (error) {
+      debugPrint('CLOUD_DELETE failed: ${error.code} ${error.message}');
+      return false;
+    } catch (error, stackTrace) {
+      debugPrint('CLOUD_DELETE failed: $error\n$stackTrace');
+      return false;
+    }
+  }
+
+  /// Empties one collection, a page at a time.
+  ///
+  /// Firestore has no recursive delete on the client — that lives in the admin
+  /// SDK — so the documents are listed and deleted in batches. Paged rather
+  /// than read whole because a large database would otherwise be pulled into
+  /// memory in one go just to be thrown away.
+  static Future<void> _deleteCollection(
+    CollectionReference<Map<String, dynamic>> collection,
+  ) async {
+    while (true) {
+      final QuerySnapshot<Map<String, dynamic>> page = await collection
+          .limit(_batchLimit)
+          .get();
+      if (page.docs.isEmpty) {
+        return;
+      }
+      final WriteBatch batch = FirebaseFirestore.instance.batch();
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in page.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+      // A short page means that was the last of them. Checked after the
+      // delete rather than before, so a collection that is an exact multiple
+      // of the page size still terminates.
+      if (page.docs.length < _batchLimit) {
+        return;
+      }
+    }
+  }
+
+  /// Removes every photo this account has in the bucket.
+  ///
+  /// Listed from Storage rather than derived from the records, deliberately:
+  /// a file whose person was deleted locally before the last sync ran, or one
+  /// left behind by an interrupted delete, is exactly the file that would
+  /// survive an erasure driven by the database — and a face is the last thing
+  /// that should outlive the request to remove it.
+  static Future<void> _deletePhotos(String uid) async {
+    final Reference root = FirebaseStorage.instance.ref('users/$uid/photos');
+    ListResult page = await root.list(const ListOptions(maxResults: 100));
+    while (true) {
+      for (final Reference item in page.items) {
+        await item.delete();
+      }
+      final String? token = page.nextPageToken;
+      if (token == null) {
+        return;
+      }
+      page = await root.list(
+        ListOptions(maxResults: 100, pageToken: token),
+      );
+    }
   }
 
   // --- Restore ------------------------------------------------------------

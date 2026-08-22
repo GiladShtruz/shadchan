@@ -30,6 +30,20 @@
     "   an ordering on two different fields, so it needs its own index like",
     "   everything else here.",
     "",
+    "4. The two tip queries, `status == … ` ordered by `createdAt`. Two indexes",
+    "   for one pair of fields, because the direction is part of a composite",
+    "   index and the two queries want opposite ones: the approval queue is",
+    "   read oldest-first, because it is a queue and whoever waited longest is",
+    "   answered first, and the approved rotation is read newest-first.",
+    "",
+    "   They exist because both queries used to run unordered under a `limit`,",
+    "   which returns documents in document-id order — and these ids are",
+    "   random. Past the limit the console was showing an arbitrary subset, and",
+    "   a pending tip outside it would never have been reviewed at all. The",
+    "   report console has the same fix but needs no index here: it orders by",
+    "   `createdAt` with no filter beside it, which the automatic single-field",
+    "   index already serves.",
+    "",
     "The `*Actions` fields hold weighted activity points now, not a count of",
     "actions. The names were left alone deliberately: renaming them would have",
     "meant rebuilding all four leaderboard indexes and a window in which every",
@@ -103,6 +117,22 @@
       "fields": [
         { "fieldPath": "toUid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],

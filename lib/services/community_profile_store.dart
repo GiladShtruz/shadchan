@@ -23,6 +23,7 @@ abstract final class CommunityProfileStore {
   static const String _avatarPathKey = 'community.avatarLocalPath';
   static const String _avatarUrlKey = 'community.avatarUrl';
   static const String _greetingKey = 'community.greetingCursor';
+  static const String _publishedKey = 'community.publishedFingerprint';
   static const String _weekSnapshotKey = 'community.weekSnapshot';
   static const String _prevWeekSnapshotKey = 'community.prevWeekSnapshot';
   static const String _communityMilestonesKey = 'community.sharedMilestones';
@@ -120,6 +121,31 @@ abstract final class CommunityProfileStore {
     _write(_avatarPathKey, path);
     _write(_avatarUrlKey, url);
   }
+
+  // --- What was last published to the community ----------------------------
+
+  /// A fingerprint of the last member row this device successfully wrote.
+  ///
+  /// **So an unchanged row is not rewritten twice a session.** Publishing runs
+  /// on app open and app pause, and every figure in it is recomputed from the
+  /// local ledgers rather than incremented — which makes the write idempotent
+  /// and, on the very many launches where the matchmaker did nothing, entirely
+  /// pointless. Two wasted writes a day per account is not a bill anybody will
+  /// notice, but it is two writes against a collection every installed copy of
+  /// the app reads, for no change.
+  ///
+  /// Cleared rather than updated whenever something writes the row by another
+  /// path ([CommunityService.setHidden], [CommunityService.deleteMyData]), so
+  /// the next publish always rebuilds it from a known state.
+  static String get publishedFingerprint {
+    final Object? raw = _read(_publishedKey);
+    return raw is String ? raw : '';
+  }
+
+  static void rememberPublished(String fingerprint) =>
+      _write(_publishedKey, fingerprint);
+
+  static void forgetPublished() => _write(_publishedKey, '');
 
   // --- The line "הפעילות שלי" opens with -----------------------------------
 

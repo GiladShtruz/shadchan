@@ -149,14 +149,21 @@ abstract final class TipsService {
     return FirebaseAuth.instance.currentUser;
   }
 
-  /// Every approved tip. Read by any signed-in device, including an anonymous
-  /// one — a matchmaker who never signed in still gets the community's tips.
+  /// The most recently approved tips. Read by any signed-in device, including
+  /// an anonymous one — a matchmaker who never signed in still gets the
+  /// community's tips.
+  ///
+  /// Ordered for the same reason [fetchPending] is: `.limit(200)` on its own
+  /// takes 200 tips in random document-id order, so past that number the
+  /// rotation would quietly freeze around an arbitrary subset and a newly
+  /// approved tip might never be shown to anybody.
   static Future<List<CommunityTip>> fetchApproved() async {
     if (await _requireAccount() == null) {
       return const <CommunityTip>[];
     }
     final QuerySnapshot<Map<String, dynamic>> snapshot = await _tips
         .where('status', isEqualTo: TipStatus.approved.name)
+        .orderBy('createdAt', descending: true)
         .limit(200)
         .get();
     return _decode(snapshot);
@@ -179,21 +186,28 @@ abstract final class TipsService {
     return mine;
   }
 
-  /// The approval queue. Readable only by the administrator — the rules refuse
-  /// this query for anyone else.
+  /// The approval queue, oldest first. Readable only by the administrator —
+  /// the rules refuse this query for anyone else.
+  ///
+  /// **Ordered on the server, and here that is a correctness fix rather than a
+  /// tidying-up.** It used to take `.limit(200)` unordered and sort afterwards,
+  /// which meant that once more than 200 tips were waiting, the console showed
+  /// 200 arbitrary ones — and a tip outside that arbitrary set would never be
+  /// drawn, never be reviewed, and never leave the queue. A submission could
+  /// sit unread for ever with nothing anywhere reporting a problem.
+  ///
+  /// Oldest first because this is a queue: whoever has been waiting longest is
+  /// answered first.
   static Future<List<CommunityTip>> fetchPending() async {
     if (await _requireAccount() == null) {
       return const <CommunityTip>[];
     }
     final QuerySnapshot<Map<String, dynamic>> snapshot = await _tips
         .where('status', isEqualTo: TipStatus.pending.name)
+        .orderBy('createdAt')
         .limit(200)
         .get();
-    final List<CommunityTip> pending = _decode(snapshot);
-    pending.sort(
-      (CommunityTip a, CommunityTip b) => a.createdAt.compareTo(b.createdAt),
-    );
-    return pending;
+    return _decode(snapshot);
   }
 
   /// Sends a tip for approval. Returns false when there is no durable account

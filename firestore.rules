@@ -126,14 +126,46 @@ service cloud.firestore {
     match /supportReports/{reportId} {
       allow read, update, delete: if isSupportAdmin();
 
+      // The three facts a report carries about the phone it came from, and the
+      // path to its screenshot. Short strings every one of them — "Samsung
+      // SM-G991B", "Android 14", "1.4.2+87", and a bucket path built from the
+      // report's own id.
+      //
+      // Capped because they were the only fields on this document that nothing
+      // checked. `text` and `authorName` have had ceilings from the start, so
+      // a client wanting to push a megabyte into the console simply put it in
+      // `device` instead — a field the reviewer's screen renders and nobody
+      // ever looks at closely.
+      function fact(data, field, ceiling) {
+        return !(field in data)
+            || (data[field] is string && data[field].size() <= ceiling);
+      }
+
       allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(
+                         ['text', 'authorName', 'authorUid', 'device', 'os',
+                          'appVersion', 'status', 'kind', 'createdAt',
+                          'imagePath'])
                     && request.resource.data.authorUid == request.auth.uid
                     && request.resource.data.status == 'isNew'
+                    // The server's clock, so the console can order by it. The
+                    // report list is `orderBy('createdAt')` under a limit, and
+                    // a document without the field is left out of that query
+                    // altogether — a report that could never be read.
+                    && request.resource.data.createdAt == request.time
                     && request.resource.data.text is string
                     && request.resource.data.text.size() > 0
                     && request.resource.data.text.size() <= 3000
                     && request.resource.data.authorName is string
                     && request.resource.data.authorName.size() <= 80
+                    && fact(request.resource.data, 'device', 200)
+                    && fact(request.resource.data, 'os', 100)
+                    && fact(request.resource.data, 'appVersion', 100)
+                    // A path inside our own bucket, never a URL. See
+                    // `SupportService._uploadScreenshot` for why a download URL
+                    // must never be stored: it carries a permanent token that
+                    // bypasses `storage.rules` entirely.
+                    && fact(request.resource.data, 'imagePath', 300)
                     // Optional, and only ever one of the four labels the form
                     // offers — a free-text field here would be a way to write
                     // unvalidated strings into the console.
@@ -142,12 +174,26 @@ service cloud.firestore {
                              ['idea', 'note', 'bug', 'unsorted']);
     }
 
-    // The administrator list itself. Readable by a signed-in device so the app
-    // can decide whether to draw the console entry; writable only by the root
-    // address, so an administrator cannot promote themselves a colleague — or
-    // remove the person who appointed them.
+    // The administrator list itself. Writable only by the root address, so an
+    // administrator cannot promote themselves a colleague — or remove the
+    // person who appointed them.
+    //
+    // Reading is split, because the two callers want different things and only
+    // one of them is an administrator. `SupportService.isAdmin` fetches the one
+    // document named after the reader's own address to decide whether to draw
+    // the console entry — that is a `get`, and it is allowed against your own
+    // address and nobody else's. `SupportService.fetchAdmins` lists the whole
+    // collection to populate the console's reviewer list, and that is a `list`
+    // only an administrator may run.
+    //
+    // The distinction is not cosmetic: `read` covered both, which meant every
+    // installed copy of the app could download the email address of every
+    // person who reviews reports. That is a set of real people's personal
+    // addresses, published to an audience that has no use for it.
     match /supportAdmins/{adminEmail} {
-      allow read: if request.auth != null;
+      allow get: if supportEmail() != ''
+                 && (adminEmail == supportEmail() || isSupportAdmin());
+      allow list: if isSupportAdmin();
       allow write: if supportEmail() == 'yitz292@gmail.com';
     }
 
@@ -178,6 +224,71 @@ service cloud.firestore {
     // may not read. Write is the owner's alone, so nobody can put words in
     // anybody's mouth or push themselves up the board.
     match /communityMembers/{uid} {
+      // A counter, if the write carries one at all.
+      //
+      // **This is the only thing standing between the community figures and
+      // one hand-rolled client.** The totals are `sum()` aggregates over this
+      // collection, so a single member document claiming 9e18 friends does not
+      // merely top the leaderboard — it becomes "what the community did this
+      // week" for every matchmaker in the app, and no client can tell that the
+      // number is wrong. An integer, never negative, and under a ceiling far
+      // above anything a real matchmaker reaches but far below anything that
+      // could overflow or dominate a sum.
+      //
+      // Absence is allowed on purpose: `setHidden` writes three fields with
+      // `merge: true`, and on a document that does not exist yet the counters
+      // are simply not part of the write.
+      function counter(data, field) {
+        return !(field in data)
+            || (data[field] is int
+                && data[field] >= 0
+                && data[field] <= 10000000);
+      }
+
+      // A period key — `2026-08-21`, `W2026-08-16`, `2026-08`. Compared for
+      // equality only, so the only thing worth checking is that it is a short
+      // string rather than a document's worth of text.
+      function periodKey(data, field) {
+        return !(field in data)
+            || (data[field] is string && data[field].size() <= 16);
+      }
+
+      function windowOk(data, prefix) {
+        return counter(data, prefix + 'Actions')
+            && counter(data, prefix + 'Friends')
+            && counter(data, prefix + 'Ideas')
+            && counter(data, prefix + 'Couples')
+            && counter(data, prefix + 'Engagements');
+      }
+
+      function countsOk(data) {
+        return windowOk(data, 'day')
+            && windowOk(data, 'week')
+            && windowOk(data, 'month')
+            && windowOk(data, 'all')
+            && periodKey(data, 'dayKey')
+            && periodKey(data, 'weekKey')
+            && periodKey(data, 'monthKey');
+      }
+
+      // Nothing but the vocabulary above. A whitelist rather than a blacklist
+      // because this collection is world-readable to every installed copy of
+      // the app: an unlisted field is a place for a client to write whatever
+      // it likes and have every other device read it.
+      function noStrayFields(data) {
+        return data.keys().hasOnly([
+          'name', 'photoUrl', 'hidden', 'updatedAt',
+          'dayKey', 'dayActions', 'dayFriends', 'dayIdeas', 'dayCouples',
+          'dayEngagements',
+          'weekKey', 'weekActions', 'weekFriends', 'weekIdeas', 'weekCouples',
+          'weekEngagements',
+          'monthKey', 'monthActions', 'monthFriends', 'monthIdeas',
+          'monthCouples', 'monthEngagements',
+          'allActions', 'allFriends', 'allIdeas', 'allCouples',
+          'allEngagements'
+        ]);
+      }
+
       allow read: if request.auth != null;
 
       allow create, update: if request.auth != null
@@ -191,7 +302,9 @@ service cloud.firestore {
                             // and is governed by `storage.rules`.
                             && (!('photoUrl' in request.resource.data)
                                 || (request.resource.data.photoUrl is string
-                                    && request.resource.data.photoUrl.size() <= 500));
+                                    && request.resource.data.photoUrl.size() <= 500))
+                            && countsOk(request.resource.data)
+                            && noStrayFields(request.resource.data);
 
       // Erasure, from the button on "פרטיות והמאגר שלי". Split out because a
       // delete carries no `request.resource`, so the field checks above would
@@ -202,72 +315,90 @@ service cloud.firestore {
 
     // --- "מזל טוב! זוג חדש התארס!" ----------------------------------------
     //
-    // The only collection in this database that can hold a candidate's name,
-    // and the rules are written on the assumption that it will be got wrong in
-    // the client one day.
+    // **No candidate's name can be written here, by anybody, ever.**
     //
-    // **An anonymous record is the default and carries nothing.** Marking a
-    // proposal as a wedding writes `{authorUid, createdAt}` and three empty
-    // strings. That is what every other user is shown: a couple, somewhere.
+    // There used to be a way: the app offered to publish a couple's first names
+    // and a photograph, and the rule below let it through on a `coupleApproved`
+    // flag the matchmaker ticked. The feature is gone, and the rule that
+    // permitted it is gone with it — a permission nothing uses is a permission
+    // waiting to be used by mistake.
     //
-    // **Names and a photo require `coupleApproved: true`, and it is checked
-    // here rather than trusted from the app.** A client cannot write a name
-    // without also writing down that it had permission to, which is what makes
-    // the flag worth having — it is a claim on the record, in the record, that
-    // survives the app being rewritten.
+    // A record says that a wedding happened, when, whose account marked it, and
+    // that account's own proposal id. Optionally the matchmaker's own name,
+    // which they are asked about per wedding. That is the whole vocabulary, and
+    // `firstNames` and `photoUrl` are refused outright rather than merely
+    // unwritten, so an older build or a hand-rolled client cannot put one back.
     //
-    // **Read is open to any signed-in device** for the same reason the member
-    // documents are: the announcement is a query over documents the reader does
-    // not own. Write, update and delete are the author's alone, so nobody can
-    // publish anybody else's couple or edit the names on one already published,
-    // and the author can always take their own back down.
+    // **Read is open to any signed-in device**, because the announcement is a
+    // query over documents the reader does not own. Write, update and delete
+    // are the author's alone.
     match /communityEngagements/{engagementId} {
       function isSignedIn() {
         return request.auth != null;
       }
 
-      // Everything the app ever writes here, and nothing else. Absent fields
-      // are refused rather than defaulted: a document that is missing
-      // `firstNames` cannot be reasoned about by the rule below it.
+      // Everything the app ever writes here, and nothing else.
       function wellFormed(data) {
-        return data.authorUid is string
-            && data.firstNames is string
-            && data.firstNames.size() <= 80
+        return data.keys().hasOnly(
+                 ['authorUid', 'createdAt', 'expiresAt', 'matchmakerName',
+                  'matchId'])
+            && data.authorUid is string
             && data.matchmakerName is string
             && data.matchmakerName.size() <= 80
-            && data.photoUrl is string
-            && data.photoUrl.size() <= 1000;
+            && data.matchId is string
+            && data.matchId.size() <= 64
+            // When the TTL sweep will delete this. Required, so a record
+            // cannot be written that outlives the policy, and refused if it is
+            // already past — a client must not be able to plant a record that
+            // disappears before anybody reads it, nor one dated so far out
+            // that "nothing here is ever a history" stops being true.
+            && data.expiresAt is timestamp
+            && data.expiresAt > request.time
+            && data.expiresAt < request.time + duration.value(60, 'd');
       }
 
-      // The one rule this collection exists to enforce. A record naming
-      // somebody must also record that the couple agreed, and it must come
-      // from a durable account: publishing two real people's names under a uid
-      // that dies with the install would leave nobody able to withdraw it.
-      function namedOnlyWithConsent(data) {
-        return data.firstNames == ''
-            || (data.coupleApproved == true
-                && request.auth.token.firebase.sign_in_provider != 'anonymous');
+      // Naming yourself needs a durable account: a name published under a uid
+      // that dies with the install could never afterwards be withdrawn by the
+      // person who put it there.
+      function namedOnlyByDurableAccount(data) {
+        return data.matchmakerName == ''
+            || request.auth.token.firebase.sign_in_provider != 'anonymous';
       }
 
       allow read: if isSignedIn();
 
+      // `createdAt` must be the server's own clock, not the client's.
+      //
+      // Every reader sorts this collection by it and shows the newest record,
+      // and the whole feature rests on a record ageing out after a week. A
+      // client-chosen timestamp is therefore not a detail: one dated to the
+      // year 3000 would sit at the top of every matchmaker's home screen and
+      // never expire, and one dated to the past would be born invisible.
+      // `request.time` is exactly what `FieldValue.serverTimestamp()` resolves
+      // to, so the app already satisfies this.
       allow create: if isSignedIn()
                     && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.createdAt == request.time
                     && wellFormed(request.resource.data)
-                    && namedOnlyWithConsent(request.resource.data);
+                    && namedOnlyByDurableAccount(request.resource.data);
 
-      // The author fills in the names on their own record afterwards. The
-      // author may never change, so an update cannot move a couple onto
-      // somebody else's account.
+      // The author attaches or removes their own name afterwards. The author
+      // may never change, so an update cannot move a record onto somebody
+      // else's account — and neither the age nor the proposal id may change,
+      // so an update cannot refresh a record to the top of the feed or
+      // redirect other people's brachot into a different journal. Only
+      // `matchmakerName` is left free, which is the whole reason update exists.
       allow update: if isSignedIn()
                     && resource.data.authorUid == request.auth.uid
                     && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.expiresAt == resource.data.expiresAt
+                    && request.resource.data.matchId == resource.data.matchId
                     && wellFormed(request.resource.data)
-                    && namedOnlyWithConsent(request.resource.data);
+                    && namedOnlyByDurableAccount(request.resource.data);
 
-      // Withdrawal, for a couple who changed their mind. Split out because a
-      // delete carries no `request.resource` and the checks above would refuse
-      // it — the same trap `communityMembers` fell into.
+      // Split out because a delete carries no `request.resource` and the checks
+      // above would refuse it.
       allow delete: if isSignedIn()
                     && resource.data.authorUid == request.auth.uid;
     }
@@ -300,7 +431,26 @@ service cloud.firestore {
 
       // Create only — a bracha cannot be edited after it is sent, which is
       // what makes "who wrote this" answerable at all.
+      // `createdAt` is required and must be the server's clock. The postbox is
+      // drained by `toUid == me` **ordered by `createdAt`**, and Firestore
+      // leaves a document without the ordered field out of the result set
+      // entirely — so a message created without one is undeliverable *and*
+      // uncollectable, and sits against the recipient's uid for ever. The
+      // ordering is also what makes "oldest first" true, which a client-chosen
+      // timestamp could quietly break.
       allow create: if isSignedIn()
+                    && request.resource.data.keys().hasOnly(
+                         ['toUid', 'fromUid', 'fromName', 'matchId', 'text',
+                          'createdAt', 'expiresAt'])
+                    && request.resource.data.createdAt == request.time
+                    // When the TTL sweep clears an uncollected message. The
+                    // recipient normally deletes it long before; this is what
+                    // stops post addressed to somebody who never comes back
+                    // from sitting here for ever.
+                    && request.resource.data.expiresAt is timestamp
+                    && request.resource.data.expiresAt > request.time
+                    && request.resource.data.expiresAt
+                         < request.time + duration.value(120, 'd')
                     && request.resource.data.fromUid == request.auth.uid
                     && request.resource.data.toUid is string
                     && request.resource.data.toUid != request.auth.uid

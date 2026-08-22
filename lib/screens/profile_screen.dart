@@ -12,6 +12,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_version.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -475,14 +476,14 @@ class _AccountGroup extends StatelessWidget {
   }
 }
 
-/// The three lines at the foot of the settings, in the smallest type on the
+/// The two lines at the foot of the settings, in the smallest type on the
 /// page. Nobody comes here for them, and everybody expects to find them here.
+///
+/// **One link, not two.** It used to offer "תנאי שימוש" beside the privacy
+/// policy, and both pushed `/privacy-policy` — the app has no terms of use, and
+/// a link that promises a document that does not exist is worse than no link.
 class _SettingsFooter extends StatelessWidget {
   const _SettingsFooter();
-
-  /// Kept beside the two links rather than in an "מידע" card of its own, which
-  /// is what it used to have.
-  static const String version = '1.0.0';
 
   @override
   Widget build(BuildContext context) {
@@ -495,25 +496,25 @@ class _SettingsFooter extends StatelessWidget {
       padding: const EdgeInsets.only(top: 4, bottom: 24),
       child: Column(
         children: <Widget>[
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 6,
-            children: <Widget>[
-              TextButton(
-                onPressed: () => context.push('/privacy-policy'),
-                style: _linkStyle,
-                child: Text('תנאי שימוש', style: style),
-              ),
-              Text('·', style: style),
-              TextButton(
-                onPressed: () => context.push('/privacy-policy'),
-                style: _linkStyle,
-                child: Text('מדיניות פרטיות', style: style),
-              ),
-            ],
+          TextButton(
+            onPressed: () => context.push('/privacy-policy'),
+            style: _linkStyle,
+            child: Text('מדיניות פרטיות', style: style),
           ),
           const SizedBox(height: 2),
-          Text('גרסה $version', style: style),
+          FutureBuilder<String>(
+            future: AppVersion.read(),
+            // Already known on every build after the first, so the line does
+            // not blink in a frame late.
+            initialData: AppVersion.value,
+            builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
+              final String version = snapshot.data ?? '';
+              if (version.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Text('גרסה $version', style: style);
+            },
+          ),
         ],
       ),
     );

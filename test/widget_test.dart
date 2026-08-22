@@ -28,6 +28,8 @@ import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/personal_card_screen.dart';
+import 'package:shadchan/screens/privacy_overview_screen.dart';
+import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -231,6 +233,47 @@ void main() {
       isFalse,
     );
   });
+
+  testWidgets(
+    'Erasing the cloud backup is offered only to an account that has one',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        _buildProfileTestApp(home: const PrivacyOverviewScreen()),
+      );
+      await tester.pumpAndSettle();
+
+      // To the bottom of the list first. The tiles sit under a screenful of
+      // explanation, and asserting from the top would have every expectation
+      // below pass for the wrong reason — the widget is absent from the
+      // viewport rather than absent from the screen.
+      await tester.scrollUntilVisible(
+        find.text('מדיניות הפרטיות המלאה'),
+        300,
+      );
+      await tester.pumpAndSettle();
+
+      // Signed out — and under `flutter test` nothing ever signs in — there is
+      // no backup on any server to remove. Offering the button anyway would
+      // imply there was something up there, which is the one thing a privacy
+      // screen must never do.
+      expect(find.text('מחיקת הגיבוי בענן'), findsNothing);
+
+      // It is on the screen all the same, drawing nothing. Asserted separately
+      // because the expectation above passes just as happily if the tile is
+      // deleted from the screen altogether — and the signed-in branch cannot
+      // be reached from here, since Firebase never comes up under
+      // `flutter test`. This is what stands in for it.
+      expect(find.byType(DeleteCloudBackupTile), findsOneWidget);
+
+      // The community row is a different erasure with a different subject, and
+      // it is not conditional on an account. The two must not be confused for
+      // each other: this one deletes counters, the other deletes the friends.
+      expect(find.text('מחיקת הנתונים שלי מהקהילה'), findsOneWidget);
+
+      // And the screen no longer tells anybody to write in and ask.
+      expect(find.textContaining('אפשר לבקש למחוק'), findsNothing);
+    },
+  );
 
   testWidgets('Only a single user sees and edits a personal card', (
     WidgetTester tester,

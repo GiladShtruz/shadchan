@@ -270,8 +270,13 @@ class HomeActionCards extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(
           context,
         ).scale(1).clamp(1, 1.8);
-        final double bandHeight = (narrow ? 54.0 : 60.0) * textScale;
-        final double artHeight = (constraints.maxWidth * 0.42).clamp(104, 172);
+        final double bandHeight = (narrow ? 46.0 : 50.0) * textScale;
+        // Squatter than the picture would like, on purpose. These two are the
+        // top of a page that has to show what is under them too, and a tile
+        // tall enough to crop well is a tile that pushes everything else off
+        // the first screen — so the artwork is cropped and the card stays
+        // closer to a square than to a portrait.
+        final double artHeight = (constraints.maxWidth * 0.33).clamp(88, 132);
 
         return SizedBox(
           height: artHeight + bandHeight,
@@ -390,7 +395,7 @@ class _AddTile extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 4),
                       _BandRule(icon: ornament),
                     ],
                   ),

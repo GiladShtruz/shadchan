@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -119,6 +120,7 @@ class SupportReport {
     required this.status,
     required this.createdAt,
     this.kind = SupportReportKind.unsorted,
+    this.imagePath,
     this.imageUrl,
   });
 
@@ -141,8 +143,22 @@ class SupportReport {
   /// the chips existed, which reads back as [SupportReportKind.unsorted].
   final SupportReportKind kind;
 
-  /// A screenshot, if one was attached.
+  /// Where the attached screenshot lives in the bucket, if there is one. Read
+  /// with [SupportService.loadScreenshot].
+  final String? imagePath;
+
+  /// The token URL older versions stored instead of a path. Kept only so
+  /// reports written before [SupportService.loadScreenshot] existed still show
+  /// their screenshot in the console; nothing writes it any more, and the
+  /// tokens behind these should be revoked in the Firebase console.
   final String? imageUrl;
+
+  /// A trimmed string, or null when the field is absent or blank. Blank and
+  /// missing mean the same thing here and must not read differently.
+  static String? _text(Object? value) {
+    final String text = (value as String?)?.trim() ?? '';
+    return text.isEmpty ? null : text;
+  }
 
   static SupportReport? fromDocument(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -166,9 +182,8 @@ class SupportReport {
       createdAt: createdAt is Timestamp
           ? createdAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),
-      imageUrl: (data['imageUrl'] as String?)?.trim().isEmpty ?? true
-          ? null
-          : (data['imageUrl'] as String).trim(),
+      imagePath: _text(data['imagePath']),
+      imageUrl: _text(data['imageUrl']),
     );
   }
 }
@@ -277,9 +292,9 @@ abstract final class SupportService {
       // upload costs the screenshot and not the report — the words are the part
       // that matters, and a report that vanished because a photo would not
       // upload is the worst possible outcome for the person sending it.
-      String? imageUrl;
+      String? imagePath;
       if (screenshot != null && await screenshot.exists()) {
-        imageUrl = await _uploadScreenshot(doc.id, screenshot);
+        imagePath = await _uploadScreenshot(doc.id, screenshot);
       }
 
       await doc.set(<String, Object?>{
@@ -294,7 +309,7 @@ abstract final class SupportService {
         'status': SupportReportStatus.isNew.name,
         'kind': kind.name,
         'createdAt': FieldValue.serverTimestamp(),
-        'imageUrl': ?imageUrl,
+        'imagePath': ?imagePath,
       });
       return true;
     } catch (_) {
@@ -302,44 +317,88 @@ abstract final class SupportService {
     }
   }
 
+  /// Uploads the screenshot and returns its **path in the bucket**, never a
+  /// download URL.
+  ///
+  /// `getDownloadURL()` does not hand back an address — it mints a permanent
+  /// access token and bakes it into the URL. Anyone holding that URL can fetch
+  /// the file without being signed in, without being an administrator, and
+  /// without `storage.rules` being consulted at all, because the token is a
+  /// second door that the rules do not stand in front of. The `allow read: if
+  /// isSupportAdmin()` rule on this path would have looked like protection and
+  /// not been it.
+  ///
+  /// A screenshot of a bug is, by definition, a picture of the screen the bug
+  /// happened on — which in this app is usually a real list of real people. So
+  /// the path is stored instead, and [loadScreenshot] reads the bytes through
+  /// the SDK under the administrator's own credentials, which is the door the
+  /// rules do guard.
   static Future<String?> _uploadScreenshot(String reportId, File file) async {
     try {
       final String extension = file.path.split('.').last.toLowerCase();
-      final Reference ref = FirebaseStorage.instance.ref(
-        'supportReports/$reportId.${extension.isEmpty ? 'jpg' : extension}',
-      );
-      await ref.putFile(
-        file,
-        SettableMetadata(
-          contentType: extension == 'png' ? 'image/png' : 'image/jpeg',
-        ),
-      );
-      return await ref.getDownloadURL();
+      final String path =
+          'supportReports/$reportId.${extension.isEmpty ? 'jpg' : extension}';
+      await FirebaseStorage.instance
+          .ref(path)
+          .putFile(
+            file,
+            SettableMetadata(
+              contentType: extension == 'png' ? 'image/png' : 'image/jpeg',
+            ),
+          );
+      return path;
     } catch (_) {
       return null;
     }
   }
 
-  /// Every report, newest first. Refused by the rules for anyone but an
-  /// administrator.
+  /// Reads an attached screenshot for the feedback console.
+  ///
+  /// Authenticated: the request carries the caller's token, so `storage.rules`
+  /// refuses it for anybody who is not an administrator. Returns null rather
+  /// than throwing — a screenshot that will not load is a smaller problem than
+  /// a console that will not open.
+  static Future<Uint8List?> loadScreenshot(String path) async {
+    if (path.trim().isEmpty) {
+      return null;
+    }
+    try {
+      // The same ceiling `storage.rules` puts on the upload, so a file that
+      // was allowed in can always be read back out.
+      return await FirebaseStorage.instance
+          .ref(path)
+          .getData(12 * 1024 * 1024);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The newest reports. Refused by the rules for anyone but an administrator.
+  ///
+  /// **The `orderBy` is the whole point of this query, not decoration.** It
+  /// used to take `.limit(300)` with no ordering at all and sort the result on
+  /// the device — which reads as "the newest 300, sorted" and is not. Without
+  /// an `orderBy`, Firestore returns documents in document-id order, and these
+  /// ids are random. So the console showed 300 *arbitrary* reports, neatly
+  /// sorted, and past that number a report sent this morning could simply
+  /// never appear.
   static Future<List<SupportReport>> fetchReports() async {
     if (await _requireAccount() == null) {
       return const <SupportReport>[];
     }
     final QuerySnapshot<Map<String, dynamic>> snapshot = await _db
         .collection(reportsCollection)
+        .orderBy('createdAt', descending: true)
         .limit(300)
         .get();
-    final List<SupportReport> reports = <SupportReport>[
+    // No client-side sort any more: the server has already ordered these, and
+    // a second sort here would only hide it if the ordering were ever lost.
+    return <SupportReport>[
       for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
           in snapshot.docs)
         if (SupportReport.fromDocument(doc) case final SupportReport report)
           report,
     ];
-    reports.sort(
-      (SupportReport a, SupportReport b) => b.createdAt.compareTo(a.createdAt),
-    );
-    return reports;
   }
 
   static Future<bool> setReportStatus(

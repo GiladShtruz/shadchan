@@ -58,41 +58,15 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
-    // A published couple's photograph — the one readable image in this bucket.
+    // A published couple's photograph used to live at
+    // `communityEngagements/{userId}/{fileName}`. The feature that wrote it —
+    // publishing a couple's first names and picture on the strength of the
+    // matchmaker ticking a consent box — was removed, and the path is removed
+    // with it rather than left open and unused. It now falls to the catch-all
+    // at the bottom of this file, which refuses everything.
     //
-    // Everything else here is private by construction, so this path is the
-    // exception and is kept as narrow as it can be. Read is open to signed-in
-    // devices because the announcement is shown to all of them. Write and
-    // delete are the uploader's alone, enforced by the uid in the path rather
-    // than by a lookup, so a matchmaker can replace or withdraw their own
-    // couple's photo and can never touch anybody else's.
-    //
-    // **Nothing reaches here without the `coupleApproved` flag on the matching
-    // Firestore document** (`communityEngagements` in `firestore.rules`), which
-    // the app writes in the same flow. The rule cannot check that — Storage
-    // rules see one file, not the record it belongs to — so the file name is
-    // the engagement id, which is what lets a stray upload be traced back to a
-    // document that either exists and consents, or does not exist at all.
-    //
-    // Anonymous accounts are excluded: publishing a photograph of two real
-    // people under a uid that dies with the install leaves nobody able to take
-    // it down.
-    match /communityEngagements/{userId}/{fileName} {
-      function isPublisher() {
-        return request.auth != null
-            && request.auth.uid == userId
-            && request.auth.token.firebase.sign_in_provider != 'anonymous';
-      }
-
-      allow read: if request.auth != null;
-      allow delete: if isPublisher();
-
-      // One image, well under the 12MB ceiling the rest of the bucket uses —
-      // the picker downsizes to 1200px before this is ever reached.
-      allow write: if isPublisher()
-                   && request.resource.size < 12 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-    }
+    // Files uploaded before the removal are still in the bucket and should be
+    // deleted from the Firebase console.
 
     // A matchmaker's own picture, drawn beside their name on the leaderboard.
     //

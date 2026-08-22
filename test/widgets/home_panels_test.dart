@@ -498,15 +498,21 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('עוצרים רגע לחשוב על החברים'), findsOneWidget);
+    expect(find.text('על מי חושבים עכשיו?'), findsOneWidget);
+    // Its own drawn picture — two profile cards and a heart — and not the
+    // notepad photograph from "הוספת רעיון" that it used to borrow. Sharing
+    // that asset put the same image twice on one screen.
+    expect(find.byType(Image), findsNothing);
     expect(
-      find.text('כל רעיון קטן יכול להיות החיבור המיוחד שייבנה חיים.'),
-      findsOneWidget,
+      find.descendant(
+        of: find.byType(HomeThinkBanner),
+        matching: find.byType(CustomPaint),
+      ),
+      findsWidgets,
     );
-    expect(find.text('למי אפשר לחשוב יחד?'), findsOneWidget);
-    expect(find.byType(Image), findsOneWidget);
 
     // The button and the card behind it open the same page.
-    await tester.tap(find.text('למי אפשר לחשוב יחד?'));
+    await tester.tap(find.text('על מי חושבים עכשיו?'));
     await tester.pump();
     expect(opened, 1);
   });
@@ -524,11 +530,9 @@ void main() {
 
     expect(tester.takeException(), isNull);
     // At 1.5x the illustration is gone and every line still fits.
-    expect(find.byType(Image), findsNothing);
     for (final String label in <String>[
       'עוצרים רגע לחשוב על החברים',
-      'כל רעיון קטן יכול להיות החיבור המיוחד שייבנה חיים.',
-      'למי אפשר לחשוב יחד?',
+      'על מי חושבים עכשיו?',
     ]) {
       final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
         find.text(label),

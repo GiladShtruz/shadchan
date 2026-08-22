@@ -104,8 +104,8 @@ class PrivacyOverviewScreen extends StatelessWidget {
       title: 'למחוק זה למחוק',
       body:
           'אפשר למחוק אדם, תמונה, הערה או רעיון מתוך האפליקציה בכל רגע. '
-          'הסרת האפליקציה מוחקת את כל מה ששמור במכשיר; אם יש גיבוי בענן, '
-          'אפשר לבקש למחוק גם אותו.',
+          'הסרת האפליקציה מוחקת את כל מה ששמור במכשיר, אבל לא את הגיבוי בענן '
+          'אם יש כזה — אותו מוחקים בכפתור שבתחתית המסך הזה.',
     ),
   ];
 
@@ -154,6 +154,15 @@ class PrivacyOverviewScreen extends StatelessWidget {
             const PrivateModeTile(),
             const SizedBox(height: 4),
             const DeleteCommunityDataTile(),
+            const SizedBox(height: 4),
+            // Last, and separate from the three above it: those are about what
+            // the community sees of *you*, this is about the copy of your
+            // friends' details on the server. It is the heavier of the two
+            // erasures and it belongs at the bottom, where it is reached
+            // deliberately rather than passed over on the way to something
+            // else. Draws nothing at all when there is no account to have a
+            // backup under.
+            const DeleteCloudBackupTile(),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,

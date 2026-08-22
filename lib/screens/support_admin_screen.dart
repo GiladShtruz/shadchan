@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
@@ -399,26 +401,9 @@ class _ReportCard extends StatelessWidget {
             report.text,
             style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
           ),
-          if (report.imageUrl != null) ...<Widget>[
+          if (report.imagePath != null || report.imageUrl != null) ...<Widget>[
             const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () => _openFullImage(context, report.imageUrl!),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  report.imageUrl!,
-                  height: 140,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    height: 60,
-                    alignment: Alignment.center,
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: const Text('התמונה לא נטענה'),
-                  ),
-                ),
-              ),
-            ),
+            _ReportScreenshot(report: report),
           ],
           const SizedBox(height: 10),
           Text(
@@ -454,9 +439,95 @@ class _ReportCard extends StatelessWidget {
   }
 }
 
+/// The screenshot attached to a report, fetched under the administrator's own
+/// credentials rather than through a public link.
+///
+/// Reports written from now on carry `imagePath`, and the bytes are read with
+/// [SupportService.loadScreenshot] — an authenticated call that `storage.rules`
+/// refuses for anybody who is not an administrator. Older reports carry a
+/// `getDownloadURL` token link instead, which is exactly the thing that was
+/// wrong with the old design; they still render, because a console that cannot
+/// show yesterday's screenshots is not an improvement, but nothing writes one
+/// any more.
+class _ReportScreenshot extends StatefulWidget {
+  const _ReportScreenshot({required this.report});
+
+  final SupportReport report;
+
+  @override
+  State<_ReportScreenshot> createState() => _ReportScreenshotState();
+}
+
+class _ReportScreenshotState extends State<_ReportScreenshot> {
+  late final Future<ImageProvider?> _image = _load();
+
+  Future<ImageProvider?> _load() async {
+    final String? path = widget.report.imagePath;
+    if (path != null) {
+      final Uint8List? bytes = await SupportService.loadScreenshot(path);
+      return bytes == null ? null : MemoryImage(bytes);
+    }
+    final String? url = widget.report.imageUrl;
+    return url == null ? null : NetworkImage(url);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return FutureBuilder<ImageProvider?>(
+      future: _image,
+      builder: (BuildContext context, AsyncSnapshot<ImageProvider?> snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Container(
+            height: 60,
+            alignment: Alignment.center,
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        final ImageProvider? image = snapshot.data;
+        if (image == null) {
+          return Container(
+            height: 60,
+            alignment: Alignment.center,
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: const Text('התמונה לא נטענה'),
+          );
+        }
+        return GestureDetector(
+          onTap: () => _openFullImage(context, image),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image(
+              image: image,
+              height: 140,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                height: 60,
+                alignment: Alignment.center,
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: const Text('התמונה לא נטענה'),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// The attached screenshot at full size. A plain black page with a pinchable
 /// image — nothing here edits or deletes what it is showing.
-Future<void> _openFullImage(BuildContext context, String url) {
+///
+/// Takes the already-loaded provider rather than an address, so the full-size
+/// view cannot become a second place that fetches by URL.
+Future<void> _openFullImage(BuildContext context, ImageProvider image) {
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
       fullscreenDialog: true,
@@ -469,8 +540,8 @@ Future<void> _openFullImage(BuildContext context, String url) {
         ),
         body: Center(
           child: InteractiveViewer(
-            child: Image.network(
-              url,
+            child: Image(
+              image: image,
               fit: BoxFit.contain,
               errorBuilder: (_, _, _) => const Text(
                 'התמונה לא נטענה',

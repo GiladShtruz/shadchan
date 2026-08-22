@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
+import 'package:shadchan/dialogs/privacy_policy_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
@@ -16,6 +17,7 @@ enum AppMenuAction {
   report,
   help,
   contact,
+  privacyPolicy,
   feedbackCenter,
 }
 
@@ -43,8 +45,8 @@ class AppMenuButton extends StatelessWidget {
   const AppMenuButton({super.key, this.boxed = false});
 
   /// Draws the trigger as one of the home bar's rounded squares instead of a
-  /// bare icon button, and as a hamburger rather than three dots — in a row of
-  /// boxed controls the vertical dots read as a cropped icon.
+  /// bare icon button, and as an info glyph rather than three dots — in a row
+  /// of boxed controls the vertical dots read as a cropped icon.
   final bool boxed;
 
   @override
@@ -101,6 +103,11 @@ class AppMenuButton extends StatelessWidget {
           ),
         _item(AppMenuAction.help, Icons.help_outline_rounded, 'עזרה והדרכה'),
         _item(AppMenuAction.contact, Icons.mail_outline_rounded, 'יצירת קשר'),
+        _item(
+          AppMenuAction.privacyPolicy,
+          Icons.privacy_tip_outlined,
+          'מדיניות פרטיות',
+        ),
       ],
     );
   }
@@ -137,6 +144,11 @@ class AppMenuButton extends StatelessWidget {
         context.push('/support/help');
       case AppMenuAction.contact:
         CommunityLinks.openSupportEmail();
+      case AppMenuAction.privacyPolicy:
+        // The dialog rather than `/privacy-policy`, so that reading it does not
+        // cost the page somebody was already on. The full screen is still there
+        // behind the settings link.
+        PrivacyPolicyDialog.show(context);
       case AppMenuAction.feedbackCenter:
         context.push('/support/admin');
     }
@@ -185,7 +197,13 @@ class _MenuRow extends StatelessWidget {
   }
 }
 
-/// The hamburger inside the home bar's rounded square.
+/// The info glyph inside the home bar's rounded square.
+///
+/// It was a hamburger. A hamburger promises navigation — a drawer of places to
+/// go — and this menu is nothing of the sort: every row on it is either help,
+/// a way to reach a person, or something to read about the app. An "i" is what
+/// that actually is, and it is also the glyph a reader looks for when the
+/// question is "what does this thing do with my data".
 ///
 /// Drawn rather than delegated to [HomeBarButton] because the tap belongs to
 /// the `PopupMenuButton` around it — the menu has to hang from this box, and a
@@ -212,7 +230,7 @@ class _BoxedMenuIcon extends StatelessWidget {
         ),
       ),
       child: Icon(
-        Icons.menu_rounded,
+        Icons.info_outline_rounded,
         size: 20,
         color: dark ? theme.colorScheme.onSurface : AppColors.primaryInk,
       ),

@@ -364,14 +364,13 @@ abstract final class MatchQuickActions {
       return;
     }
 
-    // What leaves the device is visible right here: two first names, and the
-    // matchmaker's own name only if they are not hidden from the community.
+    // What leaves the device is visible right here, and it is one name: the
+    // matchmaker's own, and only if they are not hidden from the community and
+    // say yes when asked. Nothing about either member of the couple is sent.
     final CommunityProvider community = context.read<CommunityProvider>();
     await EngagementFlow.celebrate(
       context,
       matchId: match.id,
-      firstNameA: female?.firstName ?? '',
-      firstNameB: male?.firstName ?? '',
       matchmakerName: context.read<UserProfileProvider>().name ?? '',
       shareName: !community.isHidden,
       private: community.isPrivate,
