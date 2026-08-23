@@ -69,7 +69,9 @@ dependencies:
   # uid, Storage holds the photo files the JSON only ever referenced by path,
   # and `crypto` fingerprints each record so a sync uploads what changed rather
   # than the whole database twice a session.
-  cloud_firestore: 6.4.1
+  # 6.5.0 fixes the iOS SPM Firestore 12.14 bridge initializers and pins the
+  # native SDK exactly; 6.4.1 resolves forward to 12.14 but calls its old API.
+  cloud_firestore: 6.5.0
   firebase_storage: 13.4.0
   crypto: ^3.0.7
   upgrader: ^13.6.0
