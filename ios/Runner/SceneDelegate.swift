@@ -7,7 +7,12 @@ class SceneDelegate: FlutterSceneDelegate {
     willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions
   ) {
+    // The scene connecting is what puts a window on screen. A log that stops
+    // before `scene_connected` is a launch that never got a window, which is
+    // exactly what "splash screen, then gone" looks like from the outside.
+    StartupBreadcrumbs.note("· scene_will_connect")
     super.scene(scene, willConnectTo: session, options: connectionOptions)
+    StartupBreadcrumbs.note("· scene_connected")
     configureBridges()
 
     for context in connectionOptions.urlContexts {
@@ -18,6 +23,7 @@ class SceneDelegate: FlutterSceneDelegate {
     // was not running, and the URL that brought us here is not guaranteed to
     // arrive as a urlContext.
     IncomingSharedProfileBridge.shared.drainSharedInbox()
+    StartupBreadcrumbs.note("· scene_ready")
   }
 
   override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
@@ -31,6 +37,7 @@ class SceneDelegate: FlutterSceneDelegate {
 
   private func configureBridges() {
     let controller = window?.rootViewController as? FlutterViewController
+    StartupBreadcrumbs.note("· bridges (controller: \(controller != nil))")
     IncomingBackupFileBridge.shared.configure(with: controller)
     IncomingSharedProfileBridge.shared.configure(with: controller)
   }

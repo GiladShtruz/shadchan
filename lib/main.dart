@@ -6,7 +6,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/services/device_facts.dart';
 import 'package:shadchan/services/diagnostics_log.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/utils/app_router.dart';
@@ -90,18 +89,15 @@ Future<void> main() async {
 
 /// Opens the flight recorder before anything else has a chance to fail.
 ///
-/// The version is read here rather than inside [DiagnosticsLog] so the log's
-/// own header names the build a report came from — "it crashes on 1.0.18+49" is
-/// the first thing anybody reading it needs to know.
+/// This must not call a plugin before the recorder itself is open. Device and
+/// build facts are collected by the diagnostics screen after the app is
+/// visible; asking `device_info_plus` and `package_info_plus` here used to put
+/// three method-channel round trips in front of both the log and the first
+/// frame. If one of them stalled on iOS, the launch could die without leaving
+/// a Dart breadcrumb at all. The native log already carries iOS/app versions.
 Future<void> _startDiagnostics() async {
   try {
-    String? version;
-    try {
-      version = (await DeviceFacts.read()).appVersion;
-    } on Object {
-      version = null;
-    }
-    await DiagnosticsLog.start(appVersion: version);
+    await DiagnosticsLog.start();
   } on Object catch (error) {
     debugPrint('diagnostics unavailable: $error');
   }

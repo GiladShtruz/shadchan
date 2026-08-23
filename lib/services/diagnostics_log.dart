@@ -125,26 +125,51 @@ abstract final class DiagnosticsLog {
     _write(buffer.toString().trimRight());
   }
 
-  /// The whole file, newest run last, for the diagnostics screen to show and
-  /// the matchmaker to copy.
+  /// The native log written from Swift before Dart exists. See
+  /// `ios/Runner/StartupBreadcrumbs.swift`; absent on Android, where nothing
+  /// writes it.
+  static const String _nativeFileName = 'shadchan_startup.log';
+
+  /// Both logs, native first, for the diagnostics screen to show and the
+  /// matchmaker to copy.
+  ///
+  /// The native one comes first because it starts earlier: it records the
+  /// delegate, the plugins and the scene, and this one only starts once `main`
+  /// runs. Read top to bottom they are one story, and where the first stops is
+  /// where the launch stopped.
   static Future<String> read() async {
+    final Directory directory = await _directory();
+    final String native = _readFile(File('${directory.path}/$_nativeFileName'));
+    final String dart = _readFile(
+      _file ?? File('${directory.path}/$_fileName'),
+    );
+
+    return <String>[
+      if (native.trim().isNotEmpty) ...<String>[
+        '--- הפעלה (מערכת) ---',
+        native,
+      ],
+      if (dart.trim().isNotEmpty) ...<String>['--- אפליקציה ---', dart],
+    ].join('\n');
+  }
+
+  static String _readFile(File file) {
     try {
-      final File file =
-          _file ?? File('${(await _directory()).path}/$_fileName');
-      if (!file.existsSync()) {
-        return '';
-      }
-      return file.readAsStringSync();
+      return file.existsSync() ? file.readAsStringSync() : '';
     } on Object catch (error) {
-      return 'לא הצלחנו לקרוא את היומן: $error';
+      return 'לא הצלחנו לקרוא את $file: $error';
     }
   }
 
-  /// Empties the log, keeping the current run's header so the file is never
-  /// mistaken for "the app has never started".
+  /// Empties both the native and Dart logs and resets the previous-run flag.
   static Future<void> clear() async {
     try {
-      _file?.writeAsStringSync('');
+      final Directory directory = await _directory();
+      (_file ?? File('${directory.path}/$_fileName')).writeAsStringSync('');
+      final File native = File('${directory.path}/$_nativeFileName');
+      if (native.existsSync()) {
+        native.writeAsStringSync('');
+      }
       _previousRunCrashed = false;
       _previousRunLastStep = '';
     } on Object catch (error) {
@@ -152,15 +177,34 @@ abstract final class DiagnosticsLog {
     }
   }
 
-  /// Support's own directory first, the temporary one as a fallback.
+  /// The documents directory first, the temporary one as a fallback.
+  ///
+  /// Documents rather than application support so this file lands **beside**
+  /// `shadchan_startup.log`, the native one written from Swift — the two are
+  /// read together, one continuing where the other stops, and a reader on an
+  /// iPhone gets at both through the Files app or neither.
   ///
   /// `path_provider` is a plugin, so it is itself a thing that can fail on a
   /// device where startup is already going wrong. `Directory.systemTemp` needs
   /// no channel at all and survives a relaunch on both platforms, which is all
   /// this file asks of it.
   static Future<Directory> _directory() async {
+    // On iOS this is the app container's `tmp` directory. Its parent is the
+    // container root and `Documents` is guaranteed by the iOS app sandbox.
+    // Deriving it locally avoids making path_provider the first method-channel
+    // call in Dart startup: if plugin messaging is the thing that is broken,
+    // the recorder must already be writing before we try any plugin.
+    if (Platform.isIOS) {
+      final Directory documents = Directory(
+        '${Directory.systemTemp.parent.path}/Documents',
+      );
+      if (!documents.existsSync()) {
+        documents.createSync(recursive: true);
+      }
+      return documents;
+    }
     try {
-      return await getApplicationSupportDirectory();
+      return await getApplicationDocumentsDirectory();
     } on Object {
       return Directory.systemTemp;
     }

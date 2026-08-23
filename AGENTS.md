@@ -83,6 +83,24 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-08-23 (later): **The iPhone still dies, so the app now records its own launch from Swift — and `UIFileSharingEnabled` is temporarily on so the file can be read.**
+
+  The `requestAlertPermission` fix did not stop it, and `lib/services/diagnostics_log.dart` could not see it either: that file starts recording when `main()` runs, and this failure is earlier. New `ios/Runner/StartupBreadcrumbs.swift` writes a line per step from Swift — `app_did_finish_launching`, `plugins_begin`, `plugins_done`, `scene_will_connect`, `scene_connected`, `scene_ready` — bracketed around `GeneratedPluginRegistrant.register` in `AppDelegate` and around the scene in `SceneDelegate`. It installs `NSSetUncaughtExceptionHandler` and handlers for SIGABRT/SEGV/BUS/ILL/FPE/TRAP; the signal path uses `write(2)` on an already-open descriptor and `backtrace_symbols_fd`, because allocating inside a signal handler is how a crash reporter loses its crash. Where the log stops is the answer, and a log with **no lines at all** is also an answer: the process died before `didFinishLaunching`, which is dyld failing on an embedded framework.
+
+  **`UIFileSharingEnabled` is `<true/>` in `ios/Runner/Info.plist` and must go back to `<false/>`.** It is the only way to get `Documents/shadchan_startup.log` off a phone with no Mac attached (Files → בטלפון שלי → שדכן). Its cost is that the candidate photos the app keeps in Documents become browsable to anyone holding the unlocked phone — nil on a device where the app has never opened, which is the situation now and not the situation later. `DiagnosticsLog` moved from application support to Documents so the two logs sit together, and `DiagnosticsLog.read()` returns both, native first.
+
+  **The `.ips` is filed under `Runner`, not `שדכן`.** `PRODUCT_NAME = $(TARGET_NAME)`, so the process is `Runner` and the report in Settings → פרטיות ואבטחה → נתונים ושיפורים → נתונים is `Runner-2026-…-.ips`. Anybody hunting that list should search for `Runner`. A watchdog kill (`SIGKILL`, FRONTBOARD termination reason) is what a hang looks like there; `Library not loaded` is what a dyld failure looks like.
+
+  Follow-up review hardened the recorder itself: `_startDiagnostics` no longer
+  calls `device_info_plus`/`package_info_plus` before opening the log, and on
+  iOS `DiagnosticsLog` derives the sandbox Documents path without making
+  `path_provider` the first method-channel call. Device/build facts are still
+  collected on the diagnostics screen, after the app is visible. The native
+  signal handler now writes only the fixed signal name; its former Swift array
+  and `backtrace_symbols_fd` allocated memory inside a dying process and could
+  hide the original crash. The Apple `.ips` is the native-stack source.
+
+
 - 2026-08-23: **A proposal card that whispers its status, one place messages appear, a flight recorder for startup, and a report you can answer.** Five things, and the last two are the ones to read first if something is on fire.
 
   **`SnackBar` is gone from this app.** Seventy-eight call sites went through `ScaffoldMessenger`, and every one of them put Material's black slab across the bottom of a cream-and-gold Hebrew app, over the controls the matchmaker had just used. New `lib/widgets/app_notice.dart`: a small card at the *top*, in the app's own surface colour, drawn in the **root** overlay so it outlives the sheet or page that raised it, and dismissable with a tap. `AppNotice.show(context, …)` for the ordinary case; `AppNotice.capture(context)` + `AppNotice.showOn(overlay, …)` replaces the `final messenger = ScaffoldMessenger.of(context)` trick for the calls that fire after an `await`. Undo actions survive as `actionLabel` / `onAction`. Its dismissal timer lives in the card's own `State`, not in a static — a static `Timer` outlives the tree, which is a pending-timer failure in a widget test and a callback into a dead overlay in the app.
