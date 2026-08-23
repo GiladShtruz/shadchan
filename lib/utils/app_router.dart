@@ -15,6 +15,7 @@ import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
 import 'package:shadchan/screens/community_activity_screen.dart';
 import 'package:shadchan/screens/dashboard_screen.dart';
+import 'package:shadchan/screens/diagnostics_screen.dart';
 import 'package:shadchan/screens/help_center_screen.dart';
 import 'package:shadchan/screens/home_screen.dart';
 import 'package:shadchan/screens/privacy_overview_screen.dart';
@@ -535,6 +536,15 @@ abstract final class AppRouter {
             path: 'admin',
             builder: (BuildContext context, GoRouterState state) {
               return const SupportAdminScreen();
+            },
+          ),
+          // What the app wrote down about its own startup. Reachable by hand
+          // rather than only after a crash, because "it closed on me
+          // yesterday" is the way this is usually reported.
+          GoRoute(
+            path: 'diagnostics',
+            builder: (BuildContext context, GoRouterState state) {
+              return const DiagnosticsScreen();
             },
           ),
         ],

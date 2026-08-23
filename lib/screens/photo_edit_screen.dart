@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// Viewing and lightly fixing one photo.
 ///
@@ -303,11 +304,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       return;
     }
     setState(() => _saving = false);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text('לא הצלחנו לשמור את התמונה')),
-      );
+    AppNotice.show(context, 'לא הצלחנו לשמור את התמונה');
   }
 }
 

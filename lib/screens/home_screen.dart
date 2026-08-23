@@ -33,6 +33,7 @@ import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_activity_block.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
@@ -695,11 +696,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openWhatsApp(Person person) async {
     final bool launched = await WhatsAppUtils.openChat(person);
     if (!launched && mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('לא הצלחנו לפתוח את וואטסאפ')),
-        );
+      AppNotice.show(context, 'לא הצלחנו לפתוח את וואטסאפ');
     }
   }
 

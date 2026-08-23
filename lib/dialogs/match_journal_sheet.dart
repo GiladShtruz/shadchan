@@ -5,6 +5,7 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// "יומן ההצעה" — one proposal's whole history, as a chat.
 ///
@@ -34,6 +35,185 @@ abstract final class MatchJournalSheet {
       showDragHandle: true,
       builder: (BuildContext sheetContext) => _MatchJournal(matchId: match.id),
     );
+  }
+}
+
+/// The same journal, drawn in place inside a proposal's "פעולות" panel.
+///
+/// **Open the actions and the journal is simply there.** It used to be one of
+/// six identical tiles, which made the proposal's whole history a thing to
+/// remember to go and look at — and a history nobody opens is a history nobody
+/// keeps. So it is not a button any more: every opening of the actions panel
+/// shows what has happened to this proposal, oldest first, with the composer
+/// under it.
+///
+/// Everything is here, not a preview. A proposal with forty lines is a
+/// proposal worth reading forty lines of, and the panel is closed by default —
+/// nothing is being pushed at anybody. The one concession to length is
+/// [MatchJournalSheet], still reachable from the header, which gives the same
+/// journal a full screen and a scroll of its own.
+class MatchJournalView extends StatefulWidget {
+  const MatchJournalView({super.key, required this.matchId});
+
+  final String matchId;
+
+  @override
+  State<MatchJournalView> createState() => _MatchJournalViewState();
+}
+
+class _MatchJournalViewState extends State<MatchJournalView> {
+  final TextEditingController _controller = TextEditingController();
+  final DateFormat _time = DateFormat('dd.MM · HH:mm');
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final MatchRepository repository = context.watch<MatchRepository>();
+    final List<MatchNote> notes = repository.getNotesForMatch(widget.matchId);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: theme.brightness == Brightness.dark ? 0.28 : 0.42,
+        ),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.forum_outlined,
+                size: 15,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'יומן הרעיון',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: () => _openFull(repository),
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  child: Text(
+                    'מסך מלא',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (notes.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+              child: Text(
+                'כל פעולה ברעיון תיכתב כאן מעצמה, ואפשר גם להוסיף הערות משלך.',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            for (final MatchNote note in notes)
+              _JournalLine(
+                note: note,
+                timestamp: _time.format(note.createdAt),
+                onEdit: () => _edit(repository, note),
+              ),
+          const SizedBox(height: 2),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  minLines: 1,
+                  maxLines: 4,
+                  textInputAction: TextInputAction.newline,
+                  style: theme.textTheme.bodySmall,
+                  decoration: const InputDecoration(
+                    hintText: 'מה קרה עם הרעיון?',
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'הוספה ליומן',
+                visualDensity: VisualDensity.compact,
+                onPressed: _controller.text.trim().isEmpty
+                    ? null
+                    : () => _send(repository),
+                icon: const Icon(Icons.send_rounded, size: 18),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openFull(MatchRepository repository) async {
+    final MatchIdea? match = repository.getById(widget.matchId);
+    if (match == null || !mounted) {
+      return;
+    }
+    await MatchJournalSheet.show(context, match);
+  }
+
+  Future<void> _send(MatchRepository repository) async {
+    final String text = _controller.text.trim();
+    if (text.isEmpty) {
+      return;
+    }
+    _controller.clear();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await repository.addNote(widget.matchId, text);
+  }
+
+  Future<void> _edit(MatchRepository repository, MatchNote note) async {
+    final _JournalEdit? result = await showDialog<_JournalEdit>(
+      context: context,
+      builder: (BuildContext context) => _JournalEditDialog(note: note),
+    );
+    if (result == null) {
+      return;
+    }
+    if (result.delete) {
+      await repository.deleteNote(note.id);
+      return;
+    }
+    final String text = result.text.trim();
+    if (text.isNotEmpty && text != note.text.trim()) {
+      await repository.updateNote(note.id, text);
+    }
   }
 }
 
@@ -199,17 +379,12 @@ class _MatchJournalState extends State<_MatchJournal> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: const Text('השורה נמחקה מהיומן'),
-            action: SnackBarAction(
-              label: 'ביטול',
-              onPressed: () => repository.restoreNote(note),
-            ),
-          ),
-        );
+      AppNotice.show(
+        context,
+        'השורה נמחקה מהיומן',
+        actionLabel: 'ביטול',
+        onAction: () => repository.restoreNote(note),
+      );
       return;
     }
 

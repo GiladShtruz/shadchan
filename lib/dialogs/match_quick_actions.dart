@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/engagement_dialogs.dart';
-import 'package:shadchan/dialogs/match_journal_sheet.dart';
 import 'package:shadchan/dialogs/match_outcome_dialog.dart';
 import 'package:shadchan/dialogs/match_status_sheet.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
@@ -16,15 +15,18 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 
-/// Which row of the folded "פעולות" panel an action belongs to.
+/// What kind of thing an action is.
 ///
 /// The split is not cosmetic. [MatchActionGroup.status] moves the proposal from
 /// one state to another and is the thing a matchmaker does after a phone call;
 /// [MatchActionGroup.tools] adds to the proposal without changing where it
-/// stands. Mixing the two into one grid of six put "סגירת הצעה" next to
-/// "הוספת תזכורת" as though they were the same size of decision.
+/// stands. Only the status group is drawn as a row of tiles — the tools each
+/// get a control shaped like what they do, because a grid of six identical
+/// squares put "סגירת הצעה" next to "הוספת תזכורת" as though they were the same
+/// size of decision.
 enum MatchActionGroup { status, tools }
 
 /// Everything a proposal can have done to it, from the card it sits on.
@@ -35,6 +37,9 @@ enum MatchActionGroup { status, tools }
 /// update — which is exactly why statuses went stale. The page is gone and its
 /// actions moved here, behind one folded bar, so that running down רעיונות
 /// after a round of calls never leaves the list.
+///
+/// The journal is not in here, because it is not a button: opening the panel
+/// shows it. See `MatchJournalView`.
 enum MatchQuickAction {
   waiting('העברה להמתנה', Icons.pause_rounded, MatchActionGroup.status),
   dating('מתחילים לצאת', Icons.celebration_outlined, MatchActionGroup.status),
@@ -50,8 +55,7 @@ enum MatchQuickAction {
     'הוספת איש קשר',
     Icons.person_add_alt_1_outlined,
     MatchActionGroup.tools,
-  ),
-  journal('יומן ההצעה', Icons.forum_outlined, MatchActionGroup.tools);
+  );
 
   const MatchQuickAction(this.label, this.icon, this.group);
 
@@ -82,14 +86,6 @@ enum MatchQuickAction {
         return <MatchQuickAction>[reopen];
     }
   }
-
-  /// The tools, which are the same whatever the proposal's status is. A closed
-  /// proposal still has a journal worth reading and a contact worth keeping.
-  static const List<MatchQuickAction> toolActions = <MatchQuickAction>[
-    reminder,
-    contact,
-    journal,
-  ];
 }
 
 /// Running a proposal from the list, without opening it.
@@ -121,8 +117,6 @@ abstract final class MatchQuickActions {
         await addReminder(context, repository, match);
       case MatchQuickAction.contact:
         await addRelatedContact(context, repository, match);
-      case MatchQuickAction.journal:
-        await MatchJournalSheet.show(context, match);
     }
   }
 
@@ -141,7 +135,7 @@ abstract final class MatchQuickActions {
     required Person? male,
   }) async {
     final MatchRepository repository = context.read<MatchRepository>();
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     final MatchShareResult result = await MatchWhatsAppSheet.open(
       context,
       female: female,
@@ -149,11 +143,7 @@ abstract final class MatchQuickActions {
     );
 
     if (!result.opened) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('אין מספר טלפון תקין או כרטיס שמור')),
-        );
+      AppNotice.showOn(notices, 'אין מספר טלפון תקין או כרטיס שמור');
       return;
     }
     final String? label = result.label;

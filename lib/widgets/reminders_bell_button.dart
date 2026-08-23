@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 
@@ -35,7 +36,10 @@ class RemindersBellButton extends StatelessWidget {
     // Watched, so marking a reminder as handled inside the panel takes its
     // number off the bell without the screen being rebuilt for another reason.
     final MatchRepository matches = context.watch<MatchRepository>();
-    final int due = _dueCount(matches);
+    // Reports and answers are under the same bell as the reminders — see
+    // `SupportInboxList` for why there is only one inbox in this app.
+    final int due =
+        _dueCount(matches) + context.watch<SupportInboxProvider>().unreadCount;
 
     if (boxed) {
       return HomeBarButton(

@@ -23,6 +23,7 @@ import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
+import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
@@ -246,10 +247,7 @@ void main() {
       // explanation, and asserting from the top would have every expectation
       // below pass for the wrong reason — the widget is absent from the
       // viewport rather than absent from the screen.
-      await tester.scrollUntilVisible(
-        find.text('מדיניות הפרטיות המלאה'),
-        300,
-      );
+      await tester.scrollUntilVisible(find.text('מדיניות הפרטיות המלאה'), 300);
       await tester.pumpAndSettle();
 
       // Signed out — and under `flutter test` nothing ever signs in — there is
@@ -852,7 +850,9 @@ void main() {
     expect(find.text('סגירת הצעה'), findsOneWidget);
     expect(find.text('הוספת תזכורת'), findsOneWidget);
     expect(find.text('הוספת איש קשר'), findsOneWidget);
-    expect(find.text('יומן ההצעה'), findsOneWidget);
+    // The journal is not a seventh button — opening the panel is what opens
+    // the journal.
+    expect(find.text('יומן הרעיון'), findsOneWidget);
 
     // Each side's availability is still changeable in place.
     await tester.tap(find.text('פנוי').first);
@@ -989,9 +989,10 @@ void main() {
     // while a long name gives way — see match_idea_card_test.dart.
     expect(find.text('פתוח אחד'), findsOneWidget);
     expect(find.text('ממתין אחד'), findsOneWidget);
-    // Every live card says where its proposal stands, and the couple who are
-    // out say it louder.
-    expect(find.text('✨ יוצאים ✨'), findsOneWidget);
+    // Every live card says where its proposal stands — quietly, in a chip
+    // rather than the banner this used to be. Two hits: the category button
+    // and the card, exactly like "בהמתנה" above.
+    expect(find.text('יוצאים'), findsNWidgets(2));
     expect(find.text('ארכיון אחד'), findsNothing);
 
     // Tapping a proposal compares the two candidates rather than opening a
@@ -1252,15 +1253,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
+    // Opening the actions is all it takes: the journal is lying open at the
+    // bottom of the panel, with everything that has happened in it.
     await tester.tap(find.text('פעולות'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('יומן ההצעה'));
     await tester.pumpAndSettle();
 
     expect(find.text('דיברנו בטלפון'), findsOneWidget);
     expect(find.textContaining('ההצעה עברה להמתנה'), findsOneWidget);
     // A composer, because the journal is a conversation and not a log.
-    expect(find.text('מה קרה עם ההצעה?'), findsOneWidget);
+    expect(find.text('מה קרה עם הרעיון?'), findsOneWidget);
 
     // Every line is the matchmaker's to reword or remove — the automatic ones
     // included. The app only starts the sentences.
@@ -1608,6 +1609,10 @@ Widget _buildTestApp() {
       ChangeNotifierProvider<CommunityProvider>(
         create: (_) => CommunityProvider(),
       ),
+      ChangeNotifierProvider<SupportInboxProvider>(
+        create: (_) =>
+            SupportInboxProvider(Hive.box<dynamic>('settings'), enabled: false),
+      ),
     ],
     // Same seam once more: the store check reaches SharedPreferences and an
     // http client through `Upgrader.initialize()`, neither of which exists
@@ -1656,6 +1661,10 @@ Widget _buildProfileTestApp({Widget? home}) {
       // to exist.
       ChangeNotifierProvider<CommunityProvider>(
         create: (_) => CommunityProvider(),
+      ),
+      ChangeNotifierProvider<SupportInboxProvider>(
+        create: (_) =>
+            SupportInboxProvider(Hive.box<dynamic>('settings'), enabled: false),
       ),
     ],
     child: MaterialApp(

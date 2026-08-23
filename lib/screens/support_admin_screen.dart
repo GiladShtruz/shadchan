@@ -3,12 +3,14 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/support_chat_sheet.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/screens/tips_admin_screen.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// מרכז הפידבק — the one place everything users send arrives.
 ///
@@ -139,9 +141,7 @@ class _ReportsTabState extends State<_ReportsTab> {
       return;
     }
     if (!ok) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('העדכון לא נשמר')));
+      AppNotice.show(context, 'העדכון לא נשמר');
       return;
     }
     await _load();
@@ -418,6 +418,25 @@ class _ReportCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
+          // The way to answer, first and on its own line. Everything under it
+          // files the report; this is the only control that talks to the
+          // person who sent it, and "which screen was that on?" is the most
+          // useful thing anybody triaging can do.
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FilledButton.tonalIcon(
+              onPressed: () =>
+                  SupportChatSheet.show(context, report, asAdmin: true),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: const Icon(Icons.forum_outlined, size: 17),
+              label: Text(
+                report.hasConversation ? 'המשך השיחה' : 'פתיחת שיחה עם השולח',
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
           Wrap(
             spacing: 8,
             children: <Widget>[
@@ -602,9 +621,7 @@ class _AnnouncementsTabState extends State<_AnnouncementsTab> {
     }
     setState(() => _sending = false);
     if (!ok) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('הפרסום לא נשמר')));
+      AppNotice.show(context, 'הפרסום לא נשמר');
       return;
     }
     _title.clear();
@@ -757,11 +774,7 @@ class _AdminsTabState extends State<_AdminsTab> {
       return;
     }
     if (!ok) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('לא הצלחנו להוסיף את הכתובת')),
-        );
+      AppNotice.show(context, 'לא הצלחנו להוסיף את הכתובת');
       return;
     }
     _email.clear();

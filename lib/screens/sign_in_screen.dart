@@ -12,6 +12,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// The one-time invitation to connect an account.
 ///
@@ -65,7 +66,7 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> _signIn(Future<AccountSignInResult> Function() attempt) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     final AccountSignInResult result = await attempt();
     if (!mounted) {
       return;
@@ -77,11 +78,7 @@ class _SignInScreenState extends State<SignInScreen> {
         // to this screen, so nothing is recorded and nothing is said.
         return;
       case AccountSignInOutcome.failure:
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(content: Text(result.message ?? 'לא הצלחנו להתחבר.')),
-          );
+        AppNotice.showOn(notices, result.message ?? 'לא הצלחנו להתחבר.');
         return;
       case AccountSignInOutcome.success:
         SignInPromptStore.markAnswered();

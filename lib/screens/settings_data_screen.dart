@@ -14,6 +14,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/backup_service.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/excel_export_service.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
@@ -322,9 +323,7 @@ class _SettingsDataScreenState extends State<SettingsDataScreen> {
   }
 
   void _say(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 }
 

@@ -1,10 +1,18 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:hive/hive.dart';
+import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/match_contact.dart';
+import 'package:shadchan/models/match_note.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
@@ -21,6 +29,48 @@ import 'package:shadchan/widgets/person_list_card.dart';
 /// you have to open forty times.
 void main() {
   final DateTime now = DateTime(2026, 8, 14);
+
+  // The card carries the proposal's journal inside its actions panel, so it
+  // needs the repository the journal reads — the same one it has in the app,
+  // where every screen drawing this card sits under the root providers.
+  late Directory hiveDirectory;
+
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    hiveDirectory = await Directory.systemTemp.createTemp('shadchan_card_test');
+    Hive.init(hiveDirectory.path);
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(MatchIdeaAdapter());
+    }
+    if (!Hive.isAdapterRegistered(2)) {
+      Hive.registerAdapter(MatchNoteAdapter());
+    }
+    if (!Hive.isAdapterRegistered(5)) {
+      Hive.registerAdapter(MatchStatusAdapter());
+    }
+    if (!Hive.isAdapterRegistered(6)) {
+      Hive.registerAdapter(CurrentHandlerAdapter());
+    }
+    if (!Hive.isAdapterRegistered(10)) {
+      Hive.registerAdapter(MatchProgressAdapter());
+    }
+    if (!Hive.isAdapterRegistered(11)) {
+      Hive.registerAdapter(MatchContactAdapter());
+    }
+    if (!Hive.isAdapterRegistered(12)) {
+      Hive.registerAdapter(MatchStatusEventAdapter());
+    }
+    await Hive.openBox<MatchIdea>('matches');
+    await Hive.openBox<MatchNote>('match_notes');
+    await Hive.openBox<MatchStatusEvent>('match_status_events');
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    if (hiveDirectory.existsSync()) {
+      hiveDirectory.deleteSync(recursive: true);
+    }
+  });
 
   Person person(String id, String name, Gender gender, ProfileStatus status) {
     return Person(
@@ -49,13 +99,20 @@ void main() {
   }
 
   Widget wrap(Widget child) {
-    return MaterialApp(
-      theme: AppTheme.lightTheme(),
-      home: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Scaffold(
-          body: SingleChildScrollView(
-            child: Padding(padding: const EdgeInsets.all(12), child: child),
+    return ChangeNotifierProvider<MatchRepository>(
+      create: (_) => MatchRepository(
+        Hive.box<MatchIdea>('matches'),
+        Hive.box<MatchNote>('match_notes'),
+        Hive.box<MatchStatusEvent>('match_status_events'),
+      ),
+      child: MaterialApp(
+        theme: AppTheme.lightTheme(),
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: Padding(padding: const EdgeInsets.all(12), child: child),
+            ),
           ),
         ),
       ),
@@ -183,7 +240,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('פתיחה מחדש'), findsOneWidget);
-    expect(find.text('יומן ההצעה'), findsOneWidget);
+    expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(find.text('מתחילים לצאת'), findsNothing);
     expect(find.text('סגירת הצעה'), findsNothing);
   });
@@ -224,12 +281,13 @@ void main() {
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    // Nothing sent yet: the row is a prompt, and it sits above the status
-    // moves because sending the card is what comes first.
+    // Nothing sent yet, so the row is a prompt. It sits *under* the status
+    // moves: the statuses lead the panel, and everything below them is shaped
+    // differently from them on purpose.
     expect(find.text('יאללה לקדם!'), findsOneWidget);
     expect(
       tester.getCenter(find.text('יאללה לקדם!')).dy,
-      lessThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
+      greaterThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
     );
 
     await tester.tap(find.text('יאללה לקדם!'));
@@ -330,9 +388,9 @@ void main() {
   testWidgets('the proposal actions stay folded until asked for', (
     WidgetTester tester,
   ) async {
-    // The narrowest phone the app supports. Six tiles across two rows, with
-    // "הוספת איש קשר" among them, is where the panel would overflow if a label
-    // were allowed to set its own width.
+    // The narrowest phone the app supports. Three status tiles across one row
+    // is where the panel would overflow if a label were allowed to set its own
+    // width.
     await tester.binding.setSurfaceSize(const Size(320, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -355,7 +413,8 @@ void main() {
     expect(find.text('סגירת הצעה'), findsOneWidget);
     expect(find.text('הוספת תזכורת'), findsOneWidget);
     expect(find.text('הוספת איש קשר'), findsOneWidget);
-    expect(find.text('יומן ההצעה'), findsOneWidget);
+    // Not a button: the journal is simply open at the bottom of the panel.
+    expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('מתחילים לצאת'));

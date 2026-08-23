@@ -8,6 +8,7 @@ import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// "שליחת תקלה / רעיון לשיפור" — one box, one button.
 ///
@@ -26,9 +27,11 @@ import 'package:shadchan/utils/community_links.dart';
 /// made later.
 ///
 /// The three facts that make a report actionable — which phone, which OS, which
-/// build — are attached automatically and shown before sending, so nobody has to
-/// go and look them up and nobody has to wonder what went along with their
-/// words.
+/// build — ride along automatically and are no longer spelled out on the form.
+/// They were shown as a panel above the send button, and it was the only part of
+/// the page that asked the sender to read plumbing: a person reporting that a
+/// button does nothing does not need to be told the app version they are running
+/// before they may press "שליחה".
 class SupportReportScreen extends StatefulWidget {
   const SupportReportScreen({super.key, this.initialText = ''});
 
@@ -100,7 +103,7 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
 
   Future<void> _send() async {
     final UserProfileProvider profile = context.read<UserProfileProvider>();
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     final String? path = _screenshotPath;
 
     setState(() => _sending = true);
@@ -121,15 +124,10 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
     if (sent) {
       return;
     }
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text(
-            'לא הצלחנו לשלוח כרגע. אפשר לנסות שוב או לכתוב לנו במייל.',
-          ),
-        ),
-      );
+    AppNotice.showOn(
+      notices,
+      'לא הצלחנו לשלוח כרגע. אפשר לנסות שוב או לכתוב לנו במייל.',
+    );
   }
 
   /// The way out when the form cannot reach us — no network, or a device with
@@ -140,11 +138,7 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
       body: _text.text.trim(),
     );
     if (!opened && mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('לא הצלחנו לפתוח את אפליקציית המייל')),
-        );
+      AppNotice.show(context, 'לא הצלחנו לפתוח את אפליקציית המייל');
     }
   }
 
@@ -191,9 +185,7 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
                     onPick: _attachScreenshot,
                     onRemove: _removeScreenshot,
                   ),
-                  const SizedBox(height: 16),
-                  _AttachedFacts(facts: _facts),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -383,67 +375,6 @@ class _ScreenshotField extends StatelessWidget {
   }
 }
 
-/// What goes along with the words, shown rather than promised.
-class _AttachedFacts extends StatelessWidget {
-  const _AttachedFacts({required this.facts});
-
-  final DeviceFacts facts;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    Widget line(String label, String value) => Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SizedBox(
-            width: 86,
-            child: Text(
-              label,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            'נצרף אוטומטית, כדי שלא תצטרכו לחפש',
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          line('מכשיר', facts.device),
-          line('מערכת', facts.os),
-          line('גרסה', facts.appVersion),
-        ],
-      ),
-    );
-  }
-}
-
 class _SentView extends StatelessWidget {
   const _SentView({required this.onClose});
 
@@ -466,14 +397,13 @@ class _SentView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'הפנייה נשלחה. תודה!',
+              'תודה רבה!',
               textAlign: TextAlign.center,
               style: theme.textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
             Text(
-              'קראנו כל מה שנשלח. אם צריך פרטים נוספים, נכתוב לכם למייל '
-              '${CommunityLinks.supportEmail}.',
+              'במידה ונצטרך פרטים נוספים נכתוב לכם במייל.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

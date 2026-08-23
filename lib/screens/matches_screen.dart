@@ -9,6 +9,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
@@ -635,9 +636,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 
   void _handleSearchChanged() {

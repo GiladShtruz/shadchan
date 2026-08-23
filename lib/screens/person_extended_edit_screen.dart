@@ -17,6 +17,7 @@ import 'package:shadchan/utils/card_parser.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_preferences.dart';
 import 'package:shadchan/utils/profile_palette.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
 
@@ -346,17 +347,12 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           _missing = missing;
           _open.add(_Area.basics);
         });
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text(
-                'כדי להוסיף את החבר למאגר, יש להשלים שם מלא, גיל, מגדר '
-                'וסגנון דתי.',
-              ),
-              duration: Duration(seconds: 4),
-            ),
-          );
+        AppNotice.show(
+          context,
+          'כדי להוסיף את החבר למאגר, יש להשלים שם מלא, גיל, מגדר '
+          'וסגנון דתי.',
+          duration: Duration(seconds: 4),
+        );
         return;
       }
     }
@@ -654,11 +650,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       await _save();
     } on AiParseException catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(content: Text('לא הצלחנו לקרוא את הכרטיסייה')),
-          );
+        AppNotice.show(context, 'לא הצלחנו לקרוא את הכרטיסייה');
       }
     } finally {
       if (mounted) {

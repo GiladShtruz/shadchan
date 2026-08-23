@@ -15,6 +15,7 @@ import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_contact.dart';
@@ -621,9 +622,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   void _showSnackBar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 }
 
@@ -824,9 +823,7 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
   }
 
   void _showValidationMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 
   void _cancel() {
@@ -2252,11 +2249,7 @@ class _OpenProposalRow extends StatelessWidget {
   Future<void> _openWhatsApp(BuildContext context, Person target) async {
     final bool launched = await WhatsAppUtils.openChat(target);
     if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('אין מספר טלפון תקין לפתיחת וואטסאפ')),
-        );
+      AppNotice.show(context, 'אין מספר טלפון תקין לפתיחת וואטסאפ');
     }
   }
 }
@@ -2496,6 +2489,12 @@ class _MatchPreviewHalf extends StatelessWidget {
                 fit: BoxFit.contain,
                 borderRadius: BorderRadius.circular(16),
                 backgroundColor: _profileWarmSurfaceColor(theme),
+                // The photo is the largest thing on the half and the thing a
+                // finger actually lands on, so it opens the card too. A
+                // `GestureDetector` further out cannot see it — the pager
+                // claims the area — which left the one obvious target as the
+                // one dead spot.
+                onTap: onOpenProfile,
               ),
             ],
             const SizedBox(height: 12),
@@ -2922,9 +2921,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
   }
 
   void _showSnackBar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 }
 

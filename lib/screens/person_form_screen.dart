@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/card_parser.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -631,9 +632,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_aiFailureMessage(error.reason))));
+      AppNotice.show(context, _aiFailureMessage(error.reason));
     } finally {
       if (mounted) {
         setState(() => _isReadingWithAi = false);
@@ -1093,9 +1092,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 
   void _deleteNewPhotos() {

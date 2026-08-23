@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/services/tips_service.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// The approval queue for community tips, as a panel.
 ///
@@ -44,14 +45,12 @@ class _PendingTipsReviewState extends State<PendingTipsReview> {
   }
 
   Future<void> _review(CommunityTip tip, TipStatus status) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     final bool done = await context.read<TipsProvider>().review(tip.id, status);
     if (!mounted || done) {
       return;
     }
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('הפעולה נכשלה')));
+    AppNotice.showOn(notices, 'הפעולה נכשלה');
   }
 
   @override

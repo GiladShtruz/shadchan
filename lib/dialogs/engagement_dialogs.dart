@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/services/community_engagements_service.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// What the community hears when a proposal becomes a wedding, and the one
 /// decision the matchmaker gets to make about it.
@@ -76,36 +77,26 @@ abstract final class EngagementFlow {
     // The way back. A name given in the first happy minute after a wedding is
     // exactly the kind that gets regretted in the second, and there is no
     // screen listing past announcements to take it off later.
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: const Text('השם שלך צורף להודעה לקהילה.'),
-          duration: const Duration(seconds: 8),
-          action: SnackBarAction(
-            label: 'ביטול',
-            onPressed: () async {
-              final bool removed =
-                  await CommunityEngagementsService.detachMatchmakerName(
-                    engagementId,
-                  );
-              messenger
-                ..hideCurrentSnackBar()
-                ..showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      removed
-                          ? 'השם הוסר. ההודעה נשארה בלי שם.'
-                          : 'לא הצלחנו להסיר כרגע. כדאי לנסות שוב כשיש '
-                                'חיבור לאינטרנט.',
-                    ),
-                  ),
-                );
-            },
-          ),
-        ),
-      );
+    final OverlayState? notices = AppNotice.capture(context);
+    AppNotice.showOn(
+      notices,
+      'השם שלך צורף להודעה לקהילה.',
+      duration: const Duration(seconds: 8),
+      actionLabel: 'ביטול',
+      onAction: () async {
+        final bool removed =
+            await CommunityEngagementsService.detachMatchmakerName(
+              engagementId,
+            );
+        AppNotice.showOn(
+          notices,
+          removed
+              ? 'השם הוסר. ההודעה נשארה בלי שם.'
+              : 'לא הצלחנו להסיר כרגע. כדאי לנסות שוב כשיש '
+                    'חיבור לאינטרנט.',
+        );
+      },
+    );
   }
 }
 

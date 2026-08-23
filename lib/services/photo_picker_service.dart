@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shadchan/services/face_crop_service.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// Picks photos from the gallery and copies them into the app's own `photos`
 /// directory, so a person's card keeps working even if the original is later
@@ -211,8 +212,6 @@ abstract final class PhotoPickerService {
   }
 
   static void _showSnackBar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 }

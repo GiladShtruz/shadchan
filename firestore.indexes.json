@@ -44,6 +44,11 @@
     "   `createdAt` with no filter beside it, which the automatic single-field",
     "   index already serves.",
     "",
+    "5. The reporter's own reports: `authorUid == me` ordered by `createdAt`",
+    "   descending. An equality and an ordering on two different fields again.",
+    "   It is what lets somebody read back the reports they sent — and with",
+    "   them, the answers written into their threads.",
+    "",
     "The `*Actions` fields hold weighted activity points now, not a count of",
     "actions. The names were left alone deliberately: renaming them would have",
     "meant rebuilding all four leaderboard indexes and a window in which every",
@@ -132,6 +137,14 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "supportReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "authorUid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }

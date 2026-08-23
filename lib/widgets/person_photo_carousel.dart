@@ -17,6 +17,7 @@ class PersonPhotoCarousel extends StatefulWidget {
     this.borderRadius = BorderRadius.zero,
     this.placeholder,
     this.backgroundColor,
+    this.onTap,
   });
 
   final List<String> photosPaths;
@@ -28,6 +29,13 @@ class PersonPhotoCarousel extends StatefulWidget {
   /// Fills the space around the photo. Worth setting with [BoxFit.contain],
   /// where a portrait and a landscape shot leave very different margins.
   final Color? backgroundColor;
+
+  /// What a plain tap on the photo does, if anything.
+  ///
+  /// A tap and a swipe are different gestures, so the pager keeps working —
+  /// which is what lets the comparison view make its photos a way into the
+  /// person's card without taking the gallery away.
+  final VoidCallback? onTap;
 
   @override
   State<PersonPhotoCarousel> createState() => _PersonPhotoCarouselState();
@@ -63,13 +71,16 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
       content = Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          PageView.builder(
-            controller: _pageController,
-            itemCount: photos.length,
-            onPageChanged: (int index) => setState(() => _index = index),
-            itemBuilder: (BuildContext context, int index) {
-              return Image.file(File(photos[index]), fit: widget.fit);
-            },
+          GestureDetector(
+            onTap: widget.onTap,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: photos.length,
+              onPageChanged: (int index) => setState(() => _index = index),
+              itemBuilder: (BuildContext context, int index) {
+                return Image.file(File(photos[index]), fit: widget.fit);
+              },
+            ),
           ),
           if (photos.length > 1) ...<Widget>[
             // In RTL the pager advances leftwards, so the left arrow goes

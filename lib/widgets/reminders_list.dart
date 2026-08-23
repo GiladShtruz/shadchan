@@ -14,6 +14,7 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// The reminders that have come due, oldest first — a reminder set for next
 /// month is not something to look at today, so it is simply not here.
@@ -62,6 +63,10 @@ class RemindersList extends StatelessWidget {
     return ListView.separated(
       padding: padding,
       shrinkWrap: shrinkWrap,
+      // Shrink-wrapped means this list is a child of another one — the panel
+      // and the notifications page both put the support inbox above it — and a
+      // scrollable inside a scrollable fights the finger for every drag.
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       itemCount: entries.length,
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (BuildContext context, int index) {
@@ -282,14 +287,14 @@ class ReminderCard extends StatelessWidget {
 
     // Grabbed before the await: clearing the reminder removes this very card
     // from the list, so its own context is gone by the time we come back.
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     final MatchRepository repository = context.read<MatchRepository>();
     final String? previousNote = match.reminderNote;
 
     await repository.setReminder(match.id, null);
 
-    _showHandledSnackBar(
-      messenger,
+    _showHandledNotice(
+      notices,
       onUndo: () =>
           repository.setReminder(match.id, previousDate, note: previousNote),
     );
@@ -411,18 +416,13 @@ abstract final class ReminderSnoozeDialog {
   }
 }
 
-void _showHandledSnackBar(
-  ScaffoldMessengerState messenger, {
-  required VoidCallback onUndo,
-}) {
-  messenger
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: const Text('התזכורת סומנה כטופלה'),
-        action: SnackBarAction(label: 'ביטול', onPressed: onUndo),
-      ),
-    );
+void _showHandledNotice(OverlayState? notices, {required VoidCallback onUndo}) {
+  AppNotice.showOn(
+    notices,
+    'התזכורת סומנה כטופלה',
+    actionLabel: 'ביטול',
+    onAction: onUndo,
+  );
 }
 
 /// A per-person "check on them again" reminder (busy or on a break).
@@ -533,15 +533,15 @@ class PersonReminderCard extends StatelessWidget {
   Future<void> _markHandled(BuildContext context) async {
     // Grabbed before the await: clearing the reminder removes this very card
     // from the list, so its own context is gone by the time we come back.
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     final PersonRepository repository = context.read<PersonRepository>();
     final DateTime previousDate = date;
     final String? previousNote = PersonReminders.noteFor(person.id);
 
     await repository.clearPersonReminder(person.id);
 
-    _showHandledSnackBar(
-      messenger,
+    _showHandledNotice(
+      notices,
       onUndo: () => repository.setPersonReminder(
         person.id,
         previousDate,
@@ -553,11 +553,7 @@ class PersonReminderCard extends StatelessWidget {
   Future<void> _openWhatsApp(BuildContext context) async {
     final bool launched = await WhatsAppUtils.openChat(person);
     if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('אין מספר טלפון תקין לאיש הקשר')),
-        );
+      AppNotice.show(context, 'אין מספר טלפון תקין לאיש הקשר');
     }
   }
 

@@ -13,6 +13,7 @@ import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
+import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
@@ -195,6 +196,10 @@ Widget _buildTestApp() {
       ),
       ChangeNotifierProvider<CommunityProvider>(
         create: (_) => CommunityProvider(),
+      ),
+      ChangeNotifierProvider<SupportInboxProvider>(
+        create: (_) =>
+            SupportInboxProvider(Hive.box<dynamic>('settings'), enabled: false),
       ),
     ],
     child: const App(checkForUpdates: false),

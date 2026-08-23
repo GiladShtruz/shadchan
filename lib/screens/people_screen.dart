@@ -14,6 +14,7 @@ import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
@@ -346,13 +347,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     Person person,
   ) async {
     if (person.gender == Gender.unknown) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('יש לבחור מגדר לאיש הקשר לפני פתיחת התאמות'),
-          ),
-        );
+      AppNotice.show(context, 'יש לבחור מגדר לאיש הקשר לפני פתיחת התאמות');
       return;
     }
     await openSuggestionsSheet(context, person.id);
@@ -400,11 +395,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         }
       } catch (_) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              const SnackBar(content: Text('לא הצלחנו לשמור את הפרטים')),
-            );
+          AppNotice.show(context, 'לא הצלחנו לשמור את הפרטים');
         }
         return;
       }
@@ -414,11 +405,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   Future<void> _openWhatsApp(BuildContext context, Person person) async {
     final bool launched = await WhatsAppUtils.openChat(person);
     if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('לא הצלחנו לפתוח את וואטסאפ')),
-        );
+      AppNotice.show(context, 'לא הצלחנו לפתוח את וואטסאפ');
     }
   }
 
@@ -969,9 +956,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 
   Future<bool> _confirmDelete(BuildContext context, Person person) async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// What the user sees when an import does not work.
 ///
@@ -53,9 +54,7 @@ class _ImportProblemDialogState extends State<_ImportProblemDialog> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('פרטי הבעיה הועתקו')));
+    AppNotice.show(context, 'פרטי הבעיה הועתקו');
   }
 
   /// Copies the report, then opens the app's own report form with it already

@@ -9,6 +9,7 @@ import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_period.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// The building blocks of the community surfaces.
 ///
@@ -771,19 +772,14 @@ class LeaderboardNameTile extends StatelessWidget {
   }
 
   Future<void> _set(BuildContext context, bool visible) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     await context.read<CommunityProvider>().setHidden(!visible);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            visible
-                ? 'השם שלך יופיע בדירוג הקהילה.'
-                : 'מעכשיו הפעילות שלך נספרת בלי שם.',
-          ),
-        ),
-      );
+    AppNotice.showOn(
+      notices,
+      visible
+          ? 'השם שלך יופיע בדירוג הקהילה.'
+          : 'מעכשיו הפעילות שלך נספרת בלי שם.',
+    );
   }
 }
 
@@ -844,21 +840,16 @@ class PrivateModeTile extends StatelessWidget {
   }
 
   Future<void> _set(BuildContext context, bool private) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     // Turning it on also deletes whatever is already on the server; see
     // `CommunityProvider.setPrivate`.
     await context.read<CommunityProvider>().setPrivate(private);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            private
-                ? 'מעכשיו הפעילות שלך נשארת אצלך בלבד.'
-                : 'הפעילות שלך נספרת שוב בנתוני הקהילה.',
-          ),
-        ),
-      );
+    AppNotice.showOn(
+      notices,
+      private
+          ? 'מעכשיו הפעילות שלך נשארת אצלך בלבד.'
+          : 'הפעילות שלך נספרת שוב בנתוני הקהילה.',
+    );
   }
 }
 
@@ -900,7 +891,7 @@ class DeleteCommunityDataTile extends StatelessWidget {
 
   Future<void> _confirm(BuildContext context) async {
     final CommunityProvider community = context.read<CommunityProvider>();
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
 
     final bool confirmed = await ConfirmDialog.show(
       context,
@@ -914,17 +905,12 @@ class DeleteCommunityDataTile extends StatelessWidget {
     }
 
     final bool deleted = await community.deleteMyCommunityData();
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            deleted
-                ? 'נתוני הקהילה שלך נמחקו.'
-                : 'לא הצלחנו למחוק כרגע. כדאי לנסות שוב כשיש חיבור לאינטרנט.',
-          ),
-        ),
-      );
+    AppNotice.showOn(
+      notices,
+      deleted
+          ? 'נתוני הקהילה שלך נמחקו.'
+          : 'לא הצלחנו למחוק כרגע. כדאי לנסות שוב כשיש חיבור לאינטרנט.',
+    );
   }
 }
 
@@ -996,7 +982,7 @@ class DeleteCloudBackupTile extends StatelessWidget {
 
   Future<void> _confirm(BuildContext context) async {
     final SyncProvider sync = context.read<SyncProvider>();
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
 
     final bool confirmed = await ConfirmDialog.show(
       context,
@@ -1010,19 +996,14 @@ class DeleteCloudBackupTile extends StatelessWidget {
     }
 
     final bool deleted = await sync.deleteBackup();
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            deleted
-                // Said plainly, and only when it is true. A deletion reported
-                // wrongly is worse than one that did not happen.
-                ? 'הגיבוי בענן נמחק. המאגר בטלפון שלך לא השתנה.'
-                : 'לא הצלחנו למחוק את הגיבוי כרגע. כדאי לנסות שוב כשיש '
-                      'חיבור טוב לאינטרנט.',
-          ),
-        ),
-      );
+    AppNotice.showOn(
+      notices,
+      // Said plainly, and only when it is true. A deletion reported wrongly is
+      // worse than one that did not happen.
+      deleted
+          ? 'הגיבוי בענן נמחק. המאגר בטלפון שלך לא השתנה.'
+          : 'לא הצלחנו למחוק את הגיבוי כרגע. כדאי לנסות שוב כשיש '
+                'חיבור טוב לאינטרנט.',
+    );
   }
 }

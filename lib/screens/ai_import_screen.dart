@@ -17,6 +17,7 @@ import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/import_diagnostics.dart';
 import 'package:shadchan/services/whatsapp_import_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// The ways a batch of contacts can be read by the AI. Each is only a different
 /// way of getting text in front of the model — they all end at the same parsed
@@ -347,11 +348,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
     if (warning == null || !mounted) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(warning), duration: const Duration(seconds: 8)),
-      );
+    AppNotice.show(context, warning, duration: const Duration(seconds: 8));
   }
 
   String _readFailureMessage(WhatsAppReadFailure reason) => switch (reason) {
@@ -441,9 +438,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
       _isWorking = false;
       _status = '';
     });
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 
   @override

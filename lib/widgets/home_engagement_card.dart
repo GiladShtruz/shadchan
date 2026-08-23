@@ -8,6 +8,7 @@ import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/mazel_tov_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// "מזל טוב! זוג חדש התחתן" — on the home screen, for one launch, and then
 /// gone.
@@ -73,7 +74,7 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
   }
 
   Future<void> _congratulate(CommunityEngagement engagement) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     final String myName = context.read<UserProfileProvider>().name ?? '';
     final String? text = await MazelTovSheet.show(context);
     if (text == null || !mounted) {
@@ -100,17 +101,12 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
       _sending = false;
       _sent = ok;
     });
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            ok
-                ? 'הברכה נשלחה. תודה!'
-                : 'לא הצלחנו לשלוח כרגע. כדאי לנסות שוב כשיש חיבור לאינטרנט.',
-          ),
-        ),
-      );
+    AppNotice.showOn(
+      notices,
+      ok
+          ? 'הברכה נשלחה. תודה!'
+          : 'לא הצלחנו לשלוח כרגע. כדאי לנסות שוב כשיש חיבור לאינטרנט.',
+    );
   }
 
   @override

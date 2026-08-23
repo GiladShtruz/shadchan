@@ -9,6 +9,7 @@ import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// The person's full card, full screen: every photo, swipeable, with the text
 /// written about them readable over it.
@@ -156,9 +157,7 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 }
 

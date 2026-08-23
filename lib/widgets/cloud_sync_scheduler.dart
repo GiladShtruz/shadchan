@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -36,6 +38,8 @@ class CloudSyncScheduler extends StatefulWidget {
 
 class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     with WidgetsBindingObserver {
+  AccountProvider? _account;
+
   @override
   void initState() {
     super.initState();
@@ -43,13 +47,35 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // After the first frame, not during it: this reaches three providers and
     // ends in a network call, and the opening frame should not wait behind any
     // of that.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sync();
+      // "Is this an administrator?" is a Firestore read, so on the frame the
+      // first sync runs the answer is still no. When it arrives the support
+      // inbox has to be asked again — otherwise an administrator's console is
+      // one app launch behind for the whole of the first session.
+      if (mounted) {
+        _account = context.read<AccountProvider>()
+          ..addListener(_refreshSupportInbox);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _account?.removeListener(_refreshSupportInbox);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _refreshSupportInbox() {
+    if (!mounted) {
+      return;
+    }
+    unawaited(
+      context.read<SupportInboxProvider>().refresh(
+        isAdmin: context.read<AccountProvider>().isSupportAdmin,
+      ),
+    );
   }
 
   @override
@@ -99,6 +125,13 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // for the same reason — it is warm news, not urgent news, and it costs one
     // query against an inbox that is empty for almost everybody.
     unawaited(MazelTovInbox.drain(context.read<MatchRepository>()));
+
+    // And the support inbox: a report that arrived for an administrator, or an
+    // answer that came back for whoever sent one. Same two moments again —
+    // there is no push channel in this app, so "when the app is opened" is
+    // when news can reach anybody, and that is exactly what the notifications
+    // page and its bell are for.
+    _refreshSupportInbox();
   }
 
   @override

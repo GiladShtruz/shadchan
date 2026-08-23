@@ -5,6 +5,7 @@ import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/tips_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// "הוספת טיפ" — where a matchmaker writes a tip for every other matchmaker.
 ///
@@ -90,7 +91,7 @@ class _AddTipScreenState extends State<AddTipScreen> {
   Future<void> _submit() async {
     final TipsProvider tips = context.read<TipsProvider>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
 
     setState(() => _sending = true);
     await profile.setTipAuthorName(_author.text);
@@ -104,19 +105,12 @@ class _AddTipScreenState extends State<AddTipScreen> {
     setState(() => _sending = false);
     if (sent) {
       _tip.clear();
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('הטיפ נשלח לאישור. תודה!')),
-        );
+      AppNotice.showOn(notices, 'הטיפ נשלח לאישור. תודה!');
     } else {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('לא הצלחנו לשלוח את הטיפ. יש לבדוק חיבור לאינטרנט.'),
-          ),
-        );
+      AppNotice.showOn(
+        notices,
+        'לא הצלחנו לשלוח את הטיפ. יש לבדוק חיבור לאינטרנט.',
+      );
     }
   }
 

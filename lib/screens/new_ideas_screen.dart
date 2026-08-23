@@ -10,6 +10,7 @@ import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// "רעיונות חדשים" — the screen behind the home page's opening button.
@@ -131,11 +132,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
       return;
     }
     if (match == null) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('כבר קיים רעיון לזוג הזה')),
-        );
+      AppNotice.show(context, 'כבר קיים רעיון לזוג הזה');
       return;
     }
     // A proposal has no page of its own any more — see the `/matches/:id`
@@ -180,7 +177,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
   /// sitting at the top of the other's, and the same pair would come back round
   /// as a fresh suggestion the moment the scan started from the other side.
   Future<void> _skipIdea(NewIdeaSuggestion idea) async {
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final OverlayState? notices = AppNotice.capture(context);
     await SuggestionDismissals.dismiss(idea.male.id, idea.female.id);
     await SuggestionDismissals.dismiss(idea.female.id, idea.male.id);
     if (!mounted) {
@@ -192,19 +189,13 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     // permanent — the pair never returns as a suggestion — which is exactly why
     // a mis-tap on a button sitting beside "פתיחת רעיון" needs an answer that
     // is not "go and find the two of them and undo it by hand".
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: const Text('הרעיון הוסר'),
-          duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-          action: SnackBarAction(
-            label: 'ביטול',
-            onPressed: () => _restoreIdea(idea),
-          ),
-        ),
-      );
+    AppNotice.showOn(
+      notices,
+      'הרעיון הוסר',
+      duration: const Duration(seconds: 3),
+      actionLabel: 'ביטול',
+      onAction: () => _restoreIdea(idea),
+    );
   }
 
   Future<void> _restoreIdea(NewIdeaSuggestion idea) async {

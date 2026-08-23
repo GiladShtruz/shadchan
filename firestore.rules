@@ -136,7 +136,38 @@ service cloud.firestore {
     // it. A reporter cannot read back even their own, which is deliberate:
     // making it readable would mean a query anyone could run.
     match /supportReports/{reportId} {
-      allow read, update, delete: if isSupportAdmin();
+      function isReporter() {
+        return request.auth != null
+            && resource.data.authorUid == request.auth.uid;
+      }
+
+      // An administrator sees everything. **The person who sent a report can
+      // now read that report back, and only that report** — `authorUid ==
+      // me`, which is also what makes the reporter's own query
+      // (`SupportService.fetchMyReports`) legal and keeps it from being a way
+      // to list anybody else's.
+      //
+      // This is new, and it is what the conversation feature costs. It buys
+      // the thing the old design could not do at all: answer somebody. Most
+      // accounts here are anonymous and carry no address, so before this an
+      // administrator reading "the button does nothing" had no way on earth to
+      // ask which button.
+      allow read: if isSupportAdmin() || isReporter();
+      allow delete: if isSupportAdmin();
+
+      // Filing a report — status, reviewer stamp, anything — is the
+      // administrator's. The reporter may touch exactly the two fields that
+      // record that their own message was the last one, and nothing else: they
+      // cannot mark their own report "טופל", re-word it, or change who sent
+      // it. `lastMessageFromAdmin` is forced false on their side, so a report
+      // cannot be made to look answered by the person waiting for an answer.
+      allow update: if isSupportAdmin()
+                    || (isReporter()
+                        && request.resource.data.diff(resource.data)
+                             .affectedKeys()
+                             .hasOnly(['lastMessageAt', 'lastMessageFromAdmin'])
+                        && request.resource.data.lastMessageAt == request.time
+                        && request.resource.data.lastMessageFromAdmin == false);
 
       // The three facts a report carries about the phone it came from, and the
       // path to its screenshot. Short strings every one of them — "Samsung
@@ -184,6 +215,51 @@ service cloud.firestore {
                     && (!('kind' in request.resource.data)
                         || request.resource.data.kind in
                              ['idea', 'note', 'bug', 'unsorted']);
+
+      // The conversation hanging off one report: the administrator asking for
+      // details, and the person who sent it answering.
+      //
+      // **Exactly two people can see a thread** — an administrator, and the
+      // account that wrote the report it belongs to. The reporter is
+      // recognised through the parent document, which is the only place that
+      // fact is written and one nobody but an administrator can change.
+      //
+      // `fromAdmin` is claimed by the client and checked here: a message can
+      // only say it came from the app's own team if the verified token behind
+      // it belongs to that team. Without this, anybody could write themselves
+      // an official-looking answer — in their own thread only, but still.
+      //
+      // Messages are append-only. An answered question that can be edited
+      // afterwards is not a record of anything.
+      match /messages/{messageId} {
+        function reportAuthorUid() {
+          return get(/databases/$(database)/documents/supportReports/$(reportId))
+                   .data.authorUid;
+        }
+
+        function inMyThread() {
+          return request.auth != null && reportAuthorUid() == request.auth.uid;
+        }
+
+        allow read: if isSupportAdmin() || inMyThread();
+
+        allow create: if (isSupportAdmin() || inMyThread())
+                      && request.resource.data.keys().hasOnly(
+                           ['text', 'fromAdmin', 'authorUid', 'authorName',
+                            'createdAt'])
+                      && request.resource.data.authorUid == request.auth.uid
+                      && request.resource.data.createdAt == request.time
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 1500
+                      && request.resource.data.fromAdmin is bool
+                      && (request.resource.data.fromAdmin == false
+                          || isSupportAdmin())
+                      && request.resource.data.authorName is string
+                      && request.resource.data.authorName.size() <= 80;
+
+        allow update, delete: if false;
+      }
     }
 
     // The administrator list itself. Writable only by the root address, so an

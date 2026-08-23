@@ -10,6 +10,7 @@ import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -63,22 +64,17 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
       return;
     }
     setState(() {});
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('$names הוסרו מהספירה'),
-          action: SnackBarAction(
-            label: 'ביטול',
-            onPressed: () async {
-              await DatingCountExclusions.restore(match.id);
-              if (mounted) {
-                setState(() {});
-              }
-            },
-          ),
-        ),
-      );
+    AppNotice.show(
+      context,
+      '$names הוסרו מהספירה',
+      actionLabel: 'ביטול',
+      onAction: () async {
+        await DatingCountExclusions.restore(match.id);
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
   }
 
   @override

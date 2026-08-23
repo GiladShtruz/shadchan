@@ -12,6 +12,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// Shown on first launch so the matchmaker can introduce themselves. Name,
 /// gender and personal status are required; a photo is optional.
@@ -415,9 +416,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppNotice.show(context, message);
   }
 }
 

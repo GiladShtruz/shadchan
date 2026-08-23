@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/services/device_facts.dart';
+import 'package:shadchan/services/diagnostics_log.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/match_migrations.dart';
@@ -21,6 +24,7 @@ import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/religious_levels_provider.dart';
+import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
@@ -30,26 +34,91 @@ Future<void> main() async {
   // A crash during startup used to leave a silent black screen (main threw
   // before runApp was ever called). Now any startup failure is caught and shown
   // on screen so it can be read and reported instead of just going black.
+  //
+  // What that could never catch is a failure *below* Dart — a plugin
+  // registering, a channel, the engine itself — which is what an iPhone showing
+  // the splash and then dying actually looks like. `DiagnosticsLog` is the
+  // answer to those: every startup step writes itself to a file as it finishes,
+  // and the next launch reads back how far the last one got.
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
+      await _startDiagnostics();
+
+      // Anything the framework catches during a build, layout or paint. It
+      // shows its own error box either way; this is what makes the details
+      // readable afterwards, from the phone it happened on.
+      final FlutterExceptionHandler? previousOnError = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        DiagnosticsLog.error(
+          details.exception,
+          details.stack,
+          context: 'שגיאת ממשק',
+        );
+        previousOnError?.call(details);
+      };
+      PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+        DiagnosticsLog.error(error, stack, context: 'שגיאה לא מטופלת');
+        return true;
+      };
+
       try {
         await _bootstrap();
         runApp(_buildApp());
+        // The line whose *absence* is the crash signal, so it is written from
+        // the first frame that actually reached the screen rather than from
+        // here — `runApp` returning only means the tree was scheduled.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          DiagnosticsLog.markFirstFrame();
+          // Everything that does not have to happen before the app appears,
+          // and must not be allowed to stop it appearing. See
+          // `_startNotifications`.
+          unawaited(_startNotifications());
+        });
       } catch (error, stackTrace) {
+        DiagnosticsLog.error(error, stackTrace, context: 'כשל בהפעלה');
         runApp(_StartupErrorApp(error: error, stackTrace: stackTrace));
       }
     },
     (Object error, StackTrace stackTrace) {
+      DiagnosticsLog.error(error, stackTrace, context: 'שגיאה מחוץ למסלול');
       debugPrint('Uncaught zone error: $error\n$stackTrace');
     },
   );
 }
 
-/// Opens storage and runs one-time startup work. Notification and migration
-/// failures are non-fatal — they must never keep the app from starting — so
-/// they are handled inside their own services / swallowed here.
+/// Opens the flight recorder before anything else has a chance to fail.
+///
+/// The version is read here rather than inside [DiagnosticsLog] so the log's
+/// own header names the build a report came from — "it crashes on 1.0.18+49" is
+/// the first thing anybody reading it needs to know.
+Future<void> _startDiagnostics() async {
+  try {
+    String? version;
+    try {
+      version = (await DeviceFacts.read()).appVersion;
+    } on Object {
+      version = null;
+    }
+    await DiagnosticsLog.start(appVersion: version);
+  } on Object catch (error) {
+    debugPrint('diagnostics unavailable: $error');
+  }
+}
+
+/// Opens storage and runs one-time startup work.
+///
+/// **Storage, and then as little as possible.** Everything on this path delays
+/// the first frame, and on iOS a launch that takes too long is not slow — it is
+/// killed. Notifications used to be awaited here and are not any more (see
+/// `_startNotifications`); what is left is the boxes, which the app cannot draw
+/// without, and the one-time migrations, which have to have run before anything
+/// reads a record.
+///
+/// The migrations are wrapped anyway, so a failure in one is recorded, named
+/// and stepped over rather than becoming a launch that never happens. Storage
+/// is not, because an app with no boxes has nothing to show.
 Future<void> _bootstrap() async {
   // Firebase is deliberately absent from startup. It is only needed by the AI
   // import, and `FirebaseBootstrap.ensureReady()` brings it up when one of
@@ -58,7 +127,18 @@ Future<void> _bootstrap() async {
   // frame.
   final Stopwatch watch = Stopwatch()..start();
   void mark(String step) {
-    debugPrint('STARTUP $step: ${watch.elapsedMilliseconds}ms');
+    DiagnosticsLog.mark('$step (${watch.elapsedMilliseconds}ms)');
+  }
+
+  /// A startup step that must never be the reason the app does not open: what
+  /// goes wrong is written down and named, and the launch carries on.
+  Future<void> optional(String step, Future<void> Function() work) async {
+    try {
+      await work();
+      mark(step);
+    } on Object catch (error, stackTrace) {
+      DiagnosticsLog.error(error, stackTrace, context: 'שלב $step נכשל');
+    }
   }
 
   await Hive.initFlutter();
@@ -74,40 +154,70 @@ Future<void> _bootstrap() async {
   await Hive.openBox<dynamic>('settings');
   mark('boxes_open');
 
-  // Where a tapped "יש לך הודעות מזל טוב!" goes. Set before `initialize`,
-  // which delivers a tap that launched the app the moment it is ready — wiring
-  // this afterwards would drop exactly the tap that matters most.
-  //
-  // `go` rather than `push`: the notification is the start of a journey, and
-  // there may be no stack behind it on a cold start.
-  NotificationService.onOpenMatch = (String matchId) {
-    // After a frame, never during one. A tap that launched the app is
-    // delivered inside `initialize`, before `runApp` — navigating from there
-    // would run the router's redirect against a widget tree that does not
-    // exist yet. One frame later everything it reads is in place.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppRouter.router.go('/matches/$matchId');
-    });
-  };
-  await NotificationService.initialize();
-  // Pushed a week out on every launch, so it can only ever reach someone who
-  // has not opened the app in that time.
-  unawaited(NotificationService.scheduleReturnInvitation());
-  mark('notifications');
+  await optional('migrations', () async {
+    await PersonMigrations.convertBirthDatesToAges(
+      people: Hive.box<Person>('people'),
+      settings: Hive.box<dynamic>('settings'),
+    );
+    await MatchMigrations.reconcileStatusesWithAvailability(
+      matches: Hive.box<MatchIdea>('matches'),
+      people: Hive.box<Person>('people'),
+      settings: Hive.box<dynamic>('settings'),
+    );
+  });
 
-  await PersonMigrations.convertBirthDatesToAges(
-    people: Hive.box<Person>('people'),
-    settings: Hive.box<dynamic>('settings'),
-  );
-  await MatchMigrations.reconcileStatusesWithAvailability(
-    matches: Hive.box<MatchIdea>('matches'),
-    people: Hive.box<Person>('people'),
-    settings: Hive.box<dynamic>('settings'),
-  );
-  mark('migrations');
+  mark('bootstrap_done');
+}
 
-  await NotificationService.cancelBirthdayNotifications();
-  mark('done');
+/// Notifications, started once the app is already on screen.
+///
+/// **This is deliberately not part of `_bootstrap`, and that is the fix for a
+/// launch that died on an iPhone.** `flutter_local_notifications` was being
+/// initialised with `requestAlertPermission: true` from before `runApp`, and on
+/// iOS that raises the system permission alert and waits for an answer. With
+/// nothing drawn yet, what the phone shows during that wait is the launch
+/// image — and iOS ends a process that has not finished launching after about
+/// twenty seconds. Splash screen, then gone, and a report that says "hang"
+/// rather than anything with a stack in it.
+///
+/// So nothing here blocks the first frame: the plugin comes up after it, and
+/// [NotificationService.requestPermissions] asks with the app visible behind
+/// the alert, which is where iOS expects such a question to be asked from.
+Future<void> _startNotifications() async {
+  try {
+    // Set before `initialize`, which delivers a tap that launched the app the
+    // moment it is ready — wiring this afterwards would drop exactly the tap
+    // that matters most.
+    //
+    // `go` rather than `push`: the notification is the start of a journey, and
+    // there may be no stack behind it on a cold start.
+    NotificationService.onOpenMatch = (String matchId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppRouter.router.go('/matches/$matchId');
+      });
+    };
+    // A tapped support alert lands on the notifications page rather than on
+    // one thread: a single alert can stand for several reports, and they are
+    // all listed there anyway.
+    NotificationService.onOpenSupport = () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppRouter.router.go('/reminders');
+      });
+    };
+    await NotificationService.initialize();
+    DiagnosticsLog.mark('notifications_ready');
+
+    await NotificationService.requestPermissions();
+    DiagnosticsLog.mark('notifications_permission');
+
+    // Pushed a week out on every launch, so it can only ever reach someone who
+    // has not opened the app in that time.
+    await NotificationService.scheduleReturnInvitation();
+    await NotificationService.cancelBirthdayNotifications();
+    DiagnosticsLog.mark('notifications_scheduled');
+  } on Object catch (error, stackTrace) {
+    DiagnosticsLog.error(error, stackTrace, context: 'שלב notifications נכשל');
+  }
 }
 
 Widget _buildApp() {
@@ -192,6 +302,12 @@ Widget _buildApp() {
       ChangeNotifierProvider<CommunityProvider>(
         lazy: false,
         create: (_) => CommunityProvider(),
+      ),
+      // Reports that arrived and answers that came back. Lazy: it holds only
+      // local timestamps until `CloudSyncScheduler` refreshes it a frame after
+      // startup, which is where its one network call belongs.
+      ChangeNotifierProvider<SupportInboxProvider>(
+        create: (_) => SupportInboxProvider(Hive.box<dynamic>('settings')),
       ),
     ],
     child: const _DismissKeyboardOnTap(child: App()),

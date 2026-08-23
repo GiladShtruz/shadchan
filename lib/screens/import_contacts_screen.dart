@@ -13,6 +13,7 @@ import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/add_contacts_common.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/initials_avatar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
@@ -752,15 +753,10 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     if (!mounted) {
       return;
     }
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      ),
+    AppNotice.showOn(
+      AppNotice.capture(context),
+      message,
+      duration: const Duration(seconds: 2),
     );
   }
 }

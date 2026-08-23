@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/reminders_list.dart';
+import 'package:shadchan/widgets/support_inbox_list.dart';
 
 /// The reminders list shown as a panel that drops down from the top banner, so
 /// tapping the bell on the home screen never navigates away from it and the
@@ -57,10 +58,23 @@ abstract final class RemindersPanel {
                         ),
                       ),
                       Flexible(
-                        child: RemindersList(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: ListView(
                           shrinkWrap: true,
-                          onOpenMatch: () => Navigator.of(dialogContext).pop(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                          children: <Widget>[
+                            // Reports and answers sit above the reminders:
+                            // both are "something happened that you have not
+                            // seen", which is the whole job of this panel.
+                            SupportInboxList(
+                              onOpen: () => Navigator.of(dialogContext).pop(),
+                            ),
+                            RemindersList(
+                              padding: EdgeInsets.zero,
+                              shrinkWrap: true,
+                              onOpenMatch: () =>
+                                  Navigator.of(dialogContext).pop(),
+                            ),
+                          ],
                         ),
                       ),
                     ],

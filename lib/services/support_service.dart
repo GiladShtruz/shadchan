@@ -122,6 +122,8 @@ class SupportReport {
     this.kind = SupportReportKind.unsorted,
     this.imagePath,
     this.imageUrl,
+    this.lastMessageAt,
+    this.lastMessageFromAdmin = false,
   });
 
   final String id;
@@ -152,6 +154,19 @@ class SupportReport {
   /// their screenshot in the console; nothing writes it any more, and the
   /// tokens behind these should be revoked in the Firebase console.
   final String? imageUrl;
+
+  /// When the last message in this report's thread was written, and whether it
+  /// came from the administrator.
+  ///
+  /// Kept **on the report** rather than worked out from the thread, so listing
+  /// "which of my reports has an answer waiting?" is one query over reports
+  /// instead of one read per report per app open. Null on a report nobody has
+  /// answered yet, which is most of them.
+  final DateTime? lastMessageAt;
+  final bool lastMessageFromAdmin;
+
+  /// Whether there is a thread here at all.
+  bool get hasConversation => lastMessageAt != null;
 
   /// A trimmed string, or null when the field is absent or blank. Blank and
   /// missing mean the same thing here and must not read differently.
@@ -184,6 +199,63 @@ class SupportReport {
           : DateTime.fromMillisecondsSinceEpoch(0),
       imagePath: _text(data['imagePath']),
       imageUrl: _text(data['imageUrl']),
+      lastMessageAt: data['lastMessageAt'] is Timestamp
+          ? (data['lastMessageAt'] as Timestamp).toDate()
+          : null,
+      lastMessageFromAdmin: data['lastMessageFromAdmin'] == true,
+    );
+  }
+}
+
+/// One line of the conversation hanging off a report.
+///
+/// **A report used to be a one-way message.** Somebody described a problem, it
+/// landed in the console, and there was no way to ask "which screen?" without
+/// their email address — which most reports do not carry, because most accounts
+/// are anonymous. So a report now has a thread: the administrator writes back
+/// into it, the person who sent the report sees the answer in their own app,
+/// and both sides are talking about the report they are both looking at.
+///
+/// [fromAdmin] is what tells the two apart on screen. It is written by whoever
+/// sends, and `firestore.rules` refuses a message that claims to be from an
+/// administrator unless the token behind it is one.
+class SupportMessage {
+  const SupportMessage({
+    required this.id,
+    required this.text,
+    required this.fromAdmin,
+    required this.authorName,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String text;
+  final bool fromAdmin;
+
+  /// Who wrote it, for the line above the bubble. The administrator's side is
+  /// deliberately generic — "צוות שדכן" — because a support answer is from the
+  /// app, not from a named person whose address is then in somebody's hands.
+  final String authorName;
+
+  final DateTime createdAt;
+
+  static SupportMessage? fromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final Map<String, dynamic> data = doc.data();
+    final Object? text = data['text'];
+    if (text is! String || text.trim().isEmpty) {
+      return null;
+    }
+    final Object? createdAt = data['createdAt'];
+    return SupportMessage(
+      id: doc.id,
+      text: text.trim(),
+      fromAdmin: data['fromAdmin'] == true,
+      authorName: (data['authorName'] as String?)?.trim() ?? '',
+      createdAt: createdAt is Timestamp
+          ? createdAt.toDate()
+          : DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }
@@ -365,9 +437,7 @@ abstract final class SupportService {
     try {
       // The same ceiling `storage.rules` puts on the upload, so a file that
       // was allowed in can always be read back out.
-      return await FirebaseStorage.instance
-          .ref(path)
-          .getData(12 * 1024 * 1024);
+      return await FirebaseStorage.instance.ref(path).getData(12 * 1024 * 1024);
     } catch (_) {
       return null;
     }
@@ -420,6 +490,122 @@ abstract final class SupportService {
       return false;
     }
   }
+
+  // --- The conversation on a report ---------------------------------------
+
+  /// Where a report's thread lives: `supportReports/{id}/messages`.
+  static const String messagesCollection = 'messages';
+
+  /// What the administrator's side of a thread signs itself.
+  ///
+  /// Not a person's name and not an address. Whoever is on rota answers as the
+  /// app, so nobody's personal details end up in a stranger's copy of a
+  /// conversation, and so a reviewer leaving does not orphan a thread.
+  static const String adminDisplayName = 'צוות שדכן';
+
+  /// The reports this account sent, newest first — the reporter's own side of
+  /// the console.
+  ///
+  /// A reporter could not read back even their own report until there was
+  /// something to read back *for*. Now there is: an administrator can write
+  /// into a thread, and an answer nobody can see is not an answer. The rule
+  /// that allows it is still narrow — `authorUid == request.auth.uid`, one
+  /// person's own submissions and nobody else's.
+  static Future<List<SupportReport>> fetchMyReports({int limit = 20}) async {
+    final User? user = await _requireAccount();
+    if (user == null) {
+      return const <SupportReport>[];
+    }
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _db
+          .collection(reportsCollection)
+          .where('authorUid', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .get();
+      return <SupportReport>[
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+            in snapshot.docs)
+          if (SupportReport.fromDocument(doc) case final SupportReport report)
+            report,
+      ];
+    } catch (_) {
+      return const <SupportReport>[];
+    }
+  }
+
+  /// One report's whole thread, oldest first — the order a conversation is
+  /// read in.
+  static Future<List<SupportMessage>> fetchMessages(String reportId) async {
+    if (await _requireAccount() == null) {
+      return const <SupportMessage>[];
+    }
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _db
+          .collection(reportsCollection)
+          .doc(reportId)
+          .collection(messagesCollection)
+          .orderBy('createdAt')
+          .limit(200)
+          .get();
+      return <SupportMessage>[
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+            in snapshot.docs)
+          if (SupportMessage.fromDocument(doc) case final SupportMessage note)
+            note,
+      ];
+    } catch (_) {
+      return const <SupportMessage>[];
+    }
+  }
+
+  /// Writes one message into a report's thread.
+  ///
+  /// The report document's `lastMessageAt` is stamped in the same breath. That
+  /// denormalised pair is what makes "has anybody answered me?" a single query
+  /// on both sides — see [SupportReport.lastMessageAt] — and it is written with
+  /// `merge` so a message can never overwrite the report it hangs off.
+  ///
+  /// [fromAdmin] is claimed by the client and *checked on the server*: the rule
+  /// refuses a message marked as coming from an administrator unless the token
+  /// sending it belongs to one.
+  static Future<bool> sendMessage({
+    required String reportId,
+    required String text,
+    required bool fromAdmin,
+    String authorName = '',
+  }) async {
+    final User? user = await _requireAccount();
+    final String trimmed = text.trim();
+    if (user == null || trimmed.isEmpty) {
+      return false;
+    }
+    final String capped = trimmed.length > maxMessageLength
+        ? trimmed.substring(0, maxMessageLength)
+        : trimmed;
+    try {
+      final DocumentReference<Map<String, dynamic>> report = _db
+          .collection(reportsCollection)
+          .doc(reportId);
+      await report.collection(messagesCollection).add(<String, Object?>{
+        'text': capped,
+        'fromAdmin': fromAdmin,
+        'authorUid': user.uid,
+        'authorName': fromAdmin ? adminDisplayName : authorName.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      await report.set(<String, Object?>{
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastMessageFromAdmin': fromAdmin,
+      }, SetOptions(merge: true));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// A message has to be readable in a chat bubble.
+  static const int maxMessageLength = 1500;
 
   // --- Administrators ------------------------------------------------------
 

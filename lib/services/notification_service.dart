@@ -65,10 +65,38 @@ class NotificationService {
         iOS: _iosMatchDetails,
       );
 
+  static const AndroidNotificationDetails _androidSupportDetails =
+      AndroidNotificationDetails(
+        'support_inbox',
+        'פניות ותשובות',
+        channelDescription: 'תקלות ורעיונות שנשלחו, ותשובות עליהם',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+
+  static const NotificationDetails _supportNotificationDetails =
+      NotificationDetails(
+        android: _androidSupportDetails,
+        iOS: _iosMatchDetails,
+      );
+
   /// Reminders are picked as a plain date, which would otherwise fire at
   /// midnight. They go out at this hour of the reminder day instead.
   static const int _reminderHour = 9;
 
+  /// Brings the plugin up. **Asks for nothing.**
+  ///
+  /// This used to be awaited from `main`, before `runApp`, with
+  /// `requestAlertPermission: true` — which on iOS means the system permission
+  /// alert is raised and `initialize` does not return until the person answers
+  /// it. Before the first frame there is nothing on screen but the launch
+  /// image, so what that produced was a splash screen sitting there while iOS
+  /// counted; past about twenty seconds the watchdog kills the process, and the
+  /// report it leaves behind is an "app hang", not a crash with a stack.
+  ///
+  /// So: no prompt in here, and the whole call moved off the launch path (see
+  /// `main`). Asking is [requestPermissions], which runs with the app already
+  /// drawn — which is also where an iOS permission alert is supposed to appear.
   static Future<void> initialize() async {
     tz_data.initializeTimeZones();
 
@@ -84,9 +112,9 @@ class NotificationService {
         AndroidInitializationSettings('@mipmap/launcher_icon');
     const DarwinInitializationSettings iosSettings =
         DarwinInitializationSettings(
-          requestAlertPermission: true,
-          requestBadgePermission: true,
-          requestSoundPermission: true,
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
         );
     const InitializationSettings settings = InitializationSettings(
       android: androidSettings,
@@ -99,11 +127,6 @@ class NotificationService {
         onDidReceiveNotificationResponse: (NotificationResponse response) =>
             _handleTap(response.payload),
       );
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.requestNotificationsPermission();
       _isInitialized = true;
       // A tap that *launched* the app is not delivered to the callback above —
       // the plugin was not listening yet when it happened. It is waiting here
@@ -114,6 +137,34 @@ class NotificationService {
     } catch (error, stackTrace) {
       _isInitialized = false;
       debugPrint('NotificationService.initialize failed: $error\n$stackTrace');
+    }
+  }
+
+  /// Asks for permission to post notifications, on whichever platform this is.
+  ///
+  /// Called once the app is on screen, never during startup: on iOS this raises
+  /// the system alert and waits for an answer, and a launch that waits for a
+  /// person is a launch the watchdog ends. Never throws — a matchmaker who says
+  /// no to notifications still gets the whole app, and the reminders simply
+  /// live on the home board instead of in the tray.
+  static Future<void> requestPermissions() async {
+    if (!_isInitialized) {
+      return;
+    }
+    try {
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
+    } catch (error, stackTrace) {
+      debugPrint('NotificationService.requestPermissions: $error');
+      debugPrint('$stackTrace');
     }
   }
 
@@ -292,6 +343,50 @@ class NotificationService {
     }
   }
 
+  // --- פניות ותשובות ---------------------------------------------------------
+
+  /// Where a tapped support notification goes. The notifications page, not a
+  /// thread: a single alert can stand for several reports, and the page is
+  /// where they are all listed anyway.
+  static const String _supportPayload = 'support';
+
+  /// Ids 60000-60009 belong to this. One id, reused: the alert says "there is
+  /// something in the support inbox", and a second copy of that sentence in the
+  /// tray helps nobody.
+  static const int _supportId = 60000;
+
+  /// What a tapped support notification does. Set by the app, like
+  /// [onOpenMatch], so this service still does not know the router exists.
+  static void Function()? onOpenSupport;
+
+  /// "הגיעה פנייה חדשה" for an administrator, "יש לך תשובה" for everybody else.
+  ///
+  /// Shown immediately: by the time this is called the thing it is about has
+  /// already happened and is already on the notifications page. The caller
+  /// ([SupportInboxProvider]) owns the "only when something changed" rule, so
+  /// this never fires twice for the same news.
+  static Future<void> showSupportAlert({
+    required String title,
+    required String body,
+  }) async {
+    if (!_isInitialized || title.trim().isEmpty) {
+      return;
+    }
+    try {
+      final String trimmed = body.trim().split(RegExp(r'\s+')).join(' ');
+      await _plugin.show(
+        _supportId,
+        title,
+        trimmed.length > 120 ? '${trimmed.substring(0, 120)}…' : trimmed,
+        _supportNotificationDetails,
+        payload: _supportPayload,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('NotificationService.showSupportAlert failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
   static Future<void> _handleLaunchTap() async {
     try {
       final NotificationAppLaunchDetails? details = await _plugin
@@ -305,7 +400,14 @@ class NotificationService {
   }
 
   static void _handleTap(String? payload) {
-    if (payload == null || !payload.startsWith(_matchPayloadPrefix)) {
+    if (payload == null) {
+      return;
+    }
+    if (payload == _supportPayload) {
+      onOpenSupport?.call();
+      return;
+    }
+    if (!payload.startsWith(_matchPayloadPrefix)) {
       return;
     }
     final String matchId = payload.substring(_matchPayloadPrefix.length);

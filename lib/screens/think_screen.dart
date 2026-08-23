@@ -402,10 +402,10 @@ class _PersonThought extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            // The matches, three across. `IntrinsicHeight` so a one-line name
-            // and a two-line name next to it still draw two cards of the same
-            // size — three tiles of different heights side by side is the one
-            // thing that makes this row look broken.
+            // The matches, three across. Every tile is exactly one line of
+            // name tall now (see `_CandidateChip`), so the row is level by
+            // construction; `IntrinsicHeight` stays only to hold that true if
+            // a tile ever grows something else.
             IntrinsicHeight(
               child: Row(
                 children: <Widget>[
@@ -443,16 +443,17 @@ class _PersonThought extends StatelessWidget {
   }
 }
 
-/// One possible match: a face and a full name, as a small card.
+/// One possible match: a face and as much of their name as one line holds.
 ///
-/// **First name and surname, on two lines if that is what they need.** It was
-/// a one-line pill showing the first name only, which is unambiguous in a
-/// database of thirty friends and useless in one of three hundred — half the
-/// point of this row is knowing *which* יוסי the app means, and a matchmaker
-/// who has to open a card to find out has lost the second this screen is
-/// supposed to take. The pill became a card for the same reason: two lines of
-/// name need the width, and the larger surface is an easier thing to hit with
-/// a thumb than a 24px-high capsule was.
+/// **The name is the full name, and it is exactly one line.** Showing only the
+/// first name is unambiguous in a database of thirty friends and useless in one
+/// of three hundred — half the point of this row is knowing *which* יוסי the app
+/// means. But letting it wrap to a second line made the tile — and with it the
+/// whole card — taller for one friend than for the next, and this is a screen
+/// built to be run down with an eye. So the line never wraps and never grows the
+/// tile: it shows the full name where that fits and gives up the end of the
+/// surname where it does not, which still leaves "יוסי פרידמ…" — a first name
+/// and enough of the family name to pick the right person out.
 ///
 /// Tapping it opens the two cards facing each other — the same comparison
 /// "רעיונות חדשים" and the matches list open, so a pair considered from here
@@ -486,10 +487,11 @@ class _CandidateChip extends StatelessWidget {
               Text(
                 name,
                 textAlign: TextAlign.center,
-                // Two lines, and the surname elided before the given name is:
-                // a name cut at the end still identifies somebody, and a name
-                // cut at the start does not.
-                maxLines: 2,
+                // One line, and what gives way is the end of it: a name cut at
+                // the end still identifies somebody, and a name cut at the
+                // start does not.
+                maxLines: 1,
+                softWrap: false,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w700,
