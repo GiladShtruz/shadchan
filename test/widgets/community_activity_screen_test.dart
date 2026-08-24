@@ -100,7 +100,7 @@ void main() {
           create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
         ),
         ChangeNotifierProvider<CommunityProvider>(
-          create: (_) => CommunityProvider(),
+          create: (_) => CommunityProvider(connect: () async {}),
         ),
         // `connect: () async {}` keeps `Firebase.initializeApp` out of the
         // fake-async zone, where it never completes. Signed out, so the two
@@ -239,7 +239,9 @@ void main() {
     testWidgets('stops the publish and takes the name off the board', (
       WidgetTester tester,
     ) async {
-      final CommunityProvider community = CommunityProvider();
+      final CommunityProvider community = CommunityProvider(
+        connect: () async {},
+      );
       expect(community.isPrivate, isFalse);
 
       // `deleteMyData` inside runs against a Firebase that is not up in a
@@ -273,7 +275,9 @@ void main() {
       // one switch that takes them out lives on "פרטיות והמאגר שלי".
       expect(CommunityProfileStore.isHidden, isFalse);
 
-      final CommunityProvider community = CommunityProvider();
+      final CommunityProvider community = CommunityProvider(
+        connect: () async {},
+      );
       expect(community.isHidden, isFalse);
 
       await tester.runAsync(() => community.setHidden(true));

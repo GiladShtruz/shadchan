@@ -281,17 +281,92 @@ abstract final class CommunityService {
     }
 
     try {
-      await _db.collection(membersCollection).doc(user.uid).set(
-        <String, Object?>{...row, 'updatedAt': FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
-      );
+      await _write(user.uid, row);
       // Remembered only after the server took it. A write that failed must be
       // retried by the next publish, not skipped because we already decided it
       // had happened.
       CommunityProfileStore.rememberPublished(fingerprint);
+    } on FirebaseException catch (error) {
+      // **A refusal here is usually not a permission problem — it is an old
+      // document.** `noStrayFields` in the security rules is a whitelist, and
+      // `set(merge: true)` leaves whatever is already on the document inside
+      // `request.resource.data`. So an account whose row still carries a field
+      // this app stopped writing — top-level `ideas` and `couples` from before
+      // the counters were split per window — has every publish rejected, for
+      // ever, silently. Their figures freeze at whatever they were on the day
+      // the rules tightened, and no amount of using the app can unfreeze them.
+      //
+      // The repair is to name the strays and delete them in the same write.
+      // It costs one extra read and it runs once per account, because after it
+      // the document matches the whitelist and the ordinary path works again.
+      if (error.code == 'permission-denied' &&
+          await _repairAndWrite(user.uid, row)) {
+        CommunityProfileStore.rememberPublished(fingerprint);
+      }
     } catch (_) {
       // A community figure is never worth an error in front of somebody who
       // came here to do matchmaking.
+    }
+  }
+
+  static Future<void> _write(String uid, Map<String, Object?> row) {
+    return _db.collection(membersCollection).doc(uid).set(<String, Object?>{
+      ...row,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Every field this app writes to a member document.
+  ///
+  /// The same list the security rules whitelist, and it has to stay the same
+  /// list: anything here that the rules do not allow is a write that fails, and
+  /// anything the rules allow that is missing here is a field [_repairAndWrite]
+  /// would wrongly delete.
+  static Set<String> get _knownFields => <String>{
+    'name',
+    'photoUrl',
+    'hidden',
+    'updatedAt',
+    for (final CommunityPeriod period in CommunityPeriod.values) ...<String>{
+      ?period.keyField,
+      period.actionsField,
+      period.friendsField,
+      period.ideasField,
+      period.couplesField,
+      period.engagementsField,
+    },
+  };
+
+  /// Reads the stored document, deletes anything the rules do not recognise,
+  /// and writes the row again. Answers whether the second write landed.
+  static Future<bool> _repairAndWrite(
+    String uid,
+    Map<String, Object?> row,
+  ) async {
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _db
+          .collection(membersCollection)
+          .doc(uid)
+          .get();
+      final Map<String, dynamic> stored = doc.data() ?? <String, dynamic>{};
+      final Set<String> known = _knownFields;
+      final List<String> strays = <String>[
+        for (final String key in stored.keys)
+          if (!known.contains(key)) key,
+      ];
+      if (strays.isEmpty) {
+        // Nothing to clean, so the refusal was a real one — a signed-out
+        // account, App Check, a rule this write genuinely does not satisfy.
+        // Retrying it would only fail again.
+        return false;
+      }
+      await _write(uid, <String, Object?>{
+        ...row,
+        for (final String key in strays) key: FieldValue.delete(),
+      });
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -525,13 +600,82 @@ abstract final class CommunityService {
       return CommunityTotals.empty;
     }
 
+    // **The window can live under more than one key.** A member document
+    // carries one key per window, and the month's key changed shape without a
+    // migration — see [CommunityPeriods.legacyKeysFor]. Reading only the
+    // current one is what made "החודש" a figure from a single matchmaker while
+    // "כל הזמנים", which has no key filter at all, showed the whole community.
+    // Each key is a disjoint set of documents, so the windows simply add up.
+    final List<CommunityTotals> parts = <CommunityTotals>[];
+    bool anyResolved = false;
+    for (final String? key in _keysFor(period)) {
+      final CommunityTotals part = await _totalsForKey(
+        period,
+        key,
+        cacheKey: cacheKey,
+      );
+      if (part.resolved) {
+        anyResolved = true;
+        parts.add(part);
+      }
+    }
+    if (!anyResolved) {
+      return cached?.value ?? CommunityTotals.empty;
+    }
+    final CommunityTotals merged = _sum(parts);
+    _totalsCache[cacheKey] = _Cached<CommunityTotals>(merged);
+    return merged;
+  }
+
+  /// Every key whose documents belong to [period] right now: the one this build
+  /// writes, then anything an older build wrote for the same window. A single
+  /// `null` for all-time, which has no key filter.
+  static List<String?> _keysFor(CommunityPeriod period) {
+    if (period.keyField == null) {
+      return const <String?>[null];
+    }
+    return <String?>[
+      CommunityPeriods.keyFor(period),
+      ...CommunityPeriods.legacyKeysFor(period),
+    ];
+  }
+
+  static CommunityTotals _sum(List<CommunityTotals> parts) {
+    int points = 0;
+    int active = 0;
+    int friends = 0;
+    int ideas = 0;
+    int couples = 0;
+    int engagements = 0;
+    for (final CommunityTotals part in parts) {
+      points += part.points;
+      active += part.activeMatchmakers;
+      friends += part.friends;
+      ideas += part.ideas;
+      couples += part.couples;
+      engagements += part.engagements;
+    }
+    return CommunityTotals(
+      points: points,
+      activeMatchmakers: active,
+      friends: friends,
+      ideas: ideas,
+      couples: couples,
+      engagements: engagements,
+    );
+  }
+
+  /// One window under one key. Unresolved when neither the aggregate nor the
+  /// scan could answer.
+  static Future<CommunityTotals> _totalsForKey(
+    CommunityPeriod period,
+    String? key, {
+    required String cacheKey,
+  }) async {
     try {
       Query<Map<String, dynamic>> query = _db.collection(membersCollection);
       if (period.keyField case final String keyField) {
-        query = query.where(
-          keyField,
-          isEqualTo: CommunityPeriods.keyFor(period),
-        );
+        query = query.where(keyField, isEqualTo: key);
       }
       query = query.where(period.actionsField, isGreaterThan: 0);
 
@@ -566,33 +710,27 @@ abstract final class CommunityService {
       if (!result.isEmpty) {
         // The query works in this project, whatever it answers next time.
         _aggregatesTrusted.add(cacheKey);
-        _totalsCache[cacheKey] = _Cached<CommunityTotals>(result);
         return result;
       }
       // Aggregates said nothing. That is *usually* the truth — but it is also
       // exactly what a missing composite index looks like from here, so the
       // zero is checked against a direct read before it is believed. Once.
       if (_aggregatesTrusted.contains(cacheKey)) {
-        _totalsCache[cacheKey] = _Cached<CommunityTotals>(result);
         return result;
       }
     } catch (_) {
       // And so is a failure. Both roads lead to the scan below.
     }
 
-    final CommunityTotals scanned = await _totalsByScan(period);
-    if (scanned.resolved) {
+    final CommunityTotals scanned = await _totalsByScan(period, key);
+    if (scanned.resolved && scanned.isEmpty) {
       // The scan agreed there is nothing here, so the aggregate was telling
       // the truth and need not be second-guessed again this launch. A scan
       // that found figures the aggregate missed says the opposite — the index
       // is missing — so the window stays untrusted and keeps scanning.
-      if (scanned.isEmpty) {
-        _aggregatesTrusted.add(cacheKey);
-      }
-      _totalsCache[cacheKey] = _Cached<CommunityTotals>(scanned);
-      return scanned;
+      _aggregatesTrusted.add(cacheKey);
     }
-    return cached?.value ?? CommunityTotals.empty;
+    return scanned;
   }
 
   /// The community's figures added up on this device, one member at a time.
@@ -614,17 +752,17 @@ abstract final class CommunityService {
   /// The `> 0` test the aggregate does in the query is done here in the loop,
   /// so "שדכנים פעילים" keeps meaning "did at least one thing" rather than
   /// "opened the app".
-  static Future<CommunityTotals> _totalsByScan(CommunityPeriod period) async {
+  static Future<CommunityTotals> _totalsByScan(
+    CommunityPeriod period,
+    String? key,
+  ) async {
     if (await _account() == null) {
       return CommunityTotals.empty;
     }
     try {
       Query<Map<String, dynamic>> query = _db.collection(membersCollection);
       if (period.keyField case final String keyField) {
-        query = query.where(
-          keyField,
-          isEqualTo: CommunityPeriods.keyFor(period),
-        );
+        query = query.where(keyField, isEqualTo: key);
       }
       // One more than the cap, so a community that has outgrown the scan can
       // be recognised rather than quietly half-counted. See below.
@@ -706,30 +844,48 @@ abstract final class CommunityService {
     }
 
     try {
-      Query<Map<String, dynamic>> base = _db
-          .collection(membersCollection)
-          .where('hidden', isEqualTo: false);
-      if (period.keyField case final String keyField) {
-        base = base.where(keyField, isEqualTo: CommunityPeriods.keyFor(period));
+      Query<Map<String, dynamic>> baseFor(String? key) {
+        Query<Map<String, dynamic>> base = _db
+            .collection(membersCollection)
+            .where('hidden', isEqualTo: false);
+        if (period.keyField case final String keyField) {
+          base = base.where(keyField, isEqualTo: key);
+        }
+        return base;
       }
 
-      final QuerySnapshot<Map<String, dynamic>> top = await base
-          .where(period.actionsField, isGreaterThan: 0)
-          .orderBy(period.actionsField, descending: true)
-          .limit(leaderboardSize)
-          .get();
-
-      final List<CommunityRankEntry> rows = <CommunityRankEntry>[
-        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in top.docs)
-          CommunityRankEntry(
-            uid: doc.id,
-            name: (doc.data()['name'] as String?)?.trim().isNotEmpty ?? false
-                ? (doc.data()['name'] as String).trim()
-                : 'שדכן',
-            points: (doc.data()[period.actionsField] as num?)?.toInt() ?? 0,
-            photoUrl: ((doc.data()['photoUrl'] as String?) ?? '').trim(),
-          ),
-      ];
+      // The same union the totals read — see [_keysFor]. Ten rows per key,
+      // merged and re-sorted here: the keys partition the collection, so the
+      // top ten of the union is inside the ten best of each part.
+      final List<String?> keys = _keysFor(period);
+      final List<CommunityRankEntry> rows = <CommunityRankEntry>[];
+      for (final String? key in keys) {
+        final QuerySnapshot<Map<String, dynamic>> top = await baseFor(key)
+            .where(period.actionsField, isGreaterThan: 0)
+            .orderBy(period.actionsField, descending: true)
+            .limit(leaderboardSize)
+            .get();
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+            in top.docs) {
+          rows.add(
+            CommunityRankEntry(
+              uid: doc.id,
+              name: (doc.data()['name'] as String?)?.trim().isNotEmpty ?? false
+                  ? (doc.data()['name'] as String).trim()
+                  : 'שדכן',
+              points: (doc.data()[period.actionsField] as num?)?.toInt() ?? 0,
+              photoUrl: ((doc.data()['photoUrl'] as String?) ?? '').trim(),
+            ),
+          );
+        }
+      }
+      rows.sort(
+        (CommunityRankEntry a, CommunityRankEntry b) =>
+            b.points.compareTo(a.points),
+      );
+      if (rows.length > leaderboardSize) {
+        rows.removeRange(leaderboardSize, rows.length);
+      }
 
       int? rank;
       if (includeMe && myPoints > 0) {
@@ -743,11 +899,14 @@ abstract final class CommunityService {
           // runs when `myPoints > 0`, so `> myPoints` is already the tighter of
           // the two bounds — and one range filter per field keeps the query
           // inside exactly the composite indexes the board above already uses.
-          final AggregateQuerySnapshot above = await base
-              .where(period.actionsField, isGreaterThan: myPoints)
-              .count()
-              .get();
-          rank = (above.count ?? 0) + 1;
+          int above = 0;
+          for (final String? key in keys) {
+            final AggregateQuerySnapshot part = await baseFor(
+              key,
+            ).where(period.actionsField, isGreaterThan: myPoints).count().get();
+            above += part.count ?? 0;
+          }
+          rank = above + 1;
         }
       }
 

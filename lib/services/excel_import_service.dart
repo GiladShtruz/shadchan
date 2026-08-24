@@ -70,13 +70,135 @@ abstract final class ExcelImportService {
 
     final List<ExcelTable> tables = <ExcelTable>[];
     for (final MapEntry<String, Sheet> entry in workbook.tables.entries) {
-      final List<List<String>> rows = _readRows(entry.value);
+      final List<List<String>> rows = prune(_readRows(entry.value));
       if (rows.isNotEmpty) {
         tables.add(ExcelTable(sheetName: entry.key, rows: rows));
       }
     }
     return tables;
   }
+
+  /// Takes out the empty scaffolding a spreadsheet carries, and nothing else.
+  ///
+  /// **A column is the expensive kind of waste.** A blank row costs one line;
+  /// a blank column in the middle of the grid costs a tab on *every* row, and
+  /// real exports are full of them — a spacer between two groups of headings,
+  /// a column somebody cleared instead of deleting, the serial number down
+  /// column A. On a 2,000-row sheet each of those is two thousand tokens
+  /// bought to tell the model nothing.
+  ///
+  /// **No row is ever judged on what it says.** A row is dropped only when
+  /// every cell in it is empty, which is a fact about the grid rather than a
+  /// reading of the data. Rules that looked sensible — drop the "סה״כ" line,
+  /// drop the hand-drawn divider, drop an exact repeat — are each a guess about
+  /// what a row *means*, and all of them fail the same silent way: the import
+  /// still returns a list of people, just with somebody missing from it, and
+  /// nothing on screen says a row was skipped. A totals row costs one line and
+  /// the model ignores it. A person costs a person.
+  ///
+  /// Columns are held to that same standard: a column with no content at all,
+  /// and a column that only counts the rows. Both are reconstructible from the
+  /// sheet itself, which is what makes them safe. A sparse column stays — a
+  /// "הערות" filled in for one candidate out of three hundred looks exactly
+  /// like noise, and is the one thing anybody wrote down about that person.
+  @visibleForTesting
+  static List<List<String>> prune(List<List<String>> rows) {
+    final List<List<String>> kept = <List<String>>[
+      for (final List<String> row in rows)
+        if (row.any((String cell) => cell.isNotEmpty)) <String>[...row],
+    ];
+    if (kept.isEmpty) {
+      return kept;
+    }
+
+    final int width = kept.fold<int>(
+      0,
+      (int max, List<String> row) => row.length > max ? row.length : max,
+    );
+    for (final List<String> row in kept) {
+      while (row.length < width) {
+        row.add('');
+      }
+    }
+
+    final List<int> columns = <int>[
+      for (int col = 0; col < width; col++)
+        if (!_isEmptyColumn(kept, col) && !_isSerialColumn(kept, col)) col,
+    ];
+
+    // Always rebuilt through `_trimTrailing`, including when no column was
+    // dropped: the padding above squares the grid off so columns can be judged,
+    // and leaving that padding in would spend a tab per row to say nothing —
+    // the very thing this method exists to stop.
+    return <List<String>>[
+      for (final List<String> row in kept)
+        _trimTrailing(<String>[
+          for (final int col in columns) row[col],
+        ]),
+    ];
+  }
+
+  /// Drops the empty cells off the end of a row.
+  ///
+  /// Safe in a way that dropping an empty cell in the *middle* would not be:
+  /// the columns before it keep their positions, which is what tells the model
+  /// that a bare number under a heading of years is an age.
+  static List<String> _trimTrailing(List<String> row) {
+    while (row.isNotEmpty && row.last.isEmpty) {
+      row.removeLast();
+    }
+    return row;
+  }
+
+  static bool _isEmptyColumn(List<List<String>> rows, int col) =>
+      rows.every((List<String> row) => row[col].isEmpty);
+
+  /// A column that only counts the rows: 1, 2, 3… down the sheet.
+  ///
+  /// Recognised by the run of numbers rather than by its heading, because the
+  /// heading is as often blank as it is "מס'". Either start is accepted — a
+  /// sheet with a header row numbers its people from 1 on the second line, one
+  /// without numbers them from 1 on the first.
+  static bool _isSerialColumn(List<List<String>> rows, int col) {
+    final List<int> numbers = <int>[];
+    for (final List<String> row in rows) {
+      final String cell = row[col];
+      if (cell.isEmpty) {
+        continue;
+      }
+      final int? value = int.tryParse(cell);
+      if (value == null) {
+        // A heading over the numbers is allowed, and nothing else is.
+        if (numbers.isEmpty && _serialHeadings.contains(cell)) {
+          continue;
+        }
+        return false;
+      }
+      numbers.add(value);
+    }
+    // Two numbers in a row prove nothing; a column of ages would qualify.
+    if (numbers.length < 4) {
+      return false;
+    }
+    for (int i = 1; i < numbers.length; i++) {
+      if (numbers[i] != numbers[i - 1] + 1) {
+        return false;
+      }
+    }
+    return numbers.first == 0 || numbers.first == 1;
+  }
+
+  static const Set<String> _serialHeadings = <String>{
+    'מס',
+    'מס.',
+    "מס'",
+    'מספר',
+    'מספר סידורי',
+    '#',
+    'no',
+    'No',
+    'index',
+  };
 
   @visibleForTesting
   static List<List<String>> readRowsFromBytes(List<int> bytes) {

@@ -117,6 +117,24 @@ flutter_launcher_icons:
 # dropped because it breaks Flutter's Swift Package Manager resolution on CI; put
 # it back, with the config block below, if the splash artwork needs regenerating.
 #
+# `assets/icon/splash_logo.png` is the launch mark: the adaptive pair composited
+# — `app_icon_foreground.png` over `app_icon_background.png`, scaled to frame the
+# mark exactly as `app_icon.png` does — and then given the same rounded-square
+# corner the launcher mask applies, so the tile on the splash and the icon on the
+# home screen are the one shape.
+#
+# Built from the two layers rather than from `app_icon.png` itself for size, not
+# looks: the flattened file carries about 15 greyscale levels of film grain,
+# which a photograph hides and PNG cannot compress — encoding it cost 1.0 MB per
+# copy against 290 KB for the same image built clean, and there are seventeen
+# copies. Quantising the flattened version instead was tried and rejected; at 256
+# colours the gradient bands visibly on a screen that fills the phone.
+#
+# The committed bitmaps derived from it — `splash.png` under every Android
+# density (light and dark are the same file; the tile carries its own background)
+# and the `LaunchImage` set on iOS — are regenerated whenever the icon changes,
+# at 256/384/512/768/1024 for mdpi…xxxhdpi and 256/512/768 for 1x/2x/3x.
+#
 # flutter_native_splash:
 #   color: "#F7F0E4"
 #   image: "assets/icon/splash_logo.png"

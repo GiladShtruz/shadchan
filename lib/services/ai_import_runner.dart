@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
+import 'package:shadchan/services/ai_import_memory.dart';
 import 'package:shadchan/services/ai_people_parser.dart';
 import 'package:shadchan/services/excel_import_service.dart';
 import 'package:shadchan/services/whatsapp_import_service.dart';
@@ -13,7 +14,17 @@ class AiImportOutcome {
     required this.failedBatches,
     required this.totalBatches,
     this.firstFailure,
+    this.processedKeys = const <String>{},
   });
+
+  /// Fingerprints of the messages that were **successfully** read, for
+  /// [AiImportMemory] to record once the user actually keeps the result.
+  ///
+  /// Only successful batches contribute. A batch that threw has been paid for
+  /// but produced nothing, and remembering its messages would mean the retry
+  /// that was supposed to fix it skips exactly the cards that failed — the one
+  /// outcome worse than paying twice.
+  final Set<String> processedKeys;
 
   /// What went wrong first, kept so the screen can say *why* an import found
   /// nothing instead of offering "try again" to someone whose device is simply
@@ -31,6 +42,50 @@ class AiImportOutcome {
 
   bool get isComplete => failedBatches == 0;
   bool get isEmpty => people.isEmpty;
+}
+
+/// What an import is about to cost, worked out before anything is sent.
+///
+/// Built so the screen can ask first. An import is the one action in the app
+/// that spends tokens on somebody's behalf and runs for minutes, and it used to
+/// start the instant a file was picked — so a mis-picked 20,000-message export
+/// was already running before its owner could see what they had chosen.
+@immutable
+class AiImportPlan {
+  const AiImportPlan({
+    required this.batches,
+    required this.skipped,
+    required this.duplicatesDropped,
+    required this.mediaPaths,
+    required this.messageTexts,
+  });
+
+  /// The requests that would be made, in order.
+  final List<List<({int index, WhatsAppMessage message})>> batches;
+
+  /// Candidate messages left out because this device has already read them —
+  /// the saving from [AiImportMemory], and the number worth showing, because
+  /// on a re-export it is most of the file.
+  final int skipped;
+
+  /// Messages the file itself repeated, or that carried no person at all.
+  /// Everything between the raw chat and the candidate list.
+  final int duplicatesDropped;
+
+  final Map<String, String> mediaPaths;
+  final Map<int, String> messageTexts;
+
+  int get batchCount => batches.length;
+
+  int get messageCount => batches.fold<int>(
+    0,
+    (int sum, List<({int index, WhatsAppMessage message})> b) => sum + b.length,
+  );
+
+  /// True when the memory accounted for the whole file — a re-export with
+  /// nothing new in it, which must be said rather than run as an import that
+  /// finds nobody.
+  bool get isEmpty => batches.isEmpty;
 }
 
 /// Feeds a workbook through the model a batch at a time.
@@ -56,12 +111,14 @@ abstract final class AiImportRunner {
     int count,
     Future<List<ParsedPerson>> Function(int index) runBatch, {
     void Function(int done, int total)? onProgress,
+    Set<String> Function(int index)? keysFor,
   }) async {
     final List<List<ParsedPerson>> results = List<List<ParsedPerson>>.filled(
       count,
       const <ParsedPerson>[],
     );
     final Map<int, AiParseException> failures = <int, AiParseException>{};
+    final Set<String> processedKeys = <String>{};
     int nextIndex = 0;
     int done = 0;
     onProgress?.call(0, count);
@@ -74,6 +131,9 @@ abstract final class AiImportRunner {
         final int index = nextIndex++;
         try {
           results[index] = await runBatch(index);
+          if (keysFor != null) {
+            processedKeys.addAll(keysFor(index));
+          }
           debugPrint(
             'AI_IMPORT batch ${index + 1}/$count: ${results[index].length} people',
           );
@@ -110,44 +170,98 @@ abstract final class AiImportRunner {
       firstFailure: failedIndexes.isEmpty
           ? null
           : failures[failedIndexes.first],
+      processedKeys: processedKeys,
     );
   }
 
-  /// Messages per request for a chat. Smaller than the spreadsheet batch: a
-  /// message is longer than a row, and a card can run to a dozen lines.
-  static const int messagesPerBatch = 40;
+  /// Messages per request for a chat.
+  ///
+  /// **Raised from 40, to stop paying for the same instruction a hundred
+  /// times.** Every batch resends [AiPeopleParser]'s chat instruction — about a
+  /// thousand tokens of it — so at 40 messages a batch, a large group export
+  /// spent roughly a quarter of the whole import restating the rules to a model
+  /// that had just been told them. At 100 that overhead falls to under a tenth,
+  /// and a 4,000-message group costs 40 requests instead of 100.
+  ///
+  /// Not raised further, and this is the ceiling rather than a step on the way
+  /// to one: the model has to hold every card in the window at once to place a
+  /// photo against the right one, and a batch that overruns costs a whole
+  /// hundred messages when it fails rather than forty. The gain past here is
+  /// small — the overhead is already down to a tenth — and the failure gets
+  /// steadily more expensive. Worth re-measuring against a real export before
+  /// moving it again.
+  static const int messagesPerBatch = 100;
 
   static Future<AiImportOutcome> runChat(
-    WhatsAppChat chat, {
+    AiImportPlan plan, {
     void Function(int done, int total)? onProgress,
   }) async {
-    final List<({int index, WhatsAppMessage message})> candidates =
-        chat.candidateMessages;
-    final List<List<({int index, WhatsAppMessage message})>> batches =
-        _splitChat(candidates);
-
     debugPrint(
-      'AI_IMPORT chat: ${candidates.length} candidate messages, '
-      '${batches.length} batches, ${chat.mediaPaths.length} media files',
+      'AI_IMPORT chat: ${plan.messageCount} candidate messages '
+      '(${plan.skipped} already imported), ${plan.batchCount} batches, '
+      '${plan.mediaPaths.length} media files',
     );
 
-    // Indexed here so a person's card can be kept word for word: the model
-    // points at the message it read them from, and the text comes from the
-    // export rather than from the answer.
-    final Map<int, String> messageTexts = <int, String>{
-      for (final ({int index, WhatsAppMessage message}) entry in candidates)
-        if (entry.message.text.isNotEmpty) entry.index: entry.message.text,
-    };
-
     return _runBatches(
-      batches.length,
+      plan.batchCount,
       (int index) => AiPeopleParser.parseChunk(
-        WhatsAppChat.toTranscript(batches[index]),
+        WhatsAppChat.toTranscript(plan.batches[index]),
         isChat: true,
-        mediaPaths: chat.mediaPaths,
-        messageTexts: messageTexts,
+        mediaPaths: plan.mediaPaths,
+        messageTexts: plan.messageTexts,
       ),
       onProgress: onProgress,
+      keysFor: (int index) => <String>{
+        for (final ({int index, WhatsAppMessage message}) entry
+            in plan.batches[index])
+          AiImportMemory.fingerprint(
+            sender: entry.message.sender,
+            text: entry.message.text,
+            attachmentName: entry.message.attachmentName,
+          ),
+      },
+    );
+  }
+
+  /// Works out what would be sent, without sending it.
+  ///
+  /// [alreadyImported] is [AiImportMemory.seen] — the fingerprints this device
+  /// has read before. Filtering here rather than inside [runChat] is what lets
+  /// the screen say "1,240 of these were already imported" *before* the user
+  /// commits to anything.
+  static AiImportPlan planChat(
+    WhatsAppChat chat, {
+    Set<String> alreadyImported = const <String>{},
+  }) {
+    final List<({int index, WhatsAppMessage message})> candidates =
+        chat.candidateMessages;
+    final List<({int index, WhatsAppMessage message})> fresh =
+        <({int index, WhatsAppMessage message})>[
+          for (final ({int index, WhatsAppMessage message}) entry in candidates)
+            if (!alreadyImported.contains(
+              AiImportMemory.fingerprint(
+                sender: entry.message.sender,
+                text: entry.message.text,
+                attachmentName: entry.message.attachmentName,
+              ),
+            ))
+              entry,
+        ];
+
+    return AiImportPlan(
+      batches: _splitChat(fresh),
+      skipped: candidates.length - fresh.length,
+      duplicatesDropped: chat.messages.length - candidates.length,
+      mediaPaths: chat.mediaPaths,
+      // Indexed here so a person's card can be kept word for word: the model
+      // points at the message it read them from, and the text comes from the
+      // export rather than from the answer. Built over *every* candidate, not
+      // just the fresh ones — a photo posted last month can still belong to a
+      // card posted today.
+      messageTexts: <int, String>{
+        for (final ({int index, WhatsAppMessage message}) entry in candidates)
+          if (entry.message.text.isNotEmpty) entry.index: entry.message.text,
+      },
     );
   }
 

@@ -122,7 +122,18 @@ void main() {
     final MatchIdea match = await openProposal();
 
     await matchRepository.updateStatus(match.id, MatchStatus.dating);
-    expect(journalOf(match.id), <String>['הרעיון נפתח', 'התחילו לצאת']);
+    // Going out writes two lines, and the second one is the point: a couple
+    // who have just started book their own check-in a week out, because that
+    // first week is exactly the one a matchmaker forgets. See `DatingCheckIn`.
+    // Three lines, in this order and no other. `_createNote` nudges a tied
+    // timestamp forward by a millisecond precisely so that the order things
+    // happened in is a fact the file holds — two lines written in the same
+    // millisecond used to come out in whichever order `Box.values` happened to
+    // yield, and a different one after the next restart.
+    expect(journalOf(match.id).take(2), <String>['הרעיון נפתח', 'התחילו לצאת']);
+    expect(journalOf(match.id), hasLength(3));
+    expect(journalOf(match.id).last, startsWith('נקבעה תזכורת'));
+    expect(journalOf(match.id).last, contains('לבדוק איך הולך לזוג'));
 
     // A move that had no warmer sentence of its own used to write nothing at
     // all — the status changed and the journal did not notice.

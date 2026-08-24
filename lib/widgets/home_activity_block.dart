@@ -51,6 +51,13 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
   /// moment later instead of sitting on "0" until the next launch.
   bool _wasSignedIn = false;
 
+  /// The publish this block last read after — see
+  /// [CommunityProvider.publishRevision]. A window that resolved is never asked
+  /// for again, which is right until this device tells the server something:
+  /// at that moment every community figure in hand is one publish out of date,
+  /// including the reader's own contribution to it.
+  int _revision = -1;
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +100,14 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
     if (signedIn && !_wasSignedIn) {
       _wasSignedIn = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _load(_period));
+    }
+    final int revision = community.publishRevision;
+    if (revision != _revision) {
+      _revision = revision;
+      if (revision > 0) {
+        _totals.clear();
+        WidgetsBinding.instance.addPostFrameCallback((_) => _load(_period));
+      }
     }
 
     return CommunityCard(

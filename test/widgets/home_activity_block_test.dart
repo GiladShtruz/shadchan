@@ -20,7 +20,7 @@ void main() {
       home: MultiProvider(
         providers: [
           ChangeNotifierProvider<CommunityProvider>(
-            create: (_) => CommunityProvider(),
+            create: (_) => CommunityProvider(connect: () async {}),
           ),
           // `connect: () async {}` keeps `Firebase.initializeApp` out of the
           // fake-async zone, where it never completes. `isSignedIn` is false

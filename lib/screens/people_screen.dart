@@ -18,7 +18,9 @@ import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
+import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
 enum PeopleSortOption { alphabetical, ageAscending, newest, recentlyUpdated }
@@ -120,19 +122,22 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final Set<String>? selection = _detailsSelection;
 
     return Scaffold(
+      // The same banner as בית and רעיונות: the wordmark at the start, this
+      // screen's own controls at the other end. The heading "המאגר שלי" moved
+      // onto the page — see [ScreenHeading] — so the bar carries the app's name
+      // rather than the page's, identically on all three tabs.
       appBar: selection != null
           ? _buildSelectionAppBar(selection)
-          : AppBar(
-              title: const Text('המאגר שלי'),
-              centerTitle: true,
+          : ShadchanAppBar(
               actions: <Widget>[
                 // The same bell, in the same slot, as בית and רעיונות. It leads
                 // the group so the three screens agree on where it is; adding
                 // people is this screen's own action and follows it, with the
                 // button in the thumb's corner carrying most of that traffic
                 // anyway.
-                const RemindersBellButton(),
-                IconButton(
+                const RemindersBellButton(boxed: true),
+                const SizedBox(width: 6),
+                HomeBarButton(
                   tooltip: 'הוספת אנשי קשר',
                   icon: const Icon(Icons.add),
                   onPressed: () => AddPeopleDialog.show(context),
@@ -170,7 +175,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
               onShowAll: () => setState(() => _importBatchId = null),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+            // No count under it: `_MembersBanner` a little further down the
+            // page already says how many friends there are, and a heading that
+            // repeats the line under it is one line too many.
+            child: const ScreenHeading(title: 'המאגר שלי'),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: _buildSearchRow(theme),
           ),
           Expanded(
@@ -188,27 +200,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   /// A single row: the search field, then the filter and sort buttons.
+  ///
+  /// The field itself is the one the home screen and רעיונות use — a rounded
+  /// row on the page's own paper. The two buttons beside it are this screen's
+  /// alone and stay where they were.
   Widget _buildSearchRow(ThemeData theme) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: TextField(
-            controller: _searchController,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: 'חיפוש במאגר שלי',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchController.text.trim().isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: _searchController.clear,
-                    ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 4),
+    return ShadchanSearchField(
+      controller: _searchController,
+      hintText: 'חיפוש במאגר שלי',
+      trailing: <Widget>[
         IconButton(
           tooltip: 'סינון',
           onPressed: _openFiltersSheet,

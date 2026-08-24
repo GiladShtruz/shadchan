@@ -142,11 +142,13 @@ class _MatchJournalViewState extends State<MatchJournalView> {
               ),
             )
           else
-            for (final MatchNote note in notes)
+            for (int i = 0; i < notes.length; i++)
               _JournalLine(
-                note: note,
-                timestamp: _time.format(note.createdAt),
-                onEdit: () => _edit(repository, note),
+                note: notes[i],
+                timestamp: _time.format(notes[i].createdAt),
+                isFirst: i == 0,
+                isLast: i == notes.length - 1,
+                onEdit: () => _edit(repository, notes[i]),
               ),
           const SizedBox(height: 2),
           Row(
@@ -309,6 +311,8 @@ class _MatchJournalState extends State<_MatchJournal> {
                         return _JournalLine(
                           note: note,
                           timestamp: _time.format(note.createdAt),
+                          isFirst: index == 0,
+                          isLast: index == notes.length - 1,
                           onEdit: () => _edit(repository, note),
                         );
                       },
@@ -435,172 +439,182 @@ class _EmptyJournal extends StatelessWidget {
   }
 }
 
-/// One line of the journal: a centred strip for what the app recorded, a
-/// bubble for what the matchmaker wrote, and a warmer bubble for a "מזל טוב"
-/// that arrived from another matchmaker.
+/// One line of the journal, as one step on a single timeline.
+///
+/// **Every entry is the same shape now.** It used to be three: a centred grey
+/// pill for what the app recorded, a bubble on the right for what the
+/// matchmaker wrote, and a wider tinted bubble with a heading for a "מזל טוב".
+/// Read one at a time each of those is defensible; read as a column — which is
+/// the only way a journal is ever read — it is a page of boxes at three widths
+/// and three heights, and the eye spends its effort on the shapes instead of on
+/// what happened.
+///
+/// So: a rail down the start edge, a dot per entry, the time and the sentence
+/// beside it. What tells the two kinds apart is the dot and the weight of the
+/// text, not the box — **a hollow dot for what the app recorded, a filled one
+/// in the app's own accent for what the matchmaker wrote**, with their words a
+/// shade darker and heavier. A congratulation from another matchmaker keeps its
+/// warm colour and its "מזל טוב מ־", inside the same row as everything else.
+///
+/// Everything is still editable by a tap, automatic lines included: it is the
+/// matchmaker's journal and the app only starts the sentences.
 class _JournalLine extends StatelessWidget {
   const _JournalLine({
     required this.note,
     required this.timestamp,
     required this.onEdit,
+    this.isFirst = false,
+    this.isLast = false,
   });
 
   final MatchNote note;
   final String timestamp;
   final VoidCallback onEdit;
 
+  /// The rail is drawn as two half-segments per row, so the ends of the list
+  /// stop rather than trailing off into the padding.
+  final bool isFirst;
+  final bool isLast;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final String? from = note.mazelTovFrom;
+    final bool mine = !note.isAutomatic;
 
-    if (from != null) {
-      final Color tone = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
-      return _Bubble(
-        onTap: onEdit,
-        color: tone.withValues(alpha: dark ? 0.20 : 0.12),
-        borderColor: tone.withValues(alpha: 0.45),
-        alignment: AlignmentDirectional.centerStart,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final Color rail = theme.colorScheme.outlineVariant;
+    final Color dot = from != null
+        ? (dark ? AppColors.secondaryDarkDm : AppColors.secondary)
+        : mine
+        ? theme.colorScheme.primary
+        : theme.colorScheme.outlineVariant;
+
+    return InkWell(
+      onTap: onEdit,
+      borderRadius: BorderRadius.circular(8),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(Icons.celebration_rounded, size: 15, color: tone),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    'מזל טוב מ$from',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: tone,
+            // The rail. A fixed, narrow column so every row's text starts at
+            // exactly the same place however long the sentence is — which is
+            // the whole point of a timeline over a stack of bubbles.
+            SizedBox(
+              width: 18,
+              child: Column(
+                children: <Widget>[
+                  SizedBox(
+                    height: 7,
+                    child: isFirst ? null : Center(child: _Rail(color: rail)),
+                  ),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      // Hollow for the app's own lines, filled for the
+                      // matchmaker's: the difference is legible at a glance
+                      // down the column and costs no space at all.
+                      color: mine || from != null
+                          ? dot
+                          : theme.colorScheme.surface,
+                      border: Border.all(color: dot, width: 1.5),
                     ),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: isLast
+                        ? const SizedBox.shrink()
+                        : Center(child: _Rail(color: rail)),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 5),
-            Text(note.text),
-            const SizedBox(height: 3),
-            _Stamp(timestamp: timestamp, theme: theme),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        // Both halves give way rather than only the second:
+                        // "24.08 · 14:32" and "· הערה שלך" together are wider
+                        // than the text column on a narrow card at a large
+                        // system font, and the row is one line by design.
+                        Flexible(
+                          child: Text(
+                            timestamp,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (from != null) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'מזל טוב מ$from',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: dot,
+                              ),
+                            ),
+                          ),
+                        ] else if (mine) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              '· הערה שלך',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      note.text,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        height: 1.35,
+                        fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                        color: mine
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
-      );
-    }
-
-    if (note.isAutomatic) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Center(
-          child: InkWell(
-            onTap: onEdit,
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: dark ? 0.55 : 0.8,
-                ),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '${note.text} · $timestamp',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return _Bubble(
-      onTap: onEdit,
-      color: theme.colorScheme.primaryContainer.withValues(
-        alpha: dark ? 0.45 : 0.7,
-      ),
-      borderColor: theme.colorScheme.primary.withValues(alpha: 0.28),
-      alignment: AlignmentDirectional.centerEnd,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(note.text),
-          const SizedBox(height: 3),
-          _Stamp(timestamp: timestamp, theme: theme),
-        ],
       ),
     );
   }
 }
 
-class _Bubble extends StatelessWidget {
-  const _Bubble({
-    required this.child,
-    required this.color,
-    required this.borderColor,
-    required this.alignment,
-    required this.onTap,
-  });
+/// One segment of the timeline's rail.
+class _Rail extends StatelessWidget {
+  const _Rail({required this.color});
 
-  final Widget child;
   final Color color;
-  final Color borderColor;
-  final AlignmentGeometry alignment;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Align(
-        alignment: alignment,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78,
-          ),
-          child: Material(
-            color: color,
-            borderRadius: BorderRadius.circular(15),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(15),
-              onTap: onTap,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(13, 10, 13, 9),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: borderColor),
-                ),
-                child: child,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Stamp extends StatelessWidget {
-  const _Stamp({required this.timestamp, required this.theme});
-
-  final String timestamp;
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      timestamp,
-      style: theme.textTheme.labelSmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-    );
+    return Container(width: 1.5, color: color);
   }
 }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/community_challenge.dart';
@@ -61,6 +62,13 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
   /// this is how the banner fills itself in a moment later instead of staying
   /// away for the rest of the session.
   bool _wasSignedIn = false;
+
+  /// The publish this block last read after. See
+  /// [CommunityProvider.publishRevision]: the read fired from `initState`
+  /// usually happens before this device has told the server anything, so the
+  /// figures it comes back with are missing the reader's own work and, on a
+  /// cold start, often missing everybody's.
+  int _revision = -1;
 
   @override
   void initState() {
@@ -129,6 +137,7 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
   @override
   Widget build(BuildContext context) {
     final bool signedIn = context.watch<AccountProvider>().isSignedIn;
+    final int revision = context.watch<CommunityProvider>().publishRevision;
 
     // Firebase resolves the session a moment after launch, so the read fired
     // from `initState` usually happened with no account at all. This is the
@@ -136,6 +145,14 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     if (signedIn && !_wasSignedIn) {
       _wasSignedIn = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+    // And this is the rebuild that follows the first publish of the session,
+    // which is the moment the cached community figures are known to be stale.
+    if (revision != _revision) {
+      _revision = revision;
+      if (revision > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+      }
     }
 
     final CommunityTotals? day = _day;
@@ -155,12 +172,13 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
       previousWeek: CommunityProfileStore.previousCommunityWeek,
     );
 
-    // A week in which the community has genuinely done nothing has no news and
-    // an empty bar. There is nothing to draw and nothing to apologise for.
-    if (lines.isEmpty && challenge.current == 0) {
-      _syncTimer(0);
-      return const SizedBox.shrink();
-    }
+    // **The weekly challenge is drawn even in a quiet week.** It used to be
+    // suppressed along with the news whenever the bar stood at zero, on the
+    // reasoning that an empty box teaches a feature is broken — but a target at
+    // 0 is not an empty box, it is a target, and Sunday morning is exactly when
+    // the community most needs to see one. What is still never drawn is a
+    // *read that did not resolve*: that is handled above, and it is the real
+    // "we do not know" this block must stay silent about.
     _syncTimer(lines.length);
 
     return CommunityPulseCard(

@@ -15,6 +15,8 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/match_stage.dart';
+import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 
@@ -52,7 +54,7 @@ enum MatchQuickAction {
     MatchActionGroup.tools,
   ),
   contact(
-    'הוספת איש קשר',
+    'הוספת איש קשר שקשור להצעה',
     Icons.person_add_alt_1_outlined,
     MatchActionGroup.tools,
   );
@@ -150,6 +152,136 @@ abstract final class MatchQuickActions {
     if (label != null) {
       await repository.recordCardShared(match.id, label);
     }
+    // The sheet is the other way to do what the card's own button does, so it
+    // moves the stage the same way — otherwise a proposal whose card went out
+    // through here would go on asking to be promoted to the side that already
+    // has it.
+    if (result.toGender case final Gender side) {
+      await repository.markSideAsked(match.id, side);
+    }
+  }
+
+  /// "יאללה לקדם" — the one step this proposal is actually waiting for.
+  ///
+  /// **Opening the chat *is* the action, so the stage moves with it.** The old
+  /// row asked who to message and then remembered what was sent; it could not
+  /// say whether the proposal had got any further, because "a card went out"
+  /// and "he has been asked" are not the same fact and only the first was
+  /// recorded. Now the button names the side whose turn it is, opens their
+  /// chat with the other one's card, and — if that actually opened — writes
+  /// down that they have been asked. The next time the card is drawn it offers
+  /// the next step by itself.
+  ///
+  /// **Nothing moves when nothing opened.** A side with no phone number, or
+  /// WhatsApp not installed, leaves the stage exactly where it was: a proposal
+  /// that claims somebody was asked because a launch failed is worse than one
+  /// that admits it is still waiting.
+  static Future<void> advance(
+    BuildContext context,
+    MatchIdea match,
+    MatchNextStep step, {
+    required Person? female,
+    required Person? male,
+  }) async {
+    final MatchRepository repository = context.read<MatchRepository>();
+    final OverlayState? notices = AppNotice.capture(context);
+
+    if (step == MatchNextStep.startDating) {
+      await repository.updateStatus(match.id, MatchStatus.dating);
+      return;
+    }
+
+    final bool askingMale = step == MatchNextStep.askMale;
+    final Person? target = askingMale ? male : female;
+    final Person? other = askingMale ? female : male;
+    if (target == null) {
+      AppNotice.showOn(notices, 'הצד הזה כבר לא קיים במאגר');
+      return;
+    }
+
+    final MatchShareResult result = await MatchWhatsAppSheet.approach(
+      target: target,
+      other: other,
+    );
+    if (!result.opened) {
+      AppNotice.showOn(
+        notices,
+        'אין מספר טלפון תקין, אז אי אפשר לפתוח וואטסאפ',
+      );
+      return;
+    }
+    final String? label = result.label;
+    if (label != null) {
+      await repository.recordCardShared(match.id, label);
+    }
+    await repository.markSideAsked(
+      match.id,
+      askingMale ? Gender.male : Gender.female,
+    );
+  }
+
+  /// The stage set by hand, from the little menu beside the button.
+  ///
+  /// "מתחילים לצאת" is routed through [run] rather than written here: it is a
+  /// status change with two candidates' availability, a memory of what to put
+  /// back and a community figure hanging off it, and there must be exactly one
+  /// path to it.
+  static Future<void> setStage(
+    BuildContext context,
+    MatchIdea match,
+    MatchStage stage, {
+    Person? female,
+    Person? male,
+  }) async {
+    if (stage == MatchStage.dating) {
+      await run(
+        context,
+        MatchQuickAction.dating,
+        match,
+        female: female,
+        male: male,
+      );
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    await context.read<MatchRepository>().setStage(
+      match.id,
+      // The dates that were already there are kept where the stage still
+      // includes that side, so setting "שאלתי את שניהם" on a proposal he was
+      // asked about last week does not pretend both happened this minute.
+      askedMaleAt:
+          stage == MatchStage.askedMale || stage == MatchStage.askedBoth
+          ? (match.askedMaleAt ?? now)
+          : null,
+      askedFemaleAt:
+          stage == MatchStage.askedFemale || stage == MatchStage.askedBoth
+          ? (match.askedFemaleAt ?? now)
+          : null,
+      label: stage.label,
+    );
+  }
+
+  /// The couple who are out: a chat with one of them, and the next check-in
+  /// booked because it happened.
+  static Future<void> checkInOnCouple(
+    BuildContext context,
+    MatchIdea match, {
+    required Person person,
+    required DateTime startedAt,
+  }) async {
+    final MatchRepository repository = context.read<MatchRepository>();
+    final OverlayState? notices = AppNotice.capture(context);
+    final bool opened = await WhatsAppUtils.openChat(person);
+    if (!opened) {
+      AppNotice.showOn(notices, 'לא הצלחנו לפתוח את וואטסאפ');
+      return;
+    }
+    await repository.recordDatingCheckIn(
+      match.id,
+      startedAt: startedAt,
+      note: 'בדקתי איך הולך — שיחה עם ${person.firstName.trim()}',
+    );
   }
 
   /// The availability values a matchmaker sets by hand, per side, from the
@@ -284,12 +416,21 @@ abstract final class MatchQuickActions {
       return;
     }
 
+    // **A month is the answer unless somebody says otherwise.** A proposal put
+    // on hold with no date on it is a proposal nobody ever comes back to, and
+    // the reason field above already told the app what it needs to know; being
+    // made to pick a date as well is what makes "בהמתנה" feel like paperwork.
+    // "דלג" is still there for the matchmaker who genuinely wants none.
+    final DateTime today = DateTime.now();
     final ReminderChoice? when = await ReminderPickerSheet.show(
       context,
       title: 'מתי לחזור לבדוק?',
       allowSkip: true,
       recommendedLabel: 'עוד חודש',
       intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
+      defaultChoice: ReminderChoice(
+        DateTime(today.year, today.month + 1, today.day),
+      ),
     );
     await repository.setWaiting(
       match.id,

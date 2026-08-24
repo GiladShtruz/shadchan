@@ -131,9 +131,9 @@ class AppMenuButton extends StatelessWidget {
   static void _run(BuildContext context, AppMenuAction action) {
     switch (action) {
       case AppMenuAction.settings:
-        // Straight to the settings group inside the profile, not to the top of
-        // the profile page — see [ProfileScreen.focusSettings].
-        context.push('/profile?section=settings');
+        // The settings are a page of their own now, so this goes straight to
+        // them rather than to the profile that used to contain them.
+        context.push('/profile/settings');
       case AppMenuAction.updatesGroup:
         // The dialog rather than the link, because the link alone has no way of
         // hearing "אני כבר בקבוצה" — and that is the only answer that stops the

@@ -3,11 +3,22 @@ import 'package:shadchan/utils/reminder_text_parser.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/gender_text.dart';
 
-/// The result of picking a reminder date: a date, or an explicit "clear".
+/// The result of picking a reminder date: a date, an explicit "clear", or an
+/// explicit "no reminder, thank you".
 class ReminderChoice {
-  const ReminderChoice(this.date);
+  const ReminderChoice(this.date, {this.skipped = false});
+
+  /// What "דלג" answers.
+  ///
+  /// **Distinct from dismissing the sheet**, which is the whole reason it
+  /// exists. A caller that offers a default — "בהמתנה" books a month unless
+  /// told otherwise — has to be able to tell "I closed this by accident" from
+  /// "I do not want a reminder", and both used to arrive as `null`.
+  static const ReminderChoice skip = ReminderChoice(null, skipped: true);
 
   final DateTime? date;
+
+  final bool skipped;
 }
 
 /// The small "מתי להזכיר?" menu that opens over the card. Offers the common
@@ -69,8 +80,9 @@ abstract final class ReminderPickerSheet {
     String? recommendedLabel,
     List<({String label, DateTime date})> Function(DateTime base)?
     intervalsBuilder,
-  }) {
-    return showModalBottomSheet<ReminderChoice>(
+    ReminderChoice? defaultChoice,
+  }) async {
+    final ReminderChoice? picked = await showModalBottomSheet<ReminderChoice>(
       context: context,
       showDragHandle: true,
       // Scroll-controlled so every option fits on screen; the default sheet
@@ -107,7 +119,8 @@ abstract final class ReminderPickerSheet {
                     leading: const Icon(Icons.skip_next_outlined),
                     title: const Text('דלג'),
                     subtitle: const Text('בלי תזכורת'),
-                    onTap: () => Navigator.of(sheetContext).pop(),
+                    onTap: () =>
+                        Navigator.of(sheetContext).pop(ReminderChoice.skip),
                   ),
                   const Divider(height: 1),
                   const SizedBox(height: 4),
@@ -176,6 +189,11 @@ abstract final class ReminderPickerSheet {
         );
       },
     );
+    // Swiping the sheet away is not an answer. Where the caller has a sensible
+    // default — a month, for a proposal going into "בהמתנה" — that is what a
+    // dismissal means; "דלג" is how somebody says no, and it answers
+    // [ReminderChoice.skip] so the two can be told apart.
+    return picked ?? defaultChoice;
   }
 }
 

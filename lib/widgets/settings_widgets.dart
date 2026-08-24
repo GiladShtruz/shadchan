@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_version.dart';
 
 /// The shape the settings are made of, and the reason there are only two
 /// pieces.
@@ -139,6 +141,58 @@ class SettingsSpinner extends StatelessWidget {
       width: 22,
       height: 22,
       child: CircularProgressIndicator(strokeWidth: 2),
+    );
+  }
+}
+
+/// The two quiet lines that close a settings page: the policy, and which build
+/// this is.
+///
+/// Shared rather than duplicated because it now has two homes — the profile
+/// kept its own copy while the settings moved to a page of their own, and a
+/// version number printed in two places is a version number that eventually
+/// disagrees with itself.
+class SettingsVersionFooter extends StatelessWidget {
+  const SettingsVersionFooter({super.key});
+
+  static final ButtonStyle _linkStyle = TextButton.styleFrom(
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    minimumSize: Size.zero,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? style = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 24),
+      child: Column(
+        children: <Widget>[
+          TextButton(
+            onPressed: () => context.push('/privacy-policy'),
+            style: _linkStyle,
+            child: Text('מדיניות פרטיות', style: style),
+          ),
+          const SizedBox(height: 2),
+          FutureBuilder<String>(
+            future: AppVersion.read(),
+            // Already known on every build after the first, so the line does
+            // not blink in a frame late.
+            initialData: AppVersion.value,
+            builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
+              final String version = snapshot.data ?? '';
+              if (version.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Text('גרסה $version', style: style);
+            },
+          ),
+        ],
+      ),
     );
   }
 }

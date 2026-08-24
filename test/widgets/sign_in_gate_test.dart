@@ -195,7 +195,7 @@ Widget _buildTestApp() {
             TipsProvider(Hive.box<dynamic>('settings'), enabled: false),
       ),
       ChangeNotifierProvider<CommunityProvider>(
-        create: (_) => CommunityProvider(),
+        create: (_) => CommunityProvider(connect: () async {}),
       ),
       ChangeNotifierProvider<SupportInboxProvider>(
         create: (_) =>

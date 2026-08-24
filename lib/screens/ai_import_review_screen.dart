@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/imported_banner.dart';
+import 'package:shadchan/services/ai_import_memory.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -26,10 +27,24 @@ class AiImportReviewScreen extends StatefulWidget {
     super.key,
     required this.people,
     this.failedBatches = 0,
+    this.importedKeys = const <String>{},
   });
 
   final List<ParsedPerson> people;
   final int failedBatches;
+
+  /// Fingerprints of the messages these people were read from, recorded by
+  /// [_save] so a later export of the same chat does not pay to read them
+  /// again — see [AiImportMemory].
+  ///
+  /// Carried down to this screen rather than handled by the caller because
+  /// **this** is where an import becomes real. [_save] leaves by `context.go`,
+  /// which tears the pushed route down rather than popping it, so the caller
+  /// cannot tell a completed import from an abandoned one: it would record the
+  /// memory for someone who backed out, and their next attempt would skip the
+  /// very cards they came back for. Written in the same method that writes the
+  /// people, so the two can only ever be true together.
+  final Set<String> importedKeys;
 
   @override
   State<AiImportReviewScreen> createState() => _AiImportReviewScreenState();
@@ -124,6 +139,11 @@ class _AiImportReviewScreenState extends State<AiImportReviewScreen> {
       await repository.add(draft.toPerson(now, importBatchId: batchId));
       added++;
     }
+
+    // After the people are in and before anything can navigate away. Failing
+    // to record costs a re-read next time; recording without the people would
+    // cost the people themselves.
+    await AiImportMemory.remember(widget.importedKeys);
 
     if (!mounted) {
       return;

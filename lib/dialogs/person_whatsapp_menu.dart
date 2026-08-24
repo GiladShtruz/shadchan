@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 
 /// What one candidate's WhatsApp button does, wherever it is drawn.
@@ -118,6 +119,43 @@ abstract final class MatchWhatsAppSheet {
 
   static bool _hasCard(Person? person) => WhatsAppUtils.hasSendableCard(person);
 
+  /// One named side, approached directly — no sheet, no question.
+  ///
+  /// **This is what "יאללה לקדם" does now.** The sheet below asks "who, and
+  /// with whose card?", and on a proposal that has never been mentioned to
+  /// anybody that is a question with one sensible answer: the side whose turn
+  /// it is, with the other one's card. The card's own button knows whose turn
+  /// it is (see `MatchStages`), so asking again was a tap spent confirming
+  /// something the app had already worked out.
+  ///
+  /// The card goes with it where there is one; where there is not, the chat
+  /// opens on its own, because a matchmaker with an unwritten card still has a
+  /// phone call to make. The full sheet is still one tap away for everything
+  /// else — a second card, a chat with the other side, a card resent.
+  static Future<MatchShareResult> approach({
+    required Person target,
+    required Person? other,
+  }) async {
+    if (!_hasPhone(target)) {
+      return const MatchShareResult(opened: false);
+    }
+    final String name = _firstName(target);
+    if (other != null && _hasCard(other)) {
+      final bool sent = await WhatsAppUtils.sendCardTo(target, other);
+      return MatchShareResult(
+        opened: sent,
+        label: sent ? 'הכרטיס של ${_firstName(other)} נשלח ל$name' : null,
+        toGender: sent ? target.gender : null,
+      );
+    }
+    final bool opened = await WhatsAppUtils.openChat(target);
+    return MatchShareResult(
+      opened: opened,
+      label: opened ? 'נפתחה שיחה עם $name' : null,
+      toGender: opened ? target.gender : null,
+    );
+  }
+
   /// Returns what happened, so the proposal can write it down. Dismissing the
   /// sheet is [MatchShareResult.nothing] — not a failure, and not a share.
   static Future<MatchShareResult> open(
@@ -197,12 +235,14 @@ abstract final class MatchWhatsAppSheet {
       return MatchShareResult(
         opened: opened,
         label: opened ? 'נפתחה שיחה עם $name' : null,
+        toGender: opened ? choice.person.gender : null,
       );
     }
     final bool sent = await WhatsAppUtils.sendCardTo(choice.person, other);
     return MatchShareResult(
       opened: sent,
       label: sent ? 'הכרטיס של ${_firstName(other)} נשלח ל$name' : null,
+      toGender: sent ? choice.person.gender : null,
     );
   }
 }
@@ -215,7 +255,7 @@ abstract final class MatchWhatsAppSheet {
 /// the answer was decide whether to apologise. Now the proposal's own row and
 /// its journal both read this, so "nothing happened" has to be its own answer.
 class MatchShareResult {
-  const MatchShareResult({required this.opened, this.label});
+  const MatchShareResult({required this.opened, this.label, this.toGender});
 
   /// Nothing was chosen. Not a failure — there is nothing to apologise for —
   /// and nothing to write down either.
@@ -227,6 +267,16 @@ class MatchShareResult {
   /// What went out, in the words the proposal will show and file: "הכרטיס של
   /// שרה נשלח לדוד". Null when nothing did.
   final String? label;
+
+  /// Which side was written to, so the proposal can record that they have been
+  /// asked. Null when nothing was sent.
+  ///
+  /// **The sheet knows this and used to throw it away.** "A card went out" and
+  /// "he has been asked" are not the same fact, and only the first was ever
+  /// written down — which is why the card's button could not say what the next
+  /// step was. Both come back now, from every route to WhatsApp: the button's
+  /// own ([approach]) and the full sheet's.
+  final Gender? toGender;
 
   bool get shared => label != null;
 }

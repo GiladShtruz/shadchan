@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
-import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -11,7 +10,9 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/dating_history.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/services/dating_status_memory.dart';
 import 'package:shadchan/services/notification_service.dart';
@@ -299,6 +300,23 @@ class MatchRepository extends ChangeNotifier {
         createdAt: now,
         isAutomatic: true,
       );
+      // **The first week is the one that gets forgotten.** A couple who have
+      // just started is the moment a matchmaker's call is worth most and the
+      // moment nothing in the app was asking for one: the proposal left the
+      // "רעיונות פתוחים" row, stopped being nudged, and simply sat there. So
+      // going out books its own check-in, a week out, and the dating panel
+      // books the next one each time somebody actually checks — see
+      // [DatingCheckIn] and [recordDatingCheckIn].
+      //
+      // Only when nothing is already booked: a reminder the matchmaker set by
+      // hand is a decision, and overwriting it here would silently undo it.
+      if (match.reminderDate == null || match.reminderDate!.isBefore(now)) {
+        await setReminder(
+          matchId,
+          now.add(DatingCheckIn.first),
+          note: 'לבדוק איך הולך לזוג',
+        );
+      }
     } else if (newStatus == MatchStatus.married) {
       // Nothing to put back for a couple who married.
       await DatingStatusMemory.forget(
@@ -595,6 +613,186 @@ class MatchRepository extends ChangeNotifier {
     );
     notifyListeners();
     _refreshNotifications();
+  }
+
+  /// Records that one side has been approached about this proposal.
+  ///
+  /// **This is what "יאללה לקדם" leaves behind.** Opening a chat is the act;
+  /// this is the app remembering that the act happened, so the button can name
+  /// the *next* step rather than the same one for ever. It writes the date on
+  /// the proposal, files a line in the journal, and — from "רעיון" only —
+  /// moves the status to "בבדיקה", exactly as sending a card already does.
+  ///
+  /// Idempotent by date: asking the same side twice keeps the first date,
+  /// because the useful fact is when they were first told, and overwriting it
+  /// would quietly reset the "nothing has moved in a week" clock every time
+  /// somebody reopened a chat.
+  Future<void> markSideAsked(
+    String matchId,
+    Gender side, {
+    String? note,
+  }) async {
+    final MatchIdea? match = getById(matchId);
+    if (match == null || side == Gender.unknown) {
+      return;
+    }
+    final bool male = side == Gender.male;
+    if ((male ? match.askedMaleAt : match.askedFemaleAt) != null) {
+      // Already recorded. The chat still opened, and the journal still wants
+      // the line if the caller had one, but the stage does not move.
+      if (note != null && note.trim().isNotEmpty) {
+        await _createNote(
+          matchId: matchId,
+          text: note.trim(),
+          createdAt: DateTime.now(),
+          isAutomatic: true,
+        );
+        notifyListeners();
+      }
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    final MatchStatus previous = match.status;
+    if (male) {
+      match.askedMaleAt = now;
+    } else {
+      match.askedFemaleAt = now;
+    }
+    match.updatedAt = now;
+    if (previous == MatchStatus.idea) {
+      match.status = MatchStatus.checking;
+    }
+    await match.save();
+    if (match.status != previous) {
+      await _logStatusChange(
+        matchId: matchId,
+        from: previous,
+        to: match.status,
+        at: now,
+      );
+    }
+    await _createNote(
+      matchId: matchId,
+      text: (note ?? '').trim().isNotEmpty
+          ? note!.trim()
+          : (male ? 'פניתי אל הבחור' : 'פניתי אל הבחורה'),
+      createdAt: now,
+      isAutomatic: true,
+    );
+    _recordActivity(matchId, HomeActivityAction.changedStatus);
+    notifyListeners();
+    _refreshNotifications();
+  }
+
+  /// Sets the proposal's stage by hand, from the little menu beside the button.
+  ///
+  /// **Backwards as well as forwards.** Most matchmaking happens on a phone
+  /// call the app never sees, so a stage that could only be advanced through
+  /// the one button would be wrong on half the list and unfixable. Setting
+  /// "רעיון חדש" genuinely clears both dates — it is the answer to "I marked
+  /// the wrong proposal", and a clear that leaves one date behind is not a
+  /// clear.
+  ///
+  /// "מתחילים לצאת" is not handled here: it is a status change with a
+  /// candidate's availability, a memory of what to put back and a community
+  /// figure hanging off it, and it goes through [updateStatus] like every
+  /// other one. The caller routes it there.
+  Future<void> setStage(
+    String matchId, {
+    required DateTime? askedMaleAt,
+    required DateTime? askedFemaleAt,
+    required String label,
+  }) async {
+    final MatchIdea? match = getById(matchId);
+    if (match == null) {
+      return;
+    }
+    if (match.askedMaleAt == askedMaleAt &&
+        match.askedFemaleAt == askedFemaleAt) {
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    final MatchStatus previous = match.status;
+    match
+      ..askedMaleAt = askedMaleAt
+      ..askedFemaleAt = askedFemaleAt
+      ..updatedAt = now;
+    // Back to a brand-new idea, so the status goes back with it: a proposal
+    // nobody has been asked about is not "בבדיקה".
+    if (askedMaleAt == null &&
+        askedFemaleAt == null &&
+        previous == MatchStatus.checking) {
+      match.status = MatchStatus.idea;
+    } else if (previous == MatchStatus.idea &&
+        (askedMaleAt != null || askedFemaleAt != null)) {
+      match.status = MatchStatus.checking;
+    }
+    await match.save();
+    if (match.status != previous) {
+      await _logStatusChange(
+        matchId: matchId,
+        from: previous,
+        to: match.status,
+        at: now,
+      );
+    }
+    await _createNote(
+      matchId: matchId,
+      text: 'שלב ההצעה עודכן — $label',
+      createdAt: now,
+      isAutomatic: true,
+    );
+    _recordActivity(matchId, HomeActivityAction.changedStatus);
+    notifyListeners();
+    _refreshNotifications();
+  }
+
+  /// The matchmaker checked in on a couple who are out.
+  ///
+  /// Files the line and books the next check at this proposal's own cadence —
+  /// a week for the first one, then [DatingCheckIn.defaultEveryDays] or
+  /// whatever the matchmaker set instead. This is what makes the reminder a
+  /// rhythm rather than a single alarm that goes off once and never again.
+  Future<void> recordDatingCheckIn(
+    String matchId, {
+    required DateTime startedAt,
+    String? note,
+  }) async {
+    final MatchIdea? match = getById(matchId);
+    if (match == null) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    final DateTime next = DatingCheckIn.nextCheckAt(
+      match,
+      startedAt: startedAt,
+      now: now,
+    );
+    final String line = (note ?? '').trim();
+    await _createNote(
+      matchId: matchId,
+      text: line.isEmpty ? 'בדקתי איך הולך לזוג' : line,
+      createdAt: now,
+      isAutomatic: true,
+    );
+    await setReminder(matchId, next, note: 'לבדוק איך הולך לזוג');
+    _recordActivity(matchId, HomeActivityAction.changedStatus);
+  }
+
+  /// How often to be reminded about a couple who are out. See `DatingCheckIn`.
+  Future<void> setCheckInFrequency(String matchId, int days) async {
+    final MatchIdea? match = getById(matchId);
+    if (match == null || match.checkInEveryDays == days) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    match
+      ..checkInEveryDays = days
+      ..updatedAt = now;
+    await match.save();
+    notifyListeners();
   }
 
   /// Legacy progress storage retained for older data/imports. The detail screen
@@ -1098,6 +1296,21 @@ class MatchRepository extends ChangeNotifier {
         person.fullName.toLowerCase().contains(query);
   }
 
+  /// Writes one line into a proposal's journal, **strictly after the line
+  /// before it**.
+  ///
+  /// ⚠️ **The timestamp is nudged forward when it would tie.** The journal is
+  /// ordered by `createdAt` alone (see [getNotesForMatch]), and `List.sort` is
+  /// not promised to be stable — the input order is `Box.values`, which is by
+  /// uuid, so it is effectively random. Two lines written in the same
+  /// millisecond therefore came out in an arbitrary order, and a *different*
+  /// arbitrary order after the next restart. That was always possible and is
+  /// now routine: one action can write two lines, and moving a couple to
+  /// "יוצאים" writes three.
+  ///
+  /// A millisecond of drift is invisible — the journal prints to the minute —
+  /// and it makes "the order things happened in" a fact the file holds rather
+  /// than one the reader has to hope for.
   Future<void> _createNote({
     required String matchId,
     required String text,
@@ -1105,11 +1318,17 @@ class MatchRepository extends ChangeNotifier {
     required bool isAutomatic,
     String? mazelTovFrom,
   }) async {
+    DateTime at = createdAt;
+    for (final MatchNote existing in _noteBox.values) {
+      if (existing.matchId == matchId && !existing.createdAt.isBefore(at)) {
+        at = existing.createdAt.add(const Duration(milliseconds: 1));
+      }
+    }
     final MatchNote note = MatchNote(
       id: _uuid.v4(),
       matchId: matchId,
       text: text,
-      createdAt: createdAt,
+      createdAt: at,
       isAutomatic: isAutomatic,
       mazelTovFrom: mazelTovFrom,
     );

@@ -23,6 +23,9 @@ class MatchIdea extends HiveObject {
     this.relatedContacts = const <MatchContact>[],
     this.lastShareLabel,
     this.lastShareAt,
+    this.askedMaleAt,
+    this.askedFemaleAt,
+    this.checkInEveryDays,
   });
 
   @HiveField(0)
@@ -95,4 +98,36 @@ class MatchIdea extends HiveObject {
   /// than only what was sent.
   @HiveField(15)
   DateTime? lastShareAt;
+
+  /// When each side was approached about this proposal, or null for a side
+  /// nobody has spoken to yet.
+  ///
+  /// **These two fields are the whole of the proposal's stage.** Together with
+  /// [status] they answer "what is the next thing to do here?" — nobody asked
+  /// yet, one side asked and waiting on the other, both asked and waiting for
+  /// them to meet — which is the question the card's main button now asks and
+  /// answers by itself. See `MatchStage`.
+  ///
+  /// Dates rather than booleans, because "שאלתי את הבחור" is worth being able
+  /// to date: a side asked three weeks ago and never followed up is the single
+  /// most common thing wrong with a matchmaker's list, and a flag cannot say
+  /// so.
+  ///
+  /// Null on every record written before this existed, which reads correctly:
+  /// an old proposal that has never had a side marked as approached starts at
+  /// "רעיון חדש", and the first press of the button moves it on.
+  @HiveField(16)
+  DateTime? askedMaleAt;
+
+  @HiveField(17)
+  DateTime? askedFemaleAt;
+
+  /// How often to check in on a couple who are out, in days. Null means the
+  /// standard cadence — a week after they start, then monthly.
+  ///
+  /// See `DatingCheckIn`. Stored per proposal because the right rhythm is not
+  /// the same for every couple, and a matchmaker who is asked every month
+  /// about a couple they speak to weekly stops reading the reminders.
+  @HiveField(18)
+  int? checkInEveryDays;
 }

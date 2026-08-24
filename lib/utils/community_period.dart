@@ -152,6 +152,33 @@ abstract final class CommunityPeriods {
     return 'W${sunday.year}-${_two(sunday.month)}-${_two(sunday.day)}';
   }
 
+  /// Keys written by *older builds* for the same window, still sitting on
+  /// member documents that have not published since.
+  ///
+  /// **Only the month has any**, and it has one because the month changed
+  /// shape. Until 2026-08-22 `monthKey` was the Gregorian `YYYY-MM`; it is the
+  /// Hebrew `H<year>-<month>` now, from one Rosh Chodesh to the next. The
+  /// change was right — "החודש" means the Hebrew month everywhere else in this
+  /// app — but it was made with no migration, so the community's monthly
+  /// figures split in two overnight: a client asking for the Hebrew key sees
+  /// only the handful of matchmakers who have opened the app since, and every
+  /// other member's month is filed under a key nothing reads.
+  ///
+  /// A document carries exactly one `monthKey`, so counting both is a union and
+  /// never a double count — and a member who publishes again simply moves from
+  /// the second list to the first.
+  ///
+  /// This is deliberately *not* a permanent feature. It can be deleted once no
+  /// document in the collection still carries a Gregorian month key, which is
+  /// checkable in one query.
+  static List<String> legacyKeysFor(CommunityPeriod period, [DateTime? at]) {
+    if (period != CommunityPeriod.month) {
+      return const <String>[];
+    }
+    final DateTime t = at ?? now();
+    return <String>['${t.year}-${_two(t.month)}'];
+  }
+
   static String keyFor(CommunityPeriod period, [DateTime? at]) {
     switch (period) {
       case CommunityPeriod.day:

@@ -11,7 +11,9 @@ import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
+import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_photo_editor.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -842,14 +844,16 @@ void main() {
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    expect(find.text('יאללה לקדם!'), findsOneWidget);
+    // The promotion leads the panel, and it names the step this proposal is
+    // actually waiting for rather than repeating one prompt for ever.
+    expect(find.text('יאללה לקדם — לשאול את הלל'), findsOneWidget);
     // Named for the act rather than the state, so a tile cannot be read as a
     // label saying where the proposal already is.
     expect(find.text('מתחילים לצאת'), findsOneWidget);
     expect(find.text('העברה להמתנה'), findsOneWidget);
     expect(find.text('סגירת הצעה'), findsOneWidget);
     expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('הוספת איש קשר'), findsOneWidget);
+    expect(find.text('הוספת איש קשר שקשור להצעה'), findsOneWidget);
     // The journal is not a seventh button — opening the panel is what opens
     // the journal.
     expect(find.text('יומן הרעיון'), findsOneWidget);
@@ -1003,6 +1007,90 @@ void main() {
     expect(find.text('השוואת כרטיסים'), findsOneWidget);
   });
 
+  testWidgets('the ideas banner is the app wordmark, and folds away for an '
+      'open proposal', (WidgetTester tester) async {
+    // Deliberately short: the point of the test is that the list scrolls under
+    // a header that is allowed to leave.
+    await tester.binding.setSurfaceSize(const Size(390, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final DateTime now = DateTime(2026, 8, 2);
+    final Person male = _testPerson(
+      id: 'fold-male',
+      firstName: 'אביחי',
+      lastName: 'כהן',
+      gender: Gender.male,
+      age: 27,
+      now: now,
+    );
+    final Person female = _testPerson(
+      id: 'fold-female',
+      firstName: 'תמר',
+      lastName: 'לוי',
+      gender: Gender.female,
+      age: 25,
+      now: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>(
+        'people',
+      ).putAll(<String, Person>{male.id: male, female.id: female});
+      await Hive.box<MatchIdea>('matches').put(
+        'fold-match',
+        _testMatch(
+          id: 'fold-match',
+          personAId: male.id,
+          personBId: female.id,
+          now: now,
+        ),
+      );
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The banner is the app's own, the same one בית and המאגר שלי wear, and the
+    // page's heading moved onto the page.
+    expect(find.byType(ShadchanWordmark), findsOneWidget);
+    // By type, not by text: "רעיונות" is also the name of the tab at the foot
+    // of the screen.
+    expect(find.byType(ScreenHeading), findsOneWidget);
+
+    // Switching category rebuilds the list under the same scroll controller.
+    // Doing it in both directions is what would catch a controller left
+    // attached to two positions at once.
+    await tester.tap(find.text('פתוחים'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('נסגרו'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('הכל'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // With everything closed the header stays put however far the list is
+    // scrolled: it is the map of a list being scanned.
+    await tester.drag(find.byType(MatchIdeaCard).first, const Offset(0, -220));
+    await tester.pumpAndSettle();
+    expect(find.text('פתוחים'), findsOneWidget);
+
+    // Open a proposal's actions, and the same scroll folds it away — the panel
+    // underneath is what the screen is for at that moment.
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(MatchIdeaCard).first, const Offset(0, -220));
+    await tester.pumpAndSettle();
+    expect(find.text('פתוחים'), findsNothing);
+    expect(find.byType(ScreenHeading), findsNothing);
+
+    // Closing it brings the header back whatever the scroll position is.
+    await tester.tap(find.text('סגירת פעולות'));
+    await tester.pumpAndSettle();
+    expect(find.text('פתוחים'), findsOneWidget);
+  });
+
   testWidgets('New ideas uses the matching explanation and rejection wording', (
     WidgetTester tester,
   ) async {
@@ -1136,7 +1224,7 @@ void main() {
     expect(find.text('הטקסט וכל התמונות של הכרטיס'), findsOneWidget);
   });
 
-  testWidgets('"יאללה לקדם!" opens both chats and both cards at once', (
+  testWidgets('"יאללה לקדם" goes straight to the side whose turn it is', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
@@ -1183,14 +1271,17 @@ void main() {
 
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('יאללה לקדם!'));
-    await tester.pumpAndSettle();
 
-    // One sheet, both candidates, both cards — no picking a side first.
-    expect(find.text('פתיחת שיחה עם נהרה'), findsOneWidget);
-    expect(find.text('שליחת הכרטיס של נדיב אל נהרה'), findsOneWidget);
-    expect(find.text('פתיחת שיחה עם נדיב'), findsOneWidget);
-    expect(find.text('שליחת הכרטיס של נהרה אל נדיב'), findsOneWidget);
+    // **No sheet.** The panel used to open one asking who to message and with
+    // whose card, on a proposal nobody had been told about — a question with
+    // one sensible answer, asked every single time because nothing was written
+    // down about who already knew. The button names the side itself now.
+    expect(find.text('יאללה לקדם — לשאול את נדיב'), findsOneWidget);
+    expect(find.text('פתיחת שיחה עם נהרה'), findsNothing);
+
+    // The full sheet is still reachable per side, from the disc on each face.
+    expect(find.text('רעיון חדש'), findsOneWidget);
+    expect(find.text('לפנות קודם לבחורה'), findsOneWidget);
   });
 
   testWidgets('The journal is a chat that writes itself, and stays editable', (
@@ -1607,7 +1698,7 @@ Widget _buildTestApp() {
       // Firebase is up, which it never is in a test — so it needs no stub, only
       // to exist.
       ChangeNotifierProvider<CommunityProvider>(
-        create: (_) => CommunityProvider(),
+        create: (_) => CommunityProvider(connect: () async {}),
       ),
       ChangeNotifierProvider<SupportInboxProvider>(
         create: (_) =>
@@ -1660,7 +1751,7 @@ Widget _buildProfileTestApp({Widget? home}) {
       // Firebase is up, which it never is in a test — so it needs no stub, only
       // to exist.
       ChangeNotifierProvider<CommunityProvider>(
-        create: (_) => CommunityProvider(),
+        create: (_) => CommunityProvider(connect: () async {}),
       ),
       ChangeNotifierProvider<SupportInboxProvider>(
         create: (_) =>

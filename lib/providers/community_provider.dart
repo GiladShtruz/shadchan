@@ -24,18 +24,38 @@ import 'package:shadchan/utils/dating_history.dart';
 /// block and the personal side of the activity screen work on a plane, and only
 /// the community column waits for anything.
 class CommunityProvider extends ChangeNotifier {
-  CommunityProvider();
+  /// [connect] exists only so a widget test can build the app without it.
+  ///
+  /// `Firebase.initializeApp` never completes inside `testWidgets`' fake-async
+  /// zone — the platform channel has no other side to reply from — so
+  /// `ensureReady`'s 30-second deadline is left pending and fails the test with
+  /// a pending timer. Passing `() async {}` skips the attempt; `isReady` is
+  /// false either way, which is the state under test. The same seam is on
+  /// `AccountProvider` and `SyncProvider`, for the same reason.
+  CommunityProvider({Future<void> Function()? connect})
+    : _connect = connect ?? FirebaseBootstrap.ensureReady;
+
+  final Future<void> Function() _connect;
 
   CommunityMemberCounts? _counts;
   bool _hidden = CommunityProfileStore.isHidden;
   bool _private = CommunityProfileStore.isPrivate;
   bool _publishing = false;
   bool _pulledHidden = false;
+  int _publishRevision = 0;
   String _name = '';
   String? _photoPath;
 
   /// This device's own figures, or null before the first refresh.
   CommunityMemberCounts? get myCounts => _counts;
+
+  /// Bumped once per successful publish.
+  ///
+  /// Anything drawing community figures watches this and re-reads when it
+  /// moves: the shared numbers are known to have changed at exactly that
+  /// moment, and — more importantly — the read that filled the screen may have
+  /// happened before there was an account at all and come back with nothing.
+  int get publishRevision => _publishRevision;
 
   /// Whether the matchmaker has taken themselves off the leaderboard, or has
   /// switched sharing off altogether — both come to the same thing here: no
@@ -122,11 +142,27 @@ class CommunityProvider extends ChangeNotifier {
     // Nothing leaves the device for somebody who asked for nothing to. The
     // counts above were still computed, because every personal figure in the
     // app is drawn from them and none of that is anybody else's business.
-    if (_private || _publishing || !FirebaseBootstrap.isReady) {
+    if (_private || _publishing) {
       return;
     }
     _publishing = true;
     try {
+      // **This used to give up when Firebase was not up yet, and never come
+      // back.** `CloudSyncScheduler` starts Firebase and calls this in the same
+      // breath, so on app open `isReady` is nearly always false here — the
+      // first publish of a session was therefore skipped entirely and had to
+      // wait for the app to be paused. On a device that is opened, used and
+      // closed by the task switcher, that is a publish that never happens, and
+      // the matchmaker's work never reaches the community figures at all.
+      //
+      // Awaiting the same future the bootstrap already has in hand costs
+      // nothing and cannot start a second initialisation.
+      if (!FirebaseBootstrap.isReady) {
+        await _connect();
+      }
+      if (!FirebaseBootstrap.isReady) {
+        return;
+      }
       // The opt-out is authoritative on the server, because it has to survive
       // a reinstall — but only the first time, and only if this device has not
       // been told otherwise since.
@@ -155,6 +191,13 @@ class CommunityProvider extends ChangeNotifier {
       // This device's own numbers have just moved, so every cached community
       // figure is one publish out of date.
       CommunityService.invalidate();
+      // And whatever is on screen is reading the stale ones. The home banner
+      // and the activity screen both take their community figures from a read
+      // they fired before this publish landed — usually before there was even
+      // an account — so without this the landing page keeps yesterday's answer,
+      // or no answer at all, for the rest of the session.
+      _publishRevision++;
+      notifyListeners();
     } finally {
       _publishing = false;
     }

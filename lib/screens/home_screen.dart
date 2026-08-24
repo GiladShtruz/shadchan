@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
-import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/board_add_sheet.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -45,6 +44,7 @@ import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
+import 'package:shadchan/widgets/shadchan_app_bar.dart';
 
 /// The landing screen: a calm workspace rather than a dashboard.
 ///
@@ -73,7 +73,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _homeScrollController = ScrollController();
   final GlobalKey _boardSectionKey = GlobalKey();
-  bool _searchVisible = false;
 
   /// The single vertical gap between every block on the page.
   static const double _blockGap = 14;
@@ -91,7 +90,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _searchController.text = widget.initialSearch;
-    _searchVisible = widget.initialSearch.trim().isNotEmpty;
     _searchController.addListener(() => setState(() {}));
     _scheduleBoardFocus();
     _scheduleCommunityPrompts();
@@ -175,9 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
 
     return Scaffold(
-      appBar: _searchVisible
-          ? _buildSearchAppBar(theme)
-          : _buildGreetingAppBar(theme, profile),
+      appBar: _buildGreetingAppBar(theme, profile),
       body: SafeArea(
         child: Stack(
           children: <Widget>[
@@ -191,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ]),
               builder: (BuildContext context, _) => _buildHome(),
             ),
-            if (_searchVisible) _buildSearchPanel(theme, personRepository),
+            _buildSearchPanel(theme, personRepository),
           ],
         ),
       ),
@@ -200,124 +196,51 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- AppBars ------------------------------------------------------------
 
-  /// The home bar: the matchmaker at one end, the app's name in the middle, the
-  /// three controls at the other.
+  /// The home bar: the app's name at the start, the matchmaker at the other
+  /// end with the bell beside them.
   ///
-  /// **The greeting is not in here any more.** It used to share this 56px strip
-  /// with a photograph and three icons, which left it one ellipsized line of
-  /// bar-sized type — and meant the app never said its own name anywhere inside
-  /// itself. The greeting now opens the page below (see [HomeGreeting]), at the
-  /// size a greeting deserves, and the bar carries the logo instead.
+  /// **The wordmark leads the row now, and the overflow menu is gone.** The
+  /// mark used to be centred, wedged between a photograph on one side and three
+  /// squares on the other, which left it the narrowest slot on a bar it is
+  /// supposed to sign. It sits at the start edge — the right, in RTL — where
+  /// the eye begins, and המאגר שלי and רעיונות wear exactly the same banner;
+  /// see [ShadchanAppBar].
   ///
-  /// The photograph is `leading`, which in RTL is the right-hand end, and it is
-  /// still the only way into the matchmaker's own page — where every setting
-  /// lives, so the bar carries no gear.
-  AppBar _buildGreetingAppBar(ThemeData theme, UserProfileProvider profile) {
-    final Gender? gender = profile.gender;
-
-    return AppBar(
-      // The bar is the page, not a band across the top of it. Everything in it
-      // — a photograph, a wordmark and three bordered squares — is drawn to be
-      // read against the app's own paper; on the theme's blue-grey strip the
-      // squares became white chips floating on a coloured bar, which is the one
-      // thing the design is not.
-      backgroundColor: theme.scaffoldBackgroundColor,
-      foregroundColor: theme.colorScheme.onSurface,
-      surfaceTintColor: Colors.transparent,
-      scrolledUnderElevation: 0,
-      leadingWidth: 54,
-      titleSpacing: 8,
-      leading: Center(
-        child: UserProfileAvatar(
-          photoPath: profile.photoPath,
-          gender: gender,
-          name: profile.name,
-          radius: 18,
-          showEditBadge: profile.photoPath == null,
-          onTap: () => context.push('/profile'),
-        ),
-      ),
-      centerTitle: true,
-      title: const ShadchanWordmark(),
-      // In RTL the actions group sits at the left of the bar and lays out from
-      // the right, so the first entry here is the innermost of the three. Read
-      // left to right on screen they are menu, bell, search — the order they
-      // are drawn in the design, with the overflow menu in the far corner where
-      // a phone's overflow menu is looked for — unframed, hard against the
-      // edge, with the boxed bell and search reading as the pair beside it.
+  /// **The photograph took the three dots' corner, and the bell moved up
+  /// against it.** Everything the menu offered is on the page the photograph
+  /// opens, so the dots were a second door to one room — and with them gone the
+  /// bell and the face are one group at one end instead of two controls with
+  /// the width of the bar between them.
+  ShadchanAppBar _buildGreetingAppBar(
+    ThemeData theme,
+    UserProfileProvider profile,
+  ) {
+    // In RTL the actions group sits at the left of the bar and lays out from
+    // the right, so the first entry here is the innermost: read left to right
+    // on screen the pair is the photograph and then the bell.
+    return ShadchanAppBar(
       actions: <Widget>[
-        HomeBarButton(
-          icon: const Icon(Icons.search),
-          tooltip: 'חיפוש',
-          onPressed: () => setState(() => _searchVisible = true),
-        ),
-        const SizedBox(width: 6),
         const RemindersBellButton(boxed: true),
-        const SizedBox(width: 2),
-        const AppMenuButton(boxed: true),
-        const SizedBox(width: 2),
-      ],
-    );
-  }
-
-  AppBar _buildSearchAppBar(ThemeData theme) {
-    final bool hasText = _searchController.text.trim().isNotEmpty;
-
-    return AppBar(
-      automaticallyImplyLeading: false,
-      titleSpacing: 0,
-      // The field takes the whole banner between the two edges rather than a
-      // fixed 260px centred inside the title slot. Centring inside that slot
-      // never looked centred: the slot itself is off-centre, because the close
-      // button in `actions` eats one end of the bar and nothing balances it at
-      // the other. A field that simply spans the row has no centre to get
-      // wrong, and it is as wide as the cards underneath it.
-      title: Padding(
-        padding: const EdgeInsetsDirectional.only(start: 12),
-        child: SizedBox(
-          height: 44,
-          child: TextField(
-            controller: _searchController,
-            autofocus: true,
-            textAlignVertical: TextAlignVertical.center,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              isDense: true,
-              filled: true,
-              fillColor: theme.colorScheme.surface,
-              hintText: 'חיפוש במאגר שלך',
-              prefixIcon: const Icon(Icons.search, size: 20),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(999),
-                borderSide: BorderSide.none,
-              ),
-              suffixIcon: hasText
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 20),
-                      tooltip: 'ניקוי',
-                      onPressed: _searchController.clear,
-                    )
-                  : null,
-            ),
+        const SizedBox(width: 6),
+        Center(
+          child: UserProfileAvatar(
+            photoPath: profile.photoPath,
+            gender: profile.gender,
+            name: profile.name,
+            radius: 18,
+            showEditBadge: profile.photoPath == null,
+            onTap: () => context.push('/profile'),
           ),
         ),
-      ),
-      actions: <Widget>[
-        IconButton(
-          tooltip: 'סגירת חיפוש',
-          icon: const Icon(Icons.close),
-          onPressed: _closeSearch,
-        ),
       ],
     );
   }
 
-  /// Leaves search entirely: the results, the bar, and the keyboard.
+  /// Leaves search: the results and the keyboard.
   void _closeSearch() {
     FocusScope.of(context).unfocus();
     _searchController.clear();
-    setState(() => _searchVisible = false);
+    setState(() {});
   }
 
   // --- Home body ----------------------------------------------------------
@@ -425,7 +348,26 @@ class _HomeScreenState extends State<HomeScreen> {
     return CustomScrollView(
       controller: _homeScrollController,
       slivers: <Widget>[
-        // 0. The greeting. On the page rather than in the bar, with nothing
+        // 0. The search row, hard under the banner and scrolling away with the
+        // page.
+        //
+        // **A field, not a magnifier.** Searching the database is the single
+        // most-used thing on this screen and it was behind an icon that opened
+        // a whole second app bar — one tap and one mode before a letter could
+        // be typed. A row that is simply there needs no explaining, and because
+        // it is a sliver rather than part of the bar it goes away the moment
+        // somebody scrolls past it, which is the one thing a permanent search
+        // row must not do: take a strip of every screenful.
+        block(
+          ShadchanSearchField(
+            controller: _searchController,
+            hintText: 'חיפוש במאגר שלך',
+            onCleared: _closeSearch,
+          ),
+          top: 8,
+        ),
+
+        // 1. The greeting. On the page rather than in the bar, with nothing
         // drawn around it.
         block(
           HomeGreeting(
@@ -645,7 +587,10 @@ class _HomeScreenState extends State<HomeScreen> {
         Align(
           alignment: Alignment.topCenter,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            // Clear of the search row itself, which is now the first thing on
+            // the page rather than a bar overhead: results drawn at y=8 would
+            // cover the field they belong to.
+            padding: const EdgeInsets.fromLTRB(12, 62, 12, 0),
             child: Material(
               elevation: 6,
               color: theme.colorScheme.surface,

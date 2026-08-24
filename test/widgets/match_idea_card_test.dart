@@ -15,6 +15,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 
@@ -125,9 +126,16 @@ void main() {
     String? shareLabel,
     void Function(Person, ProfileStatus)? onStatus,
     ValueChanged<MatchQuickAction>? onAction,
-    VoidCallback? onPromote,
+    void Function(MatchNextStep step)? onAdvance,
+    void Function(MatchStage stage)? onSetStage,
+    DateTime? askedMaleAt,
+    DateTime? askedFemaleAt,
+    DateTime? datingSince,
   }) {
-    final MatchIdea idea = match(status: status)..lastShareLabel = shareLabel;
+    final MatchIdea idea = match(status: status)
+      ..lastShareLabel = shareLabel
+      ..askedMaleAt = askedMaleAt
+      ..askedFemaleAt = askedFemaleAt;
     return MatchIdeaCard(
       key: key,
       match: idea,
@@ -138,7 +146,9 @@ void main() {
       onCompletePersonCard: (_) {},
       onPersonStatusPicked: onStatus,
       onQuickAction: onAction,
-      onPromote: onPromote,
+      onAdvance: onAdvance,
+      onSetStage: onSetStage,
+      datingSince: datingSince,
     );
   }
 
@@ -267,43 +277,53 @@ void main() {
     }
   });
 
-  testWidgets('"יאללה לקדם!" becomes a report once a card has gone out', (
+  testWidgets('"יאללה לקדם" names the next step and leads the panel', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    int promoted = 0;
+    final List<MatchNextStep> steps = <MatchNextStep>[];
     await tester.pumpWidget(
-      wrap(card(onAction: (_) {}, onPromote: () => promoted++)),
+      wrap(card(onAction: (_) {}, onAdvance: steps.add, onSetStage: (_) {})),
     );
     await tester.pump();
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    // Nothing sent yet, so the row is a prompt. It sits *under* the status
-    // moves: the statuses lead the panel, and everything below them is shaped
-    // differently from them on purpose.
-    expect(find.text('יאללה לקדם!'), findsOneWidget);
+    // Nobody has been asked yet, so the step is the boy — by name, because the
+    // card knows who he is. And it is the *first* thing under the fold: the
+    // three status tiles are the three ways a proposal ends, and offering them
+    // above the one thing it is waiting for was the wrong way round.
+    expect(find.text('יאללה לקדם — לשאול את דוד'), findsOneWidget);
     expect(
-      tester.getCenter(find.text('יאללה לקדם!')).dy,
-      greaterThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
+      tester.getCenter(find.text('יאללה לקדם — לשאול את דוד')).dy,
+      lessThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
     );
+    // The stage, beside it and editable — most matchmaking happens on a call
+    // the app never sees.
+    expect(find.text('רעיון חדש'), findsOneWidget);
+    // And the way to start with her instead, offered only while it is still a
+    // choice.
+    expect(find.text('לפנות קודם לבחורה'), findsOneWidget);
 
-    await tester.tap(find.text('יאללה לקדם!'));
+    await tester.tap(find.text('יאללה לקדם — לשאול את דוד'));
     await tester.pump();
-    expect(promoted, 1);
+    expect(steps, <MatchNextStep>[MatchNextStep.askMale]);
 
-    // Once something has gone out the same row answers the question it asked.
-    // A fresh key, so the panel starts folded again rather than inheriting the
-    // open state of the card above.
+    // With him already asked, the same button offers the other side. A fresh
+    // key, so the panel starts folded again rather than inheriting the open
+    // state of the card above.
     await tester.pumpWidget(
       wrap(
         card(
-          key: const ValueKey<String>('sent'),
+          key: const ValueKey<String>('asked-him'),
+          status: MatchStatus.checking,
+          askedMaleAt: DateTime(2026, 8, 20),
           shareLabel: 'הכרטיס של שרה נשלח לדוד',
           onAction: (_) {},
-          onPromote: () {},
+          onAdvance: (_) {},
+          onSetStage: (_) {},
         ),
       ),
     );
@@ -311,9 +331,101 @@ void main() {
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    expect(find.text('יאללה לקדם!'), findsNothing);
-    expect(find.text('רעיון בבדיקה'), findsOneWidget);
+    expect(find.text('יאללה לקדם — לשאול את שרה'), findsOneWidget);
+    expect(find.text('שאלתי את הבחור'), findsOneWidget);
+    expect(find.text('לפנות קודם לבחורה'), findsNothing);
+    // What already went out is context under the button, not the button.
     expect(find.text('הכרטיס של שרה נשלח לדוד'), findsOneWidget);
+
+    // Both asked: the only thing left is the two of them meeting.
+    await tester.pumpWidget(
+      wrap(
+        card(
+          key: const ValueKey<String>('asked-both'),
+          status: MatchStatus.checking,
+          askedMaleAt: DateTime(2026, 8, 20),
+          askedFemaleAt: DateTime(2026, 8, 21),
+          onAction: (_) {},
+          onAdvance: (_) {},
+          onSetStage: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('יאללה לקדם — מתחילים לצאת'), findsOneWidget);
+    expect(find.text('שאלתי את שניהם'), findsOneWidget);
+  });
+
+  testWidgets('a week with nothing happening says so, without reordering', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final MatchIdea stale = match()
+      ..updatedAt = DateTime.now().subtract(const Duration(days: 9));
+    await tester.pumpWidget(
+      wrap(
+        MatchIdeaCard(
+          match: stale,
+          male: person('male', 'דוד', Gender.male, ProfileStatus.available),
+          female: person(
+            'female',
+            'שרה',
+            Gender.female,
+            ProfileStatus.available,
+          ),
+          onTap: () {},
+          onOpenPersonWhatsApp: (_) {},
+          onCompletePersonCard: (_) {},
+          onQuickAction: (_) {},
+          onAdvance: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+
+    // In the promote area, where somebody is already deciding what to do — and
+    // nowhere else. The list stays in its own order.
+    expect(
+      find.text('עבר שבוע בלי עדכון – שווה לקדם את הרעיון'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a couple who are out are asked about, not promoted', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      wrap(
+        card(
+          status: MatchStatus.dating,
+          datingSince: DateTime.now().subtract(const Duration(days: 7)),
+          onAction: (_) {},
+          onAdvance: (_) {},
+          onSetStage: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+
+    // Asking him, asking her and sending the card are finished business.
+    expect(find.textContaining('יאללה לקדם'), findsNothing);
+    expect(find.text('הם יוצאים כבר 7 ימים 😊 בדקת איך הולך?'), findsOneWidget);
+    // One tap to each of them, and the cadence spelled out underneath.
+    expect(find.text('דוד'), findsWidgets);
+    expect(find.textContaining('פעם בחודש'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a long name gives up its surname before it wraps', (
@@ -412,7 +524,7 @@ void main() {
     expect(find.text('מתחילים לצאת'), findsOneWidget);
     expect(find.text('סגירת הצעה'), findsOneWidget);
     expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('הוספת איש קשר'), findsOneWidget);
+    expect(find.text('הוספת איש קשר שקשור להצעה'), findsOneWidget);
     // Not a button: the journal is simply open at the bottom of the panel.
     expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(tester.takeException(), isNull);

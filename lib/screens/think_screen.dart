@@ -13,7 +13,9 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
+import 'package:shadchan/utils/think_rotation.dart';
 import 'package:shadchan/utils/profile_palette.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 /// "עוצרים רגע לחשוב על החברים" — friends, one after another, each with the
@@ -74,6 +76,57 @@ class _ThinkScreenState extends State<ThinkScreen> {
   /// finger while it is being scrolled.
   final int _seed = DateTime.now().millisecondsSinceEpoch;
 
+  /// How many friends one page of this screen shows, and how many each press of
+  /// "חברים נוספים" adds.
+  ///
+  /// **Ten, and not "all of them".** The page used to draw sixty cards in one
+  /// scroll, which turns a moment of reflection into a queue to get through —
+  /// and a queue nobody finishes is a queue nobody starts. Ten is a number a
+  /// person can actually think about, and the button underneath says plainly
+  /// that there are more when there are.
+  static const int _pageSize = 10;
+
+  /// Where this visit entered the ranked list. Read once, so the rotation does
+  /// not move under the finger, and advanced on the way out so the *next* visit
+  /// opens on different people.
+  final int _cursor = ThinkRotation.cursor;
+
+  /// Friends put away with "אחשוב עליו בהמשך", read once for the same reason.
+  /// Added to as the screen is used, so a card leaves the moment it is tapped
+  /// without the whole list re-ranking underneath.
+  late final Set<String> _later = <String>{...ThinkLater.activeIds()};
+
+  int _shown = _pageSize;
+
+  @override
+  void dispose() {
+    // The next visit starts where this one stopped reading, so the page turns
+    // the database over instead of greeting everybody with the same faces.
+    ThinkRotation.advance(_shown);
+    super.dispose();
+  }
+
+  void _thinkLater(Person person) {
+    ThinkLater.remember(person.id);
+    setState(() => _later.add(person.id));
+    // An undo rather than a confirmation: putting somebody off is a one-tap
+    // decision that should stay one tap, and a mis-tap here quietly hides a
+    // friend for a month.
+    AppNotice.show(
+      context,
+      person.gender == Gender.female
+          ? 'נחשוב עליה שוב בהמשך'
+          : 'נחשוב עליו שוב בהמשך',
+      actionLabel: 'ביטול',
+      onAction: () {
+        ThinkLater.forget(person.id);
+        if (mounted) {
+          setState(() => _later.remove(person.id));
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -93,7 +146,17 @@ class _ThinkScreenState extends State<ThinkScreen> {
       activity: RecentActivityStore.instance.entries,
       limit: 60,
     );
-    final List<_ThinkRow> rows = _withOccasionalStranger(suggestions, people);
+    // Ranked, then salted with the occasional stranger, then rotated to where
+    // this visit starts, and finally cut to the page the reader has asked for.
+    final List<_ThinkRow> ranked = ThinkRotation.rotate(
+      _withOccasionalStranger(
+        suggestions,
+        people,
+      ).where((_ThinkRow row) => !_later.contains(row.person.id)).toList(),
+      _cursor,
+    );
+    final List<_ThinkRow> rows = ranked.take(_shown).toList();
+    final bool hasMore = ranked.length > rows.length;
     final _MatchLookup lookup = _MatchLookup(people: people, matches: matches);
 
     return Scaffold(
@@ -111,7 +174,10 @@ class _ThinkScreenState extends State<ThinkScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(28),
                   child: Text(
-                    'כשיהיו במאגר עוד חברים, כאן יהיה על מי לחשוב.',
+                    _later.isEmpty
+                        ? 'כשיהיו במאגר עוד חברים, כאן יהיה על מי לחשוב.'
+                        : 'עברת על כולם להיום. מי שסימנת "אחשוב עליו בהמשך" '
+                              'יחזור לכאן בעוד כמה שבועות.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: ProfilePalette.muted(theme),
@@ -119,12 +185,25 @@ class _ThinkScreenState extends State<ThinkScreen> {
                   ),
                 ),
               )
+            // One list, with the welcome as its first item and the way to more
+            // friends as its last: a header pinned outside the scroll would
+            // hold a full line of type on screen for the whole page, and the
+            // greeting is worth reading once, not permanently.
             : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
-                itemCount: rows.length,
+                itemCount: rows.length + 2,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (BuildContext context, int index) {
-                  final _ThinkRow row = rows[index];
+                  if (index == 0) {
+                    return const _ThinkWelcome();
+                  }
+                  if (index == rows.length + 1) {
+                    return _MoreFriendsFooter(
+                      hasMore: hasMore,
+                      onMore: () => setState(() => _shown += _pageSize),
+                    );
+                  }
+                  final _ThinkRow row = rows[index - 1];
                   return _PersonThought(
                     person: row.person,
                     reason: row.reason,
@@ -132,6 +211,7 @@ class _ThinkScreenState extends State<ThinkScreen> {
                     onTap: () => ThinkScreen.openPerson(context, row.person.id),
                     onCandidate: (Person candidate) =>
                         _considerPair(row.person, candidate),
+                    onLater: () => _thinkLater(row.person),
                   );
                 },
               ),
@@ -325,6 +405,7 @@ class _PersonThought extends StatelessWidget {
     required this.candidates,
     required this.onTap,
     required this.onCandidate,
+    required this.onLater,
   });
 
   final Person person;
@@ -340,6 +421,15 @@ class _PersonThought extends StatelessWidget {
   final VoidCallback onTap;
 
   final ValueChanged<Person> onCandidate;
+
+  /// "אחשוב עליו בהמשך" — takes this friend off the page for a few weeks.
+  ///
+  /// **The card needed a third answer.** Until now a friend could be opened or
+  /// scrolled past, and scrolling past leaves them exactly where they were, at
+  /// the top of the next visit. This is the honest middle: not "no", not "now",
+  /// but "not today" — and the app remembers it, which is the whole difference
+  /// between a list that gets worked through and one that is scrolled through.
+  final VoidCallback onLater;
 
   @override
   Widget build(BuildContext context) {
@@ -398,6 +488,11 @@ class _PersonThought extends StatelessWidget {
                   // Those now carry a full name each, and the width that
                   // little button was taking is exactly what the names needed.
                   _AllMatchesButton(onTap: onTap),
+                  // Deliberately an icon and not a third word on a line that
+                  // already carries a name and a link: putting somebody off is
+                  // the quietest of the card's three answers and should read
+                  // that way.
+                  _ThinkLaterButton(person: person, onTap: onLater),
                 ],
               ),
             ),
@@ -531,6 +626,127 @@ class _AllMatchesButton extends StatelessWidget {
         ),
       ),
       child: const Text('לכל ההתאמות'),
+    );
+  }
+}
+
+/// "על מי אנחנו חושבים היום?" — the first thing on the page.
+///
+/// **A question, not a heading.** The bar above says what the screen is; this
+/// says what it is *for*, and it asks rather than instructs, because nothing on
+/// this page is a task. One warm line under it explains the only thing about
+/// the page that is not obvious: that a friend can be put off without being
+/// dismissed.
+class _ThinkWelcome extends StatelessWidget {
+  const _ThinkWelcome();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            'על מי אנחנו חושבים היום?',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+              height: 1.2,
+              color: ProfilePalette.text(theme),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'כמה חברים מהמאגר, והסיבה שכל אחד מהם עלה עכשיו. '
+            'אפשר לפתוח, ואפשר לסמן "אחשוב עליו בהמשך".',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: ProfilePalette.muted(theme),
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The foot of the page: another ten friends, or the line that says there are
+/// no more.
+///
+/// **The page ends in a sentence either way.** A list that simply stops leaves
+/// the reader wondering whether it ran out or ran short, and on a screen whose
+/// whole promise is "there is always somebody worth a thought" that is the one
+/// ambiguity worth spending a line on.
+class _MoreFriendsFooter extends StatelessWidget {
+  const _MoreFriendsFooter({required this.hasMore, required this.onMore});
+
+  final bool hasMore;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (!hasMore) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(8, 14, 8, 4),
+        child: Text(
+          'זה כל מי שעלה הפעם. בכניסה הבאה יחכו כאן חברים אחרים.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: ProfilePalette.muted(theme),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+      child: OutlinedButton.icon(
+        onPressed: onMore,
+        icon: const Icon(Icons.expand_more_rounded, size: 20),
+        label: const Text('חברים נוספים'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: ProfilePalette.accent(theme),
+          side: BorderSide(
+            color: ProfilePalette.accent(theme).withValues(alpha: 0.45),
+          ),
+          minimumSize: const Size.fromHeight(46),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "אחשוב עליו בהמשך", as a small clock on the friend's own line.
+class _ThinkLaterButton extends StatelessWidget {
+  const _ThinkLaterButton({required this.person, required this.onTap});
+
+  final Person person;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool female = person.gender == Gender.female;
+
+    return IconButton(
+      onPressed: onTap,
+      tooltip: female ? 'אחשוב עליה בהמשך' : 'אחשוב עליו בהמשך',
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+      icon: Icon(
+        Icons.schedule_rounded,
+        size: 19,
+        color: ProfilePalette.muted(theme),
+      ),
     );
   }
 }

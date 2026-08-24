@@ -15,16 +15,28 @@ const String _appCheckDebugToken = String.fromEnvironment(
 
 /// Whether App Check is wired up at all.
 ///
-/// Off while the Play Integrity side of the project is still unconfigured. A
-/// registered provider that cannot attest is worse than no provider: the first
-/// exchange is refused, the SDK throttles itself, and every AI call after it
-/// fails with "Too many attempts" — so the feature is simply gone for everyone
-/// who installed from the store. Skipping `activate` sends the request with no
-/// App Check token instead, which the backend accepts for as long as
-/// enforcement stays off in the console. Those two therefore switch together:
-/// build with `--dart-define=APP_CHECK_ENABLED=true` only once enforcement is
-/// meant to be on.
-const bool _appCheckEnabled = bool.fromEnvironment('APP_CHECK_ENABLED');
+/// On. Attestation is what binds Gemini access to genuine installs of this app
+/// rather than to anyone who pulls the Firebase config out of the APK. Any
+/// limit the app puts on its own AI use guards a door that can be walked around
+/// until this is on, because the config alone is enough to spend the project's
+/// tokens from a script.
+///
+/// It stays a `bool.fromEnvironment` so a build can still turn it off —
+/// `--dart-define=APP_CHECK_ENABLED=false` — because a registered provider that
+/// cannot attest is worse than no provider: the first exchange is refused, the
+/// SDK throttles itself, and every AI call after it fails with "Too many
+/// attempts". That escape hatch is for a broken project configuration, not for
+/// normal builds.
+///
+/// This must be turned on together with the console side, and in this order:
+/// register the Play Integrity and App Attest providers for the app, ship a
+/// build with this on, wait for the App Check metrics to show verified requests
+/// arriving, and only then switch enforcement on for Vertex AI. Enforcing first
+/// locks out every copy of the app already installed.
+const bool _appCheckEnabled = bool.fromEnvironment(
+  'APP_CHECK_ENABLED',
+  defaultValue: true,
+);
 
 /// Brings Firebase up so the AI import flows have an authenticated channel to
 /// Gemini. Firebase is used *only* as that channel — no person, note, photo or

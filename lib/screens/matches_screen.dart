@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
@@ -8,11 +9,15 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
+import 'package:shadchan/widgets/shadchan_app_bar.dart';
 
 /// The five states a proposal can be in, as the screen groups them.
 ///
@@ -74,15 +79,28 @@ class MatchesScreen extends StatefulWidget {
 
 class _MatchesScreenState extends State<MatchesScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _listScroll = ScrollController();
 
   MatchCategory _category = MatchCategory.all;
   _ClosedTab _closedTab = _ClosedTab.rejected;
-  bool _searchVisible = false;
   bool _promptedShare = false;
+
+  /// Which proposals have their action panel open right now.
+  ///
+  /// Owned here rather than in the cards because it is a fact about the
+  /// *screen*: with something open, the list is being worked in rather than
+  /// scanned, and the header over it is allowed to fold away. See the header
+  /// block in [build].
+  final Set<String> _openCards = <String>{};
+
+  /// Whether the header is currently folded away. Only ever true while
+  /// [_openCards] is not empty.
+  bool _headerHidden = false;
 
   @override
   void initState() {
     super.initState();
+    _listScroll.addListener(_handleScroll);
     _searchController.addListener(_handleSearchChanged);
     _category = widget.initialShowArchived
         ? MatchCategory.closed
@@ -99,7 +117,67 @@ class _MatchesScreenState extends State<MatchesScreen> {
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
+    _listScroll
+      ..removeListener(_handleScroll)
+      ..dispose();
     super.dispose();
+  }
+
+  /// Folds the header away on the way down and brings it back on the way up —
+  /// and only while a proposal is open. The small offset floor stops the
+  /// bounce at the top of an over-scrolling list from counting as a scroll.
+  void _handleScroll() {
+    if (!_listScroll.hasClients) {
+      return;
+    }
+    if (_openCards.isEmpty) {
+      if (_headerHidden) {
+        setState(() => _headerHidden = false);
+      }
+      return;
+    }
+    final ScrollDirection direction = _listScroll.position.userScrollDirection;
+    final bool hide =
+        direction == ScrollDirection.reverse && _listScroll.offset > 40;
+    final bool show =
+        direction == ScrollDirection.forward || _listScroll.offset <= 40;
+    if (hide && !_headerHidden) {
+      setState(() => _headerHidden = true);
+    } else if (show && _headerHidden) {
+      setState(() => _headerHidden = false);
+    }
+  }
+
+  void _handleCardActions(String matchId, bool open) {
+    if (!mounted) {
+      return;
+    }
+    final bool changed = open
+        ? _openCards.add(matchId)
+        : _openCards.remove(matchId);
+    if (!changed) {
+      return;
+    }
+    // Closing the last one puts the header back whatever the scroll position
+    // is: it only ever went away to make room for a panel that is now gone.
+    setState(() {
+      if (_openCards.isEmpty) {
+        _headerHidden = false;
+      }
+    });
+  }
+
+  /// The one line under "רעיונות": what is actually live right now.
+  String? _headingSubtitle(Map<MatchCategory, List<MatchIdea>> groups) {
+    final int live = groups[MatchCategory.all]?.length ?? 0;
+    if (live == 0) {
+      return null;
+    }
+    final int dating = groups[MatchCategory.dating]?.length ?? 0;
+    if (dating == 0) {
+      return '$live רעיונות פעילים';
+    }
+    return '$live רעיונות פעילים · $dating יוצאים';
   }
 
   static MatchCategory _categoryFor(List<MatchStatus> statuses) {
@@ -154,86 +232,87 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final bool pushed = widget.focusMatchId != null;
 
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        title: const Text('רעיונות'),
-        // Adding leads, so it sits at the start edge — the top right in RTL —
-        // and searching sits at the far end, the top left.
-        leading: pushed
-            ? null
-            : IconButton(
-                tooltip: 'רעיון חדש',
-                icon: const Icon(Icons.add),
-                onPressed: () => context.push('/matches/add'),
-              ),
+      // The same banner as בית and המאגר שלי: the wordmark at the start, this
+      // screen's own controls at the other end. "רעיונות" moved onto the page,
+      // into the header block below, which is also what makes it able to get
+      // out of the way — see [_HeaderBlock].
+      appBar: ShadchanAppBar(
+        leading: pushed ? const BackButton() : null,
         actions: <Widget>[
-          if (pushed)
-            IconButton(
-              tooltip: 'רעיון חדש',
-              icon: const Icon(Icons.add),
-              onPressed: () => context.push('/matches/add'),
-            ),
-          // The same bell, in the same slot, as בית and המאגר שלי.
-          const RemindersBellButton(),
-          IconButton(
-            tooltip: _searchVisible ? 'סגירת חיפוש' : 'חיפוש',
-            icon: Icon(_searchVisible ? Icons.close : Icons.search),
-            onPressed: () {
-              setState(() {
-                _searchVisible = !_searchVisible;
-                if (!_searchVisible) {
-                  _searchController.clear();
-                }
-              });
-            },
+          const RemindersBellButton(boxed: true),
+          const SizedBox(width: 6),
+          HomeBarButton(
+            tooltip: 'רעיון חדש',
+            icon: const Icon(Icons.add),
+            onPressed: () => context.push('/matches/add'),
           ),
         ],
       ),
       body: Column(
         children: <Widget>[
-          if (_searchVisible)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: TextField(
-                controller: _searchController,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: 'חיפוש לפי שם',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: query.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: _searchController.clear,
+          // **The whole header can get out of the way — but only when there is
+          // a reason.** With every card closed this is a list being scanned,
+          // and the counts and the filter are the map of it: they stay put, the
+          // way they always have. With a proposal's actions open it is a list
+          // being *worked in* — the panel underneath is a promotion row, three
+          // status tiles and a journal — and a fixed strip of filters at the
+          // top is a third of a phone spent on navigation nobody is using. So
+          // scrolling down folds it away, and scrolling back up brings it
+          // straight back.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            alignment: Alignment.bottomCenter,
+            child: _headerHidden
+                ? const SizedBox(width: double.infinity)
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+                        child: ScreenHeading(
+                          title: 'רעיונות',
+                          subtitle: _headingSubtitle(groups),
                         ),
-                ),
-              ),
-            ),
-          // Drawn during a search too. Which kinds of proposal a person has —
-          // two open, one closed — is exactly what somebody typing their name
-          // wants to know, and hiding the split at the moment they ask was the
-          // one time it mattered most.
-          _CategoryButtons(
-            selected: _category,
-            counts: <MatchCategory, int>{
-              for (final MatchCategory category in MatchCategory.values)
-                category: groups[category]!.length,
-            },
-            onSelected: (MatchCategory category) =>
-                setState(() => _category = category),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                        child: ShadchanSearchField(
+                          controller: _searchController,
+                          hintText: 'חיפוש לפי שם',
+                        ),
+                      ),
+                      // Drawn during a search too. Which kinds of proposal a
+                      // person has — two open, one closed — is exactly what
+                      // somebody typing their name wants to know, and hiding
+                      // the split at the moment they ask was the one time it
+                      // mattered most.
+                      _CategoryButtons(
+                        selected: _category,
+                        counts: <MatchCategory, int>{
+                          for (final MatchCategory category
+                              in MatchCategory.values)
+                            category: groups[category]!.length,
+                        },
+                        onSelected: (MatchCategory category) =>
+                            setState(() => _category = category),
+                      ),
+                      if (searching)
+                        _NameSuggestions(
+                          query: query,
+                          matches: population,
+                          personRepository: personRepository,
+                          onPick: (String name) {
+                            _searchController
+                              ..text = name
+                              ..selection = TextSelection.collapsed(
+                                offset: name.length,
+                              );
+                          },
+                        ),
+                    ],
+                  ),
           ),
-          if (searching)
-            _NameSuggestions(
-              query: query,
-              matches: population,
-              personRepository: personRepository,
-              onPick: (String name) {
-                _searchController
-                  ..text = name
-                  ..selection = TextSelection.collapsed(offset: name.length);
-              },
-            ),
           Expanded(
             child: _buildCategory(
               theme,
@@ -385,6 +464,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     }
 
     return ListView(
+      controller: _listScroll,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       children: <Widget>[
         if (showReminders) ...<Widget>[
@@ -460,6 +540,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
                   subtitle: 'מה שיסתיים יופיע כאן',
                 )
               : ListView(
+                  controller: _listScroll,
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
                   children: <Widget>[
                     for (final MatchIdea match in shown)
@@ -486,18 +567,52 @@ class _MatchesScreenState extends State<MatchesScreen> {
       female = personA;
     }
 
-    // A proposal that is over, or a couple already out, has nothing to promote:
-    // the "יאללה לקדם!" row is simply absent rather than offering to forward a
-    // card that would confuse whoever received it.
-    final bool promotable =
-        !match.status.isArchived && match.status != MatchStatus.dating;
-
     return MatchIdeaCard(
       match: match,
       male: male,
       female: female,
       compact: false,
       highlighted: isDueReminder || match.id == widget.focusMatchId,
+      onActionsOpenChanged: (bool open) => _handleCardActions(match.id, open),
+      // Only computed for a couple who are actually out — every other card
+      // would be reading the whole status ledger for a line it never draws.
+      datingSince: match.status == MatchStatus.dating
+          ? DatingCheckIn.startedAt(
+              match,
+              events: context.read<MatchRepository>().getAllStatusEvents(),
+            )
+          : null,
+      onAdvance: (MatchNextStep step) => MatchQuickActions.advance(
+        context,
+        match,
+        step,
+        female: female,
+        male: male,
+      ),
+      onSetStage: (MatchStage stage) => MatchQuickActions.setStage(
+        context,
+        match,
+        stage,
+        female: female,
+        male: male,
+      ),
+      onCheckInWith: (Person person) {
+        final DateTime? since = DatingCheckIn.startedAt(
+          match,
+          events: context.read<MatchRepository>().getAllStatusEvents(),
+        );
+        if (since == null) {
+          return;
+        }
+        MatchQuickActions.checkInOnCouple(
+          context,
+          match,
+          person: person,
+          startedAt: since,
+        );
+      },
+      onChangeCheckInFrequency: (int days) =>
+          context.read<MatchRepository>().setCheckInFrequency(match.id, days),
       // **Tapping a proposal compares the two cards.** It used to open a page
       // of its own, which existed to hold the actions that now live on the card
       // itself — so what is actually left to want from a proposal is to read
@@ -520,7 +635,6 @@ class _MatchesScreenState extends State<MatchesScreen> {
         female: female,
         male: male,
       ),
-      onPromote: promotable ? () => _promote(match, female, male) : null,
     );
   }
 

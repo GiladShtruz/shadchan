@@ -29,6 +29,7 @@ import 'package:shadchan/screens/personal_card_screen.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/religious_levels_settings_screen.dart';
 import 'package:shadchan/screens/settings_appearance_screen.dart';
+import 'package:shadchan/screens/settings_screen.dart';
 import 'package:shadchan/screens/settings_data_screen.dart';
 import 'package:shadchan/screens/settings_help_screen.dart';
 import 'package:shadchan/screens/sign_in_screen.dart';
@@ -373,20 +374,27 @@ abstract final class AppRouter {
           ),
         ],
       ),
-      // The matchmaker's own page. It carries every setting the app has —
-      // there is no separate settings screen and no gear on the home page.
+      // The matchmaker's own page: who they are, their account, their card,
+      // and one row into the settings.
       GoRoute(
         path: '/profile',
         builder: (BuildContext context, GoRouterState state) {
-          // `?section=settings` lands on the settings group rather than at the
-          // top of the page. The top banner's menu offers "הגדרות", and the
-          // settings are a group on this page rather than a screen of their
-          // own — see [ProfileScreen.focusSettings].
+          // `?section=settings` highlights the row that opens the settings
+          // rather than landing at the top of the page — see
+          // [ProfileScreen.focusSettings].
           return ProfileScreen(
             focusSettings: state.uri.queryParameters['section'] == 'settings',
           );
         },
         routes: <RouteBase>[
+          // Every setting the app has, on a page of its own. It used to be a
+          // group halfway down `/profile`.
+          GoRoute(
+            path: 'settings',
+            builder: (BuildContext context, GoRouterState state) {
+              return const SettingsScreen();
+            },
+          ),
           // The matchmaker's own shidduch card, for a single user: shown in
           // full with שיתוף and עריכה, or an invitation to write a first one.
           GoRoute(

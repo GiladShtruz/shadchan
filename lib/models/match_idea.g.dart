@@ -37,13 +37,16 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
           : (fields[13] as List).cast<MatchContact>(),
       lastShareLabel: fields[14] as String?,
       lastShareAt: fields[15] as DateTime?,
+      askedMaleAt: fields[16] as DateTime?,
+      askedFemaleAt: fields[17] as DateTime?,
+      checkInEveryDays: fields[18] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, MatchIdea obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(19)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -75,7 +78,13 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       ..writeByte(14)
       ..write(obj.lastShareLabel)
       ..writeByte(15)
-      ..write(obj.lastShareAt);
+      ..write(obj.lastShareAt)
+      ..writeByte(16)
+      ..write(obj.askedMaleAt)
+      ..writeByte(17)
+      ..write(obj.askedFemaleAt)
+      ..writeByte(18)
+      ..write(obj.checkInEveryDays);
   }
 
   @override

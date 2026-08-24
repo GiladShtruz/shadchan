@@ -4,16 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/about_me_sheet.dart';
-import 'package:shadchan/dialogs/app_menu.dart';
-import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/app_version.dart';
-import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
@@ -127,100 +122,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
 
-      // The feedback console, for the handful of accounts that have one. It
-      // used to be the last group on the page — which is where somebody puts a
-      // screen they never intend to open — and the tips waiting for approval
-      // sat on a *different* row further up. One entry, above the settings, so
-      // what users sent is never far from the top of the page.
-      if (account.isSupportAdmin)
-        SettingsGroup(
-          title: 'ניהול',
-          children: <Widget>[
-            SettingsRow(
-              icon: Icons.inbox_outlined,
-              title: 'מרכז הפידבק',
-              subtitle: 'טיפים לאישור, פניות, הערות ותקלות',
-              onTap: () => context.push('/support/admin'),
-            ),
-          ],
-        ),
-
-      // 4. The settings themselves: one row per subject, one screen behind
-      // each. Everything here opens something; nothing here toggles anything.
+      // 4. The settings — one row, and a page behind it.
+      //
+      // **They used to be a group on this page, and they should not have
+      // been.** Six rows of app configuration sat between the matchmaker's own
+      // card and the community links, which made their own page mostly about
+      // something else and made the settings themselves a thing to scroll to.
+      // Everything that was in that group is on `/profile/settings` now,
+      // unchanged and in the same order; what is left here is the door.
       KeyedSubtree(
         key: _settingsKey,
         child: SettingsGroup(
           title: 'הגדרות',
           children: <Widget>[
             SettingsRow(
-              icon: Icons.palette_outlined,
-              title: 'תצוגה וערכת נושא',
-              onTap: () => context.push('/profile/appearance'),
-            ),
-            SettingsRow(
-              icon: Icons.style_outlined,
-              title: 'עריכת סגנונות דתיים',
-              onTap: () => context.push('/profile/religious-levels'),
-            ),
-            SettingsRow(
-              icon: Icons.folder_outlined,
-              title: 'גיבוי וייצוא',
-              subtitle: 'גיבוי בענן, שחזור, ייצוא לאקסל וייבוא',
-              onTap: () => context.push('/profile/data'),
-            ),
-            // Its own row rather than a line inside the backup screen. Privacy
-            // is the subject somebody comes looking for by name, and a subject
-            // nobody finds is a promise nobody reads.
-            SettingsRow(
-              icon: Icons.lock_outline_rounded,
-              title: 'פרטיות',
-              onTap: () => context.push('/support/privacy'),
-            ),
-            SettingsRow(
-              icon: Icons.help_outline_rounded,
-              title: 'עזרה ושאלות נפוצות',
-              onTap: () => context.push('/support/help'),
-            ),
-            SettingsRow(
-              icon: Icons.forum_outlined,
-              title: 'דיווח תקלות ויצירת קשר',
-              onTap: () => context.push('/profile/help'),
+              icon: Icons.settings_outlined,
+              title: 'הגדרות',
+              subtitle: 'תצוגה, גיבוי, פרטיות, עזרה ועוד',
+              onTap: () => context.push('/profile/settings'),
             ),
           ],
         ),
       ),
 
-      // 5. Everything that is not a setting: the group, the invitation to pass
-      // the app on, and what other matchmakers wrote.
-      SettingsGroup(
-        title: 'פעולות נוספות',
-        children: <Widget>[
-          if (CommunityLinks.hasUpdatesGroup)
-            SettingsRow(
-              icon: Icons.groups_outlined,
-              title: 'הצטרפות לקבוצת העדכונים',
-              subtitle: CommunityPromptsStore.isInUpdatesGroup
-                  ? 'סימנת שאתם כבר בקבוצה'
-                  : null,
-              // The dialog rather than the link: it is the only place that can
-              // hear "אני כבר בקבוצה", which is the one answer that stops the
-              // reminders.
-              onTap: () => UpdatesGroupDialog.show(context),
-            ),
-          SettingsRow(
-            icon: Icons.ios_share_outlined,
-            title: 'שיתוף האפליקציה עם חבר',
-            trailing: const SizedBox.shrink(),
-            onTap: shareTheApp,
-          ),
-          SettingsRow(
-            icon: Icons.auto_stories_outlined,
-            title: 'טיפים לשדכנים',
-            onTap: () => context.push('/profile/tips-list'),
-          ),
-        ],
-      ),
-      const _SettingsFooter(),
+      const SettingsVersionFooter(),
     ];
 
     return Scaffold(
@@ -482,51 +407,6 @@ class _AccountGroup extends StatelessWidget {
 /// **One link, not two.** It used to offer "תנאי שימוש" beside the privacy
 /// policy, and both pushed `/privacy-policy` — the app has no terms of use, and
 /// a link that promises a document that does not exist is worse than no link.
-class _SettingsFooter extends StatelessWidget {
-  const _SettingsFooter();
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final TextStyle? style = theme.textTheme.labelSmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
-    );
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 24),
-      child: Column(
-        children: <Widget>[
-          TextButton(
-            onPressed: () => context.push('/privacy-policy'),
-            style: _linkStyle,
-            child: Text('מדיניות פרטיות', style: style),
-          ),
-          const SizedBox(height: 2),
-          FutureBuilder<String>(
-            future: AppVersion.read(),
-            // Already known on every build after the first, so the line does
-            // not blink in a frame late.
-            initialData: AppVersion.value,
-            builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
-              final String version = snapshot.data ?? '';
-              if (version.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              return Text('גרסה $version', style: style);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  static final ButtonStyle _linkStyle = TextButton.styleFrom(
-    padding: const EdgeInsets.symmetric(horizontal: 4),
-    minimumSize: Size.zero,
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
-}
-
 /// The Google profile picture, falling back to the initial and then to a
 /// generic icon — the photo is a remote URL and may simply not load.
 class _AccountAvatar extends StatelessWidget {

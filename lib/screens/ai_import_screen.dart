@@ -11,6 +11,7 @@ import 'package:shadchan/dialogs/import_problem_dialog.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/screens/ai_import_review_screen.dart';
 import 'package:shadchan/utils/import_file_kind.dart';
+import 'package:shadchan/services/ai_import_memory.dart';
 import 'package:shadchan/services/ai_import_runner.dart';
 import 'package:shadchan/services/excel_import_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
@@ -23,6 +24,17 @@ import 'package:shadchan/widgets/app_notice.dart';
 /// way of getting text in front of the model — they all end at the same parsed
 /// people and the same review step.
 enum AiImportSource { excel, whatsapp, pastedText, camera, gallery }
+
+/// What the user decided when shown what an import would cost.
+enum _PlanChoice {
+  /// Read what the plan says — everything the memory has not already seen.
+  go,
+
+  /// Read the file from the top, memory ignored.
+  readAll,
+
+  cancel,
+}
 
 /// The entry page behind "היעזרו ב‑AI להוספה".
 ///
@@ -175,7 +187,15 @@ class _AiImportScreenState extends State<AiImportScreen> {
     await _run(path, source);
   }
 
-  Future<void> _run(String path, AiImportSource source) async {
+  /// [ignoreMemory] reads the file as though this device had never seen it —
+  /// the "לקרוא הכול מחדש" way out of [AiImportMemory] having skipped
+  /// something it should not have. It bypasses the memory for this run without
+  /// erasing it, so the choice costs one import rather than every future one.
+  Future<void> _run(
+    String path,
+    AiImportSource source, {
+    bool ignoreMemory = false,
+  }) async {
     if (_isWorking) {
       return;
     }
@@ -265,7 +285,54 @@ class _AiImportScreenState extends State<AiImportScreen> {
           return;
         }
         _warnAboutLimits(stats);
-        outcome = await AiImportRunner.runChat(chat, onProgress: report);
+
+        // Worked out before anything is sent, so the confirmation below can
+        // quote real numbers and the memory can take the file's repeats off
+        // the bill.
+        final AiImportPlan plan = AiImportRunner.planChat(
+          chat,
+          alreadyImported: ignoreMemory
+              ? const <String>{}
+              : AiImportMemory.seen(),
+        );
+        log
+          ..note('הודעות חדשות', plan.messageCount)
+          ..note('דולגו — יובאו כבר', plan.skipped);
+
+        if (plan.isEmpty && plan.skipped == 0) {
+          // Messages, but nothing in them that could be a card. Not the memory's
+          // doing, so there is nothing to re-read and offering it would only
+          // loop back to this same screen.
+          _failWithReport(
+            log,
+            message: 'לא נמצאו כרטיסים בקובץ.',
+            hint:
+                'בקובץ יש הודעות, אבל אף אחת מהן לא נראית כמו כרטיס של מועמד. '
+                'ודאו שייצאתם את הקבוצה שבה מפרסמים את הכרטיסים.',
+          );
+          return;
+        }
+        if (plan.isEmpty) {
+          _stopWorking();
+          if (await _confirmNothingNew(plan)) {
+            await _run(path, source, ignoreMemory: true);
+          }
+          return;
+        }
+
+        switch (await _confirmPlan(plan)) {
+          case _PlanChoice.cancel:
+            _stopWorking();
+            return;
+          case _PlanChoice.readAll:
+            _stopWorking();
+            await _run(path, source, ignoreMemory: true);
+            return;
+          case _PlanChoice.go:
+            break;
+        }
+
+        outcome = await AiImportRunner.runChat(plan, onProgress: report);
       }
 
       log
@@ -302,6 +369,9 @@ class _AiImportScreenState extends State<AiImportScreen> {
           builder: (_) => AiImportReviewScreen(
             people: outcome.people,
             failedBatches: outcome.failedBatches,
+            // Recorded by the review screen when it actually writes the people,
+            // not here — see `AiImportReviewScreen.importedKeys`.
+            importedKeys: outcome.processedKeys,
           ),
         ),
       );
@@ -324,6 +394,128 @@ class _AiImportScreenState extends State<AiImportScreen> {
         hint: 'אפשר לנסות שוב, ואם זה חוזר — לשלוח לנו את פרטי התקלה.',
       );
     }
+  }
+
+  /// Asks before spending anything, quoting what the file will actually cost.
+  ///
+  /// **The one action in the app that runs for minutes on the project's tokens,
+  /// and it used to start on a file-picker tap.** A group export gives no clue
+  /// to its size from the outside — the same share sheet hands over a
+  /// twelve-card chat and a four-year archive of a 900-member group — so the
+  /// only moment the size can be shown is here, after the file is read and
+  /// before a single request goes out.
+  ///
+  /// Requests, not people: it is the number that scales, the number that takes
+  /// the time, and the number a matchmaker can compare against the last import
+  /// they ran.
+  Future<_PlanChoice> _confirmPlan(AiImportPlan plan) async {
+    // A short file is not worth a question, unless the memory is quietly
+    // dropping most of it — that is the one small import somebody may need to
+    // argue with. The point is to catch the export nobody meant to hand over,
+    // and stopping to confirm five requests trains people to tap through the
+    // dialog that matters.
+    if (plan.batchCount <= _confirmAboveBatches && plan.skipped == 0) {
+      return _PlanChoice.go;
+    }
+
+    final StringBuffer body = StringBuffer()
+      ..writeln('בקובץ ${plan.messageCount} הודעות שצריך לקרוא.')
+      ..writeln()
+      ..writeln(
+        'הקריאה תתבצע ב‑${plan.batchCount} בקשות ל‑AI, וזה יכול לקחת כמה דקות.',
+      );
+    if (plan.skipped > 0) {
+      body
+        ..writeln()
+        ..writeln(
+          '${plan.skipped} הודעות כבר יובאו בעבר מהמכשיר הזה, והן ידולגו — '
+          'כך שהייבוא קורא רק את מה שחדש.',
+        );
+    }
+
+    final _PlanChoice? choice = await showDialog<_PlanChoice>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('לקרוא את הקובץ?'),
+        content: SingleChildScrollView(
+          child: Text(body.toString().trimRight()),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_PlanChoice.cancel),
+            child: const Text('ביטול'),
+          ),
+          // Only when there is something being skipped, and deliberately worded
+          // as what it does rather than as "reset". Somebody who deleted a
+          // person by mistake and wants them back has no other way in, and
+          // "זיכרון הייבוא" is not a thing they know exists.
+          if (plan.skipped > 0)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(_PlanChoice.readAll),
+              child: const Text('לקרוא הכול מחדש'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(_PlanChoice.go),
+            child: const Text('קראו את הקובץ'),
+          ),
+        ],
+      ),
+    );
+    return choice ?? _PlanChoice.cancel;
+  }
+
+  /// Above this many requests the import stops to ask. Below it, a confirmation
+  /// is noise: a handful of requests is seconds, and a dialog on every small
+  /// import is how people learn to dismiss the one that matters.
+  static const int _confirmAboveBatches = 5;
+
+  /// Ends an import whose file held nothing this device had not already read.
+  ///
+  /// A dialog rather than a passing notice, and its own path rather than a
+  /// failure or an empty result, because it is the normal outcome of the most
+  /// ordinary thing a matchmaker does — re-export the group to pick up the last
+  /// few weeks — and because it is the one case where the app's memory could be
+  /// wrong. "לא נמצאו אנשים" here would send somebody hunting for a bug in an
+  /// import that worked perfectly the first time; this says what happened and
+  /// offers the way past it.
+  Future<bool> _confirmNothingNew(AiImportPlan plan) async {
+    if (!mounted) {
+      return false;
+    }
+    final bool? readAll = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('הכול כבר יובא'),
+        content: Text(
+          'כל ${plan.skipped} הכרטיסים בקובץ הזה כבר נקראו מהמכשיר הזה, '
+          'ולא נמצא בו שום דבר חדש.\n\n'
+          'אם חלק מהאנשים חסרים אצלכם — אפשר לקרוא את הקובץ כולו מחדש.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('סגירה'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('לקרוא הכול מחדש'),
+          ),
+        ],
+      ),
+    );
+    return readAll ?? false;
+  }
+
+  /// Drops the working state without touching anything else, so a re-entrant
+  /// `_run` is not refused by its own `_isWorking` guard.
+  void _stopWorking() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isWorking = false;
+      _status = '';
+    });
   }
 
   /// Says out loud when the import kept less than the file held.
