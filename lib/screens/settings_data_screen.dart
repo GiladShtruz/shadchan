@@ -80,7 +80,7 @@ class _SettingsDataScreenState extends State<SettingsDataScreen> {
                 ),
                 SettingsRow(
                   icon: Icons.favorite_outline,
-                  title: 'מספר הצעות',
+                  title: 'מספר רעיונות',
                   trailing: _Count(value: matchRepo.count),
                 ),
               ],

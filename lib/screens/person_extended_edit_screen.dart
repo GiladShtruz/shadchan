@@ -775,9 +775,13 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
+              // The candidate's own status, in the candidate's own gender:
+              // "רווקה", not "רווקים". The plural belongs on a filter that
+              // covers a whole group; this chip describes one person, and
+              // reading a woman's card and being told "גרושים" is simply wrong.
               for (final MaritalStatus status in MaritalStatus.values)
                 ChoiceChip(
-                  label: Text(status.filterLabel),
+                  label: Text(status.displayNameFor(_gender)),
                   selected: _maritalStatus == status,
                   onSelected: (bool selected) =>
                       _commit(() => _maritalStatus = selected ? status : null),
@@ -818,6 +822,15 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       ),
     );
   }
+
+  /// The gender of whoever this candidate is going to be matched with. With no
+  /// gender chosen yet there is nothing to mirror, so the labels fall back to
+  /// the masculine form — which is what Hebrew does when it does not know.
+  Gender get _oppositeGender => switch (_gender) {
+    Gender.male => Gender.female,
+    Gender.female => Gender.male,
+    Gender.unknown => Gender.male,
+  };
 
   Widget _buildLookingFor(ThemeData theme) {
     final ReligiousLevelsProvider levels = context
@@ -876,9 +889,11 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
+              // What they are looking for is a person of the *other* gender,
+              // so these read "גרושה" on a man's card and "גרוש" on a woman's.
               for (final MaritalStatus status in MaritalStatus.values)
                 FilterChip(
-                  label: Text(status.filterLabel),
+                  label: Text(status.displayNameFor(_oppositeGender)),
                   selected: _prefMaritalStatuses.contains(status),
                   onSelected: (bool selected) => _commit(() {
                     if (selected) {

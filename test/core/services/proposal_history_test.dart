@@ -91,8 +91,8 @@ void main() {
   test('opening a proposal is recorded on both candidates', () async {
     await openProposal();
 
-    expect(historyFor('him'), <String>['נפתחה הצעה עם שושנה']);
-    expect(historyFor('her'), <String>['נפתחה הצעה עם אליהו']);
+    expect(historyFor('him'), <String>['נפתח רעיון עם שושנה']);
+    expect(historyFor('her'), <String>['נפתח רעיון עם אליהו']);
   });
 
   test(
@@ -109,14 +109,14 @@ void main() {
 
       // On his page the other side is named and the reason follows it.
       expect(historyFor('him'), <String>[
-        'נפתחה הצעה עם שושנה',
-        'נסגרה הצעה עם שושנה',
+        'נפתח רעיון עם שושנה',
+        'נסגר רעיון עם שושנה',
         'שושנה דחתה כי הוא תורני מדי עבורה',
       ]);
       // On hers the same closing, phrased from her side.
       expect(historyFor('her'), <String>[
-        'נפתחה הצעה עם אליהו',
-        'נסגרה הצעה עם אליהו',
+        'נפתח רעיון עם אליהו',
+        'נסגר רעיון עם אליהו',
         'דחתה כי הוא תורני מדי עבורה',
       ]);
     },
@@ -132,14 +132,14 @@ void main() {
     );
 
     expect(historyFor('him'), <String>[
-      'נפתחה הצעה עם שושנה',
-      'נסגרה הצעה עם שושנה',
-      'דחה את ההצעה',
+      'נפתח רעיון עם שושנה',
+      'נסגר רעיון עם שושנה',
+      'דחה את הרעיון',
     ]);
     expect(historyFor('her'), <String>[
-      'נפתחה הצעה עם אליהו',
-      'נסגרה הצעה עם אליהו',
-      'אליהו דחה את ההצעה',
+      'נפתח רעיון עם אליהו',
+      'נסגר רעיון עם אליהו',
+      'אליהו דחה את הרעיון',
     ]);
   });
 
@@ -153,8 +153,8 @@ void main() {
     );
 
     expect(historyFor('him'), <String>[
-      'נפתחה הצעה עם שושנה',
-      'נסגרה הצעה עם שושנה',
+      'נפתח רעיון עם שושנה',
+      'נסגר רעיון עם שושנה',
     ]);
   });
 
@@ -169,8 +169,8 @@ void main() {
     );
 
     expect(historyFor('him'), <String>[
-      'נפתחה הצעה עם שושנה',
-      'נסגרה הצעה עם שושנה',
+      'נפתח רעיון עם שושנה',
+      'נסגר רעיון עם שושנה',
       'יצאו ולא המשיכו כי לא הרגישו חיבור',
     ]);
   });

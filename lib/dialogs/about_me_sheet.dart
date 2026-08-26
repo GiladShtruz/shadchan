@@ -5,13 +5,18 @@ import 'package:shadchan/utils/gender_text.dart';
 /// "משפט קצר עליי" — the one optional line on the matchmaker's own profile,
 /// and the examples that explain it better than any label could.
 ///
-/// **The examples are the feature.** "ספרו על עצמכם" in a text box gets an
-/// empty text box: the question is too wide to answer in a sentence, and
-/// nobody wants to be the one who wrote the wrong kind of thing. Two real
-/// lines — one about why somebody does this, one about what they actually work
-/// on — draw the size and the register of the answer in less space than an
-/// instruction would, and tapping one writes it in so the field is never
-/// intimidatingly blank.
+/// **The examples show the size of the answer, and nothing more.** "ספרו על
+/// עצמכם" in a text box gets an empty text box: the question is too wide to
+/// answer in a sentence, and nobody wants to be the one who wrote the wrong
+/// kind of thing. Two real fragments — one about why somebody does this, one
+/// about what they actually work on — draw the register of the answer in less
+/// space than an instruction would.
+///
+/// **They are not choices.** They used to be chips, and a row of chips under a
+/// field is read as a menu: people tapped one, and the community filled up with
+/// three sentences written by the app. So they are one quiet grey line now,
+/// trailing off in an ellipsis — the shape of an example rather than of an
+/// option — and the only way to fill the field is to write in it.
 ///
 /// **Optional, everywhere it appears.** Sign-up shows it below the required
 /// answers and never blocks on it, and the profile keeps it editable forever —
@@ -28,62 +33,45 @@ abstract final class AboutMe {
   /// an example addressed to the wrong person is an example nobody copies.
   static const List<String> exampleTemplates = <String>[
     '{אוהב|אוהבת} לחבר בין אנשים',
-    '{עוסק|עוסקת} בשידוכים בעיקר במגזר הדתי־לאומי בגילאי 25–30',
-    '{מאמין|מאמינה} שלכל אחד יש את הזיווג שלו, ולפעמים צריך רק מי שיציג',
+    '{עוסק|עוסקת} בשידוכים במגזר מסוים',
   ];
 
   static List<String> examplesFor(Gender? gender) => <String>[
     for (final String template in exampleTemplates) template.forGender(gender),
   ];
+
+  /// The whole hint as one line: the fragments joined by a comma and left
+  /// hanging, so it reads as "something along these lines" rather than as two
+  /// sentences on offer.
+  static String exampleLineFor(Gender? gender) =>
+      'למשל: ${examplesFor(gender).join(', ')}...';
 }
 
-/// The examples, as chips that write themselves into the field.
+/// The examples, as one quiet line under the field.
 ///
 /// Shown under the input on both surfaces that carry it, so the field is
 /// explained in exactly the same way whether it is met during sign-up or a
-/// month later on the profile.
+/// month later on the profile. Deliberately the smallest, palest type on the
+/// screen: it is a caption on somebody else's answer, not a control.
 class AboutMeExamples extends StatelessWidget {
-  const AboutMeExamples({
-    super.key,
-    required this.gender,
-    required this.onPick,
-  });
+  const AboutMeExamples({super.key, required this.gender});
 
   final Gender? gender;
-  final ValueChanged<String> onPick;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          'דוגמאות:',
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
-          ),
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Text(
+        AboutMe.exampleLineFor(gender),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.75),
+          fontStyle: FontStyle.italic,
+          height: 1.35,
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: <Widget>[
-            for (final String example in AboutMe.examplesFor(gender))
-              ActionChip(
-                label: Text(example),
-                labelStyle: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.3,
-                ),
-                visualDensity: VisualDensity.compact,
-                onPressed: () => onPick(example),
-              ),
-          ],
-        ),
-      ],
+      ),
     );
   }
 }
@@ -171,15 +159,7 @@ class _AboutMeSheetState extends State<AboutMeSheet> {
               ),
             ),
             const SizedBox(height: 4),
-            AboutMeExamples(
-              gender: widget.gender,
-              onPick: (String example) => setState(() {
-                _controller.text = example;
-                _controller.selection = TextSelection.collapsed(
-                  offset: example.length,
-                );
-              }),
-            ),
+            AboutMeExamples(gender: widget.gender),
             const SizedBox(height: 18),
             Row(
               children: <Widget>[

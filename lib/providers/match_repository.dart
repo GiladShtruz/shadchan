@@ -215,14 +215,14 @@ class MatchRepository extends ChangeNotifier {
     await logPersonEvent?.call(
       personAId,
       PersonEventType.proposalOpened,
-      'נפתחה הצעה עם $nameB',
+      'נפתח רעיון עם $nameB',
       relatedPersonId: personBId,
       relatedMatchId: match.id,
     );
     await logPersonEvent?.call(
       personBId,
       PersonEventType.proposalOpened,
-      'נפתחה הצעה עם $nameA',
+      'נפתח רעיון עם $nameA',
       relatedPersonId: personAId,
       relatedMatchId: match.id,
     );
@@ -243,8 +243,8 @@ class MatchRepository extends ChangeNotifier {
   /// Moves a proposal to [newStatus].
   ///
   /// [journal] is false only for a caller that writes a fuller line of its own
-  /// — [recordOutcome] knows *who* ended the proposal and why, and "ההצעה
-  /// נסגרה" directly above "ההצעה נדחתה (מי: שרה)" says the same thing twice
+  /// — [recordOutcome] knows *who* ended the idea and why, and "הרעיון
+  /// נסגר" directly above "הרעיון נדחה (מי: שרה)" says the same thing twice
   /// and dates it twice.
   Future<void> updateStatus(
     String matchId,
@@ -377,13 +377,13 @@ class MatchRepository extends ChangeNotifier {
   }) {
     switch (to) {
       case MatchStatus.idea:
-        return from.isArchived ? 'ההצעה נפתחה מחדש' : 'ההצעה חזרה להיות פתוחה';
+        return from.isArchived ? 'הרעיון נפתח מחדש' : 'הרעיון חזר להיות פתוח';
       case MatchStatus.checking:
-        return 'ההצעה בבדיקה';
+        return 'הרעיון בבדיקה';
       case MatchStatus.unavailable:
-        return 'ההצעה עברה להמתנה';
+        return 'הרעיון עבר להמתנה';
       case MatchStatus.rejected:
-        return 'ההצעה נסגרה';
+        return 'הרעיון נסגר';
       case MatchStatus.dated:
         return 'יצאו ולא המשיכו';
       case MatchStatus.dating:
@@ -604,8 +604,8 @@ class MatchRepository extends ChangeNotifier {
       matchId: matchId,
       text: <String>[
         trimmedReason.isEmpty
-            ? 'ההצעה עברה להמתנה'
-            : 'ההצעה בהמתנה — $trimmedReason',
+            ? 'הרעיון עבר להמתנה'
+            : 'הרעיון בהמתנה — $trimmedReason',
         if (checkAgainOn != null) 'לבדוק שוב ב־${_journalDate(checkAgainOn)}',
       ].join(' · '),
       createdAt: now,
@@ -740,7 +740,7 @@ class MatchRepository extends ChangeNotifier {
     }
     await _createNote(
       matchId: matchId,
-      text: 'שלב ההצעה עודכן — $label',
+      text: 'שלב הרעיון עודכן — $label',
       createdAt: now,
       isAutomatic: true,
     );
@@ -870,7 +870,7 @@ class MatchRepository extends ChangeNotifier {
         ? 'יצאו ולא המשיכו (החליט: $who)'
         : fromInquiry
         ? _inquiryOutcomeLine
-        : 'ההצעה נדחתה (מי: $who)';
+        : 'הרעיון נדחה (מי: $who)';
     await addNote(
       matchId,
       trimmedNote.isEmpty ? journalText : '$journalText — $trimmedNote',
@@ -906,7 +906,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   /// Writes one candidate's side of a closing as **two** history entries: the
-  /// closing itself ("נסגרה הצעה עם שושנה") and, on its own line, why
+  /// closing itself ("נסגר רעיון עם שושנה") and, on its own line, why
   /// ("שושנה דחתה כי הוא תורני מדי עבורה"). Keeping them apart means the
   /// history reads as a sequence of events rather than one long sentence, and
   /// the closing line stays uniform whatever the reason was.
@@ -934,7 +934,7 @@ class MatchRepository extends ChangeNotifier {
     await logPersonEvent?.call(
       person.id,
       eventType,
-      'נסגרה הצעה עם $otherName',
+      'נסגר רעיון עם $otherName',
       relatedPersonId: otherPerson?.id,
       relatedMatchId: matchId,
       createdAt: closedAt,
@@ -966,7 +966,7 @@ class MatchRepository extends ChangeNotifier {
   ///
   /// With a reason it reads as the closing line's follow-up, so the object is
   /// left out — "שושנה דחתה כי הוא תורני מדי עבורה". Without one it has to
-  /// stand on its own, so it keeps "את ההצעה". The other side is the opposite
+  /// stand on its own, so it keeps "את הרעיון". The other side is the opposite
   /// gender by definition, which is what picks the verb form.
   String? _outcomeReasonLine({
     required bool selfIsMale,
@@ -1000,12 +1000,12 @@ class MatchRepository extends ChangeNotifier {
     }
     if (selfEnded) {
       final String verb = selfIsMale ? 'דחה' : 'דחתה';
-      return note.isEmpty ? '$verb את ההצעה' : '$verb$because';
+      return note.isEmpty ? '$verb את הרעיון' : '$verb$because';
     }
     if (otherEnded) {
       final String verb = selfIsMale ? 'דחתה' : 'דחה';
       return note.isEmpty
-          ? '$otherName $verb את ההצעה'
+          ? '$otherName $verb את הרעיון'
           : '$otherName $verb$because';
     }
 
@@ -1033,7 +1033,7 @@ class MatchRepository extends ChangeNotifier {
     await _createNote(
       matchId: matchId,
       text:
-          'נוסף איש קשר להצעה: ${contact.name}'
+          'נוסף איש קשר לרעיון: ${contact.name}'
           '${(contact.description ?? '').trim().isEmpty ? '' : ' '
                     '(${contact.description!.trim()})'}',
       createdAt: now,
@@ -1057,7 +1057,7 @@ class MatchRepository extends ChangeNotifier {
     await match.save();
     await _createNote(
       matchId: matchId,
-      text: 'הוסר איש קשר מההצעה: ${removed.name}',
+      text: 'הוסר איש קשר מהרעיון: ${removed.name}',
       createdAt: now,
       isAutomatic: true,
     );
@@ -1075,6 +1075,34 @@ class MatchRepository extends ChangeNotifier {
   Person? Function(String personId)? resolvePerson;
 
   Future<void> syncMatchesForPerson(String personId) async {
+    // **"מזל טוב" closes everything.** A friend who is getting married is not a
+    // candidate any more, and their open ideas are not ideas — they were
+    // already invisible on רעיונות (see `matchProposalTabFor`, which drops a
+    // proposal with an archived side), which meant a matchmaker could neither
+    // see them nor close them. So marking somebody "מזל טוב" now files every
+    // idea they are in: a couple who were out are recorded as having gone out,
+    // everything else is simply closed. The wedding's own proposal is already
+    // archived by the time this runs, so it is left exactly as it is.
+    if (resolvePerson?.call(personId)?.profileStatus.isArchived ?? false) {
+      for (final MatchIdea match in _matchBox.values.toList()) {
+        final bool involves =
+            match.personAId == personId || match.personBId == personId;
+        if (!involves || match.status.isArchived) {
+          continue;
+        }
+        // Through `updateStatus` rather than written here, so a couple who
+        // were out are released and the journal reads the same as it does when
+        // an idea is closed by hand.
+        await updateStatus(
+          match.id,
+          match.status == MatchStatus.dating
+              ? MatchStatus.dated
+              : MatchStatus.rejected,
+        );
+      }
+      return;
+    }
+
     final DateTime now = DateTime.now();
     bool changed = false;
 
@@ -1157,6 +1185,26 @@ class MatchRepository extends ChangeNotifier {
     match.updatedAt = DateTime.now();
     await match.save();
     notifyListeners();
+  }
+
+  /// Erases every proposal, note and status event on this device.
+  ///
+  /// The twin of `PersonRepository.clearAll`, and called only from the same
+  /// place: the account changing. See the note there for why records leaving
+  /// with the account is the point rather than a side effect.
+  Future<void> clearAll() async {
+    for (final String id in _matchBox.keys.cast<String>().toList()) {
+      await ReminderAlerts.forget(id);
+      await DatingCountExclusions.forget(id);
+    }
+    await _matchBox.clear();
+    await _noteBox.clear();
+    await _statusEventBox?.clear();
+    notifyListeners();
+    // Rescheduled from an empty database, which cancels everything that was
+    // pending — a reminder about a proposal that no longer exists here would
+    // otherwise arrive on the next matchmaker's phone.
+    _refreshNotifications();
   }
 
   Future<void> deleteMatch(String matchId) async {

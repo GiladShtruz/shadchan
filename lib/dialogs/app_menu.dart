@@ -2,24 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shadchan/dialogs/community_dialogs.dart';
-import 'package:shadchan/dialogs/privacy_policy_dialog.dart';
+import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 
 /// What the overflow menu can do.
-enum AppMenuAction {
-  settings,
-  updatesGroup,
-  share,
-  report,
-  help,
-  contact,
-  privacyPolicy,
-  feedbackCenter,
-}
+enum AppMenuAction { marriedFriends, profile, settings, report, feedbackCenter }
 
 /// The menu behind the hamburger in the top banner.
 ///
@@ -34,13 +24,15 @@ enum AppMenuAction {
 /// corner is a control — the menu belongs to the button and should come out of
 /// it.
 ///
-/// **Two groups, one line between them.** The first row opens this app's own
-/// settings; everything under the divider reaches a person — reporting
-/// something, passing the app on, the community group, the guide, an email.
-/// Six identical rows in one column is a list to read; two short groups is a
-/// menu to glance at. The rows carry their icon in a tinted square rather than
-/// bare, which is what stops a column of thin grey glyphs from reading as
-/// disabled.
+/// **Four rows, in three groups.** It used to carry nine: sharing the app, the
+/// community group, the guide, an email address and the privacy policy on top
+/// of the four that are left. All of those live in the settings, which is where
+/// somebody goes looking for them once; on a menu that is opened from every
+/// screen they were five rows to read past. What is here is what is reached
+/// often — the weddings, the matchmaker's own page, the settings, and the way
+/// to say something is broken. The rows carry their icon in a tinted square
+/// rather than bare, which is what stops a column of thin grey glyphs from
+/// reading as disabled.
 class AppMenuButton extends StatelessWidget {
   const AppMenuButton({super.key, this.boxed = false});
 
@@ -56,7 +48,7 @@ class AppMenuButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return PopupMenuButton<AppMenuAction>(
+    final Widget button = PopupMenuButton<AppMenuAction>(
       tooltip: 'תפריט',
       icon: boxed ? const _BarMenuIcon() : const Icon(Icons.more_vert),
       // The bar trigger sizes itself, so the icon button's default 48px splash
@@ -90,6 +82,19 @@ class AppMenuButton extends StatelessWidget {
           ),
           const PopupMenuDivider(height: 9),
         ],
+        // The best thing that ever comes out of this app, first on the menu:
+        // everybody the matchmaker knows who got married.
+        _item(
+          AppMenuAction.marriedFriends,
+          Icons.celebration_outlined,
+          'חברים שהתחתנו',
+        ),
+        const PopupMenuDivider(height: 9),
+        // The matchmaker's own page used to be reached by tapping their
+        // photograph in the corner of the home bar. The dots took that corner
+        // back — see `HomeScreen._buildGreetingAppBar` — so the way to it lives
+        // here.
+        _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי'),
         _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
         const PopupMenuDivider(height: 9),
         _item(
@@ -97,22 +102,23 @@ class AppMenuButton extends StatelessWidget {
           Icons.forum_outlined,
           'שליחת תקלה או רעיון',
         ),
-        _item(AppMenuAction.share, Icons.ios_share_outlined, 'שיתוף האפליקציה'),
-        if (CommunityLinks.hasUpdatesGroup)
-          _item(
-            AppMenuAction.updatesGroup,
-            Icons.groups_outlined,
-            'הצטרפות לקבוצת הקהילה',
-          ),
-        _item(AppMenuAction.help, Icons.help_outline_rounded, 'עזרה והדרכה'),
-        _item(AppMenuAction.contact, Icons.mail_outline_rounded, 'יצירת קשר'),
-        _item(
-          AppMenuAction.privacyPolicy,
-          Icons.privacy_tip_outlined,
-          'מדיניות פרטיות',
-        ),
       ],
     );
+
+    // **A `PopupMenuButton` is an `IconButton`, and an `IconButton` is 48
+    // wide.** That is Material's minimum tap target and it is applied whatever
+    // the icon size, so the bar's two popup triggers measured 48 while the bell
+    // and the "+" beside them measured 36 — twelve pixels of nothing between
+    // controls that are supposed to read as one cluster, and a home bar whose
+    // "+" was wider than the same "+" on the other two tabs. Held to the bar
+    // button's own square, the three squares finally sit against each other.
+    return boxed
+        ? SizedBox(
+            width: HomeBarButton.size,
+            height: HomeBarButton.size,
+            child: button,
+          )
+        : button;
   }
 
   static PopupMenuItem<AppMenuAction> _item(
@@ -130,31 +136,128 @@ class AppMenuButton extends StatelessWidget {
 
   static void _run(BuildContext context, AppMenuAction action) {
     switch (action) {
+      case AppMenuAction.marriedFriends:
+        context.push('/married');
+      case AppMenuAction.profile:
+        context.push('/profile');
       case AppMenuAction.settings:
         // The settings are a page of their own now, so this goes straight to
         // them rather than to the profile that used to contain them.
         context.push('/profile/settings');
-      case AppMenuAction.updatesGroup:
-        // The dialog rather than the link, because the link alone has no way of
-        // hearing "אני כבר בקבוצה" — and that is the only answer that stops the
-        // reminders.
-        UpdatesGroupDialog.show(context);
-      case AppMenuAction.share:
-        shareTheApp();
       case AppMenuAction.report:
         context.push('/support/report');
-      case AppMenuAction.help:
-        context.push('/support/help');
-      case AppMenuAction.contact:
-        CommunityLinks.openSupportEmail();
-      case AppMenuAction.privacyPolicy:
-        // The dialog rather than `/privacy-policy`, so that reading it does not
-        // cost the page somebody was already on. The full screen is still there
-        // behind the settings link.
-        PrivacyPolicyDialog.show(context);
       case AppMenuAction.feedbackCenter:
         context.push('/support/admin');
     }
+  }
+}
+
+/// What the "+" on the home screen can start.
+enum AddMenuAction { people, idea }
+
+/// The "+" in the home banner, and the two things it can start.
+///
+/// **המאגר שלי and רעיונות each have one thing to add, and בית has two.** The
+/// other two tabs' "+" goes straight to their own flow, because on those pages
+/// there is nothing else it could mean. The home screen is above both of them,
+/// so its "+" has to ask which — and a menu hanging off the button is the
+/// cheapest possible way to ask: two rows, one tap each, and the same rows in
+/// the same shape as the overflow menu beside it.
+///
+/// Each row leaves for the screen that does the work. Nothing is added from
+/// inside the menu itself.
+class AddMenuButton extends StatelessWidget {
+  const AddMenuButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    // Held to the same square as [ShadchanAddButton] on the other two tabs —
+    // see the note in [AppMenuButton.build].
+    return SizedBox(
+      width: HomeBarButton.size,
+      height: HomeBarButton.size,
+      child: PopupMenuButton<AddMenuAction>(
+        tooltip: 'הוספה',
+        icon: const _BarAddIcon(),
+        padding: EdgeInsets.zero,
+        iconSize: HomeBarButton.size,
+        position: PopupMenuPosition.under,
+        constraints: const BoxConstraints(minWidth: 216, maxWidth: 300),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        color: theme.colorScheme.surface,
+        elevation: 3,
+        onSelected: (AddMenuAction action) {
+          switch (action) {
+            case AddMenuAction.people:
+              AddPeopleDialog.show(context);
+            case AddMenuAction.idea:
+              context.push('/matches/add');
+          }
+        },
+        itemBuilder: (BuildContext context) => <PopupMenuEntry<AddMenuAction>>[
+          PopupMenuItem<AddMenuAction>(
+            value: AddMenuAction.people,
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            child: const _MenuRow(
+              icon: Icons.person_add_alt_1_outlined,
+              label: 'הוספת חברים',
+            ),
+          ),
+          PopupMenuItem<AddMenuAction>(
+            value: AddMenuAction.idea,
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            child: const _MenuRow(
+              icon: Icons.favorite_border_rounded,
+              label: 'הוספת רעיון',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The "+" inside the home bar's rounded square.
+///
+/// Drawn rather than delegated to [HomeBarButton] for the same reason
+/// [_BarMenuIcon] is: the tap belongs to the `PopupMenuButton` around it, and a
+/// button inside a button would swallow it. Unlike the menu dots this one keeps
+/// its box — it is the same control as the "+" on המאגר שלי and רעיונות, and
+/// the three bars have to agree.
+class _BarAddIcon extends StatelessWidget {
+  const _BarAddIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
+    return Container(
+      width: HomeBarButton.size,
+      height: HomeBarButton.size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: dark
+            ? theme.colorScheme.surfaceContainerHighest
+            : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.9),
+        ),
+      ),
+      child: Icon(
+        Icons.add,
+        size: 20,
+        color: dark ? theme.colorScheme.onSurface : AppColors.primaryInk,
+      ),
+    );
   }
 }
 

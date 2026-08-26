@@ -231,6 +231,13 @@ class HomeBoardStore extends ChangeNotifier {
     }
   }
 
+  /// Empties the board and forgets it on disk.
+  ///
+  /// Only for signing out: the board points at people and proposals that are
+  /// about to stop existing on this device, and a board of dangling ids is
+  /// worse than an empty one.
+  void reset() => _write(const <HomeBoardEntry>[]);
+
   void _write(List<HomeBoardEntry> entries) {
     _cache = entries;
     notifyListeners();

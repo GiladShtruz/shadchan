@@ -72,7 +72,9 @@ class HomeHeroBand extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: lead.withValues(alpha: 0.18)),
+                // No outline — the same rule as the block above it: the wash
+                // separates it from the page on its own, and a line round a
+                // tinted fill is a second edge for one shape.
                 gradient: LinearGradient(
                   begin: AlignmentDirectional.topStart,
                   end: AlignmentDirectional.bottomEnd,
@@ -98,19 +100,51 @@ class HomeHeroBand extends StatelessWidget {
                       children: <Widget>[
                         // Named for what it is: pairs the database worked out
                         // on its own, not ideas the matchmaker opened.
-                        Text(
-                          'רעיונות שהמאגר מציע לך',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1.25,
+                        //
+                        // **The same size as "עוצרים רגע לחשוב על החברים",
+                        // and on one line like it.** These two blocks sit one
+                        // above the other and are the two invitations at the
+                        // top of the page; heading one of them at the page's
+                        // lead size and the other three steps below it made
+                        // the pair read as a banner with a footnote under it.
+                        // Scaled down to fit rather than wrapped, for the
+                        // reason the block above it is: a two-line heading
+                        // here is taller than the couple beside it and turns
+                        // a row into a paragraph.
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'רעיונות שהמאגר מציע לך',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                height: 1.15,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 3),
-                        Text(
-                          'זוגות חדשים שיכולים להתאים לחברים שלך',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            height: 1.35,
+                        // One warm line about what is behind the row, in the
+                        // page's own small type. It used to describe the
+                        // mechanism — "זוגות חדשים שיכולים להתאים לחברים שלך"
+                        // — which is both longer than the row can hold and a
+                        // restatement of the heading directly above it.
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'שווה הצצה, אולי מחכה שם חיבור',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.35,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -375,9 +409,13 @@ class _AddTile extends StatelessWidget {
                           label,
                           maxLines: 1,
                           textAlign: TextAlign.center,
+                          // No size of its own: the page decides that once,
+                          // for every block on it — see [HomeTypography]. The
+                          // `FittedBox` above still shrinks the label on a
+                          // narrow card, which is what `compact` used to do by
+                          // hand.
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
-                            fontSize: (primary ? 17 : 16) * (compact ? 0.9 : 1),
                             height: 1.2,
                             color: AppColors.onPrimary,
                           ),
@@ -675,7 +713,6 @@ class _DatingPage extends StatelessWidget {
                         Text(
                           'זוגות שיוצאים',
                           style: theme.textTheme.labelMedium?.copyWith(
-                            fontSize: 13,
                             fontWeight: FontWeight.w800,
                             color: accent,
                           ),
@@ -689,7 +726,6 @@ class _DatingPage extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleLarge?.copyWith(
-                      fontSize: 22,
                       height: 1.15,
                       fontWeight: FontWeight.w900,
                       color: theme.colorScheme.onSurface,
@@ -700,10 +736,7 @@ class _DatingPage extends StatelessWidget {
                     'יוצאים כבר ${couple.duration}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 14,
-                      color: accent,
-                    ),
+                    style: theme.textTheme.bodySmall?.copyWith(color: accent),
                   ),
                 ],
               ),

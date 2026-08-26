@@ -4,7 +4,7 @@ part 'person_event.g.dart';
 
 /// The kinds of meaningful events recorded on a person's history timeline.
 /// Used both for phrasing and for the filters on the full history screen
-/// (הכל / הצעות / יצאו / שלילות / הערות).
+/// (הכל / רעיונות / יצאו / שלילות / הערות).
 @HiveType(typeId: 13)
 enum PersonEventType {
   @HiveField(0)

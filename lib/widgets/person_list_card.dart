@@ -25,6 +25,7 @@ class PersonListCard extends StatelessWidget {
     this.onStatusPicked,
     this.heroEnabled = true,
     this.selected,
+    this.trailing,
   });
 
   final Person person;
@@ -66,6 +67,14 @@ class PersonListCard extends StatelessWidget {
   /// that leaves the app in the middle of picking six people is a trap, not a
   /// shortcut.
   final bool? selected;
+
+  /// One control of the caller's own at the outer end of the row.
+  ///
+  /// Added for the card expander on the pickers — see [CandidateCardButton] —
+  /// where the row carries no messaging or favourite button and the outer edge
+  /// is empty. Dropped entirely while the row is in selection mode, for the
+  /// same reason the other trailing buttons are.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +234,7 @@ class PersonListCard extends StatelessWidget {
                       ),
                       onPressed: onToggleFavorite,
                     ),
+                  ?trailing,
                 ],
                 const SizedBox(width: 4),
               ],

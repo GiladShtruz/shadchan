@@ -1198,6 +1198,24 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
 
     return CommunityCard(
       title: 'דירוג השדכנים',
+      // **The way to the reader's own public page, on the card full of other
+      // people's.** Tapping a name here opens that matchmaker's profile — so
+      // the obvious next question is "what does mine look like, and what is on
+      // it?", and until now there was no answer anywhere near where the
+      // question is asked.
+      trailing: TextButton(
+        onPressed: () => context.push('/profile'),
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: theme.textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        child: const Text('הפרופיל שלי ›'),
+      ),
       // Plain as well, so the one gold row at the top is the only colour on it
       // — which is the whole point of a board.
       surface: CommunitySurface.plain,

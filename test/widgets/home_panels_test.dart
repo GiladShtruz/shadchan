@@ -80,7 +80,7 @@ void main() {
     expect(find.text('רעיונות שהמאגר מציע לך'), findsOneWidget);
     // One wide row that opens a screen: a title, a line under it and a chevron.
     // The full-width filled button it used to carry is gone on purpose.
-    expect(find.text('זוגות חדשים שיכולים להתאים לחברים שלך'), findsOneWidget);
+    expect(find.text('שווה הצצה, אולי מחכה שם חיבור'), findsOneWidget);
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('הוספת חברים'), findsOneWidget);
     expect(find.text('הוספת רעיון'), findsOneWidget);
@@ -612,7 +612,7 @@ void main() {
         expect(tester.takeException(), isNull);
         for (final String label in <String>[
           'רעיונות שהמאגר מציע לך',
-          'זוגות חדשים שיכולים להתאים לחברים שלך',
+          'שווה הצצה, אולי מחכה שם חיבור',
           'הוספת חברים',
           'הוספת רעיון',
         ]) {

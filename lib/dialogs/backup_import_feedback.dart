@@ -10,7 +10,7 @@ class BackupImportFeedback {
     AppNotice.show(
       context,
       'ייבוא הושלם — יובאו: ${result.peopleAdded} אנשים, '
-      '${result.matchesAdded} הצעות, ${result.notesAdded} הערות. '
+      '${result.matchesAdded} רעיונות, ${result.notesAdded} הערות. '
       'דולגו: ${result.skipped} רשומות.',
       duration: const Duration(seconds: 6),
     );

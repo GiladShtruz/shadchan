@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
-import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
@@ -26,55 +24,6 @@ import 'package:shadchan/utils/community_milestones.dart';
 /// WhatsApp, and this app never learns what happened there — so only the
 /// explicit "אני כבר בקבוצה" stops the reminders. Anything else means the
 /// invitation comes back in another hundred actions.
-/// "כבר בנית מאגר משמעותי" — the one reminder a matchmaker who skipped signing
-/// in ever gets, and the pacing that keeps it one.
-///
-/// **It is about their database, not about the account.** Somebody who declined
-/// once has heard the pitch; repeating it is nagging. What has changed since
-/// then is that they now have something worth losing, and that — not the
-/// feature list — is the only new thing worth saying.
-///
-/// Paced in friends rather than in days by [SignInPromptStore], and it rides
-/// the same one-prompt-per-launch gate as everything else the app says on its
-/// own, at the bottom of the order.
-abstract final class SignInReminderDialog {
-  static const String title = 'כבר בנית מאגר משמעותי';
-
-  static const String message =
-      'כדאי להתחבר כדי לגבות אותו ולשמור עליו גם אם תחליף מכשיר.';
-
-  static Future<void> show(BuildContext context, {required int friends}) async {
-    SignInPromptStore.markReminded(friends);
-
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final ThemeData theme = Theme.of(dialogContext);
-        return AlertDialog(
-          title: const Text(title),
-          content: Text(
-            message,
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('לא עכשיו'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                dialogContext.push('/sign-in');
-              },
-              child: const Text('התחברות'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 abstract final class UpdatesGroupDialog {
   /// [actions] is the running action count when the app raised this by itself,
   /// and null when the matchmaker opened it from the settings or the menu —

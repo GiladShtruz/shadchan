@@ -60,7 +60,7 @@ abstract final class HomeConfig {
   /// font — never with the content. Two notes are always the same box; a longer
   /// note is clamped, not taller.
   static const double cardWidth = 152;
-  static const double cardHeight = 190;
+  static const double cardHeight = 198;
 
   /// The cork surface's own padding above and below the notes. The top figure
   /// is what guarantees the drawing pin is never clipped.
@@ -79,8 +79,8 @@ abstract final class HomeConfig {
   /// clamped title line and two clamped reason lines — rather than rounded up
   /// to something comfortable. At 136 the box stood a third taller than its own
   /// contents, so every card in the row carried a band of empty white.
-  static const double nextActionCardWidth = 150;
-  static const double nextActionCardHeight = 110;
+  static const double nextActionCardWidth = 158;
+  static const double nextActionCardHeight = 120;
 
   /// "הפעולות האחרונות שלך": the maximum phone-width strip card. Height is
   /// content-driven.

@@ -19,8 +19,8 @@ class NotificationService {
   static const AndroidNotificationDetails _androidMatchDetails =
       AndroidNotificationDetails(
         'match_reminders',
-        'תזכורות להצעות',
-        channelDescription: 'התראות על הצעות שידוך',
+        'תזכורות לרעיונות',
+        channelDescription: 'התראות על רעיונות שידוך',
         importance: Importance.high,
         priority: Priority.high,
       );
@@ -457,8 +457,8 @@ class NotificationService {
         if (scheduledTime != null) {
           await _plugin.zonedSchedule(
             notifId,
-            'תזכורת להצעה',
-            match.reminderNote ?? 'יש לך תזכורת להצעת שידוך',
+            'תזכורת לרעיון',
+            match.reminderNote ?? 'יש לך תזכורת לרעיון שידוך',
             scheduledTime,
             _matchNotificationDetails,
             uiLocalNotificationDateInterpretation:

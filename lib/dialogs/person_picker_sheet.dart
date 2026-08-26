@@ -4,9 +4,12 @@ import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/widgets/candidate_card_view.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/extended_filter_toggle.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 
@@ -27,6 +30,7 @@ class PersonPickerSheet extends StatefulWidget {
     this.emptySubtitle = '{נסה|נסי} לחפש בשם אחר',
     this.allowCreateOutsideDatabase = false,
     this.filterKey,
+    this.sourcePerson,
   });
 
   final Gender? filterGender;
@@ -54,6 +58,22 @@ class PersonPickerSheet extends StatefulWidget {
   /// whole database by name.
   final String? filterKey;
 
+  /// The side of the proposal that is already chosen, when there is one.
+  ///
+  /// **The picker opens on people who fit them.** Choosing the second half of
+  /// an idea used to open the whole database in alphabetical order, which is a
+  /// list of six hundred names and no help at all — the matchmaker already knew
+  /// who the first side was, and the app knew what fits them, and neither fact
+  /// reached the screen. With a source the list opens on the candidates who
+  /// pass that person's basic filter, "סינון מורחב" narrows it to their whole
+  /// card, and "לכל המאגר" drops it entirely.
+  ///
+  /// Typing a name always searches the whole database whatever is set — a
+  /// search is a request for one particular person, and answering "no such
+  /// friend" because of a filter nobody asked for is the one thing a search
+  /// must never do.
+  final Person? sourcePerson;
+
   static Future<Person?> show(
     BuildContext context, {
     required String title,
@@ -68,6 +88,7 @@ class PersonPickerSheet extends StatefulWidget {
     String emptySubtitle = '{נסה|נסי} לחפש בשם אחר',
     bool allowCreateOutsideDatabase = false,
     String? filterKey,
+    Person? sourcePerson,
   }) {
     return showModalBottomSheet<Person>(
       context: context,
@@ -89,6 +110,7 @@ class PersonPickerSheet extends StatefulWidget {
             emptySubtitle: emptySubtitle,
             allowCreateOutsideDatabase: allowCreateOutsideDatabase,
             filterKey: filterKey,
+            sourcePerson: sourcePerson,
           ),
         );
       },
@@ -176,6 +198,18 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
   /// the same window again in five minutes.
   MatchProposalFilters? _filters;
 
+  /// Whether the automatic "who fits the other side" filter has been dropped in
+  /// favour of the whole database. Only meaningful with a
+  /// [PersonPickerSheet.sourcePerson].
+  bool _showWholeDatabase = false;
+
+  /// Whether the automatic filter is the source's *extended* one rather than
+  /// their basic one. See [ExtendedFilterToggle].
+  bool _extendedFilter = false;
+
+  /// Whose card is open inline right now.
+  final Set<String> _expandedIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -184,6 +218,19 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
     if (key != null) {
       _filters = MatchProposalFilterSheet.savedFiltersFor(key);
     }
+  }
+
+  /// Whether the list is currently being narrowed to whoever fits the already
+  /// chosen side.
+  ///
+  /// A filter the matchmaker set by hand wins over the automatic one — two
+  /// filters fighting is exactly what this sheet's older comment warns about —
+  /// and so does a search, which always covers the whole database.
+  bool _autoMatching({required bool searching}) {
+    return widget.sourcePerson != null &&
+        !_showWholeDatabase &&
+        !_hasFilters &&
+        !searching;
   }
 
   bool get _hasFilters {
@@ -266,6 +313,10 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
   Widget build(BuildContext context) {
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final String query = _searchController.text.trim().toLowerCase();
+    final Person? source = widget.sourcePerson;
+    final bool autoMatching = _autoMatching(searching: query.isNotEmpty);
+    final bool canNarrow =
+        source != null && MatchSuggestionUtils.hasExtendedPreferences(source);
 
     final List<Person> people = personRepository.getAll().where((
       Person person,
@@ -318,6 +369,21 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
         return false;
       }
 
+      if (autoMatching && source != null) {
+        final bool fits = _extendedFilter
+            ? MatchSuggestionUtils.matchesOwnPreferences(
+                source: source,
+                candidate: person,
+              )
+            : MatchSuggestionUtils.matchesBasicPreferences(
+                source: source,
+                candidate: person,
+              );
+        if (!fits) {
+          return false;
+        }
+      }
+
       if (query.isEmpty) {
         return true;
       }
@@ -327,7 +393,11 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
           person.fullName.toLowerCase().contains(query);
     }).toList();
 
-    final List<_PickerEntry> entries = _buildEntries(people, query);
+    final List<_PickerEntry> entries = _buildEntries(
+      people,
+      query,
+      restLabel: autoMatching ? 'שאר ההתאמות' : 'כל המאגר',
+    );
 
     return SafeArea(
       child: Padding(
@@ -388,6 +458,28 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                 ],
               ],
             ),
+            // Not while a filter the matchmaker set by hand is on: that one
+            // has its own "ניקוי הסינון" line directly below, and two rows
+            // claiming to describe the same list is worse than one.
+            if (source != null && query.isEmpty && !_hasFilters) ...<Widget>[
+              const SizedBox(height: 8),
+              _AutoMatchRow(
+                source: source,
+                active: autoMatching,
+                canNarrow: canNarrow,
+                narrowed: _extendedFilter,
+                onNarrowChanged: (bool value) =>
+                    setState(() => _extendedFilter = value),
+                onToggle: () => setState(() {
+                  _showWholeDatabase = !_showWholeDatabase;
+                  // Coming back to the matches starts from the wide answer,
+                  // which is the one this whole flow defaults to.
+                  if (!_showWholeDatabase) {
+                    _extendedFilter = false;
+                  }
+                }),
+              ),
+            ],
             if (_hasFilters) ...<Widget>[
               const SizedBox(height: 8),
               Align(
@@ -408,7 +500,9 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                   ? EmptyState(
                       icon: Icons.search,
                       title: 'לא נמצאו תוצאות',
-                      subtitle: widget.emptySubtitle,
+                      subtitle: autoMatching
+                          ? 'אף אחד במאגר לא מתאים לסינון — אפשר לעבור לכל המאגר למעלה'
+                          : widget.emptySubtitle,
                     )
                   : ListView.builder(
                       itemCount: entries.length,
@@ -424,10 +518,33 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                         // buttons: a picker's row has exactly one thing to do.
                         // The hero is off because the list underneath the sheet
                         // is very often the same one, tagged the same way.
-                        return PersonListCard(
-                          person: person,
-                          heroEnabled: false,
-                          onTap: () => Navigator.of(context).pop(person),
+                        final bool expanded = _expandedIds.contains(person.id);
+                        return Column(
+                          children: <Widget>[
+                            PersonListCard(
+                              person: person,
+                              heroEnabled: false,
+                              onTap: () => Navigator.of(context).pop(person),
+                              // Anybody with a card can have it read here,
+                              // without losing the choice being made — the same
+                              // control the התאמות list carries.
+                              trailing: hasCandidateCard(person)
+                                  ? CandidateCardButton(
+                                      expanded: expanded,
+                                      onPressed: () => setState(() {
+                                        if (!_expandedIds.remove(person.id)) {
+                                          _expandedIds.add(person.id);
+                                        }
+                                      }),
+                                    )
+                                  : null,
+                            ),
+                            if (expanded)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+                                child: CandidateQuickCard(candidate: person),
+                              ),
+                          ],
                         );
                       },
                     ),
@@ -443,7 +560,11 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
   /// Recently updated people lead the list so the ones being worked on right
   /// now are a tap away; the rest follow alphabetically. While searching the
   /// split is dropped and everything is listed alphabetically.
-  List<_PickerEntry> _buildEntries(List<Person> people, String query) {
+  List<_PickerEntry> _buildEntries(
+    List<Person> people,
+    String query, {
+    required String restLabel,
+  }) {
     int byName(Person a, Person b) =>
         a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase());
 
@@ -462,7 +583,7 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
     return <_PickerEntry>[
       _PickerEntry.section('עודכנו לאחרונה'),
       ...recent.map(_PickerEntry.person),
-      _PickerEntry.section('כל המאגר'),
+      _PickerEntry.section(restLabel),
       ...rest.map(_PickerEntry.person),
     ];
   }
@@ -952,6 +1073,73 @@ class _NewPersonDialogState extends State<_NewPersonDialog> {
           ).pop(_NewPersonChoice(name: name, addToDatabase: true)),
           child: const Text('הוספה למאגר'),
         ),
+      ],
+    );
+  }
+}
+
+/// The line above a picker list that says what it is currently showing.
+///
+/// Two controls and a sentence: what the list is narrowed to, "סינון מורחב"
+/// where the chosen side has one, and the way to the whole database. It is the
+/// only thing on the sheet that explains why a friend who exists is not on
+/// screen, which is what the picker was missing.
+class _AutoMatchRow extends StatelessWidget {
+  const _AutoMatchRow({
+    required this.source,
+    required this.active,
+    required this.canNarrow,
+    required this.narrowed,
+    required this.onNarrowChanged,
+    required this.onToggle,
+  });
+
+  final Person source;
+  final bool active;
+  final bool canNarrow;
+  final bool narrowed;
+  final ValueChanged<bool> onNarrowChanged;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String name = source.firstName.trim().isNotEmpty
+        ? source.firstName.trim()
+        : source.fullName.trim();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                active ? 'מתאימים ל$name' : 'כל המאגר',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onToggle,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(active ? 'לכל המאגר' : 'חזרה להתאמות'),
+            ),
+          ],
+        ),
+        if (active && canNarrow) ...<Widget>[
+          const SizedBox(height: 6),
+          ExtendedFilterToggle(selected: narrowed, onChanged: onNarrowChanged),
+        ],
       ],
     );
   }

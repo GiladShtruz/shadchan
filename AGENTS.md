@@ -21,7 +21,7 @@ Guidance for future agents working in this repository.
 
 - All user-facing UI text must be Hebrew.
 - Keep the app fully RTL. `lib/app.dart` wraps the app in `Directionality.rtl`; new screens and widgets should fit that assumption.
-- Preserve local-first behavior. User data is stored locally with Hive, local files, and explicit import/export flows.
+- Keep working offline. Hive is still the source of truth and every screen has to draw, edit and save with no network at all — but the app is **no longer local-*only***: an account is compulsory (see `AppRouter`'s gate and `SignInScreen`) and every record belongs to whoever is signed in.
 - Be careful with privacy-sensitive features: contacts, photos, sharing, backup JSON files, and notifications.
 - If a task is unclear or has a meaningful product/technical choice, ask before proceeding.
 
@@ -59,10 +59,11 @@ Guidance for future agents working in this repository.
 
 ## Current Capabilities To Preserve
 
-- People management: list, search/filter/sort, add/edit/detail, favorites, gallery photos, sharing, delete warnings.
+- People management: list, search/filter/sort, add/edit/detail, favorites, gallery photos, sharing, delete warnings. **Deleting a friend deletes their ideas with them** (`DeletePersonFlow`, `lib/dialogs/delete_person_dialog.dart`), and the confirmation counts the open ones first. A **long press ticks a friend** and turns the list into a picker for a joint "בקשת פרטים בוואטסאפ" — the sheet that used to be behind that gesture is gone, and deleting one friend is now reached from their own profile's overflow menu.
 - Matches management: one list at `/matches` and no per-proposal page. Create, duplicate detection, five fixed category buttons with live counts, live search with name completion, and per-card "פעולות": **the promotion first** — one button naming the proposal's actual next step, with the stage beside it — then the status moves as one row of tiles, one line carrying the reminder and the related contact, and the proposal journal lying open as a timeline. A couple who are out get a check-in panel in place of the promotion. Tapping a proposal compares the two candidates. `/matches/:id` still resolves — it renders the list with that proposal on top.
 - Dashboard tab at `/dashboard`.
-- One banner across the three tabs (`ShadchanAppBar`): the wordmark at the start edge, the page's controls at the other, and the page's own heading on the page (`ScreenHeading`) rather than in the bar. The home bar's left end is the bell and the matchmaker's photograph, side by side; the photograph is the only way into `/profile`.
+- One banner across the three tabs (`ShadchanAppBar`): the page's own name at the start edge — the wordmark only on בית, which has no other name — the page's controls at the other end, and the search row pinned to the bar's bottom edge (`ShadchanSearchBottom`) so neither the name nor the field ever scrolls away. All three bars carry the same three controls in the same order — `ShadchanTabActions`: reading across the bar, the overflow menu (`AppMenuButton`) at the outer edge, then a "+", then the bell. Only what the "+" does differs: המאגר שלי and רעיונות go straight to their own flow, and בית — which is above both — opens `AddMenuButton`'s two-row menu. The overflow menu is four rows: חברים שהתחתנו, הפרופיל שלי, הגדרות, שליחת תקלה או רעיון. Everything else it used to carry (sharing the app, the community group, the guide, the email address, the privacy policy) lives in the settings and only there. All three of the bar's squares are held to `HomeBarButton.size` — the two popup triggers are wrapped in a `SizedBox`, because a `PopupMenuButton` is an `IconButton` and would otherwise measure Material's 48px minimum and open a gap in the middle of the cluster.
+- One type scale for the home screen (`HomeTypography`): the ten Material roles the page's widgets reach for are folded onto three sizes by a `Theme` override in `HomeScreen.build`, so the blocks go on asking for whatever they always asked for and the page has one hierarchy. Do not add a literal `fontSize` to a home widget — it defeats the fold.
 - Every setting on its own page at `/profile/settings`. The profile carries one row into it.
 - Contacts import: explicit permission-on-entry flow, search by name/phone, multi-select import, duplicate blocking by normalized phone.
 - Unified add-contacts screen at `/people/import` with toggle between swipe (default) and list views; legacy `/people/swipe` redirects to it.
@@ -71,20 +72,82 @@ Guidance for future agents working in this repository.
 - Share-to-app intake for shidduch details from WhatsApp/other apps: Android accepts text, image, or image+text shares; iOS accepts image open-with through document handling. The flow asks whether to create a new person or add to an existing person, then opens `PersonFormScreen` with the shared text in `כרטיסייה לשליחה` and shared images staged as unsaved photos.
 - Birthday notifications using local timezone support.
 - Hebrew privacy policy screen and Settings entry.
-- Optional Google Sign-In from the profile's `החשבון שלי` section, upgrading the anonymous Firebase account in place.
+- **A compulsory account, three ways in.** Google everywhere, Apple on iOS/macOS (through `sign_in_with_apple` and a nonce — *not* `AppleAuthProvider`, which is a web flow that was never configured), and an address with a password for everybody else. The anonymous Firebase account is upgraded in place where it can be. Signing out is `AccountSwitch.signOutAndClear`: a final backup, then the account and every local record go together, so the next person to sign in on the phone sees their own database and not somebody else's.
 - Cloud backup to Firestore + Cloud Storage while signed in, running on app open and close, with an explicit additive restore. Covers people, matches, both note kinds, the matchmaker's own profile, and every photo file.
 - Home screen community banner ("מה קורה בקהילה עכשיו"): one rotating live line, plus the week's shared
   community challenge and its single progress bar, with the target derived from last week's remembered figure.
 - Rare celebrations of community-wide milestones, baselined silently on first look and shown at most one per launch.
-- "עוצרים רגע לחשוב על חברים": a rotating ten friends per visit with "חברים נוספים" for the next ten, and "אחשוב עליו בהמשך" to put one away for a month.
+- "עוצרים רגע לחשוב על חברים" and "רעיונות שהמאגר מציע לך" are drawn as one feature: the same canvas, the same centred bar, the same unframed cards, and the same one-line welcome on bare paper. Each card offers "התאמות נוספות" and "דלג" under the faces. `ThinkScreen` rotates ten friends per visit with "חברים נוספים" for the next ten; "דלג" puts one away for a month.
+- One word for the app's own record of a shidduch: **רעיון**, never הצעה. The exceptions are deliberate and narrow — the messages the app writes for a *candidate* to read (`whatsapp_utils.dart`), the general advice in `matchmaker_tips.dart`, and the privacy policy, where הצעה is what is actually being described to somebody outside the app.
+- A person's profile lists **every** idea ever opened for them (`_IdeasSection`), ordered פתוחות → בהמתנה → סגורות with a status on each, a filter chip per shelf, and five rows before a chevron.
+- A matchmaker's public page at `/matchmakers/:uid` (`MatchmakerProfileScreen`), opened by tapping a row on the leaderboard: photograph, name, the short line about themselves, whatever they chose to share under "מה תרצה ששדכנים אחרים ידעו עליך?", a benefit they offer the community, and a WhatsApp button when they published a number. **No age and no activity figures of any kind** — that is the design, not an omission.
 - The matchmaker's own "כרטיס השידוכים שלי" on its own screen at `/profile/card`, and an optional
   "משפט קצר עליי" collected at sign-up and editable from the profile.
 - Store update check on app open and on resume, offering the new version through a Hebrew dialog that links to the store listing.
 - Feedback that goes both ways: a report at `/support/report` can be answered from the console or from the notifications page, and the thread is readable by exactly two accounts — an administrator and whoever sent it.
 - A startup log at `/support/diagnostics` that survives a native crash, and a one-time notice on the launch after one.
-- Messages are never `SnackBar`s. Everything user-facing goes through `AppNotice`; see `lib/widgets/app_notice.dart`.
+- Messages are never `SnackBar`s. Everything user-facing goes through `AppNotice`; see `lib/widgets/app_notice.dart`. A *fact* is an `AppToast` at the bottom of the screen; the one moment that earns the middle of it — a batch of friends landing in the database — is `AppCelebration`, which is large, centred and still dismisses itself.
+- A tap on bare paper closes the keyboard, app-wide: `DismissKeyboardOnTap` in `lib/app.dart`, above the router. Do not add a per-screen copy.
 
 ## Recent Notes
+
+- 2026-08-26 (later): **Twenty fixes: the weddings page, deleting a friend properly, and one filter instead of two.**
+
+  **Everything that comes out of a search behaves.** New `pushLeavingSearch` (`lib/utils/search_navigation.dart`) is how a row in a results panel — or in המאגר שלי's own list — opens a person. It puts the keyboard away, waits for the view insets to settle, pushes, and takes the focus back off on the way out. That is two bugs in one call: popping a route restores focus to the field, so coming back re-opened the keyboard over the page somebody had walked back to; and a `Hero` pushed while the keyboard is up measures a viewport a keyboard shorter than the one it lands in, which is why the avatar arrived stretched.
+
+  **"מזל טוב" closes everything.** `MatchRepository.syncMatchesForPerson` now checks first whether the person is archived, and if so files every idea they are in — a couple who were out become "יצאו", the rest are closed. They were already invisible on רעיונות (`matchProposalTabFor` drops a proposal with an archived side), which meant they could be neither seen nor closed.
+
+  **`/married` — "חברים שהתחתנו".** `MarriedFriendsScreen`, first on the overflow menu. Two sections, and the split is the point: the married *proposals* are the ones the app can honestly credit ("חברים שלך שהתחתנו בזכותך!!", at the top, in the largest type on the page) and everybody else marked מזל טוב is the quieter half under it. With no wedding of the matchmaker's own there is no first section and no empty promise where it would have been.
+
+  **Basic filter by default, "סינון מורחב" one tap away.** `MatchSuggestionUtils.matchesBasicPreferences` is the new default for every list of candidates — gender, age, the styles the source's own style is matched with. The whole card (`matchesOwnPreferences`: height, city, region, marital status, explicit age range) is behind `ExtendedFilterToggle`, and only where `hasExtendedPreferences` says it would change something. Applied automatically it had been hiding most of the database — not because those people are wrong but because nobody recorded their height — with nothing on screen saying so.
+
+  **The picker knows who the other side is.** `PersonPickerSheet.sourcePerson`: choosing the second half of an idea opens on the people who fit the first half, with "סינון מורחב", "לכל המאגר", and a search that always covers the whole database whatever is set. That is what let the "מתוך המאגר או מחוץ למאגר" dialog go from a friend's profile — the picker already searches everything and already carries "הוספת שם מחוץ למאגר" along its bottom.
+
+  **A card is readable from every candidate list now.** `CandidateCardButton` and `CandidateQuickCard` (`lib/widgets/candidate_card_view.dart`) were private to `person_detail_screen`; they are shared, redesigned as the app's own small tinted square rather than a bare grey chevron, and wired into the manual search list, `PersonPickerSheet` (through the new `PersonListCard.trailing`) and `SuggestedMatchesSheet`.
+
+  **A waiting reason is a fact about a person.** Picking "היא בהפסקה" now sets her status too, and puts the same check-back date on her card — and the move ends in an `AppNotice` naming the shelf the idea landed on, with a button that opens it.
+
+  **The category tiles on רעיונות stopped hiding on a scroll.** They fold away for exactly one reason now: a proposal's action panel is open underneath and needs the room.
+
+  **"יאללה לקדם" is paper, not a mint slab.** `_PromoteRow` is the card's own surface with a thin green edge, the green kept to the icon square and the button's words, and everything that is not the action — the stage chip, the alternative side, what was last sent — moved below a hairline into one quiet footer line.
+
+  Also: bulk "בקשת פרטים" is a queue (`BulkDetailsRequestSheet`) rather than the share sheet, so nobody is searched for twice; the extended editor's marital-status chips read "רווקה"/"גרוש" in the right gender instead of "רווקים"; and the three bar squares sit against each other.
+
+- 2026-08-26: **An account is compulsory, the three tabs wear one bar, and a search finds things instead of filtering them.**
+
+  **The gate.** `AppRouter`'s redirect now asks for an account *before* the profile form, and there is no way past it: `SignInScreen` lost "המשך בלי להתחבר" and gained an address-and-password form beside the two provider buttons. The flag it reads is `SignInPromptStore.hasAccount` — still local, still read on the first frame, for the same cold-start reason as before. Existing installs land on the screen once and it steps aside by itself the moment `AccountProvider` reports a connected account. The old "you should sign in" reminder and its pacing are gone: nothing could show them, and `isSignedIn` being false for the first moment of every launch made them a hazard.
+
+  **Apple sign-in works now.** It went through `linkWithProvider(AppleAuthProvider())`, which is Firebase's *generic OAuth* path — a browser sheet posting to a Services ID and return URL that were never registered, so the button opened a web page and came back with nothing. It is `sign_in_with_apple` + a hashed nonce + `OAuthProvider('apple.com').credential` now, which is Apple's own sheet and what Firebase's Flutter documentation prescribes. ⚠️ **Not verifiable from Windows** — the entitlement is already in `Runner.entitlements` and the pod comes in through `flutter_install_all_ios_pods`, but the flow itself needs an iPhone and the Apple provider switched on in the Firebase console.
+
+  **Signing out empties the device.** `AccountSwitch.signOutAndClear` pushes a final backup, and *only if that succeeds* signs out, forgets the ledger and wipes people, proposals, notes, events, the matchmaker's profile, the board, the activity strip and the community store. A failed backup abandons the whole thing and says so.
+
+  **One bar on all three tabs** (`ShadchanTabActions`), and the "+" on בית opens a two-row menu. **`SearchResultsPanel`** is shared by all three: המאגר שלי and רעיונות now drop a panel of tappable rows under the field instead of only narrowing the list underneath, and each row opens the person or the proposal.
+
+  Sign-up also asks for the two public-profile prompts that make a matchmaker's page worth opening (`origin`, `population`), and `AboutMeExamples` is one quiet grey line rather than a row of chips people were tapping as if it were a menu.
+
+- 2026-08-25: **The bar carries the page's name and the search row, the home screen has three type sizes, a profile shows every idea, and matchmakers have public pages.**
+
+  **The banner and the search row stopped moving.** `ShadchanAppBar` gained `title` (the page's own name, in place of the wordmark, on the two tabs that have one) and the search field moved into `bottom` as `ShadchanSearchBottom`. `ScreenHeading` is still exported and still used by nothing on the three tabs — the heading line it drew is gone from all of them, along with the count under "רעיונות". The bar is 50px rather than 56. ⚠️ **Tests that scroll a tab now start from a different offset**: the bar is taller (50 + 52) and the page above the list is much shorter, so a widget that used to be reachable may now be scrolled above the viewport. `ensureVisible` before tapping.
+
+  **The home bar's photograph is three dots again.** `AppMenuButton` was orphaned by the 2026-08-24 batch and is wired back in; `/profile` is its first row, since the photograph was the only way there. It is also a link on the leaderboard card, which is the other place somebody asks "what does mine look like".
+
+  **`HomeTypography` folds ten Material roles onto three sizes** for the home screen's subtree only, applied by a `Theme` override in `HomeScreen.build`. Several literal `fontSize` overrides in the home widgets were removed so the fold reaches them; `HomeConfig.cardHeight` and `nextActionCardHeight` grew to match the larger small type.
+
+  **The community's numbers, again — this time the publish path itself.** Two real defects, both of which made a device's own figures reach the shared collection rarely or never, which is what "other people's work is not in the total" looks like from the inside:
+
+  1. ⚠️ **`CommunityService._account()` read `FirebaseAuth.instance.currentUser` the moment the bootstrap completed, and that is too early.** The persisted session is restored asynchronously, so for the first second or so of every launch `currentUser` is null on a device that is perfectly well signed in — and the app's publish runs one frame after the first. It read null, decided there was no account and returned. `_account()` now waits for `authStateChanges().first` (bounded, shared, with `resetAccountWait()` as a test seam).
+
+  2. **`CommunityProvider.refresh` published third, behind two network round trips** — `fetchHidden()` and the avatar upload. One of the two moments it runs is app *pause*, where the OS may freeze the process at any point, so anything behind a round trip there is a publish that does not happen. The counters go first now, carrying the last-uploaded photo URL so the row is unchanged in the common case; the opt-out and the picture are reconciled after, and the second publish is free because `publish()` recognises its own fingerprint. `publish()` returns `bool` so the cache is only invalidated when the collection actually changed.
+
+  **And the figures follow the work, not only the session.** `CloudSyncScheduler` listens to both repositories and republishes 20 seconds after the last change (`_activityDelay`). A four-hundred-friend import restarts the timer four hundred times and ends in one write; an edit that changes no published counter costs a local recount and no write at all.
+
+  ⚠️ **Items 9 and 10 of the request — "check with several real users that the community figure adds up" — are not verified.** They need two signed-in accounts on two devices and cannot be tested from here. The publish path is fixed and the read path was already a `sum()` aggregate over every member with no `hidden` filter, so historic rows already count towards "כל הזמנים"; whether anything else is still missing has to be checked live.
+
+  **A person's profile shows every idea, not only the open ones.** `_OpenProposalsSection` → `_IdeasSection`: all of `getByPersonId`, ordered by the new `_IdeaGroup` (פתוחות → בהמתנה → סגורות, newest first inside a shelf), with a filter chip per shelf that is only drawn when there is more than one, and five rows before a chevron.
+
+  **Matchmakers have public pages.** New `lib/models/community_profile.dart` (`CommunityProfile`, `MatchmakerShare`, `MatchmakerShareKind`), `lib/screens/matchmaker_profile_screen.dart` at `/matchmakers/:uid`, and `lib/dialogs/matchmaker_shares_sheet.dart` for the three things a matchmaker fills in. Four new fields on `communityMembers` — `about`, `shares`, `benefit`, `contactPhone` — added to `_knownFields`, to the rules' whitelist and to `profileOk()` together. ⚠️ **`firestore.rules` must be deployed before this ships**: a build that writes `about` against the old whitelist has *every* publish refused, which is exactly the lockout `_repairAndWrite` exists to undo. All four are erased by the same write that erases the name when somebody hides themselves — including in `setHidden`, not only in `publish`.
+
+  ⚠️ **`contactPhone` puts a phone number in a world-readable collection.** It is opt-in, typed by hand into its own sheet that says so in as many words, and never taken from the database. That is a deliberate product decision (a WhatsApp button on the public page was asked for); it is worth re-reading before the privacy policy is next revised.
 
 - 2026-08-24 (later): **One banner for the whole app, a page that asks a question instead of handing over a queue, the community's numbers unstuck, and a proposal card that knows what to do next.** Four batches; the last two are the ones to read.
 

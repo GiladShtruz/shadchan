@@ -361,6 +361,31 @@ service cloud.firestore {
             && periodKey(data, 'monthKey');
       }
 
+      // The matchmaker's public page: a short line about themselves, the
+      // handful of things they chose to tell other matchmakers, a benefit they
+      // offer the community, and a number to reach them on. Every one of them
+      // is optional, every one is typed in by hand, and every one is erased by
+      // the same write that erases the name when somebody hides themselves —
+      // so the only thing worth checking here is that they are short strings
+      // rather than a payload. `shares` is a list of them, capped at one per
+      // prompt on the client and at a round number here.
+      function shortText(data, field, limit) {
+        return !(field in data)
+            || (data[field] is string && data[field].size() <= limit);
+      }
+
+      function shareList(data) {
+        return !('shares' in data)
+            || (data.shares is list && data.shares.size() <= 10);
+      }
+
+      function profileOk(data) {
+        return shortText(data, 'about', 200)
+            && shortText(data, 'benefit', 240)
+            && shortText(data, 'contactPhone', 24)
+            && shareList(data);
+      }
+
       // Nothing but the vocabulary above. A whitelist rather than a blacklist
       // because this collection is world-readable to every installed copy of
       // the app: an unlisted field is a place for a client to write whatever
@@ -368,6 +393,7 @@ service cloud.firestore {
       function noStrayFields(data) {
         return data.keys().hasOnly([
           'name', 'photoUrl', 'hidden', 'updatedAt',
+          'about', 'shares', 'benefit', 'contactPhone',
           'dayKey', 'dayActions', 'dayFriends', 'dayIdeas', 'dayCouples',
           'dayEngagements',
           'weekKey', 'weekActions', 'weekFriends', 'weekIdeas', 'weekCouples',
@@ -394,6 +420,7 @@ service cloud.firestore {
                                 || (request.resource.data.photoUrl is string
                                     && request.resource.data.photoUrl.size() <= 500))
                             && countsOk(request.resource.data)
+                            && profileOk(request.resource.data)
                             && noStrayFields(request.resource.data);
 
       // Erasure, from the button on "פרטיות והמאגר שלי". Split out because a

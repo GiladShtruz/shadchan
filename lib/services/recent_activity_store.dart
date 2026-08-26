@@ -158,6 +158,9 @@ class RecentActivityStore extends ChangeNotifier {
     _write(next);
   }
 
+  /// Empties the strip and forgets it on disk. See `HomeBoardStore.reset`.
+  void reset() => _write(const <HomeActivityEntry>[]);
+
   List<HomeActivityEntry> _read() {
     final Object? stored = _box?.get(_key);
     if (stored is! String || stored.isEmpty) {

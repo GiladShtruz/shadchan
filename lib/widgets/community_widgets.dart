@@ -629,33 +629,59 @@ class CommunityRankRow extends StatelessWidget {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: <Widget>[
-          mark(),
-          const SizedBox(width: 10),
-          _RankAvatar(url: entry.photoUrl),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              entry.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: highlighted ? FontWeight.w900 : FontWeight.w600,
+    // **The whole row opens the matchmaker's own page.** A board of names and
+    // numbers is the only thing one matchmaker could know about another, which
+    // is a strange state of affairs for a feature whose whole point is that
+    // nobody here is working alone. The name and the picture travel with the
+    // route so the page opens with the person already on it — see
+    // `MatchmakerProfileScreen`.
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push(
+          Uri(
+            path: '/matchmakers/${entry.uid}',
+            queryParameters: <String, String>{
+              'name': entry.name,
+              if (entry.photoUrl.isNotEmpty) 'photo': entry.photoUrl,
+            },
+          ).toString(),
+        ),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+          child: Row(
+            children: <Widget>[
+              mark(),
+              const SizedBox(width: 10),
+              _RankAvatar(url: entry.photoUrl),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  entry.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: highlighted ? FontWeight.w900 : FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Text(
+                CommunityFigure.format(entry.points),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: lead,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(
-            CommunityFigure.format(entry.points),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: lead,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -936,7 +962,7 @@ class DeleteCloudBackupTile extends StatelessWidget {
   const DeleteCloudBackupTile({super.key});
 
   static const String explanation =
-      'מוחק מהשרת את כל מה שגובה בענן — החברים, ההערות, ההצעות והתמונות. '
+      'מוחק מהשרת את כל מה שגובה בענן — החברים, ההערות, הרעיונות והתמונות. '
       'המאגר בטלפון שלך נשאר בדיוק כמו שהוא ואפשר להמשיך לעבוד רגיל. '
       'אם תישאר מחובר, הגיבוי הבא יעלה את המאגר לענן מחדש.';
 

@@ -1,8 +1,8 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-#version: 1.0.18+50
-version: 1.0.0+5
+version: 1.0.18+54
+#version: 1.0.0+5
 
 environment:
   sdk: ^3.11.0
@@ -63,6 +63,17 @@ dependencies:
   # one that survives a reinstall or a new phone — the prerequisite for a
   # backup that can actually be restored.
   google_sign_in: ^7.2.0
+
+  # Signing in with Apple, which App Store review requires wherever Google is
+  # offered. It is a separate package and not `AppleAuthProvider` because the
+  # provider flow is a *web* OAuth flow: on iOS it opens a browser sheet against
+  # a Services ID and a return URL that only exist if they were registered in
+  # the Apple Developer portal, which is why "המשך עם Apple" never completed.
+  # This package calls `ASAuthorizationAppleIDProvider` — Apple's own sheet,
+  # backed by the entitlement the Runner target already carries — and the id
+  # token it returns is exchanged for a Firebase credential. It is the flow
+  # Firebase's own Flutter documentation prescribes.
+  sign_in_with_apple: ^8.1.0
 
   # The cloud backup. Hive stays the source of truth and the app keeps working
   # with no network at all — Firestore mirrors the database under the signed-in

@@ -4,13 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/about_me_sheet.dart';
+import 'package:shadchan/dialogs/matchmaker_shares_sheet.dart';
+import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/account_switch.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// "הפרופיל שלי" — the matchmaker's own page, and the one place the app's
@@ -122,6 +129,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
 
+      // 3.5. What other matchmakers see.
+      //
+      // **Its own group, directly under the person it describes.** Everything
+      // above it is private — the account, the matchmaker's own shidduch card —
+      // and everything below it is app configuration. This is the one part of
+      // the page that other people read, and it is drawn as a group of its own
+      // so that is never in doubt: three rows, each saying what is currently
+      // filled in, and the whole of the public page behind them.
+      SettingsGroup(
+        title: 'מה שדכנים אחרים רואים',
+        children: <Widget>[
+          SettingsRow(
+            icon: Icons.badge_outlined,
+            title: 'מה תרצה ששדכנים אחרים ידעו עליך?',
+            subtitle: _sharesSummary(profile.communityShares),
+            onTap: () => _editShares(profile),
+          ),
+          SettingsRow(
+            icon: Icons.card_giftcard_rounded,
+            title: 'הטבה לקהילה',
+            subtitle:
+                profile.communityBenefit ??
+                'לא חובה — משהו שתרצה להציע לשדכנים אחרים',
+            onTap: () => _editBenefit(profile),
+          ),
+          SettingsRow(
+            icon: Icons.chat_bubble_outline_rounded,
+            title: 'מספר לפנייה בוואטסאפ',
+            subtitle:
+                profile.communityPhone ??
+                'לא חובה — בלעדיו פשוט לא יופיע כפתור',
+            onTap: () => _editCommunityPhone(profile),
+          ),
+        ],
+      ),
+
       // 4. The settings — one row, and a page behind it.
       //
       // **They used to be a group on this page, and they should not have
@@ -232,6 +275,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await profile.setAbout(about);
   }
 
+  // --- The public page ----------------------------------------------------
+
+  /// What the row says is filled in, without listing all of it.
+  ///
+  /// The prompts' own labels rather than the answers: "מאיפה אני בארץ · תפקיד
+  /// או פעילות חברתית" tells somebody at a glance which questions they have
+  /// answered, which is what a summary line is for. The answers themselves are
+  /// one tap away, and on a settings row they would be cut mid-word anyway.
+  static String _sharesSummary(List<MatchmakerShare> shares) {
+    if (shares.isEmpty) {
+      return 'עוד לא הוספת — אזור, אוכלוסייה, תפקיד ועוד';
+    }
+    return shares.map((MatchmakerShare share) => share.kind.label).join(' · ');
+  }
+
+  Future<void> _editShares(UserProfileProvider profile) async {
+    final List<MatchmakerShare>? shares = await MatchmakerSharesSheet.show(
+      context,
+      initial: profile.communityShares,
+    );
+    if (shares == null) {
+      return;
+    }
+    await profile.setCommunityShares(shares);
+  }
+
+  Future<void> _editBenefit(UserProfileProvider profile) async {
+    final String? benefit = await CommunityBenefitSheet.show(
+      context,
+      initial: profile.communityBenefit ?? '',
+    );
+    if (benefit == null) {
+      return;
+    }
+    await profile.setCommunityBenefit(benefit);
+  }
+
+  Future<void> _editCommunityPhone(UserProfileProvider profile) async {
+    final String? phone = await CommunityPhoneSheet.show(
+      context,
+      initial: profile.communityPhone ?? '',
+    );
+    if (phone == null) {
+      return;
+    }
+    await profile.setCommunityPhone(phone);
+  }
+
   // --- Personal status ----------------------------------------------------
 
   /// Offered from the quiet line under the name. Changing to married hides the
@@ -271,9 +362,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // --- The account --------------------------------------------------------
 
-  /// Asks first, and says what is actually lost. Signing out is not
-  /// destructive here — the database is in Hive either way — and saying so is
-  /// the difference between a confirmation and a scare.
+  /// Asks first, and says exactly what happens — because what happens changed.
+  ///
+  /// **Signing out empties this device now.** It used to disconnect a backup
+  /// and leave the database where it was, which was honest when the app had no
+  /// account behind it. It does have one now: every record belongs to whoever
+  /// is signed in, so leaving takes the records with it and the next person to
+  /// sign in on this phone starts from their own account, not from somebody
+  /// else's work. The dialog says that in as many words, and says the other
+  /// half too — nothing is lost, because it is all in the backup and comes back
+  /// on the way in.
+  ///
+  /// See [AccountSwitch.signOutAndClear] for the order, and for why a failed
+  /// final backup abandons the whole thing rather than pressing on.
   Future<void> _confirmSignOut(
     AccountProvider account,
     SyncProvider sync,
@@ -284,9 +385,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return AlertDialog(
           title: const Text('יציאה מהחשבון?'),
           content: const Text(
-            'המאגר שלך שמור במכשיר וימשיך לעבוד כרגיל. רק החיבור לחשבון '
-            'Google יתנתק.',
+            'לפני היציאה נגבה את המאגר לחשבון שלך, ואז ננקה אותו מהמכשיר הזה — '
+            'כדי שמי שיתחבר כאן אחריך יראה את המאגר שלו בלבד.\n\n'
+            'שום דבר לא נמחק מהחשבון: בפעם הבאה שתתחבר, הכול יחזור.',
           ),
+          actionsOverflowDirection: VerticalDirection.down,
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -294,20 +397,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('יציאה'),
+              child: const Text('גיבוי ויציאה'),
             ),
           ],
         );
       },
     );
-    if (confirmed != true) {
+    if (confirmed != true || !mounted) {
       return;
     }
-    await account.signOut();
-    // The ledger describes what is in *that* account's cloud tree. Signing
-    // back into a different one and diffing against it would leave the new
-    // account's backup missing everything the old one happened to hold.
-    await sync.forget();
+
+    final AccountSwitchResult result = await AccountSwitch.signOutAndClear(
+      account: account,
+      sync: sync,
+      people: context.read<PersonRepository>(),
+      matches: context.read<MatchRepository>(),
+      profile: context.read<UserProfileProvider>(),
+      community: context.read<CommunityProvider>(),
+    );
+    if (!mounted) {
+      return;
+    }
+
+    if (result == AccountSwitchResult.syncFailed) {
+      AppNotice.show(
+        context,
+        'לא הצלחנו לגבות את המאגר, אז לא יצאנו מהחשבון. כדאי לבדוק את החיבור '
+        'לאינטרנט ולנסות שוב.',
+      );
+      return;
+    }
+
+    // `go` and not `pop`: there is no profile to return to any more, and the
+    // router's own gate sends anything else straight back here.
+    context.go('/sign-in');
   }
 }
 
@@ -343,7 +466,8 @@ class _AccountGroup extends StatelessWidget {
           SettingsRow(
             icon: Icons.logout,
             leadingOverride: account.isBusy ? const SettingsSpinner() : null,
-            title: 'יציאה מהחשבון',
+            title: 'יציאה והתחברות לחשבון אחר',
+            subtitle: 'המאגר מגובה לחשבון הזה ומנוקה מהמכשיר',
             destructive: true,
             enabled: !account.isBusy,
             trailing: const SizedBox.shrink(),

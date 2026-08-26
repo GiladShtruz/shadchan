@@ -413,6 +413,29 @@ class PersonRepository extends ChangeNotifier {
     _refreshPersonRemindersInBackground();
   }
 
+  /// Erases every person, note and event on this device.
+  ///
+  /// **Only ever called when the account changes.** Records belong to whoever
+  /// is signed in, so handing the phone to a second matchmaker has to hand them
+  /// an empty database — theirs is restored from their own account a moment
+  /// later. Everything here is already in that account's cloud tree by the time
+  /// this runs; see `AccountSwitch.signOutAndClear`, which pushes a final
+  /// backup first and refuses to wipe anything if that backup fails.
+  ///
+  /// The scheduled notifications go with the records. A birthday alert for
+  /// somebody who is no longer in the database would arrive on the next
+  /// matchmaker's phone with a name they have never heard.
+  Future<void> clearAll() async {
+    await NotificationService.cancelBirthdayNotifications();
+    for (final String id in _box.keys.cast<String>().toList()) {
+      await PersonReminders.clear(id);
+    }
+    await _box.clear();
+    await _noteBox?.clear();
+    await _eventBox?.clear();
+    notifyListeners();
+  }
+
   Future<void> finishImport() async {
     notifyListeners();
     _refreshBirthdayNotificationsInBackground();

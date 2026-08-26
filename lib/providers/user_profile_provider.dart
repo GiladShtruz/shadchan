@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// The matchmaker's own gender, wherever a sentence has to bend to it.
@@ -39,6 +40,9 @@ class UserProfileProvider extends ChangeNotifier {
   static const String _personalCardPhotosKey = 'userPersonalCardPhotos';
   static const String _tipAuthorNameKey = 'userTipAuthorName';
   static const String _introSeenKey = 'userSeenIntro';
+  static const String _sharesKey = 'userCommunityShares';
+  static const String _benefitKey = 'userCommunityBenefit';
+  static const String _contactPhoneKey = 'userCommunityPhone';
 
   final Box<dynamic> _box;
 
@@ -144,6 +148,80 @@ class UserProfileProvider extends ChangeNotifier {
       await _box.delete(_aboutKey);
     } else {
       await _box.put(_aboutKey, trimmed);
+    }
+    notifyListeners();
+  }
+
+  // --- What other matchmakers may see -------------------------------------
+  //
+  // The three fields below are the whole of the matchmaker's *public* page —
+  // see [CommunityProfile]. They are kept here, beside the name and the
+  // photograph, because that is what they are: parts of the same profile, and
+  // the one screen that edits them edits all of it. Each is opt-in and each is
+  // erased from the shared collection by the same write that erases the name
+  // when somebody hides themselves.
+
+  /// The answers to "מה תרצה ששדכנים אחרים ידעו עליך?", in prompt order.
+  ///
+  /// **One field with a menu behind it, not five fields.** It used to be a form
+  /// — region, population, role — and a form asks everybody every question. Most
+  /// matchmakers have two or three of these and nothing to say in the rest, so
+  /// what came back was mostly blanks. See [MatchmakerShareKind].
+  List<MatchmakerShare> get communityShares {
+    final dynamic stored = _box.get(_sharesKey);
+    if (stored is! Iterable) {
+      return const <MatchmakerShare>[];
+    }
+    return MatchmakerShare.decodeAll(stored);
+  }
+
+  Future<void> setCommunityShares(List<MatchmakerShare> shares) async {
+    if (shares.isEmpty) {
+      await _box.delete(_sharesKey);
+    } else {
+      await _box.put(_sharesKey, <String>[
+        for (final MatchmakerShare share in shares) share.encode(),
+      ]);
+    }
+    notifyListeners();
+  }
+
+  /// "הטבה לקהילה" — something this matchmaker offers other matchmakers, shown
+  /// on their public page. Empty for almost everybody, and the page then has no
+  /// such area at all.
+  String? get communityBenefit {
+    final String? value = (_box.get(_benefitKey) as String?)?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> setCommunityBenefit(String? value) async {
+    final String trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty) {
+      await _box.delete(_benefitKey);
+    } else {
+      await _box.put(_benefitKey, trimmed);
+    }
+    notifyListeners();
+  }
+
+  /// The number the WhatsApp button on the public page opens.
+  ///
+  /// **Typed in on purpose, never taken from anywhere.** The app knows the
+  /// phone numbers of hundreds of people and none of them are this: a number
+  /// published to a collection every installed copy of the app can read has to
+  /// be one somebody deliberately decided to publish. Blank means the public
+  /// page has no button, which is the state every profile starts in.
+  String? get communityPhone {
+    final String? value = (_box.get(_contactPhoneKey) as String?)?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> setCommunityPhone(String? value) async {
+    final String trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty) {
+      await _box.delete(_contactPhoneKey);
+    } else {
+      await _box.put(_contactPhoneKey, trimmed);
     }
     notifyListeners();
   }
@@ -263,6 +341,33 @@ class UserProfileProvider extends ChangeNotifier {
         await _box.put(_aboutKey, trimmedAbout);
       }
     }
+    notifyListeners();
+  }
+
+  /// Erases the matchmaker's own profile from this device.
+  ///
+  /// **Everything except [hasSeenIntro].** The welcome screens explain what the
+  /// app is and that the database is private; somebody handing their phone to a
+  /// colleague has already read them, and showing them again would put three
+  /// pages of introduction between that colleague and the sign-in screen they
+  /// actually need. Every other key here describes a *person*, and the person
+  /// is exactly what is changing — see `AccountSwitch.signOutAndClear`.
+  Future<void> clear() async {
+    await _box.deleteAll(<String>[
+      _nameKey,
+      _firstNameKey,
+      _lastNameKey,
+      _genderKey,
+      _photoPathKey,
+      _isSingleKey,
+      _aboutKey,
+      _personalCardKey,
+      _personalCardPhotosKey,
+      _tipAuthorNameKey,
+      _sharesKey,
+      _benefitKey,
+      _contactPhoneKey,
+    ]);
     notifyListeners();
   }
 

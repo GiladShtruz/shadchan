@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
+import 'package:shadchan/widgets/reminders_bell_button.dart';
 
 /// The app's own banner, worn by all three tabs.
 ///
@@ -15,16 +17,20 @@ import 'package:shadchan/widgets/home_app_bar.dart';
 /// is what frees the middle of the bar and stops the mark competing with the
 /// page heading. Everything a page can do sits in [actions], at the left end.
 ///
-/// The page's own heading is deliberately *not* in here. It moved onto the page
-/// itself, at the size a heading deserves, the way the home greeting did — a
-/// 56px strip shared with a mark and a row of controls is not where a title
-/// should have to fight for room. See [ScreenHeading].
+/// **The page's own name is back in the bar, and the search row hangs off it.**
+/// The heading had moved onto the page, which cost a whole line under a banner
+/// that was only repeating the app's name to somebody already inside it; and
+/// the search row was a sliver, which meant it scrolled away exactly when a
+/// long list made it worth having. A [title] replaces the wordmark on the tabs
+/// that have a name of their own, and [ShadchanSearchBottom] pins the field
+/// under the bar so neither the name nor the field ever leaves the screen.
 class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
   const ShadchanAppBar({
     super.key,
     this.actions = const <Widget>[],
     this.leading,
     this.bottom,
+    this.title,
   });
 
   /// The page's own controls, at the far end of the bar.
@@ -36,16 +42,30 @@ class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   final PreferredSizeWidget? bottom;
 
+  /// The page's own name, in place of the wordmark.
+  ///
+  /// **המאגר שלי and רעיונות sign themselves now.** The heading used to live on
+  /// the page, under a bar that said "שדכן" — which cost a full line of the
+  /// screen to repeat the app's name on a tab the reader is already inside.
+  /// The bar carries the wordmark only on בית, where there is no other name for
+  /// the page; everywhere else it carries the page's, and the line that used to
+  /// hold it is gone.
+  final String? title;
+
+  /// Deliberately shorter than Material's 56. The three tabs each hang a search
+  /// row off the bottom of this bar, and the pair has to stay out of the way of
+  /// the page it belongs to.
+  static const double toolbarHeight = 50;
+
   @override
   Size get preferredSize {
-    return Size.fromHeight(
-      kToolbarHeight + (bottom?.preferredSize.height ?? 0),
-    );
+    return Size.fromHeight(toolbarHeight + (bottom?.preferredSize.height ?? 0));
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final String? name = title;
 
     return AppBar(
       // The bar is the page, not a band across the top of it: the theme paints
@@ -57,15 +77,128 @@ class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
       automaticallyImplyLeading: false,
+      toolbarHeight: toolbarHeight,
       leading: leading,
       // With nothing before it the wordmark starts hard against the page's own
       // margin, so it lines up with the cards underneath.
       leadingWidth: leading == null ? 0 : null,
       titleSpacing: leading == null ? 16 : 4,
       centerTitle: false,
-      title: const ShadchanWordmark(),
+      title: name == null
+          ? const ShadchanWordmark()
+          : Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                height: 1.15,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
       actions: <Widget>[...actions, const SizedBox(width: 6)],
       bottom: bottom,
+    );
+  }
+}
+
+/// The three controls every tab wears, in one order and with nothing between
+/// them.
+///
+/// **The three bars carried three different corners.** בית had the bell and the
+/// overflow dots; המאגר שלי had the bell and a "+"; רעיונות had the bell and a
+/// different "+" — and none of them had all three, so the menu was reachable
+/// from one tab out of three and the "+" from two. Whichever tab somebody was
+/// on, one of the two things they might want was somewhere else.
+///
+/// So the group is a widget rather than a list each screen writes out: the
+/// dots, the "+" and the bell, always, in that order reading across the bar.
+/// Only what the "+" *does* differs — see [add] — because that is the one thing
+/// that genuinely depends on the page.
+///
+/// **Held tight together — with nothing at all between them.** Six pixels
+/// between three 36px squares is a strip of gaps rather than a group of
+/// buttons; two was better and still read as three separate controls that
+/// happened to be near each other. At zero the bell and the "+" sit against the
+/// overflow dots and the eye takes the three as one cluster in the corner,
+/// which is what they are. Each square keeps its own border, so nothing runs
+/// together.
+class ShadchanTabActions extends StatelessWidget {
+  const ShadchanTabActions({super.key, required this.add});
+
+  /// The middle control. [ShadchanAddButton] for a page with one thing to add,
+  /// [AddMenuButton] for the home screen, which has two.
+  final Widget add;
+
+  @override
+  Widget build(BuildContext context) {
+    // A Row rather than three entries in `actions`, so the spacing between them
+    // is decided here once instead of by whichever screen wrote the list —
+    // `AppBar` puts its own air between `actions` children.
+    //
+    // In RTL the first child is the rightmost, so this reads across the screen
+    // from the left as: the menu dots at the outer edge, then the "+", then the
+    // bell nearest the page's own name.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        const RemindersBellButton(boxed: true),
+        add,
+        const AppMenuButton(boxed: true),
+      ],
+    );
+  }
+}
+
+/// A "+" that does one thing, for the two tabs where it can only mean one
+/// thing.
+class ShadchanAddButton extends StatelessWidget {
+  const ShadchanAddButton({
+    super.key,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return HomeBarButton(
+      tooltip: tooltip,
+      icon: const Icon(Icons.add),
+      onPressed: onPressed,
+    );
+  }
+}
+
+/// The search row worn as the bar's own bottom edge.
+///
+/// **It does not scroll away any more.** Search was a sliver at the top of each
+/// page, which meant the one control every one of these screens exists to be
+/// used with was gone the moment somebody scrolled past it — and coming back to
+/// it cost a flick to the top of a list of four hundred names. Hung off the bar
+/// it is always exactly where it was left, the way it is in a messaging app.
+///
+/// Held to the field's own height plus one small gap: a fixed strip across the
+/// top of every screenful has to earn each pixel it takes.
+class ShadchanSearchBottom extends StatelessWidget
+    implements PreferredSizeWidget {
+  const ShadchanSearchBottom({super.key, required this.child});
+
+  final Widget child;
+
+  /// [ShadchanSearchField]'s own 44, and 8 of air under it.
+  static const double _height = 52;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(_height);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: child,
     );
   }
 }
@@ -138,8 +271,9 @@ class ScreenHeading extends StatelessWidget {
 ///
 /// **A row, not an icon.** A magnifier in the corner is one more thing to find
 /// before the thing actually being looked for; a field that is simply there is
-/// read as "type here" without being read at all. It scrolls away with the page
-/// — see the callers — so it costs nothing once somebody is past the top.
+/// read as "type here" without being read at all. It rides in the bar's own
+/// bottom edge — see [ShadchanSearchBottom] — so it is where it was left
+/// however far down the page somebody has scrolled.
 class ShadchanSearchField extends StatelessWidget {
   const ShadchanSearchField({
     super.key,

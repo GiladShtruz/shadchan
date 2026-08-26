@@ -334,7 +334,11 @@ class HomeThinkBanner extends StatelessWidget {
             child: Ink(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: accent.withValues(alpha: 0.20)),
+                // No outline. The wash is already a different colour from the
+                // page, which is all a block needs to be told apart from it —
+                // and a tinted fill inside a tinted line reads as a component
+                // with a frame drawn round it rather than as a piece of the
+                // page.
                 gradient: LinearGradient(
                   begin: AlignmentDirectional.topEnd,
                   end: AlignmentDirectional.bottomStart,
@@ -371,7 +375,6 @@ class HomeThinkBanner extends StatelessWidget {
                                 maxLines: 1,
                                 softWrap: false,
                                 style: theme.textTheme.titleLarge?.copyWith(
-                                  fontSize: 18,
                                   fontWeight: FontWeight.w900,
                                   height: 1.15,
                                   color: dark

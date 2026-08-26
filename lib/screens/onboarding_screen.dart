@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/about_me_sheet.dart';
+import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -27,6 +28,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _aboutController = TextEditingController();
+
+  /// The two prompts worth asking for at sign-up, out of the five the public
+  /// page can carry. Where somebody is and who they work with are the two a
+  /// colleague reading the page actually needs; the rest are things people add
+  /// once they have a reason to.
+  static const List<MatchmakerShareKind> _signUpShares = <MatchmakerShareKind>[
+    MatchmakerShareKind.origin,
+    MatchmakerShareKind.population,
+  ];
+
+  static const Map<MatchmakerShareKind, IconData> _shareIcons =
+      <MatchmakerShareKind, IconData>{
+        MatchmakerShareKind.origin: Icons.place_outlined,
+        MatchmakerShareKind.population: Icons.groups_outlined,
+      };
+
+  final Map<MatchmakerShareKind, TextEditingController> _shareControllers =
+      <MatchmakerShareKind, TextEditingController>{
+        for (final MatchmakerShareKind kind in _signUpShares)
+          kind: TextEditingController(),
+      };
+
   Gender _selectedGender = Gender.male;
   bool? _selectedIsSingle;
   String? _photoPath;
@@ -64,6 +87,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _selectedGender = profile.gender ?? Gender.male;
     _photoPath = profile.photoPath;
     _selectedIsSingle = profile.hasMaritalStatus ? profile.isSingle : null;
+    for (final MatchmakerShare share in profile.communityShares) {
+      _shareControllers[share.kind]?.text = share.text;
+    }
   }
 
   @override
@@ -71,6 +97,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _aboutController.dispose();
+    for (final TextEditingController controller in _shareControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -228,22 +257,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   height: 1.35,
                 ),
               ),
-              const SizedBox(height: 28),
-              // The one optional answer, and the last one, so nothing required
-              // sits below something that can be skipped. The examples do the
-              // explaining — see [AboutMe].
-              Row(
-                children: <Widget>[
-                  Text(AboutMe.label, style: theme.textTheme.titleMedium),
-                  const SizedBox(width: 6),
-                  Text(
-                    '(לא חובה)',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 32),
+              // **The public half of the profile, asked for here and kept
+              // short.** A matchmaker who signs up and never opens their own
+              // profile page appears in the community as a name and a face,
+              // which is the least useful thing a colleague can find. The
+              // three questions below are what actually makes that page worth
+              // opening — who you are, where you are, who you work with — and
+              // they are the *only* three asked for here. Everything else the
+              // public page can carry (a benefit, a phone number, the other
+              // prompts) is left for the profile, because sign-up is not the
+              // moment to fill in a form.
+              //
+              // Every one of them is optional and none of them blocks the
+              // button, so this whole block can be scrolled past. It is last
+              // for that reason: nothing required sits below something that
+              // can be skipped.
+              const _SectionHeading(
+                title: 'קצת עליך, בשביל הקהילה',
+                note:
+                    'זה מה ששדכנים אחרים יראו בעמוד שלך. הכול לא חובה — אפשר '
+                    'לכתוב עכשיו במשפט, ולהשלים בהמשך מהפרופיל.',
               ),
+              const SizedBox(height: 14),
+              Text(AboutMe.label, style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               TextField(
                 controller: _aboutController,
@@ -257,16 +294,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   alignLabelWithHint: true,
                 ),
               ),
-              AboutMeExamples(
-                gender: _selectedGender,
-                onPick: (String example) => setState(() {
-                  _aboutController.text = example;
-                  _aboutController.selection = TextSelection.collapsed(
-                    offset: example.length,
-                  );
-                }),
-              ),
-              const SizedBox(height: 32),
+              AboutMeExamples(gender: _selectedGender),
+              const SizedBox(height: 18),
+              for (final MatchmakerShareKind kind in _signUpShares) ...<Widget>[
+                TextField(
+                  controller: _shareControllers[kind],
+                  maxLength: MatchmakerShare.maxLength,
+                  textInputAction: TextInputAction.next,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    labelText: kind.label,
+                    hintText: kind.hint,
+                    counterText: '',
+                    prefixIcon: Icon(_shareIcons[kind]),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 20),
               FilledButton(
                 onPressed: _saving ? null : _continue,
                 child: _saving
@@ -332,7 +377,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     setState(() => _saving = true);
     try {
-      await context.read<UserProfileProvider>().saveProfile(
+      final UserProfileProvider profile = context.read<UserProfileProvider>();
+      await profile.saveProfile(
         name: _firstNameController.text,
         lastName: _lastNameController.text,
         gender: _selectedGender,
@@ -340,6 +386,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         photoPath: _photoPath,
         about: _aboutController.text,
       );
+      // Written as a set rather than merged: this screen shows every prompt it
+      // asks about, so what is in those fields is the whole of the answer —
+      // and re-opening the screen with one cleared has to clear it. Anything
+      // filled in from the profile page and not asked about here survives.
+      final List<MatchmakerShare> keptShares = <MatchmakerShare>[
+        for (final MatchmakerShare share in profile.communityShares)
+          if (!_signUpShares.contains(share.kind)) share,
+      ];
+      await profile.setCommunityShares(<MatchmakerShare>[
+        for (final MatchmakerShareKind kind in _signUpShares)
+          if (_shareControllers[kind]!.text.trim() case final String text
+              when text.isNotEmpty)
+            MatchmakerShare(kind: kind, text: text),
+        ...keptShares,
+      ]);
       if (!mounted) {
         return;
       }
@@ -480,6 +541,42 @@ class _PhotoPicker extends StatelessWidget {
           path != null ? 'תמונה נבחרה' : 'הוספת תמונה (אופציונלי)',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A quiet rule and a title, to break the form into "who you are" and "what
+/// the community sees".
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.title, required this.note});
+
+  final String title;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Divider(color: theme.colorScheme.outlineVariant),
+        const SizedBox(height: 12),
+        Text(
+          title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          note,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            height: 1.4,
           ),
         ),
       ],

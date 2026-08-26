@@ -85,6 +85,62 @@ abstract final class MatchSuggestionUtils {
     return true;
   }
 
+  /// Whether [candidate] passes the **basic** filter for [source]: the right
+  /// gender, a compatible age, and a religious style [source]'s own style is
+  /// ordinarily matched with.
+  ///
+  /// **This is the default a list of candidates opens on**, and the reason
+  /// there are two filters rather than one. A card that has been through
+  /// "עריכה מורחבת" can carry a height range, a city, a region and a marital
+  /// status, and applying all of it by default turned a database of six
+  /// hundred into a list of four — most of them missing not because they are
+  /// wrong for anybody but because nobody ever recorded their height. The
+  /// extended answer is still one tap away; see [matchesOwnPreferences] and
+  /// [hasExtendedPreferences].
+  ///
+  /// With nothing extended recorded the two are the same list, which is what
+  /// makes the toggle honest: it only ever appears where it changes something.
+  static bool matchesBasicPreferences({
+    required Person source,
+    required Person candidate,
+  }) {
+    if (!isEligibleCandidate(source: source, candidate: candidate)) {
+      return false;
+    }
+
+    final List<ReligiousLevel> levels =
+        MatchPreferences.defaultReligiousLevelsFor(source.religiousLevel);
+    final List<String> otherLabels = MatchPreferences.defaultOtherLabelsFor(
+      source,
+    );
+    if (levels.isNotEmpty || otherLabels.isNotEmpty) {
+      final bool styleFits =
+          levels.contains(candidate.religiousLevel) ||
+          (candidate.religiousLevel == ReligiousLevel.other &&
+              otherLabels.contains(candidate.religiousLevelOther?.trim()));
+      if (!styleFits) {
+        return false;
+      }
+    }
+
+    return areAgesCompatible(source: source, candidate: candidate);
+  }
+
+  /// Whether [source] has anything recorded beyond the basics — the fields
+  /// "עריכה מורחבת" collects. Only then is a "סינון מורחב" toggle worth
+  /// drawing: without one of these, narrowing would drop nobody.
+  static bool hasExtendedPreferences(Person source) {
+    return source.preferredMinAge != null ||
+        source.preferredMaxAge != null ||
+        source.preferredMinHeightCm != null ||
+        source.preferredMaxHeightCm != null ||
+        (source.preferredCity ?? '').trim().isNotEmpty ||
+        source.preferredRegions.isNotEmpty ||
+        source.preferredMaritalStatuses.isNotEmpty ||
+        source.preferredReligiousLevels.isNotEmpty ||
+        source.preferredReligiousLevelOtherLabels.isNotEmpty;
+  }
+
   /// The religious levels shown by default (before the matchmaker sets a
   /// personal filter). The default is now the candidate's *own* level only —
   /// a "דתי לאומי" sees only "דתי לאומי", a "דתי פתוח" sees only "דתי פתוח",

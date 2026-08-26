@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
+import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/board_add_sheet.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -12,7 +13,6 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/think_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -25,9 +25,11 @@ import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_config.dart';
+import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/utils/home_next_actions.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
 import 'package:shadchan/utils/home_stage.dart';
+import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
@@ -43,7 +45,6 @@ import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
-import 'package:shadchan/widgets/reminders_bell_button.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 
 /// The landing screen: a calm workspace rather than a dashboard.
@@ -170,25 +171,36 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final PersonRepository personRepository = context.watch<PersonRepository>();
-    final UserProfileProvider profile = context.watch<UserProfileProvider>();
 
-    return Scaffold(
-      appBar: _buildGreetingAppBar(theme, profile),
-      body: SafeArea(
-        child: Stack(
-          children: <Widget>[
-            // The board and the activity trail are app-wide singletons rather
-            // than injected providers — the repositories write to them when a
-            // record is deleted — so the page listens to them directly.
-            ListenableBuilder(
-              listenable: Listenable.merge(<Listenable>[
-                HomeBoardStore.instance,
-                RecentActivityStore.instance,
-              ]),
-              builder: (BuildContext context, _) => _buildHome(),
+    // **One type scale for the whole page, decided here rather than card by
+    // card.** A dozen widgets across five files were each picking a Material
+    // role that was right on their own card, and between them the landing page
+    // was drawn in ten sizes with no order to them. See [HomeTypography]: the
+    // roles are folded onto three, once, and the blocks go on asking for
+    // whatever they always asked for.
+    return Theme(
+      data: theme.copyWith(textTheme: HomeTypography.scale(theme.textTheme)),
+      child: Builder(
+        builder: (BuildContext context) => Scaffold(
+          appBar: _buildGreetingAppBar(),
+          body: SafeArea(
+            child: Stack(
+              children: <Widget>[
+                // The board and the activity trail are app-wide singletons
+                // rather than injected providers — the repositories write to
+                // them when a record is deleted — so the page listens to them
+                // directly.
+                ListenableBuilder(
+                  listenable: Listenable.merge(<Listenable>[
+                    HomeBoardStore.instance,
+                    RecentActivityStore.instance,
+                  ]),
+                  builder: (BuildContext context, _) => _buildHome(),
+                ),
+                _buildSearchPanel(Theme.of(context), personRepository),
+              ],
             ),
-            _buildSearchPanel(theme, personRepository),
-          ],
+          ),
         ),
       ),
     );
@@ -196,43 +208,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- AppBars ------------------------------------------------------------
 
-  /// The home bar: the app's name at the start, the matchmaker at the other
-  /// end with the bell beside them.
+  /// The home bar: the app's name at the start, the bell and the menu at the
+  /// other end, and the search row pinned under both.
   ///
-  /// **The wordmark leads the row now, and the overflow menu is gone.** The
-  /// mark used to be centred, wedged between a photograph on one side and three
-  /// squares on the other, which left it the narrowest slot on a bar it is
-  /// supposed to sign. It sits at the start edge — the right, in RTL — where
-  /// the eye begins, and המאגר שלי and רעיונות wear exactly the same banner;
-  /// see [ShadchanAppBar].
+  /// **The corner carries three dots again, not a face.** A photograph in the
+  /// far corner of a bar is read as "this is you", not as "this is the way to
+  /// everything else" — so the one control that opens settings, help, the
+  /// privacy policy and the way to share the app was drawn as an avatar, and
+  /// the menu those rows live on had nowhere to hang from at all. The overflow
+  /// dots are what a phone's menu is looked for, and הפרופיל שלי is the first
+  /// row on it, so the matchmaker's own page is one tap further and every other
+  /// destination is one tap closer.
   ///
-  /// **The photograph took the three dots' corner, and the bell moved up
-  /// against it.** Everything the menu offered is on the page the photograph
-  /// opens, so the dots were a second door to one room — and with them gone the
-  /// bell and the face are one group at one end instead of two controls with
-  /// the width of the bar between them.
-  ShadchanAppBar _buildGreetingAppBar(
-    ThemeData theme,
-    UserProfileProvider profile,
-  ) {
-    // In RTL the actions group sits at the left of the bar and lays out from
-    // the right, so the first entry here is the innermost: read left to right
-    // on screen the pair is the photograph and then the bell.
+  /// **The search row is part of the bar now.** It used to be the first sliver
+  /// on the page and went away with it; on a screen that is scrolled all day
+  /// that is the one control that must not.
+  ShadchanAppBar _buildGreetingAppBar() {
+    // The same three controls, in the same order, as המאגר שלי and רעיונות —
+    // see [ShadchanTabActions]. Only the "+" differs: this page is above both
+    // of the other two, so its "+" asks which of them is meant.
     return ShadchanAppBar(
-      actions: <Widget>[
-        const RemindersBellButton(boxed: true),
-        const SizedBox(width: 6),
-        Center(
-          child: UserProfileAvatar(
-            photoPath: profile.photoPath,
-            gender: profile.gender,
-            name: profile.name,
-            radius: 18,
-            showEditBadge: profile.photoPath == null,
-            onTap: () => context.push('/profile'),
-          ),
+      actions: const <Widget>[ShadchanTabActions(add: AddMenuButton())],
+      bottom: ShadchanSearchBottom(
+        child: ShadchanSearchField(
+          controller: _searchController,
+          hintText: 'חיפוש במאגר שלך',
+          onCleared: _closeSearch,
         ),
-      ],
+      ),
     );
   }
 
@@ -348,27 +351,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return CustomScrollView(
       controller: _homeScrollController,
       slivers: <Widget>[
-        // 0. The search row, hard under the banner and scrolling away with the
-        // page.
-        //
-        // **A field, not a magnifier.** Searching the database is the single
-        // most-used thing on this screen and it was behind an icon that opened
-        // a whole second app bar — one tap and one mode before a letter could
-        // be typed. A row that is simply there needs no explaining, and because
-        // it is a sliver rather than part of the bar it goes away the moment
-        // somebody scrolls past it, which is the one thing a permanent search
-        // row must not do: take a strip of every screenful.
-        block(
-          ShadchanSearchField(
-            controller: _searchController,
-            hintText: 'חיפוש במאגר שלך',
-            onCleared: _closeSearch,
-          ),
-          top: 8,
-        ),
-
-        // 1. The greeting. On the page rather than in the bar, with nothing
-        // drawn around it.
+        // 0. The greeting. On the page rather than in the bar, with nothing
+        // drawn around it. The search row that used to sit above it is in the
+        // banner now — see [_buildGreetingAppBar].
         block(
           HomeGreeting(
             greeting: _timeOfDayGreeting(
@@ -376,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             name: greetingName,
           ),
-          top: 6,
+          top: 8,
         ),
 
         // A brand-new matchmaker lands on the real home screen with one
@@ -587,10 +572,9 @@ class _HomeScreenState extends State<HomeScreen> {
         Align(
           alignment: Alignment.topCenter,
           child: Padding(
-            // Clear of the search row itself, which is now the first thing on
-            // the page rather than a bar overhead: results drawn at y=8 would
-            // cover the field they belong to.
-            padding: const EdgeInsets.fromLTRB(12, 62, 12, 0),
+            // The field is in the bar now, so the body starts directly under
+            // it and the results only need a hair of air above them.
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: Material(
               elevation: 6,
               color: theme.colorScheme.surface,
@@ -623,7 +607,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           return PersonListCard(
                             person: person,
                             heroEnabled: false,
-                            onTap: () => context.push('/people/${person.id}'),
+                            onTap: () {
+                              _closeSearch();
+                              pushLeavingSearch(
+                                context,
+                                '/people/${person.id}',
+                              );
+                            },
                             onToggleFavorite: () =>
                                 repository.toggleFavorite(person.id),
                             onOpenWhatsApp: () => _openWhatsApp(person),

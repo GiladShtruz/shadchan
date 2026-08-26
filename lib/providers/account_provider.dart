@@ -110,6 +110,34 @@ class AccountProvider extends ChangeNotifier {
   Future<AccountSignInResult> signInWithApple() =>
       _signIn(AccountService.signInWithApple);
 
+  /// The third way in, and the only one that needs no other company's account.
+  ///
+  /// Kept on the same [_signIn] path as the two providers so a spinner, a
+  /// refused second tap and the refreshed user all behave identically however
+  /// somebody signed in.
+  Future<AccountSignInResult> signInWithEmail({
+    required String email,
+    required String password,
+  }) {
+    return _signIn(
+      () => AccountService.signInWithEmail(email: email, password: password),
+    );
+  }
+
+  Future<AccountSignInResult> registerWithEmail({
+    required String email,
+    required String password,
+  }) {
+    return _signIn(
+      () => AccountService.registerWithEmail(email: email, password: password),
+    );
+  }
+
+  /// Sends the reset mail. Not a sign-in, but it shares the busy flag so the
+  /// form cannot be worked while it is in flight.
+  Future<AccountSignInResult> sendPasswordReset(String email) =>
+      _signIn(() => AccountService.sendPasswordReset(email));
+
   Future<AccountSignInResult> _signIn(
     Future<AccountSignInResult> Function() attempt,
   ) async {

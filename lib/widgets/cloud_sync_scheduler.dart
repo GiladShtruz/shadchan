@@ -40,6 +40,23 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     with WidgetsBindingObserver {
   AccountProvider? _account;
 
+  /// The two ledgers whose changes are worth telling the community about, and
+  /// the timer that stops a burst of them becoming a burst of writes.
+  PersonRepository? _people;
+  MatchRepository? _matches;
+  Timer? _activityTimer;
+
+  /// How long the app waits after the last change before republishing.
+  ///
+  /// **Long enough to swallow an import, short enough to be a live figure.**
+  /// Adding four hundred friends fires four hundred notifications inside a few
+  /// seconds; every one of them restarts this timer, so the whole import ends
+  /// in exactly one publish. A single friend added by hand reaches the
+  /// community twenty seconds later, which is what "the number moves when
+  /// somebody does something" has to mean if two matchmakers are ever to see
+  /// each other's work in the same sitting.
+  static const Duration _activityDelay = Duration(seconds: 20);
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +73,15 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       if (mounted) {
         _account = context.read<AccountProvider>()
           ..addListener(_refreshSupportInbox);
+        // **And the community figures follow the work, not only the session.**
+        // Publishing at open and pause alone means a matchmaker who adds
+        // twenty friends and stays in the app has told the community nothing —
+        // and the other matchmakers looking at "פעילות הקהילה" in the same hour
+        // are reading a total that does not contain any of it. These are the
+        // two ledgers every published counter is derived from, so a change to
+        // either is exactly the moment the row is stale.
+        _people = context.read<PersonRepository>()..addListener(_noteActivity);
+        _matches = context.read<MatchRepository>()..addListener(_noteActivity);
       }
     });
   }
@@ -63,8 +89,35 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
   @override
   void dispose() {
     _account?.removeListener(_refreshSupportInbox);
+    _people?.removeListener(_noteActivity);
+    _matches?.removeListener(_noteActivity);
+    _activityTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// A friend or an idea changed: republish, once the changes have stopped.
+  ///
+  /// Only the community counters are republished, not the whole cloud backup —
+  /// that is a far larger write and it keeps the two moments it always had.
+  void _noteActivity() {
+    _activityTimer?.cancel();
+    _activityTimer = Timer(_activityDelay, () {
+      if (!mounted) {
+        return;
+      }
+      // Cheap when nothing that is published actually moved: the counts are
+      // recomputed locally, and `CommunityService.publish` recognises a row
+      // identical to the last one it wrote and never reaches the network. So an
+      // edit to somebody's phone number costs one local recount and no write.
+      unawaited(
+        context.read<CommunityProvider>().refresh(
+          people: context.read<PersonRepository>(),
+          matches: context.read<MatchRepository>(),
+          profile: context.read<UserProfileProvider>(),
+        ),
+      );
+    });
   }
 
   void _refreshSupportInbox() {

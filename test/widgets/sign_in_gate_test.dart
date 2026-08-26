@@ -23,11 +23,11 @@ import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/utils/enums.dart';
 
-/// The one-time sign-in invitation, and the rule that it is an invitation.
+/// The sign-in gate, and the rule that it is a gate.
 ///
-/// Two things are worth a test and neither is the screen's appearance: that an
-/// onboarded matchmaker who has never answered lands on it, and that answering
-/// "המשך בלי להתחבר" gets them all the way into the app and keeps them there.
+/// Three things are worth a test and none of them is the screen's appearance:
+/// that a device with no account lands on it, that there is no way past it, and
+/// that a device which has one goes straight through.
 void main() {
   late Directory hiveDirectory;
 
@@ -77,7 +77,7 @@ void main() {
   });
 
   setUp(() async {
-    await Hive.box<dynamic>('settings').delete('signIn.promptAnswered');
+    await Hive.box<dynamic>('settings').delete('signIn.hasAccount');
     // The store's write-through cache is static and outlives the box, so a
     // test that wants a fresh install has to drop it as well as the key.
     SignInPromptStore.resetForTest();
@@ -91,49 +91,71 @@ void main() {
     }
   });
 
-  testWidgets('an onboarded matchmaker who has never answered lands on it', (
+  testWidgets('a device with no account lands on it, and cannot get past', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
     expect(find.text(SignInScreen.headline), findsOneWidget);
+
+    // All three ways in are on the one screen. Apple is drawn only on Apple's
+    // own platforms, so it is deliberately not asserted here.
     expect(find.text('המשך עם Google'), findsOneWidget);
+    expect(find.text('הרשמה עם מייל'), findsOneWidget);
 
-    // The way past is present and reachable, not hidden behind a scroll or a
-    // delay. A skip that has to be hunted for is a dark pattern.
-    expect(find.text('המשך בלי להתחבר'), findsOneWidget);
-
-    // And the app itself is not yet behind it.
+    // And there is no way round it any more. This is the assertion that would
+    // fail if somebody put the skip back.
+    expect(find.text('המשך בלי להתחבר'), findsNothing);
     expect(find.text('המאגר שלי'), findsNothing);
   });
 
-  testWidgets('skipping asks once more, then lets them all the way through', (
+  testWidgets('the address form asks for a password before it will submit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('המשך בלי להתחבר'));
+    // Nothing is red before the first press: nobody is scolded for a form they
+    // have not finished typing.
+    expect(find.text('צריך למלא כתובת מייל'), findsNothing);
+
+    await tester.ensureVisible(find.text('הרשמה עם מייל'));
+    await tester.tap(find.text('הרשמה עם מייל'));
     await tester.pumpAndSettle();
 
-    // The second question says what is actually at stake, and recommends
-    // signing in — without making the other answer unreachable.
-    expect(find.text(ContinueWithoutAccountDialog.title), findsOneWidget);
-    expect(find.text('התחברות ושמירת המאגר'), findsOneWidget);
-
-    await tester.tap(find.text('בכל זאת להמשיך בלי להתחבר'));
-    await tester.pumpAndSettle();
-
-    expect(find.text(SignInScreen.headline), findsNothing);
-    expect(find.text('המאגר שלי'), findsWidgets);
+    expect(find.text('צריך למלא כתובת מייל'), findsOneWidget);
+    // Still here, because nothing was sent anywhere.
+    expect(find.text(SignInScreen.headline), findsOneWidget);
   });
 
-  testWidgets('the answer sticks: a later launch goes straight to the app', (
+  testWidgets('the two questions swap, and only one of them is asked at once', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    // Registration leads: this screen is far more often on the path of
+    // somebody opening the app for the first time.
+    expect(find.text('הרשמה עם מייל'), findsOneWidget);
+    expect(find.text('שכחתי סיסמה'), findsNothing);
+
+    await tester.ensureVisible(find.text('כבר יש לי חשבון — התחברות'));
+    await tester.tap(find.text('כבר יש לי חשבון — התחברות'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('הרשמה עם מייל'), findsNothing);
+    expect(find.text('התחברות'), findsOneWidget);
+    // The one thing an address-and-password account needs that a provider
+    // button does not.
+    expect(find.text('שכחתי סיסמה'), findsOneWidget);
+  });
+
+  testWidgets('a device that already has an account goes straight through', (
     WidgetTester tester,
   ) async {
     await tester.runAsync(
-      () => Hive.box<dynamic>('settings').put('signIn.promptAnswered', 'true'),
+      () => Hive.box<dynamic>('settings').put('signIn.hasAccount', 'true'),
     );
 
     await tester.pumpWidget(_buildTestApp());
@@ -141,21 +163,6 @@ void main() {
 
     expect(find.text(SignInScreen.headline), findsNothing);
     expect(find.text('המאגר שלי'), findsWidgets);
-  });
-
-  testWidgets('backing out of the second question leaves them on the screen', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(_buildTestApp());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('המשך בלי להתחבר'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('התחברות ושמירת המאגר'));
-    await tester.pumpAndSettle();
-
-    // Nothing was recorded, so the question is still open.
-    expect(find.text(SignInScreen.headline), findsOneWidget);
   });
 }
 

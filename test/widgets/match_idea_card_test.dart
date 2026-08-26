@@ -252,7 +252,7 @@ void main() {
     expect(find.text('פתיחה מחדש'), findsOneWidget);
     expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(find.text('מתחילים לצאת'), findsNothing);
-    expect(find.text('סגירת הצעה'), findsNothing);
+    expect(find.text('סגירת רעיון'), findsNothing);
   });
 
   testWidgets('every card says where the proposal stands', (
@@ -522,9 +522,9 @@ void main() {
     // screen used to hold is beside them.
     expect(find.text('העברה להמתנה'), findsOneWidget);
     expect(find.text('מתחילים לצאת'), findsOneWidget);
-    expect(find.text('סגירת הצעה'), findsOneWidget);
+    expect(find.text('סגירת רעיון'), findsOneWidget);
     expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('הוספת איש קשר שקשור להצעה'), findsOneWidget);
+    expect(find.text('הוספת איש קשר שקשור לרעיון'), findsOneWidget);
     // Not a button: the journal is simply open at the bottom of the panel.
     expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -549,7 +549,7 @@ void main() {
 
     expect(find.text('מתחילים לצאת'), findsNothing);
     expect(find.text('חתונה'), findsOneWidget);
-    expect(find.text('סגירת הצעה'), findsOneWidget);
+    expect(find.text('סגירת רעיון'), findsOneWidget);
   });
 
   testWidgets('the status actions are drawn as peers, not a winner', (
@@ -569,7 +569,7 @@ void main() {
       for (final String label in <String>[
         'העברה להמתנה',
         'מתחילים לצאת',
-        'סגירת הצעה',
+        'סגירת רעיון',
       ])
         tester.widget<Material>(
           find

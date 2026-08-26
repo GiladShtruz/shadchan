@@ -7,7 +7,6 @@ import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
-import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/community_milestones.dart';
 import 'package:shadchan/utils/community_period.dart';
@@ -99,18 +98,18 @@ abstract final class CommunityPromptGate {
       return;
     }
 
-    // Last, and only for somebody who chose to work locally. It sits at the
-    // bottom of the order because it is the only prompt here that asks for
-    // something the matchmaker has already declined once — everything above it
-    // is either their own good news or a question they have not been asked.
-    final int friends = people.databaseCount;
-    if (!isSignedIn && SignInPromptStore.shouldRemind(friends)) {
-      SignInReminderDialog.show(context, friends: friends);
-      return;
-    }
-
-    // A signed-out device has no community to read from, and every call below
-    // would be refused by `CommunityService`'s own account check anyway.
+    // **There is no "you should sign in" prompt here any more.** It was the
+    // last item on this list and it has nothing left to say: an account is
+    // compulsory now — see `AppRouter`'s gate — so everybody reaching this
+    // point already has one. Worse, it would have started firing at exactly
+    // the wrong people: `isSignedIn` is false for the first moment of every
+    // launch, while Firebase is still coming up, so the prompt would have
+    // greeted signed-in matchmakers with an invitation to sign in.
+    //
+    // That first moment is also why the guard below stays. A signed-out device
+    // — or one whose Firebase has not resolved yet — has no community to read
+    // from, and every call past this point would be refused by
+    // `CommunityService`'s own account check anyway.
     if (!isSignedIn) {
       return;
     }

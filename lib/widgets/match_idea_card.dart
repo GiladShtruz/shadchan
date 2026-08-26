@@ -622,7 +622,7 @@ class _StatusLine extends StatelessWidget {
 ///
 /// **The promotion is the first thing under the fold, and the loudest.** It
 /// used to open onto a row of three status tiles — "העברה להמתנה", "מתחילים
-/// לצאת", "סגירת הצעה" — which are the three ways a proposal *ends*, offered
+/// לצאת", "סגירת רעיון" — which are the three ways an idea *ends*, offered
 /// before the one thing it is actually waiting for. Somebody who opens the
 /// actions of an open proposal is nearly always there to move it on, so that
 /// is what meets the eye: one wide row naming the exact next step, with the
@@ -788,6 +788,17 @@ class _CardActionBar extends StatelessWidget {
 /// rearranges itself is a list nobody can keep their place in — but by wearing
 /// the sentence in the one place somebody is already looking when they decide
 /// what to do next.
+///
+/// **Quiet paper, not a green slab.** This was a block of mint filling the top
+/// of every open panel, with the stage chip, an alternative side and a line
+/// about what was last sent all stacked inside the same tinted area — the
+/// loudest thing on a screen full of cards, and busy enough that the one
+/// button in it had to compete with three other controls painted on the same
+/// colour. It is the card's own surface now with a thin green edge, the green
+/// kept to a small square behind the icon and to the words on the button
+/// itself. Everything that is *not* the action moved below a hairline into one
+/// quiet footer line, so the panel opens on a single unmistakable next step
+/// with its context underneath rather than around it.
 class _PromoteRow extends StatelessWidget {
   const _PromoteRow({
     required this.match,
@@ -819,10 +830,17 @@ class _PromoteRow extends StatelessWidget {
     final Color ink = startingToDate ? AppColors.statusDating : kWhatsAppGreen;
     final String? nudge = MatchStaleness.nudge(match);
     final String? sent = match.lastShareLabel;
+    final bool hasFooter =
+        onSetStage != null ||
+        onOther != null ||
+        (sent != null && sent.trim().isNotEmpty);
 
-    return Material(
-      color: ink.withValues(alpha: dark ? 0.18 : 0.10),
-      borderRadius: BorderRadius.circular(12),
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ink.withValues(alpha: dark ? 0.45 : 0.30)),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -830,12 +848,27 @@ class _PromoteRow extends StatelessWidget {
           InkWell(
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
               child: Row(
                 children: <Widget>[
-                  startingToDate
-                      ? Icon(Icons.celebration_outlined, size: 19, color: ink)
-                      : FaIcon(FontAwesomeIcons.whatsapp, size: 19, color: ink),
+                  // The colour lives here and on the button's own words, and
+                  // nowhere else on the panel.
+                  Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: ink.withValues(alpha: dark ? 0.22 : 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: startingToDate
+                        ? Icon(Icons.celebration_outlined, size: 18, color: ink)
+                        : FaIcon(
+                            FontAwesomeIcons.whatsapp,
+                            size: 18,
+                            color: ink,
+                          ),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -849,11 +882,11 @@ class _PromoteRow extends StatelessWidget {
                             female: female,
                           ),
                           style: theme.textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             color: ink,
                           ),
                         ),
-                        const SizedBox(height: 1),
+                        const SizedBox(height: 2),
                         Text(
                           // The nudge takes the line when there is one: "what
                           // this button does" is guessable, and "nobody has
@@ -866,8 +899,9 @@ class _PromoteRow extends StatelessWidget {
                                 ? theme.colorScheme.onSurfaceVariant
                                 : AppColors.statusChecking,
                             fontWeight: nudge == null
-                                ? FontWeight.w600
-                                : FontWeight.w800,
+                                ? FontWeight.w500
+                                : FontWeight.w700,
+                            height: 1.3,
                           ),
                         ),
                       ],
@@ -880,61 +914,72 @@ class _PromoteRow extends StatelessWidget {
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.7,
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(10, 0, 6, 6),
-            // A `Wrap` and not a `Row`: the stage can be five words long and
-            // the alternative side is four more, which is wider than a 320px
-            // card at any text scale. Side by side while they fit, stacked
-            // when they do not — never clipped, and never overflowing.
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              children: <Widget>[
-                if (onSetStage != null)
-                  _StageMenu(
-                    current: MatchStage.of(match),
-                    onSelected: onSetStage!,
-                  ),
-                if (onOther != null)
-                  TextButton(
-                    onPressed: onOther,
-                    style: TextButton.styleFrom(
-                      foregroundColor: theme.colorScheme.onSurfaceVariant,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      textStyle: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+          if (hasFooter) ...<Widget>[
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(8, 4, 8, 4),
+              // A `Wrap` and not a `Row`: the stage can be five words long and
+              // the alternative side is four more, which is wider than a 320px
+              // card at any text scale. Side by side while they fit, stacked
+              // when they do not — never clipped, and never overflowing.
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                children: <Widget>[
+                  if (onSetStage != null)
+                    _StageMenu(
+                      current: MatchStage.of(match),
+                      onSelected: onSetStage!,
+                    ),
+                  if (onOther != null)
+                    TextButton(
+                      onPressed: onOther,
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.onSurfaceVariant,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        textStyle: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      child: const Text('לפנות קודם לבחורה'),
+                    ),
+                  // What already went out, once something has — on the same
+                  // quiet line as the rest of the context rather than as a
+                  // paragraph of its own under the button. A card sent last
+                  // week does not answer the question of what to do next, but
+                  // it is the context for it.
+                  if (sent != null && sent.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 0),
+                      child: Text(
+                        sent,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                    child: const Text('לפנות קודם לבחורה'),
-                  ),
-              ],
-            ),
-          ),
-          // What already went out, once something has. Under the button rather
-          // than instead of it: a card sent last week does not answer the
-          // question of what to do next, but it is the context for it.
-          if (sent != null && sent.trim().isNotEmpty)
-            Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 8),
-              child: Text(
-                sent,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                ],
               ),
             ),
+          ],
         ],
       ),
     );
@@ -958,7 +1003,7 @@ class _StageMenu extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return PopupMenuButton<MatchStage>(
-      tooltip: 'עדכון שלב ההצעה',
+      tooltip: 'עדכון שלב הרעיון',
       position: PopupMenuPosition.under,
       padding: EdgeInsets.zero,
       onSelected: onSelected,
@@ -1284,7 +1329,7 @@ class _SecondaryActionsLine extends StatelessWidget {
             Flexible(
               child: _MiniAction(
                 icon: Icons.person_add_alt_1_outlined,
-                label: 'הוספת איש קשר שקשור להצעה',
+                label: 'הוספת איש קשר שקשור לרעיון',
                 tint: theme.colorScheme.onSurfaceVariant,
                 onTap: onAddContact,
               ),

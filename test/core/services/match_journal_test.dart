@@ -138,7 +138,7 @@ void main() {
     // A move that had no warmer sentence of its own used to write nothing at
     // all — the status changed and the journal did not notice.
     await matchRepository.updateStatus(match.id, MatchStatus.unavailable);
-    expect(journalOf(match.id).last, 'ההצעה עברה להמתנה');
+    expect(journalOf(match.id).last, 'הרעיון עבר להמתנה');
 
     // Re-setting the status a proposal already has is not a move and must not
     // read as one.
@@ -158,14 +158,14 @@ void main() {
         note: 'הוא רחוק מדי',
       );
 
-      // "ההצעה נסגרה" directly above "ההצעה נדחתה (מי: שםfemale)" would say the
+      // "הרעיון נסגר" directly above "הרעיון נדחה (מי: שםfemale)" would say the
       // same thing twice and date it twice, so `updateStatus` suppresses its
       // generic line for this caller.
       final List<String> journal = journalOf(match.id);
       expect(journal, hasLength(2));
-      expect(journal.last, contains('נדחתה'));
+      expect(journal.last, contains('נדחה'));
       expect(journal.last, contains('הוא רחוק מדי'));
-      expect(journal, isNot(contains('ההצעה נסגרה')));
+      expect(journal, isNot(contains('הרעיון נסגר')));
     },
   );
 
@@ -197,11 +197,11 @@ void main() {
     );
     expect(
       journalOf(match.id).last,
-      'נוסף איש קשר להצעה: רבקה כהן (אמא של שרה)',
+      'נוסף איש קשר לרעיון: רבקה כהן (אמא של שרה)',
     );
 
     await matchRepository.removeRelatedContact(match.id, 0);
-    expect(journalOf(match.id).last, 'הוסר איש קשר מההצעה: רבקה כהן');
+    expect(journalOf(match.id).last, 'הוסר איש קשר מהרעיון: רבקה כהן');
   });
 
   test('a card going out moves the proposal to "בבדיקה" and says so', () async {

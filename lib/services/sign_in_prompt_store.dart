@@ -2,8 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/services/home_board_store.dart';
 
-/// Whether the matchmaker has been asked, once, to connect an account — and
-/// when it is fair to mention it again.
+/// Whether this device has an account on it.
 ///
 /// **Local, and deliberately not derived from the account.** The router has to
 /// answer "does this launch open on the sign-in screen?" on the *first frame*,
@@ -21,22 +20,7 @@ import 'package:shadchan/services/home_board_store.dart';
 /// in the box.
 abstract final class SignInPromptStore {
   static const String _answeredKey = 'signIn.promptAnswered';
-  static const String _remindedAtKey = 'signIn.remindedAtFriends';
-
-  /// The database size at which a matchmaker who skipped is reminded, gently
-  /// and once, that nothing they have built is backed up.
-  ///
-  /// Twenty-five, because that is roughly where a list stops being an
-  /// experiment and starts being work somebody would be upset to lose. Earlier
-  /// than that the reminder is a sales pitch about a database of four people.
-  static const int remindFromFriends = 25;
-
-  /// How much the database has to grow before the reminder may come back.
-  ///
-  /// It is measured in friends rather than in days on purpose: a matchmaker who
-  /// has not added anybody since being asked has not acquired a new reason to
-  /// be asked, however long ago it was.
-  static const int remindAgainAfterFriends = 75;
+  static const String _hasAccountKey = 'signIn.hasAccount';
 
   static Box<dynamic>? get _box =>
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
@@ -60,48 +44,33 @@ abstract final class SignInPromptStore {
   @visibleForTesting
   static void resetForTest() => _pending.clear();
 
-  /// Whether the one-time sign-in screen has had an answer — signing in, or
-  /// choosing to carry on without.
+  /// Whether this device is holding a signed-in account.
   ///
-  /// False for everybody on the launch after this feature ships, which is the
-  /// point: existing matchmakers see the screen once too.
-  static bool get hasAnswered =>
-      _read(_answeredKey) == true || _read(_answeredKey) == 'true';
-
-  /// Records that the question has been answered, however it was answered.
+  /// **This is the gate now.** The flag it replaced — `hasAnswered` — recorded
+  /// that the question had been *asked*, because the answer was allowed to be
+  /// "no". The app has no local-only mode any more: every record belongs to an
+  /// account, so what the router needs to know on the first frame is whether
+  /// there is one.
   ///
-  /// **Signing in and skipping both count.** The screen is not a gate to get
-  /// past, and somebody who chose to stay local must not be shown it again on
-  /// every launch until they give in.
-  static void markAnswered() => _write(_answeredKey, true);
+  /// False for everybody on the launch after this ships, including matchmakers
+  /// who signed in months ago — and that is deliberate rather than tolerated.
+  /// `SignInScreen` sees `AccountProvider.isSignedIn` come back true a moment
+  /// later, writes this flag and steps aside, so an existing account costs one
+  /// frame of a screen nobody has to touch. Guessing instead would mean either
+  /// letting a signed-out install through or making a signed-in one sign in
+  /// again.
+  static bool get hasAccount =>
+      _read(_hasAccountKey) == true || _read(_hasAccountKey) == 'true';
 
-  // --- The gentle reminder afterwards --------------------------------------
-
-  /// The database size the last reminder was shown at, or zero.
-  static int get remindedAtFriends {
-    final Object? raw = _read(_remindedAtKey);
-    if (raw is int) {
-      return raw;
-    }
-    return raw is String ? int.tryParse(raw) ?? 0 : 0;
+  /// Records that an account is connected on this device.
+  static void markSignedIn() {
+    _write(_hasAccountKey, true);
+    // Kept in step for the sake of anything still reading the old flag, and so
+    // that a downgrade to a build with the optional gate does not re-ask.
+    _write(_answeredKey, true);
   }
 
-  /// Whether it is fair to mention signing in again at [friends] friends.
-  ///
-  /// Never on the launch somebody skipped — [hasAnswered] alone does not gate
-  /// this, [remindFromFriends] does, and a database that small belongs to
-  /// somebody who has just arrived.
-  static bool shouldRemind(int friends) {
-    if (friends < remindFromFriends) {
-      return false;
-    }
-    final int last = remindedAtFriends;
-    if (last == 0) {
-      return true;
-    }
-    return friends - last >= remindAgainAfterFriends;
-  }
-
-  static void markReminded(int friends) =>
-      _write(_remindedAtKey, friends <= 0 ? 1 : friends);
+  /// Records that the account was disconnected, which sends the next launch —
+  /// and the current one — back to [SignInScreen].
+  static void markSignedOut() => _write(_hasAccountKey, false);
 }

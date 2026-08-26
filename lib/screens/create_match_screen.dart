@@ -14,7 +14,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/gender_text.dart';
 
 /// How the screen should open the other side of the proposal when it is
-/// reached from a candidate's "הוסף הצעה" shortcut.
+/// reached from a candidate's "הוספת רעיון" shortcut.
 enum CreateMatchPick { database, outsideDatabase }
 
 /// "רעיון חדש": pick a man, pick a woman, optionally jot down a thought, and
@@ -42,7 +42,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   Person? _personB;
   bool _didApplyPreSelection = false;
 
-  /// True from the moment "הוספת הצעה" is tapped until this screen is gone.
+  /// True from the moment "הוספת רעיון" is tapped until this screen is gone.
   ///
   /// Creating the proposal notifies [MatchRepository], and this screen watches
   /// it, so it rebuilds — with the brand new proposal now answering
@@ -205,7 +205,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    child: const Text('הוספת הצעה'),
+                    child: const Text('הוספת רעיון'),
                   ),
                 ),
               ),
@@ -237,6 +237,10 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       if (gender == Gender.male && _personB != null) _personB!.id,
       if (gender == Gender.female && _personA != null) _personA!.id,
     };
+    // The side that is already chosen, if there is one. The picker opens on the
+    // people who fit them rather than on the whole database in alphabetical
+    // order — see [PersonPickerSheet.sourcePerson].
+    final Person? other = gender == Gender.male ? _personB : _personA;
 
     final Person? selectedPerson = await PersonPickerSheet.show(
       context,
@@ -244,6 +248,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       filterGender: gender,
       excludeIds: excludeIds,
       allowCreateOutsideDatabase: true,
+      sourcePerson: other,
       // Remembered per side rather than per person: there is no source person
       // yet at this point in the flow — that is what is being chosen.
       filterKey: 'createMatch.${gender.name}',
@@ -718,7 +723,7 @@ class _DuplicateWarningCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'ההצעה הזו כבר קיימת במערכת',
+                  'הרעיון הזה כבר קיים במערכת',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.error,
                     fontWeight: FontWeight.w700,
@@ -731,7 +736,7 @@ class _DuplicateWarningCard extends StatelessWidget {
             alignment: AlignmentDirectional.centerStart,
             child: TextButton(
               onPressed: onView,
-              child: const Text('מעבר להצעה הקיימת'),
+              child: const Text('מעבר לרעיון הקיים'),
             ),
           ),
         ],

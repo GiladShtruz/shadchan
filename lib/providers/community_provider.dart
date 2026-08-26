@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -45,6 +46,10 @@ class CommunityProvider extends ChangeNotifier {
   int _publishRevision = 0;
   String _name = '';
   String? _photoPath;
+  String _about = '';
+  List<MatchmakerShare> _shares = const <MatchmakerShare>[];
+  String _benefit = '';
+  String _contactPhone = '';
 
   /// This device's own figures, or null before the first refresh.
   CommunityMemberCounts? get myCounts => _counts;
@@ -66,6 +71,29 @@ class CommunityProvider extends ChangeNotifier {
   /// Whether "שמור על הפרטיות שלי" is on — nothing about this matchmaker is
   /// published to the community at all. See [CommunityProfileStore.isPrivate].
   bool get isPrivate => _private;
+
+  /// Drops everything held about the matchmaker who was signed in.
+  ///
+  /// Called from `AccountSwitch.signOutAndClear`, after the local store has
+  /// been reset. Nothing here reaches the network: the outgoing account's row
+  /// in the shared collection is theirs and stays exactly as it was — this only
+  /// stops the *next* account inheriting a name, a face and a set of counts
+  /// that were never theirs.
+  void reset() {
+    _counts = null;
+    _hidden = false;
+    _private = false;
+    _publishing = false;
+    _pulledHidden = false;
+    _name = '';
+    _photoPath = null;
+    _about = '';
+    _shares = const <MatchmakerShare>[];
+    _benefit = '';
+    _contactPhone = '';
+    CommunityService.invalidate();
+    notifyListeners();
+  }
 
   /// Turns sharing off, or back on.
   ///
@@ -94,9 +122,13 @@ class CommunityProvider extends ChangeNotifier {
         counts: counts,
         name: _name,
         hidden: _hidden,
+        photoUrl: CommunityProfileStore.uploadedAvatarUrl,
+        about: _about,
+        shares: _shares,
+        benefit: _benefit,
+        contactPhone: _contactPhone,
       );
-      CommunityService.invalidate();
-      notifyListeners();
+      _notePublished();
     }
   }
 
@@ -126,6 +158,12 @@ class CommunityProvider extends ChangeNotifier {
     // than a handful — see [UserProfileProvider.fullName].
     _name = profile.fullName ?? '';
     _photoPath = profile.photoPath;
+    // The public page — everything the matchmaker chose to let other
+    // matchmakers see. See [CommunityProfile].
+    _about = profile.about ?? '';
+    _shares = profile.communityShares;
+    _benefit = profile.communityBenefit ?? '';
+    _contactPhone = profile.communityPhone ?? '';
     final CommunityMemberCounts counts = CommunityCounts.build(
       people: people.getAll(),
       matches: matches.getAll(),
@@ -163,6 +201,38 @@ class CommunityProvider extends ChangeNotifier {
       if (!FirebaseBootstrap.isReady) {
         return;
       }
+
+      // **The counters go first, before anything that can be slow.** They used
+      // to be third in the queue, behind a Firestore read for the stored
+      // opt-out and an upload of the matchmaker's photograph — two network
+      // round trips standing in front of the one write this method exists to
+      // make. At app pause, which is one of the two moments this runs, the
+      // process can be frozen at any point; anything waiting behind a round
+      // trip there is a publish that simply does not happen, and a device that
+      // does not publish is a matchmaker the community total has never heard
+      // of. The other two are reconciled straight afterwards, and the second
+      // publish is free when they changed nothing — see
+      // [CommunityService.publish], which compares the row it is about to
+      // write against the last one that landed.
+      //
+      // It carries the picture URL this device *last uploaded* rather than an
+      // empty one, which is the URL already on the document: without it the
+      // first write would blank the photograph and the second would put it
+      // back, which is two writes, a flicker on somebody else's leaderboard,
+      // and a row that no longer matches its own fingerprint every launch.
+      if (await CommunityService.publish(
+        counts: counts,
+        name: _name,
+        hidden: _hidden,
+        photoUrl: CommunityProfileStore.uploadedAvatarUrl,
+        about: _about,
+        shares: _shares,
+        benefit: _benefit,
+        contactPhone: _contactPhone,
+      )) {
+        _notePublished();
+      }
+
       // The opt-out is authoritative on the server, because it has to survive
       // a reinstall — but only the first time, and only if this device has not
       // been told otherwise since.
@@ -172,7 +242,6 @@ class CommunityProvider extends ChangeNotifier {
         if (stored != null && stored != _hidden) {
           _hidden = stored;
           CommunityProfileStore.setHidden(stored);
-          notifyListeners();
         }
       }
 
@@ -182,25 +251,39 @@ class CommunityProvider extends ChangeNotifier {
         localPath: _photoPath,
         hidden: _hidden,
       );
-      await CommunityService.publish(
+      // Free whenever the two reconciliations above changed nothing: the row is
+      // then byte for byte the one just written, and [CommunityService.publish]
+      // recognises its own fingerprint and returns without touching the
+      // network.
+      if (await CommunityService.publish(
         counts: counts,
         name: _name,
         hidden: _hidden,
         photoUrl: photoUrl,
-      );
-      // This device's own numbers have just moved, so every cached community
-      // figure is one publish out of date.
-      CommunityService.invalidate();
-      // And whatever is on screen is reading the stale ones. The home banner
-      // and the activity screen both take their community figures from a read
-      // they fired before this publish landed — usually before there was even
-      // an account — so without this the landing page keeps yesterday's answer,
-      // or no answer at all, for the rest of the session.
-      _publishRevision++;
-      notifyListeners();
+        about: _about,
+        shares: _shares,
+        benefit: _benefit,
+        contactPhone: _contactPhone,
+      )) {
+        _notePublished();
+      }
     } finally {
       _publishing = false;
     }
+  }
+
+  /// Announces that this device's row has just been written.
+  ///
+  /// Every cached community figure is now one publish out of date, and whatever
+  /// is on screen is reading the stale ones: the home banner and the activity
+  /// screen both take their community figures from a read they fired before
+  /// this landed — usually before there was even an account — so without this
+  /// the landing page keeps yesterday's answer, or no answer at all, for the
+  /// rest of the session.
+  void _notePublished() {
+    CommunityService.invalidate();
+    _publishRevision++;
+    notifyListeners();
   }
 
   /// Takes the matchmaker off the leaderboard, or puts them back.

@@ -34,10 +34,10 @@ import 'package:shadchan/widgets/person_avatar.dart';
 /// one person's face and name at the top, says in one line why they are worth a
 /// thought today, and then shows the three people the database thinks could
 /// suit them — a face and a full name each, as three small cards across the
-/// bottom. Tapping one opens the two cards facing each other; "לכל ההתאמות",
-/// beside the friend's own name, opens the rest. The card is held to two short
-/// rows on purpose: the screen is for running an eye over many friends, so
-/// nothing on it is allowed to grow with its content.
+/// bottom. Tapping one opens the two cards facing each other; under them
+/// "התאמות נוספות" opens the rest and "דלג" moves on. The card is held to two
+/// short rows on purpose: the screen is for running an eye over many friends,
+/// so nothing on it is allowed to grow with its content.
 class ThinkScreen extends StatefulWidget {
   const ThinkScreen({super.key});
 
@@ -334,8 +334,8 @@ class _MatchLookup {
 
   /// Three, and no more. The point of this screen is to move quickly over many
   /// friends; a fourth face is another thing to weigh up on a card that is
-  /// meant to be read in a second, and three chips are what fits across a
-  /// narrow phone beside "לכל ההתאמות", which opens the full list.
+  /// meant to be read in a second, and three is what fits across a narrow
+  /// phone. "התאמות נוספות" under them opens the full list.
   static const int shown = 3;
 
   final List<Person> people;
@@ -385,11 +385,11 @@ class _MatchLookup {
 /// One friend to think about, and the three people they could go with.
 ///
 /// **One person is the subject of the card, not one row of a list.** The photo
-/// and the name lead it and are the largest thing on it, with the way into all
-/// the matches at the end of that same line; under them is the one sentence
-/// saying why this friend is worth a thought *today*; under that, the three
-/// matches the database found, each as a small card with a face and a full
-/// name.
+/// and the name lead it and are the largest thing on it, and nothing shares
+/// that line; under them is the one sentence saying why this friend is worth a
+/// thought *today*; under that, the three matches the database found, each as a
+/// small card with a face and a full name; and under those, the card's two
+/// answers.
 ///
 /// **Still sized to be scrolled through — but the reason is never cut.** The
 /// screen exists to move an eye over many friends, so the name is one line and
@@ -416,13 +416,13 @@ class _PersonThought extends StatelessWidget {
   final List<Person> candidates;
 
   /// Opens every possible match for this friend — the name, the photo and
-  /// "לכל ההתאמות" all lead here, because they are all asking the same
+  /// "התאמות נוספות" all lead here, because they are all asking the same
   /// question.
   final VoidCallback onTap;
 
   final ValueChanged<Person> onCandidate;
 
-  /// "אחשוב עליו בהמשך" — takes this friend off the page for a few weeks.
+  /// "דלג" — takes this friend off the page for a few weeks.
   ///
   /// **The card needed a third answer.** Until now a friend could be opened or
   /// scrolled past, and scrolling past leaves them exactly where they were, at
@@ -484,15 +484,10 @@ class _PersonThought extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Up here rather than at the end of the row of faces below.
-                  // Those now carry a full name each, and the width that
-                  // little button was taking is exactly what the names needed.
-                  _AllMatchesButton(onTap: onTap),
-                  // Deliberately an icon and not a third word on a line that
-                  // already carries a name and a link: putting somebody off is
-                  // the quietest of the card's three answers and should read
-                  // that way.
-                  _ThinkLaterButton(person: person, onTap: onLater),
+                  // Nothing on the name's line but the name. The two answers
+                  // the card offers are one row under the faces, where they
+                  // belong to what is above them rather than to the person's
+                  // heading — see [_ThoughtActions].
                 ],
               ),
             ),
@@ -531,9 +526,62 @@ class _PersonThought extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 6),
+            _ThoughtActions(onMore: onTap, onSkip: onLater),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The two answers the card offers, small and side by side under the faces.
+///
+/// **"לכל ההתאמות" was up on the name's line and is gone.** A link wedged
+/// between a person's name and a clock glyph is read as part of the heading,
+/// not as an answer to what the card is asking — and the clock never said what
+/// it did at all. Both are words now, both are the same size, and both sit
+/// under the three faces they are about: more of them, or move on.
+class _ThoughtActions extends StatelessWidget {
+  const _ThoughtActions({required this.onMore, required this.onSkip});
+
+  /// Every possible match for this friend, not only the three shown.
+  final VoidCallback onMore;
+
+  /// "דלג" — the same "not today" the clock used to mean: the friend leaves
+  /// this page for a few weeks rather than being dismissed.
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    ButtonStyle style(Color ink) => TextButton.styleFrom(
+      foregroundColor: ink,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      minimumSize: Size.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: const StadiumBorder(),
+      textStyle: theme.textTheme.labelSmall?.copyWith(
+        fontWeight: FontWeight.w800,
+      ),
+    );
+
+    return Row(
+      children: <Widget>[
+        TextButton(
+          onPressed: onMore,
+          style: style(ProfilePalette.accent(theme)),
+          child: const Text('התאמות נוספות'),
+        ),
+        const SizedBox(width: 4),
+        TextButton(
+          onPressed: onSkip,
+          style: style(ProfilePalette.muted(theme)),
+          child: const Text('דלג'),
+        ),
+      ],
     );
   }
 }
@@ -602,41 +650,14 @@ class _CandidateChip extends StatelessWidget {
   }
 }
 
-/// "לכל ההתאמות" — small, quiet, and never competing with the name it sits
-/// beside.
-class _AllMatchesButton extends StatelessWidget {
-  const _AllMatchesButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        foregroundColor: ProfilePalette.muted(theme),
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: theme.textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      child: const Text('לכל ההתאמות'),
-    );
-  }
-}
-
-/// "על מי אנחנו חושבים היום?" — the first thing on the page.
+/// The first thing on the page: an invitation, and nothing under it.
 ///
-/// **A question, not a heading.** The bar above says what the screen is; this
-/// says what it is *for*, and it asks rather than instructs, because nothing on
-/// this page is a task. One warm line under it explains the only thing about
-/// the page that is not obvious: that a friend can be put off without being
-/// dismissed.
+/// **It stopped explaining itself.** The line used to be a question followed by
+/// two sentences describing what the screen does and which buttons it has —
+/// which is an instruction manual at the top of a page whose whole point is
+/// that nothing on it is a task. What is left says only that there are people
+/// here worth a moment, which is the one thing worth saying before the faces
+/// start.
 class _ThinkWelcome extends StatelessWidget {
   const _ThinkWelcome();
 
@@ -646,28 +667,13 @@ class _ThinkWelcome extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            'על מי אנחנו חושבים היום?',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              height: 1.2,
-              color: ProfilePalette.text(theme),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'כמה חברים מהמאגר, והסיבה שכל אחד מהם עלה עכשיו. '
-            'אפשר לפתוח, ואפשר לסמן "אחשוב עליו בהמשך".',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: ProfilePalette.muted(theme),
-              height: 1.4,
-            ),
-          ),
-        ],
+      child: Text(
+        'כמה חברים מהמאגר שהגיע הזמן לחשוב עליהם!',
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w900,
+          height: 1.2,
+          color: ProfilePalette.text(theme),
+        ),
       ),
     );
   }
@@ -719,33 +725,6 @@ class _MoreFriendsFooter extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// "אחשוב עליו בהמשך", as a small clock on the friend's own line.
-class _ThinkLaterButton extends StatelessWidget {
-  const _ThinkLaterButton({required this.person, required this.onTap});
-
-  final Person person;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool female = person.gender == Gender.female;
-
-    return IconButton(
-      onPressed: onTap,
-      tooltip: female ? 'אחשוב עליה בהמשך' : 'אחשוב עליו בהמשך',
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-      icon: Icon(
-        Icons.schedule_rounded,
-        size: 19,
-        color: ProfilePalette.muted(theme),
       ),
     );
   }

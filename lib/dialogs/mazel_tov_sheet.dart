@@ -76,7 +76,7 @@ class _MazelTovSheetState extends State<MazelTovSheet> {
               ),
               const SizedBox(height: 6),
               Text(
-                'הברכה תגיע לשדכן, אל ההיסטוריה של אותה הצעה. '
+                'הברכה תגיע לשדכן, אל ההיסטוריה של אותו רעיון. '
                 'שום פרט על הזוג לא נחשף לך ולא נשלח.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,

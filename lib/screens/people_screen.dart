@@ -2,24 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
+import 'package:shadchan/dialogs/bulk_details_request_sheet.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
-import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
-import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
-import 'package:shadchan/widgets/home_app_bar.dart';
-import 'package:shadchan/widgets/reminders_bell_button.dart';
+import 'package:shadchan/widgets/search_results_panel.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
@@ -122,42 +120,42 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final Set<String>? selection = _detailsSelection;
 
     return Scaffold(
-      // The same banner as בית and רעיונות: the wordmark at the start, this
-      // screen's own controls at the other end. The heading "המאגר שלי" moved
-      // onto the page — see [ScreenHeading] — so the bar carries the app's name
-      // rather than the page's, identically on all three tabs.
+      // **The bar says "המאגר שלי", and the search row is part of it.** The
+      // page used to open with a banner reading "שדכן", a heading line under it
+      // reading "המאגר שלי", and a search row under that — three strips before
+      // the first friend, two of which scrolled away. The name is in the banner
+      // now and the field is pinned to it, which is one strip instead of three
+      // and the only one of them that had to stay.
       appBar: selection != null
           ? _buildSelectionAppBar(selection)
           : ShadchanAppBar(
+              title: 'המאגר שלי',
+              // The bell, the "+" and the overflow menu — the same three, in
+              // the same order, as בית and רעיונות. See [ShadchanTabActions];
+              // this page's "+" goes straight to adding friends, because on
+              // המאגר שלי there is nothing else it could mean.
               actions: <Widget>[
-                // The same bell, in the same slot, as בית and רעיונות. It leads
-                // the group so the three screens agree on where it is; adding
-                // people is this screen's own action and follows it, with the
-                // button in the thumb's corner carrying most of that traffic
-                // anyway.
-                const RemindersBellButton(boxed: true),
-                const SizedBox(width: 6),
-                HomeBarButton(
-                  tooltip: 'הוספת אנשי קשר',
-                  icon: const Icon(Icons.add),
-                  onPressed: () => AddPeopleDialog.show(context),
+                ShadchanTabActions(
+                  add: ShadchanAddButton(
+                    tooltip: 'הוספת אנשי קשר',
+                    onPressed: () => AddPeopleDialog.show(context),
+                  ),
                 ),
               ],
+              bottom: ShadchanSearchBottom(child: _buildSearchRow(theme)),
             ),
       // Adding a friend is the whole point of this screen, so it gets the
       // thumb's corner as well as the app bar. The icon in the bar stays: it is
       // where someone who already knows the app looks, and the two open exactly
       // the same sheet.
       //
-      // While friends are being ticked the corner carries the send button
-      // instead. A second bar across the bottom would have stacked on top of
-      // the app's own tab bar, which is already down there.
+      // While friends are being ticked the corner is empty and the send control
+      // is a full-width bar along the bottom instead — see
+      // [_DetailsRequestBar]. A round button in a corner is for starting
+      // something; finishing a selection of nine friends is a labelled button
+      // the width of the thumb's whole travel.
       floatingActionButton: selection != null
-          ? FloatingActionButton.extended(
-              onPressed: _sendDetailsRequests,
-              icon: const Icon(Icons.send_rounded),
-              label: const Text('שליחת בקשה'),
-            )
+          ? null
           : FloatingActionButton(
               // `endFloat` in RTL is the bottom-left corner — the same place
               // the messaging apps everyone already uses put theirs.
@@ -165,35 +163,41 @@ class _PeopleScreenState extends State<PeopleScreen> {
               onPressed: () => AddPeopleDialog.show(context),
               child: const Icon(Icons.add),
             ),
-      // Only the search row is fixed; the banner, gender tabs and the list all
-      // scroll together as one page.
-      body: Column(
+      // The name and the search row are the bar; everything under it — the
+      // gender tabs, the filter chips and the list — scrolls as one page.
+      //
+      // The results panel is laid over all of it while there is a query, the
+      // way it is on בית: filtering the list underneath is what happens *as
+      // well*, not instead. See [SearchResultsPanel].
+      body: Stack(
         children: <Widget>[
-          if (_importBatchId != null)
-            _JustAddedBar(
-              count: visiblePeople.length,
-              onShowAll: () => setState(() => _importBatchId = null),
+          Column(
+            children: <Widget>[
+              if (_importBatchId != null)
+                _JustAddedBar(
+                  count: visiblePeople.length,
+                  onShowAll: () => setState(() => _importBatchId = null),
+                ),
+              Expanded(
+                child: _buildContent(
+                  context: context,
+                  theme: theme,
+                  totalCount: totalCount,
+                  pendingContactDrafts: pendingContactDrafts,
+                  visiblePeople: visiblePeople,
+                ),
+              ),
+            ],
+          ),
+          if (selection == null) _buildSearchPanel(personRepository),
+          if (selection != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: _DetailsRequestBar(
+                count: selection.length,
+                onSend: _sendDetailsRequests,
+              ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-            // No count under it: `_MembersBanner` a little further down the
-            // page already says how many friends there are, and a heading that
-            // repeats the line under it is one line too many.
-            child: const ScreenHeading(title: 'המאגר שלי'),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: _buildSearchRow(theme),
-          ),
-          Expanded(
-            child: _buildContent(
-              context: context,
-              theme: theme,
-              totalCount: totalCount,
-              pendingContactDrafts: pendingContactDrafts,
-              visiblePeople: visiblePeople,
-            ),
-          ),
         ],
       ),
     );
@@ -208,6 +212,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     return ShadchanSearchField(
       controller: _searchController,
       hintText: 'חיפוש במאגר שלי',
+      onCleared: _closeSearch,
       trailing: <Widget>[
         IconButton(
           tooltip: 'סינון',
@@ -224,6 +229,73 @@ class _PeopleScreenState extends State<PeopleScreen> {
         ),
       ],
     );
+  }
+
+  /// Live results over the list, capped at half the screen.
+  ///
+  /// **Every row goes straight to the person.** Narrowing the list is useful
+  /// but it is not an answer: it still leaves somebody scanning a column for
+  /// the name they have just finished typing. These rows open the profile.
+  ///
+  /// Deliberately searched over the *whole* database rather than over the
+  /// filtered list: somebody who types a name is asking for that person, and a
+  /// filter chip left on from an hour ago is not a reason to answer "no such
+  /// friend". The list underneath still obeys every filter on the screen.
+  Widget _buildSearchPanel(PersonRepository repository) {
+    final String query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final List<Person> people =
+        repository
+            .getAll()
+            .where((Person p) => !p.hidden)
+            .where(
+              (Person p) =>
+                  p.fullName.toLowerCase().contains(query) ||
+                  (p.phone ?? '').contains(query),
+            )
+            .toList()
+          ..sort(
+            (Person a, Person b) =>
+                a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+          );
+
+    return SearchResultsPanel(
+      onDismiss: _closeSearch,
+      rows: <Widget>[
+        for (final Person person in people)
+          SearchResultRow(
+            leading: SearchResultRow.avatar(person),
+            title: person.fullName,
+            subtitle: _personSummary(person),
+            onTap: () {
+              _closeSearch();
+              pushLeavingSearch(context, '/people/${person.id}');
+            },
+          ),
+      ],
+    );
+  }
+
+  /// One quiet line under a name in the results: whatever of age, city and
+  /// state is actually recorded, and nothing where nothing is.
+  static String? _personSummary(Person person) {
+    final List<String> parts = <String>[
+      if (person.age != null) '${person.age}',
+      if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
+      if (person.profileStatus != ProfileStatus.available)
+        person.profileStatus.displayName,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  /// Leaves search: the panel and the keyboard.
+  void _closeSearch() {
+    FocusScope.of(context).unfocus();
+    _searchController.clear();
+    setState(() {});
   }
 
   Widget _buildContent({
@@ -314,8 +386,21 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 }
                 return PersonListCard(
                   person: person,
-                  onTap: () => context.push('/people/${person.id}'),
-                  onLongPress: () => _showPersonActions(context, person),
+                  // Through the same helper the results panel uses: with the
+                  // keyboard up, pushing straight away makes the avatar's hero
+                  // measure a viewport that is a keyboard shorter than the one
+                  // the profile ends up in, and it lands stretched. See
+                  // [pushLeavingSearch] — with nothing focused it is an
+                  // ordinary push.
+                  onTap: () =>
+                      pushLeavingSearch(context, '/people/${person.id}'),
+                  // **A long press ticks, it does not ask.** It used to raise a
+                  // sheet whose middle row was "בקשת פרטים בוואטסאפ" — a menu
+                  // between the gesture and the only thing the gesture is for.
+                  // Pressing a friend now selects them and turns the list into
+                  // a picker; everything else that sheet offered is on the
+                  // friend's own profile, one tap away.
+                  onLongPress: () => _startDetailsSelection(person),
                   onToggleFavorite: () => context
                       .read<PersonRepository>()
                       .toggleFavorite(person.id),
@@ -787,57 +872,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
     });
   }
 
-  Future<void> _showPersonActions(BuildContext context, Person person) async {
-    final PersonRepository repository = context.read<PersonRepository>();
-
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext bottomSheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.favorite_outline),
-                title: const Text('התאמות'),
-                onTap: () {
-                  Navigator.of(bottomSheetContext).pop();
-                  _openMatchSuggestions(context, person);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.chat_outlined),
-                title: const Text('בקשת פרטים בוואטסאפ'),
-                subtitle: const Text('אפשר לסמן עוד חברים ולשלוח לכולם יחד'),
-                onTap: () {
-                  Navigator.of(bottomSheetContext).pop();
-                  _startDetailsSelection(person);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('מחיקה'),
-                textColor: Theme.of(context).colorScheme.error,
-                iconColor: Theme.of(context).colorScheme.error,
-                onTap: () async {
-                  Navigator.of(bottomSheetContext).pop();
-                  final bool shouldDelete = await _confirmDelete(
-                    context,
-                    person,
-                  );
-                  if (shouldDelete) {
-                    await repository.delete(person.id);
-                  }
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   // --- Joint "בקשת פרטים" ---------------------------------------------------
 
   /// The bar shown while friends are being ticked: how many, and the way out.
@@ -892,10 +926,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// Sends the request to everybody who was ticked.
   ///
   /// One friend goes straight into their own chat with their own gendered
-  /// wording, exactly as the button on their profile does. Several go through
-  /// the share sheet, where WhatsApp takes every chat that was ticked at once —
-  /// no chat link can carry more than one number, and opening WhatsApp once per
-  /// friend is the thing this whole selection exists to avoid.
+  /// wording, exactly as the button on their profile does. Several open a queue
+  /// — one tap per friend, each landing in that friend's own chat with the
+  /// message already typed — because no link and no share target can deliver to
+  /// several numbers at once, and the one thing worth avoiding is making the
+  /// matchmaker find the same nine people again inside WhatsApp.
   ///
   /// Anybody without a usable number is dropped and named, rather than being
   /// silently counted as asked.
@@ -939,7 +974,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
         return;
       }
     } else {
-      await WhatsAppUtils.shareDetailsRequest(reachable);
+      // The queue, not the share sheet: one tap per friend, straight into
+      // their own chat with the message already written. See
+      // [BulkDetailsRequestSheet].
+      await BulkDetailsRequestSheet.show(context, reachable);
     }
 
     if (!mounted) {
@@ -957,25 +995,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   void _showSnackBar(String message) {
     AppNotice.show(context, message);
-  }
-
-  Future<bool> _confirmDelete(BuildContext context, Person person) async {
-    final MatchRepository matchRepository = context.read<MatchRepository>();
-    final int activeMatches = matchRepository
-        .getByPersonId(person.id)
-        .where((MatchIdea match) => !match.status.isArchived)
-        .length;
-    final String warning = activeMatches > 0
-        ? '\n\nלאדם זה יש $activeMatches הצעות פעילות. ההצעות לא יימחקו.'
-        : '';
-
-    return ConfirmDialog.show(
-      context,
-      title: 'למחוק את האדם?',
-      message: 'האם למחוק את ${person.fullName.trim()}?$warning',
-      confirmText: 'מחיקה',
-      isDestructive: true,
-    );
   }
 
   /// The quick gender tabs are a shortcut into the same gender filter, so they
@@ -1249,6 +1268,54 @@ class _JustAddedBar extends StatelessWidget {
             child: const Text('לכל המאגר'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The bar along the bottom while friends are being ticked for a joint request.
+///
+/// Full width and labelled with the actual action, because that is what it is:
+/// the end of a deliberate selection, not a shortcut to start one. It sits over
+/// the list rather than under it so the list keeps its whole height, and it
+/// carries the count so the number of people about to be written to is visible
+/// at the moment of pressing send.
+class _DetailsRequestBar extends StatelessWidget {
+  const _DetailsRequestBar({required this.count, required this.onSend});
+
+  final int count;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onSend,
+              icon: const Icon(Icons.chat_outlined, size: 20),
+              label: Text(
+                count == 1
+                    ? 'בקשת פרטים בוואטסאפ'
+                    : 'בקשת פרטים בוואטסאפ ($count)',
+              ),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                textStyle: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

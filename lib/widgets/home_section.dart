@@ -97,7 +97,6 @@ class HomeSectionHeader extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall?.copyWith(
-              fontSize: homeIsNarrow(context) ? 13 : null,
               fontWeight: FontWeight.w800,
               height: 1.2,
             ),
@@ -430,7 +429,6 @@ class HomeBoardNote extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 10,
                               color: theme.colorScheme.onSurfaceVariant,
                               height: 1.25,
                             ),
@@ -888,7 +886,6 @@ class HomeCardFooter extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 10,
               color: tone,
               fontWeight: FontWeight.w600,
             ),

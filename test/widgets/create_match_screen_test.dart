@@ -19,7 +19,7 @@ import 'package:shadchan/utils/enums.dart';
 /// it rebuilds — and the proposal it just made answers its own duplicate check.
 /// The warning used to flash for the frames before the router left the screen.
 void main() {
-  const String duplicateWarning = 'ההצעה הזו כבר קיימת במערכת';
+  const String duplicateWarning = 'הרעיון הזה כבר קיים במערכת';
   final DateTime now = DateTime(2026, 8, 18);
 
   late Directory directory;
@@ -114,7 +114,7 @@ void main() {
 
     expect(find.text(duplicateWarning), findsNothing);
 
-    await tester.tap(find.text('הוספת הצעה'));
+    await tester.tap(find.text('הוספת רעיון'));
     // Two bare pumps: the repository has notified and this screen has rebuilt
     // with the new proposal in the box. This is exactly the window the warning
     // used to appear in.

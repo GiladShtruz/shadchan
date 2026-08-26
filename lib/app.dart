@@ -42,19 +42,24 @@ class App extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: AppUpdatePrompt(
-            enabled: checkForUpdates,
-            child: CloudSyncScheduler(
-              // Above the router rather than on a screen: a milestone is
-              // earned wherever the matchmaker happens to be working, and this
-              // has to be watching from all of them.
-              child: AchievementWatcher(
-                child: IncomingBackupImportListener(
-                  child: IncomingSharedProfileListener(
-                    // Only ever speaks when the previous launch died before
-                    // the app appeared; see the note there.
-                    child: StartupCrashNotice(
-                      child: child ?? const SizedBox.shrink(),
+          // Above the router rather than on any one screen: every field in the
+          // app is inside it, so a tap on bare paper anywhere puts the keyboard
+          // away. See [DismissKeyboardOnTap].
+          child: DismissKeyboardOnTap(
+            child: AppUpdatePrompt(
+              enabled: checkForUpdates,
+              child: CloudSyncScheduler(
+                // Above the router rather than on a screen: a milestone is
+                // earned wherever the matchmaker happens to be working, and this
+                // has to be watching from all of them.
+                child: AchievementWatcher(
+                  child: IncomingBackupImportListener(
+                    child: IncomingSharedProfileListener(
+                      // Only ever speaks when the previous launch died before
+                      // the app appeared; see the note there.
+                      child: StartupCrashNotice(
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 ),
@@ -82,5 +87,39 @@ class _ExitThroughPeopleBackButtonDispatcher extends RootBackButtonDispatcher {
     }
 
     return super.didPopRoute();
+  }
+}
+
+/// Taps on bare paper close the keyboard.
+///
+/// **Because on iPhone there is nothing else that does.** Android has a system
+/// back key that dismisses the keyboard; iOS has nothing, so a field with no
+/// "done" affordance — a search row, a multi-line note, a sheet — leaves the
+/// keyboard covering half the screen with no way out but scrolling blindly or
+/// leaving the page. Every phone app answers this the same way: a tap on the
+/// page behind puts it away.
+///
+/// **Translucent, and therefore harmless.** The recognizer joins the arena at
+/// the very end of the hit-test path — it is the outermost widget in the app —
+/// so any button, list row or field under the finger wins the tap and behaves
+/// exactly as it always did. Only a tap that nothing else claimed reaches this.
+///
+/// The unfocus is a closure and not `primaryFocus?.unfocus` handed over
+/// directly: the latter reads the focused node *once, at build time*, which on
+/// the app's own root build is null — which is how this widget spent its first
+/// life doing nothing at all.
+class DismissKeyboardOnTap extends StatelessWidget {
+  const DismissKeyboardOnTap({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      excludeFromSemantics: true,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: child,
+    );
   }
 }

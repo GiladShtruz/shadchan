@@ -190,7 +190,6 @@ class _NextActionCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 10,
                               height: 1.3,
                               color: theme.colorScheme.onSurfaceVariant,
                             ),

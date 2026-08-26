@@ -56,6 +56,41 @@ abstract final class CommunityProfileStore {
     persistHomeSetting(key, value.toString());
   }
 
+  /// Erases everything this store holds about the matchmaker who was signed in.
+  ///
+  /// Called from `AccountSwitch.signOutAndClear` and nowhere else. Every key
+  /// here describes one person — their photograph, their best week, which
+  /// celebrations they have already seen, whether they asked to stay off the
+  /// board — and none of it may greet the next account as its own.
+  ///
+  /// The values are deleted rather than set to a default so that a fresh
+  /// account is genuinely a fresh install as far as this store is concerned:
+  /// the baseline flags in particular have to be *absent*, or the next
+  /// matchmaker's first launch would replay somebody else's milestones.
+  static Future<void> reset() async {
+    const List<String> keys = <String>[
+      _hiddenKey,
+      _achievementsKey,
+      _achievementsBaselinedKey,
+      _bestWeekKey,
+      _bestWeekAtKey,
+      _pendingBulkImportKey,
+      _privateKey,
+      _avatarPathKey,
+      _avatarUrlKey,
+      _greetingKey,
+      _publishedKey,
+      _weekSnapshotKey,
+      _prevWeekSnapshotKey,
+      _communityMilestonesKey,
+      _communityMilestonesBaseKey,
+    ];
+    for (final String key in keys) {
+      _pending.remove(key);
+    }
+    await _box?.deleteAll(keys);
+  }
+
   // --- Hidden from the leaderboard -----------------------------------------
 
   /// True when the matchmaker asked to stay off the leaderboard.

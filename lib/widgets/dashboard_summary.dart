@@ -61,7 +61,7 @@ List<Widget> buildDashboardSummarySlivers(
     _StatItem(
       title: 'רעיונות',
       value: ideasCount.toString(),
-      subtitle: 'כל מה שמופיע בהצעות',
+      subtitle: 'כל מה שמופיע ברעיונות',
       icon: Icons.lightbulb_outline,
       color: Colors.amber.shade700,
       route: '/matches',

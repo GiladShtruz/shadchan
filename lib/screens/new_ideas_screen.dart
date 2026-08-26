@@ -9,16 +9,25 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
+import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// "רעיונות חדשים" — the screen behind the home page's opening button.
+/// "רעיונות שהמאגר מציע לך" — the screen behind the home page's second banner.
 ///
 /// It does not invent anything: it walks the database, keeps the pairs that
 /// already fit each other by the app's own matching rules, drops every pair
-/// that already has a proposal or was pushed aside, and offers what is left in
-/// the order the records argue for. Opening one creates a regular proposal.
+/// that already has an idea open or was pushed aside, and offers what is left
+/// in the order the records argue for. Opening one creates a regular idea.
+///
+/// **It is drawn as the twin of "עוצרים רגע לחשוב על החברים".** The two are one
+/// feature from where the matchmaker stands — both are the app putting people
+/// in front of them that they did not go looking for — and they were arriving
+/// as two different apps: one on the warm canvas with a centred bar and its
+/// opening line on bare paper, this one on the theme's default page with a
+/// tinted, framed banner and outlined cards. Same canvas, same bar, same
+/// opening line, same unframed cards now. See `ThinkScreen`.
 class NewIdeasScreen extends StatefulWidget {
   const NewIdeasScreen({super.key});
 
@@ -61,14 +70,21 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     final bool hasMoreRounds = rounds.length > 1;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('רעיונות שהמאגר מציע לך')),
+      backgroundColor: ProfilePalette.canvas(theme),
+      appBar: AppBar(
+        backgroundColor: ProfilePalette.canvas(theme),
+        foregroundColor: ProfilePalette.text(theme),
+        titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
+        title: const Text('רעיונות שהמאגר מציע לך'),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: ideas.isEmpty
             ? _EmptyState(theme: theme)
             : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
                 itemCount: ideas.length + (hasMoreRounds ? 2 : 1),
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (BuildContext context, int index) {
                   if (index == 0) {
                     return const _Intro();
@@ -207,51 +223,29 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
   }
 }
 
-/// One line saying what this list is, and nothing about how long it is.
+/// The first thing on the page: an invitation, and nothing under it.
 ///
-/// "המאגר מציע לך 40 רעיונות" was a number nobody could use: it was not a
-/// queue to get through, it changed every time a card was edited, and its only
-/// real effect was to make ten cards feel like the start of a chore.
+/// **The same shape "עוצרים רגע לחשוב על החברים" opens with**, which is the
+/// point — see `_ThinkWelcome`. It was a tinted, rounded banner with a sparkle
+/// glyph and a sentence explaining the matching rules; its twin opens with one
+/// warm line on bare paper, and two screens of one feature should not disagree
+/// about how they say hello.
 class _Intro extends StatelessWidget {
   const _Intro();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: dark
-            ? theme.colorScheme.primary.withValues(alpha: 0.14)
-            : AppColors.primaryLight.withValues(alpha: 0.55),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            Icons.auto_awesome,
-            size: 22,
-            color: dark ? theme.colorScheme.primary : AppColors.primaryDark,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'המאגר שלך מציע רעיונות לזוגות שיכולים להתאים לפי גיל וסגנון דתי',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
+      child: Text(
+        'כמה זוגות מהמאגר שאולי דווקא מתאימים!',
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w900,
+          height: 1.2,
+          color: ProfilePalette.text(theme),
+        ),
       ),
     );
   }
@@ -272,18 +266,23 @@ class _MoreIdeasButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
+    // The same button, in the same place, as "חברים נוספים" at the foot of the
+    // thinking page.
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
       child: OutlinedButton.icon(
         onPressed: onPressed,
-        icon: const Icon(Icons.add_rounded, size: 18),
-        label: const Text('לרעיונות נוספים'),
+        icon: const Icon(Icons.expand_more_rounded, size: 20),
+        label: const Text('רעיונות נוספים'),
         style: OutlinedButton.styleFrom(
+          foregroundColor: ProfilePalette.accent(theme),
+          side: BorderSide(
+            color: ProfilePalette.accent(theme).withValues(alpha: 0.45),
+          ),
           minimumSize: const Size.fromHeight(46),
-          foregroundColor: theme.brightness == Brightness.dark
-              ? theme.colorScheme.primary
-              : AppColors.primaryDark,
-          shape: const StadiumBorder(),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
     );
@@ -309,87 +308,91 @@ class _IdeaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // The whole pair tile — photos, names and reasons — opens the two
-          // cards facing each other, which is the question this card asks.
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onComparePair,
-            child: Row(
-              children: <Widget>[
-                HomeCardCoupleAvatars(
-                  personA: idea.female,
-                  personB: idea.male,
-                  radius: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        '${idea.female.fullName.trim()} & '
-                        '${idea.male.fullName.trim()}',
-                        maxLines: 2,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          height: 1.2,
-                        ),
-                      ),
-                      if (idea.reasons.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 4),
+    // Unframed, on the same warm surface and at the same radius as a card on
+    // the thinking page: the wash is what separates it from the canvas, and an
+    // outline round it was the loudest difference between two screens that are
+    // meant to be one feature.
+    return Material(
+      color: ProfilePalette.surface(theme),
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            // The whole pair tile — photos, names and reasons — opens the two
+            // cards facing each other, which is the question this card asks.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onComparePair,
+              child: Row(
+                children: <Widget>[
+                  HomeCardCoupleAvatars(
+                    personA: idea.female,
+                    personB: idea.male,
+                    radius: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
                         Text(
-                          idea.reasons.join(' · '),
+                          '${idea.female.fullName.trim()} & '
+                          '${idea.male.fullName.trim()}',
                           maxLines: 2,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            height: 1.3,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
                           ),
                         ),
+                        if (idea.reasons.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 4),
+                          Text(
+                            idea.reasons.join(' · '),
+                            maxLines: 2,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onOpen,
+                    icon: const Icon(Icons.favorite_outline, size: 18),
+                    label: const Text('פתיחת רעיון'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: theme.brightness == Brightness.dark
+                          ? theme.colorScheme.primary
+                          : AppColors.primaryDark,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      shape: const StadiumBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: onSkip,
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  child: const Text('לא מתאים'),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: onOpen,
-                  icon: const Icon(Icons.favorite_outline, size: 18),
-                  label: const Text('פתיחת רעיון'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: theme.brightness == Brightness.dark
-                        ? theme.colorScheme.primary
-                        : AppColors.primaryDark,
-                    foregroundColor: theme.colorScheme.onPrimary,
-                    shape: const StadiumBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: onSkip,
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.onSurfaceVariant,
-                ),
-                child: const Text('לא מתאים'),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

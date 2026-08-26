@@ -10,6 +10,7 @@ import 'package:shadchan/app.dart';
 import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
+import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
@@ -36,7 +37,11 @@ import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/dialogs/app_menu.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_router.dart';
+import 'package:shadchan/widgets/reminders_bell_button.dart';
+import 'package:shadchan/widgets/search_results_panel.dart';
 
 void main() {
   late Directory hiveDirectory;
@@ -84,9 +89,10 @@ void main() {
     await settings.put('userName', 'בודק');
     await settings.put('userGender', 'male');
     await settings.put('userIsSingle', false);
-    // And the one-time sign-in invitation as answered, for the same reason:
-    // it sits between onboarding and the app, so without this every test here
-    // would open on it. The gate itself is covered by `sign_in_gate_test.dart`.
+    // And an account on the device, for the same reason: the sign-in gate is
+    // in front of everything now, so without this every test here would open
+    // on it. The gate itself is covered by `sign_in_gate_test.dart`.
+    await settings.put('signIn.hasAccount', 'true');
     await settings.put('signIn.promptAnswered', 'true');
     // The WhatsApp updates group is offered on the first launch of a fresh
     // install, as a dialog over whatever screen is open — which swallows the
@@ -426,7 +432,7 @@ void main() {
       expect(find.text('רעיונות'), findsOneWidget);
       expect(find.text('הלל'), findsOneWidget);
       expect(find.text('התאמות'), findsOneWidget);
-      expect(find.text('לפתיחת הצעה'), findsOneWidget);
+      expect(find.text('הוספת רעיון'), findsOneWidget);
       expect(find.text('הכרטיס שלו'), findsNothing);
       expect(find.byTooltip('עריכת פרטי המועמד'), findsOneWidget);
       expect(find.byTooltip('עריכת טקסט הכרטיס המלא'), findsOneWidget);
@@ -464,12 +470,18 @@ void main() {
       await tester.tap(find.byType(ModalBarrier).last);
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.text('לפתיחת הצעה'));
-      await tester.tap(find.text('לפתיחת הצעה'));
+      await tester.ensureVisible(find.text('הוספת רעיון').first);
+      await tester.tap(find.text('הוספת רעיון').first);
       await tester.pumpAndSettle();
-      expect(find.text('הוספת הצעה עם מועמד מתוך המאגר שלי'), findsOneWidget);
-      expect(find.text('הוספת הצעה עם מועמד מחוץ למאגר שלי'), findsOneWidget);
-      await tester.tap(find.text('ביטול'));
+      // No screen in between any more. "מתוך המאגר או מחוץ למאגר" was a
+      // question the next screen already answers: the picker searches the
+      // whole database and carries "הוספת שם מחוץ למאגר" along its bottom.
+      expect(find.byType(PersonPickerSheet), findsOneWidget);
+      expect(find.text('בחירת בחורה'), findsWidgets);
+      expect(find.text('הוספת שם מחוץ למאגר'), findsOneWidget);
+      Navigator.of(tester.element(find.byType(PersonPickerSheet))).pop();
+      await tester.pumpAndSettle();
+      AppRouter.router.go('/people/${profile.id}');
       await tester.pumpAndSettle();
 
       tester
@@ -555,8 +567,10 @@ void main() {
       // The expanded card no longer carries a share button of its own.
       expect(find.byTooltip('שיתוף הכרטיס המלא'), findsNothing);
 
+      // Every idea ever opened for this person, not only the live ones — the
+      // heading counts the lot. See `_IdeasSection`.
       await tester.scrollUntilVisible(
-        find.text('הצעות פתוחות (1)'),
+        find.text('רעיונות (1)'),
         250,
         scrollable: find.byType(Scrollable).first,
       );
@@ -566,6 +580,113 @@ void main() {
       expect(find.byTooltip('WhatsApp עם כרמל לוי'), findsOneWidget);
     },
   );
+
+  testWidgets('The profile lists every idea, open first, and folds past five', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2026, 8, 20);
+    final Person subject = _testPerson(
+      id: 'ideas-subject',
+      firstName: 'הלל',
+      lastName: 'אבולעפיה',
+      gender: Gender.male,
+      age: 27,
+      now: now,
+    );
+
+    // Seven ideas across all three shelves, deliberately written in an order
+    // that is neither the enum's nor the display order: the section has to be
+    // the thing that sorts them.
+    const List<(String, MatchStatus)> plan = <(String, MatchStatus)>[
+      ('closed-a', MatchStatus.rejected),
+      ('waiting-a', MatchStatus.unavailable),
+      ('open-a', MatchStatus.idea),
+      ('closed-b', MatchStatus.dated),
+      ('open-b', MatchStatus.checking),
+      ('open-c', MatchStatus.dating),
+      ('waiting-b', MatchStatus.unavailable),
+    ];
+
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(subject.id, subject);
+      for (int i = 0; i < plan.length; i++) {
+        final (String id, MatchStatus status) = plan[i];
+        final Person other = _testPerson(
+          id: 'ideas-other-$i',
+          firstName: 'מועמדת',
+          lastName: '$i',
+          gender: Gender.female,
+          age: 25,
+          now: now,
+        );
+        await Hive.box<Person>('people').put(other.id, other);
+        await Hive.box<MatchIdea>('matches').put(
+          id,
+          MatchIdea(
+            id: id,
+            personAId: subject.id,
+            personBId: other.id,
+            status: status,
+            currentHandler: CurrentHandler.me,
+            createdAt: now,
+            // Newest first inside a shelf, so a later index is a later edit.
+            updatedAt: now.add(Duration(minutes: i)),
+          ),
+        );
+      }
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    AppRouter.router.go('/people/${subject.id}');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The once-per-install rating prompt fires from the home screen behind
+    // this one and would swallow every scroll. Nothing here is about it.
+    if (find.text('לא עכשיו').evaluate().isNotEmpty) {
+      await tester.tap(find.text('לא עכשיו'));
+      await tester.pumpAndSettle();
+    }
+
+    final Finder scroller = find.byType(Scrollable).first;
+    // **Every idea, not only the live ones.** The heading used to read
+    // "הצעות פתוחות (3)" and a closed idea was invisible on the one page
+    // where "have we already tried this?" is asked.
+    await tester.scrollUntilVisible(
+      find.text('רעיונות (7)'),
+      250,
+      scrollable: scroller,
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // Five rows, then the way to the rest.
+    expect(find.text('עוד 2 רעיונות'), findsOneWidget);
+    // פתוחות lead, and the newest of them leads those: open-c was edited
+    // after open-b, which was edited after open-a.
+    expect(find.text('מועמדת 5'), findsOneWidget);
+    expect(find.text('מועמדת 4'), findsOneWidget);
+    expect(find.text('מועמדת 2'), findsOneWidget);
+    // Then בהמתנה — both of them, which is what fills the five.
+    expect(find.text('מועמדת 6'), findsOneWidget);
+    expect(find.text('מועמדת 1'), findsOneWidget);
+    // And סגורות are the two behind the chevron.
+    expect(find.text('מועמדת 0'), findsNothing);
+    expect(find.text('מועמדת 3'), findsNothing);
+
+    await tester.tap(find.text('עוד 2 רעיונות'));
+    await tester.pumpAndSettle();
+    expect(find.text('מועמדת 0'), findsWidgets);
+    expect(find.text('הצגה מקוצרת'), findsOneWidget);
+
+    // Filtering narrows to one shelf, and re-collapses with it.
+    await tester.tap(find.text('סגורות'));
+    await tester.pumpAndSettle();
+    expect(find.text('מועמדת 5'), findsNothing);
+    expect(find.text('מועמדת 0'), findsWidgets);
+    expect(find.text('עוד 2 רעיונות'), findsNothing);
+  });
 
   testWidgets('Tapping the profile photo opens the full card full screen', (
     WidgetTester tester,
@@ -851,9 +972,9 @@ void main() {
     // label saying where the proposal already is.
     expect(find.text('מתחילים לצאת'), findsOneWidget);
     expect(find.text('העברה להמתנה'), findsOneWidget);
-    expect(find.text('סגירת הצעה'), findsOneWidget);
+    expect(find.text('סגירת רעיון'), findsOneWidget);
     expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('הוספת איש קשר שקשור להצעה'), findsOneWidget);
+    expect(find.text('הוספת איש קשר שקשור לרעיון'), findsOneWidget);
     // The journal is not a seventh button — opening the panel is what opens
     // the journal.
     expect(find.text('יומן הרעיון'), findsOneWidget);
@@ -1052,12 +1173,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The banner is the app's own, the same one בית and המאגר שלי wear, and the
-    // page's heading moved onto the page.
-    expect(find.byType(ShadchanWordmark), findsOneWidget);
-    // By type, not by text: "רעיונות" is also the name of the tab at the foot
-    // of the screen.
-    expect(find.byType(ScreenHeading), findsOneWidget);
+    // The banner carries the page's own name now, not the wordmark: only בית
+    // has no name of its own, so only בית signs itself. "רעיונות" is therefore
+    // on screen twice — the bar and the tab at the foot — which is what the
+    // count below says.
+    expect(find.byType(ShadchanWordmark), findsNothing);
+    expect(find.text('רעיונות'), findsNWidgets(2));
+    // And the search row is part of the bar, so it never folds away.
+    expect(find.byType(ShadchanSearchBottom), findsOneWidget);
 
     // Switching category rebuilds the list under the same scroll controller.
     // Doing it in both directions is what would catch a controller left
@@ -1083,9 +1206,17 @@ void main() {
     await tester.drag(find.byType(MatchIdeaCard).first, const Offset(0, -220));
     await tester.pumpAndSettle();
     expect(find.text('פתוחים'), findsNothing);
-    expect(find.byType(ScreenHeading), findsNothing);
+    // The name and the search row are the bar's, so they stay put while the
+    // category buttons fold: that is the whole point of moving them there.
+    expect(find.text('רעיונות'), findsNWidgets(2));
+    expect(find.byType(ShadchanSearchBottom), findsOneWidget);
 
-    // Closing it brings the header back whatever the scroll position is.
+    // Closing it brings the header back whatever the scroll position is. The
+    // button has to be scrolled back to first: with the header folded away the
+    // card's own top row is above the viewport, which is exactly the state
+    // this is testing the way out of.
+    await tester.ensureVisible(find.text('סגירת פעולות'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('סגירת פעולות'));
     await tester.pumpAndSettle();
     expect(find.text('פתוחים'), findsOneWidget);
@@ -1123,12 +1254,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(
-      find.text(
-        'המאגר שלך מציע רעיונות לזוגות שיכולים להתאים לפי גיל וסגנון דתי',
-      ),
-      findsOneWidget,
-    );
+    // The same shape "עוצרים רגע לחשוב על החברים" opens with — one warm line
+    // on bare paper, not a tinted banner explaining the matching rules.
+    expect(find.text('כמה זוגות מהמאגר שאולי דווקא מתאימים!'), findsOneWidget);
     expect(find.text('לא מתאים'), findsOneWidget);
     expect(find.text('לא עכשיו'), findsNothing);
   });
@@ -1611,6 +1739,184 @@ void main() {
       expect(find.text(entry.$1), findsOneWidget, reason: entry.$1);
       expect(find.text(entry.$2), findsOneWidget, reason: entry.$2);
     }
+  });
+
+  testWidgets('All three tabs carry the same three controls, in one order', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    // The bell, the "+" and the overflow dots — the group is one widget now
+    // (`ShadchanTabActions`), which is what makes "the same three" true rather
+    // than merely intended.
+    for (final String tab in <String>['/home', '/people', '/matches']) {
+      AppRouter.router.go(tab);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(ShadchanTabActions), findsOneWidget, reason: tab);
+      expect(find.byType(RemindersBellButton), findsOneWidget, reason: tab);
+      expect(find.byType(AppMenuButton), findsOneWidget, reason: tab);
+      expect(find.byIcon(Icons.add), findsWidgets, reason: tab);
+    }
+  });
+
+  testWidgets('The home "+" offers the two things there are to add', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    // בית is above both other tabs, so its "+" asks which of them is meant
+    // rather than guessing. The other two go straight to their own flow.
+    await tester.tap(find.byType(AddMenuButton));
+    await tester.pumpAndSettle();
+
+    // Scoped to the popup: "הוספת חברים" is also the label on one of the two
+    // entry cards further down the page, which is the point — the menu offers
+    // the same two things from the bar.
+    final Finder menu = find.byType(PopupMenuItem<AddMenuAction>);
+    expect(
+      find.descendant(of: menu, matching: find.text('הוספת חברים')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: menu, matching: find.text('הוספת רעיון')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Searching המאגר שלי opens results that go to the person', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2024, 5, 1);
+    await tester.runAsync(() async {
+      final Box<Person> people = Hive.box<Person>('people');
+      await people.put(
+        'p1',
+        _testPerson(
+          id: 'p1',
+          firstName: 'אביגיל',
+          lastName: 'שטרן',
+          gender: Gender.female,
+          age: 24,
+          now: now,
+          city: 'מודיעין',
+        ),
+      );
+      await people.put(
+        'p2',
+        _testPerson(
+          id: 'p2',
+          firstName: 'נחמיה',
+          lastName: 'ברגר',
+          gender: Gender.male,
+          age: 27,
+          now: now,
+        ),
+      );
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/people');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.enterText(find.byType(TextField).first, 'אביגיל');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The panel is over the page, not merely a shorter list underneath it:
+    // filtering still happens, and this is the short way through it.
+    expect(find.byType(SearchResultsPanel), findsOneWidget);
+    final Finder row = find.descendant(
+      of: find.byType(SearchResultsPanel),
+      matching: find.text('אביגיל שטרן'),
+    );
+    expect(row, findsOneWidget);
+    // One result, on its own row: the other friend does not match.
+    expect(
+      find.descendant(
+        of: find.byType(SearchResultsPanel),
+        matching: find.byType(SearchResultRow),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(row);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    // The push waits a moment for the keyboard to go down before it happens —
+    // see `pushLeavingSearch`, and the smeared hero it exists to prevent.
+    await tester.pumpAndSettle();
+
+    // Straight to the profile, rather than back to a narrowed list to scan.
+    expect(find.byType(SearchResultsPanel), findsNothing);
+    expect(find.byType(PersonDetailScreen), findsOneWidget);
+    expect(find.text('אביגיל שטרן'), findsWidgets);
+  });
+
+  testWidgets('Searching רעיונות opens results that go to the proposal', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2024, 5, 1);
+    await tester.runAsync(() async {
+      final Box<Person> people = Hive.box<Person>('people');
+      final Person male = _testPerson(
+        id: 'm1',
+        firstName: 'שמואל',
+        lastName: 'רוט',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      );
+      final Person female = _testPerson(
+        id: 'f1',
+        firstName: 'תמר',
+        lastName: 'אלמוג',
+        gender: Gender.female,
+        age: 25,
+        now: now,
+      );
+      await people.put(male.id, male);
+      await people.put(female.id, female);
+      await Hive.box<MatchIdea>('matches').put(
+        'match1',
+        _testMatch(
+          id: 'match1',
+          personAId: male.id,
+          personBId: female.id,
+          now: now,
+        ),
+      );
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.enterText(find.byType(TextField).first, 'תמר');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(SearchResultsPanel), findsOneWidget);
+    final Finder row = find.descendant(
+      of: find.byType(SearchResultsPanel),
+      matching: find.byType(SearchResultRow),
+    );
+    expect(row, findsOneWidget);
+
+    await tester.tap(row);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The panel and the query are gone, and the proposal is on the list.
+    expect(find.byType(SearchResultsPanel), findsNothing);
+    expect(find.text('שמואל רוט'), findsWidgets);
   });
 }
 

@@ -7,7 +7,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
-/// "יומן ההצעה" — one proposal's whole history, as a chat.
+/// "יומן הרעיון" — one idea's whole history, as a chat.
 ///
 /// **A chat rather than a list, because that is what it actually is.** Every
 /// move on a proposal now writes a line here — the idea being opened, a status
@@ -290,7 +290,7 @@ class _MatchJournalState extends State<_MatchJournal> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'יומן ההצעה',
+                      'יומן הרעיון',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
@@ -329,7 +329,7 @@ class _MatchJournalState extends State<_MatchJournal> {
                       maxLines: 4,
                       textInputAction: TextInputAction.newline,
                       decoration: const InputDecoration(
-                        hintText: 'מה קרה עם ההצעה?',
+                        hintText: 'מה קרה עם הרעיון?',
                         isDense: true,
                       ),
                     ),
@@ -426,7 +426,7 @@ class _EmptyJournal extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'כל פעולה בהצעה תיכתב כאן מעצמה, ואפשר גם להוסיף הערות משלך.',
+              'כל פעולה ברעיון תיכתב כאן מעצמה, ואפשר גם להוסיף הערות משלך.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

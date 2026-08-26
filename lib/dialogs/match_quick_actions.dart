@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/engagement_dialogs.dart';
@@ -27,7 +28,7 @@ import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 /// [MatchActionGroup.tools] adds to the proposal without changing where it
 /// stands. Only the status group is drawn as a row of tiles — the tools each
 /// get a control shaped like what they do, because a grid of six identical
-/// squares put "סגירת הצעה" next to "הוספת תזכורת" as though they were the same
+/// squares put "סגירת רעיון" next to "הוספת תזכורת" as though they were the same
 /// size of decision.
 enum MatchActionGroup { status, tools }
 
@@ -45,7 +46,7 @@ enum MatchActionGroup { status, tools }
 enum MatchQuickAction {
   waiting('העברה להמתנה', Icons.pause_rounded, MatchActionGroup.status),
   dating('מתחילים לצאת', Icons.celebration_outlined, MatchActionGroup.status),
-  close('סגירת הצעה', Icons.close_rounded, MatchActionGroup.status),
+  close('סגירת רעיון', Icons.close_rounded, MatchActionGroup.status),
   married('חתונה', Icons.favorite_rounded, MatchActionGroup.status),
   reopen('פתיחה מחדש', Icons.refresh_rounded, MatchActionGroup.status),
   reminder(
@@ -54,7 +55,7 @@ enum MatchQuickAction {
     MatchActionGroup.tools,
   ),
   contact(
-    'הוספת איש קשר שקשור להצעה',
+    'הוספת איש קשר שקשור לרעיון',
     Icons.person_add_alt_1_outlined,
     MatchActionGroup.tools,
   );
@@ -68,7 +69,7 @@ enum MatchQuickAction {
   /// The status moves available from [status], in reading order.
   ///
   /// The three the app has always offered — "העברה להמתנה", "מתחילים לצאת",
-  /// "סגירת הצעה" — are unchanged for an open proposal. The other rows only
+  /// "סגירת רעיון" — are unchanged for an open idea. The other rows only
   /// swap in what is actually possible: a proposal already waiting is offered
   /// its way back out, a couple already dating are offered the wedding rather
   /// than being told to start dating again, and a closed one is offered
@@ -106,7 +107,13 @@ abstract final class MatchQuickActions {
     final MatchRepository repository = context.read<MatchRepository>();
     switch (action) {
       case MatchQuickAction.waiting:
-        await _moveToWaiting(context, repository, match);
+        await _moveToWaiting(
+          context,
+          repository,
+          match,
+          female: female,
+          male: male,
+        );
       case MatchQuickAction.dating:
         await repository.updateStatus(match.id, MatchStatus.dating);
       case MatchQuickAction.close:
@@ -325,7 +332,7 @@ abstract final class MatchQuickActions {
   ) async {
     final ReminderChoice? choice = await ReminderPickerSheet.show(
       context,
-      title: 'מתי לחזור להצעה?',
+      title: 'מתי לחזור לרעיון?',
       allowClear: match.reminderDate != null,
       recommendedLabel: 'עוד חודש',
       intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
@@ -382,11 +389,43 @@ abstract final class MatchQuickActions {
     );
   }
 
+  /// Which side a waiting reason is actually about, and what it says about
+  /// them.
+  ///
+  /// **A reason is a fact about a person, not only about a proposal.** "היא
+  /// בהפסקה" is true of her in every idea she is in, and the app used to write
+  /// it down on exactly one of them: her card still read "פנוי", her other
+  /// four ideas stayed open, and the next time she came up in a suggestion
+  /// nothing on screen knew. So the reason now sets her status as well, which
+  /// is the one change that makes the rest of the app agree with the sentence
+  /// the matchmaker just picked.
+  ///
+  /// "בלי סיבה מיוחדת" and a reason the app does not recognise say nothing
+  /// about either candidate and leave both cards alone.
+  static ({Gender side, ProfileStatus status})? _statusFromWaitingReason(
+    String reason,
+  ) {
+    switch (reason.trim()) {
+      case 'הוא בהפסקה':
+        return (side: Gender.male, status: ProfileStatus.onBreak);
+      case 'היא בהפסקה':
+        return (side: Gender.female, status: ProfileStatus.onBreak);
+      case 'הוא תפוס':
+        return (side: Gender.male, status: ProfileStatus.busy);
+      case 'היא תפוסה':
+        return (side: Gender.female, status: ProfileStatus.busy);
+      default:
+        return null;
+    }
+  }
+
   static Future<void> _moveToWaiting(
     BuildContext context,
     MatchRepository repository,
-    MatchIdea match,
-  ) async {
+    MatchIdea match, {
+    Person? female,
+    Person? male,
+  }) async {
     final String? reason = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -395,7 +434,7 @@ abstract final class MatchQuickActions {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const ListTile(title: Text('למה ההצעה בהמתנה?')),
+              const ListTile(title: Text('למה הרעיון בהמתנה?')),
               for (final String option in <String>[
                 ...MatchWaitingReasons.options,
                 MatchWaitingReasons.noReason,
@@ -436,6 +475,45 @@ abstract final class MatchQuickActions {
       match.id,
       reason: reason,
       checkAgainOn: when?.date,
+    );
+
+    // The reason, applied to whoever it was about. Written *after* the
+    // proposal, so the sync that follows a status change finds this idea
+    // already waiting and leaves it alone.
+    if (_statusFromWaitingReason(reason)
+        case final ({Gender side, ProfileStatus status}) verdict) {
+      final Person? subject = verdict.side == Gender.male ? male : female;
+      if (subject != null && context.mounted) {
+        final PersonRepository people = context.read<PersonRepository>();
+        await people.updateProfileStatus(
+          subject.id,
+          verdict.status,
+          causedByMatchId: match.id,
+        );
+        // The same date, on the person as well: "לבדוק שוב בעוד חודש" was
+        // answered once and means the same thing on both records.
+        if (when?.date case final DateTime date) {
+          await people.setPersonReminder(subject.id, date);
+        }
+      }
+    }
+
+    if (!context.mounted) {
+      return;
+    }
+    // **Where it went, and the way to it.** "בהמתנה" moves a card out of the
+    // list it was being worked in, which without a word looks exactly like the
+    // card disappearing. The notice names the shelf it landed on and carries
+    // the one tap that opens it.
+    // The router is taken now, while this context is certainly alive: the
+    // notice outlives the sheet and the card that raised it, and reading
+    // `GoRouter.of` inside the callback would be reading a dead element.
+    final GoRouter router = GoRouter.of(context);
+    AppNotice.show(
+      context,
+      'הרעיון עבר לרשימת הרעיונות בהמתנה',
+      actionLabel: 'למעבר',
+      onAction: () => router.go('/matches?statuses=unavailable'),
     );
   }
 
@@ -537,7 +615,7 @@ class _ContactRoleDialogState extends State<_ContactRoleDialog> {
         autofocus: true,
         textInputAction: TextInputAction.done,
         decoration: const InputDecoration(
-          labelText: 'מה הקשר להצעה?',
+          labelText: 'מה הקשר לרעיון?',
           hintText: 'אמא של שרה, חבר של דוד…',
         ),
         onSubmitted: (String value) => Navigator.of(context).pop(value),

@@ -10,6 +10,7 @@ import 'package:shadchan/screens/onboarding_screen.dart';
 import 'package:shadchan/screens/create_match_screen.dart';
 import 'package:shadchan/screens/incoming_shared_profile_screen.dart';
 import 'package:shadchan/screens/matches_screen.dart';
+import 'package:shadchan/screens/matchmaker_profile_screen.dart';
 import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
@@ -21,6 +22,7 @@ import 'package:shadchan/screens/home_screen.dart';
 import 'package:shadchan/screens/privacy_overview_screen.dart';
 import 'package:shadchan/screens/support_admin_screen.dart';
 import 'package:shadchan/screens/support_report_screen.dart';
+import 'package:shadchan/screens/married_friends_screen.dart';
 import 'package:shadchan/screens/monthly_stats_screen.dart';
 import 'package:shadchan/screens/new_ideas_screen.dart';
 import 'package:shadchan/screens/privacy_policy_screen.dart';
@@ -102,22 +104,30 @@ abstract final class AppRouter {
       final bool atWelcome = state.uri.path == '/welcome';
       final bool atSignIn = state.uri.path == '/sign-in';
 
+      // **The account comes first, and there is no way past it.** It used to be
+      // the second step and an optional one: the profile form, then a sign-in
+      // screen with "המשך בלי להתחבר" on it. Both halves of that are gone. The
+      // account is first because a name, a photograph and a line about yourself
+      // are things that belong *to* somebody, and there was nobody to attach
+      // them to until this was answered; and it is compulsory because a
+      // local-only database is one lost phone away from nothing at all.
+      //
+      // It is gated on a **local flag**, never on the account itself: this runs
+      // on the first frame, and asking Firebase who is signed in would drag
+      // `initializeApp`, App Check and the auth restore onto the cold start.
+      // `SignInScreen` steps aside by itself when the answer turns out to be
+      // "already signed in" — see [SignInPromptStore.hasAccount].
+      if (!SignInPromptStore.hasAccount) {
+        return atSignIn ? null : '/sign-in';
+      }
+
       if (!isOnboarded) {
         return atWelcome ? null : '/welcome';
       }
 
-      // The one-time invitation to connect an account, between the profile and
-      // the app. It is gated on a **local flag**, never on the account itself:
-      // this runs on the first frame, and asking Firebase who is signed in
-      // would drag `initializeApp`, App Check and the auth restore onto the
-      // cold start. `SignInScreen` steps aside by itself when the answer turns
-      // out to be "already signed in".
-      if (!SignInPromptStore.hasAnswered) {
-        return atSignIn ? null : '/sign-in';
-      }
-      // Answered once, and still reachable: "התחברות" on the community areas
-      // pushes the same screen. It is not bounced back here, because a screen
-      // somebody asked for should open.
+      // Signed in and introduced, and the screen is still reachable:
+      // "התחברות" on the community areas pushes the same one. It is not bounced
+      // back here, because a screen somebody asked for should open.
       if (atWelcome) {
         return '/home';
       }
@@ -457,10 +467,32 @@ abstract final class AppRouter {
           ),
         ],
       ),
+      // The best page in the app: everybody who got married, with the ones the
+      // matchmaker's own ideas produced at the top of it.
+      GoRoute(
+        path: '/married',
+        builder: (BuildContext context, GoRouterState state) {
+          return const MarriedFriendsScreen();
+        },
+      ),
       GoRoute(
         path: '/ideas/new',
         builder: (BuildContext context, GoRouterState state) {
           return const NewIdeasScreen();
+        },
+      ),
+      // One matchmaker's public page, opened by tapping a name on the
+      // leaderboard. The name and the picture the board already had travel with
+      // the route so the page opens with the person on it rather than with a
+      // spinner — see [MatchmakerProfileScreen].
+      GoRoute(
+        path: '/matchmakers/:uid',
+        builder: (BuildContext context, GoRouterState state) {
+          return MatchmakerProfileScreen(
+            uid: state.pathParameters['uid'] ?? '',
+            fallbackName: state.uri.queryParameters['name'] ?? '',
+            fallbackPhotoUrl: state.uri.queryParameters['photo'] ?? '',
+          );
         },
       ),
       // The community and the matchmaker's own numbers, on one screen.

@@ -14,49 +14,75 @@ import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
-/// The one-time invitation to connect an account.
+/// The way in. Everybody comes through here, once.
 ///
-/// **It is an invitation, not a gate.** Every matchmaker can walk past it, and
-/// the app behind it works exactly as it did before — the database is local
-/// either way. What signing in adds is a backup, a second device and the
-/// community; what it must never add is a wall between somebody and the work
-/// they opened the app to do.
+/// **It used to be an invitation and it is a gate now.** The app was
+/// local-first in the strongest sense: the database lived in Hive, an account
+/// was optional, and this screen offered one with a way past it. That has a
+/// cost nobody sees until it lands on them — a phone that is lost, replaced or
+/// wiped takes years of a matchmaker's work with it, and there is nothing
+/// anybody can do about it afterwards. It also makes "whose data is this?"
+/// unanswerable, which is the other half of why this changed: with an account
+/// behind every launch, everything in the app belongs to somebody, and the
+/// somebody can change — see [AccountProvider.signOut] and the profile's own
+/// account section.
 ///
-/// **It is framed as keeping the database safe, not as registering.** "הרשמה"
-/// asks somebody to give something; "שומרים על המאגר שלך" tells them what they
-/// get. The difference is most of the reason people accept or refuse.
-///
-/// Shown once, to new matchmakers after onboarding and to existing ones on the
-/// first launch after the update — see [SignInPromptStore] for why the gate is
-/// a local flag rather than the account itself, and for how this screen gets
-/// out of the way for somebody who is already signed in.
+/// **Three ways in, and no fourth.** Google and Apple where Apple's own flow
+/// exists, and an address with a password for everybody who wants neither. The
+/// third one matters more than it looks: a matchmaker with no Google account
+/// and an Android phone had, before it, no way into the app at all.
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
 
-  static const String headline = 'שומרים על המאגר שלך';
+  static const String headline = 'מתחילים בחשבון';
 
   static const String body =
-      'התחברות מאפשרת לגבות את המאגר, לסנכרן אותו בין מכשירים ולהיות חלק '
-      'מקהילת השדכנים.';
+      'החשבון שומר את המאגר שלך, מסנכרן אותו בין מכשירים ומחבר אותך לקהילת '
+      'השדכנים. אפשר להתחבר בכל אחת מהדרכים האלה.';
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
 }
 
+/// Which question the address form is asking.
+enum _EmailMode { register, signIn }
+
 class _SignInScreenState extends State<SignInScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  /// Registration first: this screen is on the path of somebody opening the app
+  /// for the first time far more often than of somebody arriving on a second
+  /// phone. The other question is one tap away and says so plainly.
+  _EmailMode _mode = _EmailMode.register;
+
+  bool _showPassword = false;
+
+  /// Set once a button has been pressed with something missing, so nobody is
+  /// scolded for a form they have not finished typing. Same rule as the
+  /// onboarding form.
+  bool _showErrors = false;
+
   bool _leaving = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Somebody who connected an account in an earlier version has already
-    // answered this question; they simply answered it before the question
-    // existed. Firebase resolves a moment after launch, so this runs on the
+    // answered this; they simply answered it before the question was
+    // compulsory. Firebase resolves a moment after launch, so this runs on the
     // rebuild that follows rather than on the first frame.
     final AccountProvider account = context.watch<AccountProvider>();
     if (account.isSignedIn && !_leaving) {
       _leaving = true;
-      SignInPromptStore.markAnswered();
+      SignInPromptStore.markSignedIn();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _leave();
@@ -64,6 +90,8 @@ class _SignInScreenState extends State<SignInScreen> {
       });
     }
   }
+
+  // --- The three ways in ---------------------------------------------------
 
   Future<void> _signIn(Future<AccountSignInResult> Function() attempt) async {
     final OverlayState? notices = AppNotice.capture(context);
@@ -81,18 +109,83 @@ class _SignInScreenState extends State<SignInScreen> {
         AppNotice.showOn(notices, result.message ?? 'לא הצלחנו להתחבר.');
         return;
       case AccountSignInOutcome.success:
-        SignInPromptStore.markAnswered();
+        SignInPromptStore.markSignedIn();
         unawaited(_adoptLocalData());
         _leave();
     }
   }
 
+  Future<void> _submitEmail(AccountProvider account) async {
+    if (_emailProblem != null || _passwordProblem != null) {
+      setState(() => _showErrors = true);
+      FocusScope.of(context).unfocus();
+      return;
+    }
+    setState(() => _showErrors = false);
+    FocusScope.of(context).unfocus();
+
+    final String email = _emailController.text.trim();
+    final String password = _passwordController.text;
+    await _signIn(() {
+      return _mode == _EmailMode.register
+          ? account.registerWithEmail(email: email, password: password)
+          : account.signInWithEmail(email: email, password: password);
+    });
+  }
+
+  /// The one thing an address-and-password account needs that the two provider
+  /// buttons do not: a way back in after a forgotten password.
+  Future<void> _resetPassword(AccountProvider account) async {
+    if (_emailProblem != null) {
+      setState(() => _showErrors = true);
+      return;
+    }
+    final OverlayState? notices = AppNotice.capture(context);
+    final AccountSignInResult result = await account.sendPasswordReset(
+      _emailController.text.trim(),
+    );
+    if (!mounted) {
+      return;
+    }
+    AppNotice.showOn(
+      notices,
+      result.outcome == AccountSignInOutcome.success
+          ? 'שלחנו מייל לאיפוס הסיסמה.'
+          : result.message ?? 'לא הצלחנו לשלוח את המייל.',
+    );
+  }
+
+  // --- Validation ----------------------------------------------------------
+
+  String? get _emailProblem {
+    final String email = _emailController.text.trim();
+    if (email.isEmpty) {
+      return 'צריך למלא כתובת מייל';
+    }
+    // Deliberately the loosest possible check. The address is verified by the
+    // mail that either arrives or does not; a clever regular expression here
+    // only ever refuses somebody's real address.
+    if (!email.contains('@') || !email.contains('.')) {
+      return 'כתובת המייל אינה תקינה';
+    }
+    return null;
+  }
+
+  String? get _passwordProblem {
+    if (_passwordController.text.length < AccountService.minPasswordLength) {
+      return 'צריך סיסמה של לפחות ${AccountService.minPasswordLength} תווים';
+    }
+    return null;
+  }
+
+  // --- Leaving -------------------------------------------------------------
+
   /// Back to wherever this was opened from.
   ///
-  /// Popping when it can matters because this screen has two lives: the
-  /// one-time step in the entry flow, which has nothing behind it and must land
-  /// on the home screen, and the "התחברות" button on the community areas, which
-  /// should return the reader to the screen they were reading.
+  /// Popping when it can matters because this screen has two lives: the gate at
+  /// the front of the app, which has nothing behind it, and the "התחברות"
+  /// button on the community areas, which should return the reader to the
+  /// screen they were reading.
   void _leave() {
     if (!mounted) {
       return;
@@ -101,6 +194,8 @@ class _SignInScreenState extends State<SignInScreen> {
       context.pop();
       return;
     }
+    // `/home` rather than anywhere specific: the router decides what comes
+    // next, and for a brand-new account that is the profile form.
     context.go('/home');
   }
 
@@ -144,22 +239,11 @@ class _SignInScreenState extends State<SignInScreen> {
     await community.refresh(people: people, matches: matches, profile: profile);
   }
 
-  Future<void> _continueWithout() async {
-    final bool proceed = await ContinueWithoutAccountDialog.show(context);
-    if (!mounted) {
-      return;
-    }
-    if (!proceed) {
-      return;
-    }
-    SignInPromptStore.markAnswered();
-    _leave();
-  }
-
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final AccountProvider account = context.watch<AccountProvider>();
+    final bool registering = _mode == _EmailMode.register;
 
     return Scaffold(
       body: SafeArea(
@@ -174,12 +258,12 @@ class _SignInScreenState extends State<SignInScreen> {
                 children: <Widget>[
                   Icon(
                     Icons.shield_outlined,
-                    size: 56,
+                    size: 52,
                     color: theme.brightness == Brightness.dark
                         ? theme.colorScheme.primary
                         : AppColors.primaryDark,
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 20),
                   Text(
                     SignInScreen.headline,
                     textAlign: TextAlign.center,
@@ -196,7 +280,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 26),
                   // Apple only where Apple's own flow exists, and first when it
                   // does: an iPhone already has an Apple account signed in, so
                   // it is the one-tap answer there, and Apple's guidelines put
@@ -217,19 +301,96 @@ class _SignInScreenState extends State<SignInScreen> {
                     busy: account.isBusy,
                     onPressed: () => _signIn(account.signIn),
                   ),
+                  const SizedBox(height: 22),
+                  const _OrRule(),
                   const SizedBox(height: 18),
-                  // Quieter than the two above, and still a real, reachable
-                  // way out. A skip that has to be hunted for is a dark
-                  // pattern with extra steps.
-                  TextButton(
-                    onPressed: account.isBusy ? null : _continueWithout,
-                    child: Text(
-                      'המשך בלי להתחבר',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    enabled: !account.isBusy,
+                    decoration: InputDecoration(
+                      labelText: 'מייל',
+                      prefixIcon: const Icon(Icons.mail_outline_rounded),
+                      errorText: _showErrors ? _emailProblem : null,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: !_showPassword,
+                    enabled: !account.isBusy,
+                    textInputAction: TextInputAction.done,
+                    decoration: InputDecoration(
+                      labelText: 'סיסמה',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      // Shown rather than confirmed twice. A second box is one
+                      // more field to fill for a mistake an eye catches faster.
+                      suffixIcon: IconButton(
+                        tooltip: _showPassword ? 'הסתרה' : 'הצגה',
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                        onPressed: () =>
+                            setState(() => _showPassword = !_showPassword),
                       ),
+                      helperText: registering
+                          ? 'לפחות ${AccountService.minPasswordLength} תווים'
+                          : null,
+                      errorText: _showErrors ? _passwordProblem : null,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (_) => _submitEmail(account),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton(
+                    onPressed: account.isBusy
+                        ? null
+                        : () => _submitEmail(account),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    child: account.isBusy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(registering ? 'הרשמה עם מייל' : 'התחברות'),
+                  ),
+                  const SizedBox(height: 6),
+                  TextButton(
+                    onPressed: account.isBusy
+                        ? null
+                        : () => setState(() {
+                            _mode = registering
+                                ? _EmailMode.signIn
+                                : _EmailMode.register;
+                            _showErrors = false;
+                          }),
+                    child: Text(
+                      registering
+                          ? 'כבר יש לי חשבון — התחברות'
+                          : 'אין לי חשבון עדיין — הרשמה',
                     ),
                   ),
+                  if (!registering)
+                    TextButton(
+                      onPressed: account.isBusy
+                          ? null
+                          : () => _resetPassword(account),
+                      child: Text(
+                        'שכחתי סיסמה',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -240,7 +401,7 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 }
 
-/// One of the two sign-in buttons, drawn identically so neither reads as the
+/// One of the two provider buttons, drawn identically so neither reads as the
 /// recommended one.
 class _ProviderButton extends StatelessWidget {
   const _ProviderButton({
@@ -275,57 +436,32 @@ class _ProviderButton extends StatelessWidget {
   }
 }
 
-/// The second question, asked once, for somebody about to carry on locally.
-///
-/// **It says what is actually at stake and then lets them past.** The primary
-/// button goes back to signing in because that is the recommendation; the
-/// secondary one is not disguised, delayed or buried, because a matchmaker who
-/// has now read the sentence and still wants to work locally has made an
-/// informed decision and the app has no business arguing twice.
-class ContinueWithoutAccountDialog extends StatelessWidget {
-  const ContinueWithoutAccountDialog({super.key});
-
-  static const String title = 'להמשיך בלי להתחבר?';
-
-  static const String message =
-      'המידע שלך נשמר כרגע רק במכשיר הזה. אם המכשיר יוחלף, יאבד או שהאפליקציה '
-      'תימחק, המידע עלול ללכת לאיבוד. בנוסף, ללא התחברות לא ניתן לסנכרן את '
-      'המאגר בין מכשירים או להשתתף בנתוני קהילת השדכנים.';
-
-  /// True when the matchmaker chose to carry on without an account.
-  static Future<bool> show(BuildContext context) async {
-    final bool? answer = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => const ContinueWithoutAccountDialog(),
-    );
-    return answer ?? false;
-  }
+/// A hairline with "או" set into it, between the provider buttons and the
+/// address form.
+class _OrRule extends StatelessWidget {
+  const _OrRule();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Widget rule = Expanded(
+      child: Divider(color: theme.colorScheme.outlineVariant),
+    );
 
-    return AlertDialog(
-      title: const Text(title),
-      content: Text(
-        message,
-        style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-      ),
-      actionsOverflowDirection: VerticalDirection.down,
-      actions: <Widget>[
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('התחברות ושמירת המאגר'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(true),
+    return Row(
+      children: <Widget>[
+        rule,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
-            'בכל זאת להמשיך בלי להתחבר',
+            'או',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
+        rule,
       ],
     );
   }

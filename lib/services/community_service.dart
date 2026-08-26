@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/utils/activity_stats.dart';
@@ -223,13 +224,54 @@ abstract final class CommunityService {
   /// with the install and a name they were never asked for. The community is
   /// for people who connected an account; this one check is what makes that
   /// true of the publish, the totals and the board at once.
+  ///
+  /// **It waits for the session to be restored, and that is the fix for a
+  /// publish that silently never happened.** `Firebase.initializeApp`
+  /// completing does not mean `currentUser` is populated: the persisted session
+  /// is read back asynchronously, and for the first second or so of every
+  /// launch `currentUser` is null on a device that is perfectly well signed in.
+  /// The app's own publish runs one frame after the first — see
+  /// `CloudSyncScheduler` — so it landed inside that window nearly every time,
+  /// read null here, and returned without writing anything. What was left was
+  /// the publish at app pause, which is a moment the OS is entitled to freeze
+  /// the process in. The net effect is a device whose figures reach the shared
+  /// collection rarely, and a community total that looks like it contains
+  /// nobody but the reader.
+  ///
+  /// So a null `currentUser` is not taken as "signed out" until auth says so.
+  /// The wait is bounded and shared: one subscription per launch, whatever
+  /// asks.
   static Future<User?> _account() async {
     if (!FirebaseBootstrap.isReady) {
       return null;
     }
-    final User? user = FirebaseAuth.instance.currentUser;
+    final User? user = FirebaseAuth.instance.currentUser ?? await _restored();
     return user == null || user.isAnonymous ? null : user;
   }
+
+  /// The first answer `authStateChanges` gives in this process, remembered.
+  ///
+  /// `first` on that stream resolves as soon as auth has read whatever it has
+  /// on disk — immediately for a genuinely signed-out install, and after the
+  /// restore for a signed-in one. The timeout is there for the case where auth
+  /// never answers at all (no Play Services, a broken keystore): a community
+  /// figure is not worth hanging a publish on for ever.
+  static Future<User?>? _restoring;
+
+  static Future<User?> _restored() {
+    return _restoring ??= FirebaseAuth.instance
+        .authStateChanges()
+        .first
+        .timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => FirebaseAuth.instance.currentUser,
+        )
+        .catchError((Object _) => FirebaseAuth.instance.currentUser);
+  }
+
+  /// Test seam: forgets the remembered auth resolution.
+  @visibleForTesting
+  static void resetAccountWait() => _restoring = null;
 
   // --- Publishing this device's own counts ---------------------------------
 
@@ -238,15 +280,25 @@ abstract final class CommunityService {
   /// Idempotent and safe to call from both lifecycle moments: everything is
   /// recomputed from the local ledgers each time rather than incremented, so a
   /// double call writes the same numbers twice instead of doubling them.
-  static Future<void> publish({
+  ///
+  /// Answers whether the shared collection actually changed — false for a row
+  /// identical to the last one that landed, for a device with no account, and
+  /// for a write the server refused. The caller uses it to decide whether every
+  /// cached community figure is now out of date; saying "yes" when nothing was
+  /// written costs every screen on the page a round of reads for no news.
+  static Future<bool> publish({
     required CommunityMemberCounts counts,
     required String name,
     required bool hidden,
     String photoUrl = '',
+    String about = '',
+    List<MatchmakerShare> shares = const <MatchmakerShare>[],
+    String benefit = '',
+    String contactPhone = '',
   }) async {
     final User? user = await _account();
     if (user == null) {
-      return;
+      return false;
     }
 
     final Map<String, Object?> row = <String, Object?>{
@@ -259,6 +311,22 @@ abstract final class CommunityService {
       // A face travels further than a name, so it follows the same rule and
       // is cleared by the same write. See [uploadAvatar].
       'photoUrl': hidden ? '' : photoUrl.trim(),
+      // The public page — see [CommunityProfile]. Every one of these is
+      // something a matchmaker deliberately typed into their own profile, and
+      // every one of them is governed by exactly the rule the name is: hiding
+      // does not stop showing them, it stops storing them. A phone number in
+      // particular is not "kept but not displayed" in a collection every
+      // installed copy of the app can read.
+      'about': hidden ? '' : _clip(about, CommunityProfile.maxAboutLength),
+      'shares': hidden
+          ? const <String>[]
+          : <String>[
+              for (final MatchmakerShare share in shares) share.encode(),
+            ],
+      'benefit': hidden
+          ? ''
+          : _clip(benefit, CommunityProfile.maxBenefitLength),
+      'contactPhone': hidden ? '' : _clip(contactPhone, 24),
       'hidden': hidden,
       for (final CommunityPeriod period in CommunityPeriod.values) ...{
         if (period.keyField case final String key)
@@ -277,7 +345,7 @@ abstract final class CommunityService {
     // midnight publishes exactly as it always did.
     final String fingerprint = '${user.uid}|${_fingerprintOf(row)}';
     if (CommunityProfileStore.publishedFingerprint == fingerprint) {
-      return;
+      return false;
     }
 
     try {
@@ -286,6 +354,7 @@ abstract final class CommunityService {
       // retried by the next publish, not skipped because we already decided it
       // had happened.
       CommunityProfileStore.rememberPublished(fingerprint);
+      return true;
     } on FirebaseException catch (error) {
       // **A refusal here is usually not a permission problem — it is an old
       // document.** `noStrayFields` in the security rules is a whitelist, and
@@ -302,11 +371,13 @@ abstract final class CommunityService {
       if (error.code == 'permission-denied' &&
           await _repairAndWrite(user.uid, row)) {
         CommunityProfileStore.rememberPublished(fingerprint);
+        return true;
       }
     } catch (_) {
       // A community figure is never worth an error in front of somebody who
       // came here to do matchmaking.
     }
+    return false;
   }
 
   static Future<void> _write(String uid, Map<String, Object?> row) {
@@ -325,6 +396,10 @@ abstract final class CommunityService {
   static Set<String> get _knownFields => <String>{
     'name',
     'photoUrl',
+    'about',
+    'shares',
+    'benefit',
+    'contactPhone',
     'hidden',
     'updatedAt',
     for (final CommunityPeriod period in CommunityPeriod.values) ...<String>{
@@ -382,6 +457,17 @@ abstract final class CommunityService {
     ].join('|');
   }
 
+  /// [value] trimmed and cut to [limit].
+  ///
+  /// The security rules refuse anything longer, and a refusal here is silent —
+  /// so a matchmaker who pasted a paragraph would have every publish rejected
+  /// for ever and never be told why. Cutting is the only failure mode that
+  /// leaves the rest of their figures working.
+  static String _clip(String value, int limit) {
+    final String trimmed = value.trim();
+    return trimmed.length <= limit ? trimmed : trimmed.substring(0, limit);
+  }
+
   static Map<String, Object?> _fieldsFor(
     CommunityPeriod period,
     ActivityBreakdown breakdown,
@@ -414,6 +500,33 @@ abstract final class CommunityService {
     }
   }
 
+  /// One matchmaker's public page, or null.
+  ///
+  /// **One document read, and it is not cached.** A profile is opened
+  /// deliberately, one at a time, by somebody who tapped a name — which is both
+  /// rare enough that a read costs nothing worth counting and exactly the
+  /// moment stale data would be noticed. Null covers every way this can fail:
+  /// no account, no network, a row that has been deleted, and a matchmaker who
+  /// hid themselves between the board being drawn and the name being tapped.
+  static Future<CommunityProfile?> profile(String uid) async {
+    if (uid.trim().isEmpty || await _account() == null) {
+      return null;
+    }
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _db
+          .collection(membersCollection)
+          .doc(uid.trim())
+          .get();
+      final Map<String, dynamic>? data = doc.data();
+      if (data == null || data['hidden'] == true) {
+        return null;
+      }
+      return CommunityProfile.fromDocument(doc.id, data);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Flips the leaderboard opt-out without rewriting the counters.
   ///
   /// Hiding erases the stored name in the same write rather than waiting for
@@ -429,11 +542,18 @@ abstract final class CommunityService {
         <String, Object?>{
           'hidden': hidden,
           'name': hidden ? '' : name.trim(),
-          // Hiding takes the picture down in the same write for the same
-          // reason it erases the name: "we keep it but do not show it" is a
-          // promise this collection cannot make, because every installed copy
-          // of the app can read it.
-          if (hidden) 'photoUrl': '',
+          // Hiding takes the picture and the whole public page down in the
+          // same write for the same reason it erases the name: "we keep it but
+          // do not show it" is a promise this collection cannot make, because
+          // every installed copy of the app can read it. What is left against
+          // the uid is a row of numbers.
+          if (hidden) ...<String, Object?>{
+            'photoUrl': '',
+            'about': '',
+            'shares': <String>[],
+            'benefit': '',
+            'contactPhone': '',
+          },
         },
         SetOptions(merge: true),
       );

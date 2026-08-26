@@ -306,7 +306,7 @@ Widget _buildApp() {
         create: (_) => SupportInboxProvider(Hive.box<dynamic>('settings')),
       ),
     ],
-    child: const _DismissKeyboardOnTap(child: App()),
+    child: const App(),
   );
 }
 
@@ -350,21 +350,6 @@ class _StartupErrorApp extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _DismissKeyboardOnTap extends StatelessWidget {
-  const _DismissKeyboardOnTap({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: FocusManager.instance.primaryFocus?.unfocus,
-      child: child,
     );
   }
 }

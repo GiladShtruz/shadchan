@@ -1,10 +1,14 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shadchan/firebase_options.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 /// Signing the matchmaker in with Google, on top of the anonymous account
 /// [FirebaseBootstrap] already keeps.
@@ -165,14 +169,14 @@ abstract final class AccountService {
 
   /// Whether "המשך עם Apple" may be drawn at all.
   ///
-  /// **iOS and macOS only, deliberately.** Apple's own flow exists there and
-  /// needs nothing but the entitlement. On Android, `signInWithProvider` falls
-  /// back to Apple's *web* flow, which needs a Services ID and a return URL
-  /// registered in the Apple Developer portal and in the Firebase console —
-  /// and until they are, the button opens a browser that ends on
-  /// `invalid_client`. A button that cannot work is worse than no button, so
-  /// Android is offered Google alone. Turning it on later is this getter plus
-  /// the console work, and nothing else in the app.
+  /// **iOS and macOS only, deliberately.** Apple's own sheet exists there and
+  /// needs nothing but the entitlement the Runner target already carries. On
+  /// Android the same package falls back to Apple's *web* flow, which needs a
+  /// Services ID and a return URL registered in the Apple Developer portal and
+  /// in the Firebase console — and until they are, the button opens a browser
+  /// that ends on `invalid_client`. A button that cannot work is worse than no
+  /// button, so Android is offered Google and an address instead. Turning it on
+  /// later is this getter plus the console work, and nothing else in the app.
   ///
   /// It is also the reason iOS *must* keep this: App Store review requires
   /// Sign in with Apple wherever a third-party sign-in is offered.
@@ -180,11 +184,29 @@ abstract final class AccountService {
 
   /// Opens Apple's sign-in sheet and attaches the account to the Firebase user.
   ///
-  /// Goes through `AppleAuthProvider` rather than a dedicated plugin so there
-  /// is no extra dependency, no Podfile change and one code path on both Apple
-  /// platforms. `email` and `name` are asked for because Apple only ever hands
-  /// them over on the *first* authorisation for a given app; not asking means
-  /// never being able to.
+  /// **This is not `AppleAuthProvider`, and that is the whole fix.** It used to
+  /// go through `linkWithProvider(AppleAuthProvider())`, on the reading that
+  /// one provider flow serves every platform. It does not: `signInWithProvider`
+  /// is Firebase's *generic OAuth* path, and for `apple.com` that means the web
+  /// flow — a browser sheet posting to a Services ID and a return URL that only
+  /// exist once somebody has registered them in the Apple Developer portal.
+  /// Neither is registered for this project, so on an iPhone the button opened
+  /// a web page and came back with nothing. There was no crash and no Hebrew
+  /// error worth showing; it simply never signed anybody in.
+  ///
+  /// The flow below is the one Firebase's own Flutter documentation prescribes:
+  /// Apple's native sheet through `ASAuthorizationAppleIDProvider`, and the
+  /// identity token it returns exchanged for a Firebase credential.
+  ///
+  /// **The nonce is not optional.** Apple signs the *hash* of it into the
+  /// token, and Firebase re-derives the hash from the raw value handed to
+  /// `credential`. Sending the raw nonce to Apple, or omitting it, is rejected
+  /// as `invalid-credential` — which is the other way this can look like "Apple
+  /// sign-in is broken".
+  ///
+  /// `email` and `fullName` are asked for because Apple only ever hands them
+  /// over on the *first* authorisation for a given app; not asking means never
+  /// being able to.
   ///
   /// Never throws, for the same reason [signInWithGoogle] does not: every
   /// caller is a button.
@@ -202,32 +224,179 @@ abstract final class AccountService {
     }
 
     try {
-      final AppleAuthProvider provider = AppleAuthProvider()
-        ..addScope('email')
-        ..addScope('name');
-      await _attachProviderToFirebase(provider);
+      final String rawNonce = _newNonce();
+      final AuthorizationCredentialAppleID apple =
+          await SignInWithApple.getAppleIDCredential(
+            scopes: <AppleIDAuthorizationScopes>[
+              AppleIDAuthorizationScopes.email,
+              AppleIDAuthorizationScopes.fullName,
+            ],
+            nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
+          );
+
+      final String? idToken = apple.identityToken;
+      if (idToken == null) {
+        return const AccountSignInResult.failure(
+          'ההתחברות לא הושלמה. כדאי לנסות שוב.',
+          details:
+              'apple/no-identity-token\n'
+              'Apple אישרה את הבקשה אך לא החזירה identityToken.',
+        );
+      }
+
+      await _attachToFirebase(
+        OAuthProvider(
+          'apple.com',
+        ).credential(idToken: idToken, rawNonce: rawNonce),
+      );
       return const AccountSignInResult.success();
-    } on FirebaseAuthException catch (error) {
+    } on SignInWithAppleAuthorizationException catch (error) {
       final String details = _describe(
         'apple',
+        error.code.name,
+        error.message,
+        null,
+      );
+      debugPrint('ACCOUNT apple sign-in failed: $details');
+      // Closing Apple's own sheet is an answer, not a failure, and must stay
+      // silent.
+      if (error.code == AuthorizationErrorCode.canceled) {
+        return AccountSignInResult.canceled(details);
+      }
+      return AccountSignInResult.failure(
+        _appleAuthorizationMessage(error.code),
+        details: details,
+      );
+    } on SignInWithAppleNotSupportedException catch (error) {
+      return AccountSignInResult.failure(
+        'התחברות עם Apple אינה נתמכת במכשיר הזה.',
+        details: _describe('apple', 'not-supported', error.message, null),
+      );
+    } on FirebaseAuthException catch (error) {
+      final String details = _describe(
+        'firebase-apple',
         error.code,
         error.message,
         null,
       );
       debugPrint('ACCOUNT apple sign-in failed: $details');
-      // Apple's own sheet reports a dismissal as a cancelled web/native flow.
-      // It is the user's answer, not a failure, and must stay silent.
-      if (error.code == 'canceled' ||
-          error.code == 'web-context-canceled' ||
-          error.code == 'user-cancelled') {
-        return AccountSignInResult.canceled(details);
-      }
       return AccountSignInResult.failure(
         _appleMessage(error.code),
         details: details,
       );
     } catch (error, stackTrace) {
       debugPrint('ACCOUNT apple sign-in failed: $error\n$stackTrace');
+      return AccountSignInResult.failure(
+        'לא הצלחנו להתחבר. כדאי לנסות שוב.',
+        details: _describe(
+          'unexpected',
+          error.runtimeType.toString(),
+          '$error',
+          null,
+        ),
+      );
+    }
+  }
+
+  /// A fresh random string for one Apple authorisation.
+  ///
+  /// Cryptographically random, because its whole job is to make the token
+  /// Apple signs unusable for any other sign-in attempt.
+  static String _newNonce([int length = 32]) {
+    const String alphabet =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
+    final Random random = Random.secure();
+    return List<String>.generate(
+      length,
+      (_) => alphabet[random.nextInt(alphabet.length)],
+    ).join();
+  }
+
+  // --- An address and a password ------------------------------------------
+
+  /// The shortest password Firebase will accept, said in Hebrew before it is
+  /// refused in English.
+  static const int minPasswordLength = 6;
+
+  /// Signs in to an account that already exists.
+  ///
+  /// **Not `link`, on purpose.** An address and a password are what somebody
+  /// arriving on a *new phone* types, and their records are already in the
+  /// account behind them; linking would attach the address to this device's
+  /// throwaway anonymous uid and leave the real account untouched. Registration
+  /// — [registerWithEmail] — is the one that upgrades in place.
+  static Future<AccountSignInResult> signInWithEmail({
+    required String email,
+    required String password,
+  }) {
+    return _email(() async {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+    });
+  }
+
+  /// Creates a new account from an address and a password.
+  ///
+  /// The anonymous account is upgraded in place where there is one, for the
+  /// same reason Google's is: anything already written under that uid — the AI
+  /// quota above all — stays where it is instead of needing a migration.
+  static Future<AccountSignInResult> registerWithEmail({
+    required String email,
+    required String password,
+  }) {
+    return _email(() async {
+      final AuthCredential credential = EmailAuthProvider.credential(
+        email: email.trim(),
+        password: password,
+      );
+      final User? current = FirebaseAuth.instance.currentUser;
+      if (current != null && current.isAnonymous) {
+        await current.linkWithCredential(credential);
+        return;
+      }
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+    });
+  }
+
+  /// Sends the "forgotten password" mail. Answers `success` when it went out.
+  static Future<AccountSignInResult> sendPasswordReset(String email) {
+    return _email(
+      () => FirebaseAuth.instance.sendPasswordResetEmail(email: email.trim()),
+    );
+  }
+
+  /// The three address flows share one shape: bring Firebase up, run the call,
+  /// and turn every way it can fail into a Hebrew sentence.
+  static Future<AccountSignInResult> _email(Future<void> Function() run) async {
+    await FirebaseBootstrap.ensureReady();
+    if (!FirebaseBootstrap.isReady) {
+      return const AccountSignInResult.failure(
+        'לא הצלחנו להתחבר. יש לוודא חיבור לאינטרנט ולנסות שוב.',
+      );
+    }
+
+    try {
+      await run();
+      return const AccountSignInResult.success();
+    } on FirebaseAuthException catch (error) {
+      final String details = _describe(
+        'email',
+        error.code,
+        error.message,
+        null,
+      );
+      debugPrint('ACCOUNT email auth failed: $details');
+      return AccountSignInResult.failure(
+        _emailMessage(error.code),
+        details: details,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('ACCOUNT email auth failed: $error\n$stackTrace');
       return AccountSignInResult.failure(
         'לא הצלחנו להתחבר. כדאי לנסות שוב.',
         details: _describe(
@@ -267,28 +436,6 @@ abstract final class AccountService {
     }
   }
 
-  /// The provider-flow twin of [_attachToFirebase], with the same rule: the
-  /// anonymous uid is upgraded in place where it can be, and abandoned in
-  /// favour of an existing account where it cannot.
-  static Future<void> _attachProviderToFirebase(AuthProvider provider) async {
-    final User? current = FirebaseAuth.instance.currentUser;
-    if (current == null || !current.isAnonymous) {
-      await FirebaseAuth.instance.signInWithProvider(provider);
-      return;
-    }
-
-    try {
-      await current.linkWithProvider(provider);
-    } on FirebaseAuthException catch (error) {
-      if (error.code != 'credential-already-in-use' &&
-          error.code != 'email-already-in-use' &&
-          error.code != 'provider-already-linked') {
-        rethrow;
-      }
-      await FirebaseAuth.instance.signInWithProvider(provider);
-    }
-  }
-
   /// Signs out of Google and drops back to a fresh anonymous account.
   ///
   /// It drops back rather than leaving the app unauthenticated because the AI
@@ -319,6 +466,42 @@ abstract final class AccountService {
         'ההתחברות עם Google אינה זמינה כרגע.',
       GoogleSignInExceptionCode.uiUnavailable =>
         'לא הצלחנו לפתוח את מסך ההתחברות. כדאי לנסות שוב.',
+      _ => 'לא הצלחנו להתחבר. כדאי לנסות שוב.',
+    };
+  }
+
+  static String _appleAuthorizationMessage(AuthorizationErrorCode code) {
+    return switch (code) {
+      AuthorizationErrorCode.canceled => 'ההתחברות לא הושלמה.',
+      AuthorizationErrorCode.notHandled ||
+      AuthorizationErrorCode.notInteractive =>
+        'לא הצלחנו לפתוח את מסך ההתחברות של Apple. כדאי לנסות שוב.',
+      AuthorizationErrorCode.invalidResponse =>
+        'Apple החזירה תשובה שלא הצלחנו לקרוא. כדאי לנסות שוב.',
+      _ => 'לא הצלחנו להתחבר עם Apple. כדאי לנסות שוב.',
+    };
+  }
+
+  static String _emailMessage(String code) {
+    return switch (code) {
+      'invalid-email' => 'כתובת המייל אינה תקינה.',
+      'email-already-in-use' =>
+        'הכתובת הזו כבר רשומה. אפשר להתחבר איתה עם הסיסמה שנבחרה.',
+      'weak-password' =>
+        'הסיסמה קצרה מדי. צריך לפחות $minPasswordLength תווים.',
+      // Firebase stopped distinguishing "no such user" from "wrong password" on
+      // purpose — telling somebody an address is not registered is telling
+      // whoever is holding the phone which addresses are. One sentence covers
+      // all three codes, as it should.
+      'user-not-found' ||
+      'wrong-password' ||
+      'invalid-credential' => 'המייל או הסיסמה אינם נכונים.',
+      'user-disabled' => 'החשבון הזה חסום.',
+      'too-many-requests' =>
+        'היו יותר מדי ניסיונות. כדאי לנסות שוב בעוד כמה דקות.',
+      'network-request-failed' => 'אין חיבור לאינטרנט. יש להתחבר ולנסות שוב.',
+      'operation-not-allowed' =>
+        'ההתחברות עם מייל וסיסמה עדיין לא הופעלה בפרויקט.',
       _ => 'לא הצלחנו להתחבר. כדאי לנסות שוב.',
     };
   }
