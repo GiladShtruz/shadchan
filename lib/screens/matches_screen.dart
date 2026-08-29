@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
@@ -92,6 +95,25 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// panel the room. See the header block in [build].
   final Set<String> _openCards = <String>{};
 
+  /// Where the list was standing when a proposal's actions were opened.
+  ///
+  /// The anchor for "is the reader still looking at that card" — see
+  /// [_handleScroll]. Null while nothing is open.
+  double? _openAnchor;
+
+  /// True once the reader has scrolled well away from the open panel and left
+  /// it alone for [_awayAfter].
+  bool _awayFromOpenCard = false;
+
+  Timer? _awayTimer;
+
+  /// How far from the open panel counts as having left it. Roughly a screenful
+  /// of cards: anything less and the panel is probably still partly visible.
+  static const double _awayDistance = 420;
+
+  /// How long the reader has to stay away before the filters come back.
+  static const Duration _awayAfter = Duration(seconds: 10);
+
   /// Whether the category tiles are folded away right now.
   ///
   /// **Exactly one thing decides this, and it is not the scroll.** The tiles
@@ -99,16 +121,24 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// meant the map of the screen — five counts, and the only way between the
   /// five shelves — was missing at the moment somebody was furthest into a
   /// list and most likely to want to switch shelves. They are pinned under the
-  /// search row now and stay there. The one time they still go away is while a
+  /// search row now and stay there. The one time they go away is while a
   /// proposal's actions are open, because that panel is a promotion row, three
   /// status tiles and a journal, and it needs the third of the screen the
   /// filters were holding.
-  bool get _headerHidden => _openCards.isNotEmpty;
+  ///
+  /// **And they come back when the panel stops being what is being looked
+  /// at.** A panel left open at the top of a list of forty went on holding the
+  /// filters hostage for the rest of the session, however far down the reader
+  /// had gone since. So: scroll a screenful away from it, leave it alone for
+  /// ten seconds, and the map of the screen returns — without closing anything,
+  /// because the panel is still where it was left.
+  bool get _headerHidden => _openCards.isNotEmpty && !_awayFromOpenCard;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
+    _listScroll.addListener(_handleScroll);
     _category = widget.initialShowArchived
         ? MatchCategory.closed
         : _categoryFor(widget.initialStatuses);
@@ -124,8 +154,43 @@ class _MatchesScreenState extends State<MatchesScreen> {
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
-    _listScroll.dispose();
+    _awayTimer?.cancel();
+    _listScroll
+      ..removeListener(_handleScroll)
+      ..dispose();
     super.dispose();
+  }
+
+  /// Watches how far the list has travelled from the open panel.
+  ///
+  /// Distance from where the list was standing when the panel opened, rather
+  /// than the panel's own position on screen: the cards are built lazily and a
+  /// panel scrolled out of the viewport has no position to measure. A screenful
+  /// away is the point at which it is certainly not what is being read.
+  void _handleScroll() {
+    final double? anchor = _openAnchor;
+    if (anchor == null || !_listScroll.hasClients) {
+      return;
+    }
+    final bool away = (_listScroll.offset - anchor).abs() > _awayDistance;
+    if (!away) {
+      // Back at the panel: the clock stops, and the filters go away again.
+      _awayTimer?.cancel();
+      _awayTimer = null;
+      if (_awayFromOpenCard && mounted) {
+        setState(() => _awayFromOpenCard = false);
+      }
+      return;
+    }
+    if (_awayFromOpenCard || _awayTimer != null) {
+      return;
+    }
+    _awayTimer = Timer(_awayAfter, () {
+      _awayTimer = null;
+      if (mounted) {
+        setState(() => _awayFromOpenCard = true);
+      }
+    });
   }
 
   void _handleCardActions(String matchId, bool open) {
@@ -138,9 +203,51 @@ class _MatchesScreenState extends State<MatchesScreen> {
     if (!changed) {
       return;
     }
+    _awayTimer?.cancel();
+    _awayTimer = null;
+    _awayFromOpenCard = false;
+    _openAnchor = _openCards.isEmpty
+        ? null
+        : (_listScroll.hasClients ? _listScroll.offset : 0);
     // Closing the last one puts the tiles straight back — they only ever went
     // away to make room for a panel that is now gone.
     setState(() {});
+  }
+
+  /// A long press on a proposal: the one way to delete it.
+  ///
+  /// **Deliberately behind a gesture and not on the action panel.** Every
+  /// button under "פעולות" moves a proposal along; deleting one removes it and
+  /// its journal from the database for good, and a control that destructive
+  /// sitting in the same row as "העברה להמתנה" is a mis-tap waiting to happen.
+  /// Closing an idea is what the panel is for — this is for the proposal that
+  /// should never have been opened.
+  Future<void> _confirmDelete(
+    MatchIdea match,
+    Person? female,
+    Person? male,
+  ) async {
+    final String names = <String>[
+      if ((female?.firstName ?? '').trim().isNotEmpty) female!.firstName.trim(),
+      if ((male?.firstName ?? '').trim().isNotEmpty) male!.firstName.trim(),
+    ].join(' ו');
+    final MatchRepository repository = context.read<MatchRepository>();
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'מחיקת הרעיון',
+      message: names.isEmpty
+          ? 'למחוק את הרעיון? היומן וההיסטוריה שלו יימחקו איתו.'
+          : 'למחוק את הרעיון של $names? היומן וההיסטוריה שלו יימחקו איתו.',
+      confirmText: 'מחיקה',
+      isDestructive: true,
+    );
+    if (!confirmed) {
+      return;
+    }
+    await repository.deleteMatch(match.id);
+    if (mounted) {
+      AppNotice.show(context, 'הרעיון נמחק');
+    }
   }
 
   static MatchCategory _categoryFor(List<MatchStatus> statuses) {
@@ -195,7 +302,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final bool pushed = widget.focusMatchId != null;
 
     return Scaffold(
-      // **The bar says "רעיונות", and the search row is pinned to it.** The
+      // **The bar says "הרעיונות שלי", and the search row is pinned to it.** The
       // heading used to be the first line of the page and the field the second,
       // both of them folding away on a scroll — which is exactly when a list
       // long enough to scroll wants its search. The name is in the banner and
@@ -206,7 +313,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
       // was a number nobody acts on — the category buttons directly below carry
       // the same figure per kind, which is the form it is actually read in.
       appBar: ShadchanAppBar(
-        title: 'רעיונות',
+        title: 'הרעיונות שלי',
         leading: pushed ? const BackButton() : null,
         // The bell, the "+" and the overflow menu, exactly as בית and המאגר
         // שלי wear them — see [ShadchanTabActions].
@@ -584,6 +691,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
       compact: false,
       highlighted: isDueReminder || match.id == widget.focusMatchId,
       onActionsOpenChanged: (bool open) => _handleCardActions(match.id, open),
+      onLongPress: () => _confirmDelete(match, female, male),
       // Only computed for a couple who are actually out — every other card
       // would be reading the whole status ledger for a line it never draws.
       datingSince: match.status == MatchStatus.dating

@@ -116,19 +116,27 @@ class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
 /// Only what the "+" *does* differs — see [add] — because that is the one thing
 /// that genuinely depends on the page.
 ///
-/// **Held tight together — with nothing at all between them.** Six pixels
-/// between three 36px squares is a strip of gaps rather than a group of
-/// buttons; two was better and still read as three separate controls that
-/// happened to be near each other. At zero the bell and the "+" sit against the
-/// overflow dots and the eye takes the three as one cluster in the corner,
-/// which is what they are. Each square keeps its own border, so nothing runs
-/// together.
+/// **Two of them touch and one does not.** Three squares with equal gaps read
+/// as a strip; three with no gap at all read as one slab, and the bell —
+/// which is the one control of the three that is about something *arriving*
+/// rather than about this page — was pressed hard against the "+" beside it.
+/// So the "+" sits against the overflow dots, where the pair is the page's own
+/// menu of things to do, and a hair of air separates that pair from the bell.
+/// Each square keeps its own border, so nothing runs together.
 class ShadchanTabActions extends StatelessWidget {
-  const ShadchanTabActions({super.key, required this.add});
+  const ShadchanTabActions({
+    super.key,
+    required this.add,
+    this.menu = AppMenuVariant.list,
+  });
 
   /// The middle control. [ShadchanAddButton] for a page with one thing to add,
   /// [AddMenuButton] for the home screen, which has two.
   final Widget add;
+
+  /// Which overflow menu the bar carries. בית has its own — see
+  /// [AppMenuVariant]; the two lists share the other.
+  final AppMenuVariant menu;
 
   @override
   Widget build(BuildContext context) {
@@ -143,8 +151,9 @@ class ShadchanTabActions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         const RemindersBellButton(boxed: true),
+        const SizedBox(width: 5),
         add,
-        const AppMenuButton(boxed: true),
+        AppMenuButton(boxed: true, variant: menu),
       ],
     );
   }

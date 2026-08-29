@@ -224,6 +224,53 @@ abstract final class CommunityEngagementsService {
     }
   }
 
+  /// The matchmakers who published their own name on an engagement inside
+  /// [freshFor], newest first.
+  ///
+  /// **Only names that were volunteered.** A record carries a name only after
+  /// [attachMatchmakerName] — that is, only after that matchmaker was asked
+  /// about that particular wedding and said yes — so everything this returns
+  /// is a name its owner chose to have said out loud. Records with no name are
+  /// skipped entirely rather than announced anonymously here; the anonymous
+  /// count already has its own line.
+  ///
+  /// Nothing about either member of the couple is stored on these records, so
+  /// there is nothing about them to return.
+  ///
+  /// One small query, capped, and it costs nothing when it comes back empty —
+  /// which is most weeks.
+  static Future<List<String>> namedThisWeek({DateTime? now}) async {
+    final User? user = await _account();
+    if (user == null) {
+      return const <String>[];
+    }
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _db
+          .collection(collection)
+          .orderBy('createdAt', descending: true)
+          .limit(20)
+          .get();
+
+      final DateTime cutoff = (now ?? DateTime.now()).subtract(freshFor);
+      final List<String> names = <String>[];
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+          in snapshot.docs) {
+        final CommunityEngagement? engagement =
+            CommunityEngagement.fromDocument(doc);
+        if (engagement == null || engagement.at.isBefore(cutoff)) {
+          continue;
+        }
+        final String name = engagement.matchmakerName.trim();
+        if (name.isNotEmpty && !names.contains(name)) {
+          names.add(name);
+        }
+      }
+      return names;
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
   /// The newest engagement this device has not been told about, or null.
   ///
   /// **Your own couple is skipped.** You were there; being congratulated by

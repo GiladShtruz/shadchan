@@ -78,9 +78,10 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('רעיונות שהמאגר מציע לך'), findsOneWidget);
-    // One wide row that opens a screen: a title, a line under it and a chevron.
-    // The full-width filled button it used to carry is gone on purpose.
-    expect(find.text('שווה הצצה, אולי מחכה שם חיבור'), findsOneWidget);
+    // One wide row that opens a screen: a title and a chevron. The full-width
+    // filled button it used to carry, and the line that used to sit under the
+    // title, are both gone on purpose.
+    expect(find.text('שווה הצצה, אולי מחכה שם חיבור'), findsNothing);
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('הוספת חברים'), findsOneWidget);
     expect(find.text('הוספת רעיון'), findsOneWidget);
@@ -205,14 +206,14 @@ void main() {
             HomeDatingCouple(
               matchId: 'm1',
               names: 'אלעד & תהילה',
-              duration: '3 חודשים',
+              sinceLabel: 'יוצאים כבר 3 חודשים',
               personA: contact('a', 'אלעד', Gender.male),
               personB: contact('b', 'תהילה', Gender.female),
             ),
             const HomeDatingCouple(
               matchId: 'm2',
               names: 'יאיר & שושנה',
-              duration: 'שבועיים',
+              sinceLabel: 'יוצאים כבר שבועיים',
             ),
           ],
           onOpen: (_) {},
@@ -224,7 +225,10 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('אלעד & תהילה'), findsOneWidget);
     expect(find.text('יוצאים כבר 3 חודשים'), findsOneWidget);
-    expect(find.text('ממשיכים לשמור על קשר עד החתונה! :)'), findsOneWidget);
+    expect(
+      find.text('ממשיכים לשמור איתם על קשר עד החתונה! :)'),
+      findsOneWidget,
+    );
     // Material mirrors the chevrons in RTL, so the arrow that renders pointing
     // left — the way this page reads forward — is `chevron_right`.
     expect(
@@ -413,7 +417,7 @@ void main() {
                   HomeDatingCouple(
                     matchId: 'm1',
                     names: 'אלישבע-מרים & יהונתן-יוסף',
-                    duration: 'שלושה חודשים',
+                    sinceLabel: 'יוצאים כבר שלושה חודשים',
                   ),
                 ],
                 onOpen: (_) {},
@@ -439,7 +443,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       for (final String label in <String>[
-        'ממשיכים לשמור על קשר עד החתונה! :)',
+        'ממשיכים לשמור איתם על קשר עד החתונה! :)',
         'מרים בת־אברהם',
       ]) {
         expect(find.text(label), findsOneWidget, reason: label);
@@ -610,12 +614,7 @@ void main() {
         await tester.pump();
 
         expect(tester.takeException(), isNull);
-        for (final String label in <String>[
-          'רעיונות שהמאגר מציע לך',
-          'שווה הצצה, אולי מחכה שם חיבור',
-          'הוספת חברים',
-          'הוספת רעיון',
-        ]) {
+        for (final String label in <String>['הוספת חברים', 'הוספת רעיון']) {
           final RenderParagraph paragraph = tester
               .renderObject<RenderParagraph>(find.text(label));
           expect(paragraph.didExceedMaxLines, isFalse, reason: label);

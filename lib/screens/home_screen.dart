@@ -7,6 +7,7 @@ import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/board_add_sheet.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -20,8 +21,8 @@ import 'package:shadchan/services/tips_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
+import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/dating_history.dart';
-import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_config.dart';
@@ -228,7 +229,13 @@ class _HomeScreenState extends State<HomeScreen> {
     // see [ShadchanTabActions]. Only the "+" differs: this page is above both
     // of the other two, so its "+" asks which of them is meant.
     return ShadchanAppBar(
-      actions: const <Widget>[ShadchanTabActions(add: AddMenuButton())],
+      actions: const <Widget>[
+        // בית keeps its own overflow menu — the app itself, the community
+        // group, the guide, the privacy policy. המאגר שלי and הרעיונות שלי
+        // carry the shorter list of destinations instead. See
+        // [AppMenuVariant].
+        ShadchanTabActions(add: AddMenuButton(), menu: AppMenuVariant.home),
+      ],
       bottom: ShadchanSearchBottom(
         child: ShadchanSearchField(
           controller: _searchController,
@@ -1132,15 +1139,28 @@ class _DatingSection extends StatelessWidget {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
+    // **How long they have been out, and not when the card was last touched.**
+    // The line came from `updatedAt`, which moves every time anything at all
+    // happens to the proposal — so a couple three months in read "יוצאים כבר
+    // מהיום" the moment a note was added to them. The status ledger knows when
+    // they actually started; see `DatingCheckIn.startedAt`.
+    final List<MatchStatusEvent> statusEvents = context
+        .read<MatchRepository>()
+        .getAllStatusEvents();
     final List<HomeDatingCouple> couples = <HomeDatingCouple>[
       for (final MatchIdea match in matches)
         () {
           final Person? personA = personRepository.getById(match.personAId);
           final Person? personB = personRepository.getById(match.personBId);
+          final DateTime since =
+              DatingCheckIn.startedAt(match, events: statusEvents) ??
+              match.updatedAt;
           return HomeDatingCouple(
             matchId: match.id,
             names: '${_firstName(personA)} & ${_firstName(personB)}',
-            duration: AppDateUtils.elapsedLabel(match.updatedAt),
+            sinceLabel: DatingCheckIn.datingSinceLabel(
+              DatingCheckIn.daysOut(since),
+            ),
             personA: personA,
             personB: personB,
           );

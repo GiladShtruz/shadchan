@@ -102,6 +102,46 @@ abstract final class DatingCheckIn {
         : 'הם יוצאים כבר $months חודשים 😊 בדקת איך הולך?';
   }
 
+  /// "יוצאים מהיום" / "יוצאים כבר יומיים" / "יוצאים כבר שבוע" — how long a
+  /// couple have been out, as the banner says it.
+  ///
+  /// **The first week counts in days, and only then in weeks.** A couple who
+  /// went out this morning were being told "יוצאים כבר מהיום", which is not a
+  /// sentence anybody would say, and every day of that first week — the one
+  /// week a matchmaker actually watches — read the same. So day one is
+  /// "מהיום", day two is "יומיים", and from there it is the number until a
+  /// week has passed and the count moves up a unit.
+  static String datingSinceLabel(int days) {
+    if (days <= 0) {
+      return 'יוצאים מהיום';
+    }
+    if (days == 1) {
+      return 'יוצאים כבר יום';
+    }
+    if (days == 2) {
+      return 'יוצאים כבר יומיים';
+    }
+    if (days < 7) {
+      return 'יוצאים כבר $days ימים';
+    }
+    if (days < 30) {
+      final int weeks = days ~/ 7;
+      if (weeks == 1) {
+        return 'יוצאים כבר שבוע';
+      }
+      return weeks == 2 ? 'יוצאים כבר שבועיים' : 'יוצאים כבר $weeks שבועות';
+    }
+    if (days < 365) {
+      final int months = days ~/ 30;
+      if (months == 1) {
+        return 'יוצאים כבר חודש';
+      }
+      return months == 2 ? 'יוצאים כבר חודשיים' : 'יוצאים כבר $months חודשים';
+    }
+    final int years = days ~/ 365;
+    return years == 1 ? 'יוצאים כבר שנה' : 'יוצאים כבר $years שנים';
+  }
+
   /// When to ask next, given when they started and when the last check was.
   ///
   /// The first one is [first] after they started; every one after that is

@@ -25,7 +25,7 @@ class HomeCommunityLink extends StatelessWidget {
   const HomeCommunityLink({super.key});
 
   static const String label = 'הצטרפו לקהילת הוואטסאפ של שדכן';
-  static const String shareLabel = 'שתפו את שדכן עם חבר';
+  static const String shareLabel = 'שתפו את שדכן עם חברים';
 
   @override
   Widget build(BuildContext context) {

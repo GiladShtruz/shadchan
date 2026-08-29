@@ -12,17 +12,16 @@ import 'package:shadchan/widgets/person_avatar.dart';
 
 /// "חברים שהתחתנו" — the one page in the app that only holds good news.
 ///
-/// **Two halves, and the order between them is the whole point.** A matchmaker
-/// marks a friend "מזל טוב" whoever made the shidduch; the app only knows which
-/// ones *it* was part of, and those are the ones worth putting at the top of
-/// the screen in the largest type it has. "בזכותך" is a claim the app can only
-/// make about a proposal that was opened here and ended in a wedding, so that
-/// is exactly what the first section is built from — married ideas — and the
-/// second is everybody else who is celebrating.
+/// **One count at the top, then everybody under it.** The page opens by saying
+/// how many friends from this database are married and that the matchmaker had
+/// a part in getting them there — which is true of all of them, and is the
+/// thing worth saying first. "בזכותך" is a narrower claim, one the app can only
+/// make about a proposal that was opened here and ended in a wedding, so it
+/// keeps its own quieter heading over exactly those couples.
 ///
-/// With no proposal of the matchmaker's own having reached a wedding yet, there
-/// is no first section and no empty promise where it would have been: the page
-/// is simply the friends who married, on the same paper.
+/// With no proposal of the matchmaker's own having reached a wedding yet, that
+/// middle section is simply absent and no empty promise stands where it would
+/// have been.
 class MarriedFriendsScreen extends StatelessWidget {
   const MarriedFriendsScreen({super.key});
 
@@ -50,14 +49,20 @@ class MarriedFriendsScreen extends StatelessWidget {
             .toList()
           ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
 
+    // Everybody the page is about, however they got there: both halves of
+    // every wedding the matchmaker's own proposals reached, plus everybody
+    // else marked "מזל טוב".
+    final int marriedFriends = couples.length * 2 + others.length;
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: theme.scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
-        title: const Text('חברים שהתחתנו'),
-        centerTitle: true,
+        // No title. The first thing on the page says what the page is, at
+        // length and in the right voice; the bar repeating "חברים שהתחתנו"
+        // over it was the same words twice, the upper set in white on a strip.
       ),
       body: couples.isEmpty && others.isEmpty
           ? const EmptyState(
@@ -67,11 +72,17 @@ class MarriedFriendsScreen extends StatelessWidget {
                   'כל מי שיסומן במזל טוב יופיע כאן, וגם כל רעיון שיגיע לחתונה',
             )
           : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
               children: <Widget>[
+                _MarriedHeader(count: marriedFriends),
+                const SizedBox(height: 14),
                 if (couples.isNotEmpty) ...<Widget>[
-                  const _ThanksToYouHeader(),
-                  const SizedBox(height: 14),
+                  _QuietHeader(
+                    title: 'ואלה התחתנו בזכותך!!',
+                    subtitle: 'הרעיונות שפתחת כאן והגיעו עד החופה',
+                    lonely: true,
+                  ),
+                  const SizedBox(height: 10),
                   for (final _Couple couple in couples) ...<Widget>[
                     _CoupleCard(couple: couple),
                     const SizedBox(height: 12),
@@ -130,9 +141,24 @@ class _Couple {
   final Person b;
 }
 
-/// The loud half of the page.
-class _ThanksToYouHeader extends StatelessWidget {
-  const _ThanksToYouHeader();
+/// The top of the page, and the only thing on it that is addressed to the
+/// matchmaker rather than about a friend.
+///
+/// **It counts everybody, and it credits the matchmaker for all of them.** The
+/// page used to open with "חברים שלך שהתחתנו בזכותך!!" over the weddings the
+/// app can actually claim, which meant a matchmaker whose own proposals had
+/// not reached a wedding yet opened this page on nothing at all — and one who
+/// had was told, by omission, that the other half of the page had nothing to
+/// do with them. Neither is true to how a database of friends works: somebody
+/// who was introduced, thought about, asked after or simply kept in mind is
+/// part of how they got there, and this is the one page in the app where that
+/// is worth saying out loud.
+class _MarriedHeader extends StatelessWidget {
+  const _MarriedHeader({required this.count});
+
+  /// Everybody on the page: both halves of every couple, plus the friends
+  /// marked "מזל טוב" on their own.
+  final int count;
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +185,9 @@ class _ThanksToYouHeader extends StatelessWidget {
           Text('🎉', style: theme.textTheme.displaySmall),
           const SizedBox(height: 6),
           Text(
-            'חברים שלך שהתחתנו בזכותך!!',
+            count == 1
+                ? 'חבר אחד מהמאגר שלך התחתן!'
+                : '$count חברים מהמאגר שלך התחתנו!',
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w900,
@@ -169,10 +197,12 @@ class _ThanksToYouHeader extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'הרעיונות שפתחת כאן והגיעו עד החופה',
+            'גם אם לא אתה היית השדכן בפועל, היה לך חלק במסע שלהם לחתונה. '
+            'כל הכבוד!',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
+              height: 1.35,
             ),
           ),
         ],

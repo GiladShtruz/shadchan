@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/community_challenge.dart';
@@ -55,6 +56,10 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
   CommunityTotals? _day;
   CommunityTotals? _week;
 
+  /// The matchmakers who put their name to a wedding this week, newest first.
+  /// Empty in most weeks, and empty until the read comes back.
+  List<String> _namedEngagements = const <String>[];
+
   /// Whether the last look at [AccountProvider] said there was an account.
   ///
   /// The block is built before Firebase has finished restoring the session, so
@@ -92,6 +97,13 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     final CommunityTotals week = await CommunityService.totals(
       CommunityPeriod.week,
     );
+    // The one line here that names somebody. Fetched beside the totals rather
+    // than derived from them, because the aggregate knows how many weddings
+    // there were and not whose they were — and only a record its own author
+    // signed carries a name at all.
+    final List<String> named = week.engagements > 0
+        ? await CommunityEngagementsService.namedThisWeek()
+        : const <String>[];
     if (week.resolved) {
       // The only place this is written. Next week it is what "בשבוע שעבר הגענו
       // ל־X" reads — see [CommunityProfileStore.recordCommunityWeek].
@@ -108,6 +120,7 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     setState(() {
       _day = day;
       _week = week;
+      _namedEngagements = named;
       _index = 0;
     });
   }
@@ -165,6 +178,7 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     final List<String> lines = CommunityHighlight.pulseLines(
       day: day,
       week: week,
+      namedMatchmakers: _namedEngagements,
     );
     final CommunityChallenge challenge = CommunityChallenge.build(
       weekKey: CommunityPeriods.weekKey(),

@@ -8,16 +8,16 @@ import 'package:shadchan/services/community_service.dart';
 /// would be a news section, and a news section is a second thing to maintain,
 /// to moderate and to be wrong.
 ///
-/// **Nobody is named.** The engagement line could carry a matchmaker's name —
-/// the leaderboard already carries names, with consent — but tying a *name* to
-/// an *engagement* is a different disclosure from tying a name to a score, and
-/// the record the app writes when a couple marries is deliberately anonymous.
-/// So the good news is announced and the couple stays theirs. Congratulating
-/// the matchmaker by name is a feature that needs its own consent, not a string
-/// change here.
+/// **The couple is never named, and the matchmaker only ever names
+/// themselves.** Tying a *name* to an *engagement* is a different disclosure
+/// from tying one to a score, so it has its own consent: the record the app
+/// writes when a couple marries is anonymous, and a name goes on it afterwards
+/// only if that matchmaker was asked about that wedding and said yes — see
+/// `CommunityEngagementsService.attachMatchmakerName`. Nothing about either
+/// member of the couple is ever stored or said.
 ///
-/// Every line is derived from figures the screen has already fetched, so this
-/// costs no reads at all.
+/// Every line is derived from figures the screen has already fetched. The one
+/// exception is the list of names in [pulseLines], which its caller fetches.
 abstract final class CommunityHighlight {
   /// The sentence for this window, or null when the community has been quiet
   /// enough that anything said would be an announcement of nothing.
@@ -65,7 +65,8 @@ abstract final class CommunityHighlight {
   /// **Today first, then the week.** "18 רעיונות נפתחו היום" is news; the same
   /// figure for the week is background. The engagement is the exception and
   /// leads whatever else is true — it is the only line here that is somebody's
-  /// life rather than somebody's activity.
+  /// life rather than somebody's activity — and where the matchmaker put their
+  /// own name to it, so does the line.
   ///
   /// The lines are short on purpose: this is one line of a banner, at whatever
   /// text size the phone is set to, and a sentence that wraps to three lines
@@ -73,15 +74,33 @@ abstract final class CommunityHighlight {
   ///
   /// Both windows come from figures the caller has already fetched, so this
   /// costs no reads.
+  ///
+  /// [namedMatchmakers] are the matchmakers who published their own name on an
+  /// engagement this week — see `CommunityEngagementsService.namedThisWeek`.
+  /// Each one gets a line of their own, ahead of everything else, and it stays
+  /// in the rotation for as long as the record is fresh, which is a week.
+  ///
+  /// **A name here was volunteered for this wedding.** It is not the
+  /// leaderboard's standing consent and it is not inferred from anything: the
+  /// matchmaker was asked when the couple married and said yes. Nothing about
+  /// the couple is stored on those records, so there is nothing about them to
+  /// say — the line congratulates the matchmaker and stops.
   static List<String> pulseLines({
     required CommunityTotals day,
     required CommunityTotals week,
+    List<String> namedMatchmakers = const <String>[],
   }) {
+    // A named engagement outranks the anonymous count of the same news, so the
+    // count only speaks for the weddings nobody put a name to.
+    final int unnamed = week.engagements - namedMatchmakers.length;
+
     return <String>[
-      if (week.engagements > 0)
-        week.engagements == 1
+      for (final String name in namedMatchmakers)
+        'מזל טוב לשדכן $name שזוג שלו התארס השבוע! 🎉',
+      if (unnamed > 0)
+        unnamed == 1
             ? 'מזל טוב! זוג נוסף התארס 🎉'
-            : 'מזל טוב! ${week.engagements} זוגות התארסו השבוע 🎉',
+            : 'מזל טוב! $unnamed זוגות התארסו השבוע 🎉',
       if (day.ideas > 0)
         day.ideas == 1
             ? 'רעיון חדש נפתח היום'

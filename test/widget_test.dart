@@ -129,7 +129,7 @@ void main() {
 
     expect(find.text('בית'), findsWidgets);
     expect(find.text('המאגר שלי'), findsWidgets);
-    expect(find.text('רעיונות'), findsWidgets);
+    expect(find.text('הרעיונות שלי'), findsWidgets);
   });
 
   testWidgets('Onboarding requires an explicit single or married choice', (
@@ -429,7 +429,7 @@ void main() {
 
       expect(find.text('בית'), findsOneWidget);
       expect(find.text('המאגר שלי'), findsOneWidget);
-      expect(find.text('רעיונות'), findsOneWidget);
+      expect(find.text('הרעיונות שלי'), findsOneWidget);
       expect(find.text('הלל'), findsOneWidget);
       expect(find.text('התאמות'), findsOneWidget);
       expect(find.text('הוספת רעיון'), findsOneWidget);
@@ -1174,11 +1174,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // The banner carries the page's own name now, not the wordmark: only בית
-    // has no name of its own, so only בית signs itself. "רעיונות" is therefore
-    // on screen twice — the bar and the tab at the foot — which is what the
-    // count below says.
+    // has no name of its own, so only בית signs itself. "הרעיונות שלי" is
+    // therefore on screen twice — the bar and the tab at the foot — which is
+    // what the count below says.
     expect(find.byType(ShadchanWordmark), findsNothing);
-    expect(find.text('רעיונות'), findsNWidgets(2));
+    expect(find.text('הרעיונות שלי'), findsNWidgets(2));
     // And the search row is part of the bar, so it never folds away.
     expect(find.byType(ShadchanSearchBottom), findsOneWidget);
 
@@ -1208,7 +1208,7 @@ void main() {
     expect(find.text('פתוחים'), findsNothing);
     // The name and the search row are the bar's, so they stay put while the
     // category buttons fold: that is the whole point of moving them there.
-    expect(find.text('רעיונות'), findsNWidgets(2));
+    expect(find.text('הרעיונות שלי'), findsNWidgets(2));
     expect(find.byType(ShadchanSearchBottom), findsOneWidget);
 
     // Closing it brings the header back whatever the scroll position is. The
@@ -1407,8 +1407,8 @@ void main() {
     expect(find.text('יאללה לקדם — לשאול את נדיב'), findsOneWidget);
     expect(find.text('פתיחת שיחה עם נהרה'), findsNothing);
 
-    // The full sheet is still reachable per side, from the disc on each face.
-    expect(find.text('רעיון חדש'), findsOneWidget);
+    // The status sits beside it, named, and the alternative side under it.
+    expect(find.text('סטטוס: רעיון חדש'), findsOneWidget);
     expect(find.text('לפנות קודם לבחורה'), findsOneWidget);
   });
 
@@ -1473,18 +1473,43 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // Opening the actions is all it takes: the journal is lying open at the
-    // bottom of the panel, with everything that has happened in it.
+    // bottom of the panel, with everything that has happened in it. Each entry
+    // is one rich line — the sentence, then the time in small type — so the
+    // finder has to look inside it.
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    expect(find.text('דיברנו בטלפון'), findsOneWidget);
-    expect(find.textContaining('ההצעה עברה להמתנה'), findsOneWidget);
+    expect(
+      find.textContaining('דיברנו בטלפון', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('ההצעה עברה להמתנה', findRichText: true),
+      findsOneWidget,
+    );
     // A composer, because the journal is a conversation and not a log.
     expect(find.text('מה קרה עם הרעיון?'), findsOneWidget);
 
+    // **Newest first**, and the automatic line is the newer of the two.
+    final Offset written1 = tester.getTopLeft(
+      find.textContaining('דיברנו בטלפון', findRichText: true),
+    );
+    final Offset recorded1 = tester.getTopLeft(
+      find.textContaining('ההצעה עברה להמתנה', findRichText: true),
+    );
+    expect(recorded1.dy, lessThan(written1.dy));
+
+    // A tap anywhere on the compact journal opens the full one — the "מסך מלא"
+    // link in its corner is gone. Editing a line lives there.
+    await tester.tap(find.textContaining('דיברנו בטלפון', findRichText: true));
+    await tester.pumpAndSettle();
+    expect(find.text('יומן הרעיון'), findsWidgets);
+
     // Every line is the matchmaker's to reword or remove — the automatic ones
     // included. The app only starts the sentences.
-    await tester.tap(find.text('דיברנו בטלפון'));
+    await tester.tap(
+      find.textContaining('דיברנו בטלפון', findRichText: true).last,
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('שורה ביומן'), findsOneWidget);

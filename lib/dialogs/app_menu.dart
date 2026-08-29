@@ -3,13 +3,45 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
+import 'package:shadchan/dialogs/community_dialogs.dart';
+import 'package:shadchan/dialogs/privacy_policy_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 
 /// What the overflow menu can do.
-enum AppMenuAction { marriedFriends, profile, settings, report, feedbackCenter }
+enum AppMenuAction {
+  marriedFriends,
+  profile,
+  settings,
+  updatesGroup,
+  share,
+  report,
+  help,
+  contact,
+  privacyPolicy,
+  feedbackCenter,
+}
+
+/// Which of the two menus a bar is wearing.
+///
+/// **בית and the two lists do not want the same menu, and folding them into
+/// one made both worse.** המאגר שלי and הרעיונות שלי are working screens: what
+/// is wanted from a corner there is the short way to the weddings, to the
+/// matchmaker's own page, to the settings and to "something is broken". בית is
+/// where somebody sits for a moment, and its menu is the one that has always
+/// carried the app itself — sharing it, the community group, the guide, an
+/// address to write to, the privacy policy.
+///
+/// So there are two, and they share only their shape.
+enum AppMenuVariant {
+  /// The home screen's own menu: the app, and the ways to reach a person.
+  home,
+
+  /// המאגר שלי and הרעיונות שלי: four rows, all of them destinations.
+  list,
+}
 
 /// The menu behind the hamburger in the top banner.
 ///
@@ -24,17 +56,24 @@ enum AppMenuAction { marriedFriends, profile, settings, report, feedbackCenter }
 /// corner is a control — the menu belongs to the button and should come out of
 /// it.
 ///
-/// **Four rows, in three groups.** It used to carry nine: sharing the app, the
-/// community group, the guide, an email address and the privacy policy on top
-/// of the four that are left. All of those live in the settings, which is where
-/// somebody goes looking for them once; on a menu that is opened from every
-/// screen they were five rows to read past. What is here is what is reached
-/// often — the weddings, the matchmaker's own page, the settings, and the way
-/// to say something is broken. The rows carry their icon in a tinted square
-/// rather than bare, which is what stops a column of thin grey glyphs from
-/// reading as disabled.
+/// **Two menus, one button.** On המאגר שלי and הרעיונות שלי it is four rows in
+/// three groups — the weddings, the matchmaker's own page, the settings, and
+/// the way to say something is broken — because those are working screens and
+/// what a corner is reached for there is a destination. On בית it is the menu
+/// the home screen has always had: the settings, and then everything that is
+/// about the app itself rather than about the database. See [AppMenuVariant].
+///
+/// The rows carry their icon in a tinted square rather than bare, which is what
+/// stops a column of thin grey glyphs from reading as disabled.
 class AppMenuButton extends StatelessWidget {
-  const AppMenuButton({super.key, this.boxed = false});
+  const AppMenuButton({
+    super.key,
+    this.boxed = false,
+    this.variant = AppMenuVariant.list,
+  });
+
+  /// Which of the two menus this button opens.
+  final AppMenuVariant variant;
 
   /// Trims the trigger down to the bare three dots at the bar's outer edge:
   /// no rounded square, no border. The frame and the info glyph made the menu
@@ -82,26 +121,7 @@ class AppMenuButton extends StatelessWidget {
           ),
           const PopupMenuDivider(height: 9),
         ],
-        // The best thing that ever comes out of this app, first on the menu:
-        // everybody the matchmaker knows who got married.
-        _item(
-          AppMenuAction.marriedFriends,
-          Icons.celebration_outlined,
-          'חברים שהתחתנו',
-        ),
-        const PopupMenuDivider(height: 9),
-        // The matchmaker's own page used to be reached by tapping their
-        // photograph in the corner of the home bar. The dots took that corner
-        // back — see `HomeScreen._buildGreetingAppBar` — so the way to it lives
-        // here.
-        _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי'),
-        _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
-        const PopupMenuDivider(height: 9),
-        _item(
-          AppMenuAction.report,
-          Icons.forum_outlined,
-          'שליחת תקלה או רעיון',
-        ),
+        ...(variant == AppMenuVariant.home ? _homeRows() : _listRows()),
       ],
     );
 
@@ -119,6 +139,49 @@ class AppMenuButton extends StatelessWidget {
             child: button,
           )
         : button;
+  }
+
+  /// המאגר שלי and הרעיונות שלי: four destinations and nothing else.
+  static List<PopupMenuEntry<AppMenuAction>> _listRows() {
+    return <PopupMenuEntry<AppMenuAction>>[
+      // The best thing that ever comes out of this app, first on the menu:
+      // everybody the matchmaker knows who got married.
+      _item(
+        AppMenuAction.marriedFriends,
+        Icons.celebration_outlined,
+        'חברים שהתחתנו',
+      ),
+      const PopupMenuDivider(height: 9),
+      _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי'),
+      _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
+      const PopupMenuDivider(height: 9),
+      _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
+    ];
+  }
+
+  /// בית: the settings, and then everything that is about the app rather than
+  /// about the database — sharing it, the community group, the guide, an
+  /// address to write to, the privacy policy.
+  static List<PopupMenuEntry<AppMenuAction>> _homeRows() {
+    return <PopupMenuEntry<AppMenuAction>>[
+      _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
+      const PopupMenuDivider(height: 9),
+      _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
+      _item(AppMenuAction.share, Icons.ios_share_outlined, 'שיתוף האפליקציה'),
+      if (CommunityLinks.hasUpdatesGroup)
+        _item(
+          AppMenuAction.updatesGroup,
+          Icons.groups_outlined,
+          'הצטרפות לקבוצת הקהילה',
+        ),
+      _item(AppMenuAction.help, Icons.help_outline_rounded, 'עזרה והדרכה'),
+      _item(AppMenuAction.contact, Icons.mail_outline_rounded, 'יצירת קשר'),
+      _item(
+        AppMenuAction.privacyPolicy,
+        Icons.privacy_tip_outlined,
+        'מדיניות פרטיות',
+      ),
+    ];
   }
 
   static PopupMenuItem<AppMenuAction> _item(
@@ -146,6 +209,22 @@ class AppMenuButton extends StatelessWidget {
         context.push('/profile/settings');
       case AppMenuAction.report:
         context.push('/support/report');
+      case AppMenuAction.updatesGroup:
+        // The dialog rather than the link, because the link alone has no way of
+        // hearing "אני כבר בקבוצה" — and that is the only answer that stops the
+        // reminders.
+        UpdatesGroupDialog.show(context);
+      case AppMenuAction.share:
+        shareTheApp();
+      case AppMenuAction.help:
+        context.push('/support/help');
+      case AppMenuAction.contact:
+        CommunityLinks.openSupportEmail();
+      case AppMenuAction.privacyPolicy:
+        // The dialog rather than `/privacy-policy`, so that reading it does not
+        // cost the page somebody was already on. The full screen is still there
+        // behind the settings link.
+        PrivacyPolicyDialog.show(context);
       case AppMenuAction.feedbackCenter:
         context.push('/support/admin');
     }

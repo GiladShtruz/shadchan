@@ -12,16 +12,18 @@ import 'package:shadchan/widgets/app_notice.dart';
 /// **A chat rather than a list, because that is what it actually is.** Every
 /// move on a proposal now writes a line here — the idea being opened, a status
 /// changing, a reminder set, a contact added, a card sent — and the matchmaker
-/// writes their own lines in between. Read top to bottom that is a
-/// conversation about one couple, so it is drawn as one: oldest first, newest
-/// at the bottom, the composer under it, and the view opening already scrolled
-/// to the end where the news is.
+/// writes their own lines in between. Read top to bottom that is the story of
+/// one couple.
 ///
-/// The two kinds of line are told apart by shape, not by a label. What the app
-/// wrote is a quiet centred strip, the way a chat marks that somebody joined;
-/// what the matchmaker wrote is a bubble on their own side. Neither is more
-/// important — but a wall of identical cards is unreadable, and the eye needs
-/// somewhere to skip to.
+/// **Newest first.** It ran the other way, the way a chat does, which is right
+/// for a window somebody is sitting inside and wrong for a history that is
+/// glanced at: what a matchmaker opening a proposal wants is the last thing
+/// that happened, and it was at the bottom of a list that could be forty lines
+/// long. The composer stays under it either way.
+///
+/// The two kinds of line are told apart by the dot beside them and by the
+/// weight of the words, not by a label — a wall of identical rows is
+/// unreadable, and the eye needs somewhere to skip to.
 ///
 /// **Everything here is still the matchmaker's to change.** An automatic line
 /// opens the same editor a hand-written one does. It is their journal; the app
@@ -44,14 +46,15 @@ abstract final class MatchJournalSheet {
 /// six identical tiles, which made the proposal's whole history a thing to
 /// remember to go and look at — and a history nobody opens is a history nobody
 /// keeps. So it is not a button any more: every opening of the actions panel
-/// shows what has happened to this proposal, oldest first, with the composer
-/// under it.
+/// shows what has happened to this proposal, newest line first, with the
+/// composer under it.
 ///
-/// Everything is here, not a preview. A proposal with forty lines is a
-/// proposal worth reading forty lines of, and the panel is closed by default —
-/// nothing is being pushed at anybody. The one concession to length is
-/// [MatchJournalSheet], still reachable from the header, which gives the same
-/// journal a full screen and a scroll of its own.
+/// **About seven lines, then it scrolls inside itself.** Drawing the whole
+/// history in place was right while the journal was somewhere you went; inside
+/// a card in a scrolling list a long one pushed the composer and the next
+/// proposal off the screen. A tap anywhere on it opens [MatchJournalSheet] —
+/// the same journal with a screen to itself, which is also where a line is
+/// edited.
 class MatchJournalView extends StatefulWidget {
   const MatchJournalView({super.key, required this.matchId});
 
@@ -64,6 +67,10 @@ class MatchJournalView extends StatefulWidget {
 class _MatchJournalViewState extends State<MatchJournalView> {
   final TextEditingController _controller = TextEditingController();
   final DateFormat _time = DateFormat('dd.MM · HH:mm');
+
+  /// About seven lines of journal, which is as much as a card in a scrolling
+  /// list can hold without becoming the list.
+  static const double _compactMaxHeight = 190;
 
   @override
   void initState() {
@@ -82,6 +89,11 @@ class _MatchJournalViewState extends State<MatchJournalView> {
     final ThemeData theme = Theme.of(context);
     final MatchRepository repository = context.watch<MatchRepository>();
     final List<MatchNote> notes = repository.getNotesForMatch(widget.matchId);
+
+    // Newest first. A journal read inside a card is read from the top, and the
+    // line worth reading is the last thing that happened — which was at the
+    // bottom of a list that could be forty lines long.
+    final List<MatchNote> newestFirst = notes.reversed.toList();
 
     return Container(
       width: double.infinity,
@@ -112,44 +124,45 @@ class _MatchJournalViewState extends State<MatchJournalView> {
                   ),
                 ),
               ),
-              InkWell(
-                onTap: () => _openFull(repository),
-                borderRadius: BorderRadius.circular(999),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  child: Text(
-                    'מסך מלא',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
+              // The "מסך מלא" link is gone. A word in the corner of a block is
+              // a thing to notice before it can be used; the block itself is
+              // the target now — see the tap below.
             ],
           ),
           if (notes.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-              child: Text(
-                'כל פעולה ברעיון תיכתב כאן מעצמה, ואפשר גם להוסיף הערות משלך.',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            // Nothing at all under the heading. The line that used to sit here
+            // explained the feature to somebody who had not used it yet, which
+            // is the one reader who does not need to be told: the first line
+            // writes itself the moment anything happens to the proposal.
+            const SizedBox(height: 4)
+          else
+            // **Seven rows, then a scroll of its own.** Everything, always, was
+            // the rule while the journal was a thing you had to go and open;
+            // now that it lies open inside every proposal's actions a forty-line
+            // history pushed the composer — and the next card in the list — off
+            // the bottom of the screen. Seven is about a screenful of a card.
+            //
+            // A tap anywhere on it opens the full journal, where a line can be
+            // edited. Scrolling inside it still works: a drag is not a tap.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: _compactMaxHeight),
+              child: GestureDetector(
+                onTap: () => _openFull(repository),
+                child: ListView.builder(
+                  primary: false,
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: newestFirst.length,
+                  itemBuilder: (BuildContext context, int i) => _JournalLine(
+                    note: newestFirst[i],
+                    timestamp: _time.format(newestFirst[i].createdAt),
+                    isFirst: i == 0,
+                    isLast: i == newestFirst.length - 1,
+                    onEdit: () => _openFull(repository),
+                  ),
                 ),
               ),
-            )
-          else
-            for (int i = 0; i < notes.length; i++)
-              _JournalLine(
-                note: notes[i],
-                timestamp: _time.format(notes[i].createdAt),
-                isFirst: i == 0,
-                isLast: i == notes.length - 1,
-                onEdit: () => _edit(repository, notes[i]),
-              ),
+            ),
           const SizedBox(height: 2),
           Row(
             children: <Widget>[
@@ -200,23 +213,8 @@ class _MatchJournalViewState extends State<MatchJournalView> {
     await repository.addNote(widget.matchId, text);
   }
 
-  Future<void> _edit(MatchRepository repository, MatchNote note) async {
-    final _JournalEdit? result = await showDialog<_JournalEdit>(
-      context: context,
-      builder: (BuildContext context) => _JournalEditDialog(note: note),
-    );
-    if (result == null) {
-      return;
-    }
-    if (result.delete) {
-      await repository.deleteNote(note.id);
-      return;
-    }
-    final String text = result.text.trim();
-    if (text.isNotEmpty && text != note.text.trim()) {
-      await repository.updateNote(note.id, text);
-    }
-  }
+  // Editing a line is not offered here any more: a tap on the compact journal
+  // opens the full one, which is where a line is reworded or removed.
 }
 
 class _MatchJournal extends StatefulWidget {
@@ -247,28 +245,32 @@ class _MatchJournalState extends State<_MatchJournal> {
     super.dispose();
   }
 
-  /// The newest line is the one worth reading, so the journal opens on it.
+  /// The newest line leads the list now, so "where the news is" is the top.
   void _jumpToEnd({bool animate = false}) {
     if (!_scroll.hasClients) {
       return;
     }
-    final double end = _scroll.position.maxScrollExtent;
+    const double start = 0;
     if (animate) {
       _scroll.animateTo(
-        end,
+        start,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
       );
       return;
     }
-    _scroll.jumpTo(end);
+    _scroll.jumpTo(start);
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final MatchRepository repository = context.watch<MatchRepository>();
-    final List<MatchNote> notes = repository.getNotesForMatch(widget.matchId);
+    // Newest first, the same way round as the journal inside a card.
+    final List<MatchNote> notes = repository
+        .getNotesForMatch(widget.matchId)
+        .reversed
+        .toList();
 
     return Padding(
       padding: EdgeInsets.only(
@@ -418,18 +420,14 @@ class _EmptyJournal extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 10),
+            // Three words and nothing under them. The sentence that used to
+            // follow described how the journal works to the one reader who has
+            // not seen it work yet — and the first line writes itself the
+            // moment anything happens to the proposal.
             Text(
               'היומן עוד ריק',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'כל פעולה ברעיון תיכתב כאן מעצמה, ואפשר גם להוסיף הערות משלך.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -534,68 +532,48 @@ class _JournalLine extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        // Both halves give way rather than only the second:
-                        // "24.08 · 14:32" and "· הערה שלך" together are wider
-                        // than the text column on a narrow card at a large
-                        // system font, and the row is one line by design.
-                        Flexible(
-                          child: Text(
-                            timestamp,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                            ),
+                // **The sentence first, and the clock inside it.** The date
+                // used to hold a line of its own above every entry, in the
+                // same size as the text and in a heavier weight — so a journal
+                // of ten lines was ten timestamps with ten sentences between
+                // them, and what the eye landed on down the column was a
+                // column of dates. The stamp is now the last few characters of
+                // the line the entry is written on, small enough to be read
+                // only when it is looked for.
+                child: Text.rich(
+                  TextSpan(
+                    children: <InlineSpan>[
+                      if (from != null)
+                        TextSpan(
+                          text: 'מזל טוב מ$from · ',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: dot,
                           ),
                         ),
-                        if (from != null) ...<Widget>[
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              'מזל טוב מ$from',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                color: dot,
-                              ),
-                            ),
-                          ),
-                        ] else if (mine) ...<Widget>[
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              '· הערה שלך',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      note.text,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        height: 1.35,
-                        fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
-                        color: mine
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurfaceVariant,
+                      TextSpan(
+                        text: note.text,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          height: 1.35,
+                          fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                          color: mine
+                              ? theme.colorScheme.onSurface
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
-                  ],
+                      TextSpan(
+                        text: '  $timestamp',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 9,
+                          height: 1.35,
+                          fontWeight: FontWeight.w400,
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.75,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

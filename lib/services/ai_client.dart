@@ -13,12 +13,21 @@ abstract final class AiClient {
   /// location, so callers create one per call with the system instruction and
   /// output schema that fit their own parsing job rather than sharing a model
   /// configured for someone else's.
+  ///
+  /// Limited-use App Check tokens are on so that the console's replay
+  /// protection can be enforced: each request then carries a fresh, single-use
+  /// token instead of reusing the cached one for the hour, and a token lifted
+  /// off one request buys an attacker nothing on the next. The cost is a full
+  /// Play Integrity attestation per call rather than per hour, which is
+  /// seconds on the first one — worth it only because an import is already a
+  /// slow, deliberate action rather than something on a hot path.
   static GenerativeModel model({
     Content? systemInstruction,
     GenerationConfig? generationConfig,
   }) {
     return FirebaseAI.vertexAI(
       location: AiConfig.vertexLocation,
+      useLimitedUseAppCheckTokens: true,
     ).generativeModel(
       model: AiConfig.model,
       systemInstruction: systemInstruction,

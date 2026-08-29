@@ -632,7 +632,7 @@ class _AppShell extends StatelessWidget {
                 BottomNavigationBarItem(
                   icon: Icon(Icons.favorite_border),
                   activeIcon: Icon(Icons.favorite),
-                  label: 'רעיונות',
+                  label: 'הרעיונות שלי',
                 ),
               ],
             )

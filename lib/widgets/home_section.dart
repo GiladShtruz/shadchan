@@ -938,3 +938,45 @@ class HomeArrowButton extends StatelessWidget {
     );
   }
 }
+
+/// The heading of one of the two invitations at the top of the home page —
+/// "עוצרים רגע לחשוב על חברים" and "רעיונות שהמאגר מציע לך".
+///
+/// **One widget because the two have to be the same size, and could not be.**
+/// Both asked for `titleLarge` and both were wrapped in a `FittedBox`, so what
+/// each of them was actually drawn at came out of the width left over on its
+/// own card — a picture on one, a pair of portraits and a chevron on the other
+/// — and the two blocks that sit one above the other were headed at two
+/// different sizes. The size is fixed here instead, and what gives is the
+/// number of lines: a heading that wraps on a narrow phone is still the same
+/// heading as the one above it, and a heading that shrinks is not.
+class HomeBannerTitle extends StatelessWidget {
+  const HomeBannerTitle({super.key, required this.text, this.color});
+
+  final String text;
+
+  /// The block's own accent, where it has one. Defaults to the page's ink.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Text(
+        text,
+        // No line cap. What gives at a large system font on a narrow phone is
+        // the number of lines, never the size: two blocks that sit one above
+        // the other and are headed at two different sizes read as a banner
+        // with a footnote, which is exactly what the `FittedBox` on each of
+        // them used to produce.
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w900,
+          height: 1.15,
+          color: color ?? theme.colorScheme.onSurface,
+        ),
+      ),
+    );
+  }
+}

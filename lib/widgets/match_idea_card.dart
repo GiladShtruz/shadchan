@@ -35,6 +35,7 @@ class MatchIdeaCard extends StatefulWidget {
     this.onChangeCheckInFrequency,
     this.datingSince,
     this.onActionsOpenChanged,
+    this.onLongPress,
     this.compact = false,
     this.highlighted = false,
   });
@@ -89,6 +90,10 @@ class MatchIdeaCard extends StatefulWidget {
   /// the filter banner over it stops earning its strip of screen. See
   /// `MatchesScreen`.
   final ValueChanged<bool>? onActionsOpenChanged;
+
+  /// A long press on the card. The one way to delete a proposal — see
+  /// `MatchesScreen._confirmDelete` for why it is a gesture and not a button.
+  final VoidCallback? onLongPress;
 
   final bool compact;
 
@@ -176,6 +181,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
@@ -725,6 +731,7 @@ class _CardActionBar extends StatelessWidget {
                             startedAt: datingSince,
                             onCheckInWith: onCheckInWith,
                             onChangeFrequency: onChangeCheckInFrequency,
+                            onSetStage: onSetStage,
                           )
                         else if (next != null && onAdvance != null) ...<Widget>[
                           _PromoteRow(
@@ -826,8 +833,8 @@ class _PromoteRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final bool startingToDate = step == MatchNextStep.startDating;
-    final Color ink = startingToDate ? AppColors.statusDating : kWhatsAppGreen;
+    final bool bothAsked = step == MatchNextStep.startDating;
+    final Color ink = bothAsked ? AppColors.statusDating : kWhatsAppGreen;
     final String? nudge = MatchStaleness.nudge(match);
     final String? sent = match.lastShareLabel;
     final bool hasFooter =
@@ -846,12 +853,15 @@ class _PromoteRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           InkWell(
-            onTap: onTap,
+            // Nothing to press once both sides have been asked: the row is a
+            // statement of where the proposal stands, and what happens next is
+            // one of the three status tiles under it.
+            onTap: bothAsked ? null : onTap,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
               child: Row(
                 children: <Widget>[
-                  // The colour lives here and on the button's own words, and
+                  // The colour lives here and on the row's own words, and
                   // nowhere else on the panel.
                   Container(
                     width: 34,
@@ -861,8 +871,8 @@ class _PromoteRow extends StatelessWidget {
                       color: ink.withValues(alpha: dark ? 0.22 : 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: startingToDate
-                        ? Icon(Icons.celebration_outlined, size: 18, color: ink)
+                    child: bothAsked
+                        ? Icon(Icons.done_all_rounded, size: 18, color: ink)
                         : FaIcon(
                             FontAwesomeIcons.whatsapp,
                             size: 18,
@@ -886,24 +896,25 @@ class _PromoteRow extends StatelessWidget {
                             color: ink,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          // The nudge takes the line when there is one: "what
-                          // this button does" is guessable, and "nobody has
-                          // touched this in a week" is not.
-                          nudge ?? MatchStages.buttonHint(step),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: nudge == null
-                                ? theme.colorScheme.onSurfaceVariant
-                                : AppColors.statusChecking,
-                            fontWeight: nudge == null
-                                ? FontWeight.w500
-                                : FontWeight.w700,
-                            height: 1.3,
+                        // **Only the nudge gets a second line.** What the
+                        // button does was written under it on every open
+                        // proposal in the list — a caption explaining a button
+                        // whose own words already say it. That a proposal has
+                        // not been touched in a week is the one thing here
+                        // that cannot be read off the row itself.
+                        if (nudge != null) ...<Widget>[
+                          const SizedBox(height: 2),
+                          Text(
+                            nudge,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: AppColors.statusChecking,
+                              fontWeight: FontWeight.w700,
+                              height: 1.3,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -911,13 +922,14 @@ class _PromoteRow extends StatelessWidget {
                   // carry `matchTextDirection`, so each one is mirrored in this
                   // RTL app, and this is the one that actually draws pointing
                   // left — the way the row reads and the way the card goes out.
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant.withValues(
-                      alpha: 0.7,
+                  if (!bothAsked)
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -986,12 +998,20 @@ class _PromoteRow extends StatelessWidget {
   }
 }
 
-/// The stage, as a chip that opens a menu.
+/// The proposal's status, as a chip that opens the list of statuses.
 ///
-/// Small and grey on purpose: it is a correction, not an action. The button
-/// above it is what moves the proposal in the ordinary course of things, and a
-/// second control of the same weight beside it would make the panel ask a
-/// question instead of offering an answer.
+/// **It says "סטטוס" before it says the status.** The chip used to be the bare
+/// words — "שאלתי את הבחור" — sitting in a footer under a button, which reads
+/// as a caption on the button rather than as the one field on the panel that
+/// can be set. Naming it is what turns it into a control, and the arrow beside
+/// it is then a promise the reader can act on.
+///
+/// **The list goes backwards as well as forwards.** Every status is offered
+/// whatever the proposal is on now, which is the whole point: a "מתחילים לצאת"
+/// tapped by mistake has to be undoable, and it has to be undoable from the
+/// same place it was set. Still small and grey, because a correction is not an
+/// action — the button above it is what moves a proposal in the ordinary
+/// course of things.
 class _StageMenu extends StatelessWidget {
   const _StageMenu({required this.current, required this.onSelected});
 
@@ -1003,11 +1023,22 @@ class _StageMenu extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return PopupMenuButton<MatchStage>(
-      tooltip: 'עדכון שלב הרעיון',
+      tooltip: 'עדכון סטטוס הרעיון',
       position: PopupMenuPosition.under,
       padding: EdgeInsets.zero,
       onSelected: onSelected,
       itemBuilder: (BuildContext context) => <PopupMenuEntry<MatchStage>>[
+        PopupMenuItem<MatchStage>(
+          enabled: false,
+          height: 34,
+          child: Text(
+            'עדכון סטטוס',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
         for (final MatchStage stage in MatchStage.values)
           if (stage.isSelectable)
             PopupMenuItem<MatchStage>(
@@ -1031,11 +1062,19 @@ class _StageMenu extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(
-              current.label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.onSurfaceVariant,
+            // "סטטוס: מחכים לתשובת הבחורה" is a long chip on a narrow card at
+            // a large system font. It wraps rather than being cut: the whole
+            // point of the word "סטטוס" in front is that the control names
+            // itself, and half a name is worse than none.
+            Flexible(
+              child: Text(
+                'סטטוס: ${current.label}',
+                maxLines: 2,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  height: 1.25,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
             Icon(
@@ -1070,6 +1109,7 @@ class _DatingPanel extends StatelessWidget {
     required this.startedAt,
     required this.onCheckInWith,
     required this.onChangeFrequency,
+    required this.onSetStage,
   });
 
   final MatchIdea match;
@@ -1078,6 +1118,16 @@ class _DatingPanel extends StatelessWidget {
   final DateTime? startedAt;
   final void Function(Person person)? onCheckInWith;
   final void Function(int days)? onChangeFrequency;
+
+  /// The way back out of "מתחילים לצאת".
+  ///
+  /// **A couple who are out had no undo at all.** The status chip lives in the
+  /// promotion row's footer, and this panel replaces that row entirely — so a
+  /// proposal marked as dating by a mis-tap was stuck there, with both
+  /// candidates marked "תפוס" and the card offering nothing but a wedding or a
+  /// closure. It is the same menu it is everywhere else, at the foot of the
+  /// panel where it stays out of the way of the good news.
+  final void Function(MatchStage stage)? onSetStage;
 
   @override
   Widget build(BuildContext context) {
@@ -1204,6 +1254,14 @@ class _DatingPanel extends StatelessWidget {
                   ),
               ],
             ),
+            if (onSetStage != null)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: _StageMenu(
+                  current: MatchStage.of(match),
+                  onSelected: onSetStage!,
+                ),
+              ),
           ],
         ),
       ),
@@ -1311,7 +1369,15 @@ class _SecondaryActionsLine extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Row(
+        // **A `Wrap`, so neither pill is ever cut.** Side by side in a `Row`
+        // the second one took whatever the first left, which on any ordinary
+        // phone was not enough: "הוספת איש קשר שקשור לרעיון" was ellipsized to
+        // "הוספת איש קשר שקשור…" on every open proposal in the list. Stacked
+        // when they do not fit, side by side when they do, and each of them
+        // always shows its whole label.
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
           children: <Widget>[
             _MiniAction(
               icon: date != null
@@ -1325,14 +1391,11 @@ class _SecondaryActionsLine extends StatelessWidget {
                   : theme.colorScheme.onSurfaceVariant,
               onTap: onReminder,
             ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: _MiniAction(
-                icon: Icons.person_add_alt_1_outlined,
-                label: 'הוספת איש קשר שקשור לרעיון',
-                tint: theme.colorScheme.onSurfaceVariant,
-                onTap: onAddContact,
-              ),
+            _MiniAction(
+              icon: Icons.person_add_alt_1_outlined,
+              label: 'הוספת איש קשר שקשור לרעיון',
+              tint: theme.colorScheme.onSurfaceVariant,
+              onTap: onAddContact,
             ),
           ],
         ),
@@ -1395,13 +1458,19 @@ class _MiniAction extends StatelessWidget {
             children: <Widget>[
               Icon(icon, size: 14, color: tint),
               const SizedBox(width: 5),
+              // **It wraps rather than being cut.** "הוספת איש קשר שקשור
+              // לרעיון" is wider than the inside of a proposal card on an
+              // ordinary phone, so clamping it to one line meant it was
+              // ellipsized to "הוספת איש קשר שקשור…" every time. Two lines
+              // cost a few pixels once; a label nobody can finish reading
+              // costs the action.
               Flexible(
                 child: Text(
                   label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    height: 1.25,
                     color: tint,
                   ),
                 ),

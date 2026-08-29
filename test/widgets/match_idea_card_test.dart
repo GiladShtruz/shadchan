@@ -300,9 +300,10 @@ void main() {
       tester.getCenter(find.text('יאללה לקדם — לשאול את דוד')).dy,
       lessThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
     );
-    // The stage, beside it and editable — most matchmaking happens on a call
-    // the app never sees.
-    expect(find.text('רעיון חדש'), findsOneWidget);
+    // The status, beside it, named and editable — most matchmaking happens on
+    // a call the app never sees, and a status that can only move forwards is
+    // one that goes wrong and stays wrong.
+    expect(find.text('סטטוס: רעיון חדש'), findsOneWidget);
     // And the way to start with her instead, offered only while it is still a
     // choice.
     expect(find.text('לפנות קודם לבחורה'), findsOneWidget);
@@ -332,12 +333,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('יאללה לקדם — לשאול את שרה'), findsOneWidget);
-    expect(find.text('שאלתי את הבחור'), findsOneWidget);
+    // Named for what is being waited for, not for the call that was made.
+    expect(find.text('סטטוס: מחכים לתשובת הבחור'), findsOneWidget);
     expect(find.text('לפנות קודם לבחורה'), findsNothing);
     // What already went out is context under the button, not the button.
     expect(find.text('הכרטיס של שרה נשלח לדוד'), findsOneWidget);
 
-    // Both asked: the only thing left is the two of them meeting.
+    // Both asked: there is nothing left for the app to do on anybody's behalf,
+    // so the row stops being a button and says where the proposal stands. What
+    // happens next is one of the three status tiles under it.
+    final List<MatchNextStep> afterBoth = <MatchNextStep>[];
     await tester.pumpWidget(
       wrap(
         card(
@@ -346,7 +351,7 @@ void main() {
           askedMaleAt: DateTime(2026, 8, 20),
           askedFemaleAt: DateTime(2026, 8, 21),
           onAction: (_) {},
-          onAdvance: (_) {},
+          onAdvance: afterBoth.add,
           onSetStage: (_) {},
         ),
       ),
@@ -355,8 +360,21 @@ void main() {
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    expect(find.text('יאללה לקדם — מתחילים לצאת'), findsOneWidget);
+    expect(find.text('יאללה לקדם — מתחילים לצאת'), findsNothing);
     expect(find.text('שאלתי את שניהם'), findsOneWidget);
+    expect(find.text('סטטוס: בבדיקה'), findsOneWidget);
+    // The three answers that can come back, and nothing else.
+    for (final String action in <String>[
+      'העברה להמתנה',
+      'מתחילים לצאת',
+      'סגירת רעיון',
+    ]) {
+      expect(find.text(action), findsOneWidget, reason: action);
+    }
+
+    await tester.tap(find.text('שאלתי את שניהם'));
+    await tester.pump();
+    expect(afterBoth, isEmpty);
   });
 
   testWidgets('a week with nothing happening says so, without reordering', (

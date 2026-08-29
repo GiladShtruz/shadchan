@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -34,10 +35,16 @@ import 'package:shadchan/widgets/person_avatar.dart';
 /// one person's face and name at the top, says in one line why they are worth a
 /// thought today, and then shows the three people the database thinks could
 /// suit them — a face and a full name each, as three small cards across the
-/// bottom. Tapping one opens the two cards facing each other; under them
-/// "התאמות נוספות" opens the rest and "דלג" moves on. The card is held to two
-/// short rows on purpose: the screen is for running an eye over many friends,
-/// so nothing on it is allowed to grow with its content.
+/// bottom — and above those, any proposal that is already open for them, which
+/// is the one thing that outranks a pair the database imagined. Tapping a
+/// suggestion opens the two cards facing each other; tapping an open idea goes
+/// to it on הרעיונות שלי. At the foot of the card, under a hairline,
+/// "התאמות נוספות" opens the rest and "אחשוב עליו בהזדמנות אחרת" puts this
+/// friend away for a few weeks.
+///
+/// Only friends marked פנוי appear here at all: the page asks who somebody
+/// could go with, and that is not a question about a person who is out with
+/// somebody else.
 class ThinkScreen extends StatefulWidget {
   const ThinkScreen({super.key});
 
@@ -49,23 +56,9 @@ class ThinkScreen extends StatefulWidget {
     );
   }
 
-  /// Tapping a person opens the question this page is asking — "who could this
-  /// one go with?" — which is the matches screen, not the profile.
-  ///
-  /// The profile is pushed underneath it rather than skipped, so backing out of
-  /// the matches lands on the person's own card and backing out again returns
-  /// here. That is the route a matchmaker actually walks: consider the pairs,
-  /// then look at who this person is, then move on to the next thought.
-  static void openPerson(BuildContext context, String personId) {
-    final NavigatorState navigator = Navigator.of(context);
-    navigator.push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            PersonDetailScreen(personId: personId),
-      ),
-    );
-    openSuggestionsFor(context, personId);
-  }
+  // A tap used to push the profile *and* the matches list on top of it, from
+  // one gesture. The card splits them now: the photograph is the profile, the
+  // words beside it are the matches. See `_PersonThought`.
 
   @override
   State<ThinkScreen> createState() => _ThinkScreenState();
@@ -87,28 +80,56 @@ class _ThinkScreenState extends State<ThinkScreen> {
   static const int _pageSize = 10;
 
   /// Where this visit entered the ranked list. Read once, so the rotation does
-  /// not move under the finger, and advanced on the way out so the *next* visit
-  /// opens on different people.
-  final int _cursor = ThinkRotation.cursor;
+  /// not move under the finger.
+  late final int _cursor;
 
-  /// Friends put away with "אחשוב עליו בהמשך", read once for the same reason.
-  /// Added to as the screen is used, so a card leaves the moment it is tapped
-  /// without the whole list re-ranking underneath.
+  /// Friends put away with "אחשוב עליו בהזדמנות אחרת", read once for the same
+  /// reason. Added to as the screen is used, so a card leaves the moment it is
+  /// tapped without the whole list re-ranking underneath.
   late final Set<String> _later = <String>{...ThinkLater.activeIds()};
+
+  /// Friends taken off *this* visit's page, by id.
+  ///
+  /// **Held apart from [_later] because the list must not move.** Putting one
+  /// friend away used to be enough to re-rank and re-rotate everything — a
+  /// different cursor over a shorter list is a different page — so answering
+  /// one card replaced every card under it. The rows are decided once, into
+  /// [_ranked], and this is what quietly takes one of them out.
+  final Set<String> _removed = <String>{};
+
+  /// The friends this visit is showing, computed once and then left alone.
+  List<_ThinkRow>? _ranked;
 
   int _shown = _pageSize;
 
   @override
+  void initState() {
+    super.initState();
+    // **Advanced on the way in, not on the way out.** The next visit used to
+    // be moved on from `dispose`, which is a callback the screen does not
+    // always get to run — and when it did not, the page opened on exactly the
+    // faces it had opened on before. Taken here it is spent the moment the
+    // screen exists, so no two visits in a row start in the same place.
+    _cursor = ThinkRotation.cursor;
+    ThinkRotation.advance(_pageSize);
+  }
+
+  @override
   void dispose() {
-    // The next visit starts where this one stopped reading, so the page turns
-    // the database over instead of greeting everybody with the same faces.
-    ThinkRotation.advance(_shown);
+    // Whatever was read past the first page counts too, so "חברים נוספים"
+    // does not hand the next visit people who were already looked at.
+    ThinkRotation.advance(_shown - _pageSize);
     super.dispose();
   }
 
   void _thinkLater(Person person) {
     ThinkLater.remember(person.id);
-    setState(() => _later.add(person.id));
+    // Only this friend leaves, and only from this page: `_removed` is read by
+    // the already-built list rather than by the ranking behind it.
+    setState(() {
+      _later.add(person.id);
+      _removed.add(person.id);
+    });
     // An undo rather than a confirmation: putting somebody off is a one-tap
     // decision that should stay one tap, and a mis-tap here quietly hides a
     // friend for a month.
@@ -121,7 +142,10 @@ class _ThinkScreenState extends State<ThinkScreen> {
       onAction: () {
         ThinkLater.forget(person.id);
         if (mounted) {
-          setState(() => _later.remove(person.id));
+          setState(() {
+            _later.remove(person.id);
+            _removed.remove(person.id);
+          });
         }
       },
     );
@@ -133,30 +157,44 @@ class _ThinkScreenState extends State<ThinkScreen> {
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final MatchRepository matchRepository = context.watch<MatchRepository>();
 
+    // **Only friends who are actually available.** The page asks "who could
+    // this one go with?", and asking it about somebody who is out with
+    // somebody else, on a break or already married is a question with no
+    // answer — the matchmaker reads the card, works out why it cannot be acted
+    // on, and moves on. `pausesMatches` and `isArchived` between them cover
+    // תפוס, בהפסקה and מזל טוב.
     final List<Person> people = personRepository
         .getAll()
-        .where((Person person) => !person.hidden && !person.needsReview)
+        .where(
+          (Person person) =>
+              !person.hidden &&
+              !person.needsReview &&
+              person.profileStatus == ProfileStatus.available,
+        )
         .toList();
     final List<MatchIdea> matches = matchRepository.getAll();
 
-    final List<HomeSuggestion> suggestions = HomeSuggestions.build(
-      people: people,
-      matches: matches,
-      events: personRepository.getAllEvents(),
-      activity: RecentActivityStore.instance.entries,
-      limit: 60,
-    );
-    // Ranked, then salted with the occasional stranger, then rotated to where
-    // this visit starts, and finally cut to the page the reader has asked for.
-    final List<_ThinkRow> ranked = ThinkRotation.rotate(
+    // The rows this visit shows are decided once. Rebuilding them on every
+    // `setState` is what made putting one friend away reshuffle the page —
+    // a shorter list rotates to a different place. See [_removed].
+    final List<_ThinkRow> ranked = _ranked ??= ThinkRotation.rotate(
       _withOccasionalStranger(
-        suggestions,
+        HomeSuggestions.build(
+          people: people,
+          matches: matches,
+          events: personRepository.getAllEvents(),
+          activity: RecentActivityStore.instance.entries,
+          limit: 60,
+        ),
         people,
       ).where((_ThinkRow row) => !_later.contains(row.person.id)).toList(),
       _cursor,
     );
-    final List<_ThinkRow> rows = ranked.take(_shown).toList();
-    final bool hasMore = ranked.length > rows.length;
+    final List<_ThinkRow> live = ranked
+        .where((_ThinkRow row) => !_removed.contains(row.person.id))
+        .toList();
+    final List<_ThinkRow> rows = live.take(_shown).toList();
+    final bool hasMore = live.length > rows.length;
     final _MatchLookup lookup = _MatchLookup(people: people, matches: matches);
 
     return Scaffold(
@@ -164,7 +202,14 @@ class _ThinkScreenState extends State<ThinkScreen> {
       appBar: AppBar(
         backgroundColor: ProfilePalette.canvas(theme),
         foregroundColor: ProfilePalette.text(theme),
-        titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
+        // Lighter than the page's own headings, and a size down. The bar was
+        // set in the same black weight as a title, which on a screen whose
+        // whole point is that nothing on it is a task made the top of it read
+        // as an instruction.
+        titleTextStyle: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: ProfilePalette.muted(theme),
+        ),
         title: const Text('עוצרים רגע לחשוב על החברים'),
         centerTitle: true,
       ),
@@ -207,14 +252,35 @@ class _ThinkScreenState extends State<ThinkScreen> {
                   return _PersonThought(
                     person: row.person,
                     reason: row.reason,
+                    openIdeas: lookup.openIdeasFor(row.person),
                     candidates: lookup.topFor(row.person),
-                    onTap: () => ThinkScreen.openPerson(context, row.person.id),
+                    // The photograph goes to the person's own card; everything
+                    // else on the tile asks the page's question, which is who
+                    // they could go with.
+                    onOpenProfile: () => _openProfile(row.person.id),
+                    onTap: () => openSuggestionsFor(context, row.person.id),
+                    onOpenIdea: (_OpenIdea idea) =>
+                        context.push('/matches/${idea.match.id}'),
                     onCandidate: (Person candidate) =>
                         _considerPair(row.person, candidate),
                     onLater: () => _thinkLater(row.person),
                   );
                 },
               ),
+      ),
+    );
+  }
+
+  /// One friend's own card, and nothing pushed on top of it.
+  ///
+  /// The tile used to open the profile *and* the matches list over it from a
+  /// single tap, which is two destinations for one gesture. The face is the
+  /// profile; the rest of the tile is the matches.
+  Future<void> _openProfile(String personId) {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            PersonDetailScreen(personId: personId),
       ),
     );
   }
@@ -322,6 +388,14 @@ class _ThinkRow {
   final String reason;
 }
 
+/// A proposal already open for the friend on the card, and who it is with.
+class _OpenIdea {
+  const _OpenIdea({required this.match, required this.other});
+
+  final MatchIdea match;
+  final Person other;
+}
+
 /// Who each friend could go with, worked out once for the whole screen.
 ///
 /// **Built once and cached per person**, because the naive version is a scan of
@@ -342,6 +416,45 @@ class _MatchLookup {
   final List<MatchIdea> matches;
 
   final Map<String, List<Person>> _cache = <String, List<Person>>{};
+  final Map<String, List<_OpenIdea>> _openCache = <String, List<_OpenIdea>>{};
+
+  /// The proposals already open for this friend, with the other side named.
+  ///
+  /// **They come before the suggestions on the card.** A friend with a live
+  /// proposal in flight is not somebody to think of new pairs for — they are
+  /// somebody with a pair already, waiting on an answer — and the page was
+  /// showing them three fresh faces while saying nothing about the idea that
+  /// already exists. Newest first, capped at three for the same reason the
+  /// suggestions are.
+  List<_OpenIdea> openIdeasFor(Person person) {
+    return _openCache.putIfAbsent(person.id, () {
+      final List<_OpenIdea> open = <_OpenIdea>[];
+      for (final MatchIdea match in matches) {
+        if (match.status.isArchived) {
+          continue;
+        }
+        final String? otherId = match.personAId == person.id
+            ? match.personBId
+            : match.personBId == person.id
+            ? match.personAId
+            : null;
+        if (otherId == null) {
+          continue;
+        }
+        for (final Person other in people) {
+          if (other.id == otherId) {
+            open.add(_OpenIdea(match: match, other: other));
+            break;
+          }
+        }
+      }
+      open.sort(
+        (_OpenIdea a, _OpenIdea b) =>
+            b.match.updatedAt.compareTo(a.match.updatedAt),
+      );
+      return open.take(shown).toList();
+    });
+  }
 
   List<Person> topFor(Person person) {
     return _cache.putIfAbsent(person.id, () {
@@ -382,14 +495,19 @@ class _MatchLookup {
   }
 }
 
-/// One friend to think about, and the three people they could go with.
+/// One friend to think about, and the people they could go with.
 ///
 /// **One person is the subject of the card, not one row of a list.** The photo
 /// and the name lead it and are the largest thing on it, and nothing shares
 /// that line; under them is the one sentence saying why this friend is worth a
-/// thought *today*; under that, the three matches the database found, each as a
-/// small card with a face and a full name; and under those, the card's two
-/// answers.
+/// thought *today*; then any proposal already open for them; then the three
+/// matches the database found, each as a small card with a face and a full
+/// name; and under those, behind a hairline, the card's two answers.
+///
+/// **The face and the words beside it go to different places.** A photograph
+/// means "this person's card" everywhere else in the app, and the rest of the
+/// heading asks the page's own question, which is who they could go with. One
+/// tap used to push both, one on top of the other.
 ///
 /// **Still sized to be scrolled through — but the reason is never cut.** The
 /// screen exists to move an eye over many friends, so the name is one line and
@@ -402,8 +520,11 @@ class _PersonThought extends StatelessWidget {
   const _PersonThought({
     required this.person,
     required this.reason,
+    required this.openIdeas,
     required this.candidates,
+    required this.onOpenProfile,
     required this.onTap,
+    required this.onOpenIdea,
     required this.onCandidate,
     required this.onLater,
   });
@@ -411,18 +532,29 @@ class _PersonThought extends StatelessWidget {
   final Person person;
   final String reason;
 
+  /// The proposals already open for this friend. Drawn above the suggestions,
+  /// because an idea that exists outranks one the database imagined.
+  final List<_OpenIdea> openIdeas;
+
   /// At most [_MatchLookup.shown]. Empty for a friend with nobody to pair them
   /// with yet, and the card says so in a line instead of drawing empty chips.
   final List<Person> candidates;
 
-  /// Opens every possible match for this friend — the name, the photo and
-  /// "התאמות נוספות" all lead here, because they are all asking the same
-  /// question.
+  /// The photograph, and only the photograph: this friend's own card.
+  final VoidCallback onOpenProfile;
+
+  /// Opens every possible match for this friend — the name, the rest of the
+  /// heading and "התאמות נוספות" all lead here, because they are all asking the
+  /// same question.
   final VoidCallback onTap;
+
+  /// Goes straight to a proposal that already exists, on הרעיונות שלי.
+  final ValueChanged<_OpenIdea> onOpenIdea;
 
   final ValueChanged<Person> onCandidate;
 
-  /// "דלג" — takes this friend off the page for a few weeks.
+  /// "אחשוב עליו בהזדמנות אחרת" — takes this friend off the page for a few
+  /// weeks.
   ///
   /// **The card needed a third answer.** Until now a friend could be opened or
   /// scrolled past, and scrolling past leaves them exactly where they were, at
@@ -446,14 +578,25 @@ class _PersonThought extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             // The friend: face, name, and the reason this is the moment.
-            InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(12),
-              child: Row(
-                children: <Widget>[
-                  PersonAvatar(person: person, radius: 22),
-                  const SizedBox(width: 10),
-                  Expanded(
+            //
+            // **Two targets on one line, and the split is deliberate.** The
+            // face opens the person's own card — which is what a photograph
+            // means everywhere else in the app — and the words beside it open
+            // the question this page is asking, which is who they could go
+            // with. One tap used to do both, pushing the profile and then the
+            // matches on top of it.
+            Row(
+              children: <Widget>[
+                InkWell(
+                  onTap: onOpenProfile,
+                  customBorder: const CircleBorder(),
+                  child: PersonAvatar(person: person, radius: 22),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: onTap,
+                    borderRadius: BorderRadius.circular(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -484,14 +627,62 @@ class _PersonThought extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Nothing on the name's line but the name. The two answers
-                  // the card offers are one row under the faces, where they
-                  // belong to what is above them rather than to the person's
-                  // heading — see [_ThoughtActions].
-                ],
-              ),
+                ),
+              ],
             ),
+            // The proposals that already exist, above the ones the database
+            // imagined: a friend waiting on an answer is not a friend to think
+            // of new pairs for. Each one goes straight to that proposal.
+            if (openIdeas.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                openIdeas.length == 1 ? 'רעיון פתוח' : 'רעיונות פתוחים',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: ProfilePalette.accent(theme),
+                ),
+              ),
+              const SizedBox(height: 4),
+              IntrinsicHeight(
+                child: Row(
+                  children: <Widget>[
+                    for (int i = 0; i < openIdeas.length; i++)
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsetsDirectional.only(
+                            end: i == openIdeas.length - 1 ? 0 : 6,
+                          ),
+                          child: _CandidateChip(
+                            person: openIdeas[i].other,
+                            status: openIdeas[i].match.status.stateLabel,
+                            onTap: () => onOpenIdea(openIdeas[i]),
+                          ),
+                        ),
+                      ),
+                    // Fewer than three open ideas leaves the row ragged
+                    // otherwise, and a half-width tile beside two full ones
+                    // reads as a tile that failed to load.
+                    for (int i = openIdeas.length; i < 3; i++)
+                      const Expanded(child: SizedBox.shrink()),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
+            // Named only when there is something above it to be told apart
+            // from. On a card with no open proposal the row of faces is the
+            // only row there is, and a heading over the one thing on a card is
+            // a label on a box.
+            if (openIdeas.isNotEmpty) ...<Widget>[
+              Text(
+                'התאמות אפשריות',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: ProfilePalette.muted(theme),
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
             // The matches, three across. Every tile is exactly one line of
             // name tall now (see `_CandidateChip`), so the row is level by
             // construction; `IntrinsicHeight` stays only to hold that true if
@@ -535,21 +726,25 @@ class _PersonThought extends StatelessWidget {
   }
 }
 
-/// The two answers the card offers, small and side by side under the faces.
+/// The two answers the card offers: centred at its foot, under a hairline.
 ///
-/// **"לכל ההתאמות" was up on the name's line and is gone.** A link wedged
-/// between a person's name and a clock glyph is read as part of the heading,
-/// not as an answer to what the card is asking — and the clock never said what
-/// it did at all. Both are words now, both are the same size, and both sit
-/// under the three faces they are about: more of them, or move on.
+/// **A rule above them, and the middle of the card under them.** Pinned to the
+/// reading edge the pair read as two more links belonging to the row of faces
+/// directly above; a thin line and a centred pair say instead "this is what
+/// the card asks of you", which is what they are. Still small and still quiet
+/// — the faces are the card, and these are the two ways out of it.
+///
+/// **"דלג" became "אחשוב עליו בהזדמנות אחרת".** "דלג" is what you do to an
+/// advert. What actually happens is a postponement — the friend comes back in
+/// a few weeks — and saying so is what stops the button feeling like a
+/// dismissal of somebody.
 class _ThoughtActions extends StatelessWidget {
   const _ThoughtActions({required this.onMore, required this.onSkip});
 
   /// Every possible match for this friend, not only the three shown.
   final VoidCallback onMore;
 
-  /// "דלג" — the same "not today" the clock used to mean: the friend leaves
-  /// this page for a few weeks rather than being dismissed.
+  /// The friend leaves this page for a few weeks rather than being dismissed.
   final VoidCallback onSkip;
 
   @override
@@ -559,7 +754,7 @@ class _ThoughtActions extends StatelessWidget {
     ButtonStyle style(Color ink) => TextButton.styleFrom(
       foregroundColor: ink,
       visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       minimumSize: Size.zero,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       shape: const StadiumBorder(),
@@ -568,18 +763,32 @@ class _ThoughtActions extends StatelessWidget {
       ),
     );
 
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        TextButton(
-          onPressed: onMore,
-          style: style(ProfilePalette.accent(theme)),
-          child: const Text('התאמות נוספות'),
+        Divider(
+          height: 9,
+          thickness: 1,
+          color: ProfilePalette.muted(theme).withValues(alpha: 0.18),
         ),
-        const SizedBox(width: 4),
-        TextButton(
-          onPressed: onSkip,
-          style: style(ProfilePalette.muted(theme)),
-          child: const Text('דלג'),
+        // Side by side while both fit, stacked on a narrow phone at a large
+        // system font — "אחשוב עליו בהזדמנות אחרת" is a long label and must
+        // never be cut down to "אחשוב עליו…".
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            TextButton(
+              onPressed: onMore,
+              style: style(ProfilePalette.accent(theme)),
+              child: const Text('התאמות נוספות'),
+            ),
+            TextButton(
+              onPressed: onSkip,
+              style: style(ProfilePalette.muted(theme)),
+              child: const Text('אחשוב עליו בהזדמנות אחרת'),
+            ),
+          ],
         ),
       ],
     );
@@ -602,10 +811,18 @@ class _ThoughtActions extends StatelessWidget {
 /// "רעיונות חדשים" and the matches list open, so a pair considered from here
 /// goes through exactly the route it would anywhere else.
 class _CandidateChip extends StatelessWidget {
-  const _CandidateChip({required this.person, required this.onTap});
+  const _CandidateChip({
+    required this.person,
+    required this.onTap,
+    this.status,
+  });
 
   final Person person;
   final VoidCallback onTap;
+
+  /// Where the proposal stands, for the tiles that stand for one that already
+  /// exists. Null for a suggestion, which is not a proposal and has no status.
+  final String? status;
 
   @override
   Widget build(BuildContext context) {
@@ -613,6 +830,7 @@ class _CandidateChip extends StatelessWidget {
     final String name = person.fullName.trim().isNotEmpty
         ? person.fullName.trim()
         : person.firstName.trim();
+    final String? state = status;
 
     return Material(
       color: ProfilePalette.canvas(theme),
@@ -642,6 +860,20 @@ class _CandidateChip extends StatelessWidget {
                   color: ProfilePalette.text(theme),
                 ),
               ),
+              if (state != null)
+                Text(
+                  state,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: ProfilePalette.accent(theme),
+                  ),
+                ),
             ],
           ),
         ),
@@ -655,25 +887,42 @@ class _CandidateChip extends StatelessWidget {
 /// **It stopped explaining itself.** The line used to be a question followed by
 /// two sentences describing what the screen does and which buttons it has —
 /// which is an instruction manual at the top of a page whose whole point is
-/// that nothing on it is a task. What is left says only that there are people
-/// here worth a moment, which is the one thing worth saying before the faces
-/// start.
+/// that nothing on it is a task.
+///
+/// **And it stopped shouting.** What was left was still set as a heavy black
+/// heading, the largest and darkest thing on the page, which is the wrong
+/// voice for an invitation: this is somebody being told their friends would be
+/// glad of a thought, not a section title. Set in the page's warm accent at a
+/// size down, with a small mark in front of it, it reads the way it is meant.
 class _ThinkWelcome extends StatelessWidget {
   const _ThinkWelcome();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color ink = ProfilePalette.accent(theme);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
-      child: Text(
-        'כמה חברים מהמאגר שהגיע הזמן לחשוב עליהם!',
-        style: theme.textTheme.titleLarge?.copyWith(
-          fontWeight: FontWeight.w900,
-          height: 1.2,
-          color: ProfilePalette.text(theme),
-        ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(Icons.favorite_rounded, size: 16, color: ink),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              'חברים שלך שישמחו שתחשוב בשבילם!',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+                color: ink,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

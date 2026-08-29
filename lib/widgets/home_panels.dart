@@ -101,52 +101,18 @@ class HomeHeroBand extends StatelessWidget {
                         // Named for what it is: pairs the database worked out
                         // on its own, not ideas the matchmaker opened.
                         //
-                        // **The same size as "עוצרים רגע לחשוב על החברים",
-                        // and on one line like it.** These two blocks sit one
-                        // above the other and are the two invitations at the
-                        // top of the page; heading one of them at the page's
-                        // lead size and the other three steps below it made
-                        // the pair read as a banner with a footnote under it.
-                        // Scaled down to fit rather than wrapped, for the
-                        // reason the block above it is: a two-line heading
-                        // here is taller than the couple beside it and turns
-                        // a row into a paragraph.
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              'רעיונות שהמאגר מציע לך',
-                              maxLines: 1,
-                              softWrap: false,
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                height: 1.15,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        // One warm line about what is behind the row, in the
-                        // page's own small type. It used to describe the
-                        // mechanism — "זוגות חדשים שיכולים להתאים לחברים שלך"
-                        // — which is both longer than the row can hold and a
-                        // restatement of the heading directly above it.
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              'שווה הצצה, אולי מחכה שם חיבור',
-                              maxLines: 1,
-                              softWrap: false,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                        ),
+                        // **Exactly the size of "עוצרים רגע לחשוב על חברים"
+                        // above it.** These two blocks sit one on top of the
+                        // other and are the two invitations at the top of the
+                        // page; each was scaled to whatever width its own card
+                        // had left over, so the pair read as a banner with a
+                        // footnote under it. One size, fixed — see
+                        // [HomeBannerTitle].
+                        //
+                        // The line that used to sit under it, "שווה הצצה,
+                        // אולי מחכה שם חיבור", is gone: the heading already
+                        // says what the row is.
+                        const HomeBannerTitle(text: 'רעיונות שהמאגר מציע לך'),
                       ],
                     ),
                   ),
@@ -483,7 +449,7 @@ class HomeDatingCouple {
   const HomeDatingCouple({
     required this.matchId,
     required this.names,
-    required this.duration,
+    required this.sinceLabel,
     this.personA,
     this.personB,
   });
@@ -491,8 +457,13 @@ class HomeDatingCouple {
   final String matchId;
   final String names;
 
-  /// How long they have been dating, e.g. "3 חודשים".
-  final String duration;
+  /// The whole sentence, not a fragment: "יוצאים מהיום", "יוצאים כבר יומיים",
+  /// "יוצאים כבר שבוע". It used to be a duration with "יוצאים כבר" glued in
+  /// front of it here, which produced "יוצאים כבר מהיום" for every couple in
+  /// their first days — and, because the figure came from the proposal's
+  /// `updatedAt`, for every couple whose card had just been touched. See
+  /// `DatingCheckIn.datingSinceLabel`.
+  final String sinceLabel;
 
   final Person? personA;
   final Person? personB;
@@ -630,7 +601,7 @@ class _HomeDatingBannerState extends State<HomeDatingBanner> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        'ממשיכים לשמור על קשר עד החתונה! :)',
+                        'ממשיכים לשמור איתם על קשר עד החתונה! :)',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.labelMedium?.copyWith(
                           fontWeight: FontWeight.w700,
@@ -733,7 +704,7 @@ class _DatingPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    'יוצאים כבר ${couple.duration}',
+                    couple.sinceLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(color: accent),

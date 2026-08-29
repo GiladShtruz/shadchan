@@ -358,35 +358,30 @@ class HomeThinkBanner extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          // One line, always. Wrapped across two it was the
-                          // tallest heading on the page and it turned the
-                          // card into a block of text; scaled down to fit,
-                          // it stays a title.
-                          Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                // A statement, not a question. The block is
-                                // an open door, and a question mark on the
-                                // home screen asks for an answer the
-                                // matchmaker did not come here to give.
-                                'עוצרים רגע לחשוב על החברים',
-                                maxLines: 1,
-                                softWrap: false,
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.15,
-                                  color: dark
-                                      ? theme.colorScheme.onSurface
-                                      : accent,
-                                ),
-                              ),
-                            ),
+                          // A statement, not a question. The block is an
+                          // open door, and a question mark on the home screen
+                          // asks for an answer the matchmaker did not come
+                          // here to give.
+                          //
+                          // Held to exactly the size of "רעיונות שהמאגר מציע
+                          // לך" under it rather than scaled down to one line
+                          // — see [HomeBannerTitle]. Two blocks that sit one
+                          // above the other cannot be headed at two sizes,
+                          // and which of them came out larger depended on how
+                          // much room the picture beside it happened to
+                          // leave.
+                          HomeBannerTitle(
+                            text: 'עוצרים רגע לחשוב על החברים',
+                            color: dark ? theme.colorScheme.onSurface : accent,
                           ),
                           const SizedBox(height: 8),
+                          // Centred in its own column rather than pinned to
+                          // the reading edge: the invitation is the middle of
+                          // the block, and a pill hard against the right edge
+                          // under a two-line heading reads as a footnote to
+                          // it.
                           Align(
-                            alignment: AlignmentDirectional.centerStart,
+                            alignment: Alignment.center,
                             child: FilledButton(
                               onPressed: onTap,
                               // Scaled down rather than wrapped. The

@@ -227,12 +227,19 @@ abstract final class MatchQuickActions {
     );
   }
 
-  /// The stage set by hand, from the little menu beside the button.
+  /// The status set by hand, from the menu beside the button.
   ///
   /// "מתחילים לצאת" is routed through [run] rather than written here: it is a
   /// status change with two candidates' availability, a memory of what to put
   /// back and a community figure hanging off it, and there must be exactly one
   /// path to it.
+  ///
+  /// **And the way back out of it goes through the same door.** Picking any
+  /// other status on a couple who are out has to undo everything that starting
+  /// to date did — both cards go back to what they were, the check-in reminder
+  /// stops being the point of the card — and only [MatchRepository.updateStatus]
+  /// knows how to do that. So the status leaves "יוצאים" first, and only then
+  /// are the two asked-dates written.
   static Future<void> setStage(
     BuildContext context,
     MatchIdea match,
@@ -251,8 +258,19 @@ abstract final class MatchQuickActions {
       return;
     }
 
+    final MatchRepository repository = context.read<MatchRepository>();
+    // Read before the move: `match` is the live Hive record, so `updateStatus`
+    // mutates the very field this is testing.
+    final bool wasDating = match.status == MatchStatus.dating;
+    if (wasDating) {
+      // "בבדיקה" and not "רעיון": the proposal is being put back to a side
+      // having been asked, which is exactly what `checking` means, and every
+      // status this menu offers is one of those.
+      await repository.updateStatus(match.id, MatchStatus.checking);
+    }
+
     final DateTime now = DateTime.now();
-    await context.read<MatchRepository>().setStage(
+    await repository.setStage(
       match.id,
       // The dates that were already there are kept where the stage still
       // includes that side, so setting "שאלתי את שניהם" on a proposal he was
@@ -267,6 +285,16 @@ abstract final class MatchQuickActions {
           : null,
       label: stage.label,
     );
+    // A couple who have just been taken back out of "יוצאים" have both dates
+    // already, so `setStage` finds nothing to write and files no line. The
+    // status move above is the thing that happened; this is what says so.
+    if (wasDating) {
+      await repository.addNote(
+        match.id,
+        'הסטטוס עודכן — ${stage.label}',
+        isAutomatic: true,
+      );
+    }
   }
 
   /// The couple who are out: a chat with one of them, and the next check-in

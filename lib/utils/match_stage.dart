@@ -35,30 +35,40 @@ enum MatchStage {
   /// it is going — see `DatingCheckIn`.
   dating;
 
-  /// The stage as the card says it, in the matchmaker's own voice.
+  /// The status as the card says it, named for what is being *waited for*
+  /// rather than for what was done.
+  ///
+  /// **"שאלתי את הבחור" was a report; "מחכים לתשובת הבחור" is the state.** The
+  /// difference matters on a list: a matchmaker running down forty proposals
+  /// is looking for the ones that are stuck, and what tells them that is whose
+  /// answer has not come — not which call was made last week.
   String get label {
     switch (this) {
       case MatchStage.newIdea:
         return 'רעיון חדש';
       case MatchStage.askedMale:
-        return 'שאלתי את הבחור';
+        return 'מחכים לתשובת הבחור';
       case MatchStage.askedFemale:
-        return 'שאלתי את הבחורה';
+        return 'מחכים לתשובת הבחורה';
       case MatchStage.askedBoth:
-        return 'שאלתי את שניהם';
+        return 'בבדיקה';
       case MatchStage.dating:
         return 'מתחילים לצאת';
     }
   }
 
-  /// Whether the matchmaker may set this stage by hand from the little menu
-  /// beside the button.
+  /// Whether the matchmaker may set this status by hand from the menu beside
+  /// the button.
   ///
-  /// All of them, deliberately. The app advances the stage on its own when the
-  /// action is taken through it, but plenty of matchmaking happens on a phone
-  /// call the app never sees, and a stage that can only move forwards through
-  /// this one button is a stage that goes wrong and stays wrong.
-  bool get isSelectable => true;
+  /// Four of the five, and the menu is deliberately both ways: the app advances
+  /// the status on its own when the action is taken through it, but plenty of
+  /// matchmaking happens on a phone call the app never sees, and a status that
+  /// can only move forwards is one that goes wrong and stays wrong. That is
+  /// also what puts right a "מתחילים לצאת" tapped by mistake.
+  ///
+  /// "רעיון חדש" is the one that is not offered: it is where every proposal
+  /// starts and it is not a state anybody moves a proposal *to*.
+  bool get isSelectable => this != MatchStage.newIdea;
 
   static MatchStage of(MatchIdea match) {
     if (match.status == MatchStatus.dating) {
@@ -139,6 +149,12 @@ abstract final class MatchStages {
   }
 
   /// The words on the button, naming the person where there is a name.
+  ///
+  /// **Only the two asking steps are a button at all.** Once both sides have
+  /// been asked there is nothing left for the app to do on the matchmaker's
+  /// behalf — the answer is what is being waited for — so the panel says
+  /// [bothAskedLabel] instead and leaves the three status moves underneath to
+  /// carry whatever comes back. See `_CardActionBar`.
   static String buttonLabel(
     MatchNextStep step, {
     Person? male,
@@ -150,20 +166,18 @@ abstract final class MatchStages {
       case MatchNextStep.askFemale:
         return 'יאללה לקדם — לשאול את ${_firstName(female, 'הבחורה')}';
       case MatchNextStep.startDating:
-        return 'יאללה לקדם — מתחילים לצאת';
+        return bothAskedLabel;
     }
   }
 
-  /// The quiet line under the button: what pressing it actually does.
-  static String buttonHint(MatchNextStep step) {
-    switch (step) {
-      case MatchNextStep.askMale:
-      case MatchNextStep.askFemale:
-        return 'פתיחת וואטסאפ עם הכרטיס של הצד השני';
-      case MatchNextStep.startDating:
-        return 'שני הצדדים ענו — לסמן שהם יוצאים';
-    }
-  }
+  /// What the panel says once both sides know about it.
+  ///
+  /// A statement, not a prompt. "יאללה לקדם — מתחילים לצאת" asked the
+  /// matchmaker to press a button on somebody else's decision; what is
+  /// actually true at this point is that both of them have been asked, and
+  /// "מתחילים לצאת" is one of the three status tiles below like every other
+  /// answer that could come back.
+  static const String bothAskedLabel = 'שאלתי את שניהם';
 
   static String _firstName(Person? person, String fallback) {
     final String name = (person?.firstName ?? '').trim();

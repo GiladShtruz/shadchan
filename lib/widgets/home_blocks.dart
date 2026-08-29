@@ -537,7 +537,9 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
                 // actually is — two or three lines — rather than rounded up to
                 // something comfortable.
                 SizedBox(
-                  height: homeScaled(context, 74),
+                  // Tall enough for three lines at the tip's own size, which
+                  // is a size larger than it used to be drawn at.
+                  height: homeScaled(context, 86),
                   child: PageView.builder(
                     controller: _controller,
                     onPageChanged: (int page) {
@@ -642,16 +644,18 @@ class _TipPage extends StatelessWidget {
         Flexible(
           // The sentence carries no mark of its own any more: the bulb sits
           // in the block's heading, where it belongs to the card rather than
-          // to whatever somebody happened to write. Set a size up from the
-          // rest of the page as well — this is the one block that exists to
-          // be read, and body-small advice on a large card reads as a
-          // footnote.
+          // to whatever somebody happened to write.
+          //
+          // **The same size as "טיפ לשדכן" over it.** The advice was set two
+          // steps below its own heading, which made the one block on the page
+          // that exists to be *read* the smallest type on it. `titleSmall` is
+          // the heading's own role; only the weight separates them now.
           child: Text(
             tip.text,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
+            style: theme.textTheme.titleSmall?.copyWith(
               height: 1.45,
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
