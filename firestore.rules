@@ -120,8 +120,13 @@ service cloud.firestore {
                     && request.resource.data.authorName is string
                     && request.resource.data.authorName.size() <= 80;
 
-      // Approval, rejection and removal are the administrator's alone.
-      allow update, delete: if isAdmin();
+      // Approval and rejection are the administrator's alone. The author may
+      // remove their own submission — including during account deletion — but
+      // can never edit an approved tip into different words afterwards.
+      allow update: if isAdmin();
+      allow delete: if isAdmin()
+                    || (isSignedIn()
+                        && resource.data.authorUid == request.auth.uid);
     }
 
     // --- Support -----------------------------------------------------------
@@ -544,7 +549,12 @@ service cloud.firestore {
             && request.auth.token.firebase.sign_in_provider != 'anonymous';
       }
 
-      allow read: if isSignedIn() && resource.data.toUid == request.auth.uid;
+      // The sender may read only their own outgoing documents so account
+      // deletion can find and remove undelivered post. The app has no screen
+      // that displays sent messages.
+      allow read: if isSignedIn()
+                  && (resource.data.toUid == request.auth.uid
+                      || resource.data.fromUid == request.auth.uid);
 
       // Create only — a bracha cannot be edited after it is sent, which is
       // what makes "who wrote this" answerable at all.
@@ -582,8 +592,12 @@ service cloud.firestore {
 
       allow update: if false;
 
-      // The recipient clears their own, once it is safely in their journal.
-      allow delete: if isSignedIn() && resource.data.toUid == request.auth.uid;
+      // The recipient clears their own once it is safely in their journal; the
+      // sender may withdraw their own undelivered post or erase it with their
+      // account.
+      allow delete: if isSignedIn()
+                    && (resource.data.toUid == request.auth.uid
+                        || resource.data.fromUid == request.auth.uid);
     }
 
     // Anything not named above is closed. Without this, a path added later

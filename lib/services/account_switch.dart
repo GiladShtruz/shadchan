@@ -6,6 +6,8 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
+import 'package:shadchan/services/account_remote_data_service.dart';
+import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -63,8 +65,56 @@ abstract final class AccountSwitch {
     }
 
     await account.signOut();
-    await sync.forget();
+    await _clearLocalData(
+      sync: sync,
+      people: people,
+      matches: matches,
+      profile: profile,
+      community: community,
+    );
+    return AccountSwitchResult.done;
+  }
 
+  /// Permanently removes the account, its server data and this device's copy.
+  ///
+  /// Reauthentication and remote erasure happen inside [AccountService] while
+  /// the account is still valid. Local data is cleared only after Firebase has
+  /// confirmed that the authentication account itself is gone.
+  static Future<AccountDeletionResult> deleteAccountAndClear({
+    required AccountProvider account,
+    required SyncProvider sync,
+    required PersonRepository people,
+    required MatchRepository matches,
+    required UserProfileProvider profile,
+    required CommunityProvider community,
+    String? password,
+  }) async {
+    final AccountDeletionResult result = await account.deleteAccount(
+      password: password,
+      deleteRemoteData: AccountRemoteDataService.deleteAll,
+    );
+    if (result.outcome != AccountDeletionOutcome.success) {
+      return result;
+    }
+
+    await _clearLocalData(
+      sync: sync,
+      people: people,
+      matches: matches,
+      profile: profile,
+      community: community,
+    );
+    return result;
+  }
+
+  static Future<void> _clearLocalData({
+    required SyncProvider sync,
+    required PersonRepository people,
+    required MatchRepository matches,
+    required UserProfileProvider profile,
+    required CommunityProvider community,
+  }) async {
+    await sync.forget();
     await people.clearAll();
     await matches.clearAll();
     await profile.clear();
@@ -72,9 +122,7 @@ abstract final class AccountSwitch {
     HomeBoardStore.instance.reset();
     RecentActivityStore.instance.reset();
     community.reset();
-
     SignInPromptStore.markSignedOut();
-    return AccountSwitchResult.done;
   }
 
   /// True when the outgoing account's backup is up to date.

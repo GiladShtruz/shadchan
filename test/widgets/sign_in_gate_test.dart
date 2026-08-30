@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
@@ -22,6 +23,7 @@ import 'package:shadchan/screens/sign_in_screen.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 /// The sign-in gate, and the rule that it is a gate.
 ///
@@ -108,6 +110,37 @@ void main() {
     // fail if somebody put the skip back.
     expect(find.text('המשך בלי להתחבר'), findsNothing);
     expect(find.text('המאגר שלי'), findsNothing);
+  });
+
+  testWidgets('Apple platforms use the guideline-compliant Apple button', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SignInWithAppleButton), findsOneWidget);
+      expect(find.text('המשך עם Apple'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('Android never offers Apple sign-in', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SignInWithAppleButton), findsNothing);
+      expect(find.text('המשך עם Apple'), findsNothing);
+      expect(find.text('המשך עם Google'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('the address form asks for a password before it will submit', (

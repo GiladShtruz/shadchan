@@ -144,411 +144,79 @@ footer.site {
     </nav>
   </header>
   <main>
-<h1>Privacy Policy — Shadchan (שדכן)</h1>
-<p><strong>Last updated: August 21, 2026</strong>
-<strong>Effective date: August 21, 2026</strong></p>
-<p>Shadchan ("the Application") is a mobile application that helps matchmakers manage
-contacts, match ideas, notes and reminders related to the matchmaking process. The
-Application is developed and operated by <strong>Gilad Shtruzman</strong> ("the Service Provider",
-"we", "us"), who acts as the data controller for the limited processing described
-below. You can reach us at any time at <strong>giladsh22@gmail.com</strong>.</p>
-<p>This policy explains what information the Application processes, how it is used, where
-it is stored, who else can see it, and what control you have over it.</p>
-<hr />
-<h2>1. Summary</h2>
-<p>We think the honest short version matters more than the legal long version, so here it is:</p>
+<h1>Privacy Policy — Shadchan</h1>
+<p>Last updated: August 30, 2026</p>
+<p>This policy applies to the <strong>Shadchan</strong> application and its information website. The Application is developed and operated by Gilad Shtruzman ("we"), the controller of the processing described here. Privacy contact: <strong>giladsh22@gmail.com</strong>.</p>
+<h2>In brief</h2>
+<p>The Application is local-first: the active database lives on the device and continues to work offline. An account is nevertheless required, and a cloud backup is kept automatically in Firebase under that account's identifier. The Application contains no advertising, analytics SDK, crash-reporting SDK, cookies or behavioural tracking, and we do not sell personal information.</p>
+<h2>1. Information processed</h2>
+<h3>Your account</h3>
+<p>You can sign in with Google, with Apple on supported Apple devices, or with an email address and password. Firebase Authentication processes the account identifier, sign-in provider, email address and basic profile details supplied by the provider. Passwords for email accounts are handled by Firebase and are not visible to us. For security and abuse prevention, Firebase may also process IP addresses, user-agent strings and sign-in logs. Before sign-in or after sign-out, the Application may create a temporary technical anonymous Firebase identifier; it receives no backup and cannot pass the sign-in gate.</p>
+<h3>Matchmaking database</h3>
+<p>You may enter information about yourself and other people, including names, gender, age, religious style, city, telephone number, contact people, how you know them, photographs, private notes, preferences, reminders, match ideas and their handling history. People in your database do not become users and are not automatically notified.</p>
+<h3>Contacts, call log and photographs</h3>
 <ul>
-<li><strong>The Application is local-first.</strong> Your database lives on your device. The
-  Application works completely offline and with no account at all.</li>
-<li><strong>We do not use advertising, analytics or tracking SDKs.</strong> The Application contains no
-  ad network, no analytics SDK, no crash-reporting SDK, no cookies, no pixels and no
-  cross-app or cross-site tracking. We do not collect your IP address, your browsing
-  behaviour, an advertising identifier, or a record of which screens you visit.</li>
-<li><strong>We never sell personal information</strong>, and we never share it with advertisers or data
-  brokers.</li>
-<li><strong>Nothing leaves your device automatically.</strong> Data leaves the device only when you sign
-  in and enable cloud backup, when you use an AI-assisted import, when you send a support
-  request, when the community area is enabled for your account, or when you yourself
-  choose to share, export or publish something.</li>
+<li>Contact import displays names and phone numbers on the device and adds only the contacts you select. The candidate list may be cached locally for speed.</li>
+<li>On Android, you may grant call-log access to sort contacts by recent calls. The log is used only for local sorting and is never uploaded.</li>
+<li>Selecting a photograph opens the system media picker. Google ML Kit face detection is used entirely on-device to help crop the image; neither the image nor face-detection output is sent to ML Kit in the cloud.</li>
+<li>Content shared into the Application from another app is copied temporarily and added to the database only after an explicit choice.</li>
 </ul>
-<p>The rest of this policy is the long version.</p>
-<hr />
-<h2>2. Information you enter into the Application</h2>
-<p>You may enter information manually, including:</p>
-<ul>
-<li>First name and last name</li>
-<li>Gender</li>
-<li>Age</li>
-<li>Religious level or style</li>
-<li>City</li>
-<li>Phone number</li>
-<li>How you know the person</li>
-<li>Private notes</li>
-<li>Photographs</li>
-<li>Favourite markers</li>
-<li>Information about match ideas and notes attached to them</li>
-</ul>
-<p>This information is stored in the Application's local database on your device. See
-section 5 for where it goes if you enable cloud backup.</p>
-<hr />
-<h2>3. Information the Application reads from your device</h2>
-<h3>Contacts</h3>
-<p>If you choose to use contact import, the Application requests permission to read the
-contacts on your device in order to show you names and phone numbers as import
-candidates. To make repeat visits to the import screen faster, the list of import
-candidates may be cached locally on the device. <strong>Contacts you do not choose to import
-are not added to the Application's records</strong>, and no contact data is transmitted anywhere
-as part of this feature.</p>
-<h3>Call log (Android only)</h3>
-<p>In the card-swipe import view, the Application may request access to the call log in
-order to sort the suggested contacts by most recent calls. <strong>The call log is used for
-local sorting only.</strong> It is never uploaded, never transmitted off the device, and is
-never stored as a person record unless you choose to import that contact.</p>
-<h3>Photos and media</h3>
-<p>If you choose to add a photograph, the Application accesses your gallery or the device
-media picker so you can select an image and save it to a person record.</p>
-<h3>On-device face detection</h3>
-<p>To centre a photograph on the face rather than cropping it off, the Application runs
-Google ML Kit face detection. <strong>This runs entirely on the device.</strong> No photograph, and no
-face data derived from it, is transmitted anywhere for this purpose.</p>
-<h3>Content shared into the Application</h3>
-<p>If you share text or an image into the Application from another app — WhatsApp, for
-example — the shared content is copied temporarily to your device and shown to you so you
-can decide whether to add it to an existing person or create a new one. The content is
-saved to a person record only after you take a deliberate action.</p>
-<h3>Backups you create yourself</h3>
-<p>If you choose to export or import a backup, the Application creates or reads a JSON file
-that may contain everything stored in the Application, including people, ideas, notes and
-local photographs. A file you export is yours; once it leaves the Application, it is
-subject to wherever you put it.</p>
-<p>The Application does not store dates of birth. Older versions did, so a backup file created by one of them may contain a date of birth — in that case the Application reads it during the import, converts it to an age, and does not keep the date itself.</p>
-<h3>Notifications</h3>
-<p>If you allow notifications, the Application shows local reminders you set yourself on ideas and on people, and an invitation to come back if you have not opened it for a week. They are scheduled on the device;
-no reminder content is sent to a server.</p>
-<h3>Application version check</h3>
-<p>The Application checks the public app-store listing for a newer version so it can tell
-you when an update is available. This request carries no personal information.</p>
-<hr />
-<h2>4. How the information is used</h2>
-<p>Information is used to operate the features of the Application, and for nothing else:</p>
-<ul>
-<li>Managing person records</li>
-<li>Creating and tracking match ideas</li>
-<li>Adding private notes and notes on ideas</li>
-<li>Searching, filtering and sorting</li>
-<li>Importing contacts you select</li>
-<li>Sorting import candidates by recent calls on Android</li>
-<li>Displaying and storing photographs</li>
-<li>Sharing that you initiate</li>
-<li>Receiving text or images you shared into the Application</li>
-<li>Backup and restore</li>
-<li>Local reminders you set yourself</li>
-<li>The community area and leaderboard, if you are signed in (section 7)</li>
-<li>Handling support requests you send (section 9)</li>
-</ul>
-<p>We do not use your information for advertising, profiling, automated decision-making with
-legal effect, or marketing. <strong>We will not send you marketing communications.</strong></p>
-<hr />
-<h2>5. Where information is stored</h2>
-<p>As of August 21, 2026, information is stored <strong>locally on the device</strong> on which the
-Application is installed: in the Application's local database, and in local files for
-photographs and temporary backups. The Application works fully offline and with no
-account.</p>
-<p>The Application does not require an account. It offers to sign in once, and you may
-decline and keep working locally forever.</p>
-<p><strong>If, and only if, you choose to sign in with a Google or Apple account</strong>, cloud backup is
-enabled: a copy of your database — people, ideas, notes and photographs — is stored in
-Google's Firebase services (Cloud Firestore and Cloud Storage) under your account alone.
-The backup runs automatically when the Application opens and closes, and its only purpose
-is to let you restore your database on a new device.</p>
-<p>Access to the backup is restricted by server-side security rules to the account that
-created it, and the Application provides no way whatsoever to view another user's
-database. This data is not used for advertising, analytics, or sale to third parties.
-Signing out stops the backup; the database on the device stays exactly as it is.</p>
-<p>Firebase App Check is used to verify that requests come from a genuine installation of the
-Application. It does not identify you.</p>
-<hr />
-<h2>6. AI-assisted import (Google Gemini)</h2>
-<p>The Application offers AI-assisted import: you can hand it a spreadsheet, or a WhatsApp
-chat export, and it will read the people out of it for you instead of you typing them in
-one at a time.</p>
-<p>When you use this feature, <strong>the text of the file you selected is sent to Google's Gemini
-model</strong> through Firebase AI on the Vertex AI platform, so that it can be parsed into
-person records. This text may contain personal information about the people in that file —
-names, ages, phone numbers, and whatever else the file happens to contain.</p>
-<p>What you should know about this:</p>
-<ul>
-<li><strong>It only happens when you start an import.</strong> No content is sent to the model in the
-  background, and the feature is never automatic.</li>
-<li><strong>Only text is sent.</strong> Photographs are never sent to the model.</li>
-<li><strong>Processing is governed by the Google Cloud data-processing terms</strong>, which are a
-  contractual commitment that the content is not used to train Google's models and is not
-  retained.</li>
-<li><strong>Requests are processed on Google's global endpoint</strong>, which means processing may occur
-  outside your country of residence, including outside the European Economic Area. See
-  section 13.</li>
-<li>The parsed results are shown to you for review, and are written to your database only
-  after you accept them.</li>
-</ul>
-<p>If you would rather not send anything to a third party, do not use the AI import — every
-person record can be created manually, and the rest of the Application is unaffected.</p>
-<hr />
-<h2>7. Community area and leaderboard</h2>
-<p>The Application includes a community area showing aggregate figures across all
-matchmakers — activity points, number of active matchmakers, friends added, ideas opened,
-couples who started dating, and engagements — along with a leaderboard of the ten most
-active matchmakers.</p>
-<p><strong>The community area is open only to users who signed in with a Google or Apple account.</strong>
-If you use the Application without signing in, you send no data to this server at all, you
-are not counted in the community figures, you do not appear in the leaderboard, and you do
-not see them.</p>
-<p>For this purpose, and only for this purpose, two kinds of data about a signed-in user are
-stored on the server:</p>
-<ul>
-<li><strong>Activity counters</strong> — how many activity points you accumulated today, this week, this
-  month and all-time, and how many friends, ideas, couples dating and engagements lie
-  behind them. These are numbers only.</li>
-<li><strong>The name and picture in your profile</strong> — so that you can be shown in the leaderboard.</li>
-</ul>
-<p><strong>No detail about any person in your database is ever sent to this server.</strong> Not a name,
-not an age, not a phone number, not a note, not a photograph of them. What other
-matchmakers see is the name and picture from your own profile, and the numbers.</p>
-<p>By default, the name and picture from your profile do appear in the community leaderboard.
-You can turn this off at any time via <strong>"Appear in the community under my name"</strong> in the
-"Privacy and my database" screen — your activity is then still counted in the community
-totals, but with no name, no picture and no place in the leaderboard. In the same screen
-you can switch on <strong>"Keep me private"</strong>, which stops anything at all being sent to the
-community, and you can delete your community data from the server entirely.</p>
-<p>Please note: the community data is read by the Application on every device it is installed
-on, in order to compute the totals and the leaderboard. <strong>Treat a name shown in the
-leaderboard as visible to every user of the Application.</strong></p>
-<hr />
-<h2>8. "Mazal tov! A new couple is engaged" announcements</h2>
-<p>When a matchmaker marks in the Application that a couple has reached the wedding, a short
-record is sent to the server so that the announcement can be shown to other users.</p>
-<p><strong>No detail about either member of the couple is ever sent to this server — not a name,
-not a first name, not a photograph, not an age, nothing.</strong> The record holds a timestamp,
-the matchmaker's account identifier, and their own proposal id (a random identifier
-generated on their phone, meaningless outside their own database, carried only so a
-congratulation can be delivered back). What other users see is that some couple got
-engaged.</p>
-<p>The Application used to offer to publish the couple's first names and a photograph, once
-the matchmaker confirmed they had the couple's consent. <strong>That feature has been removed.</strong>
-Two people who are not users of the Application, who agreed to nothing and would have no
-way of knowing, are not made public on the strength of a third person ticking a box. The
-server itself now rejects any attempt to write a couple's name or picture — it is not
-merely that the app declines to.</p>
-<p>The only thing that can be added to an announcement is <strong>the matchmaker's own name</strong>.
-Right after the wedding is marked, a separate question is asked: may the announcement say
-that this match was yours. If you agree, the name from your profile is added — and nothing
-else. If you decline, or dismiss the question, the announcement stays nameless. Appearing
-in the community leaderboard is not an answer to this question, and it is asked afresh for
-every wedding. Immediately afterwards an "Undo" button removes the name and leaves the
-announcement nameless.</p>
-<p>Note that even a nameless announcement carries the matchmaker's account identifier, and
-that identifier is also used by your community record. A matchmaker who appears in the
-leaderboard under their name can be identified this way even when the announcement itself
-carries no name.</p>
-<p>The announcement is temporary: it is shown for up to one week from publication, and the
-Application has no screen, list or archive of engaged couples.</p>
-<hr />
-<h2>9. Support requests</h2>
-<p>If you send a problem report or an improvement idea from within the Application, we
-receive the text you wrote, an image if you attached one, the name in your profile, and
-three technical details about the device: model, operating system, and application
-version. These details are shown to you on screen before sending. Support requests are
-accessible to the Application's administrators only, and are used solely to handle the
-request.</p>
-<hr />
-<h2>10. Information about other people</h2>
-<p>The Application is built around a matchmaker recording information about <strong>other people</strong>,
-who are not users of the Application and have not agreed to this policy.</p>
-<p>Where data protection law applies to you, you are responsible for that information: for
-having a lawful basis to hold it, for handling it fairly, and for responding to the people
-concerned if they ask what you hold about them. The Application is designed to help:
-records stay on your device by default, they are never shared with other users, and no
-detail from your database is ever transmitted to the community server. The only paths by
-which such information leaves your device are the ones you initiate — cloud backup, AI
-import, an engagement announcement you publish, an export, or a share.</p>
-<p>Please use the Application the way you would want someone to use it about you.</p>
-<hr />
+<h3>Reminders and files</h3>
+<p>Reminders are local notifications scheduled on the device. Exporting JSON or Excel, sharing a card, or opening a backup file happens at your direction. A copy delivered to another app or stored outside Shadchan is under your control.</p>
+<h2>2. Purposes</h2>
+<p>Information is used to operate the Application: database management, match ideas, search and filtering, reminders, imports and sharing you request, backup and restore, community features, support, security and abuse prevention. We do not use it for advertising, marketing, commercial profiling or automated decisions with legal effect, and we do not send marketing communications.</p>
+<h2>3. Local storage and cloud backup</h2>
+<p>Hive and local files are the active source of truth, so the Application can work offline after sign-in. An account is required to separate different users' databases on one device and to make restoration possible.</p>
+<p>A backup under <code>users/{uid}</code> in Cloud Firestore and Cloud Storage includes people, ideas, notes, activity and status history, the profile and photographs. It runs on app open, pause/close and after changes, and is used to restore the database on a new device. Server-side rules restrict it to the account that created it; the Application has no administrator screen or cross-account database search.</p>
+<p>Signing out first attempts a final backup. Only after it succeeds does the Application disconnect the account and clear the local database, so the next user cannot see it. The cloud copy remains and returns when the same account signs in again.</p>
+<h2>4. Gemini-assisted import</h2>
+<p>Only when you start an AI-assisted import, text extracted from an Excel file, chat backup or profile card is sent to Gemini through Firebase AI Logic and Vertex AI at a global endpoint. It may contain names, ages, telephone numbers and other content in the selected file. Photographs are not sent to the model in this flow. Parsed results are shown for review and written only after acceptance.</p>
+<p>Use is governed by the Google Cloud and Generative AI service terms. Google states that it will not use customer data to train or fine-tune AI/ML models without permission or instruction, but may process or retain data as needed for security, abuse monitoring, operation or caching under its settings and terms. If you do not want to send text to a model, use the manual and non-AI import paths.</p>
+<h2>5. Community and public profile</h2>
+<p>An account may have a community document with period activity counters: points, friends, ideas, couples dating and engagements. Other signed-in users read those counters to produce community totals and the leaderboard.</p>
+<p>If you choose to appear by name, the following details about <strong>you only</strong> may also be visible: profile name, profile picture, short introduction, answers you chose to share, a community benefit and a WhatsApp number you entered voluntarily. Treat them as visible to every signed-in user. You can hide the named profile, stop community publishing or erase the community document from "Privacy and my database".</p>
+<p>No name, phone number, note or photograph of a person in your matchmaking database is written to the community member document.</p>
+<h2>6. Engagement announcements and congratulations</h2>
+<p>When an idea is marked as a wedding, a temporary community announcement contains a timestamp, the matchmaker's account identifier and a random idea identifier meaningless without their local database. It contains no name, photograph, age or other detail about the couple. The matchmaker's own name is added only after separate consent. It is displayed for up to one week and intended for Firestore TTL deletion after a retention period of no more than 28 days.</p>
+<p>Another user may send a "Mazal tov" message. It contains sender and recipient identifiers, the sender's name if published, the idea identifier and the message text. Only sender and recipient may read it. It is deleted after delivery to the local journal and is intended for TTL deletion after no more than 90 days.</p>
+<h2>7. Community tips</h2>
+<p>If you submit a tip, its text, your profile name, account identifier and review status are stored. Approved tips are visible to signed-in users. Support administrators review, approve or reject them. Your tips are deleted when your account is deleted.</p>
+<h2>8. Support requests</h2>
+<p>If you send a problem or idea, we store the text, request type, your name and account identifier, device model, operating system, app version, submission time and any image you attach. Replies from you and the Shadchan team are kept in a thread. Only you and authorised support administrators can read the request and thread.</p>
+<p>Support correspondence is retained while needed to handle the request, document a defect, secure the service and prevent abuse. It is not deleted automatically with the account; this is also stated in the deletion confirmation. You may request earlier deletion at <strong>giladsh22@gmail.com</strong>, subject to any legal retention requirement.</p>
+<h2>9. App Check and service security</h2>
+<p>Firebase App Check sends attestation material and tokens to Google or Apple to verify genuine installations. Firebase states that App Check does not retain attestation material; tokens are time-limited, and tokens used with replay protection may be kept for up to 30 days. App Check is not used to identify database content.</p>
+<h2>10. Information website</h2>
+<p>The static website on Firebase Hosting has no accounts, forms, cookies, advertising or analytics. Firebase Hosting and Google may process technical connection information, such as IP address and user-agent, to deliver pages, secure the service and prevent abuse under Google's terms.</p>
 <h2>11. Permissions</h2>
-<p>The Application may request the following permissions, only when they are needed for an
-action you chose:</p>
-<table>
-<thead>
-<tr>
-<th>Permission</th>
-<th>Why</th>
-<th>Where the data goes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Contacts</td>
-<td>Show device contacts so you can import the ones you pick</td>
-<td>Stays on the device</td>
-</tr>
-<tr>
-<td>Call log (Android)</td>
-<td>Sort import candidates by recent calls in the card-swipe view</td>
-<td>Stays on the device; sorting only</td>
-</tr>
-<tr>
-<td>Photos / gallery</td>
-<td>Choose a photograph for a person record</td>
-<td>Stays on the device unless you enable backup or publish it</td>
-</tr>
-<tr>
-<td>Notifications</td>
-<td>Local reminders you set yourself</td>
-<td>Never leaves the device</td>
-</tr>
-</tbody>
-</table>
-<p>You may revoke permissions at any time through device settings, but some features may not
-work without the corresponding permission.</p>
-<hr />
-<h2>12. Third-party services</h2>
-<p>The Application uses the following third-party services, which have their own privacy
-policies:</p>
+<p>The Application may request contacts, Android call log, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.</p>
+<h2>12. Providers and international transfers</h2>
+<p>The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Firebase App Check, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.</p>
+<p>Information may be processed outside your country. Firebase Authentication operates from US data centres; global and AI services may process data in other locations. Where required, we rely on Google data-processing agreements and transfer mechanisms and other lawful safeguards.</p>
+<h2>13. Retention and erasure</h2>
 <ul>
-<li><strong>Google Play Services</strong>, covering Firebase Authentication, Cloud Firestore, Cloud
-  Storage, Firebase App Check, Firebase AI (Gemini on Vertex AI), Google Sign-In, and
-  Google ML Kit — <a href="https://www.google.com/policies/privacy/">Google Privacy Policy</a></li>
-<li><strong>Sign in with Apple</strong>, if you choose to sign in with an Apple account —
-  <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a></li>
+<li>Local data remains until you delete it, delete the account or uninstall the Application.</li>
+<li>Backup remains until erased from the privacy screen or through account deletion. Uninstalling alone does not erase it.</li>
+<li>Community data can be erased immediately from the privacy screen.</li>
+<li>Engagement records and congratulations follow section 6.</li>
+<li>Your tips are erased with the account.</li>
+<li>Support correspondence follows section 8.</li>
+<li>Firebase Authentication may keep logged IP addresses for a few weeks. Firebase states that after user deletion, Authentication data is removed from live and backup systems within 180 days.</li>
 </ul>
-<p>Beyond these, the Application uses <strong>no advertising networks, no analytics providers, and
-no crash-reporting services</strong>.</p>
-<hr />
-<h2>13. International data transfers</h2>
-<p>If you use cloud backup, AI import, the community area or support requests, the data
-involved is processed on Google's infrastructure and may be transferred to and processed
-in countries outside your country of residence, including outside the European Economic
-Area. AI import requests in particular are processed on Google's global endpoint.</p>
-<p>Where applicable law requires safeguards for such transfers, we rely on the mechanisms
-Google Cloud and Firebase provide for their customers, which include:</p>
-<ul>
-<li>Standard Contractual Clauses (SCCs) approved by the European Commission</li>
-<li>Adequacy decisions or other legally recognised transfer mechanisms</li>
-<li>Your consent, where required and legally permitted</li>
-</ul>
-<p>Data protection laws in other countries may differ from those in your jurisdiction.</p>
-<hr />
-<h2>14. Sharing and disclosure</h2>
-<p>The Application does not sell personal information and does not share it with advertisers
-or commercial parties.</p>
-<p>Beyond the community area, the AI import and the support requests described above,
-information leaves the device only at your initiative: if you use sharing, backup export,
-opening a backup file, or dialling, the relevant information may be handed to the
-application, service or operating system you chose to use. In those cases, the handling of
-that information is also subject to the policy of the external service or application you
-selected.</p>
-<p>We may disclose information:</p>
-<ul>
-<li>as required by law, such as to comply with a subpoena or similar legal process;</li>
-<li>when we believe in good faith that disclosure is necessary to protect our rights,
-  protect your safety or the safety of others, investigate fraud, or respond to a
-  government request;</li>
-<li>to our trusted service providers who work on our behalf, have no independent use of the
-  information disclosed to them, and are bound to the rules set out in this policy.</li>
-</ul>
-<hr />
-<h2>15. Legal bases for processing (EEA/UK)</h2>
-<p>Where the GDPR or UK GDPR applies:</p>
-<ul>
-<li><strong>Performance of a contract</strong> — operating the features you asked for, including storing
-  your records and, if enabled, restoring them from backup.</li>
-<li><strong>Consent</strong> — device permissions (contacts, call log, photos, notifications), signing in
-  and enabling cloud backup, publishing an engagement announcement with details, and using
-  AI-assisted import. You may withdraw consent at any time; withdrawal does not affect
-  processing carried out beforehand.</li>
-<li><strong>Legitimate interests</strong> — running the community area for signed-in users, including
-  showing your profile name and picture in the leaderboard, which you can switch off at
-  any time (section 7); verifying that requests come from a genuine installation
-  (App Check); handling support requests you send; and preventing abuse.</li>
-</ul>
-<hr />
-<h2>16. Data retention and deletion</h2>
-<ul>
-<li><strong>On-device data</strong> is kept on the device until you update it, delete it, or uninstall
-  the Application. We set no retention period on it, because we do not hold it.</li>
-<li><strong>Cloud backup</strong>, if enabled, is kept under your account until you delete it. It is
-  deleted from the server with one tap from "Privacy and my database" — every record, the
-  profile and every photo — and the database on your device is left untouched. Signing out
-  stops the backup being updated but does not remove it. <strong>Uninstalling the Application
-  alone does not delete it.</strong></li>
-<li><strong>Community data</strong> — counters, and your name if you approved it — is deleted from the
-  server with one tap from "Privacy and my database". <strong>Uninstalling the Application alone
-  does not delete it.</strong></li>
-<li><strong>Engagement announcements</strong> are shown for up to one week and can be removed immediately
-  with the "Unpublish" button.</li>
-<li><strong>Support requests</strong> are kept only as long as needed to handle the request.</li>
-<li><strong>AI import content</strong> is not retained by Google under the Google Cloud data-processing
-  terms, and is not retained by us.</li>
-</ul>
-<p>You can delete people, photographs, notes and ideas from within the Application. If you
-exported a backup file or shared information with another application, those copies may
-remain outside the Application until you delete them manually.</p>
-<p>To request deletion of anything we hold, write to <strong>giladsh22@gmail.com</strong>.</p>
-<hr />
-<h2>17. Your rights</h2>
-<p>Subject to applicable law, you have the right to access, correct, delete, restrict or
-object to the processing of your personal data, the right to data portability, and the
-right to withdraw consent where processing is based on consent. Most of these you can
-exercise directly in the Application — the data is on your device, and the community and
-backup data can be deleted from within it.</p>
-<p>For anything you cannot do yourself, contact <strong>giladsh22@gmail.com</strong>. You also have the
-right to lodge a complaint with your local data protection authority.</p>
-<h3>California privacy rights (CCPA/CPRA)</h3>
-<p>If you are a California resident, you have the right to know what personal information is
-collected, the right to delete personal information, the right to correct inaccurate
-personal information, the right to opt out of the sale or sharing of personal information,
-and the right to non-discrimination for exercising these rights.</p>
-<p><strong>We do not sell or share personal information as those terms are defined under the
-CCPA/CPRA</strong>, and we do not use it for cross-context behavioural advertising. To exercise
-your rights, contact <strong>giladsh22@gmail.com</strong>.</p>
-<hr />
-<h2>18. Opt-out</h2>
-<p>You can stop any further processing by uninstalling the Application. Note that
-uninstalling does not by itself delete community data already stored on the server or a
-cloud backup already created. Both have their own delete button on "Privacy and my
-database" — use them before you uninstall. If you have already uninstalled, write to us
-and we will do it.</p>
-<hr />
-<h2>19. Children</h2>
-<p>The Application is not intended for children under 16 years of age, or such higher age as
-required by applicable law, and is not marketed to them. We do not knowingly collect
-personal information from children.</p>
-<p>If you are a parent or guardian and believe a child has provided us with personal
-information, contact us at <strong>giladsh22@gmail.com</strong> and we will delete it.</p>
-<hr />
-<h2>20. Security</h2>
-<p>The Application relies on the storage and permission mechanisms of the operating system
-and of Flutter. Cloud backup, community data and support requests are protected by
-server-side security rules that restrict each record to the account that created it, and
-by Firebase App Check. Although reasonable measures are taken, we cannot guarantee
-absolute protection against unauthorised access to the device itself, and no method of
-transmission or storage is completely secure.</p>
-<hr />
-<h2>21. Data breach notification</h2>
-<p>If a data breach occurs that affects your personal data, we will notify you in accordance
-with applicable legal requirements, including, where required, the nature of the breach
-and the steps being taken to address it.</p>
-<hr />
-<h2>22. Changes to this policy</h2>
-<p>This privacy policy may be updated from time to time. In the event of a material change,
-the updated version will replace the previous one and carry a new update date. Where
-required by law, we will seek your consent to material changes before they take effect.
-Previous versions are available on request at <strong>giladsh22@gmail.com</strong>.</p>
-<hr />
-<h2>23. Contact</h2>
-<p>For questions about privacy, or requests concerning your information:</p>
-<p><strong>Gilad Shtruzman</strong> — <strong>giladsh22@gmail.com</strong></p>
-<hr />
-<p><em>A Hebrew version of this policy is available in PRIVACY_POLICY.md.
-In case of any discrepancy between the versions, the Hebrew version prevails.</em></p>
+<h2>14. Account deletion</h2>
+<p>Account deletion can be completed inside the Application: <strong>My profile → Account → Delete account and data</strong>. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.</p>
+<p>Deletion removes the Firebase user, cloud backup and photographs, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.</p>
+<p>If you no longer have access to the Application, request deletion at <strong>giladsh22@gmail.com</strong>. We will verify ownership first.</p>
+<h2>15. Rights and legal bases</h2>
+<p>Depending on applicable law, processing necessary to run the account and Application is based on performance of the service; permissions, AI and voluntary publication rely on consent; and security, support and community operations may rely on legitimate interests. You may have rights of access, correction, erasure, restriction, objection, portability and withdrawal of consent, and the right to complain to a supervisory authority. We do not sell or "share" personal information for cross-context behavioural advertising under the CCPA/CPRA.</p>
+<p>You are responsible for information about other people that you enter, including having a lawful basis to keep and share it. Use the Application as you would want someone to use information about you.</p>
+<h2>16. Children</h2>
+<p>The Application is not intended for children under 16, or a higher age required by local law, and we do not knowingly collect information from children.</p>
+<h2>17. Security</h2>
+<p>We use operating-system protections, Firebase Security Rules, uid separation, App Check and encrypted transport. No system is completely secure. You are also responsible for securing the device, sign-in provider account and exported files.</p>
+<h2>18. Changes and contact</h2>
+<p>A material change will carry a new update date and be presented where required. For questions, rights requests or deletion requests: <strong>Gilad Shtruzman — giladsh22@gmail.com</strong>.</p>
+<p>If the English translation differs from the Hebrew policy, the Hebrew policy prevails.</p>
   </main>
   <footer class="site">
     Shadchan &middot; Gilad Shtruzman

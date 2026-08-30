@@ -1,4 +1,27 @@
+import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/services/community_service.dart';
+
+/// One sentence on "מה קורה בקהילה עכשיו", and whatever can be done about it.
+///
+/// **Most news is only news.** A line about how many ideas opened today is
+/// something to know and nothing to act on, and dressing it up with a chevron
+/// would promise a screen that does not exist. The one exception is somebody
+/// else's good news: a wedding a matchmaker put their own name to can be
+/// answered, in one tap, with a bracha that lands in their journal for that
+/// couple — see `MazelTovService`. That is the only action this banner has ever
+/// been able to offer, and [engagement] is how a line carries it.
+class CommunityPulseLine {
+  const CommunityPulseLine({required this.text, this.engagement});
+
+  final String text;
+
+  /// The wedding this line is about, when it is one that can be answered.
+  /// Null on every other line, and on a wedding whose author is not accepting
+  /// congratulations.
+  final CommunityEngagement? engagement;
+
+  bool get isActionable => engagement?.canBeCongratulated ?? false;
+}
 
 /// The one human sentence on a screen otherwise made of numbers.
 ///
@@ -17,7 +40,8 @@ import 'package:shadchan/services/community_service.dart';
 /// member of the couple is ever stored or said.
 ///
 /// Every line is derived from figures the screen has already fetched. The one
-/// exception is the list of names in [pulseLines], which its caller fetches.
+/// exception is the list of engagements in [pulseLines], which its caller
+/// fetches.
 abstract final class CommunityHighlight {
   /// The sentence for this window, or null when the community has been quiet
   /// enough that anything said would be an announcement of nothing.
@@ -75,49 +99,68 @@ abstract final class CommunityHighlight {
   /// Both windows come from figures the caller has already fetched, so this
   /// costs no reads.
   ///
-  /// [namedMatchmakers] are the matchmakers who published their own name on an
-  /// engagement this week — see `CommunityEngagementsService.namedThisWeek`.
-  /// Each one gets a line of their own, ahead of everything else, and it stays
-  /// in the rotation for as long as the record is fresh, which is a week.
+  /// [namedEngagements] are the weddings whose matchmaker published their own
+  /// name this week — see `CommunityEngagementsService.namedThisWeek`. Each one
+  /// gets a line of its own, ahead of everything else, and it stays in the
+  /// rotation for as long as the record is fresh, which is a week. Where the
+  /// author is accepting congratulations the line is tappable and says so.
   ///
   /// **A name here was volunteered for this wedding.** It is not the
   /// leaderboard's standing consent and it is not inferred from anything: the
   /// matchmaker was asked when the couple married and said yes. Nothing about
   /// the couple is stored on those records, so there is nothing about them to
   /// say — the line congratulates the matchmaker and stops.
-  static List<String> pulseLines({
+  static List<CommunityPulseLine> pulseLines({
     required CommunityTotals day,
     required CommunityTotals week,
-    List<String> namedMatchmakers = const <String>[],
+    List<CommunityEngagement> namedEngagements = const <CommunityEngagement>[],
   }) {
     // A named engagement outranks the anonymous count of the same news, so the
     // count only speaks for the weddings nobody put a name to.
-    final int unnamed = week.engagements - namedMatchmakers.length;
+    final int unnamed = week.engagements - namedEngagements.length;
 
-    return <String>[
-      for (final String name in namedMatchmakers)
-        'מזל טוב לשדכן $name שזוג שלו התארס השבוע! 🎉',
+    CommunityPulseLine plain(String text) => CommunityPulseLine(text: text);
+
+    return <CommunityPulseLine>[
+      // The only lines here that carry an action: tapping one opens the
+      // brachot sheet addressed to that matchmaker. See [CommunityPulseLine].
+      for (final CommunityEngagement engagement in namedEngagements)
+        CommunityPulseLine(
+          text: engagement.canBeCongratulated
+              ? 'מזל טוב לשדכן ${engagement.matchmakerName} שזוג שלו התארס השבוע! 🎉 לשליחת ברכה'
+              : 'מזל טוב לשדכן ${engagement.matchmakerName} שזוג שלו התארס השבוע! 🎉',
+          engagement: engagement,
+        ),
       if (unnamed > 0)
-        unnamed == 1
-            ? 'מזל טוב! זוג נוסף התארס 🎉'
-            : 'מזל טוב! $unnamed זוגות התארסו השבוע 🎉',
+        plain(
+          unnamed == 1
+              ? 'מזל טוב! זוג נוסף התארס 🎉'
+              : 'מזל טוב! $unnamed זוגות התארסו השבוע 🎉',
+        ),
       if (day.ideas > 0)
-        day.ideas == 1
-            ? 'רעיון חדש נפתח היום'
-            : '${day.ideas} רעיונות נפתחו היום',
+        plain(
+          day.ideas == 1
+              ? 'רעיון חדש נפתח היום'
+              : '${day.ideas} רעיונות נפתחו היום',
+        ),
       if (week.couples > 0)
-        week.couples == 1
-            ? 'זוג אחד התחיל לצאת השבוע'
-            : '${week.couples} זוגות התחילו לצאת השבוע',
+        plain(
+          week.couples == 1
+              ? 'זוג אחד התחיל לצאת השבוע'
+              : '${week.couples} זוגות התחילו לצאת השבוע',
+        ),
       if (day.friends > 0)
-        day.friends == 1
-            ? 'חבר חדש נוסף למאגרים היום'
-            : '${day.friends} חברים חדשים נוספו היום',
+        plain(
+          day.friends == 1
+              ? 'חבר חדש נוסף למאגרים היום'
+              : '${day.friends} חברים חדשים נוספו היום',
+        ),
       if (day.activeMatchmakers > 1)
-        '${day.activeMatchmakers} שדכנים פעילים היום',
-      if (week.ideas > 0 && day.ideas == 0) '${week.ideas} רעיונות נפתחו השבוע',
+        plain('${day.activeMatchmakers} שדכנים פעילים היום'),
+      if (week.ideas > 0 && day.ideas == 0)
+        plain('${week.ideas} רעיונות נפתחו השבוע'),
       if (week.friends > 0 && day.friends == 0)
-        '${week.friends} חברים חדשים נוספו השבוע',
+        plain('${week.friends} חברים חדשים נוספו השבוע'),
     ];
   }
 

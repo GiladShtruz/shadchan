@@ -13,6 +13,7 @@ import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 /// The way in. Everybody comes through here, once.
 ///
@@ -287,11 +288,16 @@ class _SignInScreenState extends State<SignInScreen> {
                   // their button above the alternatives. See
                   // `AccountService.isAppleAvailable`.
                   if (account.isAppleAvailable) ...<Widget>[
-                    _ProviderButton(
-                      icon: Icons.apple,
-                      label: 'המשך עם Apple',
-                      busy: account.isBusy,
-                      onPressed: () => _signIn(account.signInWithApple),
+                    SignInWithAppleButton(
+                      onPressed: account.isBusy
+                          ? null
+                          : () => _signIn(account.signInWithApple),
+                      text: 'המשך עם Apple',
+                      height: 52,
+                      style: theme.brightness == Brightness.dark
+                          ? SignInWithAppleButtonStyle.white
+                          : SignInWithAppleButtonStyle.black,
+                      borderRadius: const BorderRadius.all(Radius.circular(12)),
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -401,8 +407,7 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 }
 
-/// One of the two provider buttons, drawn identically so neither reads as the
-/// recommended one.
+/// The Google provider button. Apple uses its guideline-compliant widget.
 class _ProviderButton extends StatelessWidget {
   const _ProviderButton({
     required this.icon,

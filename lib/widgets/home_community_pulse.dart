@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/dialogs/mazel_tov_sheet.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
+import 'package:shadchan/services/mazel_tov_service.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/community_challenge.dart';
 import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/utils/community_period.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 
 /// "מה קורה בקהילה עכשיו" — the one live thing on the home screen.
@@ -56,9 +60,13 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
   CommunityTotals? _day;
   CommunityTotals? _week;
 
-  /// The matchmakers who put their name to a wedding this week, newest first.
-  /// Empty in most weeks, and empty until the read comes back.
-  List<String> _namedEngagements = const <String>[];
+  /// The weddings whose matchmaker put their own name to them this week,
+  /// newest first. Empty in most weeks, and empty until the read comes back.
+  List<CommunityEngagement> _namedEngagements = const <CommunityEngagement>[];
+
+  /// The engagement ids a bracha has already been sent for from this device, so
+  /// the line stops offering an action it has already been given.
+  final Set<String> _congratulated = <String>{};
 
   /// Whether the last look at [AccountProvider] said there was an account.
   ///
@@ -101,9 +109,9 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     // than derived from them, because the aggregate knows how many weddings
     // there were and not whose they were — and only a record its own author
     // signed carries a name at all.
-    final List<String> named = week.engagements > 0
+    final List<CommunityEngagement> named = week.engagements > 0
         ? await CommunityEngagementsService.namedThisWeek()
-        : const <String>[];
+        : const <CommunityEngagement>[];
     if (week.resolved) {
       // The only place this is written. Next week it is what "בשבוע שעבר הגענו
       // ל־X" reads — see [CommunityProfileStore.recordCommunityWeek].
@@ -175,10 +183,10 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
       return const SizedBox.shrink();
     }
 
-    final List<String> lines = CommunityHighlight.pulseLines(
+    final List<CommunityPulseLine> lines = CommunityHighlight.pulseLines(
       day: day,
       week: week,
-      namedMatchmakers: _namedEngagements,
+      namedEngagements: _namedEngagements,
     );
     final CommunityChallenge challenge = CommunityChallenge.build(
       weekKey: CommunityPeriods.weekKey(),
@@ -195,11 +203,67 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     // "we do not know" this block must stay silent about.
     _syncTimer(lines.length);
 
+    final CommunityPulseLine? current = lines.isEmpty
+        ? null
+        : lines[_index % lines.length];
+
     return CommunityPulseCard(
-      line: lines.isEmpty ? null : lines[_index % lines.length],
+      line: current,
       challenge: challenge,
       onOpen: widget.onOpen,
+      // A line that can be acted on is acted on where it is read. Everything
+      // else goes on opening the activity screen, which is the long form of
+      // what the banner summarises.
+      onLine: current != null && current.isActionable
+          ? () => _congratulate(current.engagement!)
+          : null,
       beat: _index,
+      sent:
+          current?.engagement != null &&
+          _congratulated.contains(current!.engagement!.id),
+    );
+  }
+
+  /// "שלחו מזל טוב" — the one action any line on this banner carries.
+  ///
+  /// The same flow the engagement card runs: four ready-made brachot and a
+  /// field, delivered into the other matchmaker's journal for that couple. It
+  /// is deliberately not a message thread — there is no inbox in this app and
+  /// there is not going to be one.
+  Future<void> _congratulate(CommunityEngagement engagement) async {
+    final OverlayState? notices = AppNotice.capture(context);
+    final String myName = context.read<UserProfileProvider>().name ?? '';
+    final String? text = await MazelTovSheet.show(context);
+    if (text == null || !mounted) {
+      return;
+    }
+    // The rotation must not carry the line out from under a sheet somebody is
+    // still reading the result of.
+    _timer?.cancel();
+    _timer = null;
+
+    final bool ok = await MazelTovService.send(
+      toUid: engagement.authorUid,
+      matchId: engagement.matchId,
+      text: text,
+      // The same rule the leaderboard follows: a matchmaker who has not agreed
+      // to publish their name sends the bracha without one, and the recipient
+      // reads it as coming from "שדכן מהקהילה".
+      fromName: CommunityProfileStore.isHidden ? '' : myName,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (ok) {
+        _congratulated.add(engagement.id);
+      }
+    });
+    AppNotice.showOn(
+      notices,
+      ok
+          ? 'הברכה נשלחה. תודה!'
+          : 'לא הצלחנו לשלוח כרגע. כדאי לנסות שוב כשיש חיבור לאינטרנט.',
     );
   }
 }
@@ -216,6 +280,8 @@ class CommunityPulseCard extends StatelessWidget {
     required this.line,
     required this.challenge,
     required this.onOpen,
+    this.onLine,
+    this.sent = false,
     this.beat = 0,
   });
 
@@ -226,15 +292,23 @@ class CommunityPulseCard extends StatelessWidget {
 
   /// The sentence showing right now, or null when the community has been quiet
   /// and only the challenge is worth drawing.
-  final String? line;
+  final CommunityPulseLine? line;
 
   final CommunityChallenge challenge;
   final VoidCallback onOpen;
 
+  /// What this particular line does when it is tapped, where it does anything.
+  /// Null on every line that is only news — which is nearly all of them — and
+  /// the line then falls through to [onOpen] like the rest of the card.
+  final VoidCallback? onLine;
+
+  /// Whether the action this line offers has already been taken.
+  final bool sent;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String? current = line;
+    final CommunityPulseLine? current = line;
     final int beat = this.beat;
 
     return CommunityCard(
@@ -265,7 +339,7 @@ class CommunityPulseCard extends StatelessWidget {
             ),
             if (current != null) ...<Widget>[
               const SizedBox(height: 10),
-              _RotatingLine(line: current),
+              _RotatingLine(line: current, onTap: onLine, sent: sent),
             ],
             const SizedBox(height: 14),
             _ChallengeBar(challenge: challenge),
@@ -282,13 +356,61 @@ class CommunityPulseCard extends StatelessWidget {
 /// a small area on a calm page, and a sentence that flies in from the side
 /// turns a quiet banner into a ticker tape.
 class _RotatingLine extends StatelessWidget {
-  const _RotatingLine({required this.line});
+  const _RotatingLine({required this.line, this.onTap, this.sent = false});
 
-  final String line;
+  final CommunityPulseLine line;
+
+  /// Present only on a line that can be acted on — today that is one thing, a
+  /// bracha to a matchmaker whose couple got engaged.
+  final VoidCallback? onTap;
+
+  /// Whether that bracha has already gone. The line stays in the rotation and
+  /// stops offering the action, which is the honest thing for it to say.
+  final bool sent;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color lead = communityLead(theme);
+    final bool actionable = onTap != null && !sent;
+
+    final Widget row = Row(
+      key: ValueKey<String>('${line.text}|$sent'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: lead),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            sent ? '${line.text} — הברכה נשלחה 💛' : line.text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+              // Only a line that does something wears the colour that says so.
+              color: actionable ? lead : null,
+              decoration: actionable ? TextDecoration.underline : null,
+              decorationColor: actionable ? lead.withValues(alpha: 0.5) : null,
+            ),
+          ),
+        ),
+        if (actionable) ...<Widget>[
+          const SizedBox(width: 6),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(Icons.favorite_rounded, size: 15, color: lead),
+          ),
+        ],
+      ],
+    );
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 420),
@@ -306,35 +428,21 @@ class _RotatingLine extends StatelessWidget {
           ),
         );
       },
-      child: Row(
-        key: ValueKey<String>(line),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Container(
-              width: 5,
-              height: 5,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: communityLead(theme),
+      // The line's own tap has to beat the card's, and an `InkWell` inside the
+      // card's `InkWell` is exactly how: the innermost hit wins, so the news
+      // that can be answered is answered and everything else still opens the
+      // activity screen.
+      child: actionable
+          ? InkWell(
+              key: ValueKey<String>('action:${line.text}'),
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: row,
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              line,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      ),
+            )
+          : row,
     );
   }
 }

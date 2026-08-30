@@ -827,6 +827,76 @@ void main() {
     );
   });
 
+  testWidgets('Every open idea lands on the board, with its next step on it', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final DateTime now = DateTime(2026, 8, 15);
+    final Person male = Person(
+      id: 'board-open-male',
+      firstName: 'דוד',
+      lastName: 'כהן',
+      gender: Gender.male,
+      manualAge: 26,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final Person female = Person(
+      id: 'board-open-female',
+      firstName: 'שרה',
+      lastName: 'לוי',
+      gender: Gender.female,
+      manualAge: 24,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final MatchIdea idea = MatchIdea(
+      id: 'board-open-idea',
+      personAId: male.id,
+      personBId: female.id,
+      status: MatchStatus.idea,
+      currentHandler: CurrentHandler.me,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(male.id, male);
+      await Hive.box<Person>('people').put(female.id, female);
+      await Hive.box<MatchIdea>('matches').put(idea.id, idea);
+    });
+    addTearDown(() async {
+      await Hive.box<Person>('people').delete(male.id);
+      await Hive.box<Person>('people').delete(female.id);
+      await Hive.box<MatchIdea>('matches').delete(idea.id);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.ensureVisible(find.text('הלוח שלי'));
+    await tester.pump();
+
+    // Nobody pinned this proposal: it is on the board because it is open, which
+    // is what replaced "רעיונות פתוחים" as a strip of its own.
+    expect(
+      HomeBoardStore.instance.contains(HomeItemKind.idea, idea.id),
+      isFalse,
+    );
+    expect(find.text('דוד & שרה'), findsOneWidget);
+
+    // And it carries the step the ideas page would offer for the same stage —
+    // a brand-new proposal, so the boy is asked first.
+    expect(find.text('השלב הבא: לשאול את דוד'), findsOneWidget);
+
+    // The row of open ideas that used to sit further down the page is gone: the
+    // board is the one answer to "what am I working on".
+    expect(find.text('רעיונות פתוחים'), findsNothing);
+    expect(find.text('הפעולות הבאות שלך'), findsNothing);
+  });
+
   testWidgets('Pinning a person opens home directly at the board', (
     WidgetTester tester,
   ) async {

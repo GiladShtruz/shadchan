@@ -170,6 +170,28 @@ abstract final class MatchStages {
     }
   }
 
+  /// The same step, in as few words as a board note can hold.
+  ///
+  /// **The step itself is not decided here.** This is [nextStep]'s answer said
+  /// shorter — the ideas page's own button is [buttonLabel] and stays exactly
+  /// as it is. A note on הלוח שלי is a third of a phone wide and already
+  /// carrying two faces and two names, so "יאללה לקדם — לשאול את יוסי" would be
+  /// cut off before it reached the name, which is the only part of it that says
+  /// anything. Naming the row is what the shorter form spends its words on
+  /// instead.
+  static String shortLabel(MatchNextStep step, {Person? male, Person? female}) {
+    switch (step) {
+      case MatchNextStep.askMale:
+        return 'השלב הבא: לשאול את ${_firstName(male, 'הבחור')}';
+      case MatchNextStep.askFemale:
+        return 'השלב הבא: לשאול את ${_firstName(female, 'הבחורה')}';
+      case MatchNextStep.startDating:
+        // Both have been asked; there is nothing for the matchmaker to do next
+        // except hear back. See [bothAskedLabel].
+        return 'השלב הבא: מחכים לתשובה';
+    }
+  }
+
   /// What the panel says once both sides know about it.
   ///
   /// A statement, not a prompt. "יאללה לקדם — מתחילים לצאת" asked the

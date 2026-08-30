@@ -938,8 +938,9 @@ class _PrivacyNote extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            'רק מה שתבחרו כאן נשלח לקריאה, ואינו משמש לאימון מודלים. המאגר '
-            'הקיים שלכם לא נשלח לשום מקום.',
+            'רק הטקסט שתבחרו כאן נשלח ל־Gemini. לפי תנאי Google Cloud הוא '
+            'אינו משמש לאימון מודלים בלי רשות; ייתכן עיבוד לצורכי אבטחה '
+            'ותפעול. המאגר הקיים והתמונות אינם נשלחים למודל.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

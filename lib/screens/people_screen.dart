@@ -10,11 +10,13 @@ import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/screens/think_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/search_results_panel.dart';
@@ -311,6 +313,19 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
     return CustomScrollView(
       slivers: <Widget>[
+        // **"עוצרים רגע לחשוב על חברים" opens this page, and used to open the
+        // home screen.** It is an invitation to look through the database with
+        // fresh eyes, so it belongs on top of the database rather than two taps
+        // away from it — and the home screen it left is one block shorter for
+        // it. Held back under three friends, where there is nothing yet to
+        // think about.
+        if (totalCount >= 3)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: HomeThinkBanner(onTap: () => ThinkScreen.open(context)),
+            ),
+          ),
         if (pendingContactDrafts.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(

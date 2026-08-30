@@ -9,10 +9,10 @@ import 'package:shadchan/widgets/home_activity_block.dart';
 
 /// The home screen's activity area.
 ///
-/// Two figures, one switch and a way into the rule. Everything that used to sit
-/// here — three windows at once, a community meter, a shared weekly target —
-/// is gone on purpose: this is a workspace, and the numbers screen is one tap
-/// away.
+/// Two squares, one number each, and a window that turns over by itself.
+/// Everything that used to sit here — three windows at once, a community meter,
+/// a shared weekly target, a row of tabs to pick a window with — is gone on
+/// purpose: this is a workspace, and the numbers screen is one tap away.
 void main() {
   Widget wrap(Widget child, {double width = 360, double textScale = 1.0}) {
     return MaterialApp(
@@ -58,24 +58,24 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('נתונים'), findsOneWidget);
-    expect(find.text('הפעילות שלך'), findsOneWidget);
-    // No account in a widget test, so the community column is the invitation
+    expect(find.text('הפעילות שלי'), findsOneWidget);
+    // No account in a widget test, so the community square is the invitation
     // rather than a figure. See the signed-out test below.
     expect(find.text('הצטרפו לקהילת השדכנים'), findsOneWidget);
 
-    // The three windows are a switch, not three columns.
-    for (final String label in <String>['השבוע', 'החודש', 'כל הזמנים']) {
-      expect(find.text(label), findsOneWidget, reason: label);
+    // One window at a time, named — never three columns and never a row of
+    // tabs asking the reader to pick one.
+    expect(find.text('השבוע'), findsOneWidget);
+    for (final String label in <String>['החודש', 'כל הזמנים', 'היום']) {
+      expect(find.text(label), findsNothing, reason: label);
     }
-    expect(find.text('היום'), findsNothing);
 
     // Nothing that belongs on the full screen leaks onto the home page.
     expect(find.textContaining('טבלת הדירוג'), findsNothing);
     expect(find.textContaining('יעד'), findsNothing);
     expect(find.byType(LinearProgressIndicator), findsNothing);
 
-    await tester.tap(find.text('נתונים'));
+    await tester.tap(find.text('הפעילות שלי'));
     await tester.pump();
     expect(opened, 1);
   });
@@ -102,7 +102,7 @@ void main() {
     }
   });
 
-  testWidgets('the switch changes the window without opening the screen', (
+  testWidgets('the window turns over on its own, and never opens the screen', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -112,10 +112,21 @@ void main() {
     await tester.pumpWidget(wrap(HomeActivityBlock(onOpen: () => opened++)));
     await tester.pump();
 
-    await tester.tap(find.text('כל הזמנים'));
-    await tester.pump();
+    // Nothing has been done in any window here — no provider figures — so the
+    // rotation is the honest single "השבוע" and stays on it however long it
+    // runs. What is being checked is that time passing costs nothing and takes
+    // nobody anywhere.
+    for (int i = 0; i < 3; i++) {
+      await tester.pump(const Duration(seconds: 6));
+    }
 
     expect(opened, 0);
+    expect(find.text('השבוע'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // The timer must not outlive the widget.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 12));
     expect(tester.takeException(), isNull);
   });
 
@@ -130,11 +141,12 @@ void main() {
 
     // Their own numbers are untouched — the gate withholds the community, not
     // anything that was ever theirs.
-    expect(find.text('הפעילות שלך'), findsOneWidget);
+    expect(find.text('הפעילות שלי'), findsOneWidget);
     expect(find.text('פעילות הקהילה'), findsNothing);
 
+    // And the invitation wears the same square, so the shape still says a
+    // number belongs there.
     expect(find.text('הצטרפו לקהילת השדכנים'), findsOneWidget);
-    expect(find.text('התחברות'), findsOneWidget);
   });
 
   for (final double width in <double>[320, 360, 430]) {
@@ -150,7 +162,7 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('הפעילות שלך'), findsOneWidget);
+      expect(find.text('הפעילות שלי'), findsOneWidget);
     });
   }
 }

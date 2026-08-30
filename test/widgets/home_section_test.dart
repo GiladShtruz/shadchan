@@ -108,4 +108,70 @@ void main() {
       greaterThan(HomeConfig.cardWidth),
     );
   });
+
+  testWidgets('a note carries the next step beside the note, not instead of '
+      'it', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        Center(
+          child: HomeBoardNote(
+            leading: const HomeCardCoupleAvatars(personA: null, personB: null),
+            title: 'יוסי & רבקה',
+            subtitle: 'לחזור אליהם אחרי החג',
+            footnote: 'השלב הבא: לשאול את יוסי',
+            actions: const HomeNoteActionsButton(),
+            tintSeed: 'idea:1',
+            onTap: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    // Both lines are on the note. The app's line never quietly replaces
+    // somebody's own words.
+    expect(find.text('לחזור אליהם אחרי החג'), findsOneWidget);
+    expect(find.text('השלב הבא: לשאול את יוסי'), findsOneWidget);
+    // And the paper is still the fixed board card, not a box that grew to fit
+    // the extra line.
+    expect(
+      tester.getSize(find.byType(HomeBoardNote)).height,
+      closeTo(HomeConfig.cardHeight, 1),
+    );
+  });
+
+  testWidgets('a line drawing is clipped to its own box', (
+    WidgetTester tester,
+  ) async {
+    // The recolouring turns transparent pixels opaque, so an unclipped filter
+    // layer paints the whole card. This is the guard: the drawing occupies its
+    // 60x60 box and the red ground around it survives.
+    await tester.pumpWidget(
+      wrap(
+        Center(
+          child: ColoredBox(
+            color: const Color(0xFFFF0000),
+            child: const SizedBox(
+              width: 200,
+              height: 200,
+              child: Center(
+                child: SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: HomeLineArt(
+                    asset: 'assets/shadchan-tip.png',
+                    ink: Color(0xFF5C84A3),
+                    paper: Color(0xFFFBF5EA),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(find.byType(HomeLineArt)), const Size(60, 60));
+  });
 }

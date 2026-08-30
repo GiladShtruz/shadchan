@@ -224,8 +224,12 @@ abstract final class CommunityEngagementsService {
     }
   }
 
-  /// The matchmakers who published their own name on an engagement inside
+  /// The engagements whose matchmaker published their own name inside
   /// [freshFor], newest first.
+  ///
+  /// The whole record rather than only the name, so a line about one can carry
+  /// the way to answer it — the author's uid and their own proposal id are what
+  /// make "שלחו מזל טוב" deliverable. Your own weddings are left out.
   ///
   /// **Only names that were volunteered.** A record carries a name only after
   /// [attachMatchmakerName] — that is, only after that matchmaker was asked
@@ -239,10 +243,12 @@ abstract final class CommunityEngagementsService {
   ///
   /// One small query, capped, and it costs nothing when it comes back empty —
   /// which is most weeks.
-  static Future<List<String>> namedThisWeek({DateTime? now}) async {
+  static Future<List<CommunityEngagement>> namedThisWeek({
+    DateTime? now,
+  }) async {
     final User? user = await _account();
     if (user == null) {
-      return const <String>[];
+      return const <CommunityEngagement>[];
     }
     try {
       final QuerySnapshot<Map<String, dynamic>> snapshot = await _db
@@ -252,7 +258,8 @@ abstract final class CommunityEngagementsService {
           .get();
 
       final DateTime cutoff = (now ?? DateTime.now()).subtract(freshFor);
-      final List<String> names = <String>[];
+      final Set<String> names = <String>{};
+      final List<CommunityEngagement> named = <CommunityEngagement>[];
       for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
           in snapshot.docs) {
         final CommunityEngagement? engagement =
@@ -260,14 +267,19 @@ abstract final class CommunityEngagementsService {
         if (engagement == null || engagement.at.isBefore(cutoff)) {
           continue;
         }
+        // Your own wedding is not news to you, and a bracha addressed to
+        // yourself is a bug wearing a feature's clothes.
+        if (engagement.authorUid == user.uid) {
+          continue;
+        }
         final String name = engagement.matchmakerName.trim();
-        if (name.isNotEmpty && !names.contains(name)) {
-          names.add(name);
+        if (name.isNotEmpty && names.add(name)) {
+          named.add(engagement);
         }
       }
-      return names;
+      return named;
     } catch (_) {
-      return const <String>[];
+      return const <CommunityEngagement>[];
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/community_challenge.dart';
@@ -115,15 +116,67 @@ void main() {
 
   group('The home banner lines', () {
     test('lead with the engagement, then today, then the week', () {
-      final List<String> lines = CommunityHighlight.pulseLines(
-        day: _totals(ideas: 18, friends: 4, active: 7),
-        week: _totals(ideas: 40, friends: 30, couples: 6, engagements: 1),
-      );
+      final List<String> lines = <String>[
+        for (final CommunityPulseLine line in CommunityHighlight.pulseLines(
+          day: _totals(ideas: 18, friends: 4, active: 7),
+          week: _totals(ideas: 40, friends: 30, couples: 6, engagements: 1),
+        ))
+          line.text,
+      ];
       expect(lines.first, 'מזל טוב! זוג נוסף התארס 🎉');
       expect(lines, contains('18 רעיונות נפתחו היום'));
       expect(lines, contains('6 זוגות התחילו לצאת השבוע'));
       // The week's ideas are not repeated when today already has some.
       expect(lines, isNot(contains('40 רעיונות נפתחו השבוע')));
+    });
+
+    test('only a named engagement carries something to do', () {
+      final List<CommunityPulseLine> lines = CommunityHighlight.pulseLines(
+        day: _totals(ideas: 3),
+        week: _totals(ideas: 9, engagements: 1),
+        namedEngagements: <CommunityEngagement>[
+          CommunityEngagement(
+            id: 'e1',
+            authorUid: 'someone',
+            at: DateTime(2026, 8, 30),
+            matchmakerName: 'יצחק',
+            matchId: 'm1',
+          ),
+        ],
+      );
+
+      // The wedding leads, says whose it is, and offers the bracha.
+      expect(lines.first.text, contains('יצחק'));
+      expect(lines.first.text, contains('לשליחת ברכה'));
+      expect(lines.first.isActionable, isTrue);
+      // The anonymous count does not repeat news that already has a name.
+      expect(
+        lines.where((CommunityPulseLine l) => l.text.contains('התארס')).length,
+        1,
+      );
+      // Everything else on the banner is news and nothing else.
+      for (final CommunityPulseLine line in lines.skip(1)) {
+        expect(line.isActionable, isFalse, reason: line.text);
+      }
+    });
+
+    test('an author not accepting brachot is announced but not tappable', () {
+      final List<CommunityPulseLine> lines = CommunityHighlight.pulseLines(
+        day: _totals(),
+        week: _totals(engagements: 1),
+        namedEngagements: <CommunityEngagement>[
+          CommunityEngagement(
+            id: 'e1',
+            authorUid: 'someone',
+            at: DateTime(2026, 8, 30),
+            matchmakerName: 'יצחק',
+          ),
+        ],
+      );
+
+      expect(lines.first.text, contains('יצחק'));
+      expect(lines.first.text, isNot(contains('לשליחת ברכה')));
+      expect(lines.first.isActionable, isFalse);
     });
 
     test('say nothing at all about a community that did nothing', () {

@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shadchan/firebase_options.dart';
+import 'package:shadchan/services/apple_sign_in_credentials.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -180,19 +181,44 @@ abstract final class AccountService {
   ///
   /// It is also the reason iOS *must* keep this: App Store review requires
   /// Sign in with Apple wherever a third-party sign-in is offered.
-  static bool get isAppleAvailable => Platform.isIOS || Platform.isMacOS;
+  static bool get isAppleAvailable {
+    if (kIsWeb) {
+      return false;
+    }
+    return defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+  }
+
+  /// Chooses the proof used before account deletion. Apple takes precedence
+  /// because an Apple-linked account must obtain a fresh authorization code
+  /// for token revocation even when another provider is linked as well.
+  static AccountDeletionAuthMethod deletionAuthMethod(
+    Iterable<String> providerIds, {
+    bool? appleAvailable,
+  }) {
+    final Set<String> providers = providerIds.toSet();
+    if (providers.contains('apple.com')) {
+      return (appleAvailable ?? isAppleAvailable)
+          ? AccountDeletionAuthMethod.apple
+          : AccountDeletionAuthMethod.unsupported;
+    }
+    if (providers.contains('google.com')) {
+      return AccountDeletionAuthMethod.google;
+    }
+    if (providers.contains('password')) {
+      return AccountDeletionAuthMethod.password;
+    }
+    return AccountDeletionAuthMethod.unsupported;
+  }
 
   /// Opens Apple's sign-in sheet and attaches the account to the Firebase user.
   ///
-  /// **This is not `AppleAuthProvider`, and that is the whole fix.** It used to
-  /// go through `linkWithProvider(AppleAuthProvider())`, on the reading that
-  /// one provider flow serves every platform. It does not: `signInWithProvider`
-  /// is Firebase's *generic OAuth* path, and for `apple.com` that means the web
-  /// flow — a browser sheet posting to a Services ID and a return URL that only
-  /// exist once somebody has registered them in the Apple Developer portal.
-  /// Neither is registered for this project, so on an iPhone the button opened
-  /// a web page and came back with nothing. There was no crash and no Hebrew
-  /// error worth showing; it simply never signed anybody in.
+  /// This deliberately does not use
+  /// `signInWithProvider(AppleAuthProvider())`: that provider-driven UI was the
+  /// web OAuth flow that previously opened a browser against an unconfigured
+  /// Services ID. `AppleAuthProvider.credentialWithIDToken`, used below, is a
+  /// different API: it only builds Firebase's dedicated native credential from
+  /// the result of Apple's own sheet.
   ///
   /// The flow below is the one Firebase's own Flutter documentation prescribes:
   /// Apple's native sheet through `ASAuthorizationAppleIDProvider`, and the
@@ -244,10 +270,15 @@ abstract final class AccountService {
         );
       }
 
+      final OAuthCredential credential = createAppleFirebaseCredential(
+        idToken: idToken,
+        rawNonce: rawNonce,
+        givenName: apple.givenName,
+        familyName: apple.familyName,
+      );
       await _attachToFirebase(
-        OAuthProvider(
-          'apple.com',
-        ).credential(idToken: idToken, rawNonce: rawNonce),
+        credential,
+        credentialAfterLinkFailure: resolveAppleCredentialAfterLinkFailure,
       );
       return const AccountSignInResult.success();
     } on SignInWithAppleAuthorizationException catch (error) {
@@ -417,7 +448,11 @@ abstract final class AccountService {
   /// install or another phone. Signing into *that* account is exactly what
   /// someone restoring a backup wants — the throwaway anonymous uid on this
   /// device is what should be abandoned, not the account holding their data.
-  static Future<void> _attachToFirebase(AuthCredential credential) async {
+  static Future<void> _attachToFirebase(
+    AuthCredential credential, {
+    AuthCredential Function(FirebaseAuthException error)?
+    credentialAfterLinkFailure,
+  }) async {
     final User? current = FirebaseAuth.instance.currentUser;
     if (current == null || !current.isAnonymous) {
       await FirebaseAuth.instance.signInWithCredential(credential);
@@ -432,8 +467,215 @@ abstract final class AccountService {
           error.code != 'provider-already-linked') {
         rethrow;
       }
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final AuthCredential signInCredential =
+          credentialAfterLinkFailure?.call(error) ?? credential;
+      await FirebaseAuth.instance.signInWithCredential(signInCredential);
     }
+  }
+
+  // --- Account deletion ---------------------------------------------------
+
+  /// Permanently deletes the signed-in account and all data tied to it.
+  ///
+  /// The user is reauthenticated *before* [deleteRemoteData] runs. Firebase
+  /// requires a recent sign-in for [User.delete], and discovering that only
+  /// after the backup has been erased would leave a half-deleted account. The
+  /// callback then removes the server data while the security rules can still
+  /// prove ownership. Only when that succeeds do we revoke Apple (when linked)
+  /// and delete the Firebase Authentication user.
+  static Future<AccountDeletionResult> deleteAccount({
+    required Future<bool> Function() deleteRemoteData,
+    String? password,
+  }) async {
+    await FirebaseBootstrap.ensureReady();
+    if (!FirebaseBootstrap.isReady) {
+      return const AccountDeletionResult.failure(
+        AccountDeletionOutcome.authenticationFailed,
+        'לא הצלחנו להתחבר לשרת. כדאי לבדוק את החיבור לאינטרנט ולנסות שוב.',
+      );
+    }
+
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      return const AccountDeletionResult.failure(
+        AccountDeletionOutcome.authenticationFailed,
+        'לא מצאנו חשבון מחובר למחיקה.',
+      );
+    }
+
+    try {
+      final Set<String> providers = user.providerData
+          .map((UserInfo info) => info.providerId)
+          .toSet();
+      String? appleAuthorizationCode;
+
+      // If Apple is linked, its authorization must be revoked as part of
+      // deletion. A fresh Apple sheet supplies both the recent Firebase
+      // credential and the one-time authorization code needed for revocation.
+      final AccountDeletionAuthMethod authMethod = deletionAuthMethod(
+        providers,
+      );
+      if (authMethod == AccountDeletionAuthMethod.apple) {
+        if (!isAppleAvailable) {
+          return const AccountDeletionResult.failure(
+            AccountDeletionOutcome.authenticationFailed,
+            'כדי למחוק חשבון שמחובר ל‑Apple צריך לבצע את הפעולה ממכשיר Apple.',
+          );
+        }
+        final _AppleAuthorization authorization =
+            await _freshAppleAuthorization();
+        await user.reauthenticateWithCredential(authorization.credential);
+        appleAuthorizationCode = authorization.authorizationCode;
+      } else if (authMethod == AccountDeletionAuthMethod.google) {
+        await user.reauthenticateWithCredential(await _freshGoogleCredential());
+      } else if (authMethod == AccountDeletionAuthMethod.password) {
+        final String enteredPassword = password ?? '';
+        final String email = user.email?.trim() ?? '';
+        if (enteredPassword.isEmpty || email.isEmpty) {
+          return const AccountDeletionResult.failure(
+            AccountDeletionOutcome.passwordRequired,
+            'כדי למחוק את החשבון צריך להזין את הסיסמה.',
+          );
+        }
+        await user.reauthenticateWithCredential(
+          EmailAuthProvider.credential(email: email, password: enteredPassword),
+        );
+      } else {
+        return const AccountDeletionResult.failure(
+          AccountDeletionOutcome.authenticationFailed,
+          'לא הצלחנו לאמת מחדש את החשבון הזה.',
+        );
+      }
+
+      if (!await deleteRemoteData()) {
+        return const AccountDeletionResult.failure(
+          AccountDeletionOutcome.dataDeletionFailed,
+          'לא הצלחנו למחוק את כל הנתונים מהשרת, ולכן החשבון נשאר פעיל. '
+          'שום מידע נוסף לא יימחק עד שתנסה שוב.',
+        );
+      }
+
+      if (appleAuthorizationCode != null) {
+        await FirebaseAuth.instance.revokeTokenWithAuthorizationCode(
+          appleAuthorizationCode,
+        );
+      }
+      await user.delete();
+
+      // Clear the provider-side Google session too. This does not affect the
+      // deletion if it fails; the Firebase account is already gone.
+      if (providers.contains('google.com')) {
+        try {
+          await _ensureGoogleInitialized();
+          await GoogleSignIn.instance.signOut();
+        } catch (error) {
+          debugPrint('ACCOUNT Google cleanup after deletion failed: $error');
+        }
+      }
+      await FirebaseBootstrap.restoreAnonymousSession();
+      return const AccountDeletionResult.success();
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code == AuthorizationErrorCode.canceled) {
+        return const AccountDeletionResult.canceled();
+      }
+      return AccountDeletionResult.failure(
+        AccountDeletionOutcome.authenticationFailed,
+        _appleAuthorizationMessage(error.code),
+        details: _describe(
+          'apple-delete',
+          error.code.name,
+          error.message,
+          null,
+        ),
+      );
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.canceled ||
+          error.code == GoogleSignInExceptionCode.interrupted) {
+        return const AccountDeletionResult.canceled();
+      }
+      return AccountDeletionResult.failure(
+        AccountDeletionOutcome.authenticationFailed,
+        _googleMessage(error.code),
+        details: _describe(
+          'google-delete',
+          error.code.name,
+          error.description,
+          error.details,
+        ),
+      );
+    } on FirebaseAuthException catch (error) {
+      final String message = switch (error.code) {
+        'wrong-password' ||
+        'invalid-credential' => 'הסיסמה אינה נכונה. כדאי לנסות שוב.',
+        'requires-recent-login' =>
+          'האימות פג לפני שהמחיקה הושלמה. כדאי לנסות שוב.',
+        'network-request-failed' =>
+          'אין חיבור לאינטרנט. כדאי להתחבר ולנסות שוב.',
+        _ => 'לא הצלחנו למחוק את החשבון. כדאי לנסות שוב.',
+      };
+      return AccountDeletionResult.failure(
+        AccountDeletionOutcome.authenticationFailed,
+        message,
+        details: _describe('firebase-delete', error.code, error.message, null),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('ACCOUNT deletion failed: $error\n$stackTrace');
+      return AccountDeletionResult.failure(
+        AccountDeletionOutcome.authenticationFailed,
+        'לא הצלחנו למחוק את החשבון. כדאי לנסות שוב.',
+        details: _describe(
+          'delete-unexpected',
+          error.runtimeType.toString(),
+          '$error',
+          null,
+        ),
+      );
+    }
+  }
+
+  static Future<AuthCredential> _freshGoogleCredential() async {
+    await _ensureGoogleInitialized();
+    if (!GoogleSignIn.instance.supportsAuthenticate()) {
+      throw StateError('Google authentication is unavailable');
+    }
+    final GoogleSignInAccount account = await GoogleSignIn.instance
+        .authenticate();
+    final String? idToken = account.authentication.idToken;
+    if (idToken == null) {
+      throw FirebaseAuthException(
+        code: 'invalid-credential',
+        message: 'Google did not return an ID token.',
+      );
+    }
+    return GoogleAuthProvider.credential(idToken: idToken);
+  }
+
+  static Future<_AppleAuthorization> _freshAppleAuthorization() async {
+    final String rawNonce = _newNonce();
+    final AuthorizationCredentialAppleID apple =
+        await SignInWithApple.getAppleIDCredential(
+          scopes: <AppleIDAuthorizationScopes>[
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
+        );
+    final String? idToken = apple.identityToken;
+    if (idToken == null) {
+      throw FirebaseAuthException(
+        code: 'invalid-credential',
+        message: 'Apple did not return an identity token.',
+      );
+    }
+    return _AppleAuthorization(
+      credential: createAppleFirebaseCredential(
+        idToken: idToken,
+        rawNonce: rawNonce,
+        givenName: apple.givenName,
+        familyName: apple.familyName,
+      ),
+      authorizationCode: apple.authorizationCode,
+    );
   }
 
   /// Signs out of Google and drops back to a fresh anonymous account.
@@ -512,6 +754,8 @@ abstract final class AccountService {
         'לכתובת הזו כבר יש חשבון עם דרך התחברות אחרת.',
       'network-request-failed' => 'אין חיבור לאינטרנט. יש להתחבר ולנסות שוב.',
       'operation-not-allowed' => 'ההתחברות עם Apple עדיין לא הופעלה בפרויקט.',
+      'apple-updated-credential-missing' =>
+        'לא הצלחנו להשלים את החיבור לחשבון Apple. כדאי לנסות שוב.',
       'user-disabled' => 'החשבון הזה חסום.',
       _ => 'לא הצלחנו להתחבר. כדאי לנסות שוב.',
     };
@@ -558,5 +802,47 @@ class AccountSignInResult {
   /// Kept apart from [message] on purpose: nobody should be shown a Credential
   /// Manager stack trace by default, and nobody debugging a release build
   /// should have to go without one.
+  final String? details;
+}
+
+class _AppleAuthorization {
+  const _AppleAuthorization({
+    required this.credential,
+    required this.authorizationCode,
+  });
+
+  final OAuthCredential credential;
+  final String authorizationCode;
+}
+
+enum AccountDeletionOutcome {
+  success,
+  canceled,
+  passwordRequired,
+  authenticationFailed,
+  dataDeletionFailed,
+}
+
+enum AccountDeletionAuthMethod { apple, google, password, unsupported }
+
+class AccountDeletionResult {
+  const AccountDeletionResult.success()
+    : outcome = AccountDeletionOutcome.success,
+      message = null,
+      details = null;
+
+  const AccountDeletionResult.canceled()
+    : outcome = AccountDeletionOutcome.canceled,
+      message = null,
+      details = null;
+
+  const AccountDeletionResult.failure(
+    this.outcome,
+    String this.message, {
+    this.details,
+  });
+
+  final AccountDeletionOutcome outcome;
+  final String? message;
   final String? details;
 }

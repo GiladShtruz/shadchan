@@ -11,10 +11,18 @@
 		</array>
 		<!-- Sign in with Apple. Required by App Store review wherever a
 		     third-party sign-in (Google) is offered, and what makes
-		     AppleAuthProvider use Apple's own sheet rather than a web flow.
+		     `sign_in_with_apple` able to open Apple's own native sheet.
 		     It also has to be enabled for this App ID in the Apple Developer
 		     portal, and the Apple provider switched on in the Firebase
 		     console — neither of which lives in this repository. -->
+		<!-- App Attest, the primary App Check provider on iOS. Without this the
+		     attestation cannot run at all and every request falls through to the
+		     DeviceCheck fallback. `production` is what TestFlight and App Store
+		     builds need; debug builds never reach here because they use
+		     `AppleDebugProvider` instead. App Attest must also be enabled for this
+		     App ID in the Apple Developer portal, or signing fails. -->
+		<key>com.apple.developer.devicecheck.appattest-environment</key>
+		<string>production</string>
 		<key>com.apple.developer.applesignin</key>
 		<array>
 			<string>Default</string>

@@ -23,26 +23,14 @@ List<Widget> buildDashboardSummarySlivers(
   final List<Person> visiblePeople = storedPeople
       .where((Person p) => !p.hidden)
       .toList();
-  final List<Person> allPeople = visiblePeople
-      .where((Person p) => !p.needsReview)
-      .toList();
   final List<MatchIdea> allMatches = matchRepository.getAll();
 
   final int peopleCount = visiblePeople.length;
-  final int mazelTovCount = allPeople
-      .where((Person p) => p.profileStatus == ProfileStatus.mazelTov)
-      .length;
   final int ideasCount = allMatches
       .where((MatchIdea m) => _isVisibleInActiveMatchesView(m, storedPeople))
       .length;
-  final int rejectedIdeasCount = allMatches
-      .where((MatchIdea m) => m.status == MatchStatus.rejected)
-      .length;
   final int datingCount = allMatches
       .where((MatchIdea m) => m.status == MatchStatus.dating)
-      .length;
-  final int datedCount = allMatches
-      .where((MatchIdea m) => m.status == MatchStatus.dated)
       .length;
   final int marriedCount = allMatches
       .where((MatchIdea m) => m.status == MatchStatus.married)
@@ -74,30 +62,6 @@ List<Widget> buildDashboardSummarySlivers(
       color: Colors.green.shade600,
       route: '/matches?statuses=dating',
     ),
-    // _StatItem(
-    //   title: 'זוגות שיצאו',
-    //   value: datedCount.toString(),
-    //   subtitle: '',
-    //   icon: Icons.heart_broken,
-    //   color: Colors.deepPurple,
-    //   route: '/matches?archived=true&statuses=dated',
-    // ),
-    // _StatItem(
-    //   title: 'רעיונות שנפסלו',
-    //   value: rejectedIdeasCount.toString(),
-    //   subtitle: 'הצעות שנדחו',
-    //   icon: Icons.cancel_outlined,
-    //   color: Colors.red.shade500,
-    //   route: '/matches?archived=true&statuses=rejected',
-    // ),
-    // _StatItem(
-    //   title: 'מזל טוב',
-    //   value: mazelTovCount.toString(),
-    //   subtitle: 'חברים שהתחתנו',
-    //   icon: Icons.celebration_outlined,
-    //   color: Colors.teal.shade500,
-    //   route: '/people?archived=true&statuses=mazelTov',
-    // ),
   ];
 
   final _StatItem marriedStat = _StatItem(

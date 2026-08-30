@@ -219,18 +219,24 @@ class _HeroCouple extends StatelessWidget {
 /// "הוספת חברים" and "הוספת רעיון" — the two most important things on the page,
 /// because they are the two that make everything else on it possible.
 ///
-/// Each is one illustrated card: the picture is the top of it, a coloured band
+/// Each is one illustrated card: the drawing is the top of it, a coloured band
 /// across the bottom carries the name of the action, and the whole surface is
 /// the button. There is no chevron and no inner badge — a card that is entirely
-/// a tap target does not need an arrow to say so. Adding friends is the louder
-/// of the two: it takes more of the row.
+/// a tap target does not need an arrow to say so.
+///
+/// **The two are exactly the same size.** They used to be split 13:9 while the
+/// database was small, on the reasoning that adding friends is what moves
+/// anything forward — but two cards drawn as a pair and then set at two
+/// different widths read as one card and its afterthought. They are halves of
+/// the row now, and what makes adding friends lead is what it is *drawn* in:
+/// the deeper of the two tones, and the shadow. See [emphasiseAddPeople].
 ///
 /// **The label is text, not part of the picture.** The artwork these came from
 /// had the Hebrew drawn into it, which would have been one less widget and four
 /// separate losses: it does not grow with the system font size, a screen reader
 /// cannot read it, it is soft on a large display, and it could never be
-/// reworded. So each illustration is cropped to its picture alone and the band
-/// under it is drawn here, in the colour sampled from the band the artwork had.
+/// reworded. So each card is a line drawing on its own paper and the band under
+/// it is drawn here.
 class HomeActionCards extends StatelessWidget {
   const HomeActionCards({
     super.key,
@@ -243,7 +249,9 @@ class HomeActionCards extends StatelessWidget {
   final VoidCallback onAddIdea;
 
   /// While the database is still small, adding friends is the thing that
-  /// actually moves anything forward, so it takes visibly more of the row.
+  /// actually moves anything forward — so the card is drawn louder: a filled
+  /// ground behind the drawing rather than a pale one, and a deeper shadow. It
+  /// never takes more of the row; the two are always the same size.
   final bool emphasiseAddPeople;
 
   @override
@@ -259,11 +267,10 @@ class HomeActionCards extends StatelessWidget {
           context,
         ).scale(1).clamp(1, 1.8);
         final double bandHeight = (narrow ? 46.0 : 50.0) * textScale;
-        // Squatter than the picture would like, on purpose. These two are the
+        // Squatter than the drawing would like, on purpose. These two are the
         // top of a page that has to show what is under them too, and a tile
-        // tall enough to crop well is a tile that pushes everything else off
-        // the first screen — so the artwork is cropped and the card stays
-        // closer to a square than to a portrait.
+        // tall enough to give a line drawing room is a tile that pushes
+        // everything else off the first screen.
         final double artHeight = (constraints.maxWidth * 0.33).clamp(88, 132);
 
         return SizedBox(
@@ -271,33 +278,33 @@ class HomeActionCards extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // Even at rest adding friends leads; while the database is small
-              // it leads by more.
+              // Equal halves. Adding friends leads by colour and by shadow,
+              // never by width — see [emphasiseAddPeople].
               Expanded(
-                flex: emphasiseAddPeople ? 13 : 11,
                 child: _AddTile(
                   onTap: onAddPeople,
                   compact: narrow,
-                  art: 'assets/home_add_people.jpg',
+                  art: 'assets/home_add_people2.png',
                   band: AppColors.addPeopleBand,
                   ornament: Icons.favorite,
                   label: 'הוספת חברים',
                   bandHeight: bandHeight,
                   primary: true,
+                  loud: emphasiseAddPeople,
                 ),
               ),
               SizedBox(width: narrow ? 8 : 12),
               Expanded(
-                flex: emphasiseAddPeople ? 9 : 10,
                 child: _AddTile(
                   onTap: onAddIdea,
                   compact: narrow,
-                  art: 'assets/home_add_idea.jpg',
+                  art: 'assets/home_add_idea2.png',
                   band: AppColors.addIdeaBand,
                   ornament: Icons.star_rounded,
                   label: 'הוספת רעיון',
                   bandHeight: bandHeight,
                   primary: false,
+                  loud: false,
                 ),
               ),
             ],
@@ -308,8 +315,12 @@ class HomeActionCards extends StatelessWidget {
   }
 }
 
-/// One of the two entry tiles: its picture, its band, and one tap target over
+/// One of the two entry tiles: its drawing, its band, and one tap target over
 /// the whole of it.
+///
+/// The drawing is a black-on-white line illustration recoloured at draw time —
+/// see [HomeLineArt] — so the paper under it is the card's own, and in the dark
+/// theme the strokes come out light on a dark ground rather than as a lightbox.
 class _AddTile extends StatelessWidget {
   const _AddTile({
     required this.onTap,
@@ -320,6 +331,7 @@ class _AddTile extends StatelessWidget {
     required this.label,
     required this.bandHeight,
     required this.primary,
+    required this.loud,
   });
 
   final VoidCallback onTap;
@@ -331,21 +343,47 @@ class _AddTile extends StatelessWidget {
   final double bandHeight;
   final bool primary;
 
+  /// Drawn to be picked first: a tinted ground behind the illustration instead
+  /// of the plain paper, and a deeper shadow under the card.
+  final bool loud;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
+    // The ground the drawing sits on, and what its strokes are drawn in. In the
+    // dark theme the two swap over: pale ink on the card's own dark paper.
+    final Color paper = dark
+        ? Color.alphaBlend(
+            band.withValues(alpha: loud ? 0.22 : 0.12),
+            theme.colorScheme.surface,
+          )
+        : Color.alphaBlend(
+            band.withValues(alpha: loud ? 0.16 : 0.07),
+            AppColors.surface,
+          );
+    final Color ink = dark
+        ? Color.alphaBlend(band.withValues(alpha: 0.55), Colors.white)
+        : band;
 
     return Material(
-      // The band's own colour, so the corners the picture does not reach are
+      // The band's own colour, so the corners the drawing does not reach are
       // never the page showing through.
       color: band,
       borderRadius: BorderRadius.circular(22),
-      elevation: primary ? 3 : 0,
+      elevation: loud ? 3 : (primary ? 2 : 0),
       // A neutral shadow, not one tinted with the band. Tinting worked while
       // the tile was a flat blue rectangle; under an illustration the same
       // shadow reads as a coloured halo drawn around the card rather than as
       // the card sitting above the page.
       shadowColor: AppColors.onSurface.withValues(alpha: 0.4),
+      // **No elevation overlay.** Material 3 lightens a raised surface towards
+      // `surfaceTint`, which in the dark theme is a pale blue — so a raised
+      // card's band would drift off the brand colour and take the contrast of
+      // the white label on it with it. The band is a brand colour, not a
+      // surface: it means the same thing at any elevation.
+      surfaceTintColor: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       child: Stack(
         fit: StackFit.expand,
@@ -353,12 +391,22 @@ class _AddTile extends StatelessWidget {
           Column(
             children: <Widget>[
               Expanded(
-                child: Image.asset(
-                  art,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  // The label under it says everything this picture says.
-                  excludeFromSemantics: true,
+                child: ColoredBox(
+                  color: paper,
+                  child: Padding(
+                    // The drawings are line art with very little margin of
+                    // their own, so the breathing room is given here rather
+                    // than baked into three separate files.
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? 10 : 14,
+                      compact ? 8 : 10,
+                      compact ? 10 : 14,
+                      compact ? 6 : 8,
+                    ),
+                    child: SizedBox.expand(
+                      child: HomeLineArt(asset: art, ink: ink, paper: paper),
+                    ),
+                  ),
                 ),
               ),
               SizedBox(
@@ -769,6 +817,78 @@ class _CoupleFaces extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// "כל הכבוד! 3 זוגות שלך יוצאים — שומרים איתם על קשר עד החתונה!"
+///
+/// **A strip, not a banner.** The couples who are out used to be a colourful
+/// card on the home screen, three faces wide and a third of a phone tall,
+/// carrying nothing anybody acts on — it was pure encouragement, and pure
+/// encouragement does not earn that much of a landing page. It is one line at
+/// the head of "הרעיונות שלי" now, where the couples themselves are a tap away
+/// on the "יוצאים" shelf, and tapping the line is what opens that shelf.
+///
+/// It exists only while there is somebody to celebrate, which is what keeps it
+/// from becoming furniture.
+class DatingCouplesStrip extends StatelessWidget {
+  const DatingCouplesStrip({
+    super.key,
+    required this.count,
+    required this.onTap,
+  });
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color ink = dark ? _datingInkDm : _datingInk;
+    final String couples = count == 1
+        ? 'זוג אחד שלך יוצא'
+        : '$count זוגות שלך יוצאים';
+
+    return Material(
+      color: dark
+          ? Color.alphaBlend(
+              ink.withValues(alpha: 0.14),
+              theme.colorScheme.surface,
+            )
+          : _datingPaper,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 9, 8, 9),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.celebration_rounded,
+                size: 17,
+                color: _celebrationGold,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'כל הכבוד! $couples — שומרים איתם על קשר עד החתונה!',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 1.3,
+                    color: dark ? theme.colorScheme.onSurface : _datingInk,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 22, color: ink),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

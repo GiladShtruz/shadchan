@@ -75,3 +75,6 @@ shiduchim_backup_import.json
 backup_*.json
 backups/
 exports/
+
+# Local build-time secrets (App Check debug token). Never commit.
+env.json

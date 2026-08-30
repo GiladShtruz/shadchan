@@ -5,233 +5,20 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
-import 'package:shadchan/utils/home_config.dart';
-import 'package:shadchan/utils/home_next_actions.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// The blocks introduced by the home-screen rework: the ranked next actions,
-/// the open ideas drawn without boxes, the activity summary and the community
-/// tip carousel.
+/// The blocks introduced by the home-screen rework: the open ideas drawn
+/// without boxes, and the community tip carousel.
+///
+/// "הפעולות הבאות שלך" used to live here too — a ranked, sideways-scrolling
+/// queue of what the app thought was most worth doing. It is gone: the home
+/// screen already carries הלוח שלי, which every open proposal now lands on by
+/// itself, and two competing answers to "what should I do next" is one answer
+/// too many.
 ///
 /// They share one rule with the rest of the page — a block with nothing to say
 /// is not drawn — and one visual rule: outside the board, the tip and the
 /// "עוצרים רגע" banner, nothing here introduces a new card shape.
-
-Color _leadTone(ThemeData theme) => theme.brightness == Brightness.dark
-    ? theme.colorScheme.primary
-    : AppColors.primaryDark;
-
-// --- הפעולות הבאות שלך ------------------------------------------------------
-
-/// The ranked recommendations, as one horizontally scrolling row.
-///
-/// **A scroll rather than a "פעולות נוספות" button.** The button showed three
-/// at a time and swapped the whole trio, which meant reaching the tenth action
-/// took three taps and no sense of where it sat in the list. A row that is
-/// dragged runs an eye past a dozen actions in one gesture, which is what this
-/// list is for — it is a place to scan, not a queue to work through in order.
-///
-/// Every card is exactly the same box, and a compact one. The reason line is
-/// clamped rather than allowed to set the height: a row whose cards are three
-/// different heights reads as three different kinds of thing, and a card sized
-/// for the longest sentence in the database leaves every other card half empty.
-class HomeNextActionsRow extends StatelessWidget {
-  const HomeNextActionsRow({
-    super.key,
-    required this.actions,
-    required this.onOpen,
-  });
-
-  final List<HomeNextAction> actions;
-  final void Function(HomeNextAction action) onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    if (actions.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const HomeSectionHeader(title: 'הפעולות הבאות שלך'),
-        SizedBox(
-          height: homeScaled(context, HomeConfig.nextActionCardHeight),
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            // The end padding is deliberately smaller than a card, so the next
-            // one always peeks in from the edge. That slice is the only thing
-            // telling the user the row moves, and it replaces the button.
-            padding: EdgeInsetsDirectional.fromSTEB(
-              homeHorizontalInset(context),
-              0,
-              28,
-              0,
-            ),
-            itemCount: actions.length,
-            separatorBuilder: (_, _) => SizedBox(width: homeCardGap(context)),
-            itemBuilder: (BuildContext context, int index) => _NextActionCard(
-              action: actions[index],
-              onTap: () => onOpen(actions[index]),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _NextActionCard extends StatelessWidget {
-  const _NextActionCard({required this.action, required this.onTap});
-
-  final HomeNextAction action;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool urgent = action.kind == HomeActionKind.reminderDue;
-    final bool dark = theme.brightness == Brightness.dark;
-    // A card about one person wears that person's own accent, the way their
-    // row in המאגר שלי and their profile do. Before this every card was the
-    // app's stone blue, so a card about a woman was drawn in the men's colour
-    // — and the sentence on it read "אין לו" as well. The couple cards and the
-    // two habit prompts have no single person to belong to, so they keep the
-    // page's lead tone; an urgent reminder overrides everything.
-    final Color accent = urgent
-        ? AppColors.secondary
-        : (action.isPerson && action.person != null
-              ? AppColors.genderAccent(action.person!.gender, dark: dark)
-              : _leadTone(theme));
-
-    return SizedBox(
-      width: homeIsNarrow(context) ? 134 : HomeConfig.nextActionCardWidth,
-      child: Material(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: urgent
-                    ? accent.withValues(alpha: 0.45)
-                    : accent.withValues(alpha: 0.20),
-              ),
-              // The same wash "רעיונות שהמאגר מציע" and the activity panel
-              // wear — a card that belongs to this page rather than a plain
-              // white rectangle, and quiet enough that twelve of them in a row
-              // still read as one calm strip. Urgent cards take it a shade
-              // deeper; that, and the border, are the whole difference.
-              gradient: LinearGradient(
-                begin: AlignmentDirectional.topStart,
-                end: AlignmentDirectional.bottomEnd,
-                colors: <Color>[
-                  accent.withValues(
-                    alpha: urgent
-                        ? (dark ? 0.20 : 0.13)
-                        : (dark ? 0.13 : 0.065),
-                  ),
-                  theme.colorScheme.surface,
-                ],
-              ),
-            ),
-            child: Column(
-              children: <Widget>[
-                // A hairline of the card's own tone along the top edge. It is
-                // what keeps the row from reading as a queue of identical
-                // boxes without any of them raising its voice.
-                Container(height: 3, color: accent.withValues(alpha: 0.55)),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        if (action.isPrompt)
-                          _PromptBadge(icon: action.kind.icon, accent: accent)
-                        else if (action.isPerson)
-                          HomeCardAvatar(person: action.person, radius: 16)
-                        else
-                          HomeCardCoupleAvatars(
-                            personA: action.personA,
-                            personB: action.personB,
-                            radius: 12,
-                          ),
-                        const SizedBox(height: 5),
-                        Text(
-                          action.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1.15,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        // Two lines and no more: the card's height is fixed,
-                        // so a long sentence is cut rather than allowed to
-                        // push the box.
-                        // The reason, and nothing in front of it. An
-                        // eleven-pixel glyph before every line of eight-word
-                        // explanations was decoration at a size nobody could
-                        // read it at, and it stole a third of a narrow card's
-                        // width from the words that were the point.
-                        Expanded(
-                          child: Text(
-                            action.reason,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              height: 1.3,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Stands where a face would go on the two habit prompts, which are about the
-/// matchmaker rather than about anybody in the database.
-class _PromptBadge extends StatelessWidget {
-  const _PromptBadge({required this.icon, required this.accent});
-
-  final IconData icon;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 34,
-      height: 34,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: accent.withValues(alpha: 0.12),
-      ),
-      child: Icon(icon, size: 18, color: accent),
-    );
-  }
-}
-
-// --- רעיונות פתוחים ---------------------------------------------------------
 
 /// An open proposal on the wave, in the same frameless language the suggestion
 /// circles used: the two faces, the names and the status, with no white box of
@@ -489,28 +276,37 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                // The bulb leads the block rather than trailing the
+                // The mark leads the block rather than trailing the
                 // sentence. It used to be an emoji appended to the tip text,
                 // which is the one place a mark cannot be relied on: a device
                 // without a colour emoji font drew a blank box at the end of
                 // every tip, and even where it rendered it read as a typo in
-                // somebody's sentence. Drawn as an icon in its own tinted
-                // disc it is part of the card's furniture — the thing that
-                // says "this box is advice" before a word of it is read.
+                // somebody's sentence. In its own tinted disc it is part of
+                // the card's furniture — the thing that says "this box is
+                // advice" before a word of it is read.
+                //
+                // The bulb it used to be is the app's own drawing now: a heart
+                // beside a pencil, which is what a matchmaker's tip actually
+                // is. Recoloured at draw time so it wears the card's ink in
+                // either theme — see [HomeLineArt].
                 Row(
                   children: <Widget>[
                     Container(
-                      width: 26,
-                      height: 26,
+                      width: 28,
+                      height: 28,
                       alignment: Alignment.center,
+                      clipBehavior: Clip.antiAlias,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: ink.withValues(alpha: dark ? 0.24 : 0.14),
+                        color: _tipDisc(theme, ink),
                       ),
-                      child: Icon(
-                        Icons.lightbulb_rounded,
-                        size: 15,
-                        color: ink,
+                      child: Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: HomeLineArt(
+                          asset: 'assets/shadchan-tip.png',
+                          ink: ink,
+                          paper: _tipDisc(theme, ink),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -684,6 +480,17 @@ class _TipPage extends StatelessWidget {
 /// emoji in the app that has to read as "here is an idea" at 14px, in one
 /// glyph, on both platforms' fonts.
 const String tipMark = '💡';
+
+/// The tinted disc the tip's drawing sits in — and the paper the drawing's own
+/// white ground is recoloured to, so the two are the same tone by construction
+/// rather than by two constants that have to be kept in step.
+Color _tipDisc(ThemeData theme, Color ink) {
+  final bool dark = theme.brightness == Brightness.dark;
+  return Color.alphaBlend(
+    ink.withValues(alpha: dark ? 0.24 : 0.14),
+    dark ? theme.colorScheme.surfaceContainerHighest : _tipPaper,
+  );
+}
 
 const Color _tipInk = Color(0xFF5C84A3);
 const Color _tipInkDm = Color(0xFF9DBED6);

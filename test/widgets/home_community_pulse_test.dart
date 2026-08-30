@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/utils/community_challenge.dart';
+import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/widgets/home_community_pulse.dart';
 
 Widget _wrap(Widget child, {double textScale = 1}) {
@@ -32,7 +34,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         CommunityPulseCard(
-          line: '18 רעיונות נפתחו היום',
+          line: const CommunityPulseLine(text: '18 רעיונות נפתחו היום'),
           challenge: challenge,
           onOpen: () {},
         ),
@@ -63,7 +65,7 @@ void main() {
     await tester.pumpWidget(
       _wrap(
         CommunityPulseCard(
-          line: 'מזל טוב! זוג נוסף התארס 🎉',
+          line: const CommunityPulseLine(text: 'מזל טוב! זוג נוסף התארס 🎉'),
           challenge: challenge,
           onOpen: () {},
         ),
@@ -89,6 +91,77 @@ void main() {
 
     expect(find.text(CommunityPulseCard.title), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('A line with a bracha behind it is what gets tapped, not the '
+      'card', (WidgetTester tester) async {
+    int opened = 0;
+    int congratulated = 0;
+    final CommunityEngagement engagement = CommunityEngagement(
+      id: 'e1',
+      authorUid: 'someone',
+      at: DateTime(2026, 8, 30),
+      matchmakerName: 'יצחק',
+      matchId: 'm1',
+    );
+
+    await tester.pumpWidget(
+      _wrap(
+        CommunityPulseCard(
+          line: CommunityPulseLine(
+            text: 'מזל טוב לשדכן יצחק! לשליחת ברכה',
+            engagement: engagement,
+          ),
+          challenge: challenge,
+          onOpen: () => opened++,
+          onLine: () => congratulated++,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('מזל טוב לשדכן יצחק! לשליחת ברכה'));
+    await tester.pump();
+
+    expect(congratulated, 1);
+    // The line's own tap is the innermost hit, so the card's does not also
+    // fire and carry the reader off to the activity screen.
+    expect(opened, 0);
+
+    // The heading is still the way in to the long form.
+    await tester.tap(find.text(CommunityPulseCard.title));
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  testWidgets('A bracha that has already gone says so and stops offering', (
+    WidgetTester tester,
+  ) async {
+    int congratulated = 0;
+    await tester.pumpWidget(
+      _wrap(
+        CommunityPulseCard(
+          line: CommunityPulseLine(
+            text: 'מזל טוב לשדכן יצחק!',
+            engagement: CommunityEngagement(
+              id: 'e1',
+              authorUid: 'someone',
+              at: DateTime(2026, 8, 30),
+              matchmakerName: 'יצחק',
+              matchId: 'm1',
+            ),
+          ),
+          challenge: challenge,
+          onOpen: () {},
+          onLine: () => congratulated++,
+          sent: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('הברכה נשלחה'), findsOneWidget);
+    expect(congratulated, 0);
   });
 
   testWidgets('A week that broke the record says so', (

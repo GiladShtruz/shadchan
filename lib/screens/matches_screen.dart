@@ -12,11 +12,13 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/dating_check_in.dart';
+import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/search_results_panel.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
@@ -294,6 +296,13 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final List<MatchIdea> dueReminders = searching
         ? const <MatchIdea>[]
         : _dueReminders(matchRepository.getAll());
+    // Over the whole database rather than over the search: the strip at the
+    // head of the page celebrates every couple who is out, and narrowing it to
+    // whatever was typed would make it say something that is not true.
+    final int datingCount = matchRepository
+        .getAll()
+        .where((MatchIdea match) => match.status == MatchStatus.dating)
+        .length;
 
     // Reached by following a link to one proposal, this screen is a pushed page
     // rather than the tab — so the start edge has to carry the way back, and
@@ -356,6 +365,42 @@ class _MatchesScreenState extends State<MatchesScreen> {
                     : Column(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
+                          // **The two blocks that used to open the home
+                          // screen.** "כל הכבוד! X זוגות שלך יוצאים" and
+                          // "רעיונות שהמאגר מציע לך" were both invitations into
+                          // this page, sitting on the page before it; they are
+                          // at the head of the page they were about now, which
+                          // is one tap shorter and two blocks of home screen
+                          // cheaper. They fold away with the category buttons
+                          // while a proposal's actions are open — see
+                          // [_headerHidden].
+                          //
+                          // Not drawn during a search: what somebody typing a
+                          // name wants is the proposals that match it, not two
+                          // banners above them.
+                          if (!searching && datingCount > 0)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              child: DatingCouplesStrip(
+                                count: datingCount,
+                                onTap: () => setState(
+                                  () => _category = MatchCategory.dating,
+                                ),
+                              ),
+                            ),
+                          // Held back until the database is big enough to keep
+                          // producing pairs — below fifty friends the well runs
+                          // dry and the row becomes a promise the app cannot
+                          // keep.
+                          if (!searching &&
+                              personRepository.databaseCount >
+                                  HomeConfig.databaseIdeasMinFriends)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              child: HomeHeroBand(
+                                onShowIdeas: () => context.push('/ideas/new'),
+                              ),
+                            ),
                           // Drawn during a search too. Which kinds of proposal a
                           // person has — two open, one closed — is exactly what
                           // somebody typing their name wants to know, and hiding

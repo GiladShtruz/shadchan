@@ -156,6 +156,28 @@ void main() {
         'יאללה לקדם — לשאול את הבחורה',
       );
     });
+
+    test('the board note says the same step, named and shorter', () {
+      // הלוח שלי asks the same question of the same stage and only spends its
+      // words differently: a note a third of a phone wide would have cut
+      // "יאללה לקדם — " off before it reached the name.
+      expect(
+        MatchStages.shortLabel(
+          MatchNextStep.askMale,
+          male: candidate('male', 'דוד', Gender.male),
+        ),
+        'השלב הבא: לשאול את דוד',
+      );
+      expect(
+        MatchStages.shortLabel(MatchNextStep.askFemale),
+        'השלב הבא: לשאול את הבחורה',
+      );
+      // Both sides asked: there is nothing for the matchmaker to do next.
+      expect(
+        MatchStages.shortLabel(MatchNextStep.startDating),
+        'השלב הבא: מחכים לתשובה',
+      );
+    });
   });
 
   group('a proposal nothing has happened to', () {

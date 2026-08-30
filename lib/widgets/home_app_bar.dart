@@ -187,8 +187,17 @@ class HomeBarButton extends StatelessWidget {
 /// **No frame, no tint, no card.** It is spoken, not displayed: a box around it
 /// would make it a component, and the page already opens with two real cards
 /// under it.
+///
+/// **And one short line under it**, in the page's ordinary voice, saying what
+/// the day is for. It is the only sentence on the home screen that asks for
+/// nothing: everything else either shows work or offers a way to do some.
 class HomeGreeting extends StatelessWidget {
-  const HomeGreeting({super.key, required this.greeting, required this.name});
+  const HomeGreeting({
+    super.key,
+    required this.greeting,
+    required this.name,
+    this.line,
+  });
 
   /// "בוקר טוב" / "צהריים טובים" / "ערב טוב" / "לילה טוב".
   final String greeting;
@@ -197,35 +206,54 @@ class HomeGreeting extends StatelessWidget {
   /// they are filed.
   final String name;
 
+  /// The warm line under the greeting — "בוא ניצור היום חיבורים חדשים".
+  final String? line;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
+    final String? warm = line?.trim();
 
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: Text.rich(
-        TextSpan(
-          children: <InlineSpan>[
-            TextSpan(text: '$greeting, '),
-            // The name in the warm accent: the one word on the line that is
-            // about this particular person.
-            TextSpan(
-              text: name,
-              style: TextStyle(
-                color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text.rich(
+          TextSpan(
+            children: <InlineSpan>[
+              TextSpan(text: '$greeting, '),
+              // The name in the warm accent: the one word on the line that is
+              // about this particular person.
+              TextSpan(
+                text: name,
+                style: TextStyle(
+                  color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+                ),
               ),
+            ],
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            height: 1.2,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        if (warm != null && warm.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            warm,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.3,
             ),
-          ],
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w800,
-          height: 1.2,
-          color: theme.colorScheme.onSurface,
-        ),
-      ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -1,8 +1,8 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-version: 1.0.18+55
-#version: 1.0.0+5
+#version: 1.0.18+57
+version: 1.0.0+6
 
 environment:
   sdk: ^3.11.0
@@ -65,14 +65,11 @@ dependencies:
   google_sign_in: ^7.2.0
 
   # Signing in with Apple, which App Store review requires wherever Google is
-  # offered. It is a separate package and not `AppleAuthProvider` because the
-  # provider flow is a *web* OAuth flow: on iOS it opens a browser sheet against
-  # a Services ID and a return URL that only exist if they were registered in
-  # the Apple Developer portal, which is why "המשך עם Apple" never completed.
-  # This package calls `ASAuthorizationAppleIDProvider` — Apple's own sheet,
-  # backed by the entitlement the Runner target already carries — and the id
-  # token it returns is exchanged for a Firebase credential. It is the flow
-  # Firebase's own Flutter documentation prescribes.
+  # offered. This package calls `ASAuthorizationAppleIDProvider` — Apple's own
+  # sheet, backed by the Runner entitlement. Firebase's dedicated
+  # `AppleAuthProvider.credentialWithIDToken` then exchanges its id token and
+  # raw nonce. Do not replace this pair with the provider-driven
+  # `signInWithProvider(AppleAuthProvider())` web OAuth flow.
   sign_in_with_apple: ^8.1.0
 
   # The cloud backup. Hive stays the source of truth and the app keeps working
@@ -166,13 +163,14 @@ flutter:
     # sits directly on the page rather than inside a coloured tile the way the
     # launcher icon does.
     - assets/logo_mark.png
-    # The two home entry cards. Cropped out of a single source illustration to
-    # the picture alone — the label the artwork had drawn into it is Flutter
-    # text now, so it scales, reads aloud and can be reworded. JPEG rather than
-    # PNG on purpose: they are opaque rectangles with painted paper texture, and
-    # PNG spent six times the bytes on it.
-    - assets/home_add_people.jpg
-    - assets/home_add_idea.jpg
+    # The two home entry cards and the tip block's mark. Line drawings on white:
+    # black ink on a white ground, tinted at draw time rather than baked — see
+    # `HomeLineArt`, which screens the brand tone into the strokes and multiplies
+    # the paper tone into the ground, so one file serves the light and the dark
+    # theme and the same drawing can wear either card's colour.
+    - assets/home_add_people2.png
+    - assets/home_add_idea2.png
+    - assets/shadchan-tip.png
     - assets/male_pic/
     - assets/female_pic/
   fonts:

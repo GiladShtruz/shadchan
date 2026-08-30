@@ -5,7 +5,6 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_config.dart';
-import 'package:shadchan/utils/home_next_actions.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_panels.dart';
@@ -48,15 +47,6 @@ void main() {
     );
   }
 
-  HomeNextAction action(String title, String reason) {
-    return HomeNextAction.person(
-      kind: HomeActionKind.noIdeas,
-      person: contact(title, title, Gender.female),
-      title: title,
-      reason: reason,
-    );
-  }
-
   testWidgets('the opening band and the two action cards fit a phone', (
     WidgetTester tester,
   ) async {
@@ -86,9 +76,10 @@ void main() {
     expect(find.text('הוספת חברים'), findsOneWidget);
     expect(find.text('הוספת רעיון'), findsOneWidget);
 
-    // Adding friends is deliberately the louder of the two at every width: it
-    // is what makes everything else on the page possible. Both still sit in one
-    // row, level with each other.
+    // **The two cards are exactly the same size.** They were split 13:9 while
+    // the database was small, which made the pair read as one card and its
+    // afterthought; adding friends leads by colour and by shadow now. Both sit
+    // in one row, level with each other.
     final double addPeople = tester
         .getSize(
           find
@@ -109,7 +100,7 @@ void main() {
               .first,
         )
         .width;
-    expect(addPeople, greaterThan(addIdea));
+    expect(addPeople, closeTo(addIdea, 0.5));
     // Neither tile carries a chevron any more: the whole surface is the button,
     // and an arrow inside it was one decoration too many.
     expect(
@@ -146,12 +137,23 @@ void main() {
           .map((Image image) => (image.image as AssetImage).assetName)
           .toList();
       expect(assets, <String>[
-        'assets/home_add_people.jpg',
-        'assets/home_add_idea.jpg',
+        'assets/home_add_people2.png',
+        'assets/home_add_idea2.png',
       ]);
 
-      // The artwork these were cut from had the Hebrew painted into it. If it
-      // ever goes back to being part of the picture, it stops growing with the
+      // The drawings are black ink on a white ground and are recoloured at
+      // draw time, which is what keeps a white rectangle off a coloured card
+      // and a lightbox out of the dark theme. See [HomeLineArt].
+      expect(
+        find.descendant(
+          of: find.byType(HomeActionCards),
+          matching: find.byType(HomeLineArt),
+        ),
+        findsNWidgets(2),
+      );
+
+      // The artwork these replaced had the Hebrew painted into it. If it ever
+      // goes back to being part of the picture, it stops growing with the
       // system font and stops being readable to a screen reader — and this is
       // the assertion that would notice.
       expect(find.text('הוספת חברים'), findsOneWidget);
@@ -263,10 +265,17 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('טיפ לשדכנית'), findsOneWidget);
     expect(find.text('טיפ לשדכן'), findsNothing);
-    // The tip is the sentence and nothing else: the bulb is an icon in the
+    // The tip is the sentence and nothing else: the mark is a drawing in the
     // block's heading now, not an emoji glued to somebody's words.
     expect(find.text('אנשים משתנים.'), findsOneWidget);
-    expect(find.byIcon(Icons.lightbulb_rounded), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(HomeTipCarousel),
+        matching: find.byType(HomeLineArt),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.lightbulb_rounded), findsNothing);
     // The author's name rides under the tip, small and quiet.
     expect(find.text('רבקה לוי'), findsOneWidget);
     // Tips are read here and written from the settings; no compose entry.
@@ -304,101 +313,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('שני'), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('every next-action card is the same compact box, and the row '
-      'scrolls', (WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(
-      wrap(
-        HomeNextActionsRow(
-          actions: <HomeNextAction>[
-            action('רבקה', 'אין לו כרגע אף רעיון פתוח'),
-            action(
-              'אלישבע-מרים',
-              'הכרטיס לא עודכן כבר ארבעה חודשים, ויש בו כמה שדות חדשים '
-                  'שעדיין ריקים לגמרי',
-            ),
-            action('דנה', 'חסר בכרטיס: גיל'),
-            action('שירה', 'חסר בכרטיס: סגנון דתי'),
-          ],
-          onOpen: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('הפעולות הבאות שלך'), findsOneWidget);
-
-    // A long reason does not make its card taller or wider than the short one
-    // beside it — it is clamped to the box, never the other way round.
-    final List<Size> sizes = tester
-        .widgetList<Ink>(
-          find.descendant(
-            of: find.byType(HomeNextActionsRow),
-            matching: find.byType(Ink),
-          ),
-        )
-        .map((Ink card) => tester.getSize(find.byWidget(card)))
-        .toList();
-    expect(sizes, isNotEmpty);
-    for (final Size size in sizes) {
-      expect(size.height, sizes.first.height);
-      expect(size.width, sizes.first.width);
-      expect(size.height, HomeConfig.nextActionCardHeight);
-      expect(size.width, HomeConfig.nextActionCardWidth);
-    }
-
-    // The row is dragged, not paged. There is no button that swaps the visible
-    // set, and the card that was off the end comes in by scrolling.
-    expect(find.text('פעולות נוספות'), findsNothing);
-    expect(find.text('שירה'), findsNothing);
-    // The row is RTL: later cards sit off the *left* edge, so the finger
-    // travels rightwards to bring them in.
-    await tester.drag(
-      find.descendant(
-        of: find.byType(HomeNextActionsRow),
-        matching: find.byType(ListView),
-      ),
-      const Offset(400, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('שירה'), findsOneWidget);
-  });
-
-  testWidgets('a habit prompt is a card with no face and its own route', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    HomeNextAction? opened;
-    await tester.pumpWidget(
-      wrap(
-        HomeNextActionsRow(
-          actions: const <HomeNextAction>[
-            HomeNextAction.prompt(
-              kind: HomeActionKind.addFriendNudge,
-              title: 'הוספת חבר',
-              reason: 'כבר שבוע לא הוספת חבר למאגר',
-            ),
-          ],
-          onOpen: (HomeNextAction action) => opened = action,
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('כבר שבוע לא הוספת חבר למאגר'), findsOneWidget);
-
-    await tester.tap(find.text('הוספת חבר'));
-    await tester.pump();
-    expect(opened?.kind, HomeActionKind.addFriendNudge);
-    expect(opened?.isPrompt, isTrue);
   });
 
   for (final double width in <double>[320, 360, 390, 430]) {

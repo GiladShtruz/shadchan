@@ -320,6 +320,7 @@ class HomeBoardNote extends StatelessWidget {
     required this.onTap,
     required this.actions,
     this.subtitle,
+    this.footnote,
     this.tintSeed = '',
   });
 
@@ -334,6 +335,16 @@ class HomeBoardNote extends StatelessWidget {
 
   /// The pinned note in the matchmaker's words.
   final String? subtitle;
+
+  /// The one line the app itself has to say about this item — today that is
+  /// "השלב הבא" on a proposal, in exactly the words the ideas page uses for it.
+  ///
+  /// Drawn under the note rather than instead of it: what the matchmaker wrote
+  /// and what the proposal is waiting for are two different things, and a note
+  /// that quietly replaced one with the other would be the app editing
+  /// somebody's own words. The two share the note's text budget instead — each
+  /// gets one line when both are there.
+  final String? footnote;
 
   /// Keeps the same person or proposal on the same paper colour between
   /// builds, so the board looks hand-arranged rather than random.
@@ -372,6 +383,9 @@ class HomeBoardNote extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String? sub = subtitle?.trim();
+    final String? foot = footnote?.trim();
+    final bool hasFoot = foot != null && foot.isNotEmpty;
+    final bool hasSub = sub != null && sub.isNotEmpty;
     final Color paper = _paperFor(theme);
 
     // A hand-pinned note is never quite straight, but it is also never askew:
@@ -421,16 +435,40 @@ class HomeBoardNote extends StatelessWidget {
                             height: 1.2,
                           ),
                         ),
-                        if (sub != null && sub.isNotEmpty) ...<Widget>[
+                        if (hasSub) ...<Widget>[
                           const SizedBox(height: 3),
                           Text(
                             sub,
-                            maxLines: 2,
+                            // One line each when the note and the next step are
+                            // both there, two when the note is on its own. The
+                            // note is a fixed box, so the text budget is fixed
+                            // with it.
+                            maxLines: hasFoot ? 1 : 2,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                               height: 1.25,
+                            ),
+                          ),
+                        ],
+                        if (hasFoot) ...<Widget>[
+                          SizedBox(height: hasSub ? 2 : 3),
+                          Text(
+                            foot,
+                            maxLines: hasSub ? 1 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              // The one coloured line on a note. It is the only
+                              // thing on the board the app wrote rather than
+                              // the matchmaker, and it is the thing they are
+                              // looking for.
+                              color: theme.brightness == Brightness.dark
+                                  ? AppColors.primaryDarkDm
+                                  : AppColors.primaryDark,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
                             ),
                           ),
                         ],
@@ -978,5 +1016,105 @@ class HomeBannerTitle extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// One of the app's hand-drawn line illustrations, wearing the colour of
+/// whatever block it is on.
+///
+/// The drawings arrive as black ink on a white ground with no alpha channel, so
+/// dropping one onto a coloured card would paste a white rectangle over it and
+/// dropping one into the dark theme would put a lightbox in the middle of the
+/// page. Blend modes do the whole job without touching the files, and which
+/// ones depends on which way round the card is:
+///
+///  * **Dark drawing on a light card** — `screen` leaves white alone and turns
+///    black into [ink]; `multiply` then leaves that alone and turns the white
+///    ground into [paper].
+///  * **Light drawing on a dark card** — neither mode can lighten a stroke
+///    while darkening the ground, so the image is *inverted* first. `multiply`
+///    then turns the (now white) strokes into [ink] and leaves the black ground
+///    alone, and `screen` lifts that ground to [paper].
+///
+/// Which of the two is in play is read off the colours themselves rather than
+/// off the theme: a caller that wants pale strokes on a dark ground has already
+/// said so by passing a [paper] darker than its [ink].
+///
+/// Either way the result is a drawing in [ink] on [paper], from one asset, in
+/// either theme — and the source files stay exactly as they were drawn.
+class HomeLineArt extends StatelessWidget {
+  const HomeLineArt({
+    super.key,
+    required this.asset,
+    required this.ink,
+    required this.paper,
+    this.fit = BoxFit.contain,
+  });
+
+  final String asset;
+
+  /// What the black strokes become.
+  final Color ink;
+
+  /// What the white ground becomes.
+  final Color paper;
+
+  final BoxFit fit;
+
+  /// Flips every channel. The one step that lets a light stroke sit on a dark
+  /// ground, which no single blend of these two colours can produce.
+  static const List<double> _invert = <double>[
+    -1, 0, 0, 0, 255, //
+    0, -1, 0, 0, 255, //
+    0, 0, -1, 0, 255, //
+    0, 0, 0, 1, 0, //
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    // **The white ground is painted, not assumed.** `ColorFilter.mode` is
+    // applied to a whole layer, and for these blend modes an opaque source over
+    // a transparent destination comes out opaque — so every pixel the drawing
+    // does not cover, the letterbox `BoxFit.contain` leaves around it included,
+    // came out the colour of a stroke and drew a hard frame round the picture.
+    // Extending the drawing's own white ground across the box is what makes the
+    // filters see one uniform white to recolour.
+    final Widget image = ColoredBox(
+      color: Colors.white,
+      child: Image.asset(
+        asset,
+        fit: fit,
+        // Whatever the drawing shows, the words beside it say it better.
+        excludeFromSemantics: true,
+      ),
+    );
+
+    // Darker ground than strokes means the drawing has to come out light, which
+    // is the inverted path.
+    final Widget filtered = paper.computeLuminance() < ink.computeLuminance()
+        ? ColorFiltered(
+            colorFilter: ColorFilter.mode(paper, BlendMode.screen),
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(ink, BlendMode.multiply),
+              child: ColorFiltered(
+                colorFilter: const ColorFilter.matrix(_invert),
+                child: image,
+              ),
+            ),
+          )
+        : ColorFiltered(
+            colorFilter: ColorFilter.mode(paper, BlendMode.multiply),
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(ink, BlendMode.screen),
+              child: image,
+            ),
+          );
+
+    // **And the whole thing is clipped to its own box.** A `ColorFiltered`
+    // becomes a compositing layer, and a layer whose filter turns transparent
+    // into opaque paints that opacity over everything up to the nearest clip —
+    // which here was the entire card, label band included. The clip is what
+    // keeps the recolouring inside the picture.
+    return ClipRect(child: filtered);
   }
 }

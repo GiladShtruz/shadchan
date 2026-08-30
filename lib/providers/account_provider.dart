@@ -91,6 +91,20 @@ class AccountProvider extends ChangeNotifier {
 
   String? get photoUrl => _google?.photoURL ?? _user?.photoURL;
 
+  /// Email/password accounts need their password typed before deletion. The
+  /// provider id comes from Firebase itself, not from whichever button was
+  /// last pressed, so it remains correct after an app restart.
+  bool get deletionRequiresPassword {
+    final User? user = _user;
+    if (user == null) {
+      return false;
+    }
+    return AccountService.deletionAuthMethod(
+          user.providerData.map((UserInfo info) => info.providerId),
+        ) ==
+        AccountDeletionAuthMethod.password;
+  }
+
   UserInfo? get _google {
     for (final UserInfo info in _user?.providerData ?? const <UserInfo>[]) {
       if (info.providerId == 'google.com') {
@@ -162,6 +176,26 @@ class AccountProvider extends ChangeNotifier {
     try {
       await AccountService.signOut();
       _refreshUser();
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<AccountDeletionResult> deleteAccount({
+    required Future<bool> Function() deleteRemoteData,
+    String? password,
+  }) async {
+    if (_isBusy) {
+      return const AccountDeletionResult.canceled();
+    }
+    _setBusy(true);
+    try {
+      final AccountDeletionResult result = await AccountService.deleteAccount(
+        deleteRemoteData: deleteRemoteData,
+        password: password,
+      );
+      _refreshUser();
+      return result;
     } finally {
       _setBusy(false);
     }

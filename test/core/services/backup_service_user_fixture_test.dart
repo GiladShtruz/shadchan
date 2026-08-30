@@ -19,18 +19,27 @@ void main() {
       'shadchan_user_fixture_',
     );
     Hive.init(hiveDirectory.path);
-    if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(PersonAdapter());
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(PersonAdapter());
+    }
     if (!Hive.isAdapterRegistered(14)) {
       Hive.registerAdapter(RegionAdapter());
     }
-    if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(MatchIdeaAdapter());
-    if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(MatchNoteAdapter());
-    if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(GenderAdapter());
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(MatchIdeaAdapter());
+    }
+    if (!Hive.isAdapterRegistered(2)) {
+      Hive.registerAdapter(MatchNoteAdapter());
+    }
+    if (!Hive.isAdapterRegistered(3)) {
+      Hive.registerAdapter(GenderAdapter());
+    }
     if (!Hive.isAdapterRegistered(4)) {
       Hive.registerAdapter(ReligiousLevelAdapter());
     }
-    if (!Hive.isAdapterRegistered(5))
+    if (!Hive.isAdapterRegistered(5)) {
       Hive.registerAdapter(MatchStatusAdapter());
+    }
     if (!Hive.isAdapterRegistered(6)) {
       Hive.registerAdapter(CurrentHandlerAdapter());
     }

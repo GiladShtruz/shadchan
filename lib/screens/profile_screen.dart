@@ -12,6 +12,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/account_switch.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -109,6 +110,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         account: account,
         onSignIn: () => context.push('/sign-in'),
         onSignOut: () => _confirmSignOut(account, sync),
+        onDeleteAccount: () => _confirmDeleteAccount(account, sync),
       ),
 
       // 3. A single matchmaker's own card — one row, and a page behind it. The
@@ -432,6 +434,124 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // router's own gate sends anything else straight back here.
     context.go('/sign-in');
   }
+
+  /// Permanently removes the authentication account and every app record tied
+  /// to it. A provider sheet (Google/Apple) or the password prompt below is the
+  /// recent-login proof Firebase requires for a destructive account action.
+  Future<void> _confirmDeleteAccount(
+    AccountProvider account,
+    SyncProvider sync,
+  ) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('למחוק את החשבון לצמיתות?'),
+          content: const Text(
+            'הפעולה תמחק את חשבון ההתחברות, את הגיבוי בענן, את נתוני הקהילה, '
+            'פרסומי האירוסין והברכות שעדיין בשרת — וגם את כל המאגר מהמכשיר '
+            'הזה.\n\nאי אפשר לבטל את הפעולה או לשחזר את המידע אחריה. פניות '
+            'תמיכה שכבר נשלחו נשמרות לפי מדיניות הפרטיות.',
+          ),
+          actionsOverflowDirection: VerticalDirection.down,
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(dialogContext).colorScheme.error,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('מחיקת החשבון'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    String? password;
+    if (account.deletionRequiresPassword) {
+      password = await _requestDeletionPassword();
+      if (password == null || !mounted) {
+        return;
+      }
+    }
+
+    final AccountDeletionResult result =
+        await AccountSwitch.deleteAccountAndClear(
+          account: account,
+          sync: sync,
+          people: context.read<PersonRepository>(),
+          matches: context.read<MatchRepository>(),
+          profile: context.read<UserProfileProvider>(),
+          community: context.read<CommunityProvider>(),
+          password: password,
+        );
+    if (!mounted) {
+      return;
+    }
+    if (result.outcome == AccountDeletionOutcome.canceled) {
+      return;
+    }
+    if (result.outcome != AccountDeletionOutcome.success) {
+      AppNotice.show(
+        context,
+        result.message ?? 'לא הצלחנו למחוק את החשבון. כדאי לנסות שוב.',
+      );
+      return;
+    }
+    context.go('/sign-in');
+  }
+
+  Future<String?> _requestDeletionPassword() async {
+    final TextEditingController controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: const Text('אימות לפני המחיקה'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: 'הסיסמה שלך',
+                prefixIcon: Icon(Icons.lock_outline),
+              ),
+              onSubmitted: (String value) {
+                if (value.isNotEmpty) {
+                  Navigator.of(dialogContext).pop(value);
+                }
+              },
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('ביטול'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (controller.text.isNotEmpty) {
+                    Navigator.of(dialogContext).pop(controller.text);
+                  }
+                },
+                child: const Text('אימות ומחיקה'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
 }
 
 class _AccountGroup extends StatelessWidget {
@@ -439,11 +559,13 @@ class _AccountGroup extends StatelessWidget {
     required this.account,
     required this.onSignIn,
     required this.onSignOut,
+    required this.onDeleteAccount,
   });
 
   final AccountProvider account;
   final VoidCallback onSignIn;
   final VoidCallback onSignOut;
+  final VoidCallback onDeleteAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -472,6 +594,15 @@ class _AccountGroup extends StatelessWidget {
             enabled: !account.isBusy,
             trailing: const SizedBox.shrink(),
             onTap: onSignOut,
+          ),
+          SettingsRow(
+            icon: Icons.delete_forever_outlined,
+            title: 'מחיקת החשבון והנתונים',
+            subtitle: 'מחיקה לצמיתות מהשרת ומהמכשיר הזה',
+            destructive: true,
+            enabled: !account.isBusy,
+            trailing: const SizedBox.shrink(),
+            onTap: onDeleteAccount,
           ),
         ],
       );

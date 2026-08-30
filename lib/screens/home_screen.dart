@@ -7,30 +7,25 @@ import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/board_add_sheet.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
-import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/screens/think_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/tips_service.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
-import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
-import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/search_navigation.dart';
-import 'package:shadchan/utils/home_next_actions.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
 import 'package:shadchan/utils/home_stage.dart';
 import 'package:shadchan/utils/home_typography.dart';
+import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
@@ -268,21 +263,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final List<MatchIdea> allMatches = matchRepository.getAll();
-    final List<Person> allPeople = personRepository.getAll();
-    // The month's figures are not computed here any more: the home screen shows
-    // one encouraging line, and every number, chart and comparison lives on the
-    // screen that line opens.
-    final List<Person> visiblePeople = allPeople
-        .where((Person p) => !p.hidden)
-        .toList();
-
-    final List<MatchIdea> datingMatches =
-        allMatches
-            .where((MatchIdea m) => m.status == MatchStatus.dating)
-            .toList()
-          ..sort(
-            (MatchIdea a, MatchIdea b) => b.updatedAt.compareTo(a.updatedAt),
-          );
+    // "זוגות שיוצאים" is not on this page any more — it lives at the head of
+    // "הרעיונות שלי", where the couples themselves are. See
+    // `MatchesScreen`'s dating strip.
     final List<HomeOpenIdea> openIdeas = HomeOpenIdeas.build(
       matches: allMatches,
       personById: personRepository.getById,
@@ -297,15 +280,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final int friends = personRepository.databaseCount;
     final HomeStage stage = HomeStage.forCount(friends);
     final HomeMilestone milestone = HomeMilestone.forCount(friends);
-
-    // What the app itself thinks is most worth doing, ranked. Deliberately not
-    // the board, and deliberately not chronological.
-    final List<HomeNextAction> nextActions = HomeNextActions.build(
-      people: visiblePeople,
-      matches: allMatches,
-      personById: personRepository.getById,
-      personReminder: PersonReminders.forPerson,
-    );
 
     // At most one encouragement card, picked by what the database actually
     // needs next. A brand-new matchmaker already has the welcome card above, so
@@ -340,13 +314,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // The order of what follows *is* the design, and it is an order of
-    // usefulness. Thinking about a shidduch and the pairs the database found
-    // come first: they are the matchmaking itself, and the previous version
-    // buried them under the two add buttons, where the eye had already left the
-    // top of the screen by the time it reached them. The two ways to grow the
-    // database follow, still large and still unmissable. Then what was parked
-    // or is in flight, then what the app recommends, and only at the end what
-    // has been achieved.
+    // usefulness. The greeting, then the two ways to grow the database, then
+    // the board — which is now the whole of "what am I working on", because
+    // every open proposal lands on it by itself. Only after all of that does
+    // the page turn to figures: what has been done, what the community is
+    // doing, the week's shared target, and a tip to close on.
+    //
+    // **Three areas left this page rather than being redrawn on it.**
+    // "עוצרים רגע לחשוב על חברים" is at the head of המאגר שלי, "רעיונות שהמאגר
+    // מציע לך" and the couples who are out are at the head of הרעיונות שלי.
+    // Each of them was an invitation into a screen it now sits on top of, which
+    // is one tap shorter and one block of home screen cheaper. Gone entirely:
+    // "הפעולות הבאות" — a ranked queue on a page that already has a board — and
+    // "רעיונות פתוחים", which the board now carries.
     //
     // A block with nothing in it is not drawn at all rather than shown as an
     // empty box — an empty screen teaches that the app is empty.
@@ -358,15 +338,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return CustomScrollView(
       controller: _homeScrollController,
       slivers: <Widget>[
-        // 0. The greeting. On the page rather than in the bar, with nothing
-        // drawn around it. The search row that used to sit above it is in the
-        // banner now — see [_buildGreetingAppBar].
+        // 1. The greeting, and one warm line under it. On the page rather than
+        // in the bar, with nothing drawn around it. The search row that used to
+        // sit above it is in the banner now — see [_buildGreetingAppBar].
         block(
           HomeGreeting(
             greeting: _timeOfDayGreeting(
               TimeOfDay.fromDateTime(DateTime.now()),
             ),
             name: greetingName,
+            line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
           ),
           top: 8,
         ),
@@ -378,21 +359,9 @@ class _HomeScreenState extends State<HomeScreen> {
             HomeWelcomeCard(onAddPeople: () => AddPeopleDialog.show(context)),
           ),
 
-        // 1. The invitation to think. A banner and nothing else: no faces, no
-        // names, no count — the people live on the page it opens.
-        if (friends >= 3)
-          block(HomeThinkBanner(onTap: () => ThinkScreen.open(context))),
-
-        // 2. The pairs the database worked out on its own. Held back until the
-        // database is big enough to keep producing them — below fifty friends
-        // the well runs dry and the block becomes a promise the app cannot
-        // keep, so the screen goes on pushing towards growth instead.
-        if (friends > HomeConfig.databaseIdeasMinFriends)
-          block(HomeHeroBand(onShowIdeas: () => context.push('/ideas/new'))),
-
-        // 3. The two entry actions — still the largest, loudest thing on the
-        // page, because everything else on it is only possible once they have
-        // been used.
+        // 2. The two entry actions — the largest, loudest thing on the page,
+        // because everything else on it is only possible once they have been
+        // used. Two equal cards; adding friends leads by colour, not by size.
         block(
           HomeActionCards(
             onAddPeople: () => AddPeopleDialog.show(context),
@@ -401,71 +370,45 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // 4. The personal target: how far the database is from ten friends,
-        // then twenty-five, then fifty, then a hundred.
-        //
-        // It has its own slot rather than sharing the encouragement slot below,
-        // which is how it came to be almost never drawn — the first-idea nudge
-        // and the import offer both outranked it, so the one block on the page
-        // that shows the matchmaker their own progress was the one that lost
-        // every time. It stops entirely at a hundred friends, where a target is
-        // no longer the useful thing to say.
+        // The personal target: how far the database is from ten friends, then
+        // twenty-five, then fifty, then a hundred. It stops entirely at a
+        // hundred friends, where a target is no longer the useful thing to say.
         if (friends > 0 && stage.showsTarget)
           block(HomeMilestoneCard(milestone: milestone)),
 
-        // 5. Exactly one encouragement card, never a stack of them. The
-        // first-idea nudge and the bulk-import offer used to be able to appear
-        // together, which put two differently shaped boxes between the add
-        // buttons and the actual work.
+        // Exactly one encouragement card, never a stack of them.
         if (nudge != null) block(nudge),
 
-        // 5. הלוח שלי — what was pinned by hand, plus whatever asked to be
-        // remembered today. Absent entirely when there is nothing on it.
+        // 3. הלוח שלי — every open proposal, whatever asked to be remembered
+        // today, and whatever was pinned by hand. One surface for "what am I
+        // working on", which is why "רעיונות פתוחים" no longer needs a row of
+        // its own further down the page.
         _BoardSection(
           focusKey: _boardSectionKey,
           entries: board.entries,
+          openIdeas: openIdeas,
           personRepository: personRepository,
           matchRepository: matchRepository,
         ),
 
-        // 6. רעיונות פתוחים — every proposal that is open right now, with the
-        // ones asking for something today at the head of the row.
-        _OpenIdeasSection(ideas: openIdeas, personRepository: personRepository),
-
-        // 7. The emotional anchor, and the only block on the page wearing
-        // colour. Drawn only while there is somebody to celebrate.
-        _DatingSection(
-          matches: datingMatches.take(HomeConfig.datingCouplesInRow).toList(),
-          personRepository: personRepository,
-        ),
-
-        // 8. What the app recommends, mixed by kind and scrolled sideways.
-        if (nextActions.isNotEmpty)
-          SliverToBoxAdapter(
-            child: HomeNextActionsRow(
-              actions: nextActions,
-              onOpen: (HomeNextAction action) => _openAction(action),
-            ),
-          ),
-
-        // 9. The community, live: what it did today, and the one target it is
-        // working towards together this week. The only block on the page that
-        // moves on its own, and the only one that is about other people —
-        // which is exactly why it sits directly above the numbers, where the
-        // page turns from "your work" to "everybody's".
-        block(HomeCommunityPulse(onOpen: () => context.push('/activity'))),
-
-        // 10. What has been done — the matchmaker's own score beside the
-        // community's, in one window at a time. Two numbers and a switch;
-        // the breakdown, the chart and the leaderboard are all one tap away on
-        // a screen somebody opened *to look at numbers*.
+        // 4. What has been done — the matchmaker's own score beside the
+        // community's, two squares and one window at a time. The breakdown, the
+        // chart and the leaderboard are all one tap away on a screen somebody
+        // opened *to look at numbers*.
         block(HomeActivityBlock(onOpen: () => context.push('/activity'))),
+
+        // 5 and 6. The community, live: what it did today, and the one target
+        // it is working towards together this week. The only block on the page
+        // that moves on its own, and the only one that is about other people —
+        // which is why it sits directly under the numbers, where the page turns
+        // from "your work" to "everybody's".
+        block(HomeCommunityPulse(onOpen: () => context.push('/activity'))),
 
         // Somebody else's good news, for one launch. It draws nothing at all
         // when there is none, which is nearly always.
         block(const HomeEngagementCard()),
 
-        // 11. The community's tip.
+        // 7. The community's tip.
         block(
           HomeTipCarousel(
             tips: _tips(context),
@@ -488,36 +431,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
-  }
-
-  /// Opens whatever one of "הפעולות הבאות שלך" is about.
-  ///
-  /// Most cards carry a record and open it. The two habit prompts — a week with
-  /// no friend added, a week with no idea — carry nothing, so they open the
-  /// flow that answers them instead. That is the whole reason they are on the
-  /// row: an action the app names has to be doable from where it is named.
-  void _openAction(HomeNextAction action) {
-    if (action.person != null) {
-      context.push('/people/${action.person!.id}');
-      return;
-    }
-    if (action.match != null) {
-      context.push('/matches/${action.match!.id}');
-      return;
-    }
-    switch (action.kind) {
-      case HomeActionKind.addFriendNudge:
-        AddPeopleDialog.show(context);
-      case HomeActionKind.newIdeaNudge:
-        context.push('/matches/add');
-      case HomeActionKind.reminderDue:
-      case HomeActionKind.datingCheckIn:
-      case HomeActionKind.staleIdea:
-      case HomeActionKind.missingDetails:
-      case HomeActionKind.noIdeas:
-      case HomeActionKind.staleCard:
-        break;
-    }
   }
 
   /// The rotation the tip block swipes through: the tips that ship with the app
@@ -663,34 +576,46 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // --- הלוח שלי ---------------------------------------------------------------
 
-/// The people and proposals the matchmaker parked to come back to — plus
-/// whatever asked to be remembered today.
+/// Everything the matchmaker is working on right now, on one surface.
 ///
-/// Two sources, one surface. A note pinned by hand and a reminder whose date has
-/// arrived are the same thing from where the matchmaker is standing: something
-/// they told the app to put back in front of them. The reminders lead, because
-/// they are the ones with a date attached.
+/// Three sources, one board. **Every open proposal is on it by itself** — that
+/// is what replaced "רעיונות פתוחים" as a row of its own further down the page:
+/// the answer to "what is open?" and the answer to "what did I park?" were two
+/// separate strips saying overlapping things, and the board is the one the
+/// matchmaker already treats as their desk. To that are added the reminders
+/// whose date has arrived, and whatever was pinned by hand.
+///
+/// The order is the order of urgency: a reminder that came due leads, then what
+/// was pinned deliberately, then the rest of the open proposals.
+///
+/// **A proposal's note carries its next step**, in exactly the words the ideas
+/// page uses for it — see [MatchStages.buttonLabel]. Nothing new decides what
+/// that step is; the board reads the same stage the card does.
 ///
 /// Always exactly one row, however many notes there are.
 ///
-/// **It folds, and it remembers.** The board is an optional tool: some
-/// matchmakers pin to it constantly and some never open it, and a permanently
-/// visible empty corkboard on the home screen of the second group is a block
-/// they scroll past every day. So an empty board is one compact line with an
-/// arrow, a board with something on it opens by default, and whichever way the
-/// matchmaker last left it is how they find it next time. The one thing that
-/// overrides their choice is the first item landing on an empty board — being
-/// shown what was just added is the point of adding it.
+/// **It folds, and it remembers.** Some matchmakers live on the board and some
+/// never open it, so an empty board is one compact line with an arrow, a board
+/// with something on it opens by default, and whichever way the matchmaker last
+/// left it is how they find it next time. The one thing that overrides their
+/// choice is the first item landing on an empty board — being shown what was
+/// just added is the point of adding it.
 class _BoardSection extends StatefulWidget {
   const _BoardSection({
     required this.focusKey,
     required this.entries,
+    required this.openIdeas,
     required this.personRepository,
     required this.matchRepository,
   });
 
   final Key focusKey;
   final List<HomeBoardEntry> entries;
+
+  /// Every proposal that is open right now, already ranked — the ones asking
+  /// for something today first. See [HomeOpenIdeas].
+  final List<HomeOpenIdea> openIdeas;
+
   final PersonRepository personRepository;
   final MatchRepository matchRepository;
 
@@ -727,8 +652,8 @@ class _BoardSectionState extends State<_BoardSection> {
     persistHomeSetting(_foldKey, expanded.toString());
   }
 
-  /// The pinned entries plus the due reminders, without repeating an item that
-  /// is both.
+  /// The pinned entries, the due reminders and every open proposal, without
+  /// repeating an item that is more than one of those.
   List<HomeBoardEntry> _live() {
     // A pinned record that has since been deleted simply drops out.
     final List<HomeBoardEntry> pinned = widget.entries.where((
@@ -782,7 +707,22 @@ class _BoardSectionState extends State<_BoardSection> {
     due.sort(
       (HomeBoardEntry a, HomeBoardEntry b) => a.addedAt.compareTo(b.addedAt),
     );
-    return <HomeBoardEntry>[...due, ...pinned];
+
+    // And every open proposal, in the order the row already ranked them —
+    // whatever is not already on the board because it was pinned or because its
+    // reminder came due. They carry no note of their own: what a proposal has
+    // to say for itself is its next step, and the card reads that live.
+    final List<HomeBoardEntry> open = <HomeBoardEntry>[
+      for (final HomeOpenIdea idea in widget.openIdeas)
+        if (seen.add('${HomeItemKind.idea.name}:${idea.match.id}'))
+          HomeBoardEntry(
+            kind: HomeItemKind.idea,
+            targetId: idea.match.id,
+            addedAt: idea.match.updatedAt,
+          ),
+    ];
+
+    return <HomeBoardEntry>[...due, ...pinned, ...open];
   }
 
   @override
@@ -824,7 +764,9 @@ class _BoardSectionState extends State<_BoardSection> {
         children: <Widget>[
           HomeSectionHeader(
             title: 'הלוח שלי',
-            subtitle: expanded ? 'אנשים או רעיונות שחשוב לי לזכור' : null,
+            subtitle: expanded
+                ? 'הרעיונות הפתוחים, התזכורות ומה שהצמדתי'
+                : null,
             expanded: expanded,
             onToggle: () => _setChoice(!expanded),
           ),
@@ -934,10 +876,24 @@ class _BoardCard extends StatelessWidget {
     final MatchIdea match = matchRepository.getById(entry.targetId)!;
     final Person? personA = personRepository.getById(match.personAId);
     final Person? personB = personRepository.getById(match.personBId);
+    // Which of the two is the boy decides which name the step names, and the
+    // proposal itself does not promise an order — the same normalisation the
+    // ideas page does before it draws a card.
+    final bool swap =
+        personA?.gender == Gender.female || personB?.gender == Gender.male;
+    final Person? male = swap ? personB : personA;
+    final Person? female = swap ? personA : personB;
+    // The proposal's next step, decided by exactly what decides it on the
+    // ideas page — [MatchStages] reads the same stage the card does — and said
+    // in as few words as a note can hold.
+    final MatchNextStep? step = MatchStages.nextStep(match);
     return _card(
       context,
       leading: HomeCardCoupleAvatars(personA: personA, personB: personB),
       title: '${_firstName(personA)} & ${_firstName(personB)}',
+      footnote: step == null
+          ? null
+          : MatchStages.shortLabel(step, male: male, female: female),
       onTap: () => context.push('/matches/${match.id}'),
     );
   }
@@ -947,12 +903,14 @@ class _BoardCard extends StatelessWidget {
     required Widget leading,
     required String title,
     required VoidCallback onTap,
+    String? footnote,
   }) {
     return HomeBoardNote(
       tintSeed: '${entry.kind.name}:${entry.targetId}',
       leading: leading,
       title: title,
       subtitle: entry.note,
+      footnote: footnote,
       onTap: onTap,
       actions: _BoardCardMenu(kind: entry.kind, targetId: entry.targetId),
     );
@@ -1032,155 +990,6 @@ class _BoardCardMenu extends StatelessWidget {
     }
     return context.read<MatchRepository>().getById(targetId)?.reminderDate !=
         null;
-  }
-}
-
-// --- רעיונות פתוחים ---------------------------------------------------------
-
-/// Every proposal that is open right now, in one horizontal row.
-///
-/// The row used to hold only the proposals with a reason to be looked at again
-/// today — a due reminder, or an idea that had not moved in weeks — which meant
-/// that on most days the one place on the home screen that answers "what is
-/// open?" was not drawn at all. It is a fixed part of the screen now, and the
-/// urgency lives in the *order*: due reminders and reopened proposals lead,
-/// then the rest, newest first.
-class _OpenIdeasSection extends StatelessWidget {
-  const _OpenIdeasSection({
-    required this.ideas,
-    required this.personRepository,
-  });
-
-  final List<HomeOpenIdea> ideas;
-  final PersonRepository personRepository;
-
-  @override
-  Widget build(BuildContext context) {
-    final List<HomeOpenIdea> openIdeas = ideas;
-    if (openIdeas.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-
-    // The open ideas inherit the wave: free circles on soft water rather than
-    // one more row of white rectangles. The page already carries a board, a
-    // banner, three action cards and a tip — another rounded box would have
-    // been the fifth variation on the same shape.
-    return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          HomeSectionHeader(
-            title: 'רעיונות פתוחים',
-            onSeeAll: () => context.go('/matches'),
-          ),
-          HomeWaveBackground(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              padding: EdgeInsets.symmetric(
-                horizontal: homeHorizontalInset(context),
-                vertical: HomeConfig.suggestionRowPadding,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  for (
-                    int index = 0;
-                    index < openIdeas.length;
-                    index++
-                  ) ...<Widget>[
-                    if (index > 0) const SizedBox(width: 2),
-                    () {
-                      final HomeOpenIdea idea = openIdeas[index];
-                      final Person? a = personRepository.getById(
-                        idea.match.personAId,
-                      );
-                      final Person? b = personRepository.getById(
-                        idea.match.personBId,
-                      );
-                      return HomeOpenIdeaBubble(
-                        personA: a,
-                        personB: b,
-                        title: '${_firstName(a)} & ${_firstName(b)}',
-                        status: idea.match.status.displayName,
-                        statusColor: AppColors.statusColor(
-                          idea.match.status.name,
-                        ),
-                        alerting: idea.alerting,
-                        onTap: () => context.push('/matches/${idea.match.id}'),
-                      );
-                    }(),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- זוגות שיוצאים ----------------------------------------------------------
-
-/// Pure encouragement, not a work queue: it exists only while there is someone
-/// to celebrate, and it is the one block on the page that wears colour.
-class _DatingSection extends StatelessWidget {
-  const _DatingSection({required this.matches, required this.personRepository});
-
-  final List<MatchIdea> matches;
-  final PersonRepository personRepository;
-
-  @override
-  Widget build(BuildContext context) {
-    if (matches.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-
-    // **How long they have been out, and not when the card was last touched.**
-    // The line came from `updatedAt`, which moves every time anything at all
-    // happens to the proposal — so a couple three months in read "יוצאים כבר
-    // מהיום" the moment a note was added to them. The status ledger knows when
-    // they actually started; see `DatingCheckIn.startedAt`.
-    final List<MatchStatusEvent> statusEvents = context
-        .read<MatchRepository>()
-        .getAllStatusEvents();
-    final List<HomeDatingCouple> couples = <HomeDatingCouple>[
-      for (final MatchIdea match in matches)
-        () {
-          final Person? personA = personRepository.getById(match.personAId);
-          final Person? personB = personRepository.getById(match.personBId);
-          final DateTime since =
-              DatingCheckIn.startedAt(match, events: statusEvents) ??
-              match.updatedAt;
-          return HomeDatingCouple(
-            matchId: match.id,
-            names: '${_firstName(personA)} & ${_firstName(personB)}',
-            sinceLabel: DatingCheckIn.datingSinceLabel(
-              DatingCheckIn.daysOut(since),
-            ),
-            personA: personA,
-            personB: personB,
-          );
-        }(),
-    ];
-
-    return SliverPadding(
-      padding: EdgeInsets.fromLTRB(
-        homeHorizontalInset(context),
-        _HomeScreenState._blockGap,
-        homeHorizontalInset(context),
-        0,
-      ),
-      sliver: SliverToBoxAdapter(
-        child: HomeDatingBanner(
-          couples: couples,
-          onOpen: (String matchId) => context.push('/matches/$matchId'),
-        ),
-      ),
-    );
   }
 }
 
