@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/call_log_disclosure_dialog.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -31,18 +32,38 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
   /// the screen are literally looking at the same contacts, the same progress
   /// and the same statuses — switching views never reloads or resets anything.
   AddContactsSession? _session;
+  bool _sessionStarting = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_session != null) {
+    if (_session != null || _sessionStarting) {
+      return;
+    }
+    _sessionStarting = true;
+    final PersonRepository repository = context.read<PersonRepository>();
+    _startSession(repository);
+  }
+
+  /// Only the very first time this screen is ever opened does this actually
+  /// show anything — [CallLogDisclosureDialog] remembers the answer, so every
+  /// later visit resolves instantly and the session starts loading exactly as
+  /// before.
+  Future<void> _startSession(PersonRepository repository) async {
+    final bool allowCallLogPrompt = await CallLogDisclosureDialog.ensureAcknowledged(
+      context,
+    );
+    if (!mounted) {
       return;
     }
     final AddContactsSession session = AddContactsSession(
-      context.read<PersonRepository>(),
+      repository,
+      allowCallLogPrompt: allowCallLogPrompt,
     );
-    _session = session;
     session.load();
+    setState(() {
+      _session = session;
+    });
   }
 
   @override

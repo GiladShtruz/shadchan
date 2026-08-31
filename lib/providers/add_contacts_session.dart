@@ -46,7 +46,11 @@ class ContactCandidateEntry {
 /// Nothing here decides *how* a contact is presented; that is the only
 /// difference between the two views.
 class AddContactsSession extends ChangeNotifier {
-  AddContactsSession(this._repository) {
+  /// [allowCallLogPrompt] reflects whether the matchmaker has already agreed
+  /// to [CallLogDisclosureDialog] — the call log is read without prompting
+  /// when they have not (or declined), same as everywhere outside this flow.
+  AddContactsSession(this._repository, {bool allowCallLogPrompt = false})
+    : _allowCallLogPrompt = allowCallLogPrompt {
     _repository.addListener(_handleRepositoryChanged);
   }
 
@@ -57,6 +61,7 @@ class AddContactsSession extends ChangeNotifier {
   static const String _revealedFilteredSetKey = 'revealed_filtered_phones';
 
   final PersonRepository _repository;
+  final bool _allowCallLogPrompt;
 
   bool _isLoading = true;
   bool _isRefreshing = false;
@@ -296,8 +301,9 @@ class AddContactsSession extends ChangeNotifier {
     // contact on the phone. Awaiting either *before* publishing the cached list
     // is what used to leave this screen blank for several seconds even though
     // the list it was going to show had been on disk the whole time.
-    final Future<Map<String, int>> callLogOrder =
-        CallLogSortService.loadRecentCallOrderRequestingPermission();
+    final Future<Map<String, int>> callLogOrder = _allowCallLogPrompt
+        ? CallLogSortService.loadRecentCallOrderRequestingPermission()
+        : CallLogSortService.loadRecentCallOrder();
     final Future<List<ContactImportCandidate>>
     deviceContacts = ContactsImportService.loadCandidates(
       _repository,

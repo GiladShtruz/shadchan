@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/call_log_disclosure_dialog.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
@@ -564,10 +565,22 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     }
 
     // Loading the call log may prompt for the READ_CALL_LOG permission, which
-    // is acceptable here in the add-contacts flow.
+    // is acceptable here in the add-contacts flow — but only after the
+    // matchmaker has seen the in-app disclosure, once, before Android's own
+    // dialog ever appears.
     if (selected.value == _ImportSortOption.recentCalls && !_recentCallLoaded) {
-      final Map<String, int> order =
-          await CallLogSortService.loadRecentCallOrderRequestingPermission();
+      if (!mounted) {
+        return;
+      }
+      final bool canPrompt = await CallLogDisclosureDialog.ensureAcknowledged(
+        context,
+      );
+      if (!mounted) {
+        return;
+      }
+      final Map<String, int> order = canPrompt
+          ? await CallLogSortService.loadRecentCallOrderRequestingPermission()
+          : await CallLogSortService.loadRecentCallOrder();
       if (!mounted) {
         return;
       }
