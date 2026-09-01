@@ -16,6 +16,7 @@ Guidance for future agents working in this repository.
 - App entry points are `lib/main.dart` and `lib/app.dart`.
 - Navigation is centralized in `lib/utils/app_router.dart` using `go_router`.
 - Tests live under `test/`, with service tests in `test/core/services/` and the app boot test in `test/widget_test.dart`.
+- A **web client** is planned as a separate Next.js application against the same Firestore and Auth — not Flutter Web. The decision, the Firestore document contract it reads, the read-only first phase and the console work it needs are in `docs/web-client.md`; read that before touching anything web-facing. Its screen designs live in `design/web/`.
 
 ## Product Rules
 
