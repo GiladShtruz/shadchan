@@ -250,6 +250,56 @@ void main() {
       await peopleBox.deleteFromDisk();
     },
   );
+
+  test(
+    'sortByFavoriteThenName puts starred contacts first, each block by name',
+    () {
+      final List<ContactImportCandidate> candidates = <ContactImportCandidate>[
+        _named('בני', isFavorite: false),
+        _named('דינה', isFavorite: true),
+        _named('אבי', isFavorite: false),
+        _named('גילה', isFavorite: true),
+      ];
+
+      ContactsImportService.sortByFavoriteThenName(candidates);
+
+      expect(
+        candidates.map((ContactImportCandidate c) => c.displayName).toList(),
+        <String>['גילה', 'דינה', 'אבי', 'בני'],
+      );
+    },
+  );
+
+  test('a contact with no favourite flag sorts as an ordinary one', () {
+    // Every candidate decoded from an older cache, and every contact on iOS,
+    // arrives with isFavorite defaulted to false — the order must stay a plain
+    // alphabetical one rather than degrade into the input order.
+    final List<ContactImportCandidate> candidates = <ContactImportCandidate>[
+      _named('רחל'),
+      _named('אסתר'),
+      _named('לאה'),
+    ];
+
+    ContactsImportService.sortByFavoriteThenName(candidates);
+
+    expect(
+      candidates.map((ContactImportCandidate c) => c.displayName).toList(),
+      <String>['אסתר', 'לאה', 'רחל'],
+    );
+  });
+}
+
+ContactImportCandidate _named(String displayName, {bool isFavorite = false}) {
+  return ContactImportCandidate(
+    deviceContactId: 'contact_$displayName',
+    displayName: displayName,
+    phone: '054-1111111',
+    normalizedPhone: '0541111111',
+    alreadyExists: false,
+    hasAdditionalPhones: false,
+    isFilteredByName: false,
+    isFavorite: isFavorite,
+  );
 }
 
 ContactImportCandidate _candidate() {

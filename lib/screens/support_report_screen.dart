@@ -33,12 +33,21 @@ import 'package:shadchan/widgets/app_notice.dart';
 /// button does nothing does not need to be told the app version they are running
 /// before they may press "שליחה".
 class SupportReportScreen extends StatefulWidget {
-  const SupportReportScreen({super.key, this.initialText = ''});
+  const SupportReportScreen({
+    super.key,
+    this.initialText = '',
+    this.initialKind = SupportReportKind.unsorted,
+  });
 
   /// Pre-filled text. The import-problem dialog hands its diagnostic report
   /// through here, so a failure that has already been described does not have
   /// to be described again.
   final String initialText;
+
+  /// Pre-selected classification. A report opened from the flag on a published
+  /// tip arrives already marked as a content report, so the sender writes what
+  /// is wrong with it rather than filing it themselves.
+  final SupportReportKind initialKind;
 
   @override
   State<SupportReportScreen> createState() => _SupportReportScreenState();
@@ -51,8 +60,9 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
 
   DeviceFacts _facts = DeviceFacts.unknown;
 
-  /// Unanswered until the sender taps a chip, and unanswered is allowed.
-  SupportReportKind _kind = SupportReportKind.unsorted;
+  /// Unanswered until the sender taps a chip, and unanswered is allowed —
+  /// unless the flow that opened the form already knows (see [initialKind]).
+  late SupportReportKind _kind = widget.initialKind;
 
   String? _screenshotPath;
   bool _sending = false;

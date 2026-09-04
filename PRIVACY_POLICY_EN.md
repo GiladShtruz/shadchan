@@ -18,10 +18,10 @@ You can sign in with Google, with Apple on supported Apple devices, or with an e
 
 You may enter information about yourself and other people, including names, gender, age, religious style, city, telephone number, contact people, how you know them, photographs, private notes, preferences, reminders, match ideas and their handling history. People in your database do not become users and are not automatically notified.
 
-### Contacts, call log and photographs
+### Contacts and photographs
 
 - Contact import displays names and phone numbers on the device and adds only the contacts you select. The candidate list may be cached locally for speed.
-- On Android, you may grant call-log access to sort contacts by recent calls. The log is used only for local sorting and is never uploaded.
+- On Android the contact's "favourite" flag is also read, so favourites appear at the top of the import list. It is used only for local sorting and is never uploaded.
 - Selecting a photograph opens the system media picker. Google ML Kit face detection is used entirely on-device to help crop the image; neither the image nor face-detection output is sent to ML Kit in the cloud.
 - Content shared into the Application from another app is copied temporarily and added to the database only after an explicit choice.
 
@@ -81,7 +81,7 @@ The static website on Firebase Hosting has no accounts, forms, cookies, advertis
 
 ## 11. Permissions
 
-The Application may request contacts, Android call log, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.
+The Application may request contacts, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.
 
 ## 12. Providers and international transfers
 

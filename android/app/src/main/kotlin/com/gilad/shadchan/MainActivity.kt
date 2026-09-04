@@ -1,17 +1,12 @@
 package com.gilad.shadchan
 
-import android.Manifest
 import android.content.ContentResolver
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
-import android.provider.CallLog
 import android.os.Bundle
 import android.provider.OpenableColumns
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -25,7 +20,6 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     private val pendingSharedProfiles = mutableListOf<Map<String, Any>>()
     private var eventSink: EventChannel.EventSink? = null
     private var sharedProfilesEventSink: EventChannel.EventSink? = null
-    private var pendingCallLogResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         consumeIncomingIntent(intent)
@@ -45,17 +39,6 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
                     pendingFilePaths.clear()
                 }
 
-                else -> result.notImplemented()
-            }
-        }
-
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            CALL_LOG_CHANNEL_NAME,
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getRecentCallNumbers" -> getRecentCallNumbers(result)
-                "getRecentCallNumbersIfGranted" -> getRecentCallNumbersIfGranted(result)
                 else -> result.notImplemented()
             }
         }
@@ -145,27 +128,6 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
 
     override fun onCancel(arguments: Any?) {
         eventSink = null
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode != CALL_LOG_PERMISSION_REQUEST_CODE) {
-            return
-        }
-
-        val result = pendingCallLogResult ?: return
-        pendingCallLogResult = null
-
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            result.success(queryRecentCallNumbers())
-        } else {
-            result.error("PERMISSION_NOT_GRANTED", "READ_CALL_LOG permission was not granted", null)
-        }
     }
 
     private fun enqueueIncomingFiles(intent: Intent?) {
@@ -449,71 +411,6 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
     }
 
-    private fun getRecentCallNumbers(result: MethodChannel.Result) {
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.READ_CALL_LOG,
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            result.success(queryRecentCallNumbers())
-            return
-        }
-
-        pendingCallLogResult?.error("SUPERSEDED", "A newer call log request replaced this one", null)
-        pendingCallLogResult = result
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.READ_CALL_LOG),
-            CALL_LOG_PERMISSION_REQUEST_CODE,
-        )
-    }
-
-    /// Returns recent call numbers only when the permission is already granted;
-    /// never prompts. Used where a permission dialog would be intrusive (e.g.
-    /// the home screen). Returns an empty list when permission is missing.
-    private fun getRecentCallNumbersIfGranted(result: MethodChannel.Result) {
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.READ_CALL_LOG,
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            result.success(queryRecentCallNumbers())
-        } else {
-            result.success(emptyList<String>())
-        }
-    }
-
-    private fun queryRecentCallNumbers(): List<String> {
-        return try {
-            val numbers = mutableListOf<String>()
-            val projection = arrayOf(CallLog.Calls.NUMBER)
-            val sortOrder = "${CallLog.Calls.DATE} DESC"
-
-            contentResolver.query(
-                CallLog.Calls.CONTENT_URI,
-                projection,
-                null,
-                null,
-                sortOrder,
-            )?.use { cursor: Cursor ->
-                val numberIndex = cursor.getColumnIndex(CallLog.Calls.NUMBER)
-                if (numberIndex < 0) {
-                    return@use
-                }
-
-                while (cursor.moveToNext() && numbers.size < MAX_CALL_LOG_NUMBERS) {
-                    cursor.getString(numberIndex)
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let(numbers::add)
-                }
-            }
-
-            numbers
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
     companion object {
         /// What the AI import can read: a spreadsheet, or a WhatsApp chat
         /// export as either the .zip with its media or the bare .txt.
@@ -532,8 +429,5 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             "shadchan/incoming_shared_profiles/methods"
         private const val SHARED_PROFILES_EVENT_CHANNEL_NAME =
             "shadchan/incoming_shared_profiles/events"
-        private const val CALL_LOG_CHANNEL_NAME = "shadchan/call_log"
-        private const val CALL_LOG_PERMISSION_REQUEST_CODE = 4601
-        private const val MAX_CALL_LOG_NUMBERS = 5000
     }
 }

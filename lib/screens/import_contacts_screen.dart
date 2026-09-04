@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/call_log_disclosure_dialog.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
-import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -20,7 +18,7 @@ import 'package:shadchan/widgets/initials_avatar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
 
 /// Sort options for the import contacts list.
-enum _ImportSortOption { alphabetical, recentCalls, nameLength, wordCount }
+enum _ImportSortOption { alphabetical, favorites, nameLength, wordCount }
 
 /// The list half of the add-friends screen.
 ///
@@ -55,11 +53,6 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
 
   /// Contacts picked for a batch action. A plain set literal keeps insertion
   /// order, so a multi-add walks through people in the order they were picked.
-
-  /// Normalized phone -> recency index (0 = most recent) from the device call
-  /// log, loaded the first time the user picks the "recent calls" sort.
-  Map<String, int> _recentCallOrder = const <String, int>{};
-  bool _recentCallLoaded = false;
 
   @override
   void initState() {
@@ -379,10 +372,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
           ).compareTo(_wordCount(b.candidate.displayName));
           return dir * (c != 0 ? c : _compareName(a, b));
         });
-      case _ImportSortOption.recentCalls:
-        // Recency has a natural order (most recent first); the direction
-        // toggle doesn't apply here.
-        entries.sort(_compareRecentCalls);
+      case _ImportSortOption.favorites:
+        // Favourites belong at the top; the direction toggle doesn't apply.
+        entries.sort(_compareFavorites);
     }
   }
 
@@ -400,17 +392,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     return trimmed.split(RegExp(r'\s+')).length;
   }
 
-  int _compareRecentCalls(ContactCandidateEntry a, ContactCandidateEntry b) {
-    final int? rankA = _recentCallOrder[a.candidate.normalizedPhone];
-    final int? rankB = _recentCallOrder[b.candidate.normalizedPhone];
-    if (rankA != null && rankB != null && rankA != rankB) {
-      return rankA.compareTo(rankB);
-    }
-    if (rankA != null && rankB == null) {
-      return -1;
-    }
-    if (rankA == null && rankB != null) {
-      return 1;
+  int _compareFavorites(ContactCandidateEntry a, ContactCandidateEntry b) {
+    if (a.candidate.isFavorite != b.candidate.isFavorite) {
+      return a.candidate.isFavorite ? -1 : 1;
     }
     return _compareName(a, b);
   }
@@ -419,8 +403,8 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     switch (option) {
       case _ImportSortOption.alphabetical:
         return 'א-ת';
-      case _ImportSortOption.recentCalls:
-        return 'שיחות אחרונות';
+      case _ImportSortOption.favorites:
+        return 'מועדפים';
       case _ImportSortOption.nameLength:
         return 'אורך שם';
       case _ImportSortOption.wordCount:
@@ -526,8 +510,8 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                                 label: 'א-ת',
                               ),
                               (
-                                value: _ImportSortOption.recentCalls,
-                                label: 'שיחות אחרונות',
+                                value: _ImportSortOption.favorites,
+                                label: 'מועדפים בטלפון',
                               ),
                               (
                                 value: _ImportSortOption.nameLength,
@@ -562,30 +546,6 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
 
     if (selected == null) {
       return;
-    }
-
-    // Loading the call log may prompt for the READ_CALL_LOG permission, which
-    // is acceptable here in the add-contacts flow — but only after the
-    // matchmaker has seen the in-app disclosure, once, before Android's own
-    // dialog ever appears.
-    if (selected.value == _ImportSortOption.recentCalls && !_recentCallLoaded) {
-      if (!mounted) {
-        return;
-      }
-      final bool canPrompt = await CallLogDisclosureDialog.ensureAcknowledged(
-        context,
-      );
-      if (!mounted) {
-        return;
-      }
-      final Map<String, int> order = canPrompt
-          ? await CallLogSortService.loadRecentCallOrderRequestingPermission()
-          : await CallLogSortService.loadRecentCallOrder();
-      if (!mounted) {
-        return;
-      }
-      _recentCallOrder = order;
-      _recentCallLoaded = true;
     }
 
     setState(() {

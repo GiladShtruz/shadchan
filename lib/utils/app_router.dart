@@ -40,6 +40,7 @@ import 'package:shadchan/screens/tips_list_screen.dart';
 import 'package:shadchan/screens/whatsapp_message_settings_screen.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
+import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 
@@ -557,6 +558,9 @@ abstract final class AppRouter {
             builder: (BuildContext context, GoRouterState state) {
               return SupportReportScreen(
                 initialText: state.extra is String ? state.extra as String : '',
+                initialKind: SupportReportKind.byName(
+                  state.uri.queryParameters['kind'],
+                ),
               );
             },
           ),

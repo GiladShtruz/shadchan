@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/services/tips_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -38,14 +39,18 @@ class TipsListScreen extends StatelessWidget {
     final Gender? gender = context.watch<UserProfileProvider>().gender;
     final List<CommunityTip> community = context.watch<TipsProvider>().approved;
 
-    final List<({String text, String? author})> tips =
-        <({String text, String? author})>[
+    // `id` is null for the tips that ship with the app and set for the ones
+    // matchmakers published. Only the latter can be reported — there is nobody
+    // to report the app's own copy to.
+    final List<({String text, String? author, String? id})> tips =
+        <({String text, String? author, String? id})>[
           for (final String template in MatchmakerTips.tips)
-            (text: template.forGender(gender), author: null),
+            (text: template.forGender(gender), author: null, id: null),
           for (final CommunityTip tip in community)
             (
               text: tip.text,
               author: tip.authorName.isEmpty ? null : tip.authorName,
+              id: tip.id,
             ),
         ];
 
@@ -65,15 +70,66 @@ class TipsListScreen extends StatelessWidget {
               return _AddTipInvite(onTap: () => context.push('/profile/tips'));
             }
 
-            final ({String text, String? author}) tip = tips[index - 1];
+            final ({String text, String? author, String? id}) tip =
+                tips[index - 1];
             return _TipCard(
               text: tip.text,
               author: tip.author,
               tone: _TipTone.values[(index - 1) % _TipTone.values.length],
+              onReport: tip.id == null
+                  ? null
+                  : () => _reportTip(context, id: tip.id!, text: tip.text),
             );
           },
         ),
       ),
+    );
+  }
+
+  /// Confirms, then opens the support form already classified as a content
+  /// report and already quoting the tip. Play's user-generated-content policy
+  /// asks for a way to flag published content *from where it is read*; the
+  /// general "שליחת תקלה" form was reachable from the menu but nothing on this
+  /// page pointed at it, and a reporter should not have to describe which tip
+  /// they mean.
+  static Future<void> _reportTip(
+    BuildContext context, {
+    required String id,
+    required String text,
+  }) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('דיווח על טיפ'),
+          content: const Text(
+            'הטיפ יישלח לבדיקה שלנו, ואם הוא לא מתאים הוא יוסר מהעמוד. '
+            'אפשר להוסיף בשלב הבא מה בדיוק לא בסדר בו.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('לדיווח'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    context.push(
+      '/support/report?kind=${SupportReportKind.contentReport.name}',
+      extra:
+          'דיווח על טיפ שפורסם (מזהה $id):\n'
+          '"$text"\n\n'
+          'מה לא בסדר בו:\n',
     );
   }
 }
@@ -188,11 +244,17 @@ class _TipCard extends StatelessWidget {
     required this.text,
     required this.author,
     required this.tone,
+    this.onReport,
   });
 
   final String text;
   final String? author;
   final _TipTone tone;
+
+  /// Null for the tips that ship with the app; set for anything a matchmaker
+  /// published, which is the only content on this page there is anyone to
+  /// report.
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -237,38 +299,61 @@ class _TipCard extends StatelessWidget {
                     color: theme.colorScheme.onSurface,
                   ),
                 ),
-                if (by != null && by.isNotEmpty) ...<Widget>[
+                // The foot of the card carries whoever wrote it and, for a
+                // published tip, the way to flag it. It is drawn whenever
+                // either of those exists — an anonymous community tip still
+                // needs its flag.
+                if ((by != null && by.isNotEmpty) ||
+                    onReport != null) ...<Widget>[
                   const SizedBox(height: 12),
                   Row(
                     children: <Widget>[
-                      Container(
-                        width: 22,
-                        height: 22,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: ink.withValues(alpha: dark ? 0.28 : 0.16),
-                        ),
-                        child: Text(
-                          by.characters.first,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            color: ink,
+                      if (by != null && by.isNotEmpty) ...<Widget>[
+                        Container(
+                          width: 22,
+                          height: 22,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: ink.withValues(alpha: dark ? 0.28 : 0.16),
+                          ),
+                          child: Text(
+                            by.characters.first,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: ink,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          by,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: ink,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            by,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: ink,
+                            ),
                           ),
                         ),
-                      ),
+                      ] else
+                        const Spacer(),
+                      // Quiet on purpose: it has to be findable without
+                      // competing with the words above it.
+                      if (onReport case final VoidCallback report)
+                        TextButton.icon(
+                          onPressed: report,
+                          icon: const Icon(Icons.outlined_flag, size: 16),
+                          label: const Text('דיווח'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: ink.withValues(alpha: 0.75),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            textStyle: theme.textTheme.labelMedium,
+                          ),
+                        ),
                     ],
                   ),
                 ],

@@ -36,6 +36,7 @@ class ContactImportCandidate {
     required this.alreadyExists,
     required this.hasAdditionalPhones,
     required this.isFilteredByName,
+    this.isFavorite = false,
   });
 
   final String deviceContactId;
@@ -45,6 +46,12 @@ class ContactImportCandidate {
   final bool alreadyExists;
   final bool hasAdditionalPhones;
   final bool isFilteredByName;
+
+  /// Whether the device marks this contact as a favourite (`STARRED`). Android
+  /// only — always false on iOS, which has no such flag. It is the one signal
+  /// about who matters to the matchmaker that the address book itself gives
+  /// us, so it is what the "favourites first" ordering sorts on.
+  final bool isFavorite;
 
   bool matchesQuery(String query) {
     final String normalizedQuery = _normalizeSearchText(query);
@@ -198,6 +205,8 @@ abstract final class ContactsImportService {
       properties: <ContactProperty>{
         ContactProperty.name,
         ContactProperty.phone,
+        // Costs one more column on the same cursor, no extra permission.
+        ContactProperty.favorite,
       },
     );
 
@@ -210,6 +219,7 @@ abstract final class ContactsImportService {
         phones: contact.phones.map((Phone phone) => phone.number).toList(),
         existingPhones: existingPhones,
         hiddenPhones: hiddenPhones,
+        isFavorite: contact.android?.isFavorite ?? false,
       );
 
       // Contacts already in the database are kept rather than dropped: the
@@ -242,6 +252,7 @@ abstract final class ContactsImportService {
     required List<String> phones,
     required Set<String> existingPhones,
     Set<String> hiddenPhones = const <String>{},
+    bool isFavorite = false,
   }) {
     final String trimmedName = displayName.trim();
     if (trimmedName.isEmpty) {
@@ -287,6 +298,7 @@ abstract final class ContactsImportService {
       isFilteredByName:
           isFilteredByName(trimmedName) ||
           hiddenPhones.contains(normalizedPhone),
+      isFavorite: isFavorite,
     );
   }
 
@@ -429,6 +441,22 @@ abstract final class ContactsImportService {
     return parts.join(' ').trim();
   }
 
+  /// Favourites first, each block in name order.
+  ///
+  /// This is the default order the add-contacts flow opens in. Which contacts
+  /// the matchmaker has starred on their own phone is the closest thing the
+  /// address book offers to "the people you actually deal with", and it puts
+  /// them at the top of a list that is otherwise several thousand names long.
+  /// On iOS there are no favourites, so this is plain name order.
+  static void sortByFavoriteThenName(List<ContactImportCandidate> candidates) {
+    candidates.sort((ContactImportCandidate a, ContactImportCandidate b) {
+      if (a.isFavorite != b.isFavorite) {
+        return a.isFavorite ? -1 : 1;
+      }
+      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+    });
+  }
+
   static void _sortCandidatesByName(List<ContactImportCandidate> candidates) {
     candidates.sort((ContactImportCandidate a, ContactImportCandidate b) {
       return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
@@ -466,6 +494,7 @@ abstract final class ContactsImportService {
       'normalizedPhone': candidate.normalizedPhone,
       'hasAdditionalPhones': candidate.hasAdditionalPhones,
       'isFilteredByName': candidate.isFilteredByName,
+      'isFavorite': candidate.isFavorite,
     };
   }
 
@@ -502,6 +531,7 @@ abstract final class ContactsImportService {
       isFilteredByName:
           isFilteredByName(displayName) ||
           hiddenPhones.contains(normalizedPhone),
+      isFavorite: rawCandidate['isFavorite'] == true,
     );
   }
 }

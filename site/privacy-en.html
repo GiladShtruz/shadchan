@@ -154,10 +154,10 @@ footer.site {
 <p>You can sign in with Google, with Apple on supported Apple devices, or with an email address and password. Firebase Authentication processes the account identifier, sign-in provider, email address and basic profile details supplied by the provider. Passwords for email accounts are handled by Firebase and are not visible to us. For security and abuse prevention, Firebase may also process IP addresses, user-agent strings and sign-in logs. Before sign-in or after sign-out, the Application may create a temporary technical anonymous Firebase identifier; it receives no backup and cannot pass the sign-in gate.</p>
 <h3>Matchmaking database</h3>
 <p>You may enter information about yourself and other people, including names, gender, age, religious style, city, telephone number, contact people, how you know them, photographs, private notes, preferences, reminders, match ideas and their handling history. People in your database do not become users and are not automatically notified.</p>
-<h3>Contacts, call log and photographs</h3>
+<h3>Contacts and photographs</h3>
 <ul>
 <li>Contact import displays names and phone numbers on the device and adds only the contacts you select. The candidate list may be cached locally for speed.</li>
-<li>On Android, you may grant call-log access to sort contacts by recent calls. The log is used only for local sorting and is never uploaded.</li>
+<li>On Android the contact's "favourite" flag is also read, so favourites appear at the top of the import list. It is used only for local sorting and is never uploaded.</li>
 <li>Selecting a photograph opens the system media picker. Google ML Kit face detection is used entirely on-device to help crop the image; neither the image nor face-detection output is sent to ML Kit in the cloud.</li>
 <li>Content shared into the Application from another app is copied temporarily and added to the database only after an explicit choice.</li>
 </ul>
@@ -189,7 +189,7 @@ footer.site {
 <h2>10. Information website</h2>
 <p>The static website on Firebase Hosting has no accounts, forms, cookies, advertising or analytics. Firebase Hosting and Google may process technical connection information, such as IP address and user-agent, to deliver pages, secure the service and prevent abuse under Google's terms.</p>
 <h2>11. Permissions</h2>
-<p>The Application may request contacts, Android call log, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.</p>
+<p>The Application may request contacts, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.</p>
 <h2>12. Providers and international transfers</h2>
 <p>The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Firebase App Check, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.</p>
 <p>Information may be processed outside your country. Firebase Authentication operates from US data centres; global and AI services may process data in other locations. Where required, we rely on Google data-processing agreements and transfer mechanisms and other lawful safeguards.</p>

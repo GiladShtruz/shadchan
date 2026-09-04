@@ -27,10 +27,10 @@ abstract final class PrivacyPolicyText {
 
 אתם עשויים להזין מידע על עצמכם ועל אנשים אחרים, לרבות שם, מגדר, גיל, סגנון דתי, עיר, טלפון, אנשי קשר, קשר אישי, תמונות, הערות, העדפות, תזכורות, רעיונות לשידוך והיסטוריית הטיפול בהם. אנשים שמופיעים במאגר אינם הופכים למשתמשי האפליקציה ואינם מקבלים הודעה אוטומטית.
 
-אנשי קשר, יומן שיחות ותמונות
+אנשי קשר ותמונות
 
 - ייבוא אנשי קשר מציג שמות ומספרים מהמכשיר ומוסיף רק את מי שבחרתם. הרשימה עשויה להישמר זמנית במכשיר לצורך מהירות.
-- באנדרואיד אפשר לאשר גישה ליומן השיחות כדי למיין אנשי קשר לפי שיחה אחרונה. היומן משמש למיון מקומי בלבד ואינו מועלה.
+- באנדרואיד נקרא גם הסימון "מועדף" של איש הקשר, כדי להציג את המועדפים בראש רשימת הייבוא. הסימון משמש למיון מקומי בלבד ואינו מועלה.
 - בחירת תמונה פותחת את בורר המדיה. Google ML Kit משמש לזיהוי פנים לצורך חיתוך נוח, כולו על המכשיר; התמונה ותוצאת הזיהוי אינן נשלחות ל-ML Kit בענן.
 - תוכן ששיתפתם אל האפליקציה מאפליקציה אחרת מועתק זמנית ומתווסף למאגר רק לאחר בחירה מפורשת.
 
@@ -90,7 +90,7 @@ Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואס�
 
 11. הרשאות
 
-האפליקציה עשויה לבקש אנשי קשר, יומן שיחות באנדרואיד, תמונות/מדיה והתראות — רק בעת שימוש בתכונה המתאימה. אפשר לבטל הרשאה בהגדרות המכשיר, אך התכונה התלויה בה עלולה לא לעבוד.
+האפליקציה עשויה לבקש אנשי קשר, תמונות/מדיה והתראות — רק בעת שימוש בתכונה המתאימה. אפשר לבטל הרשאה בהגדרות המכשיר, אך התכונה התלויה בה עלולה לא לעבוד.
 
 12. שירותים חיצוניים והעברות בינלאומיות
 
@@ -158,10 +158,10 @@ Matchmaking database
 
 You may enter information about yourself and other people, including names, gender, age, religious style, city, telephone number, contact people, how you know them, photographs, private notes, preferences, reminders, match ideas and their handling history. People in your database do not become users and are not automatically notified.
 
-Contacts, call log and photographs
+Contacts and photographs
 
 - Contact import displays names and phone numbers on the device and adds only the contacts you select. The candidate list may be cached locally for speed.
-- On Android, you may grant call-log access to sort contacts by recent calls. The log is used only for local sorting and is never uploaded.
+- On Android the contact's "favourite" flag is also read, so favourites appear at the top of the import list. It is used only for local sorting and is never uploaded.
 - Selecting a photograph opens the system media picker. Google ML Kit face detection is used entirely on-device to help crop the image; neither the image nor face-detection output is sent to ML Kit in the cloud.
 - Content shared into the Application from another app is copied temporarily and added to the database only after an explicit choice.
 
@@ -221,7 +221,7 @@ The static website on Firebase Hosting has no accounts, forms, cookies, advertis
 
 11. Permissions
 
-The Application may request contacts, Android call log, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.
+The Application may request contacts, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.
 
 12. Providers and international transfers
 

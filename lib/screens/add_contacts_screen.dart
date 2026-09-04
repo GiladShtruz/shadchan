@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/call_log_disclosure_dialog.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -45,21 +44,8 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
     _startSession(repository);
   }
 
-  /// Only the very first time this screen is ever opened does this actually
-  /// show anything — [CallLogDisclosureDialog] remembers the answer, so every
-  /// later visit resolves instantly and the session starts loading exactly as
-  /// before.
-  Future<void> _startSession(PersonRepository repository) async {
-    final bool allowCallLogPrompt = await CallLogDisclosureDialog.ensureAcknowledged(
-      context,
-    );
-    if (!mounted) {
-      return;
-    }
-    final AddContactsSession session = AddContactsSession(
-      repository,
-      allowCallLogPrompt: allowCallLogPrompt,
-    );
+  void _startSession(PersonRepository repository) {
+    final AddContactsSession session = AddContactsSession(repository);
     session.load();
     setState(() {
       _session = session;

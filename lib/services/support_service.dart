@@ -60,6 +60,12 @@ enum SupportReportKind {
   /// Something is broken.
   bug,
 
+  /// A tip somebody else published that should not be on the page — offensive,
+  /// misleading or simply not a tip. Play's user-generated-content policy asks
+  /// for a way to flag published content from the place it is read, and this is
+  /// the classification those reports arrive under.
+  contentReport,
+
   /// No answer given.
   unsorted;
 
@@ -81,6 +87,8 @@ enum SupportReportKind {
         return 'הערה או תיקון';
       case SupportReportKind.bug:
         return 'תקלה טכנית';
+      case SupportReportKind.contentReport:
+        return 'דיווח על תוכן';
       case SupportReportKind.unsorted:
         return 'משהו אחר';
     }
@@ -95,6 +103,8 @@ enum SupportReportKind {
         return 'הערות ותיקונים';
       case SupportReportKind.bug:
         return 'תקלות ובאגים';
+      case SupportReportKind.contentReport:
+        return 'דיווחים על תוכן';
       case SupportReportKind.unsorted:
         return 'ללא סיווג';
     }

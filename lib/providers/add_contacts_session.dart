@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/services/call_log_sort_service.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 
 /// Where one device contact stands in the add-friends flow.
@@ -46,11 +45,7 @@ class ContactCandidateEntry {
 /// Nothing here decides *how* a contact is presented; that is the only
 /// difference between the two views.
 class AddContactsSession extends ChangeNotifier {
-  /// [allowCallLogPrompt] reflects whether the matchmaker has already agreed
-  /// to [CallLogDisclosureDialog] — the call log is read without prompting
-  /// when they have not (or declined), same as everywhere outside this flow.
-  AddContactsSession(this._repository, {bool allowCallLogPrompt = false})
-    : _allowCallLogPrompt = allowCallLogPrompt {
+  AddContactsSession(this._repository) {
     _repository.addListener(_handleRepositoryChanged);
   }
 
@@ -61,7 +56,6 @@ class AddContactsSession extends ChangeNotifier {
   static const String _revealedFilteredSetKey = 'revealed_filtered_phones';
 
   final PersonRepository _repository;
-  final bool _allowCallLogPrompt;
 
   bool _isLoading = true;
   bool _isRefreshing = false;
@@ -295,15 +289,11 @@ class AddContactsSession extends ChangeNotifier {
       return;
     }
 
-    // Both of the slow things start now and neither of them holds up the first
-    // frame. Reading the device call log goes over a method channel and can
-    // raise its own permission dialog; re-reading the address book walks every
-    // contact on the phone. Awaiting either *before* publishing the cached list
-    // is what used to leave this screen blank for several seconds even though
-    // the list it was going to show had been on disk the whole time.
-    final Future<Map<String, int>> callLogOrder = _allowCallLogPrompt
-        ? CallLogSortService.loadRecentCallOrderRequestingPermission()
-        : CallLogSortService.loadRecentCallOrder();
+    // Re-reading the address book walks every contact on the phone, so it
+    // starts now and does not hold up the first frame: awaiting it *before*
+    // publishing the cached list is what used to leave this screen blank for
+    // several seconds even though the list it was going to show had been on
+    // disk the whole time.
     final Future<List<ContactImportCandidate>>
     deviceContacts = ContactsImportService.loadCandidates(
       _repository,
@@ -325,24 +315,15 @@ class AddContactsSession extends ChangeNotifier {
     }
 
     if (cached.isNotEmpty) {
-      // On the screen immediately, in name order. Name order is a real order,
-      // not a placeholder: it is what the list view sorts by anyway, and only
-      // the swipe deck cares about the call-log ordering underneath.
+      // On the screen immediately, favourites first and then by name — the
+      // same order the fresh read will land in, so nothing jumps under the
+      // finger when it arrives.
+      ContactsImportService.sortByFavoriteThenName(cached);
       _allCandidates = cached;
       _isLoading = false;
       _isRefreshing = true;
       _captureProgressTotal();
       _notify();
-
-      final Map<String, int> order = await callLogOrder;
-      if (_disposed) {
-        return;
-      }
-      // Only if the fresh read has not already overtaken us.
-      if (_isRefreshing) {
-        _allCandidates = CallLogSortService.applyOrder(cached, order);
-        _notify();
-      }
     } else {
       _loadingMessage = 'טוענים אנשי קשר מהמכשיר...';
       _notify();
@@ -353,10 +334,8 @@ class AddContactsSession extends ChangeNotifier {
       return;
     }
 
-    _allCandidates = CallLogSortService.applyOrder(fresh, await callLogOrder);
-    if (_disposed) {
-      return;
-    }
+    ContactsImportService.sortByFavoriteThenName(fresh);
+    _allCandidates = fresh;
     _isLoading = false;
     _isRefreshing = false;
     _loadingProgress = null;
