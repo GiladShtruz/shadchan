@@ -1,0 +1,382 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; direction: rtl; background: #F7F0E4; color: #211D17;
+           font-family: 'Assistant', 'Segoe UI', system-ui, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #8F5F3D; } a:hover { color: #C1845B; }
+    .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 19px;
+           height: 19px; padding: 0 5px; border: 1px solid #E2D7C8; border-bottom-width: 2px;
+           border-radius: 5px; background: #FFFDF8; font-size: 11px; font-weight: 600;
+           color: #7C7468; line-height: 1; direction: ltr; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
+            border: 1px solid #E2D7C8; border-radius: 999px; background: #FFFDF8;
+            font-size: 13px; color: #211D17; white-space: nowrap; }
+    .chip-on { background: #D7E4EA; border-color: #7F9EAA; color: #3F5A66; font-weight: 600; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .muted { color: #7C7468; }
+    .sect { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #7C7468; }
+    .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
+           border: 1px solid #E2D7C8; border-radius: 9px; background: #FFFDF8;
+           font-size: 14px; font-weight: 600; color: #211D17; }
+    .btn-p { background: #7F9EAA; border-color: #7F9EAA; color: #FFFDF8; }
+  </style>
+
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #F7F0E4; overflow: hidden;">
+
+  <!-- ===== top bar ===== -->
+  <div style="height: 56px; flex: none; display: flex; align-items: center; gap: 22px; padding: 0 20px; background: #FFFDF8; border-bottom: 1px solid #E2D7C8;">
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <div style="width: 26px; height: 26px; border-radius: 8px; background: #7F9EAA; display: flex; align-items: center; justify-content: center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="3.4"/><circle cx="16" cy="16" r="3.4"/><path d="M10.4 10.4l3.2 3.2"/></svg>
+      </div>
+      <span style="font-size: 16px; font-weight: 700; letter-spacing: -.01em;">שדכן</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; background: #D7E4EA; color: #3F5A66; font-size: 14px; font-weight: 600;">מועמדים</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">שידוכים</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">תזכורות</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">קהילה</span>
+    </div>
+
+    <div style="margin-inline-start: auto; display: flex; align-items: center; gap: 14px;">
+      <div style="display: flex; align-items: center; gap: 9px; width: 300px; height: 34px; padding: 0 11px; border: 1px solid #E2D7C8; border-radius: 9px; background: #F7F0E4;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7C7468" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6" stroke-linecap="round"/></svg>
+        <span class="muted" style="font-size: 13.5px;">חיפוש אדם, עיר או שידוך</span>
+        <span style="margin-inline-start: auto; display: flex; gap: 3px;"><span class="kbd">⌘</span><span class="kbd">K</span></span>
+      </div>
+      <div style="width: 32px; height: 32px; border-radius: 50%; background: #EFE4D4; color: #8F5F3D; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">ר״ל</div>
+    </div>
+  </div>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <!-- ===== right pane — the list ===== -->
+    <div style="width: 348px; flex: none; display: flex; flex-direction: column; background: #FFFDF8; border-inline-start: 1px solid #E2D7C8; min-height: 0;">
+      <div style="padding: 13px 14px 11px; border-bottom: 1px solid #EFE7DA;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 11px; border: 1px solid #E2D7C8; border-radius: 9px; background: #F7F0E4;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C7468" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6" stroke-linecap="round"/></svg>
+          <span class="muted" style="font-size: 13px;">סינון הרשימה</span>
+          <span style="margin-inline-start: auto;"><span class="kbd">/</span></span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px;">
+          <span class="chip chip-on">נשים</span>
+          <span class="chip chip-on">24–29</span>
+          <span class="chip chip-on">מרכז + השרון</span>
+          <span class="chip">רמה דתית</span>
+          <span class="chip">גובה</span>
+          <span class="chip" style="color: #7C7468;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7C7468" stroke-width="1.8" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+            מסנן
+          </span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 9px 15px; border-bottom: 1px solid #EFE7DA;">
+        <span style="font-size: 12.5px; font-weight: 700;">31 מועמדות</span>
+        <span class="muted" style="font-size: 12.5px; margin-inline-start: 6px;">מתוך 218</span>
+        <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: #7C7468;">
+          עודכן לאחרונה
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7C7468" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </div>
+
+      <div style="flex: 1; overflow: hidden;">
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px 11px 11px; border-inline-end: 3px solid #7F9EAA; background: #EAF1F5;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #7F9EAA; color: #FFFDF8; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">נ״ב</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 700;">נועה ברקוביץ׳</span>
+              <span class="dot" style="background: #6F7A55;"></span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">26 · פתח תקווה · דתי לאומי</div>
+          </div>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="#C1845B" stroke="#C1845B" stroke-width="1.5" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.9-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.9z"/></svg>
+        </div>
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #EFE7DA;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #EFE4D4; color: #8F5F3D; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">ש״א</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 600;">שירה אלמליח</span>
+              <span class="dot" style="background: #6F7A55;"></span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">24 · ירושלים · חרד״ל</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #EFE7DA;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #DDE3CF; color: #4d5540; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">ת״ו</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 600;">תמר וייס</span>
+              <span class="dot" style="background: #B99A55;"></span>
+              <span style="font-size: 10.5px; font-weight: 700; color: #8F5F3D; background: #EFE4D4; border-radius: 4px; padding: 1px 5px;">דורש בדיקה</span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">28 · רעננה · דתי לאומי תורני</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #EFE7DA;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #DDD7E7; color: #55507a; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">א״כ</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 600;">אביגיל כהן</span>
+              <span class="dot" style="background: #6F7A55;"></span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">25 · מודיעין · דתי לייט</div>
+          </div>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="#C1845B" stroke="#C1845B" stroke-width="1.5" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.9-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.9z"/></svg>
+        </div>
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #EFE7DA;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #EFDDE4; color: #86546a; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">י״פ</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 600;">יעל פרידמן</span>
+              <span class="dot" style="background: #948577;"></span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">30 · חיפה · מסורתי · בהפסקה</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #EFE7DA;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #EFE0B8; color: #7a6626; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">מ״ר</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 600;">מיכל רוזנברג</span>
+              <span class="dot" style="background: #6F7A55;"></span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">27 · בית שמש · חרדי מודרני</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #EFE7DA;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #D7E4EA; color: #3F5A66; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">ה״ש</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 600;">הודיה שטרן</span>
+              <span class="dot" style="background: #A96B49;"></span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">23 · אלעד · חסיד · תפוסה</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 11px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #EFE7DA;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #E6D4C0; color: #8a6242; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex: none;">ר״ג</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14.5px; font-weight: 600;">רחלי גולדשטיין</span>
+              <span class="dot" style="background: #6F7A55;"></span>
+            </div>
+            <div class="muted" style="font-size: 12px; margin-top: 2px;">29 · תל אביב · דתי פתוח</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="flex: none; display: flex; align-items: center; gap: 14px; padding: 9px 15px; border-top: 1px solid #EFE7DA; background: #FDFAF3;">
+        <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">↑</span><span class="kbd">↓</span> ניווט</span>
+        <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">F</span> מועדף</span>
+        <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">N</span> אדם חדש</span>
+      </div>
+    </div>
+
+    <!-- ===== center pane — the card ===== -->
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; background: #F7F0E4;">
+      <div style="padding: 22px 28px 16px; background: #FFFDF8; border-bottom: 1px solid #E2D7C8;">
+        <div style="display: flex; align-items: flex-start; gap: 16px;">
+          <div style="width: 62px; height: 62px; border-radius: 50%; background: #7F9EAA; color: #FFFDF8; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; flex: none;">נ״ב</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h1 style="margin: 0; font-size: 25px; font-weight: 700; letter-spacing: -.015em;">נועה ברקוביץ׳</h1>
+              <span class="chip" style="background: #DDE3CF; border-color: #6F7A55; color: #46502f; font-weight: 600; height: 26px;"><span class="dot" style="background: #6F7A55;"></span>פנויה</span>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="#C1845B" stroke="#C1845B" stroke-width="1.5" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.9-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.9z"/></svg>
+            </div>
+            <div class="muted" style="font-size: 13.5px; margin-top: 5px;">נוספה ב-14 במרץ 2026 · מקור: המלצה של רותי לוי · 3 הצעות פתוחות</div>
+          </div>
+          <div style="display: flex; gap: 8px; flex: none;">
+            <span class="btn btn-p">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="1.9" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+              הצעת שידוך <span class="kbd" style="background: rgba(255,253,248,.2); border-color: rgba(255,253,248,.45); color: #FFFDF8;">M</span>
+            </span>
+            <span class="btn">עריכה <span class="kbd">E</span></span>
+            <span class="btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#211D17" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding: 20px 28px; display: flex; flex-direction: column; gap: 16px; min-height: 0;">
+
+        <div style="border: 1px solid #E2D7C8; border-radius: 12px; background: #FFFDF8; padding: 16px 18px;">
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 12px;">
+            <div><div class="sect">גיל</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px;">26</div></div>
+            <div><div class="sect">גובה</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px;">168 ס״מ</div></div>
+            <div><div class="sect">עיר</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px;">פתח תקווה</div></div>
+            <div><div class="sect">אזור</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px;">מרכז</div></div>
+            <div><div class="sect">רמה דתית</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px;">דתי לאומי</div></div>
+            <div><div class="sect">מצב משפחתי</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px;">רווקה</div></div>
+            <div><div class="sect">טלפון</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px; direction: ltr; text-align: right;">052-555-0134</div></div>
+            <div><div class="sect">איש קשר לבירורים</div><div style="font-size: 15px; font-weight: 600; margin-top: 4px;">רותי לוי (דודה)</div></div>
+          </div>
+        </div>
+
+        <div style="border: 1px solid #E2D7C8; border-radius: 12px; background: #FFFDF8; padding: 16px 18px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 700;">מחפשת</span>
+            <span class="muted" style="font-size: 12.5px;">ההעדפות שנרשמו בפגישה</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px;">
+            <div>
+              <div style="display: flex; align-items: baseline; gap: 7px;">
+                <span class="sect">גיל</span>
+                <span style="font-size: 14px; font-weight: 600;">26–31</span>
+              </div>
+              <div style="height: 6px; border-radius: 3px; background: #EFE7DA; position: relative; margin-top: 8px;">
+                <div style="position: absolute; top: 0; bottom: 0; right: 18%; left: 32%; border-radius: 3px; background: #7F9EAA;"></div>
+              </div>
+              <div class="muted" style="display: flex; justify-content: space-between; font-size: 10.5px; margin-top: 4px;"><span>20</span><span>45</span></div>
+            </div>
+            <div>
+              <div style="display: flex; align-items: baseline; gap: 7px;">
+                <span class="sect">גובה</span>
+                <span style="font-size: 14px; font-weight: 600;">172–188 ס״מ</span>
+              </div>
+              <div style="height: 6px; border-radius: 3px; background: #EFE7DA; position: relative; margin-top: 8px;">
+                <div style="position: absolute; top: 0; bottom: 0; right: 40%; left: 12%; border-radius: 3px; background: #7F9EAA;"></div>
+              </div>
+              <div class="muted" style="display: flex; justify-content: space-between; font-size: 10.5px; margin-top: 4px;"><span>150</span><span>200</span></div>
+            </div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 15px;">
+            <span class="sect" style="align-self: center; margin-inline-end: 4px;">רמה דתית</span>
+            <span class="chip">דתי לאומי</span>
+            <span class="chip">דתי לאומי תורני</span>
+            <span class="chip">חרד״ל</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+            <span class="sect" style="align-self: center; margin-inline-end: 4px;">אזורים</span>
+            <span class="chip">מרכז</span>
+            <span class="chip">השרון</span>
+            <span class="chip">ירושלים והסביבה</span>
+          </div>
+        </div>
+
+        <div style="border: 1px solid #E2D7C8; border-radius: 12px; background: #FFFDF8; padding: 16px 18px; flex: 1; min-height: 0;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 700;">תיאור</span>
+            <span class="muted" style="font-size: 12.5px;">נערך לאחרונה ב-2 באוגוסט</span>
+          </div>
+          <p style="margin: 10px 0 0; font-size: 14px; line-height: 1.65; color: #3a352d; text-wrap: pretty;">
+            מדריכה בבני עקיבא, סיימה תואר בריפוי בעיסוק ועובדת בקופת חולים בפתח תקווה. בית חם ופתוח, אבא ר״מ בישיבה תיכונית. מחפשת מישהו לומד ועובד, עם ראש פתוח ורצינות. חשוב לה שיהיה גבוה ממנה ושיגור במרכז — לא מוכנה לעבור צפונה בשלב הזה.
+          </p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===== left pane — proposals ===== -->
+    <div style="width: 396px; flex: none; display: flex; flex-direction: column; background: #FFFDF8; border-inline-end: 1px solid #E2D7C8; min-height: 0;">
+
+      <div style="display: flex; align-items: center; padding: 14px 16px 11px;">
+        <span style="font-size: 14px; font-weight: 700;">הצעות פתוחות</span>
+        <span style="margin-inline-start: 7px; font-size: 11.5px; font-weight: 700; color: #3F5A66; background: #D7E4EA; border-radius: 999px; padding: 1px 7px;">3</span>
+        <span style="margin-inline-start: auto; font-size: 12.5px; color: #7C7468;">היסטוריה (9)</span>
+      </div>
+
+      <div style="padding: 0 16px; display: flex; flex-direction: column; gap: 9px;">
+
+        <div style="border: 1px solid #E2D7C8; border-radius: 11px; background: #FDFAF3; padding: 12px 13px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14.5px; font-weight: 700;">יונתן שפירא</span>
+            <span class="muted" style="font-size: 12px;">28 · רמת גן</span>
+            <span class="chip" style="margin-inline-start: auto; height: 24px; font-size: 12px; background: #F4EEDF; border-color: #B99A55; color: #6f5c2c;"><span class="dot" style="background: #B99A55;"></span>בבדיקה</span>
+          </div>
+          <div style="font-size: 13px; line-height: 1.55; margin-top: 8px; color: #3a352d;">דיברתי עם האמא ביום ראשון, מחכים לתשובה מהצד שלו. הוא ביקש לראות תמונה נוספת.</div>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+            <span class="muted" style="font-size: 11.5px;">עודכן לפני 3 ימים · 4 עדכונים</span>
+            <span style="margin-inline-start: auto; font-size: 11.5px; font-weight: 600; color: #8F5F3D;">תזכורת למחר 10:00</span>
+          </div>
+        </div>
+
+        <div style="border: 1px solid #E2D7C8; border-radius: 11px; background: #FDFAF3; padding: 12px 13px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14.5px; font-weight: 700;">אלעד מזרחי</span>
+            <span class="muted" style="font-size: 12px;">27 · הוד השרון</span>
+            <span class="chip" style="margin-inline-start: auto; height: 24px; font-size: 12px;"><span class="dot" style="background: #7F9EAA;"></span>רעיון</span>
+          </div>
+          <div style="font-size: 13px; line-height: 1.55; margin-top: 8px; color: #3a352d;">עוד לא הצעתי לאף צד. לבדוק גובה — כתוב 174 ולא בטוחה שזה מדויק.</div>
+          <div class="muted" style="font-size: 11.5px; margin-top: 10px;">נוצר לפני שבוע</div>
+        </div>
+
+        <div style="border: 1px solid #E2D7C8; border-radius: 11px; background: #FDFAF3; padding: 12px 13px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14.5px; font-weight: 700;">דוד אשכנזי</span>
+            <span class="muted" style="font-size: 12px;">29 · ירושלים</span>
+            <span class="chip" style="margin-inline-start: auto; height: 24px; font-size: 12px; background: #F1EDE7; border-color: #948577; color: #5d554b;"><span class="dot" style="background: #948577;"></span>בהמתנה</span>
+          </div>
+          <div style="font-size: 13px; line-height: 1.55; margin-top: 8px; color: #3a352d;">בחו״ל עד אחרי החגים. לחזור אליו באלול.</div>
+          <div class="muted" style="font-size: 11.5px; margin-top: 10px;">עודכן לפני חודש</div>
+        </div>
+
+      </div>
+
+      <div style="margin-top: 20px; padding: 0 16px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 14px; font-weight: 700;">מועמדים מתאימים</span>
+          <span class="muted" style="font-size: 12px;">לפי גיל, גובה, אזור ורמה דתית</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 11px;">
+
+          <div style="display: flex; align-items: center; gap: 11px; border: 1px solid #E2D7C8; border-radius: 11px; background: #FFFDF8; padding: 11px 13px;">
+            <div style="width: 34px; height: 34px; border-radius: 50%; background: #DDE3CF; color: #4d5540; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: none;">א״ה</div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 14px; font-weight: 600;">אריאל הרשקוביץ</div>
+              <div class="muted" style="font-size: 12px; margin-top: 2px;">28 · 181 ס״מ · כפר סבא · דתי לאומי</div>
+            </div>
+            <span class="btn" style="height: 30px; font-size: 13px; padding: 0 11px;">הצע</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 11px; border: 1px solid #E2D7C8; border-radius: 11px; background: #FFFDF8; padding: 11px 13px;">
+            <div style="width: 34px; height: 34px; border-radius: 50%; background: #D7E4EA; color: #3F5A66; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: none;">נ״ט</div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 14px; font-weight: 600;">נתנאל טולדנו</div>
+              <div class="muted" style="font-size: 12px; margin-top: 2px;">30 · 176 ס״מ · פתח תקווה · דתי לאומי תורני</div>
+            </div>
+            <span class="btn" style="height: 30px; font-size: 13px; padding: 0 11px;">הצע</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 11px; border: 1px solid #E2D7C8; border-radius: 11px; background: #FFFDF8; padding: 11px 13px;">
+            <div style="width: 34px; height: 34px; border-radius: 50%; background: #EFE4D4; color: #8F5F3D; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: none;">ע״ב</div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 14px; font-weight: 600;">עמיחי בן-שושן</div>
+              <div class="muted" style="font-size: 12px; margin-top: 2px;">27 · 174 ס״מ · רעננה · חרד״ל</div>
+            </div>
+            <span class="btn" style="height: 30px; font-size: 13px; padding: 0 11px;">הצע</span>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

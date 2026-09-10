@@ -122,22 +122,6 @@
 		<string>האפליקציה אינה עושה שימוש במיקום ולא תבקש אותו</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>כדי לבחור תמונה מהגלריה ולהוסיף אותה לכרטיס האישי</string>
-		<!-- TEMPORARY, FOR ONE DIAGNOSTIC BUILD. Turn this back to <false/>
-		     before the next release.
-
-		     This exposes the app's Documents directory in the Files app, under
-		     "בטלפון שלי → שדכן", which is the only way to read
-		     Documents/shadchan_startup.log off a phone with no Mac attached —
-		     and that file is the only witness to a launch that dies before the
-		     app can draw anything. See ios/Runner/StartupBreadcrumbs.swift.
-
-		     The cost, once the app does start, is that the candidate photos
-		     the app stores in Documents become browsable by anyone holding the
-		     unlocked phone. On a device where the app has never opened there is
-		     nothing in there at all, which is why it is acceptable now and not
-		     acceptable later. -->
-		<key>UIFileSharingEnabled</key>
-		<true/>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>

@@ -16,6 +16,7 @@ Guidance for future agents working in this repository.
 - App entry points are `lib/main.dart` and `lib/app.dart`.
 - Navigation is centralized in `lib/utils/app_router.dart` using `go_router`.
 - Tests live under `test/`, with service tests in `test/core/services/` and the app boot test in `test/widget_test.dart`.
+- A **desktop web client** exists as a separate Next.js application against the same Firestore and Auth — not Flutter Web. It lives in its own git repository at `C:\Users\97250\WebstormProjects\shadchan-web`, not inside this one. The decision, the Firestore document contract it reads and the read-only first phase are in `docs/web-client.md`; its screen designs are in `design/web/`. Changing `Person`, any enum in `lib/utils/enums.dart` or any `BackupService.*ToJson` shape breaks it — that repo's `npm run check:contract` compares the two.
 
 ## Product Rules
 
@@ -86,11 +87,18 @@ Guidance for future agents working in this repository.
   "משפט קצר עליי" collected at sign-up and editable from the profile.
 - Store update check on app open and on resume, offering the new version through a Hebrew dialog that links to the store listing.
 - Feedback that goes both ways: a report at `/support/report` can be answered from the console or from the notifications page, and the thread is readable by exactly two accounts — an administrator and whoever sent it.
-- A startup log at `/support/diagnostics` that survives a native crash, and a one-time notice on the launch after one.
 - Messages are never `SnackBar`s. Everything user-facing goes through `AppNotice`; see `lib/widgets/app_notice.dart`. A *fact* is an `AppToast` at the bottom of the screen; the one moment that earns the middle of it — a batch of friends landing in the database — is `AppCelebration`, which is large, centred and still dismisses itself.
 - A tap on bare paper closes the keyboard, app-wide: `DismissKeyboardOnTap` in `lib/app.dart`, above the router. Do not add a per-screen copy.
 
 ## Recent Notes
+
+- 2026-09-10 (ios/policy): **Two things that would have failed an App Store submission: the diagnostic file-sharing flag was still on, and the privacy manifest still described a local-only app.**
+
+  (1) **The temporary crash recorder is fully removed.** `UIFileSharingEnabled` is no longer present in `ios/Runner/Info.plist` (absence means disabled), so Documents and candidate photos are not published in Files. The Swift `StartupBreadcrumbs`, Dart `DiagnosticsLog`, `/support/diagnostics` screen and route, post-crash notice, help links, and all AppDelegate/SceneDelegate hooks were deleted after the launch bug was resolved. The real fixes remain: notifications still start after the first frame, startup exceptions still render `_StartupErrorApp`, and the compatible Firebase family remains pinned.
+
+  (2) **`ios/Runner/PrivacyInfo.xcprivacy` declared `NSPrivacyCollectedDataTypes` as empty**, on the reasoning that the app is local-first and Firebase is only a channel to Gemini. That stopped being true when the cloud backup landed: `cloud_sync_service.dart` mirrors people, notes, matches and the matchmaker profile into Firestore under `users/{uid}` with photos in Cloud Storage, `community_service.dart` publishes a profile, and `support_service.dart` sends reports with a screenshot and device facts. Apple counts data transmitted off-device and retained as *collected*, whoever may read it. Eleven types are now declared — Name, PhoneNumber, EmailAddress, PhysicalAddress, Contacts, PhotosorVideos, **SensitiveInfo** (religious level; the easiest to miss on a shidduchim app and the worst to miss), OtherUserContent, CustomerSupport, UserID, OtherDiagnosticData — all Linked, none Tracking, all App Functionality. `NSPrivacyTracking` stays `false`: no ad SDK, no ATT.
+
+  **The App Store Connect nutrition label is filled in separately and by hand, and review compares it against this manifest.** Whatever is here has to be mirrored there. `PRIVACY_POLICY.md`, its English twin and `lib/utils/privacy_policy_text.dart` were checked and already describe the cloud backup correctly — no change needed there.
 
 - 2026-09-02 (policy): **`READ_CALL_LOG` is gone, and it must not come back.** The Play Store rejected the release over it, twice in one letter — once against the store listing and once against the installed app. The cause is not the implementation, which was clean and had a proper prominent-disclosure dialog: Google's Call Log policy is a **closed list** of permitted use cases (default dialer, caller ID, spam blocking, device backup/restore, enterprise device management, companion device, accessibility) and "sort the contact import by who was called recently" is not on it. A prominent disclosure is required *in addition to* a permitted use case, never instead of one, so no amount of in-app explanation could have carried it. The console declaration had also been answered as *Enterprise archive / CRM / device management*, which is what both rejection paragraphs quote back.
 
@@ -261,7 +269,7 @@ Guidance for future agents working in this repository.
 
   The `requestAlertPermission` fix did not stop it, and `lib/services/diagnostics_log.dart` could not see it either: that file starts recording when `main()` runs, and this failure is earlier. New `ios/Runner/StartupBreadcrumbs.swift` writes a line per step from Swift — `app_did_finish_launching`, `plugins_begin`, `plugins_done`, `scene_will_connect`, `scene_connected`, `scene_ready` — bracketed around `GeneratedPluginRegistrant.register` in `AppDelegate` and around the scene in `SceneDelegate`. It installs `NSSetUncaughtExceptionHandler` and handlers for SIGABRT/SEGV/BUS/ILL/FPE/TRAP; the signal path uses `write(2)` on an already-open descriptor and `backtrace_symbols_fd`, because allocating inside a signal handler is how a crash reporter loses its crash. Where the log stops is the answer, and a log with **no lines at all** is also an answer: the process died before `didFinishLaunching`, which is dyld failing on an embedded framework.
 
-  **`UIFileSharingEnabled` is `<true/>` in `ios/Runner/Info.plist` and must go back to `<false/>`.** It is the only way to get `Documents/shadchan_startup.log` off a phone with no Mac attached (Files → בטלפון שלי → שדכן). Its cost is that the candidate photos the app keeps in Documents become browsable to anyone holding the unlocked phone — nil on a device where the app has never opened, which is the situation now and not the situation later. `DiagnosticsLog` moved from application support to Documents so the two logs sit together, and `DiagnosticsLog.read()` returns both, native first.
+  **This whole temporary recorder was removed on 2026-09-10 after the launch bug was resolved.** The historical details below explain the diagnosis, not current code. `UIFileSharingEnabled`, the native/Dart loggers, diagnostics screen and route, and the post-crash notice no longer exist.
 
   **The `.ips` is filed under `Runner`, not `שדכן`.** `PRODUCT_NAME = $(TARGET_NAME)`, so the process is `Runner` and the report in Settings → פרטיות ואבטחה → נתונים ושיפורים → נתונים is `Runner-2026-…-.ips`. Anybody hunting that list should search for `Runner`. A watchdog kill (`SIGKILL`, FRONTBOARD termination reason) is what a hang looks like there; `Library not loaded` is what a dyld failure looks like.
 

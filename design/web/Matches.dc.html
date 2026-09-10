@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; direction: rtl; background: #F7F0E4; color: #211D17;
+           font-family: 'Assistant', 'Segoe UI', system-ui, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #8F5F3D; } a:hover { color: #C1845B; }
+    .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 19px;
+           height: 19px; padding: 0 5px; border: 1px solid #E2D7C8; border-bottom-width: 2px;
+           border-radius: 5px; background: #FFFDF8; font-size: 11px; font-weight: 600;
+           color: #7C7468; line-height: 1; direction: ltr; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
+            border: 1px solid #E2D7C8; border-radius: 999px; background: #FFFDF8;
+            font-size: 13px; color: #211D17; white-space: nowrap; }
+    .chip-on { background: #D7E4EA; border-color: #7F9EAA; color: #3F5A66; font-weight: 600; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .muted { color: #7C7468; }
+    .sect { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #7C7468; }
+    .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
+           border: 1px solid #E2D7C8; border-radius: 9px; background: #FFFDF8;
+           font-size: 14px; font-weight: 600; color: #211D17; }
+    .btn-p { background: #7F9EAA; border-color: #7F9EAA; color: #FFFDF8; }
+  </style>
+
+<style>
+  .row { display: flex; align-items: center; gap: 14px; padding: 13px 18px; border-bottom: 1px solid #EFE7DA; background: #FFFDF8; }
+  .who { display: flex; align-items: center; gap: 10px; width: 232px; flex: none; }
+  .av  { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+         font-size: 12px; font-weight: 700; flex: none; }
+  .nm  { font-size: 14px; font-weight: 600; }
+  .mt  { font-size: 11.5px; color: #7C7468; margin-top: 2px; }
+  .lnk { width: 26px; flex: none; display: flex; align-items: center; justify-content: center; }
+  .note { flex: 1; min-width: 0; font-size: 13px; color: #3a352d; overflow: hidden;
+          text-overflow: ellipsis; white-space: nowrap; }
+  .when { width: 118px; flex: none; text-align: left; font-size: 11.5px; color: #7C7468; }
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #F7F0E4; overflow: hidden;">
+
+  <div style="height: 56px; flex: none; display: flex; align-items: center; gap: 22px; padding: 0 20px; background: #FFFDF8; border-bottom: 1px solid #E2D7C8;">
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <div style="width: 26px; height: 26px; border-radius: 8px; background: #7F9EAA; display: flex; align-items: center; justify-content: center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="3.4"/><circle cx="16" cy="16" r="3.4"/><path d="M10.4 10.4l3.2 3.2"/></svg>
+      </div>
+      <span style="font-size: 16px; font-weight: 700; letter-spacing: -.01em;">שדכן</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">מועמדים</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; background: #D7E4EA; color: #3F5A66; font-size: 14px; font-weight: 600;">שידוכים</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">תזכורות</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">קהילה</span>
+    </div>
+    <div style="margin-inline-start: auto; display: flex; align-items: center; gap: 14px;">
+      <div style="display: flex; align-items: center; gap: 9px; width: 300px; height: 34px; padding: 0 11px; border: 1px solid #E2D7C8; border-radius: 9px; background: #F7F0E4;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7C7468" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6" stroke-linecap="round"/></svg>
+        <span class="muted" style="font-size: 13.5px;">חיפוש אדם, עיר או שידוך</span>
+        <span style="margin-inline-start: auto; display: flex; gap: 3px;"><span class="kbd">⌘</span><span class="kbd">K</span></span>
+      </div>
+      <div style="width: 32px; height: 32px; border-radius: 50%; background: #EFE4D4; color: #8F5F3D; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">ר״ל</div>
+    </div>
+  </div>
+
+  <div style="padding: 22px 24px 0;">
+    <h1 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.015em;">שידוכים</h1>
+  </div>
+
+  <div style="display: flex; align-items: flex-end; gap: 2px; padding: 16px 24px 0; border-bottom: 1px solid #E2D7C8;">
+    <span style="display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 2px solid #7F9EAA; color: #3F5A66; font-size: 14.5px; font-weight: 700;">
+      פתוח <span style="font-size: 11.5px; font-weight: 700; background: #D7E4EA; border-radius: 999px; padding: 1px 7px;">12</span>
+    </span>
+    <span style="display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 2px solid transparent; color: #7C7468; font-size: 14.5px;">
+      בהמתנה <span style="font-size: 11.5px; font-weight: 600; background: #EFE7DA; border-radius: 999px; padding: 1px 7px;">5</span>
+    </span>
+    <span style="display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 2px solid transparent; color: #7C7468; font-size: 14.5px;">
+      יוצאים <span style="font-size: 11.5px; font-weight: 600; background: #EFE7DA; border-radius: 999px; padding: 1px 7px;">3</span>
+    </span>
+    <span style="display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 2px solid transparent; color: #7C7468; font-size: 14.5px;">
+      יצאו <span style="font-size: 11.5px; font-weight: 600; background: #EFE7DA; border-radius: 999px; padding: 1px 7px;">21</span>
+    </span>
+    <span style="display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 2px solid transparent; color: #7C7468; font-size: 14.5px;">
+      נדחו <span style="font-size: 11.5px; font-weight: 600; background: #EFE7DA; border-radius: 999px; padding: 1px 7px;">34</span>
+    </span>
+    <span style="display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 2px solid transparent; color: #7C7468; font-size: 14.5px;">
+      חתונות <span style="font-size: 11.5px; font-weight: 600; background: #EFE7DA; border-radius: 999px; padding: 1px 7px;">8</span>
+    </span>
+    <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 8px; padding-bottom: 8px;">
+      <span class="chip">כל השדכנים</span>
+      <span class="chip">עודכן לאחרונה</span>
+      <span class="btn btn-p" style="height: 32px; font-size: 13.5px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="1.9" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+        שידוך חדש
+      </span>
+    </span>
+  </div>
+
+  <div style="flex: 1; min-height: 0; padding: 0 24px 0; overflow: hidden;">
+    <div style="border: 1px solid #E2D7C8; border-top: none; border-radius: 0 0 12px 12px; overflow: hidden; background: #FFFDF8;">
+
+      <div class="row" style="background: #EAF1F5; border-inline-end: 3px solid #7F9EAA; padding-inline-end: 15px;">
+        <div class="who">
+          <div class="av" style="background: #7F9EAA; color: #FFFDF8;">נ״ב</div>
+          <div><div class="nm">נועה ברקוביץ׳</div><div class="mt">26 · פתח תקווה · דתי לאומי</div></div>
+        </div>
+        <div class="lnk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B99A55" stroke-width="1.7"><circle cx="8" cy="12" r="4.2"/><circle cx="16" cy="12" r="4.2"/></svg></div>
+        <div class="who">
+          <div class="av" style="background: #DDE3CF; color: #4d5540;">י״ש</div>
+          <div><div class="nm">יונתן שפירא</div><div class="mt">28 · רמת גן · דתי לאומי</div></div>
+        </div>
+        <span class="chip" style="height: 25px; font-size: 12.5px; flex: none; background: #F4EEDF; border-color: #B99A55; color: #6f5c2c;"><span class="dot" style="background: #B99A55;"></span>בבדיקה</span>
+        <div class="note">דיברתי עם האמא ביום ראשון, מחכים לתשובה מהצד שלו. ביקש תמונה נוספת.</div>
+        <div class="when">לפני 3 ימים<div style="color: #8F5F3D; font-weight: 600; margin-top: 2px;">תזכורת מחר</div></div>
+      </div>
+
+      <div class="row">
+        <div class="who">
+          <div class="av" style="background: #EFE4D4; color: #8F5F3D;">ש״א</div>
+          <div><div class="nm">שירה אלמליח</div><div class="mt">24 · ירושלים · חרד״ל</div></div>
+        </div>
+        <div class="lnk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7F9EAA" stroke-width="1.7"><circle cx="8" cy="12" r="4.2"/><circle cx="16" cy="12" r="4.2"/></svg></div>
+        <div class="who">
+          <div class="av" style="background: #D7E4EA; color: #3F5A66;">מ״א</div>
+          <div><div class="nm">משה אדלר</div><div class="mt">26 · בית שמש · חרד״ל</div></div>
+        </div>
+        <span class="chip" style="height: 25px; font-size: 12.5px; flex: none;"><span class="dot" style="background: #7F9EAA;"></span>רעיון</span>
+        <div class="note">שני הצדדים מבית דומה. עוד לא פניתי — לברר קודם עם הרב שלו.</div>
+        <div class="when">לפני 5 ימים</div>
+      </div>
+
+      <div class="row">
+        <div class="who">
+          <div class="av" style="background: #DDD7E7; color: #55507a;">א״כ</div>
+          <div><div class="nm">אביגיל כהן</div><div class="mt">25 · מודיעין · דתי לייט</div></div>
+        </div>
+        <div class="lnk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B99A55" stroke-width="1.7"><circle cx="8" cy="12" r="4.2"/><circle cx="16" cy="12" r="4.2"/></svg></div>
+        <div class="who">
+          <div class="av" style="background: #E6D4C0; color: #8a6242;">א״ה</div>
+          <div><div class="nm">אריאל הרשקוביץ</div><div class="mt">28 · כפר סבא · דתי לאומי</div></div>
+        </div>
+        <span class="chip" style="height: 25px; font-size: 12.5px; flex: none; background: #F4EEDF; border-color: #B99A55; color: #6f5c2c;"><span class="dot" style="background: #B99A55;"></span>בבדיקה</span>
+        <div class="note">היא אמרה כן. מחכה שהוא יחזור אליי אחרי שידבר עם ההורים.</div>
+        <div class="when">לפני שבוע</div>
+      </div>
+
+      <div class="row">
+        <div class="who">
+          <div class="av" style="background: #EFE0B8; color: #7a6626;">מ״ר</div>
+          <div><div class="nm">מיכל רוזנברג</div><div class="mt">27 · בית שמש · חרדי מודרני</div></div>
+        </div>
+        <div class="lnk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7F9EAA" stroke-width="1.7"><circle cx="8" cy="12" r="4.2"/><circle cx="16" cy="12" r="4.2"/></svg></div>
+        <div class="who">
+          <div class="av" style="background: #DDE3CF; color: #4d5540;">ש״פ</div>
+          <div><div class="nm">שמואל פינטו</div><div class="mt">29 · ירושלים · חרדי מודרני</div></div>
+        </div>
+        <span class="chip" style="height: 25px; font-size: 12.5px; flex: none;"><span class="dot" style="background: #7F9EAA;"></span>רעיון</span>
+        <div class="note">הפרש גובה גדול — לוודא מולה שזה בסדר לפני שמציעים.</div>
+        <div class="when">לפני שבועיים</div>
+      </div>
+
+      <div class="row">
+        <div class="who">
+          <div class="av" style="background: #E6D4C0; color: #8a6242;">ר״ג</div>
+          <div><div class="nm">רחלי גולדשטיין</div><div class="mt">29 · תל אביב · דתי פתוח</div></div>
+        </div>
+        <div class="lnk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B99A55" stroke-width="1.7"><circle cx="8" cy="12" r="4.2"/><circle cx="16" cy="12" r="4.2"/></svg></div>
+        <div class="who">
+          <div class="av" style="background: #D7E4EA; color: #3F5A66;">ד״ב</div>
+          <div><div class="nm">דניאל בר-און</div><div class="mt">31 · גבעתיים · דתי פתוח</div></div>
+        </div>
+        <span class="chip" style="height: 25px; font-size: 12.5px; flex: none; background: #F4EEDF; border-color: #B99A55; color: #6f5c2c;"><span class="dot" style="background: #B99A55;"></span>בבדיקה</span>
+        <div class="note">שניהם אמרו כן, מתאמים ביניהם ישירות. לבדוק בעוד שבוע אם יצאו.</div>
+        <div class="when">אתמול</div>
+      </div>
+
+      <div class="row">
+        <div class="who">
+          <div class="av" style="background: #DDE3CF; color: #4d5540;">ת״ו</div>
+          <div><div class="nm">תמר וייס</div><div class="mt">28 · רעננה · דתי לאומי תורני</div></div>
+        </div>
+        <div class="lnk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7F9EAA" stroke-width="1.7"><circle cx="8" cy="12" r="4.2"/><circle cx="16" cy="12" r="4.2"/></svg></div>
+        <div class="who">
+          <div class="av" style="background: #EFE4D4; color: #8F5F3D;">ע״ב</div>
+          <div><div class="nm">עמיחי בן-שושן</div><div class="mt">27 · רעננה · חרד״ל</div></div>
+        </div>
+        <span class="chip" style="height: 25px; font-size: 12.5px; flex: none;"><span class="dot" style="background: #7F9EAA;"></span>רעיון</span>
+        <div class="note">שכנים באותה שכונה — לבדוק שהם לא מכירים מהתיכון.</div>
+        <div class="when">לפני 3 שבועות</div>
+      </div>
+
+      <div class="row" style="border-bottom: none;">
+        <div class="who">
+          <div class="av" style="background: #D7E4EA; color: #3F5A66;">ה״ג</div>
+          <div><div class="nm">הדס גבאי</div><div class="mt">26 · נתניה · מסורתי</div></div>
+        </div>
+        <div class="lnk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7F9EAA" stroke-width="1.7"><circle cx="8" cy="12" r="4.2"/><circle cx="16" cy="12" r="4.2"/></svg></div>
+        <div class="who">
+          <div class="av" style="background: #EFDDE4; color: #86546a;">י״ס</div>
+          <div><div class="nm">יובל סגל</div><div class="mt">28 · הרצליה · מסורתי</div></div>
+        </div>
+        <span class="chip" style="height: 25px; font-size: 12.5px; flex: none;"><span class="dot" style="background: #7F9EAA;"></span>רעיון</span>
+        <div class="note">הצעה של דודה שלה. עוד לא ראיתי אותו — לבקש כרטיס מלא.</div>
+        <div class="when">לפני חודש</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="flex: none; display: flex; align-items: center; gap: 16px; padding: 11px 24px; border-top: 1px solid #E2D7C8; background: #FFFDF8;">
+    <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">↑</span><span class="kbd">↓</span> ניווט</span>
+    <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">↵</span> פתיחת השידוך</span>
+    <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">S</span> שינוי סטטוס</span>
+    <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">R</span> תזכורת</span>
+    <span style="display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #7C7468;"><span class="kbd">1</span>–<span class="kbd">6</span> מעבר בין הלשוניות</span>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

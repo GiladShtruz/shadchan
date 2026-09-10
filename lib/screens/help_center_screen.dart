@@ -105,20 +105,6 @@ class HelpCenterScreen extends StatelessWidget {
                 label: const Text('כתבו לנו במייל'),
               ),
             ),
-            const SizedBox(height: 4),
-            // The way to get a crash out of a phone that is not on our desk.
-            // Quiet and last, because nobody needs it until they do — and then
-            // it is the only thing on this page that matters.
-            Center(
-              child: TextButton.icon(
-                onPressed: () => context.push('/support/diagnostics'),
-                icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                label: const Text('יומן תקלות (למקרה שהאפליקציה קרסה)'),
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
           ],
         ),
       ),

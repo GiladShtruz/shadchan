@@ -78,3 +78,24 @@ exports/
 
 # Local build-time secrets (App Check debug token). Never commit.
 env.json
+
+# Firebase Hosting / CLI local state. `firebase.json` and `.firebaserc` stay
+# tracked — they are the deploy target. `.firebase/` is only a hash cache of
+# the last upload from this machine and means nothing on another one.
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+database-debug.log*
+ui-debug.log*
+
+# The desktop web client is a separate repository
+# (WebstormProjects/shadchan-web) and nothing of its build belongs here. These
+# are a guard in case anything from it is ever copied in by hand.
+node_modules/
+.next/
+.vercel/
+*.tsbuildinfo
+
+# JVM crash dumps from Gradle
+hs_err_pid*.log
+replay_pid*.log

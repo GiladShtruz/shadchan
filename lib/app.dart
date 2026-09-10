@@ -8,7 +8,6 @@ import 'package:shadchan/widgets/app_update_prompt.dart';
 import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
 import 'package:shadchan/widgets/incoming_shared_profile_listener.dart';
-import 'package:shadchan/widgets/startup_crash_notice.dart';
 import 'package:shadchan/utils/app_router.dart';
 
 class App extends StatelessWidget {
@@ -55,11 +54,7 @@ class App extends StatelessWidget {
                 child: AchievementWatcher(
                   child: IncomingBackupImportListener(
                     child: IncomingSharedProfileListener(
-                      // Only ever speaks when the previous launch died before
-                      // the app appeared; see the note there.
-                      child: StartupCrashNotice(
-                        child: child ?? const SizedBox.shrink(),
-                      ),
+                      child: child ?? const SizedBox.shrink(),
                     ),
                   ),
                 ),

@@ -1,0 +1,289 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; direction: rtl; background: #F7F0E4; color: #211D17;
+           font-family: 'Assistant', 'Segoe UI', system-ui, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #8F5F3D; } a:hover { color: #C1845B; }
+    .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 19px;
+           height: 19px; padding: 0 5px; border: 1px solid #E2D7C8; border-bottom-width: 2px;
+           border-radius: 5px; background: #FFFDF8; font-size: 11px; font-weight: 600;
+           color: #7C7468; line-height: 1; direction: ltr; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px;
+            border: 1px solid #E2D7C8; border-radius: 999px; background: #FFFDF8;
+            font-size: 13px; color: #211D17; white-space: nowrap; }
+    .chip-on { background: #D7E4EA; border-color: #7F9EAA; color: #3F5A66; font-weight: 600; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .muted { color: #7C7468; }
+    .sect { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #7C7468; }
+    .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
+           border: 1px solid #E2D7C8; border-radius: 9px; background: #FFFDF8;
+           font-size: 14px; font-weight: 600; color: #211D17; }
+    .btn-p { background: #7F9EAA; border-color: #7F9EAA; color: #FFFDF8; }
+  </style>
+
+<style>
+  th { font-size: 11px; font-weight: 700; letter-spacing: .05em; color: #7C7468; text-align: right;
+       padding: 0 10px; height: 34px; border-bottom: 1px solid #E2D7C8; white-space: nowrap; }
+  td { font-size: 13.5px; padding: 0 10px; height: 42px; border-bottom: 1px solid #EFE7DA;
+       white-space: nowrap; vertical-align: middle; }
+  .box { width: 15px; height: 15px; border: 1.5px solid #C9BCA9; border-radius: 4px; display: inline-block; vertical-align: -2px; }
+  .box-on { background: #7F9EAA; border-color: #7F9EAA; display: inline-flex; align-items: center; justify-content: center; }
+  .facet { font-size: 13.5px; display: flex; align-items: center; gap: 9px; padding: 5px 0; }
+  .cnt { margin-inline-start: auto; font-size: 11.5px; color: #7C7468; }
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #F7F0E4; overflow: hidden;">
+
+  <div style="height: 56px; flex: none; display: flex; align-items: center; gap: 22px; padding: 0 20px; background: #FFFDF8; border-bottom: 1px solid #E2D7C8;">
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <div style="width: 26px; height: 26px; border-radius: 8px; background: #7F9EAA; display: flex; align-items: center; justify-content: center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="3.4"/><circle cx="16" cy="16" r="3.4"/><path d="M10.4 10.4l3.2 3.2"/></svg>
+      </div>
+      <span style="font-size: 16px; font-weight: 700; letter-spacing: -.01em;">שדכן</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; background: #D7E4EA; color: #3F5A66; font-size: 14px; font-weight: 600;">מועמדים</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">שידוכים</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">תזכורות</span>
+      <span style="height: 32px; display: flex; align-items: center; padding: 0 13px; border-radius: 8px; font-size: 14px; color: #7C7468;">קהילה</span>
+    </div>
+    <div style="margin-inline-start: auto; display: flex; align-items: center; gap: 14px;">
+      <div style="display: flex; align-items: center; gap: 7px;">
+        <span style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; background: #D7E4EA; color: #3F5A66; font-size: 13px; font-weight: 600;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3F5A66" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          טבלה
+        </span>
+        <span style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; font-size: 13px; color: #7C7468;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C7468" stroke-width="1.8"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
+          כרטיסים
+        </span>
+      </div>
+      <div style="width: 32px; height: 32px; border-radius: 50%; background: #EFE4D4; color: #8F5F3D; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">ר״ל</div>
+    </div>
+  </div>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <!-- ===== filter rail ===== -->
+    <div style="width: 268px; flex: none; background: #FFFDF8; border-inline-start: 1px solid #E2D7C8; padding: 16px 16px 0; min-height: 0;">
+      <div style="display: flex; align-items: center;">
+        <span style="font-size: 14px; font-weight: 700;">מסננים</span>
+        <span style="margin-inline-start: auto; font-size: 12.5px; color: #8F5F3D; font-weight: 600;">ניקוי הכל</span>
+      </div>
+
+      <div style="margin-top: 16px;">
+        <div class="sect">מגדר</div>
+        <div style="margin-top: 6px;">
+          <div class="facet"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>נשים<span class="cnt">124</span></div>
+          <div class="facet"><span class="box"></span>גברים<span class="cnt">94</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid #EFE7DA;">
+        <div class="sect">אזור</div>
+        <div style="margin-top: 6px;">
+          <div class="facet"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>מרכז<span class="cnt">51</span></div>
+          <div class="facet"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>השרון<span class="cnt">28</span></div>
+          <div class="facet"><span class="box"></span>ירושלים והסביבה<span class="cnt">33</span></div>
+          <div class="facet"><span class="box"></span>חיפה והקריות<span class="cnt">11</span></div>
+          <div class="facet"><span class="box"></span>צפון<span class="cnt">7</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid #EFE7DA;">
+        <div class="sect">רמה דתית</div>
+        <div style="margin-top: 6px;">
+          <div class="facet"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>דתי לאומי<span class="cnt">42</span></div>
+          <div class="facet"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>דתי לאומי תורני<span class="cnt">19</span></div>
+          <div class="facet"><span class="box"></span>חרד״ל<span class="cnt">14</span></div>
+          <div class="facet"><span class="box"></span>דתי לייט<span class="cnt">12</span></div>
+          <div class="facet"><span class="box"></span>דתי פתוח<span class="cnt">10</span></div>
+          <div class="facet" style="color: #8F5F3D; font-weight: 600;">עוד 7 רמות</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid #EFE7DA;">
+        <div class="sect">גיל</div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 9px;">
+          <span style="display: flex; align-items: center; justify-content: center; width: 54px; height: 30px; border: 1px solid #E2D7C8; border-radius: 8px; background: #FFFDF8; font-size: 13.5px; font-weight: 600;">24</span>
+          <span class="muted" style="font-size: 13px;">עד</span>
+          <span style="display: flex; align-items: center; justify-content: center; width: 54px; height: 30px; border: 1px solid #E2D7C8; border-radius: 8px; background: #FFFDF8; font-size: 13.5px; font-weight: 600;">29</span>
+        </div>
+        <div style="height: 6px; border-radius: 3px; background: #EFE7DA; position: relative; margin-top: 12px;">
+          <div style="position: absolute; top: 0; bottom: 0; right: 16%; left: 44%; border-radius: 3px; background: #7F9EAA;"></div>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid #EFE7DA;">
+        <div class="sect">מצב</div>
+        <div style="margin-top: 6px;">
+          <div class="facet"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>פנוי בלבד<span class="cnt">31</span></div>
+          <div class="facet"><span class="box"></span>דורש בדיקה<span class="cnt">6</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== table ===== -->
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 14px 20px 12px;">
+        <span style="font-size: 15px; font-weight: 700;">31 מועמדות</span>
+        <span class="chip chip-on">נשים</span>
+        <span class="chip chip-on">מרכז + השרון</span>
+        <span class="chip chip-on">דתי לאומי +1</span>
+        <span class="chip chip-on">24–29</span>
+        <span class="chip chip-on">פנויות</span>
+        <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 8px;">
+          <span class="btn" style="height: 32px; font-size: 13px;">ייצוא</span>
+          <span class="btn" style="height: 32px; font-size: 13px;">שמירת התצוגה</span>
+        </span>
+      </div>
+
+      <div style="flex: 1; min-height: 0; margin: 0 20px; border: 1px solid #E2D7C8; border-radius: 12px 12px 0 0; background: #FFFDF8; overflow: hidden;">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="width: 38px; padding-inline-start: 14px;"><span class="box"></span></th>
+              <th>שם</th>
+              <th style="width: 56px;">גיל</th>
+              <th style="width: 74px;">גובה</th>
+              <th style="width: 108px;">עיר</th>
+              <th style="width: 96px;">אזור</th>
+              <th style="width: 150px;">רמה דתית</th>
+              <th style="width: 96px;">מחפשת גיל</th>
+              <th style="width: 108px;">מחפשת גובה</th>
+              <th style="width: 78px;">הצעות</th>
+              <th style="width: 96px;">עודכן</th>
+              <th style="width: 92px;">מצב</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background: #EAF1F5;">
+              <td style="padding-inline-start: 14px;"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span></td>
+              <td style="font-weight: 700;">נועה ברקוביץ׳</td>
+              <td>26</td><td>168</td><td>פתח תקווה</td><td>מרכז</td><td>דתי לאומי</td>
+              <td>26–31</td><td>172–188</td><td>3</td><td class="muted">לפני 3 ימים</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr style="background: #EAF1F5;">
+              <td style="padding-inline-start: 14px;"><span class="box box-on"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFFDF8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span></td>
+              <td style="font-weight: 700;">תמר וייס</td>
+              <td>28</td><td>172</td><td>רעננה</td><td>השרון</td><td>דתי לאומי תורני</td>
+              <td>27–33</td><td>175–195</td><td>1</td><td class="muted">אתמול</td>
+              <td><span class="dot" style="background: #B99A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">לבדיקה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">אביגיל כהן</td>
+              <td>25</td><td>161</td><td>מודיעין</td><td>מרכז</td><td>דתי לייט</td>
+              <td>25–30</td><td>168–185</td><td>2</td><td class="muted">לפני שבוע</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">רחלי גולדשטיין</td>
+              <td>29</td><td>170</td><td>תל אביב</td><td>מרכז</td><td>דתי פתוח</td>
+              <td>28–35</td><td>172–190</td><td>4</td><td class="muted">אתמול</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">הדס גבאי</td>
+              <td>26</td><td>165</td><td>נתניה</td><td>השרון</td><td>מסורתי</td>
+              <td>26–32</td><td>170–190</td><td>1</td><td class="muted">לפני חודש</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">שירה לוינגר</td>
+              <td>24</td><td>158</td><td>גבעת שמואל</td><td>מרכז</td><td>דתי לאומי</td>
+              <td>24–28</td><td>165–182</td><td>0</td><td class="muted">לפני 4 ימים</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">אפרת דיין</td>
+              <td>27</td><td>174</td><td>כפר סבא</td><td>השרון</td><td>דתי לאומי תורני</td>
+              <td>27–33</td><td>178–195</td><td>2</td><td class="muted">לפני שבועיים</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">ליאור אמסלם</td>
+              <td>25</td><td>163</td><td>ראשון לציון</td><td>מרכז</td><td>דתי לאומי</td>
+              <td>25–30</td><td>170–186</td><td>1</td><td class="muted">לפני 6 ימים</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">בתיה נחמני</td>
+              <td>28</td><td>167</td><td>הוד השרון</td><td>השרון</td><td>דתי לאומי</td>
+              <td>28–34</td><td>172–190</td><td>3</td><td class="muted">לפני 9 ימים</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+            <tr>
+              <td style="padding-inline-start: 14px;"><span class="box"></span></td>
+              <td style="font-weight: 600;">שני אוחיון</td>
+              <td>29</td><td>169</td><td>רחובות</td><td>מרכז</td><td>דתי לאומי תורני</td>
+              <td>29–36</td><td>174–192</td><td>0</td><td class="muted">לפני חודשיים</td>
+              <td><span class="dot" style="background: #6F7A55; display: inline-block; vertical-align: 0;"></span> <span class="muted" style="font-size: 12.5px;">פנויה</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ===== compare drawer ===== -->
+      <div style="flex: none; margin: 0 20px; border: 1px solid #7F9EAA; border-bottom: none; border-radius: 12px 12px 0 0; background: #FFFDF8; box-shadow: 0 -8px 26px rgba(33,29,23,.09);">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #EFE7DA;">
+          <span style="font-size: 13.5px; font-weight: 700;">השוואה</span>
+          <span class="muted" style="font-size: 12.5px;">2 מסומנות · אפשר להשוות עד 4</span>
+          <span style="margin-inline-start: auto; display: flex; align-items: center; gap: 8px;">
+            <span class="btn btn-p" style="height: 30px; font-size: 13px;">פתיחת כרטיסים זה לצד זה <span class="kbd" style="background: rgba(255,253,248,.2); border-color: rgba(255,253,248,.45); color: #FFFDF8;">C</span></span>
+            <span class="btn" style="height: 30px; font-size: 13px;">ניקוי הסימון</span>
+          </span>
+        </div>
+        <div style="display: grid; grid-template-columns: 132px repeat(2, minmax(0, 1fr)); gap: 0 18px; padding: 12px 18px 15px; align-items: center;">
+          <div></div>
+          <div style="display: flex; align-items: center; gap: 9px;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: #7F9EAA; color: #FFFDF8; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">נ״ב</div>
+            <span style="font-size: 14px; font-weight: 700;">נועה ברקוביץ׳</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 9px;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: #DDE3CF; color: #4d5540; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">ת״ו</div>
+            <span style="font-size: 14px; font-weight: 700;">תמר וייס</span>
+          </div>
+
+          <div class="sect" style="padding: 7px 0;">גיל</div>
+          <div style="font-size: 13.5px;">26</div>
+          <div style="font-size: 13.5px;">28</div>
+
+          <div class="sect" style="padding: 7px 0;">גובה</div>
+          <div style="font-size: 13.5px;">168 ס״מ</div>
+          <div style="font-size: 13.5px;">172 ס״מ</div>
+
+          <div class="sect" style="padding: 7px 0;">מחפשת</div>
+          <div style="font-size: 13.5px;">26–31 · 172–188 ס״מ</div>
+          <div style="font-size: 13.5px;">27–33 · 175–195 ס״מ</div>
+
+          <div class="sect" style="padding: 7px 0;">אזורים</div>
+          <div style="display: flex; gap: 5px;"><span class="chip" style="height: 24px; font-size: 12px;">מרכז</span><span class="chip" style="height: 24px; font-size: 12px;">השרון</span><span class="chip" style="height: 24px; font-size: 12px;">ירושלים</span></div>
+          <div style="display: flex; gap: 5px;"><span class="chip" style="height: 24px; font-size: 12px;">השרון</span><span class="chip" style="height: 24px; font-size: 12px;">מרכז</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

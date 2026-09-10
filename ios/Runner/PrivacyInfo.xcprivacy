@@ -2,20 +2,201 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
-		<!-- The app is local-first: people, notes, photos and matches live in Hive
-		     on the device and are never uploaded. Firebase is used only as an
-		     authenticated channel to Gemini for the AI import flows, and no
-		     personal data is written to any Firebase product, so nothing is
-		     "collected" in Apple's sense. -->
+		<!-- What leaves the device, and why.
+
+		     Hive is still the source of truth and every screen still draws with
+		     no network — but "local-first" is not "local-only", and this file
+		     describes the *first* half of that sentence only at its peril. Since
+		     the cloud backup landed, `lib/services/cloud_sync_service.dart`
+		     mirrors people, notes, matches and the matchmaker's own profile into
+		     Firestore under `users/{uid}`, and the photo files into Cloud
+		     Storage under `users/{uid}/photos/`. `community_service.dart`
+		     publishes a matchmaker profile, `support_service.dart` sends problem
+		     reports, and `firebase_ai` carries pasted text to Gemini.
+
+		     All of that is data transmitted off the device and retained, which
+		     is what Apple means by "collected" — the fact that it is the user's
+		     own backup, under their own uid, behind App Check and their own
+		     sign-in, changes who may read it, not whether it was collected.
+
+		     Every type below is Linked (it hangs off the Firebase uid) and none
+		     is used for Tracking (no ad SDK, no ATT prompt, no data joined with
+		     anything from another company). The purpose is App Functionality
+		     throughout: nothing here is analytics, advertising or
+		     personalisation.
+
+		     KEEP THIS IN STEP WITH APP STORE CONNECT. The nutrition label on the
+		     listing is filled in separately by hand, and review compares the two
+		     — a type declared here and missing there is a rejection. -->
 		<key>NSPrivacyCollectedDataTypes</key>
-		<array/>
+		<array>
+			<!-- Candidate first/last names, the matchmaker's own display name,
+			     and the name attached to a problem report. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeName</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- `Person.phone`, `inquiryContactPhone`, the additional contacts on
+			     a card, and the contact number on a community profile. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypePhoneNumber</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- The address on the account itself — the Google or Apple identity
+			     the backup belongs to. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeEmailAddress</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- `Person.city`, and the region a card is filed under. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypePhysicalAddress</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- People imported from the device address book by
+			     `contacts_import_service.dart` become cards like any other, and
+			     are backed up like any other. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeContacts</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- Candidate photos in Cloud Storage, the matchmaker's profile
+			     picture, and a screenshot attached to a problem report. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- `religiousLevel` and `religiousLevelOther`. Apple counts
+			     religious belief as sensitive, and a shidduchim card is built
+			     around it — this is the entry most easily missed and the one
+			     least forgivable to miss. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeSensitiveInfo</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- Everything else the matchmaker types: notes on a person, notes on
+			     a match, the free-text description, age and height, what someone
+			     is looking for, and the "about" and shares on a community
+			     profile. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- The text of a problem report — `support_service.dart`. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeCustomerSupport</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- The Firebase uid every record above is stored under. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeUserID</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+			<!-- Phone model, OS version and app version, read by
+			     `device_facts.dart` at the moment a problem report is sent and
+			     nowhere else. No advertising id, no install id, no telemetry
+			     hook — but it travels attached to the uid, so it is Linked. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
+		</array>
+		<!-- No ATT prompt, no advertising SDK, and nothing here is ever joined
+		     with data from another company for advertising or measurement. -->
 		<key>NSPrivacyTracking</key>
 		<false/>
 		<key>NSPrivacyTrackingDomains</key>
 		<array/>
-		<!-- The Runner target's own native code (the two incoming-file bridges)
-		     uses no required-reason APIs; the Flutter engine and each plugin ship
-		     their own manifests for the ones they use. -->
+		<!-- The Runner target's own Swift uses no required-reason APIs. The
+		     Flutter engine and each plugin ship their own privacy manifests. -->
 		<key>NSPrivacyAccessedAPITypes</key>
 		<array/>
 	</dict>

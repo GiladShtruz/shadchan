@@ -42,15 +42,6 @@ class SettingsHelpScreen extends StatelessWidget {
                   subtitle: CommunityLinks.supportEmail,
                   onTap: CommunityLinks.openSupportEmail,
                 ),
-                // The app's own record of what it did on each launch. The one
-                // thing that can answer "it just closed on me" from a phone
-                // nobody can attach a debugger to.
-                SettingsRow(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'יומן תקלות',
-                  subtitle: 'מה קרה בהפעלה האחרונה — להעתקה ולשליחה',
-                  onTap: () => context.push('/support/diagnostics'),
-                ),
               ],
             ),
             Padding(
