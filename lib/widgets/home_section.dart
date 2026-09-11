@@ -989,32 +989,57 @@ class HomeArrowButton extends StatelessWidget {
 /// number of lines: a heading that wraps on a narrow phone is still the same
 /// heading as the one above it, and a heading that shrinks is not.
 class HomeBannerTitle extends StatelessWidget {
-  const HomeBannerTitle({super.key, required this.text, this.color});
+  const HomeBannerTitle({
+    super.key,
+    required this.text,
+    this.color,
+    this.singleLine = false,
+  });
 
   final String text;
 
   /// The block's own accent, where it has one. Defaults to the page's ink.
   final Color? color;
 
+  /// Keeps the heading on one line, shrinking it to fit rather than wrapping.
+  ///
+  /// The exception to the rule above, and it is allowed exactly where the rule
+  /// has nothing left to protect: a banner that no longer sits above a second
+  /// banner has nothing to be the same size *as*. The two are on separate
+  /// pages now — "עוצרים רגע לחשוב על החברים" heads המאגר שלי and "רעיונות
+  /// שהמאגר מציע לך" heads הרעיונות שלי — and a heading that wraps to two
+  /// lines makes its block taller than the one invitation inside it deserves.
+  final bool singleLine;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
+    final Widget label = Text(
+      text,
+      // No line cap by default. What gives at a large system font on a narrow
+      // phone is the number of lines, never the size: two blocks that sit one
+      // above the other and are headed at two different sizes read as a banner
+      // with a footnote, which is exactly what the `FittedBox` on each of them
+      // used to produce.
+      maxLines: singleLine ? 1 : null,
+      softWrap: !singleLine,
+      style: theme.textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w900,
+        height: 1.15,
+        color: color ?? theme.colorScheme.onSurface,
+      ),
+    );
+
     return Align(
       alignment: AlignmentDirectional.centerStart,
-      child: Text(
-        text,
-        // No line cap. What gives at a large system font on a narrow phone is
-        // the number of lines, never the size: two blocks that sit one above
-        // the other and are headed at two different sizes read as a banner
-        // with a footnote, which is exactly what the `FittedBox` on each of
-        // them used to produce.
-        style: theme.textTheme.titleLarge?.copyWith(
-          fontWeight: FontWeight.w900,
-          height: 1.15,
-          color: color ?? theme.colorScheme.onSurface,
-        ),
-      ),
+      child: singleLine
+          ? FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: label,
+            )
+          : label,
     );
   }
 }

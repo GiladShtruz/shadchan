@@ -348,98 +348,112 @@ class _MatchesScreenState extends State<MatchesScreen> {
       // See [SearchResultsPanel].
       body: Stack(
         children: <Widget>[
-          Column(
-            children: <Widget>[
-              // **The category buttons are pinned under the search row.** They
-              // sit outside the scrolling list, directly below the bar the field
-              // hangs off, so the five counts and the way between the five
-              // shelves are on screen however far down a list of forty somebody
-              // has gone. The one thing that folds them away is a proposal's
-              // action panel opening underneath — see [_headerHidden].
-              AnimatedSize(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                alignment: Alignment.bottomCenter,
-                child: _headerHidden
-                    ? const SizedBox(width: double.infinity)
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          // **The two blocks that used to open the home
-                          // screen.** "כל הכבוד! X זוגות שלך יוצאים" and
-                          // "רעיונות שהמאגר מציע לך" were both invitations into
-                          // this page, sitting on the page before it; they are
-                          // at the head of the page they were about now, which
-                          // is one tap shorter and two blocks of home screen
-                          // cheaper. They fold away with the category buttons
-                          // while a proposal's actions are open — see
-                          // [_headerHidden].
-                          //
-                          // Not drawn during a search: what somebody typing a
-                          // name wants is the proposals that match it, not two
-                          // banners above them.
-                          if (!searching && datingCount > 0)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                              child: DatingCouplesStrip(
-                                count: datingCount,
-                                onTap: () => setState(
-                                  () => _category = MatchCategory.dating,
-                                ),
-                              ),
-                            ),
-                          // Held back until the database is big enough to keep
-                          // producing pairs — below fifty friends the well runs
-                          // dry and the row becomes a promise the app cannot
-                          // keep.
-                          if (!searching &&
-                              personRepository.databaseCount >
-                                  HomeConfig.databaseIdeasMinFriends)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                              child: HomeHeroBand(
-                                onShowIdeas: () => context.push('/ideas/new'),
-                              ),
-                            ),
-                          // Drawn during a search too. Which kinds of proposal a
-                          // person has — two open, one closed — is exactly what
-                          // somebody typing their name wants to know, and hiding
-                          // the split at the moment they ask was the one time it
-                          // mattered most.
-                          _CategoryButtons(
-                            selected: _category,
-                            counts: <MatchCategory, int>{
-                              for (final MatchCategory category
-                                  in MatchCategory.values)
-                                category: groups[category]!.length,
-                            },
-                            onSelected: (MatchCategory category) =>
-                                setState(() => _category = category),
-                          ),
-                          // The row of name chips that used to hang here is
-                          // gone. It completed a half-typed name, which was the
-                          // best answer available when a search could only
-                          // filter the list; the panel over this page answers
-                          // the same question by naming the actual proposals
-                          // and opening the one that is tapped, and a strip of
-                          // chips behind the panel's scrim is unreachable.
-                        ],
-                      ),
-              ),
-              Expanded(
-                child: _buildCategory(
-                  theme,
-                  groups,
-                  dueReminders,
-                  personRepository,
-                  searching: searching,
-                ),
-              ),
-            ],
+          _buildBody(
+            theme,
+            groups,
+            dueReminders,
+            personRepository,
+            searching: searching,
+            datingCount: datingCount,
           ),
           if (searching) _buildSearchPanel(population, personRepository),
         ],
       ),
+    );
+  }
+
+  /// The page under the search panel: the two banners, the pinned category
+  /// row, and whichever list the category asks for — **all in one scroll
+  /// view**.
+  ///
+  /// **The banners scroll away and the counts do not.** They used to sit
+  /// together in a block outside the list, which pinned all of it: the two
+  /// invitations at the head of the page stayed on screen through forty
+  /// proposals, taking a third of the phone with them and saying nothing new
+  /// after the first second. They are ordinary content now — first in the
+  /// scroll view, above everything — and only the category row is pinned, so
+  /// it rides up over them and parks against the search field the moment they
+  /// have gone by. That is the one part of this header somebody scrolling a
+  /// long list actually reaches for.
+  ///
+  /// One `CustomScrollView` rather than a column of a header and a list,
+  /// because a pinned row *between* two scrolling things is exactly what a
+  /// sliver is and nothing else does it.
+  Widget _buildBody(
+    ThemeData theme,
+    Map<MatchCategory, List<MatchIdea>> groups,
+    List<MatchIdea> dueReminders,
+    PersonRepository personRepository, {
+    required bool searching,
+    required int datingCount,
+  }) {
+    // **The two blocks that used to open the home screen.** "כל הכבוד! X זוגות
+    // שלך יוצאים" and "רעיונות שהמאגר מציע לך" were both invitations into this
+    // page, sitting on the page before it; they are at the head of the page
+    // they were about now, which is one tap shorter and two blocks of home
+    // screen cheaper. They fold away with the category row while a proposal's
+    // actions are open — see [_headerHidden].
+    //
+    // Not drawn during a search: what somebody typing a name wants is the
+    // proposals that match it, not two banners above them.
+    final List<Widget> banners = <Widget>[
+      if (!searching && !_headerHidden && datingCount > 0)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: DatingCouplesStrip(
+            count: datingCount,
+            onTap: () => setState(() => _category = MatchCategory.dating),
+          ),
+        ),
+      // Held back until the database is big enough to keep producing pairs —
+      // below fifty friends the well runs dry and the row becomes a promise
+      // the app cannot keep.
+      if (!searching &&
+          !_headerHidden &&
+          personRepository.databaseCount > HomeConfig.databaseIdeasMinFriends)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: HomeHeroBand(onShowIdeas: () => context.push('/ideas/new')),
+        ),
+    ];
+
+    return CustomScrollView(
+      controller: _listScroll,
+      slivers: <Widget>[
+        if (banners.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Column(mainAxisSize: MainAxisSize.min, children: banners),
+          ),
+        // Drawn during a search too. Which kinds of proposal a person has —
+        // two open, one closed — is exactly what somebody typing their name
+        // wants to know, and hiding the split at the moment they ask was the
+        // one time it mattered most.
+        if (!_headerHidden)
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedCategories(
+              // Opaque, because the banners pass underneath it.
+              background: theme.scaffoldBackgroundColor,
+              extent: _CategoryButtons.heightFor(context),
+              child: _CategoryButtons(
+                selected: _category,
+                counts: <MatchCategory, int>{
+                  for (final MatchCategory category in MatchCategory.values)
+                    category: groups[category]!.length,
+                },
+                onSelected: (MatchCategory category) =>
+                    setState(() => _category = category),
+              ),
+            ),
+          ),
+        ..._categorySlivers(
+          theme,
+          groups,
+          dueReminders,
+          personRepository,
+          searching: searching,
+        ),
+      ],
     );
   }
 
@@ -581,7 +595,12 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   // --- Lists --------------------------------------------------------------
 
-  Widget _buildCategory(
+  /// The list under the pinned category row, as slivers.
+  ///
+  /// Slivers rather than a `ListView` inside an `Expanded`: the row above has
+  /// to pin against the search field while these scroll past it, and two
+  /// scroll views cannot do that between them.
+  List<Widget> _categorySlivers(
     ThemeData theme,
     Map<MatchCategory, List<MatchIdea>> groups,
     List<MatchIdea> dueReminders,
@@ -589,7 +608,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     required bool searching,
   }) {
     if (_category == MatchCategory.closed) {
-      return _buildClosed(
+      return _closedSlivers(
         groups[MatchCategory.closed]!,
         personRepository,
         searching: searching,
@@ -616,40 +635,50 @@ class _MatchesScreenState extends State<MatchesScreen> {
         : groups[_category]!;
 
     if (matches.isEmpty && !showReminders) {
-      return searching
-          ? const EmptyState(
-              icon: Icons.search,
-              title: 'לא נמצאו תוצאות',
-              subtitle: '{נסה|נסי} לחפש בשם אחר, או {בחר|בחרי} סוג אחר למעלה',
-            )
-          : _emptyState(_category);
+      return <Widget>[
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: searching
+              ? const EmptyState(
+                  icon: Icons.search,
+                  title: 'לא נמצאו תוצאות',
+                  subtitle:
+                      '{נסה|נסי} לחפש בשם אחר, או {בחר|בחרי} סוג אחר למעלה',
+                )
+              : _emptyState(_category),
+        ),
+      ];
     }
 
-    return ListView(
-      controller: _listScroll,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-      children: <Widget>[
-        if (showReminders) ...<Widget>[
-          _RemindersHeader(count: dueReminders.length),
-          for (final MatchIdea match in dueReminders)
-            _card(match, personRepository, isDueReminder: true),
-          const SizedBox(height: 8),
-          Text(
-            _category == MatchCategory.all
-                ? 'כל הרעיונות הפעילים (${matches.length})'
-                : 'כל הרעיונות הפתוחים (${matches.length})',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-        for (final MatchIdea match in matches) _card(match, personRepository),
-      ],
-    );
+    return <Widget>[
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        sliver: SliverList.list(
+          children: <Widget>[
+            if (showReminders) ...<Widget>[
+              _RemindersHeader(count: dueReminders.length),
+              for (final MatchIdea match in dueReminders)
+                _card(match, personRepository, isDueReminder: true),
+              const SizedBox(height: 8),
+              Text(
+                _category == MatchCategory.all
+                    ? 'כל הרעיונות הפעילים (${matches.length})'
+                    : 'כל הרעיונות הפתוחים (${matches.length})',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            for (final MatchIdea match in matches)
+              _card(match, personRepository),
+          ],
+        ),
+      ),
+    ];
   }
 
-  Widget _buildClosed(
+  List<Widget> _closedSlivers(
     List<MatchIdea> closed,
     PersonRepository personRepository, {
     required bool searching,
@@ -667,9 +696,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
         ? rejected
         : dated;
 
-    return Column(
-      children: <Widget>[
-        Padding(
+    return <Widget>[
+      SliverToBoxAdapter(
+        child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: SegmentedButton<_ClosedTab>(
             showSelectedIcon: false,
@@ -688,30 +717,33 @@ class _MatchesScreenState extends State<MatchesScreen> {
                 setState(() => _closedTab = selection.first),
           ),
         ),
-        Expanded(
-          child: shown.isEmpty
-              ? EmptyState(
-                  icon: _closedTab == _ClosedTab.rejected
-                      ? Icons.cancel_outlined
-                      : Icons.history,
-                  title: searching
-                      ? 'לא נמצאו תוצאות'
-                      : _closedTab == _ClosedTab.rejected
-                      ? 'אין רעיונות שנדחו'
-                      : 'אין זוגות שיצאו',
-                  subtitle: 'מה שיסתיים יופיע כאן',
-                )
-              : ListView(
-                  controller: _listScroll,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                  children: <Widget>[
-                    for (final MatchIdea match in shown)
-                      _card(match, personRepository),
-                  ],
-                ),
+      ),
+      if (shown.isEmpty)
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(
+            icon: _closedTab == _ClosedTab.rejected
+                ? Icons.cancel_outlined
+                : Icons.history,
+            title: searching
+                ? 'לא נמצאו תוצאות'
+                : _closedTab == _ClosedTab.rejected
+                ? 'אין רעיונות שנדחו'
+                : 'אין זוגות שיצאו',
+            subtitle: 'מה שיסתיים יופיע כאן',
+          ),
+        )
+      else
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+          sliver: SliverList.list(
+            children: <Widget>[
+              for (final MatchIdea match in shown)
+                _card(match, personRepository),
+            ],
+          ),
         ),
-      ],
-    );
+    ];
   }
 
   Widget _card(
@@ -929,12 +961,83 @@ class _MatchesScreenState extends State<MatchesScreen> {
 /// to swipe a row that gives no sign it can be swiped. Five buttons fit across
 /// a phone if the label goes above the number instead of beside it, so that is
 /// what they do: the whole map of the screen, visible at once.
+/// The pinned host for [_CategoryButtons].
+///
+/// A `SliverPersistentHeader` has to be told its height in advance — a sliver
+/// negotiates extent before it lays its child out — so the row's height is
+/// computed from the text styles it is about to use rather than measured. See
+/// [_CategoryButtons.heightFor]; the row centres itself in whatever it is
+/// given, so an over-estimate is a few spare pixels and never a clipped
+/// button.
+///
+/// Opaque, because the two banners scroll underneath it.
+class _PinnedCategories extends SliverPersistentHeaderDelegate {
+  const _PinnedCategories({
+    required this.child,
+    required this.extent,
+    required this.background,
+  });
+
+  final Widget child;
+  final double extent;
+  final Color background;
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Material(
+      color: background,
+      // No shadow at rest and none while pinned: the row's own outlined
+      // buttons already separate it from whatever is passing behind, and an
+      // elevation that appears mid-scroll reads as a second app bar arriving.
+      elevation: 0,
+      child: SizedBox.expand(child: child),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedCategories oldDelegate) {
+    return oldDelegate.child != child ||
+        oldDelegate.extent != extent ||
+        oldDelegate.background != background;
+  }
+}
+
 class _CategoryButtons extends StatelessWidget {
   const _CategoryButtons({
     required this.selected,
     required this.counts,
     required this.onSelected,
   });
+
+  /// What [_PinnedCategories] has to promise the sliver protocol.
+  ///
+  /// Built from the two text styles the buttons draw, put through the reader's
+  /// own text scale, plus the paddings and borders around them — with a little
+  /// slack, because being a few pixels tall costs nothing and being a few
+  /// pixels short clips the count off the bottom of every button.
+  static double heightFor(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    // Material's own line heights for the two roles, rounded up: 1.33 for
+    // `labelMedium` and 1.50 for `titleMedium`.
+    final double label =
+        scaler.scale(theme.textTheme.labelMedium?.fontSize ?? 12) * 1.45;
+    final double count =
+        scaler.scale(theme.textTheme.titleMedium?.fontSize ?? 16) * 1.55;
+    // 10 + 6 around the row, 7 + 7 inside a button, 1 + 1 of border, 2 between
+    // the two lines, and 4 of slack.
+    return 38 + label + count;
+  }
 
   final MatchCategory selected;
   final Map<MatchCategory, int> counts;
@@ -1011,6 +1114,7 @@ class _CategoryButton extends StatelessWidget {
             ),
           ),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               // The name on top and the number under it. Scaled down rather
@@ -1028,11 +1132,19 @@ class _CategoryButton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                '$count',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: accent,
+              // Scaled down like the name above it. The row's height is
+              // promised to a sliver before anything is laid out — see
+              // [_CategoryButtons.heightFor] — so neither line may be allowed
+              // to argue with the answer.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '$count',
+                  maxLines: 1,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: accent,
+                  ),
                 ),
               ),
             ],

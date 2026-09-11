@@ -9,10 +9,10 @@ import 'package:shadchan/widgets/home_activity_block.dart';
 
 /// The home screen's activity area.
 ///
-/// Two squares, one number each, and a window that turns over by itself.
-/// Everything that used to sit here — three windows at once, a community meter,
-/// a shared weekly target, a row of tabs to pick a window with — is gone on
-/// purpose: this is a workspace, and the numbers screen is one tap away.
+/// Two tiles, one number each, and a window the reader picks. Everything else
+/// that used to sit here — three windows at once, a community meter, a shared
+/// weekly target — is gone on purpose: this is a workspace, and the numbers
+/// screen is one tap away.
 void main() {
   Widget wrap(Widget child, {double width = 360, double textScale = 1.0}) {
     return MaterialApp(
@@ -63,12 +63,17 @@ void main() {
     // rather than a figure. See the signed-out test below.
     expect(find.text('הצטרפו לקהילת השדכנים'), findsOneWidget);
 
-    // One window at a time, named — never three columns and never a row of
-    // tabs asking the reader to pick one.
-    expect(find.text('השבוע'), findsOneWidget);
-    for (final String label in <String>['החודש', 'כל הזמנים', 'היום']) {
-      expect(find.text(label), findsNothing, reason: label);
+    // One window's figures at a time, and the three to choose between. "היום"
+    // is not one of them — a day is too noisy a window for a figure that is
+    // trying to say how things are going.
+    for (final String label in <String>['השבוע', 'החודש', 'כל הזמנים']) {
+      expect(find.text(label), findsOneWidget, reason: label);
     }
+    expect(find.text('היום'), findsNothing);
+
+    // The figure says what it is, under itself, rather than leaving the reader
+    // to infer it from a pill above the pair.
+    expect(find.text('נקודות פעילות'), findsOneWidget);
 
     // Nothing that belongs on the full screen leaks onto the home page.
     expect(find.textContaining('טבלת הדירוג'), findsNothing);
@@ -102,7 +107,7 @@ void main() {
     }
   });
 
-  testWidgets('the window turns over on its own, and never opens the screen', (
+  testWidgets('the window only ever changes because somebody changed it', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -112,19 +117,23 @@ void main() {
     await tester.pumpWidget(wrap(HomeActivityBlock(onOpen: () => opened++)));
     await tester.pump();
 
-    // Nothing has been done in any window here — no provider figures — so the
-    // rotation is the honest single "השבוע" and stays on it however long it
-    // runs. What is being checked is that time passing costs nothing and takes
-    // nobody anywhere.
+    // **Time passing must do nothing.** This block used to rotate through the
+    // three windows on a five-second timer, which meant the figure somebody
+    // was reading changed under them and could not be held still.
     for (int i = 0; i < 3; i++) {
       await tester.pump(const Duration(seconds: 6));
     }
-
     expect(opened, 0);
-    expect(find.text('השבוע'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    // The timer must not outlive the widget.
+    // A tap on a window switches to it, and switching windows is not a way
+    // into the activity screen.
+    await tester.tap(find.text('כל הזמנים'));
+    await tester.pump();
+    expect(opened, 0);
+    expect(tester.takeException(), isNull);
+
+    // Nothing left running behind it.
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 12));
     expect(tester.takeException(), isNull);
@@ -144,7 +153,7 @@ void main() {
     expect(find.text('הפעילות שלי'), findsOneWidget);
     expect(find.text('פעילות הקהילה'), findsNothing);
 
-    // And the invitation wears the same square, so the shape still says a
+    // And the invitation wears the same tile, so the shape still says a
     // number belongs there.
     expect(find.text('הצטרפו לקהילת השדכנים'), findsOneWidget);
   });

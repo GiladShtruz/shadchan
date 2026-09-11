@@ -23,6 +23,8 @@ abstract final class CommunityProfileStore {
   static const String _avatarPathKey = 'community.avatarLocalPath';
   static const String _avatarUrlKey = 'community.avatarUrl';
   static const String _greetingKey = 'community.greetingCursor';
+  static const String _activityPeriodKey = 'community.homeActivityPeriod';
+  static const String _joinedAtKey = 'community.joinedAtWritten';
   static const String _publishedKey = 'community.publishedFingerprint';
   static const String _weekSnapshotKey = 'community.weekSnapshot';
   static const String _prevWeekSnapshotKey = 'community.prevWeekSnapshot';
@@ -201,6 +203,51 @@ abstract final class CommunityProfileStore {
 
   static void setGreetingCursor(int value) =>
       _write(_greetingKey, value.abs() % 1000);
+
+  // --- The window the home activity block is left on ------------------------
+
+  /// Which of השבוע / החודש / כל הזמנים the home screen's two figures are
+  /// showing.
+  ///
+  /// **Remembered because the block stopped choosing for itself.** The three
+  /// windows used to rotate on a timer, which meant the number under somebody's
+  /// thumb changed while they were reading it and there was nothing to be done
+  /// about it. They are picked by hand now — and a choice made by hand that is
+  /// forgotten the moment the screen is left is a choice the reader has to make
+  /// again every single time they come back.
+  ///
+  /// Defaults to the week: the window somebody is actually working in.
+  static CommunityPeriod get activityPeriod {
+    final Object? raw = _read(_activityPeriodKey);
+    if (raw is! String) {
+      return CommunityPeriod.week;
+    }
+    for (final CommunityPeriod period in CommunityPeriod.values) {
+      if (period.name == raw) {
+        return period;
+      }
+    }
+    return CommunityPeriod.week;
+  }
+
+  static void setActivityPeriod(CommunityPeriod period) =>
+      _write(_activityPeriodKey, period.name);
+
+  // --- Whether this account's join date has been published ------------------
+
+  /// True once `joinedAt` is known to be on this account's community row.
+  ///
+  /// It is written exactly once per account and never again — the date a
+  /// matchmaker joined the community cannot be allowed to move forward every
+  /// time they publish their figures, which is what a `merge` write of a
+  /// server timestamp would do. So the publish reads the document once, writes
+  /// the field if it is missing, and remembers here that the question has been
+  /// settled; a device that has forgotten (a reinstall, a new phone) reads once
+  /// more and finds the date already there.
+  static bool get joinedAtWritten =>
+      _read(_joinedAtKey) == true || _read(_joinedAtKey) == 'true';
+
+  static void markJoinedAtWritten() => _write(_joinedAtKey, true);
 
   // --- The personal weekly best --------------------------------------------
 

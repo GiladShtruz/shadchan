@@ -315,14 +315,12 @@ class HomeThinkBanner extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool showPicture =
             constraints.maxWidth >= 300 && textScale <= 1.3;
-        // Held down deliberately: the button under the title has to keep
-        // "על מי חושבים עכשיו?" on one line, and every pixel the picture takes
-        // comes out of the column that has to hold it. It is also what sets the
-        // height of the whole block now that there is no sentence under the
-        // title, so it stays close to the height of the two lines beside it.
-        final double pictureWidth = (constraints.maxWidth * 0.22).clamp(
-          64.0,
-          84.0,
+        // Smaller than it was, for the same reason the padding is: the title
+        // is one line now, so the block is two lines tall, and a picture sized
+        // for a three-line card would be the only thing setting its height.
+        final double pictureWidth = (constraints.maxWidth * 0.18).clamp(
+          52.0,
+          66.0,
         );
 
         return Material(
@@ -349,7 +347,7 @@ class HomeThinkBanner extends StatelessWidget {
                 ),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
@@ -363,18 +361,23 @@ class HomeThinkBanner extends StatelessWidget {
                           // asks for an answer the matchmaker did not come
                           // here to give.
                           //
-                          // Held to exactly the size of "רעיונות שהמאגר מציע
-                          // לך" under it rather than scaled down to one line
-                          // — see [HomeBannerTitle]. Two blocks that sit one
-                          // above the other cannot be headed at two sizes,
-                          // and which of them came out larger depended on how
-                          // much room the picture beside it happened to
-                          // leave.
+                          // **One line, whatever it costs in size.** The
+                          // rule it used to follow — a fixed size, and let
+                          // the number of lines give — was written when this
+                          // block and "רעיונות שהמאגר מציע לך" sat one above
+                          // the other on the home screen and had to be headed
+                          // identically. They are on two different pages now
+                          // (המאגר שלי and הרעיונות שלי), so nothing is left
+                          // for this heading to match, and what wrapping cost
+                          // was real: a two-line heading over a button made
+                          // the block a third taller than the invitation in
+                          // it is worth. See [HomeBannerTitle.singleLine].
                           HomeBannerTitle(
                             text: 'עוצרים רגע לחשוב על החברים',
                             color: dark ? theme.colorScheme.onSurface : accent,
+                            singleLine: true,
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           // Centred in its own column rather than pinned to
                           // the reading edge: the invitation is the middle of
                           // the block, and a pill hard against the right edge

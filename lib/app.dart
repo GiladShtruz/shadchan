@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
@@ -67,21 +68,62 @@ class App extends StatelessWidget {
   }
 }
 
+/// The last thing between a back press and the app closing.
+///
+/// Android's back is one gesture with two very different meanings, and only
+/// the router can tell them apart: on a pushed page it means "go back", and on
+/// the first page of the app it means "leave". go_router answers the first,
+/// and what is left over lands here.
+///
+/// **Nothing leaves the app except the home tab with nothing on top of it.**
+/// A back press on המאגר שלי or on הרעיונות שלי goes to בית — the tabs are a
+/// hierarchy, and the top of it is the home screen — and only a second press,
+/// from there, closes the app.
+///
+/// **The location is not a reliable answer to "what is on screen".** A page
+/// opened with `push` is an `ImperativeRouteMatch`, and `RouteMatchList.uri`
+/// deliberately ignores those: standing on "הוספת אנשי קשר", pushed from the
+/// home tab, `uri.path` still reads `/home`. So a back press that go_router
+/// declined to handle while such a page was up used to satisfy the
+/// `== '/home'` test and close the app from underneath a full-screen task
+/// flow — which is what "back out of adding contacts and the app disappears"
+/// was. Whether a pushed page is on screen is asked of the match tree instead,
+/// where the answer is actually kept.
 class _ExitThroughPeopleBackButtonDispatcher extends RootBackButtonDispatcher {
   @override
   Future<bool> didPopRoute() {
-    final router = AppRouter.router;
+    final GoRouter router = AppRouter.router;
     if (router.canPop()) {
       return super.didPopRoute();
     }
 
-    final String currentPath = router.routeInformationProvider.value.uri.path;
-    if (currentPath != '/home') {
+    final RouteMatchList configuration =
+        router.routerDelegate.currentConfiguration;
+    // Something is on screen that the location does not name, and it cannot be
+    // popped. Going to the home screen is the one thing left that is not
+    // closing the app on top of somebody's work.
+    if (_hasPushedPage(configuration.matches) ||
+        configuration.uri.path != '/home') {
       router.go('/home');
       return Future<bool>.value(true);
     }
 
     return super.didPopRoute();
+  }
+
+  /// Whether anything in the tree got there through `push` rather than through
+  /// the location. Recursive, because a page pushed onto a tab sits inside that
+  /// branch's `ShellRouteMatch` rather than at the top of the list.
+  static bool _hasPushedPage(List<RouteMatchBase> matches) {
+    for (final RouteMatchBase match in matches) {
+      if (match is ImperativeRouteMatch) {
+        return true;
+      }
+      if (match is ShellRouteMatch && _hasPushedPage(match.matches)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

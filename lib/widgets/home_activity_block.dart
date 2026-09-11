@@ -1,15 +1,14 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 
-/// "הפעילות שלי" beside "פעילות הקהילה" — two squares, one number each.
+/// "הפעילות שלי" beside "פעילות הקהילה" — two tiles, one number each.
 ///
 /// **Two numbers and nothing else.** No leaderboard, no chart, no breakdown —
 /// those all live one tap away on a screen somebody opened *to look at
@@ -19,17 +18,16 @@ import 'package:shadchan/widgets/community_widgets.dart';
 /// What is left is the one comparison worth putting on the landing page: "12"
 /// says very little on its own and a great deal beside "1,842 בקהילה".
 ///
-/// **The window turns over by itself, and the two squares turn together.** The
-/// three windows used to be a row of tabs, which asked the reader to pick one
-/// before the block would say anything — on a landing page that is a question,
-/// not an answer. They rotate now, השבוע → החודש → כל הזמנים, both halves in
-/// step so the two figures on screen are always about the same span of time,
-/// with the span named between them.
-///
-/// **A window the matchmaker did nothing in is skipped entirely**, however busy
-/// the community was in it. "0 השבוע" beside "1,842 בקהילה" is not a
-/// comparison, it is a reproach — and it is the one thing this block must never
-/// be. What is shown instead is the next window they *were* active in.
+/// **The window is chosen by hand, and remembered.** It rotated by itself for
+/// a while — השבוע → החודש → כל הזמנים on a five-second timer — on the
+/// reasoning that a landing page should answer rather than ask. What that
+/// actually produced was a number that changed under the reader's thumb: you
+/// cannot compare two figures that are about to become two different figures,
+/// and there was no way to hold the one you wanted. The three windows are a row
+/// of tabs again, both halves move together so the two figures on screen are
+/// always about the same span of time, and whichever one is left selected is
+/// the one that is there on the way back — see
+/// [CommunityProfileStore.activityPeriod].
 ///
 /// Your own figures need no network and are drawn on the first frame. The
 /// community column fills in when the reads land rather than holding a spinner
@@ -45,8 +43,8 @@ class HomeActivityBlock extends StatefulWidget {
 
   final VoidCallback onOpen;
 
-  /// The rotation, in the order it reads best: this week first, because it is
-  /// the window somebody is actually working in.
+  /// The three offered, in the order they read best: this week first, because
+  /// it is the window somebody is actually working in.
   static const List<CommunityPeriod> periods = <CommunityPeriod>[
     CommunityPeriod.week,
     CommunityPeriod.month,
@@ -58,16 +56,8 @@ class HomeActivityBlock extends StatefulWidget {
 }
 
 class _HomeActivityBlockState extends State<HomeActivityBlock> {
-  /// Long enough to read two numbers and their window without hurrying, short
-  /// enough that a glance at the page catches it moving.
-  static const Duration _dwell = Duration(seconds: 5);
-
-  /// Advances through whichever windows are worth showing. Counted rather than
-  /// held as a period, so a window dropping in or out of the rotation — the
-  /// first idea of the week lands, and השבוע becomes showable — never leaves
-  /// the block pointing at something that is no longer in the list.
-  int _beat = 0;
-  Timer? _timer;
+  /// The window on screen — the one this device was left on.
+  CommunityPeriod _period = CommunityProfileStore.activityPeriod;
 
   /// Kept per window so a window already read is instant and free.
   final Map<CommunityPeriod, CommunityTotals> _totals =
@@ -92,26 +82,26 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
   void initState() {
     super.initState();
     _loadAll();
-    _timer = Timer.periodic(_dwell, (_) {
-      if (mounted) {
-        setState(() => _beat++);
-      }
-    });
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+  void _select(CommunityPeriod period) {
+    if (period == _period) {
+      return;
+    }
+    setState(() => _period = period);
+    // Written on the tap rather than on leaving the screen: the home screen is
+    // never "left" in a way this widget is told about, and a preference that
+    // only survives a graceful exit is a preference that mostly does not.
+    CommunityProfileStore.setActivityPeriod(period);
+    _load(period);
   }
 
   /// All three windows at once rather than the one on screen.
   ///
-  /// The block turns itself over every few seconds, so a window fetched only
-  /// when it comes up would show "0 בקהילה" for the first second of every
-  /// rotation — and the three reads share [CommunityService]'s process cache
-  /// with the activity screen, so asking for them together costs the same as
-  /// asking for them one at a time.
+  /// A tab is tapped and answered in the same frame that way, instead of
+  /// showing "0 בקהילה" until a read lands — and the three reads share
+  /// [CommunityService]'s process cache with the activity screen, so asking
+  /// for them together costs the same as asking for them one at a time.
   Future<void> _loadAll() async {
     for (final CommunityPeriod period in HomeActivityBlock.periods) {
       await _load(period);
@@ -133,22 +123,6 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
     if (mounted) {
       setState(() => _totals[period] = totals);
     }
-  }
-
-  /// The windows worth showing: the ones the matchmaker actually did something
-  /// in.
-  ///
-  /// Falls back to the whole rotation when they have done nothing anywhere,
-  /// which is a brand-new matchmaker on their first launch. A single honest "0
-  /// השבוע" is the right thing to show somebody who has not started yet; what
-  /// the rule above exists to prevent is a *busy* matchmaker being shown the
-  /// one window they happen to have been quiet in.
-  List<CommunityPeriod> _showable(CommunityProvider community) {
-    final List<CommunityPeriod> live = <CommunityPeriod>[
-      for (final CommunityPeriod period in HomeActivityBlock.periods)
-        if (community.myPoints(period) > 0) period,
-    ];
-    return live.isEmpty ? const <CommunityPeriod>[CommunityPeriod.week] : live;
   }
 
   @override
@@ -174,8 +148,7 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
       }
     }
 
-    final List<CommunityPeriod> showable = _showable(community);
-    final CommunityPeriod period = showable[_beat % showable.length];
+    final CommunityPeriod period = _period;
     final CommunityTotals? totals = _totals[period];
 
     return CommunityCard(
@@ -183,24 +156,28 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // The window the two figures belong to, named once between them
-          // rather than twice inside them. It changes with the numbers, so a
-          // reader who looks up mid-rotation is never left working out which
-          // span of time they are looking at.
-          _PeriodPill(period: period),
-          const SizedBox(height: 12),
-          // Not `stretch`: each square sets its own height from its own width,
-          // and stretching would hand them the column's unbounded height.
+          // The window both figures belong to, chosen once above the pair
+          // rather than named twice inside them. The same control the activity
+          // screen uses, so switching window means the same gesture in both
+          // places.
+          CommunityPeriodTabs(
+            selected: period,
+            onChanged: _select,
+            periods: HomeActivityBlock.periods,
+          ),
+          const SizedBox(height: 10),
+          // Not `stretch`: each tile sets its own height, and stretching would
+          // hand them the column's unbounded height.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
-                child: _FigureSquare(
+                child: _FigureTile(
                   label: 'הפעילות שלי',
                   value: community.myPoints(period),
                   period: period,
                   // The warm tone the matchmaker's own surfaces wear, so the
-                  // two squares are told apart by colour as well as by their
+                  // two tiles are told apart by colour as well as by their
                   // labels: this half is yours, the one beside it is
                   // everybody's.
                   accent: theme.brightness == Brightness.dark
@@ -209,10 +186,10 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
                   onTap: widget.onOpen,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: signedIn
-                    ? _FigureSquare(
+                    ? _FigureTile(
                         label: 'פעילות הקהילה',
                         // Zero until the read lands, which is also the honest
                         // answer on a device that has never reached the
@@ -222,11 +199,11 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
                         accent: communityLead(theme),
                         onTap: widget.onOpen,
                       )
-                    : _JoinSquare(onTap: widget.onOpen),
+                    : _JoinTile(onTap: widget.onOpen),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           const ActivityScoringLink(),
         ],
       ),
@@ -234,48 +211,18 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
   }
 }
 
-/// The name of the window the two figures belong to.
-class _PeriodPill extends StatelessWidget {
-  const _PeriodPill({required this.period});
-
-  final CommunityPeriod period;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color lead = communityLead(theme);
-
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 320),
-        child: Container(
-          key: ValueKey<CommunityPeriod>(period),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          decoration: BoxDecoration(
-            color: lead.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            period.label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: lead,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One of the two squares: a name, and one number under it.
+/// One of the two tiles: the name at the top, the figure across the middle,
+/// and the unit under it.
 ///
-/// The number is the only thing in it that is allowed to be large. Everything
-/// that could be said *about* the number — what it is made of, how it compares,
-/// who else is on the board — is on the screen this square opens.
-class _FigureSquare extends StatelessWidget {
-  const _FigureSquare({
+/// **Three lines and no square.** These were 1:1 boxes with the label sitting
+/// directly on top of a headline number — as tall as they were wide, which on
+/// a phone is a pair of 160px blocks for two figures, and they pushed the rest
+/// of the page down for it. What is here now is a card the height of the type
+/// in it: a small caption, the number in the largest size on the block, and
+/// "נקודות פעילות" underneath in the smallest, so what the figure *is* is said
+/// once and quietly instead of being inferred from a pill above the pair.
+class _FigureTile extends StatelessWidget {
+  const _FigureTile({
     required this.label,
     required this.value,
     required this.period,
@@ -297,38 +244,53 @@ class _FigureSquare extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return _Square(
+    return _Tile(
       accent: accent,
       onTap: onTap,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Text(
-            label,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.2,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.1,
+              ),
             ),
           ),
-          const SizedBox(height: 6),
-          Flexible(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 320),
-              child: FittedBox(
-                key: ValueKey<String>('${period.name}:$value'),
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  CommunityFigure.format(value),
-                  maxLines: 1,
-                  style: theme.textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    height: 1.05,
-                    color: accent,
-                  ),
+          const SizedBox(height: 4),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            child: FittedBox(
+              key: ValueKey<String>('${period.name}:$value'),
+              fit: BoxFit.scaleDown,
+              child: Text(
+                CommunityFigure.format(value),
+                maxLines: 1,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  height: 1.0,
+                  color: accent,
                 ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'נקודות פעילות',
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.1,
               ),
             ),
           ),
@@ -340,11 +302,11 @@ class _FigureSquare extends StatelessWidget {
 
 /// The community half before there is an account to compare with.
 ///
-/// Deliberately the same square as the figure beside it rather than a banner
+/// Deliberately the same tile as the figure beside it rather than a banner
 /// under the pair: the shape is what says "there is a number that belongs
 /// here", and the sentence says why it is missing.
-class _JoinSquare extends StatelessWidget {
-  const _JoinSquare({required this.onTap});
+class _JoinTile extends StatelessWidget {
+  const _JoinTile({required this.onTap});
 
   final VoidCallback onTap;
 
@@ -353,22 +315,22 @@ class _JoinSquare extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Color lead = communityLead(theme);
 
-    return _Square(
+    return _Tile(
       accent: lead,
       onTap: onTap,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.groups_outlined, size: 26, color: lead),
-          const SizedBox(height: 8),
+          Icon(Icons.groups_outlined, size: 20, color: lead),
+          const SizedBox(height: 4),
           Text(
             'הצטרפו לקהילת השדכנים',
-            maxLines: 3,
+            maxLines: 2,
             textAlign: TextAlign.center,
-            style: theme.textTheme.labelLarge?.copyWith(
+            style: theme.textTheme.labelMedium?.copyWith(
               fontWeight: FontWeight.w800,
               color: lead,
-              height: 1.25,
+              height: 1.2,
             ),
           ),
         ],
@@ -377,13 +339,14 @@ class _JoinSquare extends StatelessWidget {
   }
 }
 
-/// The shape both halves wear: equal, square-ish, and entirely a tap target.
-class _Square extends StatelessWidget {
-  const _Square({
-    required this.accent,
-    required this.onTap,
-    required this.child,
-  });
+/// The shape both halves wear: equal, compact, and entirely a tap target.
+///
+/// No fixed height any more. It used to be squared off against its own width,
+/// which is what made the pair the tallest thing on the home screen; the height
+/// is the three lines of type inside it now, and it grows with the system font
+/// instead of being clamped against it.
+class _Tile extends StatelessWidget {
+  const _Tile({required this.accent, required this.onTap, required this.child});
 
   final Color accent;
   final VoidCallback onTap;
@@ -393,54 +356,36 @@ class _Square extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    // Square at the width a phone actually gives it, and taller only where the
-    // system font asks for it. A strict 1:1 would clip the label at 1.5x text;
-    // a free height would let the two halves come out different shapes.
-    final double scale = MediaQuery.textScalerOf(
-      context,
-    ).scale(1).clamp(1, 1.6);
 
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double side = constraints.maxWidth.clamp(96.0, 168.0) * scale;
-
-        return SizedBox(
-          height: side,
-          child: Material(
-            color: dark
-                ? theme.colorScheme.surfaceContainerHighest
-                : theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              child: Ink(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: accent.withValues(alpha: 0.22)),
-                  gradient: LinearGradient(
-                    begin: AlignmentDirectional.topStart,
-                    end: AlignmentDirectional.bottomEnd,
-                    colors: <Color>[
-                      accent.withValues(alpha: dark ? 0.16 : 0.08),
-                      dark
-                          ? theme.colorScheme.surfaceContainerHighest
-                          : theme.colorScheme.surface,
-                    ],
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 12,
-                  ),
-                  child: child,
-                ),
-              ),
+    return Material(
+      color: dark
+          ? theme.colorScheme.surfaceContainerHighest
+          : theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: accent.withValues(alpha: 0.22)),
+            gradient: LinearGradient(
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
+              colors: <Color>[
+                accent.withValues(alpha: dark ? 0.16 : 0.08),
+                dark
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : theme.colorScheme.surface,
+              ],
             ),
           ),
-        );
-      },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }

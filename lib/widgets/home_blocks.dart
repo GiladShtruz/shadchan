@@ -285,28 +285,26 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
                 // the card's furniture — the thing that says "this box is
                 // advice" before a word of it is read.
                 //
-                // The bulb it used to be is the app's own drawing now: a heart
-                // beside a pencil, which is what a matchmaker's tip actually
-                // is. Recoloured at draw time so it wears the card's ink in
-                // either theme — see [HomeLineArt].
+                // **The bulb, back where it started.** The heart-and-pencil
+                // drawing that stood here belongs to "הוספת רעיון" now — a
+                // pencil is what you pick up to *write* something down, and
+                // that card is the one asking for it. What a tip is is an
+                // idea somebody had and passed on, and the bulb says that in
+                // one glyph at 18px, which no line drawing does.
                 Row(
                   children: <Widget>[
                     Container(
                       width: 28,
                       height: 28,
                       alignment: Alignment.center,
-                      clipBehavior: Clip.antiAlias,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: _tipDisc(theme, ink),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(5),
-                        child: HomeLineArt(
-                          asset: 'assets/shadchan-tip.png',
-                          ink: ink,
-                          paper: _tipDisc(theme, ink),
-                        ),
+                      child: Icon(
+                        Icons.lightbulb_outline_rounded,
+                        size: 17,
+                        color: ink,
                       ),
                     ),
                     const SizedBox(width: 8),

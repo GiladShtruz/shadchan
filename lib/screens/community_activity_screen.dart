@@ -130,7 +130,12 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('הפעילות שלי'), centerTitle: true),
+      // Named for the screen, not for one card on it. "הפעילות שלי" is the
+      // heading of the home block that opens this page and of the personal
+      // half of it; the page itself is the matchmaker's figures *and* the
+      // community's, so the narrower of the two names was a promise the
+      // second half of the screen kept breaking.
+      appBar: AppBar(title: const Text('פעילות'), centerTitle: true),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _refresh,
@@ -249,7 +254,7 @@ typedef _ActivityStory = ({
 /// **Nothing is ever congratulated into existence.** Each line carries the
 /// condition that makes it true, and a database with nothing in it falls
 /// through to an invitation rather than to praise for having installed an app.
-/// The opener follows the same rule: "כל הכבוד!!" belongs to a week that
+/// The opener follows the same rule: "כל הכבוד!" belongs to a week that
 /// actually had something in it, and an empty database is welcomed instead.
 ///
 /// **It opens with a word, not with a filing label.** The top line used to read
@@ -283,7 +288,7 @@ class _CelebrationHeader extends StatelessWidget {
       lines.add((
         icon: Icons.auto_awesome_rounded,
         tone: _friendsTone,
-        opener: 'כל הכבוד!!',
+        opener: 'כל הכבוד!',
         // Points, and called points. The figure is weighted — a wedding is
         // worth fifty of it — so describing it as "פעולות" was the one place on
         // this screen where a number was given a name it does not have, and it
@@ -307,7 +312,7 @@ class _CelebrationHeader extends StatelessWidget {
       lines.add((
         icon: Icons.lightbulb_outline_rounded,
         tone: _ideasTone,
-        opener: 'כל הכבוד!!',
+        opener: 'כל הכבוד!',
         headline: week.ideas == 1
             ? 'פתחת השבוע רעיון חדש'
             : 'פתחת השבוע ${week.ideas} רעיונות',
@@ -496,48 +501,60 @@ class _MyNumbersCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _NumberTile(
-                  value: breakdown.friends,
-                  label: 'חברים שהוספת',
-                  icon: Icons.people_alt_outlined,
-                  metric: MonthlyStatMetric.people,
+          // **`IntrinsicHeight`, and it has to be.** The two tiles have to come
+          // out the same height — a label that wraps to two lines beside one
+          // that does not is what stops four figures reading as a grid — and
+          // `CrossAxisAlignment.stretch` alone cannot do it here: this `Row`
+          // sits in a `Column` with no height of its own, so stretching would
+          // hand each tile an infinite one.
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: _NumberTile(
+                    value: breakdown.friends,
+                    label: 'חברים שהוספת',
+                    icon: Icons.people_alt_outlined,
+                    metric: MonthlyStatMetric.people,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _NumberTile(
-                  value: breakdown.ideas,
-                  label: 'רעיונות שפתחת',
-                  icon: Icons.lightbulb_outline_rounded,
-                  metric: MonthlyStatMetric.ideas,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _NumberTile(
+                    value: breakdown.ideas,
+                    label: 'רעיונות שפתחת',
+                    icon: Icons.lightbulb_outline_rounded,
+                    metric: MonthlyStatMetric.ideas,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _NumberTile(
-                  value: breakdown.couples,
-                  label: 'זוגות שהוצאת לדייט',
-                  icon: Icons.favorite_outline_rounded,
-                  metric: MonthlyStatMetric.dating,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: _NumberTile(
+                    value: breakdown.couples,
+                    label: 'זוגות שהוצאת לדייט',
+                    icon: Icons.favorite_outline_rounded,
+                    metric: MonthlyStatMetric.dating,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _NumberTile(
-                  value: breakdown.engagements,
-                  label: 'חתונות',
-                  icon: Icons.diamond_outlined,
-                  metric: MonthlyStatMetric.weddings,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _NumberTile(
+                    value: breakdown.engagements,
+                    label: 'חתונות',
+                    icon: Icons.diamond_outlined,
+                    metric: MonthlyStatMetric.weddings,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -585,17 +602,24 @@ class _NumberTile extends StatelessWidget {
           color: _numbersWash(theme),
           border: Border.all(color: _numbersEdge(theme)),
         ),
+        // **Centred on one axis down the middle of the tile.** Everything
+        // used to hang off the reading edge, which is right for a paragraph
+        // and wrong for a figure: the mark, the number and the word under it
+        // are three lines of three different widths, and ragged against the
+        // edge they read as a list that has lost its bullets. Stacked on the
+        // tile's own centre the four tiles become one grid of four figures.
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Icon(icon, size: 18, color: ink),
             const SizedBox(height: 8),
             FittedBox(
               fit: BoxFit.scaleDown,
-              alignment: AlignmentDirectional.centerStart,
               child: Text(
                 CommunityFigure.format(value),
                 maxLines: 1,
+                textAlign: TextAlign.center,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w900,
                   height: 1.05,
@@ -607,6 +631,7 @@ class _NumberTile extends StatelessWidget {
             Text(
               label,
               maxLines: 2,
+              textAlign: TextAlign.center,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
@@ -1108,6 +1133,19 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
               icon: Icons.groups_outlined,
               label: 'שדכנים פעילים',
               value: totals?.activeMatchmakers ?? 0,
+            ),
+            // Last of the six, and the only one that is not about work done.
+            // "שדכנים פעילים" says how many of us were busy in this window;
+            // this says how many of us there *are* that were not here before
+            // it — which is the line that makes the community feel like one
+            // rather than like a scoreboard. Over כל הזמנים it is the size of
+            // the community.
+            CommunityStatLine(
+              icon: Icons.person_add_alt_1_outlined,
+              label: _period == CommunityPeriod.allTime
+                  ? 'שדכנים בקהילה'
+                  : 'שדכנים חדשים שהצטרפו לקהילה',
+              value: totals?.newMatchmakers ?? 0,
             ),
             // A read that never left the device says so, instead of passing
             // itself off as a community that did nothing.

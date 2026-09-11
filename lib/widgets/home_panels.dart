@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// The full-width blocks of the home screen: the database's own suggestions,
@@ -39,9 +37,11 @@ const Color _celebrationGold = Color(0xFFD4A34B);
 /// of this elsewhere": a mark, a line, a line under it, and a chevron. The
 /// whole row is the tap target, so nothing inside it has to be one.
 ///
-/// The couple stays. It is the one thing on the row that says at a glance what
-/// kind of thing is behind it, and it costs no height the two lines of type do
-/// not already take.
+/// The mark at the head of it is the sealed envelope that used to be the
+/// drawing on "הוספת חברים" — see [_HeroMark]. It says at a glance what kind
+/// of thing is behind the row, and it costs no height the line of type does
+/// not already take. The pair of portraits it replaced stood at the *other*
+/// end, which left one row carrying two separate pictures of the same idea.
 class HomeHeroBand extends StatelessWidget {
   const HomeHeroBand({super.key, required this.onShowIdeas});
 
@@ -56,9 +56,9 @@ class HomeHeroBand extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
-        // The portraits are the first thing to go: they are decoration, and the
-        // two lines of type are the row.
-        final bool showCouple = constraints.maxWidth >= 340 && textScale <= 1.3;
+        // The mark is the first thing to go: it is decoration, and the line of
+        // type is the row.
+        final bool showMark = constraints.maxWidth >= 300 && textScale <= 1.4;
 
         return Material(
           color: dark
@@ -88,11 +88,18 @@ class HomeHeroBand extends StatelessWidget {
               ),
               child: Row(
                 children: <Widget>[
-                  // No second mark at the head of the row. The blue disc with
-                  // the sparkle said "the app has something for you"; the
-                  // couple at the other end says the same thing and says what
-                  // kind of something, so the disc was one symbol too many for
-                  // a row that is two lines of type.
+                  // **The sealed envelope**, which used to be the drawing on
+                  // "הוספת חברים". It is the one mark in the set that means
+                  // *something arrived for you* rather than *do something* —
+                  // which is exactly what this row is, and is why the pair of
+                  // portraits that stood at the other end of it has gone: two
+                  // marks for one destination, and the couple was the vaguer
+                  // of them. Recoloured at draw time so the strokes wear the
+                  // row's own lead in either theme — see [HomeLineArt].
+                  if (showMark) ...<Widget>[
+                    _HeroMark(lead: lead, dark: dark),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,10 +123,6 @@ class HomeHeroBand extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (showCouple) ...<Widget>[
-                    const SizedBox(width: 8),
-                    const _HeroCouple(compact: true),
-                  ],
                   // `chevron_right` and not `chevron_left`: Material's
                   // directional icons mirror themselves, so in this RTL app
                   // this is the one that points the way the page is going.
@@ -138,79 +141,38 @@ class HomeHeroBand extends StatelessWidget {
   }
 }
 
-/// The two bundled illustrations that stand in for a couple, with a small heart
-/// where they meet. Decorative only — no record is behind them.
-class _HeroCouple extends StatelessWidget {
-  const _HeroCouple({required this.compact});
+/// The envelope that heads "רעיונות שהמאגר מציע לך".
+///
+/// A drawing rather than a Material glyph, because every other block at the
+/// top of these pages is headed by one of the app's own line illustrations and
+/// an outlined mail icon among them reads as a control that wandered in. It
+/// sits in a disc of the row's own tint so the white ground the file ships
+/// with never shows — see [HomeLineArt] for how the two colours are put on.
+class _HeroMark extends StatelessWidget {
+  const _HeroMark({required this.lead, required this.dark});
 
-  final bool compact;
+  final Color lead;
+  final bool dark;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    // Smaller than it was: the block is a card near the top of the page now,
-    // not the banner it opened as, and the mark is there to identify it rather
-    // than to fill it.
-    final double radius = compact ? 17 : 24;
-    final double overlap = compact ? 11 : 14;
+    final Color disc = Color.alphaBlend(
+      lead.withValues(alpha: dark ? 0.20 : 0.10),
+      dark
+          ? theme.colorScheme.surfaceContainerHighest
+          : theme.colorScheme.surface,
+    );
 
-    Widget portrait(String? asset, Color ring) {
-      return Container(
-        width: radius * 2,
-        height: radius * 2,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: ring,
-          border: Border.all(color: theme.colorScheme.surface, width: 2.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: asset == null
-            ? Icon(
-                Icons.person_outline,
-                color: theme.colorScheme.primary,
-                size: radius,
-              )
-            : Image.asset(asset, fit: BoxFit.cover),
-      );
-    }
-
-    return SizedBox(
-      width: radius * 4 - overlap,
-      height: radius * 2 + 10,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          PositionedDirectional(
-            start: 0,
-            child: portrait(
-              PersonAvatarAssets.pathFor(Gender.female, 0),
-              AppColors.femaleSurface,
-            ),
-          ),
-          PositionedDirectional(
-            start: radius * 2 - overlap,
-            child: portrait(
-              PersonAvatarAssets.pathFor(Gender.male, 0),
-              AppColors.maleSurface,
-            ),
-          ),
-          PositionedDirectional(
-            start: radius * 2 - overlap - 8,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.all(5),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.favorite,
-                size: 13,
-                color: AppColors.femaleAccent,
-              ),
-            ),
-          ),
-        ],
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: disc),
+      padding: const EdgeInsets.all(9),
+      child: HomeLineArt(
+        asset: 'assets/home_add_people2.png',
+        ink: lead,
+        paper: disc,
       ),
     );
   }
@@ -284,7 +246,13 @@ class HomeActionCards extends StatelessWidget {
                 child: _AddTile(
                   onTap: onAddPeople,
                   compact: narrow,
-                  art: 'assets/home_add_people2.png',
+                  // The notepad, which came off "הוספת רעיון". Adding a
+                  // friend is the moment somebody writes a person down —
+                  // the name, the age, the two lines that will one day make
+                  // a match possible — so the page of ruled lines with a
+                  // pencil beside it is the more literal of the two
+                  // drawings for the more literal of the two actions.
+                  art: 'assets/home_add_idea2.png',
                   band: AppColors.addPeopleBand,
                   ornament: Icons.favorite,
                   label: 'הוספת חברים',
@@ -298,7 +266,11 @@ class HomeActionCards extends StatelessWidget {
                 child: _AddTile(
                   onTap: onAddIdea,
                   compact: narrow,
-                  art: 'assets/home_add_idea2.png',
+                  // The heart beside a pencil, which used to head "טיפ
+                  // לשדכן". A notepad is a place to write anything down; a
+                  // heart being drawn *is* the idea, which is what this card
+                  // opens. The tip block took a bulb in its place.
+                  art: 'assets/shadchan-tip.png',
                   band: AppColors.addIdeaBand,
                   ornament: Icons.star_rounded,
                   label: 'הוספת רעיון',

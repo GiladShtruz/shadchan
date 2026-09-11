@@ -136,9 +136,14 @@ void main() {
           )
           .map((Image image) => (image.image as AssetImage).assetName)
           .toList();
+      // The notepad for adding friends, the heart-and-pencil for adding an
+      // idea. Writing a person down is the more literal act and gets the more
+      // literal drawing; the heart being drawn *is* the idea. The envelope
+      // that used to be here heads "רעיונות שהמאגר מציע לך" now — see
+      // [HomeHeroBand].
       expect(assets, <String>[
-        'assets/home_add_people2.png',
         'assets/home_add_idea2.png',
+        'assets/shadchan-tip.png',
       ]);
 
       // The drawings are black ink on a white ground and are recoloured at
@@ -265,17 +270,25 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('טיפ לשדכנית'), findsOneWidget);
     expect(find.text('טיפ לשדכן'), findsNothing);
-    // The tip is the sentence and nothing else: the mark is a drawing in the
-    // block's heading now, not an emoji glued to somebody's words.
+    // The tip is the sentence and nothing else: the mark is in the block's
+    // heading, not an emoji glued to somebody's words.
     expect(find.text('אנשים משתנים.'), findsOneWidget);
+    // A bulb again. The heart-and-pencil drawing that stood here belongs to
+    // "הוספת רעיון" now — see the entry-cards test above.
     expect(
       find.descendant(
         of: find.byType(HomeTipCarousel),
         matching: find.byType(HomeLineArt),
       ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(HomeTipCarousel),
+        matching: find.byIcon(Icons.lightbulb_outline_rounded),
+      ),
       findsOneWidget,
     );
-    expect(find.byIcon(Icons.lightbulb_rounded), findsNothing);
     // The author's name rides under the tip, small and quiet.
     expect(find.text('רבקה לוי'), findsOneWidget);
     // Tips are read here and written from the settings; no compose entry.

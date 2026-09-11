@@ -61,8 +61,20 @@ class CommunityTotals {
     required this.ideas,
     required this.couples,
     required this.engagements,
+    this.newMatchmakers = 0,
     this.resolved = true,
   });
+
+  CommunityTotals withNewMatchmakers(int value) => CommunityTotals(
+    points: points,
+    activeMatchmakers: activeMatchmakers,
+    friends: friends,
+    ideas: ideas,
+    couples: couples,
+    engagements: engagements,
+    newMatchmakers: value,
+    resolved: resolved,
+  );
 
   /// "We do not know", not "the community did nothing".
   ///
@@ -99,6 +111,19 @@ class CommunityTotals {
   final int ideas;
   final int couples;
   final int engagements;
+
+  /// Matchmakers whose account joined the community inside this window.
+  ///
+  /// **Not derived from the activity fields, and it could not be.** Every other
+  /// figure here is a sum over the members who *did something* in the window;
+  /// this one is a count of the members who *arrived* in it, which is a
+  /// different set — somebody can join in a quiet week and somebody who joined
+  /// two years ago can have their busiest. It comes from `joinedAt`, written
+  /// once per account and never again — see [CommunityService.publish].
+  ///
+  /// For כל הזמנים it is simply how many matchmakers are in the community,
+  /// including everyone who was already here before `joinedAt` existed.
+  final int newMatchmakers;
 
   /// Whether there is anything here worth drawing at all.
   bool get isEmpty => points == 0 && activeMatchmakers == 0;
@@ -344,12 +369,36 @@ abstract final class CommunityService {
     // The period keys are part of the fingerprint, so a window rolling over at
     // midnight publishes exactly as it always did.
     final String fingerprint = '${user.uid}|${_fingerprintOf(row)}';
-    if (CommunityProfileStore.publishedFingerprint == fingerprint) {
+
+    // **The day this account joined the community, written exactly once.**
+    // It is what "שדכנים חדשים שהצטרפו לקהילה" counts, and it is the one field
+    // on the document that must never be rewritten: this row is published with
+    // `merge: true` on every app open, so a server timestamp sent each time
+    // would move everybody's join date forward to today and the figure would
+    // permanently read "everyone joined this week".
+    //
+    // So it is asked about rather than assumed. One read settles it per
+    // account — is the field already there? — and the answer is remembered on
+    // the device, which is why this costs nothing from the second publish
+    // onwards. A device that has forgotten (a reinstall, a new phone) reads
+    // once more and finds the date already written.
+    final bool needsJoinedAt = await _wantsJoinedAt(user.uid);
+    if (!needsJoinedAt &&
+        CommunityProfileStore.publishedFingerprint == fingerprint) {
       return false;
+    }
+    if (needsJoinedAt) {
+      // Deliberately outside the fingerprint above: it is written once, and a
+      // row that is otherwise identical to the last one must not be forced
+      // through again for ever afterwards.
+      row['joinedAt'] = FieldValue.serverTimestamp();
     }
 
     try {
       await _write(user.uid, row);
+      if (needsJoinedAt) {
+        CommunityProfileStore.markJoinedAtWritten();
+      }
       // Remembered only after the server took it. A write that failed must be
       // retried by the next publish, not skipped because we already decided it
       // had happened.
@@ -370,6 +419,9 @@ abstract final class CommunityService {
       // the document matches the whitelist and the ordinary path works again.
       if (error.code == 'permission-denied' &&
           await _repairAndWrite(user.uid, row)) {
+        if (needsJoinedAt) {
+          CommunityProfileStore.markJoinedAtWritten();
+        }
         CommunityProfileStore.rememberPublished(fingerprint);
         return true;
       }
@@ -378,6 +430,33 @@ abstract final class CommunityService {
       // came here to do matchmaking.
     }
     return false;
+  }
+
+  /// Whether this publish has to carry `joinedAt`.
+  ///
+  /// False as soon as the device knows the question is settled, so the read
+  /// below happens once per install and not once per publish. A read that
+  /// fails answers "no" and leaves the flag unset: the next publish asks
+  /// again, which is the right way round — writing the field twice would move
+  /// a join date, and not writing it leaves one matchmaker out of one figure
+  /// until the next app open.
+  static Future<bool> _wantsJoinedAt(String uid) async {
+    if (CommunityProfileStore.joinedAtWritten) {
+      return false;
+    }
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await _db
+          .collection(membersCollection)
+          .doc(uid)
+          .get();
+      if (snapshot.exists && snapshot.data()?['joinedAt'] != null) {
+        CommunityProfileStore.markJoinedAtWritten();
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> _write(String uid, Map<String, Object?> row) {
@@ -402,6 +481,7 @@ abstract final class CommunityService {
     'contactPhone',
     'hidden',
     'updatedAt',
+    'joinedAt',
     for (final CommunityPeriod period in CommunityPeriod.values) ...<String>{
       ?period.keyField,
       period.actionsField,
@@ -742,9 +822,42 @@ abstract final class CommunityService {
     if (!anyResolved) {
       return cached?.value ?? CommunityTotals.empty;
     }
-    final CommunityTotals merged = _sum(parts);
+    // One more count, and it is not part of the sum above: the newcomers are
+    // counted by *when they joined*, not by which activity key they carry, so
+    // the query has nothing to do with the per-key parts and adding it into
+    // them would multiply it by however many legacy keys the window has.
+    final CommunityTotals merged = _sum(
+      parts,
+    ).withNewMatchmakers(await _newMatchmakers(period));
     _totalsCache[cacheKey] = _Cached<CommunityTotals>(merged);
     return merged;
+  }
+
+  /// How many accounts joined the community inside [period].
+  ///
+  /// A `count()` over one range filter on `joinedAt` — a single-field query,
+  /// so it needs no composite index and cannot fail the way the aggregate
+  /// sums above can. For כל הזמנים there is no filter at all and the answer is
+  /// the size of the community, which includes the matchmakers who were
+  /// already here before the field existed.
+  ///
+  /// Zero when it cannot be answered. It is one line on a card of six, and a
+  /// community figure is never worth failing a screen over.
+  static Future<int> _newMatchmakers(CommunityPeriod period) async {
+    try {
+      Query<Map<String, dynamic>> query = _db.collection(membersCollection);
+      final DateTime? start = CommunityPeriods.startOf(period);
+      if (start != null) {
+        query = query.where(
+          'joinedAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+        );
+      }
+      final AggregateQuerySnapshot snapshot = await query.count().get();
+      return snapshot.count ?? 0;
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// Every key whose documents belong to [period] right now: the one this build

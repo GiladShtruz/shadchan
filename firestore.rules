@@ -391,13 +391,23 @@ service cloud.firestore {
             && shareList(data);
       }
 
+      // The day this account joined the community, which is what
+      // "שדכנים חדשים שהצטרפו לקהילה" counts. A timestamp or absent, and
+      // nothing else: the client writes it once, with a server timestamp, on
+      // the first publish that finds it missing. Absence has to be allowed
+      // because every publish after that one carries no `joinedAt` at all,
+      // and `setHidden` writes three fields on their own.
+      function joinedAtOk(data) {
+        return !('joinedAt' in data) || data.joinedAt is timestamp;
+      }
+
       // Nothing but the vocabulary above. A whitelist rather than a blacklist
       // because this collection is world-readable to every installed copy of
       // the app: an unlisted field is a place for a client to write whatever
       // it likes and have every other device read it.
       function noStrayFields(data) {
         return data.keys().hasOnly([
-          'name', 'photoUrl', 'hidden', 'updatedAt',
+          'name', 'photoUrl', 'hidden', 'updatedAt', 'joinedAt',
           'about', 'shares', 'benefit', 'contactPhone',
           'dayKey', 'dayActions', 'dayFriends', 'dayIdeas', 'dayCouples',
           'dayEngagements',
@@ -426,6 +436,7 @@ service cloud.firestore {
                                     && request.resource.data.photoUrl.size() <= 500))
                             && countsOk(request.resource.data)
                             && profileOk(request.resource.data)
+                            && joinedAtOk(request.resource.data)
                             && noStrayFields(request.resource.data);
 
       // Erasure, from the button on "פרטיות והמאגר שלי". Split out because a

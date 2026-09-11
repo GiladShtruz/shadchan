@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/support_service.dart';
 
 /// Who is signed in, for the screens that have to say so.
@@ -226,7 +227,9 @@ class AccountProvider extends ChangeNotifier {
     // anonymous account does not change *which* user is signed in, only what
     // that user now carries, so the auth-state stream stays silent through the
     // one event this screen exists to show.
-    _userChanges = FirebaseAuth.instance.userChanges().listen(_setUser);
+    _userChanges = FirebaseAuth.instance.userChanges().listen((User? user) {
+      _setUser(user, fromStream: true);
+    });
     _refreshUser();
   }
 
@@ -236,10 +239,50 @@ class AccountProvider extends ChangeNotifier {
     );
   }
 
-  void _setUser(User? user) {
+  void _setUser(User? user, {bool fromStream = false}) {
     _user = user;
+    if (fromStream) {
+      _reconcileGate(user);
+    }
     notifyListeners();
     unawaited(_refreshSupportAdmin());
+  }
+
+  /// Keeps the router's first-frame gate honest about this device.
+  ///
+  /// **The gate is a local flag, and a local flag can go stale.**
+  /// `SignInPromptStore.hasAccount` is what decides on the very first frame
+  /// whether the app opens on [SignInScreen] — it has to be local, because the
+  /// honest answer is a Firebase round trip and asking for one there would drag
+  /// the whole auth restore onto the cold start. The cost of that is a flag
+  /// that goes on saying "yes" after the account it describes is gone: a
+  /// deleted account, a revoked token, a sign-out that happened on another
+  /// device. What is left is somebody using the app with an anonymous uid —
+  /// which is precisely the state the app no longer has: nothing they do
+  /// reaches the cloud backup, nothing they do reaches the community figures,
+  /// and no screen tells them so.
+  ///
+  /// So the truth is written back whenever auth speaks. Only from the stream,
+  /// never from [_refreshUser]: `currentUser` is null for the first second of
+  /// every launch while the session is read back off disk, and marking a
+  /// perfectly good account signed-out there would send everybody through the
+  /// sign-in screen once per launch.
+  void _reconcileGate(User? user) {
+    if (user == null) {
+      // Mid-transition. `FirebaseBootstrap` signs back in anonymously after a
+      // sign-out, so the settled signed-out state is the anonymous one below
+      // and this frame says nothing either way.
+      return;
+    }
+    if (user.isAnonymous) {
+      if (SignInPromptStore.hasAccount) {
+        SignInPromptStore.markSignedOut();
+      }
+      return;
+    }
+    if (!SignInPromptStore.hasAccount) {
+      SignInPromptStore.markSignedIn();
+    }
   }
 
   Future<void> _refreshSupportAdmin() async {

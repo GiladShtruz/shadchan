@@ -86,6 +86,27 @@ bool shouldShowBottomNavigationBar(String path) {
   }.contains(segments.last);
 }
 
+/// The navigator above the tabs.
+///
+/// **Named so that a task flow can be pushed onto it, and that is the whole
+/// reason it exists.** Pressing back out of "הוספת אנשי קשר" used to close the
+/// app. The route lives under `/people`, in the second branch; opening it from
+/// בית is a push across branches, and `RouteMatchList.push` keeps only the
+/// *last* match of the branch it lands in — so the branch's navigator was
+/// handed one page, `AddContactsScreen`, with nothing underneath it. go_router
+/// then walks down to the deepest navigator that can pop, finds that this one
+/// cannot, and hands the back press to the root navigator instead, whose only
+/// page is the shell. That pop fails, and a failed pop at the root is how
+/// Android is told to leave the app — without the screen's own `PopScope` ever
+/// being consulted, because the pop was never attempted on its route.
+///
+/// Pushing these flows here instead puts them above the shell, which always
+/// has something to go back *to*: whichever tab was open. See the routes that
+/// carry `parentNavigatorKey: _rootNavigatorKey`.
+final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'root',
+);
+
 /// One navigator per shell branch, so the bottom bar can reach into a branch's
 /// own stack. See [_AppShell.build] for why it has to.
 final List<GlobalKey<NavigatorState>> _branchNavigatorKeys =
@@ -98,6 +119,7 @@ final List<GlobalKey<NavigatorState>> _branchNavigatorKeys =
 
 abstract final class AppRouter {
   static final GoRouter router = GoRouter(
+    navigatorKey: _rootNavigatorKey,
     initialLocation: '/home',
     redirect: (BuildContext context, GoRouterState state) {
       final bool isOnboarded = context.read<UserProfileProvider>().isOnboarded;
@@ -208,8 +230,16 @@ abstract final class AppRouter {
                   );
                 },
                 routes: <RouteBase>[
+                  // **Above the tabs, not inside them.** These four are task
+                  // flows rather than destinations: they are opened from בית
+                  // as often as from המאגר שלי, they cover the whole screen,
+                  // and every one of them is left by going back. Pushed onto a
+                  // branch navigator from another branch they end up as the
+                  // only page in it, and back then leaves the app — see
+                  // [_rootNavigatorKey] for exactly how.
                   GoRoute(
                     path: 'import',
+                    parentNavigatorKey: _rootNavigatorKey,
                     builder: (BuildContext context, GoRouterState state) {
                       return const AddContactsScreen();
                     },
@@ -221,6 +251,7 @@ abstract final class AppRouter {
                   ),
                   GoRoute(
                     path: 'ai',
+                    parentNavigatorKey: _rootNavigatorKey,
                     builder: (BuildContext context, GoRouterState state) {
                       // A path arrives here when the file was shared to the app
                       // or opened with it, rather than picked inside it.
@@ -233,6 +264,7 @@ abstract final class AppRouter {
                   ),
                   GoRoute(
                     path: 'add',
+                    parentNavigatorKey: _rootNavigatorKey,
                     builder: (BuildContext context, GoRouterState state) {
                       final IncomingSharedProfileDraft? draft =
                           state.extra is IncomingSharedProfileDraft
@@ -243,6 +275,7 @@ abstract final class AppRouter {
                   ),
                   GoRoute(
                     path: 'shared-import',
+                    parentNavigatorKey: _rootNavigatorKey,
                     builder: (BuildContext context, GoRouterState state) {
                       final IncomingSharedProfileDraft? draft =
                           state.extra is IncomingSharedProfileDraft
@@ -322,8 +355,13 @@ abstract final class AppRouter {
                   );
                 },
                 routes: <RouteBase>[
+                  // Opened from בית's "+" and from the two add cards as
+                  // often as from הרעיונות שלי, so it goes above the tabs for
+                  // the same reason the people flows do — see
+                  // [_rootNavigatorKey].
                   GoRoute(
                     path: 'add',
+                    parentNavigatorKey: _rootNavigatorKey,
                     builder: (BuildContext context, GoRouterState state) {
                       final Map<String, String> q = state.uri.queryParameters;
                       return CreateMatchScreen(
