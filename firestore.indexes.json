@@ -10,20 +10,24 @@
     "   both are part of every index. The all-time board has no period key, so",
     "   it needs one fewer field.",
     "",
-    "   Two `isGreaterThan` filters run against these same indexes and need no",
-    "   further index of their own, because a range on the field already being",
-    "   ordered by is free: the `> 0` that keeps a member who published a zero",
-    "   counter this morning off the board, and the `> myPoints` that counts the",
-    "   rows above the reader to find their rank.",
+    "   The rank is a `count()` of `hidden == false && periodKey == … &&",
+    "   periodActions > myPoints`, and that aggregate does NOT run on the",
+    "   descending board index: the server asks for the same fields ascending.",
+    "   Without them the count throws, and the whole board comes back empty for",
+    "   anybody with points who is outside the top ten.",
     "",
     "2. The community totals, which are `sum()` / `count()` aggregates over the",
     "   same collection *without* the `hidden` filter — a hidden matchmaker's",
     "   work still counts towards what the community did, only their name does",
     "   not appear. They carry `periodKey == … && periodActions > 0`, which is",
     "   what makes 'שדכנים פעילים' mean 'did at least one thing' rather than",
-    "   'opened the app'. An equality and a range on two different fields needs",
-    "   its own index; the all-time version filters on one field only and runs",
-    "   on the automatic single-field index.",
+    "   'opened the app'. **A `sum()` needs every summed field in the index,**",
+    "   after the filtered ones — all-time included, which is why it is not",
+    "   served by the single-field index. The totals are split into two",
+    "   aggregate queries (Firestore allows five aggregations per query), so",
+    "   each window has two indexes: actions+friends+ideas and",
+    "   actions+couples+engagements. Until 2026-09-13 none of them existed and",
+    "   every total silently fell back to reading the members one by one.",
     "",
     "3. The mazel-tov postbox, drained oldest-first by the one person a message",
     "   is addressed to: `toUid == me` ordered by `createdAt`. An equality and",
@@ -114,6 +118,119 @@
       "fields": [
         { "fieldPath": "monthKey", "order": "ASCENDING" },
         { "fieldPath": "monthActions", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dayKey", "order": "ASCENDING" },
+        { "fieldPath": "dayActions", "order": "ASCENDING" },
+        { "fieldPath": "dayFriends", "order": "ASCENDING" },
+        { "fieldPath": "dayIdeas", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dayKey", "order": "ASCENDING" },
+        { "fieldPath": "dayActions", "order": "ASCENDING" },
+        { "fieldPath": "dayCouples", "order": "ASCENDING" },
+        { "fieldPath": "dayEngagements", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "weekKey", "order": "ASCENDING" },
+        { "fieldPath": "weekActions", "order": "ASCENDING" },
+        { "fieldPath": "weekFriends", "order": "ASCENDING" },
+        { "fieldPath": "weekIdeas", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "weekKey", "order": "ASCENDING" },
+        { "fieldPath": "weekActions", "order": "ASCENDING" },
+        { "fieldPath": "weekCouples", "order": "ASCENDING" },
+        { "fieldPath": "weekEngagements", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "monthKey", "order": "ASCENDING" },
+        { "fieldPath": "monthActions", "order": "ASCENDING" },
+        { "fieldPath": "monthFriends", "order": "ASCENDING" },
+        { "fieldPath": "monthIdeas", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "monthKey", "order": "ASCENDING" },
+        { "fieldPath": "monthActions", "order": "ASCENDING" },
+        { "fieldPath": "monthCouples", "order": "ASCENDING" },
+        { "fieldPath": "monthEngagements", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "allActions", "order": "ASCENDING" },
+        { "fieldPath": "allFriends", "order": "ASCENDING" },
+        { "fieldPath": "allIdeas", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "allActions", "order": "ASCENDING" },
+        { "fieldPath": "allCouples", "order": "ASCENDING" },
+        { "fieldPath": "allEngagements", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "dayKey", "order": "ASCENDING" },
+        { "fieldPath": "dayActions", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "weekKey", "order": "ASCENDING" },
+        { "fieldPath": "weekActions", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "ASCENDING" },
+        { "fieldPath": "monthActions", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "communityMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden", "order": "ASCENDING" },
+        { "fieldPath": "allActions", "order": "ASCENDING" }
       ]
     },
     {
