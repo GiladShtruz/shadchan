@@ -6,6 +6,7 @@ import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/utils/community_links.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// "הגדרות" — a page of its own, at last.
@@ -110,7 +111,8 @@ class SettingsScreen extends StatelessWidget {
                   icon: Icons.ios_share_outlined,
                   title: 'שיתוף האפליקציה עם חבר',
                   trailing: const SizedBox.shrink(),
-                  onTap: shareTheApp,
+                  onTap: () =>
+                      shareTheApp(origin: ShareUtils.originOf(context)),
                 ),
                 SettingsRow(
                   icon: Icons.auto_stories_outlined,

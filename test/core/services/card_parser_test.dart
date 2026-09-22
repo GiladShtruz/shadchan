@@ -73,6 +73,41 @@ void main() {
       expect(parsed.heightCm, isNull);
     });
 
+    test('reads the answer after an options list, not the options', () {
+      const String card =
+          'שם: דוד כהן\n'
+          'רווק / אלמן / גרוש: רווק\n'
+          'גיל: 27';
+
+      final ParsedCard parsed = CardParser.parse(card);
+
+      expect(parsed.maritalStatus, MaritalStatus.single);
+      expect(parsed.firstName, 'דוד');
+      expect(parsed.age, 27);
+    });
+
+    test('an options list longer than a label still yields its answer', () {
+      const String card =
+          'רווקה / גרושה / אלמנה / פרודה: גרושה';
+
+      expect(
+        CardParser.parse(card).maritalStatus,
+        MaritalStatus.divorced,
+      );
+    });
+
+    test('a gender options list answers the gender', () {
+      const String card = 'זכר / נקבה: נקבה';
+
+      expect(CardParser.parse(card).gender, Gender.female);
+    });
+
+    test('a slashed label that is not an options list keeps its value', () {
+      const String card = 'עיר/ישוב: ירושלים';
+
+      expect(CardParser.parse(card).city, 'ירושלים');
+    });
+
     test('returns nothing for empty text', () {
       expect(CardParser.parse('   ').isEmpty, isTrue);
     });

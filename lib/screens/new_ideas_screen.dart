@@ -36,12 +36,30 @@ class NewIdeasScreen extends StatefulWidget {
 }
 
 class _NewIdeasScreenState extends State<NewIdeasScreen> {
-  /// Which round of ten is on screen.
+  /// Which round the list opens on.
   ///
   /// Starts where the last visit left off and moves on as it opens, so coming
   /// back tomorrow shows ten different friends rather than the same ten
-  /// forever. "לרעיונות נוספים" moves it by hand.
-  late int _batch = NewIdeaRotation.cursor;
+  /// forever.
+  late final int _batch = NewIdeaRotation.cursor;
+
+  /// How many rounds are on screen, for the rotation cursor.
+  int _roundsShown = 1;
+
+  /// The pairs on screen, in order, as [NewIdeaSuggestions.keyOf].
+  ///
+  /// **The list belongs to this visit, not to the ranking.** It used to be
+  /// recomputed from scratch on every change, so turning one pair down could
+  /// reshuffle the whole screen — and usually brought back the same popular
+  /// friend with somebody else. It is built once from the opening round, and
+  /// after that only grows ("רעיונות נוספים") or has one card swapped in place
+  /// ("לא מתאים"). A pair that stops being a suggestion — opened as an idea —
+  /// drops out on its own. Null until the first build.
+  List<String>? _shownKeys;
+
+  /// Which side the next "לא מתאים" keeps — see
+  /// [NewIdeaSuggestions.replacementFor]. Flips on every one.
+  bool _keepMaleNext = true;
 
   @override
   void initState() {
@@ -51,23 +69,41 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     NewIdeaRotation.setCursor(_batch + 1);
   }
 
+  List<NewIdeaSuggestion> _ranked(
+    PersonRepository personRepository,
+    MatchRepository matchRepository,
+  ) {
+    return NewIdeaSuggestions.build(
+      people: personRepository.getAll(),
+      matches: matchRepository.getAll(),
+      dismissedFor: SuggestionDismissals.dismissedFor,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final PersonRepository personRepository = context.watch<PersonRepository>();
     final MatchRepository matchRepository = context.watch<MatchRepository>();
 
-    final List<List<NewIdeaSuggestion>> rounds = NewIdeaSuggestions.batches(
-      NewIdeaSuggestions.build(
-        people: personRepository.getAll(),
-        matches: matchRepository.getAll(),
-        dismissedFor: SuggestionDismissals.dismissedFor,
-      ),
+    final List<NewIdeaSuggestion> ranked = _ranked(
+      personRepository,
+      matchRepository,
     );
-    final List<NewIdeaSuggestion> ideas = rounds.isEmpty
-        ? const <NewIdeaSuggestion>[]
-        : rounds[_batch % rounds.length];
-    final bool hasMoreRounds = rounds.length > 1;
+    final List<String> shownKeys = _shownKeys ??= _openingRound(ranked);
+    final Map<String, NewIdeaSuggestion> byKey = <String, NewIdeaSuggestion>{
+      for (final NewIdeaSuggestion idea in ranked)
+        NewIdeaSuggestions.keyOf(idea): idea,
+    };
+    final List<NewIdeaSuggestion> ideas = <NewIdeaSuggestion>[
+      for (final String key in shownKeys)
+        if (byKey[key] case final NewIdeaSuggestion idea) idea,
+    ];
+    final Set<String> shownSet = shownKeys.toSet();
+    final bool hasMoreRounds = ranked.any(
+      (NewIdeaSuggestion idea) =>
+          !shownSet.contains(NewIdeaSuggestions.keyOf(idea)),
+    );
 
     return Scaffold(
       backgroundColor: ProfilePalette.canvas(theme),
@@ -91,7 +127,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
                   }
                   if (index > ideas.length) {
                     return _MoreIdeasButton(
-                      onPressed: () => _nextBatch(rounds),
+                      onPressed: () => _moreIdeas(ranked),
                     );
                   }
                   final NewIdeaSuggestion idea = ideas[index - 1];
@@ -107,10 +143,35 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
     );
   }
 
-  /// Another ten. Wraps at the end rather than emptying the screen.
-  void _nextBatch(List<List<NewIdeaSuggestion>> rounds) {
-    setState(() => _batch = (_batch + 1) % rounds.length);
-    NewIdeaRotation.setCursor(_batch + 1);
+  /// The round this visit opens on, as keys.
+  List<String> _openingRound(List<NewIdeaSuggestion> ranked) {
+    final List<List<NewIdeaSuggestion>> rounds = NewIdeaSuggestions.batches(
+      ranked,
+    );
+    if (rounds.isEmpty) {
+      return <String>[];
+    }
+    return rounds[_batch % rounds.length]
+        .map(NewIdeaSuggestions.keyOf)
+        .toList();
+  }
+
+  /// Another round, added under the ones already on screen — see
+  /// [NewIdeaSuggestions.nextRound].
+  void _moreIdeas(List<NewIdeaSuggestion> ranked) {
+    final List<String> shown = _shownKeys ?? <String>[];
+    final List<NewIdeaSuggestion> round = NewIdeaSuggestions.nextRound(
+      ranked,
+      shownKeys: shown.toSet(),
+    );
+    if (round.isEmpty) {
+      return;
+    }
+    setState(() {
+      _shownKeys = <String>[...shown, ...round.map(NewIdeaSuggestions.keyOf)];
+      _roundsShown++;
+    });
+    NewIdeaRotation.setCursor(_batch + _roundsShown);
   }
 
   /// Opens a real proposal for the pair, after asking.
@@ -192,14 +253,44 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
   /// direction only would keep the pair out of one profile's list and leave it
   /// sitting at the top of the other's, and the same pair would come back round
   /// as a fresh suggestion the moment the scan started from the other side.
+  ///
+  /// **The card is replaced where it stood**, by the next idea for one of the
+  /// two — the man this time, the woman the next — so the list moves on
+  /// instead of reshuffling. See [NewIdeaSuggestions.replacementFor].
   Future<void> _skipIdea(NewIdeaSuggestion idea) async {
     final OverlayState? notices = AppNotice.capture(context);
+    final PersonRepository personRepository = context.read<PersonRepository>();
+    final MatchRepository matchRepository = context.read<MatchRepository>();
     await SuggestionDismissals.dismiss(idea.male.id, idea.female.id);
     await SuggestionDismissals.dismiss(idea.female.id, idea.male.id);
     if (!mounted) {
       return;
     }
-    setState(() {});
+
+    final String key = NewIdeaSuggestions.keyOf(idea);
+    final List<String> shown = List<String>.of(_shownKeys ?? <String>[]);
+    final int index = shown.indexOf(key);
+    final bool keepMale = _keepMaleNext;
+    final NewIdeaSuggestion? next = NewIdeaSuggestions.replacementFor(
+      _ranked(personRepository, matchRepository),
+      dismissed: idea,
+      keepMale: keepMale,
+      shownKeys: shown.toSet(),
+    );
+    final String? nextKey = next == null
+        ? null
+        : NewIdeaSuggestions.keyOf(next);
+    setState(() {
+      if (index >= 0) {
+        if (nextKey != null) {
+          shown[index] = nextKey;
+        } else {
+          shown.removeAt(index);
+        }
+      }
+      _shownKeys = shown;
+      _keepMaleNext = !keepMale;
+    });
 
     // A small banner for three seconds, with a way back. The dismissal is
     // permanent — the pair never returns as a suggestion — which is exactly why
@@ -210,16 +301,33 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
       'הרעיון הוסר',
       duration: const Duration(seconds: 3),
       actionLabel: 'ביטול',
-      onAction: () => _restoreIdea(idea),
+      onAction: () => _restoreIdea(idea, index: index, replacedBy: nextKey),
     );
   }
 
-  Future<void> _restoreIdea(NewIdeaSuggestion idea) async {
+  /// Puts a turned-down pair back in the place it had, over the card that had
+  /// taken it — that one was never judged, so it simply goes.
+  Future<void> _restoreIdea(
+    NewIdeaSuggestion idea, {
+    required int index,
+    String? replacedBy,
+  }) async {
     await SuggestionDismissals.restore(idea.male.id, idea.female.id);
     await SuggestionDismissals.restore(idea.female.id, idea.male.id);
-    if (mounted) {
-      setState(() {});
+    if (!mounted) {
+      return;
     }
+    final String key = NewIdeaSuggestions.keyOf(idea);
+    setState(() {
+      final List<String> shown = List<String>.of(_shownKeys ?? <String>[]);
+      final int at = replacedBy == null ? -1 : shown.indexOf(replacedBy);
+      if (at >= 0) {
+        shown[at] = key;
+      } else if (index >= 0 && !shown.contains(key)) {
+        shown.insert(index.clamp(0, shown.length), key);
+      }
+      _shownKeys = shown;
+    });
   }
 }
 
@@ -237,26 +345,34 @@ class _Intro extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
+    // One line, shrunk to fit rather than wrapped: broken over two lines the
+    // welcome read as a heading with a stray word under it.
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
-      child: Text(
-        'כמה זוגות מהמאגר שאולי דווקא מתאימים!',
-        style: theme.textTheme.titleLarge?.copyWith(
-          fontWeight: FontWeight.w900,
-          height: 1.2,
-          color: ProfilePalette.text(theme),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: AlignmentDirectional.centerStart,
+        child: Text(
+          'כמה זוגות מהמאגר שאולי דווקא מתאימים!',
+          maxLines: 1,
+          softWrap: false,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w900,
+            height: 1.2,
+            color: ProfilePalette.text(theme),
+          ),
         ),
       ),
     );
   }
 }
 
-/// "לרעיונות נוספים" — the next ten.
+/// "רעיונות נוספים" — the next ten, added under these.
 ///
 /// At the bottom of the list rather than in the app bar: it is the answer to
 /// "I have read these ten", and that question is asked at the end of them. It
-/// is worded as *more* rather than as a refresh, because nothing is being
-/// reloaded — the list moves on to pairs that have not been shown yet.
+/// is worded as *more* rather than as a refresh, because nothing is replaced —
+/// the new pairs join the list and the ones already read stay above them.
 class _MoreIdeasButton extends StatelessWidget {
   const _MoreIdeasButton({required this.onPressed});
 

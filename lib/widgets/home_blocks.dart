@@ -397,10 +397,10 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
             icon: Icon(
               Icons.edit_outlined,
               size: 14,
-              color: theme.colorScheme.onSurfaceVariant,
+              color: AppColors.muted(dark: dark),
             ),
             style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.onSurfaceVariant,
+              foregroundColor: AppColors.muted(dark: dark),
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               minimumSize: Size.zero,
@@ -449,10 +449,12 @@ class _TipPage extends StatelessWidget {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
+            // The page's heading ink, like every other line this size on it.
+            // It used to name `onSurface` — a warm near-black, and the one
+            // brown on the page that was not the palette's.
             style: theme.textTheme.titleSmall?.copyWith(
               height: 1.45,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface,
             ),
           ),
         ),
@@ -490,6 +492,9 @@ Color _tipDisc(ThemeData theme, Color ink) {
   );
 }
 
-const Color _tipInk = Color(0xFF5C84A3);
-const Color _tipInkDm = Color(0xFF9DBED6);
-const Color _tipPaper = Color(0xFFFBF5EA);
+// The palette itself, not a shade beside it: the tip block sits directly
+// under blocks that use the brand blue and the cream ground, and a near-miss
+// there reads as a mistake rather than as a different block.
+const Color _tipInk = AppColors.primaryDark;
+const Color _tipInkDm = AppColors.primaryDarkDm;
+const Color _tipPaper = AppColors.background;

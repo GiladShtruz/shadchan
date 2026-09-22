@@ -1001,7 +1001,11 @@ class _CommunityActivityCard extends StatefulWidget {
 }
 
 class _CommunityActivityCardState extends State<_CommunityActivityCard> {
-  CommunityPeriod _period = CommunityPeriod.week;
+  /// The windows worth offering today — see [CommunityPeriods.communityWindows].
+  /// Read once, so the tabs do not change under the reader at midnight.
+  final List<CommunityPeriod> _windows = CommunityPeriods.communityWindows();
+
+  CommunityPeriod _period = CommunityPeriod.allTime;
   final Map<CommunityPeriod, CommunityTotals> _totals =
       <CommunityPeriod, CommunityTotals>{};
   CommunityTotals? _week;
@@ -1094,7 +1098,7 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
           CommunityPeriodTabs(
             selected: _period,
             onChanged: _select,
-            periods: CommunityPeriodTabs.weekMonthAllTime,
+            periods: _windows,
           ),
           const SizedBox(height: 14),
           if (totals == null && _loading)
@@ -1201,7 +1205,9 @@ class _LeaderboardCard extends StatefulWidget {
 }
 
 class _LeaderboardCardState extends State<_LeaderboardCard> {
-  CommunityPeriod _period = CommunityPeriod.week;
+  /// All time first: a week or a month that has only just begun is a board of
+  /// two or three names, and that is not what anybody opened it to see.
+  CommunityPeriod _period = CommunityPeriod.allTime;
   CommunityLeaderboard? _board;
   bool _loading = true;
 
@@ -1266,9 +1272,9 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
               setState(() => _period = period);
               _load();
             },
-            // The only place "היום" appears. A daily board resets at midnight
-            // Israel time and is worth checking; a daily *total* is noise.
-            periods: CommunityPeriod.values,
+            // No daily board: it reset at midnight and spent most of every day
+            // showing a handful of names.
+            periods: CommunityPeriodTabs.weekMonthAllTime,
           ),
           const SizedBox(height: 12),
           if (_loading && board == null)

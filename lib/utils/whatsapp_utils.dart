@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:hive/hive.dart';
 import 'package:share_plus/share_plus.dart';
@@ -154,7 +155,11 @@ abstract final class WhatsAppUtils {
   ///   the photos is worth the extra tap;
   /// * **text only** → the direct chat, exactly as before. There is nothing to
   ///   attach, so there is no reason to make anybody pick a contact twice.
-  static Future<bool> sendCardTo(Person recipient, Person card) async {
+  static Future<bool> sendCardTo(
+    Person recipient,
+    Person card, {
+    Rect? origin,
+  }) async {
     final String text = (card.description ?? '').trim();
     final List<String> photos = card.photosPaths
         .where((String path) => File(path).existsSync())
@@ -170,6 +175,7 @@ abstract final class WhatsAppUtils {
       await Share.shareXFiles(
         photos.map((String path) => XFile(path)).toList(),
         text: message,
+        sharePositionOrigin: origin,
       );
       return true;
     }

@@ -14,6 +14,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/backup_service.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/excel_export_service.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
@@ -232,12 +233,15 @@ class _SettingsDataScreenState extends State<SettingsDataScreen> {
     MatchRepository matchRepo,
   ) async {
     setState(() => _isExporting = true);
+    // Read before the export runs: the share is anchored to this screen, and
+    // iOS refuses a share with no anchor.
+    final Rect origin = ShareUtils.originOf(context);
     try {
       final File backupFile = await BackupService.exportData(
         personRepo,
         matchRepo,
       );
-      await BackupService.shareBackup(backupFile);
+      await BackupService.shareBackup(backupFile, origin: origin);
     } catch (_) {
       if (mounted) {
         _say('לא הצלחנו לייצא את הנתונים');
@@ -254,12 +258,13 @@ class _SettingsDataScreenState extends State<SettingsDataScreen> {
     MatchRepository matchRepo,
   ) async {
     setState(() => _isExportingExcel = true);
+    final Rect origin = ShareUtils.originOf(context);
     try {
       final File excelFile = await ExcelExportService.exportData(
         personRepo,
         matchRepo,
       );
-      await ExcelExportService.shareExport(excelFile);
+      await ExcelExportService.shareExport(excelFile, origin: origin);
     } catch (_) {
       if (mounted) {
         _say('לא הצלחנו לייצא לאקסל');

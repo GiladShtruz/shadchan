@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -101,14 +103,22 @@ void main() {
         )
         .width;
     expect(addPeople, closeTo(addIdea, 0.5));
-    // Neither tile carries a chevron any more: the whole surface is the button,
-    // and an arrow inside it was one decoration too many.
+    // The chevron beside each label is a plain mark, not the round
+    // [HomeArrowButton] the banners use — the whole card is the button, so a
+    // second button drawn inside it would be a target within a target.
     expect(
       find.descendant(
         of: find.byType(HomeActionCards),
         matching: find.byType(HomeArrowButton),
       ),
       findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(HomeActionCards),
+        matching: find.byIcon(Icons.chevron_left_rounded),
+      ),
+      findsNWidgets(2),
     );
     final double peopleTop = tester.getTopLeft(find.text('הוספת חברים')).dy;
     final double ideaTop = tester.getTopLeft(find.text('הוספת רעיון')).dy;
@@ -142,8 +152,8 @@ void main() {
       // that used to be here heads "רעיונות שהמאגר מציע לך" now — see
       // [HomeHeroBand].
       expect(assets, <String>[
-        'assets/home_add_idea2.png',
-        'assets/shadchan-tip.png',
+        'assets/add_friends_icon.png',
+        'assets/add_idea_icon.png',
       ]);
 
       // The drawings are black ink on a white ground and are recoloured at
@@ -163,6 +173,71 @@ void main() {
       // the assertion that would notice.
       expect(find.text('הוספת חברים'), findsOneWidget);
       expect(find.text('הוספת רעיון'), findsOneWidget);
+    });
+
+    testWidgets('each is plain paper with one rule of its own colour under '
+        'it', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        wrap(
+          HomeActionCards(
+            onAddPeople: () {},
+            onAddIdea: () {},
+            // Even the emphasised card is plain paper: emphasis is the shadow
+            // under it and nothing else.
+            emphasiseAddPeople: true,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // `.first` is the card itself; the ancestors past it are the scaffold
+      // and the app.
+      Material cardFor(String label) {
+        return tester.widget<Material>(
+          find
+              .ancestor(
+                of: find.text(label),
+                matching: find.byType(Material),
+              )
+              .first,
+        );
+      }
+
+      expect(cardFor('הוספת חברים').color, AppColors.surface);
+      expect(cardFor('הוספת רעיון').color, AppColors.surface);
+
+      // The colour is all in the rule: the palette's light blue for friends,
+      // the palette's brown for an idea, and no band behind the label.
+      final List<Color> rules = tester
+          .widgetList<AccentUnderline>(
+            find.descendant(
+              of: find.byType(HomeActionCards),
+              matching: find.byType(AccentUnderline),
+            ),
+          )
+          .map((AccentUnderline rule) => rule.color)
+          .toList();
+      expect(rules, <Color>[AppColors.primary, AppColors.secondary]);
+
+      // The little heart and star that used to sit under the labels went with
+      // the band they decorated.
+      expect(
+        find.descendant(
+          of: find.byType(HomeActionCards),
+          matching: find.byIcon(Icons.favorite),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(HomeActionCards),
+          matching: find.byIcon(Icons.star_rounded),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('a tap on the picture counts, not only on the label', (
@@ -430,17 +505,24 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('עוצרים רגע לחשוב על החברים'), findsOneWidget);
     expect(find.text('על מי חושבים עכשיו?'), findsOneWidget);
-    // Its own drawn picture — somebody sitting with a coffee, thinking — and
-    // not the notepad photograph from "הוספת רעיון" that it used to borrow.
-    // Sharing that asset put the same image twice on one screen.
-    expect(find.byType(Image), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byType(HomeThinkBanner),
-        matching: find.byType(CustomPaint),
-      ),
-      findsWidgets,
+    // A line drawing of a cup of coffee, recoloured the way the home cards'
+    // drawings are — not the notepad from "הוספת רעיון", which would put the
+    // same picture twice on one screen.
+    final Finder art = find.descendant(
+      of: find.byType(HomeThinkBanner),
+      matching: find.byType(HomeLineArt),
     );
+    expect(art, findsOneWidget);
+    expect(tester.widget<HomeLineArt>(art).asset, 'assets/coffee_icon.png');
+
+    // The question sits on the reading edge under the heading, not centred.
+    final double titleRight = tester
+        .getTopRight(find.text('עוצרים רגע לחשוב על החברים'))
+        .dx;
+    final double buttonRight = tester
+        .getTopRight(find.widgetWithText(FilledButton, 'על מי חושבים עכשיו?'))
+        .dx;
+    expect(buttonRight, closeTo(titleRight, 2));
 
     // The button and the card behind it open the same page.
     await tester.tap(find.text('על מי חושבים עכשיו?'));
@@ -460,7 +542,7 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    // At 1.5x the illustration is gone and every line still fits.
+    // At 1.5x the drawing is gone and every line still fits.
     for (final String label in <String>[
       'עוצרים רגע לחשוב על החברים',
       'על מי חושבים עכשיו?',

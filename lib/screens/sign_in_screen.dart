@@ -41,6 +41,20 @@ class SignInScreen extends StatefulWidget {
       'החשבון שומר את המאגר שלך, מסנכרן אותו בין מכשירים ומחבר אותך לקהילת '
       'השדכנים. אפשר להתחבר בכל אחת מהדרכים האלה.';
 
+  /// For somebody who already used the app before an account was compulsory.
+  ///
+  /// They arrive here with a profile and a database but no account, so they
+  /// are asked to *complete* a registration rather than to start one, and told
+  /// the thing they will worry about: nothing is lost. What makes that true is
+  /// [_SignInScreenState._adoptLocalData] — the local records are backed up
+  /// under the new account and published to the community figures.
+  static const String returningHeadline = 'משלימים הרשמה';
+
+  static const String returningBody =
+      'כדי לשמור את המאגר שלך ולצרף את הפעילות שלך לקהילת השדכנים, צריך '
+      'להשלים הרשמה לחשבון. כל החברים והרעיונות שכבר יש לך נשארים ועוברים '
+      'לחשבון החדש.';
+
   @override
   State<SignInScreen> createState() => _SignInScreenState();
 }
@@ -245,6 +259,9 @@ class _SignInScreenState extends State<SignInScreen> {
     final ThemeData theme = Theme.of(context);
     final AccountProvider account = context.watch<AccountProvider>();
     final bool registering = _mode == _EmailMode.register;
+    // The gate comes before the profile form, so only a matchmaker from before
+    // the gate can reach it already introduced.
+    final bool returning = context.watch<UserProfileProvider>().isOnboarded;
 
     return Scaffold(
       body: SafeArea(
@@ -266,7 +283,9 @@ class _SignInScreenState extends State<SignInScreen> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    SignInScreen.headline,
+                    returning
+                        ? SignInScreen.returningHeadline
+                        : SignInScreen.headline,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w900,
@@ -274,7 +293,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    SignInScreen.body,
+                    returning ? SignInScreen.returningBody : SignInScreen.body,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,

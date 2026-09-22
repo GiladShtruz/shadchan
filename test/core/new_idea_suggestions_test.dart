@@ -262,6 +262,77 @@ void main() {
     expect(ideas.first.completeCards, 2);
   });
 
+  group('moving on from a pair', () {
+    final List<Person> people = <Person>[
+      for (int i = 0; i < 4; i++)
+        person(id: 'm$i', firstName: 'בחור $i', gender: Gender.male),
+      for (int i = 0; i < 4; i++)
+        person(id: 'f$i', firstName: 'בחורה $i', gender: Gender.female),
+    ];
+    final List<NewIdeaSuggestion> ranked = NewIdeaSuggestions.build(
+      people: people,
+      matches: const <MatchIdea>[],
+    );
+    NewIdeaSuggestion pair(String male, String female) => ranked.firstWhere(
+      (NewIdeaSuggestion idea) =>
+          idea.male.id == male && idea.female.id == female,
+    );
+
+    test('turning a pair down alternates which side the next idea keeps', () {
+      final NewIdeaSuggestion dismissed = pair('m0', 'f0');
+      final Set<String> shown = <String>{NewIdeaSuggestions.keyOf(dismissed)};
+
+      final NewIdeaSuggestion? forHim = NewIdeaSuggestions.replacementFor(
+        ranked,
+        dismissed: dismissed,
+        keepMale: true,
+        shownKeys: shown,
+      );
+      expect(forHim!.male.id, 'm0');
+      expect(forHim.female.id, isNot('f0'));
+
+      final NewIdeaSuggestion? forHer = NewIdeaSuggestions.replacementFor(
+        ranked,
+        dismissed: dismissed,
+        keepMale: false,
+        shownKeys: shown,
+      );
+      expect(forHer!.female.id, 'f0');
+      expect(forHer.male.id, isNot('m0'));
+    });
+
+    test('a partner already on screen is not offered again', () {
+      final NewIdeaSuggestion dismissed = pair('m0', 'f0');
+      final Set<String> shown = <String>{
+        NewIdeaSuggestions.keyOf(dismissed),
+        NewIdeaSuggestions.keyOf(pair('m1', 'f1')),
+      };
+      final NewIdeaSuggestion? next = NewIdeaSuggestions.replacementFor(
+        ranked,
+        dismissed: dismissed,
+        keepMale: true,
+        shownKeys: shown,
+      );
+      expect(next!.male.id, 'm0');
+      expect(next.female.id, isNot('f1'));
+    });
+
+    test('"רעיונות נוספים" brings only pairs that were not shown yet', () {
+      final List<NewIdeaSuggestion> first = NewIdeaSuggestions.batches(
+        ranked,
+      ).first;
+      final Set<String> shown = first.map(NewIdeaSuggestions.keyOf).toSet();
+      final List<NewIdeaSuggestion> more = NewIdeaSuggestions.nextRound(
+        ranked,
+        shownKeys: shown,
+      );
+      expect(more, isNotEmpty);
+      for (final NewIdeaSuggestion idea in more) {
+        expect(shown, isNot(contains(NewIdeaSuggestions.keyOf(idea))));
+      }
+    });
+  });
+
   test('"לשניהם אין רעיון פתוח" is no longer written on every card', () {
     final List<Person> people = <Person>[
       person(id: 'm', firstName: 'אריאל', gender: Gender.male),

@@ -17,6 +17,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
@@ -209,6 +210,7 @@ abstract final class MatchQuickActions {
     final MatchShareResult result = await MatchWhatsAppSheet.approach(
       target: target,
       other: other,
+      origin: ShareUtils.originOf(context),
     );
     if (!result.opened) {
       AppNotice.showOn(
@@ -563,14 +565,36 @@ abstract final class MatchQuickActions {
         : MatchStatus.rejected;
     final ({MatchOutcomeParty party, String note})? outcome =
         await MatchOutcomeDialog.show(context, closing);
-    if (outcome == null) {
+    if (outcome == null || !context.mounted) {
       return;
     }
+    // Taken before anything is written, so the undo knows what to put back
+    // and where the closing's own records begin.
+    final OverlayState? notices = AppNotice.capture(context);
+    final MatchStatus previousStatus = match.status;
+    final DateTime previousUpdatedAt = match.updatedAt;
+    final String? waitingReason = match.waitingReason;
+    final DateTime since = DateTime.now();
     await repository.recordOutcome(
       match.id,
       newStatus: closing,
       party: outcome.party,
       note: outcome.note.isEmpty ? null : outcome.note,
+    );
+    // The card leaves the list it was in, so say where it went — briefly, with
+    // the one tap that brings it back.
+    AppNotice.showOn(
+      notices,
+      'הרעיון עבר לארכיון',
+      actionLabel: 'ביטול',
+      duration: const Duration(seconds: 2),
+      onAction: () => repository.undoClose(
+        match.id,
+        previousStatus: previousStatus,
+        previousUpdatedAt: previousUpdatedAt,
+        since: since,
+        waitingReason: waitingReason,
+      ),
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/utils/community_links.dart';
+import 'package:shadchan/utils/share_utils.dart';
 
 /// The two quiet invitations at the very bottom of the home page: joining the
 /// WhatsApp community, and passing the app on to a friend.
@@ -58,7 +59,7 @@ class HomeCommunityLink extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
             label: shareLabel,
-            onTap: shareTheApp,
+            onTap: () => shareTheApp(origin: ShareUtils.originOf(context)),
             theme: theme,
           ),
         ],

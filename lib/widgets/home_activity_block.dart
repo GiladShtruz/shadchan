@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
-import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_period.dart';
@@ -18,16 +17,13 @@ import 'package:shadchan/widgets/community_widgets.dart';
 /// What is left is the one comparison worth putting on the landing page: "12"
 /// says very little on its own and a great deal beside "1,842 בקהילה".
 ///
-/// **The window is chosen by hand, and remembered.** It rotated by itself for
-/// a while — השבוע → החודש → כל הזמנים on a five-second timer — on the
-/// reasoning that a landing page should answer rather than ask. What that
-/// actually produced was a number that changed under the reader's thumb: you
-/// cannot compare two figures that are about to become two different figures,
-/// and there was no way to hold the one you wanted. The three windows are a row
-/// of tabs again, both halves move together so the two figures on screen are
-/// always about the same span of time, and whichever one is left selected is
-/// the one that is there on the way back — see
-/// [CommunityProfileStore.activityPeriod].
+/// **The window opens on כל הזמנים and changes only by hand.** It rotated by
+/// itself for a while — השבוע → החודש → כל הזמנים on a five-second timer — and
+/// what that produced was a number that changed under the reader's thumb. The
+/// three windows are a row of tabs, both halves move together so the two
+/// figures on screen are always about the same span of time, and every visit
+/// starts from all time: a week or a month that has just rolled over reads "0",
+/// which is a strange thing to be greeted with.
 ///
 /// Your own figures need no network and are drawn on the first frame. The
 /// community column fills in when the reads land rather than holding a spinner
@@ -55,13 +51,26 @@ class HomeActivityBlock extends StatefulWidget {
   State<HomeActivityBlock> createState() => _HomeActivityBlockState();
 }
 
-class _HomeActivityBlockState extends State<HomeActivityBlock> {
-  /// The window on screen — the one this device was left on.
-  CommunityPeriod _period = CommunityProfileStore.activityPeriod;
+class _HomeActivityBlockState extends State<HomeActivityBlock>
+    with WidgetsBindingObserver {
+  /// The window on screen. Always all time on arrival — see the class comment.
+  CommunityPeriod _period = CommunityPeriod.allTime;
 
   /// Kept per window so a window already read is instant and free.
   final Map<CommunityPeriod, CommunityTotals> _totals =
       <CommunityPeriod, CommunityTotals>{};
+
+  /// The period key each entry in [_totals] was read under.
+  ///
+  /// **What stops last week's figure from surviving into this one.** A window
+  /// that resolved used to be kept for the life of the widget, and the home
+  /// screen lives as long as the process — which on Android is days. On
+  /// 2026-09-13 a new week and a new Hebrew month began together, and a phone
+  /// that had been open since before kept showing the old week's community
+  /// total while a freshly launched one correctly showed the new week's zero.
+  /// A resolved window is now kept only while its key is still the current
+  /// one.
+  final Map<CommunityPeriod, String> _keys = <CommunityPeriod, String>{};
 
   /// Whether the last look at [AccountProvider] said there was an account.
   ///
@@ -81,7 +90,24 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Coming back to the app is when a window has most likely rolled over —
+  /// the phone was put down on Saturday night and picked up on Sunday. Only
+  /// windows whose key actually changed are read again; see [_load].
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadAll();
+    }
   }
 
   void _select(CommunityPeriod period) {
@@ -89,10 +115,6 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
       return;
     }
     setState(() => _period = period);
-    // Written on the tap rather than on leaving the screen: the home screen is
-    // never "left" in a way this widget is told about, and a preference that
-    // only survives a graceful exit is a preference that mostly does not.
-    CommunityProfileStore.setActivityPeriod(period);
     _load(period);
   }
 
@@ -113,15 +135,27 @@ class _HomeActivityBlockState extends State<HomeActivityBlock> {
     // not — no account yet, no network — always is. Storing an unresolved zero
     // as though it were an answer is what used to leave a live community
     // showing "0" for the whole session. See [CommunityTotals.resolved].
-    if (_totals[period]?.resolved ?? false) {
+    //
+    // Unless the window itself has moved on since: then the figure in hand
+    // belongs to a week or month that is over, and so may the one in
+    // `CommunityService`'s cache, which is why that read is forced.
+    final String key = CommunityPeriods.keyFor(period);
+    final bool rolledOver = _keys[period] != null && _keys[period] != key;
+    if (!rolledOver && (_totals[period]?.resolved ?? false)) {
       return;
     }
     // Cheap and harmless without an account — `CommunityService` refuses an
     // anonymous uid and answers with an unresolved zero rather than reaching
     // the network.
-    final CommunityTotals totals = await CommunityService.totals(period);
+    final CommunityTotals totals = await CommunityService.totals(
+      period,
+      forceRefresh: rolledOver,
+    );
     if (mounted) {
-      setState(() => _totals[period] = totals);
+      setState(() {
+        _totals[period] = totals;
+        _keys[period] = key;
+      });
     }
   }
 
@@ -258,7 +292,6 @@ class _FigureTile extends StatelessWidget {
               textAlign: TextAlign.center,
               style: theme.textTheme.labelMedium?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: theme.colorScheme.onSurfaceVariant,
                 height: 1.1,
               ),
             ),
@@ -289,7 +322,6 @@ class _FigureTile extends StatelessWidget {
               textAlign: TextAlign.center,
               style: theme.textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurfaceVariant,
                 height: 1.1,
               ),
             ),

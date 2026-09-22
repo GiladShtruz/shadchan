@@ -101,7 +101,7 @@ Information may be processed outside your country. Firebase Authentication opera
 
 ## 14. Account deletion
 
-Account deletion can be completed inside the Application: **My profile → Account → Delete account and data**. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.
+Account deletion can be completed inside the Application: **My profile → bottom of the page → Delete account and data**. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.
 
 Deletion removes the Firebase user, cloud backup and photographs, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
 

@@ -56,31 +56,36 @@ abstract final class CardParser {
 
     final Map<String, String> labels = _readLabelledValues(text);
 
+    // Every free-text pass reads the *answers*, never the raw card: a line
+    // that lists its options before the colon would otherwise hand each
+    // heuristic the whole menu to choose from. See [_answersOnly].
+    final String answers = _answersOnly(text);
+
     final String? name = _pickLabel(labels, _nameLabels);
     final ({String? first, String? last}) splitName = _splitName(
-      name ?? _guessNameFromFirstLine(text),
+      name ?? _guessNameFromFirstLine(answers),
     );
 
     final Gender? gender = _parseGender(
       _pickLabel(labels, _genderLabels),
-      text,
+      answers,
     );
 
     final ({String? name, String? phone}) contact = _parseInquiryContact(
       _pickLabel(labels, _contactLabels),
-      text,
+      answers,
     );
 
     return ParsedCard(
       firstName: splitName.first,
       lastName: splitName.last,
-      age: _parseAge(_pickLabel(labels, _ageLabels), text),
+      age: _parseAge(_pickLabel(labels, _ageLabels), answers),
       gender: gender,
-      city: _parseCity(_pickLabel(labels, _cityLabels), text),
-      heightCm: _parseHeight(_pickLabel(labels, _heightLabels), text),
+      city: _parseCity(_pickLabel(labels, _cityLabels), answers),
+      heightCm: _parseHeight(_pickLabel(labels, _heightLabels), answers),
       maritalStatus: _parseMaritalStatus(
         _pickLabel(labels, _maritalLabels),
-        text,
+        answers,
       ),
       inquiryContactName: contact.name,
       inquiryContactPhone: contact.phone,
@@ -173,6 +178,19 @@ abstract final class CardParser {
 
     for (final String rawLine in text.split(RegExp(r'[\r\n]+'))) {
       final String line = _stripDecoration(rawLine);
+
+      // "רווק / אלמן / גרוש: רווק" carries no label at all — its options *are*
+      // the label. File the answer under the category those options belong to
+      // so the ordinary lookup finds it, and never store the menu itself.
+      final ({String options, String answer})? choice = _optionLine(line);
+      if (choice != null) {
+        final String? category = _optionCategory(choice.options);
+        if (category != null) {
+          values.putIfAbsent(category, () => choice.answer);
+        }
+        continue;
+      }
+
       final int separator = _labelSeparatorIndex(line);
       if (separator <= 0) {
         continue;
@@ -189,6 +207,78 @@ abstract final class CardParser {
     }
 
     return values;
+  }
+
+  /// A card line whose options are listed *before* the colon and whose answer
+  /// follows it — "רווק / אלמן / גרוש: רווק". The options are the form the
+  /// sender filled in, not facts about the person, so only the answer counts.
+  ///
+  /// Recognised by the answer repeating one of the options rather than by the
+  /// slashes alone: "בירורים אצל אמא/אבא: 052…" has the same shape and is an
+  /// ordinary labelled line. A gendered variant of an option still matches, so
+  /// "רווק / אלמן / גרוש: רווקה" reads as רווקה.
+  static ({String options, String answer})? _optionLine(String line) {
+    final int colon = line.indexOf(':');
+    if (colon <= 0) {
+      return null;
+    }
+    final String options = line.substring(0, colon).trim();
+    final String answer = line.substring(colon + 1).trim();
+    if (options.isEmpty || answer.isEmpty) {
+      return null;
+    }
+
+    final List<String> parts = options
+        .split(_optionSeparator)
+        .map((String part) => part.trim())
+        .where((String part) => part.isNotEmpty)
+        .toList();
+    if (parts.length < 2) {
+      return null;
+    }
+
+    final String normalized = answer.replaceAll(RegExp(r'\s+'), ' ');
+    for (final String part in parts) {
+      final String option = part.replaceAll(RegExp(r'\s+'), ' ');
+      if (normalized == option ||
+          normalized.startsWith(option) ||
+          option.startsWith(normalized)) {
+        return (options: options, answer: answer);
+      }
+    }
+    return null;
+  }
+
+  static final RegExp _optionSeparator = RegExp(r'\s*[/|\\]\s*');
+
+  /// Which field an option list is offering, read from the options themselves.
+  /// Marital status is tested first because its options are gendered words:
+  /// "רווק / אלמן / גרוש" would otherwise read as a gender menu.
+  static String? _optionCategory(String options) {
+    if (_maritalFrom(options) != null) {
+      return _normalizeLabel(_maritalLabels.first);
+    }
+    if (_genderFrom(options) != null) {
+      return _normalizeLabel(_genderLabels.first);
+    }
+    return null;
+  }
+
+  /// The card with every option line reduced to the answer it chose.
+  ///
+  /// This is what the free-text passes read. Left whole, "רווק / אלמן / גרוש:
+  /// רווק" contains all three statuses, and every heuristic over it returns
+  /// whichever one its own pattern reaches first — which is how a single man
+  /// ended up recorded as divorced.
+  static String _answersOnly(String text) {
+    final StringBuffer buffer = StringBuffer();
+    for (final String rawLine in text.split(RegExp(r'[\r\n]+'))) {
+      final ({String options, String answer})? choice = _optionLine(
+        _stripDecoration(rawLine),
+      );
+      buffer.writeln(choice?.answer ?? rawLine);
+    }
+    return buffer.toString();
   }
 
   /// Index of the `:` (or `-`) that separates a label from its value, or -1.

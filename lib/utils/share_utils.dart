@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/community_links.dart';
@@ -16,7 +17,33 @@ import 'package:shadchan/utils/community_links.dart';
 /// 05…" is a detail somebody asked for, and three lines of app credit under it
 /// would be the tail wagging the dog.
 abstract final class ShareUtils {
-  static Future<void> sharePerson(Person person) async {
+  /// Where on the screen the share sheet should be anchored.
+  ///
+  /// **iOS refuses to share without it.** `share_plus` hands the activity
+  /// controller to UIKit, and whenever that controller has a popover
+  /// presentation controller — which on current iOS is not only iPad — an
+  /// empty origin makes the plugin return an error instead of presenting
+  /// anything at all. The share silently does nothing, which is exactly what
+  /// sharing a card looked like on iPhone. Every share in the app is anchored
+  /// through here, on the rect of the widget that was tapped.
+  ///
+  /// Falls back to a point in the middle of the screen when the context has no
+  /// laid-out box of its own — an anchor in the wrong place still shares; no
+  /// anchor does not.
+  static Rect originOf(BuildContext context) {
+    final RenderObject? object = context.findRenderObject();
+    if (object is RenderBox && object.hasSize) {
+      return object.localToGlobal(Offset.zero) & object.size;
+    }
+    final Size screen = MediaQuery.of(context).size;
+    return Rect.fromCenter(
+      center: Offset(screen.width / 2, screen.height / 2),
+      width: 1,
+      height: 1,
+    );
+  }
+
+  static Future<void> sharePerson(Person person, {Rect? origin}) async {
     final List<String> photoPaths = _existingPhotoPaths(person);
     final String card = _shareText(person);
 
@@ -33,11 +60,12 @@ abstract final class ShareUtils {
       await Share.shareXFiles(
         photoPaths.map((String path) => XFile(path)).toList(),
         text: shareText,
+        sharePositionOrigin: origin,
       );
       return;
     }
 
-    await Share.share(shareText);
+    await Share.share(shareText, sharePositionOrigin: origin);
   }
 
   /// Shares a card written as free text, with any number of photos.
@@ -47,6 +75,7 @@ abstract final class ShareUtils {
     String text, {
     String? photoPath,
     Iterable<String> photoPaths = const <String>[],
+    Rect? origin,
   }) async {
     final String trimmed = text.trim();
     final List<String> existing = <String>[
@@ -62,10 +91,11 @@ abstract final class ShareUtils {
       await Share.shareXFiles(
         existing.map((String path) => XFile(path)).toList(),
         text: shareText,
+        sharePositionOrigin: origin,
       );
       return;
     }
-    await Share.share(shareText);
+    await Share.share(shareText, sharePositionOrigin: origin);
   }
 
   static List<String> _existingPhotoPaths(Person person) {
@@ -82,13 +112,19 @@ abstract final class ShareUtils {
 
   /// Shares the person's contact ("איש קשר") as plain text. Returns false when
   /// there is no contact recorded.
-  static Future<bool> shareInquiryContact(Person person) async {
+  static Future<bool> shareInquiryContact(
+    Person person, {
+    Rect? origin,
+  }) async {
     final String contact = inquiryContactText(person);
     if (contact.isEmpty) {
       return false;
     }
 
-    await Share.share('${person.fullName.trim()} — איש קשר: $contact'.trim());
+    await Share.share(
+      '${person.fullName.trim()} — איש קשר: $contact'.trim(),
+      sharePositionOrigin: origin,
+    );
     return true;
   }
 

@@ -1,8 +1,8 @@
 name: shadchan
 description: "אפליקציית שידוכים חדשה ב-Flutter."
 publish_to: 'none'
-#version: 1.0.19+60
-version: 1.0.1+8
+version: 1.0.19+62
+#version: 1.0.1+8
 
 environment:
   sdk: ^3.11.0
@@ -168,9 +168,20 @@ flutter:
     # `HomeLineArt`, which screens the brand tone into the strokes and multiplies
     # the paper tone into the ground, so one file serves the light and the dark
     # theme and the same drawing can wear either card's colour.
+    #
+    # The two `*_icon.png` are the current entry-card drawings: cropped out of
+    # `assets/add-friends-icon.jpeg` and `assets/add-idea-icon.jpeg` (neither of
+    # which is bundled) with the JPEG's off-white ground flattened to pure
+    # white, because `HomeLineArt` multiplies the card's paper into whatever
+    # ground it is given and a grey one tints the whole tile.
+    - assets/add_friends_icon.png
+    - assets/add_idea_icon.png
     - assets/home_add_people2.png
     - assets/home_add_idea2.png
     - assets/shadchan-tip.png
+    # The cup of coffee on "עוצרים רגע לחשוב על החברים". Cropped out of
+    # `assets/coffee-icon.jpeg` (which is not bundled) and drawn the same way.
+    - assets/coffee_icon.png
     - assets/male_pic/
     - assets/female_pic/
   fonts:

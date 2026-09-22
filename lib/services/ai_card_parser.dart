@@ -262,6 +262,9 @@ reported. Omit a field only when the card genuinely does not mention it.
   usage — נועה and שרה are female, דוד and אברהם are male. Leave it null only
   for a genuinely unisex name with no gendered wording anywhere, such as שי or
   אורי.
+- A line that lists choices before the colon is a form, not a fact: in
+  "רווק / אלמן / גרוש: רווק" only what follows the colon is this person's
+  answer. Never take a value from the list of options itself.
 - maritalStatus: only from an explicit word — רווק/רווקה is single,
   גרוש/גרושה is divorced, אלמן/אלמנה is widowed. A card that says nothing about
   it has no marital status. Never default to single.

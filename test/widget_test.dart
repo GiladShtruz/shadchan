@@ -12,6 +12,8 @@ import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
+import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
@@ -101,6 +103,11 @@ void main() {
     // it. Answered here so every test in this file starts from the same place,
     // whether it is run alone or after four hundred others.
     await settings.put('community.inWhatsAppGroup', 'true');
+    // The one-time tips on "הוספת אנשי קשר" and on the first profile opened
+    // would otherwise land on whichever test gets there first and push its
+    // content down. They are covered by `first_visit_tip_test.dart`.
+    await settings.put('firstVisit.addFriends', 'true');
+    await settings.put('firstVisit.friendProfile', 'true');
   });
 
   setUp(() async {
@@ -780,23 +787,36 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The board is named even with nothing on it, unlike every other block on
-    // this page — it is the one area filled by hand, and a surface that never
-    // appears until something is on it can never be where the first thing
-    // goes. But an *empty* board is one folded line rather than a corkboard
-    // taking a third of the screen to say it is empty.
+    // The board is drawn even with nothing on it, and open: it folds only when
+    // the matchmaker folds it. It is the one area filled by hand, and a
+    // surface that has to be found and opened first is never where the first
+    // thing goes.
     expect(find.text('הלוח שלי'), findsOneWidget);
-    expect(find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'), findsNothing);
+    await tester.ensureVisible(
+      find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'),
+    );
+    await tester.pump();
+    expect(
+      find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'),
+      findsOneWidget,
+    );
+    // The same four all-time figures as "הנתונים שלך" head it — one noun
+    // each, with no sentence and no icon around it.
+    expect(find.text('חברים'), findsOneWidget);
+    expect(find.text('חתונות'), findsOneWidget);
+    expect(find.text('חברים שהוספת'), findsNothing);
+    expect(find.text('רעיונות שפתחת'), findsNothing);
 
+    // Folding it is remembered, and nothing opens it again by itself.
     await tester.ensureVisible(find.text('הלוח שלי'));
     await tester.pump();
     await tester.tap(find.text('הלוח שלי'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(
-      find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'),
-      findsOneWidget,
-    );
+    expect(find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'), findsNothing);
+    await tester.tap(find.text('הלוח שלי'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
     await tester.ensureVisible(find.text('הוספה ללוח'));
     await tester.pump();
@@ -892,6 +912,28 @@ void main() {
     // a brand-new proposal, so the boy is asked first.
     expect(find.text('השלב הבא: לשאול את דוד'), findsOneWidget);
 
+    // **It is a row, not a pinned paper note.** A proposal has two sides, so
+    // it carries the app's one accent bar on each edge — the woman's at the
+    // reading start, the man's at the other end, exactly as רעיונות שלי draws
+    // a couple. See [AccentStripe].
+    final Finder stripes = find.descendant(
+      of: find.ancestor(
+        of: find.text('דוד & שרה'),
+        matching: find.byType(Row),
+      ),
+      matching: find.byType(AccentStripe),
+    );
+    expect(stripes, findsNWidgets(2));
+    expect(
+      tester.widgetList<AccentStripe>(stripes).map(
+        (AccentStripe s) => (s.color, s.atStart),
+      ),
+      <(Color, bool)>[
+        (AppColors.genderAccent(Gender.female), true),
+        (AppColors.genderAccent(Gender.male), false),
+      ],
+    );
+
     // The row of open ideas that used to sit further down the page is gone: the
     // board is the one answer to "what am I working on".
     expect(find.text('רעיונות פתוחים'), findsNothing);
@@ -945,6 +987,43 @@ void main() {
     expect(find.text('הלוח שלי'), findsOneWidget);
     expect(find.text('אבישי הלוי'), findsWidgets);
     expect(tester.getTopLeft(find.text('הלוח שלי')).dy, lessThan(260));
+  });
+
+  testWidgets('A friend in "חברים שהוספת" opens their profile, not a blank', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime.now();
+    await tester.runAsync(
+      () => Hive.box<Person>('people').put(
+        'stats-friend',
+        _testPerson(
+          id: 'stats-friend',
+          firstName: 'תמר',
+          lastName: 'גולן',
+          gender: Gender.female,
+          age: 25,
+          now: now,
+        ),
+      ),
+    );
+    addTearDown(() => Hive.box<Person>('people').delete('stats-friend'));
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/home');
+    await tester.pump();
+    // The list is a page above the tabs; `/people/:id` is inside them. Pushed
+    // from here the old way, go_router could not build the profile at all.
+    AppRouter.router.push('/stats/month/people?window=all');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.text('תמר גולן').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(PersonDetailScreen), findsOneWidget);
   });
 
   testWidgets('The edit route opens quick editing inside the profile card', (
@@ -1360,27 +1439,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('פתוחים'), findsOneWidget);
 
-    // Open a proposal's actions, and the same scroll folds it away — the panel
-    // underneath is what the screen is for at that moment.
+    // Open a proposal's actions and scroll: the category row stays pinned under
+    // the search field. It is one compact line and the only way between the
+    // shelves, so it no longer folds away for an open panel.
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
     await tester.drag(find.byType(MatchIdeaCard).first, const Offset(0, -220));
     await tester.pumpAndSettle();
-    expect(find.text('פתוחים'), findsNothing);
-    // The name and the search row are the bar's, so they stay put while the
-    // category buttons fold: that is the whole point of moving them there.
+    expect(find.text('פתוחים'), findsOneWidget);
     expect(find.text('הרעיונות שלי'), findsNWidgets(2));
     expect(find.byType(ShadchanSearchBottom), findsOneWidget);
 
-    // Closing it brings the header back whatever the scroll position is. The
-    // button has to be scrolled back to first: with the header folded away the
-    // card's own top row is above the viewport, which is exactly the state
-    // this is testing the way out of.
     await tester.ensureVisible(find.text('סגירת פעולות'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('סגירת פעולות'));
     await tester.pumpAndSettle();
     expect(find.text('פתוחים'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('New ideas uses the matching explanation and rejection wording', (

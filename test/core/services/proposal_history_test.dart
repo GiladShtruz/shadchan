@@ -12,7 +12,8 @@ import 'package:shadchan/utils/enums.dart';
 
 /// What a proposal writes into each candidate's own history: opening it,
 /// closing it, and why it closed — the "why" deliberately on its own line so
-/// the history reads as separate events rather than one long sentence.
+/// the history reads as separate events rather than one long sentence. The
+/// other side is named in full, since a history is read long after the fact.
 void main() {
   late Directory directory;
   late Box<Person> people;
@@ -58,7 +59,8 @@ void main() {
     personRepository = PersonRepository(people, null, events);
     matchRepository = MatchRepository(matches, notes)
       ..resolvePerson = personRepository.getById
-      ..logPersonEvent = personRepository.logEvent;
+      ..logPersonEvent = personRepository.logEvent
+      ..deletePersonEventsSince = personRepository.deleteMatchEventsSince;
   });
 
   tearDownAll(() async {
@@ -91,8 +93,8 @@ void main() {
   test('opening a proposal is recorded on both candidates', () async {
     await openProposal();
 
-    expect(historyFor('him'), <String>['נפתח רעיון עם שושנה']);
-    expect(historyFor('her'), <String>['נפתח רעיון עם אליהו']);
+    expect(historyFor('him'), <String>['נפתח רעיון עם שושנה ישראלי']);
+    expect(historyFor('her'), <String>['נפתח רעיון עם אליהו ישראלי']);
   });
 
   test(
@@ -109,14 +111,14 @@ void main() {
 
       // On his page the other side is named and the reason follows it.
       expect(historyFor('him'), <String>[
-        'נפתח רעיון עם שושנה',
-        'נסגר רעיון עם שושנה',
-        'שושנה דחתה כי הוא תורני מדי עבורה',
+        'נפתח רעיון עם שושנה ישראלי',
+        'נסגר רעיון עם שושנה ישראלי',
+        'שושנה ישראלי דחתה כי הוא תורני מדי עבורה',
       ]);
       // On hers the same closing, phrased from her side.
       expect(historyFor('her'), <String>[
-        'נפתח רעיון עם אליהו',
-        'נסגר רעיון עם אליהו',
+        'נפתח רעיון עם אליהו ישראלי',
+        'נסגר רעיון עם אליהו ישראלי',
         'דחתה כי הוא תורני מדי עבורה',
       ]);
     },
@@ -132,14 +134,14 @@ void main() {
     );
 
     expect(historyFor('him'), <String>[
-      'נפתח רעיון עם שושנה',
-      'נסגר רעיון עם שושנה',
+      'נפתח רעיון עם שושנה ישראלי',
+      'נסגר רעיון עם שושנה ישראלי',
       'דחה את הרעיון',
     ]);
     expect(historyFor('her'), <String>[
-      'נפתח רעיון עם אליהו',
-      'נסגר רעיון עם אליהו',
-      'אליהו דחה את הרעיון',
+      'נפתח רעיון עם אליהו ישראלי',
+      'נסגר רעיון עם אליהו ישראלי',
+      'אליהו ישראלי דחה את הרעיון',
     ]);
   });
 
@@ -153,9 +155,47 @@ void main() {
     );
 
     expect(historyFor('him'), <String>[
-      'נפתח רעיון עם שושנה',
-      'נסגר רעיון עם שושנה',
+      'נפתח רעיון עם שושנה ישראלי',
+      'נסגר רעיון עם שושנה ישראלי',
     ]);
+  });
+
+  test('undoing a closing leaves no trace of it', () async {
+    final MatchIdea match = await openProposal();
+    final DateTime updatedAt = match.updatedAt;
+    final int journalBefore = notes.values
+        .where((MatchNote note) => note.matchId == match.id)
+        .length;
+    // Opening and closing inside the same millisecond would make the opening
+    // lines look like part of the closing. In the app there is always a dialog
+    // between the two.
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    final DateTime since = DateTime.now();
+
+    await matchRepository.recordOutcome(
+      match.id,
+      newStatus: MatchStatus.rejected,
+      party: MatchOutcomeParty.her,
+      note: 'לא מתאים',
+    );
+    expect(matchRepository.getById(match.id)!.status, MatchStatus.rejected);
+
+    await matchRepository.undoClose(
+      match.id,
+      previousStatus: MatchStatus.idea,
+      previousUpdatedAt: updatedAt,
+      since: since,
+    );
+
+    final MatchIdea restored = matchRepository.getById(match.id)!;
+    expect(restored.status, MatchStatus.idea);
+    expect(restored.updatedAt, updatedAt);
+    expect(
+      notes.values.where((MatchNote note) => note.matchId == match.id).length,
+      journalBefore,
+    );
+    expect(historyFor('him'), <String>['נפתח רעיון עם שושנה ישראלי']);
+    expect(historyFor('her'), <String>['נפתח רעיון עם אליהו ישראלי']);
   });
 
   test('a couple that went out and stopped reads as such', () async {
@@ -169,8 +209,8 @@ void main() {
     );
 
     expect(historyFor('him'), <String>[
-      'נפתח רעיון עם שושנה',
-      'נסגר רעיון עם שושנה',
+      'נפתח רעיון עם שושנה ישראלי',
+      'נסגר רעיון עם שושנה ישראלי',
       'יצאו ולא המשיכו כי לא הרגישו חיבור',
     ]);
   });

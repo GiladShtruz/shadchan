@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/person_navigation.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -346,7 +347,7 @@ class _MarriedFriendRow extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () => context.push('/people/${person.id}'),
+        onTap: () => openPersonProfile(context, person.id),
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(

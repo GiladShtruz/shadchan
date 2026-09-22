@@ -99,7 +99,11 @@ void main() {
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
-    expect(find.text(SignInScreen.headline), findsOneWidget);
+    // This matchmaker is already introduced — they used the app before an
+    // account was compulsory — so they are asked to complete a registration,
+    // and told their database comes with them.
+    expect(find.text(SignInScreen.returningHeadline), findsOneWidget);
+    expect(find.text(SignInScreen.returningBody), findsOneWidget);
 
     // All three ways in are on the one screen. Apple is drawn only on Apple's
     // own platforms, so it is deliberately not asserted here.
@@ -159,7 +163,7 @@ void main() {
 
     expect(find.text('צריך למלא כתובת מייל'), findsOneWidget);
     // Still here, because nothing was sent anywhere.
-    expect(find.text(SignInScreen.headline), findsOneWidget);
+    expect(find.text(SignInScreen.returningHeadline), findsOneWidget);
   });
 
   testWidgets('the two questions swap, and only one of them is asked at once', (
@@ -194,8 +198,23 @@ void main() {
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
-    expect(find.text(SignInScreen.headline), findsNothing);
+    expect(find.text(SignInScreen.returningHeadline), findsNothing);
     expect(find.text('המאגר שלי'), findsWidgets);
+  });
+
+  testWidgets('a brand-new install is asked to start, not to complete', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    await tester.runAsync(() => settings.delete('userName'));
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text(SignInScreen.headline), findsOneWidget);
+    expect(find.text(SignInScreen.returningHeadline), findsNothing);
+
+    await tester.runAsync(() => settings.put('userName', 'בודק'));
   });
 }
 

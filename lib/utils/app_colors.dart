@@ -40,16 +40,40 @@ abstract final class AppColors {
   static const Color softYellow = Color(0xFFEFE0B8);
   static const Color softRose = Color(0xFFEFDDE4);
 
-  /// The label bands under the two home entry cards.
+  /// What the two home entry cards are drawn in: their line drawing and the
+  /// rule along their bottom edge.
   ///
-  /// Sampled from `assets/home_add_people.jpg` and `assets/home_add_idea.jpg`
-  /// rather than picked out of the palette above: the band has to read as the
-  /// bottom of the same painted card as the picture over it, and the nearest
-  /// brand tones (`primaryDark`, `secondary`) are close enough to look like a
-  /// mistake and far enough to show a seam. Re-sample them if the artwork is
-  /// ever replaced.
-  static const Color addPeopleBand = Color(0xFF708C97);
-  static const Color addIdeaBand = Color(0xFFB77D67);
+  /// They were a *band* once — a filled strip of colour carrying the label in
+  /// [onPrimary] — and before that a pair of tones sampled off painted
+  /// artwork, which left the home screen with a blue and a copper that were
+  /// only nearly the brand's. The cards are white with a rule under them now,
+  /// so all that is left is the accent itself, and it is simply the palette:
+  /// the light brand blue for friends, the brand brown for an idea.
+  static const Color addPeopleAccent = primary;
+  static const Color addIdeaAccent = secondary;
+
+  /// **The two inks the home page is written in.**
+  ///
+  /// One colour for everything that titles, names or counts, and one for
+  /// everything that explains, dates or qualifies — decided here rather than
+  /// card by card, because "the heading colour" drifting by a few points per
+  /// block is what makes a page of calm cards read as five different pages.
+  /// [HomeTypography] folds them onto Material's roles; a block only names one
+  /// of these directly when it is not going through that fold.
+  ///
+  /// [headingInk] is [onSurface] taken round to the brand's blue — the same
+  /// near-black weight, so nothing loses contrast, in the hue the rest of the
+  /// page is built from. [mutedInk] is a true neutral grey rather than the
+  /// warm taupe of [onSurfaceVariant]: beside navy, the warm one reads as a
+  /// third colour instead of as quieter text.
+  static const Color headingInk = Color(0xFF0B2233);
+  static const Color mutedInk = Color(0xFF5E5C58);
+  static const Color headingInkDm = Color(0xFFDCE6EC);
+  static const Color mutedInkDm = onSurfaceVariantDm;
+
+  static Color heading({bool dark = false}) => dark ? headingInkDm : headingInk;
+
+  static Color muted({bool dark = false}) => dark ? mutedInkDm : mutedInk;
 
   /// Gentle pastel pairs used for the initials circles next to a contact's
   /// name. Each entry is a soft surface plus the ink that stays readable on it.

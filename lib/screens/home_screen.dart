@@ -16,6 +16,8 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/tips_service.dart';
+import 'package:shadchan/utils/activity_stats.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
 import 'package:shadchan/utils/dating_history.dart';
@@ -27,10 +29,13 @@ import 'package:shadchan/utils/home_stage.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
+import 'package:shadchan/utils/monthly_stats.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/home_activity_block.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
@@ -175,7 +180,12 @@ class _HomeScreenState extends State<HomeScreen> {
     // roles are folded onto three, once, and the blocks go on asking for
     // whatever they always asked for.
     return Theme(
-      data: theme.copyWith(textTheme: HomeTypography.scale(theme.textTheme)),
+      data: theme.copyWith(
+        textTheme: HomeTypography.scale(
+          theme.textTheme,
+          dark: theme.brightness == Brightness.dark,
+        ),
+      ),
       child: Builder(
         builder: (BuildContext context) => Scaffold(
           appBar: _buildGreetingAppBar(),
@@ -513,8 +523,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Text(
                           'לא נמצאו תוצאות',
                           textAlign: TextAlign.center,
+                          // `bodyLarge` folds to the heading ink; this line is
+                          // an absence, not a heading.
                           style: theme.textTheme.bodyLarge?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: AppColors.muted(
+                              dark: theme.brightness == Brightness.dark,
+                            ),
                           ),
                         ),
                       )
@@ -592,14 +606,20 @@ class _HomeScreenState extends State<HomeScreen> {
 /// page uses for it — see [MatchStages.buttonLabel]. Nothing new decides what
 /// that step is; the board reads the same stage the card does.
 ///
-/// Always exactly one row, however many notes there are.
+/// **A list, not a pinboard.** The cork surface with paper notes pinned to it
+/// was the one thing on this page drawn in a language of its own: it scrolled
+/// sideways while the page scrolled down, it could only ever show two items at
+/// a time, and every item on it was a different shape from the same item in
+/// המאגר שלי or רעיונות שלי. The rows here are the rows those screens use — one
+/// accent bar down the edge of a person, one down each edge of a couple — so a
+/// friend looks like themselves wherever the app draws them.
 ///
-/// **It folds, and it remembers.** Some matchmakers live on the board and some
-/// never open it, so an empty board is one compact line with an arrow, a board
-/// with something on it opens by default, and whichever way the matchmaker last
-/// left it is how they find it next time. The one thing that overrides their
-/// choice is the first item landing on an empty board — being shown what was
-/// just added is the point of adding it.
+/// **Open unless it was closed.** The board opens by default, empty or not,
+/// and folds only when the matchmaker folds it — that choice is kept and
+/// nothing overrides it.
+///
+/// **Four figures head it**: the same all-time counts as "הנתונים שלך" on the
+/// activity screen, small, each opening the records behind it.
 class _BoardSection extends StatefulWidget {
   const _BoardSection({
     required this.focusKey,
@@ -630,9 +650,13 @@ class _BoardSectionState extends State<_BoardSection> {
 
   bool? _choice;
 
-  /// How many notes were on the board last build, so the empty → not-empty
-  /// moment can be spotted. -1 is "not measured yet".
-  int _lastLiveCount = -1;
+  /// How many rows the section shows before "עוד N". Long enough that a
+  /// working matchmaker sees their whole day without opening anything, short
+  /// enough that a database with forty open proposals does not bury every
+  /// other block on the page under them.
+  static const int _collapsedRows = 5;
+
+  bool _showAll = false;
 
   @override
   void initState() {
@@ -738,24 +762,12 @@ class _BoardSectionState extends State<_BoardSection> {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
-    // Something has just landed on a board that was empty. Whatever the
-    // matchmaker last chose, they are shown what they added — and the choice is
-    // updated, so it stays open rather than snapping shut on the next build.
-    if (_lastLiveCount == 0 && live.isNotEmpty && _choice == false) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _setChoice(true);
-        }
-      });
-    }
-    _lastLiveCount = live.length;
-
-    // The *default* follows the content: an empty board is folded, because the
-    // cork, its frame and its "הלוח ריק" line take a third of a phone screen to
-    // say that there is nothing there. An explicit choice always wins over it —
-    // including opening the empty board, which is how the first note gets
-    // pinned in the first place.
-    final bool expanded = _choice ?? live.isNotEmpty;
+    // Open until the matchmaker closes it, and then closed until they open it.
+    final bool expanded = _choice ?? true;
+    final List<HomeBoardEntry> shown = _showAll
+        ? live
+        : live.take(_collapsedRows).toList();
+    final int hidden = live.length - shown.length;
 
     return SliverToBoxAdapter(
       child: Column(
@@ -773,74 +785,85 @@ class _BoardSectionState extends State<_BoardSection> {
           if (!expanded)
             const SizedBox(height: 4)
           else ...<Widget>[
-            HomeNoteBoard(
+            _BoardStats(
+              people: widget.personRepository,
+              matches: widget.matchRepository,
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: homeHorizontalInset(context),
+              ),
               child: live.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(
-                          'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black.withValues(alpha: 0.55),
-                          ),
-                        ),
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 18,
+                      ),
+                      child: Text(
+                        'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium,
                       ),
                     )
-                  // The end padding is smaller than a note, so the next one always
-                  // peeks in from the edge — which is what says the row scrolls,
-                  // without an arrow and without a second line of notes.
-                  : ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      // The notes are exactly as tall as this viewport, and each
-                      // one is drawn slightly rotated with a shadow under it — so
-                      // a viewport that clipped to its own bounds would shave the
-                      // low corner and the shadow off every note. The board's own
-                      // `ClipRRect` is the real edge; between it and here there is
-                      // only the cork's vertical padding, which is exactly the
-                      // room those corners need.
-                      clipBehavior: Clip.none,
-                      physics: const BouncingScrollPhysics(
-                        parent: AlwaysScrollableScrollPhysics(),
-                      ),
-                      padding: EdgeInsetsDirectional.fromSTEB(
-                        homeIsNarrow(context) ? 10 : 12,
-                        0,
-                        28,
-                        0,
-                      ),
-                      itemCount: live.length,
-                      separatorBuilder: (_, _) =>
-                          SizedBox(width: homeCardGap(context)),
-                      itemBuilder: (BuildContext context, int index) =>
-                          _BoardCard(
-                            entry: live[index],
+                  : Column(
+                      children: <Widget>[
+                        for (final HomeBoardEntry entry in shown)
+                          _BoardRow(
+                            entry: entry,
                             personRepository: widget.personRepository,
                             matchRepository: widget.matchRepository,
                           ),
+                      ],
                     ),
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
                 homeHorizontalInset(context),
-                8,
+                4,
                 homeHorizontalInset(context),
                 0,
               ),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton.icon(
-                  onPressed: () => BoardAddSheet.show(context),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    textStyle: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
+              child: Row(
+                children: <Widget>[
+                  TextButton.icon(
+                    onPressed: () => BoardAddSheet.show(context),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('הוספה ללוח'),
                   ),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('הוספה ללוח'),
-                ),
+                  const Spacer(),
+                  // The rest of the list opens in place. There is no screen
+                  // behind this section to send anybody to — the board *is*
+                  // the list — so a "הצגת הכל" that navigated would have
+                  // nowhere to go.
+                  if (hidden > 0)
+                    TextButton(
+                      onPressed: () => setState(() => _showAll = true),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      child: Text('עוד $hidden'),
+                    )
+                  else if (_showAll && live.length > _collapsedRows)
+                    TextButton(
+                      onPressed: () => setState(() => _showAll = false),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      child: const Text('הצגה מקוצרת'),
+                    ),
+                ],
               ),
             ),
           ],
@@ -850,8 +873,164 @@ class _BoardSectionState extends State<_BoardSection> {
   }
 }
 
-class _BoardCard extends StatelessWidget {
-  const _BoardCard({
+/// "חברים", "רעיונות", "זוגות שיצאו", "חתונות" — all time, in a row of four
+/// at the head of the section.
+///
+/// Counted by [ActivityStats.allTime], exactly as "הנתונים שלך" counts them,
+/// and each opens the same all-time list that screen opens.
+///
+/// **One word each, and no picture.** They read "חברים שהוספת" and "רעיונות
+/// שפתחת" once, which is a sentence about the matchmaker where a label was
+/// wanted — and it was long enough to wrap, which is what made four short wide
+/// tiles into four tall boxes. A figure over a noun is the whole of it; the
+/// icon over each one was a third thing to look at in a tile the width of a
+/// thumb.
+class _BoardStats extends StatelessWidget {
+  const _BoardStats({required this.people, required this.matches});
+
+  final PersonRepository people;
+  final MatchRepository matches;
+
+  @override
+  Widget build(BuildContext context) {
+    final ActivityBreakdown all = ActivityStats.allTime(
+      people: people.getAll(),
+      matches: matches.getAll(),
+      matchStatusEvents: matches.getAllStatusEvents(),
+      excludedFromDating: DatingCountExclusions.all(),
+    );
+    final double inset = homeHorizontalInset(context);
+
+    Widget tile(int value, String label, MonthlyStatMetric m) {
+      return Expanded(
+        child: _BoardStatTile(
+          value: value,
+          label: label,
+          onTap: () => context.push('/stats/month/${m.name}?window=all'),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(inset, 0, inset, 12),
+      // Equal heights whichever label is the longest.
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            tile(all.friends, 'חברים', MonthlyStatMetric.people),
+            const SizedBox(width: 8),
+            tile(all.ideas, 'רעיונות', MonthlyStatMetric.ideas),
+            const SizedBox(width: 8),
+            tile(all.couples, 'זוגות שיצאו', MonthlyStatMetric.dating),
+            const SizedBox(width: 8),
+            tile(all.engagements, 'חתונות', MonthlyStatMetric.weddings),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One figure: the number, the noun under it, and the page's one rule along
+/// the foot.
+///
+/// **Brown on all four**, and not a colour per metric. A different accent per
+/// tile turns a row of four into four unrelated things and invites the reader
+/// to work out what each colour means, which is nothing — the four are one
+/// set of figures about one database.
+class _BoardStatTile extends StatelessWidget {
+  const _BoardStatTile({
+    required this.value,
+    required this.label,
+    required this.onTap,
+  });
+
+  final int value;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      elevation: 2,
+      shadowColor: AppColors.onSurface.withValues(alpha: 0.18),
+      surfaceTintColor: Colors.transparent,
+      // The rule is flush to the bottom edge; this clip is what rounds it.
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        // The four tiles are stretched to one height by an `IntrinsicHeight`
+        // above, so this column has to fill that height rather than sit at the
+        // top of it — otherwise a tile whose label had to shrink ends up with
+        // its rule floating a few pixels above the card's own foot, and the
+        // four rules no longer line up.
+        child: Column(
+          children: <Widget>[
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 9, 4, 8),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        CommunityFigure.format(value),
+                        maxLines: 1,
+                        // The one figure on the page drawn larger than the
+                        // type scale: it is the thing being read, and at the
+                        // page's title size four of them in a row disappear
+                        // into the nouns under them.
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontSize: HomeTypography.lead,
+                          fontWeight: FontWeight.w900,
+                          height: 1.05,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AccentUnderline(
+              color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One item on the board, drawn as the app draws a row.
+///
+/// A person carries one accent bar on the reading-start edge, in their own
+/// gender's colour — exactly the row המאגר שלי draws. A proposal carries two,
+/// one on each edge, exactly as רעיונות שלי draws a couple. Nothing else about
+/// the two rows differs, so the board reads as the same list as the rest of
+/// the app rather than as a surface of its own.
+class _BoardRow extends StatelessWidget {
+  const _BoardRow({
     required this.entry,
     required this.personRepository,
     required this.matchRepository,
@@ -863,12 +1042,16 @@ class _BoardCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+
     if (entry.kind == HomeItemKind.person) {
       final Person person = personRepository.getById(entry.targetId)!;
-      return _card(
+      return _row(
         context,
-        leading: HomeCardAvatar(person: person),
+        leading: HomeCardAvatar(person: person, radius: 20),
         title: person.fullName.trim(),
+        subtitle: entry.note,
+        startAccent: AppColors.genderAccent(person.gender, dark: dark),
         onTap: () => context.push('/people/${person.id}'),
       );
     }
@@ -885,34 +1068,112 @@ class _BoardCard extends StatelessWidget {
     final Person? female = swap ? personA : personB;
     // The proposal's next step, decided by exactly what decides it on the
     // ideas page — [MatchStages] reads the same stage the card does — and said
-    // in as few words as a note can hold.
+    // in as few words as a row can hold.
     final MatchNextStep? step = MatchStages.nextStep(match);
-    return _card(
+    final String? note = entry.note?.trim();
+
+    return _row(
       context,
-      leading: HomeCardCoupleAvatars(personA: personA, personB: personB),
+      leading: HomeCardCoupleAvatars(
+        personA: personA,
+        personB: personB,
+        radius: 16,
+      ),
       title: '${_firstName(personA)} & ${_firstName(personB)}',
-      footnote: step == null
+      // What the matchmaker wrote wins the line; the step the app worked out
+      // fills it when they wrote nothing. Both on one row would be two
+      // sentences competing in a space that holds one.
+      subtitle: note != null && note.isNotEmpty
+          ? note
+          : step == null
           ? null
+          // Already reads "השלב הבא: …" — see [MatchStages.shortLabel].
           : MatchStages.shortLabel(step, male: male, female: female),
+      // Women lead in RTL, which is the side רעיונות שלי puts them on too.
+      startAccent: AppColors.genderAccent(Gender.female, dark: dark),
+      endAccent: AppColors.genderAccent(Gender.male, dark: dark),
       onTap: () => context.push('/matches/${match.id}'),
     );
   }
 
-  Widget _card(
+  Widget _row(
     BuildContext context, {
     required Widget leading,
     required String title,
+    required Color startAccent,
     required VoidCallback onTap,
-    String? footnote,
+    Color? endAccent,
+    String? subtitle,
   }) {
-    return HomeBoardNote(
-      tintSeed: '${entry.kind.name}:${entry.targetId}',
-      leading: leading,
-      title: title,
-      subtitle: entry.note,
-      footnote: footnote,
-      onTap: onTap,
-      actions: _BoardCardMenu(kind: entry.kind, targetId: entry.targetId),
+    final ThemeData theme = Theme.of(context);
+    final String? sub = subtitle?.trim();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Row(
+              children: <Widget>[
+                AccentStripe(color: startAccent, height: AccentBar.rowHeight),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 10),
+                  child: leading,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (sub != null && sub.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 2),
+                          Text(
+                            sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                _BoardRowMenu(kind: entry.kind, targetId: entry.targetId),
+                if (endAccent != null) ...<Widget>[
+                  const SizedBox(width: 4),
+                  AccentStripe(
+                    color: endAccent,
+                    atStart: false,
+                    height: AccentBar.rowHeight,
+                  ),
+                ] else
+                  const SizedBox(width: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -924,8 +1185,8 @@ class _BoardCard extends StatelessWidget {
 /// A note that is on the board because its reminder came due is not pinned, so
 /// it is offered the pin rather than "הסרה מהלוח" — removing it from a board it
 /// was never put on would have nothing to remove.
-class _BoardCardMenu extends StatelessWidget {
-  const _BoardCardMenu({required this.kind, required this.targetId});
+class _BoardRowMenu extends StatelessWidget {
+  const _BoardRowMenu({required this.kind, required this.targetId});
 
   final HomeItemKind kind;
   final String targetId;
@@ -937,9 +1198,8 @@ class _BoardCardMenu extends StatelessWidget {
       position: PopupMenuPosition.under,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 190),
-      // A `child` rather than an `icon`: the icon form is an IconButton, whose
-      // fixed tap target does not fit the note's bottom edge.
-      child: const HomeNoteActionsButton(),
+      icon: const Icon(Icons.more_horiz, size: 20),
+      iconSize: 20,
       onSelected: (String value) async {
         switch (value) {
           case 'note':

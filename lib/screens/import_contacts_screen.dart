@@ -591,7 +591,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
         await repository.activatePendingContactDraft(staged.person);
         session.recordAdded();
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
-          await _continueToFullCard(staged.person.id);
+          await _continueToFullCard(staged.person);
         }
         return;
       }
@@ -628,6 +628,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
 
     final PersonRepository repository = context.read<PersonRepository>();
     int addedCount = 0;
+    int fullCards = 0;
     for (int index = 0; index < selected.length; index++) {
       final ContactImportCandidate candidate = selected[index];
       StagedContact? staged;
@@ -658,11 +659,12 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
         await repository.activatePendingContactDraft(staged.person);
         addedCount++;
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
-          // Filling in a full card ends on that person's profile, so the rest
-          // of the batch is abandoned rather than resumed behind it.
-          session.recordAdded(addedCount);
-          await _continueToFullCard(staged.person.id);
-          return;
+          // The full card comes back here, so the batch carries on after it.
+          fullCards++;
+          await _continueToFullCard(staged.person);
+          if (!mounted) {
+            return;
+          }
         }
         continue;
       }
@@ -683,20 +685,27 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     // celebration rather than following it — one word about the moment, not
     // two. Below it, nothing has changed.
     CommunityProfileStore.noteBulkImport(addedCount);
-    if (addedCount < CommunityProfileStore.bulkImportNoticeFrom) {
+    // A single friend who went through the full card was already confirmed on
+    // the way back from it.
+    final bool alreadyConfirmed = addedCount == 1 && fullCards == 1;
+    if (addedCount < CommunityProfileStore.bulkImportNoticeFrom &&
+        !alreadyConfirmed) {
       ContactsAddedCelebration.show(context, count: addedCount);
     }
   }
 
-  /// Continues from the quick details into the full card, and finishes on the
-  /// new friend's profile rather than back here — the matchmaker who asked for
-  /// the whole card is working on that one person, not on the queue.
-  Future<void> _continueToFullCard(String personId) async {
-    await openExtendedPersonEditor(context, personId, isNewFriend: true);
+  /// Continues from the quick details into the full card, then comes back here
+  /// with a confirmation.
+  ///
+  /// It used to push the new friend's profile on the way out. That is a route
+  /// inside the tabs pushed from this screen, which sits above them, and
+  /// go_router cannot build it there — the ✓ ended on a blank screen.
+  Future<void> _continueToFullCard(Person person) async {
+    await openExtendedPersonEditor(context, person.id, isNewFriend: true);
     if (!mounted) {
       return;
     }
-    context.push('/people/$personId');
+    ContactsAddedCelebration.showNewFriend(context, person);
   }
 
   /// Takes the picked contacts off the add-friends list. They keep their place

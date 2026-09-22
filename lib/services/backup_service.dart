@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'dart:ui' show Rect;
+
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -79,10 +81,12 @@ class BackupService {
     return backupFile;
   }
 
-  static Future<void> shareBackup(File backupFile) async {
-    await Share.shareXFiles(<XFile>[
-      XFile(backupFile.path),
-    ], subject: 'גיבוי שדכן');
+  static Future<void> shareBackup(File backupFile, {Rect? origin}) async {
+    await Share.shareXFiles(
+      <XFile>[XFile(backupFile.path)],
+      subject: 'גיבוי שדכן',
+      sharePositionOrigin: origin,
+    );
   }
 
   static Future<ImportResult> importData(

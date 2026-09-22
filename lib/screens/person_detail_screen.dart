@@ -45,6 +45,8 @@ import 'package:shadchan/widgets/person_photo_carousel.dart';
 import 'package:shadchan/widgets/section_header.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/person_navigation.dart';
+import 'package:shadchan/widgets/first_visit_tip.dart';
 
 /// Opens the "התאמות" view for a person from anywhere in the app — the heart on
 /// a row in המאגר שלי lands on exactly the same screen the profile's own
@@ -128,6 +130,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   bool _showFullCard = false;
   bool _editingDetails = false;
   bool _editingFullCard = false;
+
+  /// The one-time hint about sharing a photo and a few words from WhatsApp.
+  /// Taken when the first profile is opened, so it never comes back.
+  bool _showShareTip = FirstVisitTips.takeFirstVisit(
+    FirstVisitTopic.friendProfile,
+  );
 
   @override
   void initState() {
@@ -233,7 +241,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             // photo in one go. The old path handed WhatsApp a `wa.me?text=`
             // link, which can carry no images at all and drops the matchmaker
             // into WhatsApp's own compose box to send the text by hand.
-            onPressed: () => ShareUtils.sharePerson(person),
+            onPressed: () => ShareUtils.sharePerson(
+              person,
+              origin: ShareUtils.originOf(context),
+            ),
             icon: const Icon(Icons.share_outlined),
             tooltip: 'שיתוף כרטיס',
           ),
@@ -349,6 +360,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 await _openCardEditPage(context);
               },
             ),
+            _ProfilePhotoStrip(
+              person: person,
+              onOpen: (int index) => PersonCardViewer.open(
+                context,
+                person.id,
+                initialIndex: index,
+              ),
+            ),
             if (person.hidden)
               _OutsideDatabaseBanner(
                 person: person,
@@ -363,6 +382,25 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               onMatches: () => _openSuggestions(context, person),
               onAddProposal: () => _openAddProposal(context, person),
             ),
+            // Above the card it is about: most of what a profile needs is
+            // already sitting in a WhatsApp chat.
+            if (_showShareTip)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: FirstVisitTip(
+                  icon: Icons.ios_share_rounded,
+                  headline:
+                      '{שתף|שתפי} מתוך הווטסאפ תמונה וכמה מילים על '
+                              '${person.gender == Gender.female ? 'החברה' : 'החבר'} '
+                              'שלך!'
+                          .forGender(context.userGender),
+                  lines: const <String>[
+                    'בווטסאפ: לחיצה ארוכה על התמונה ← שיתוף ← שדכן, ובוחרים '
+                        'להוסיף לכרטיס קיים.',
+                  ],
+                  onDismiss: () => setState(() => _showShareTip = false),
+                ),
+              ),
             _WhatsAppCardSection(
               person: person,
               editing: _editingFullCard,
@@ -533,7 +571,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   /// candidate's card.
   Future<void> _shareInquiryContact(BuildContext context, Person person) async {
     try {
-      final bool shared = await ShareUtils.shareInquiryContact(person);
+      final bool shared = await ShareUtils.shareInquiryContact(
+        person,
+        origin: ShareUtils.originOf(context),
+      );
       if (!shared && context.mounted) {
         _showSnackBar(context, 'אין איש קשר לשיתוף');
       }
@@ -1107,6 +1148,105 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
 /// card worked, it could be put in a proposal, and it simply never appeared in
 /// any list. Filling in a detail now admits it on its own; this says so, and
 /// offers the one tap for somebody who wants it in with nothing filled at all.
+/// Every other photo on the card, under the face at the top of the profile.
+///
+/// The header shows one photo and it is round, so until now the second, third
+/// and fourth pictures of somebody existed only inside the full-screen viewer
+/// — which had to be guessed at, because nothing on the profile said there was
+/// more than one. The strip says so, and a tap opens that photo full screen
+/// with the card still under it.
+///
+/// Draws nothing when there is only the face, and nothing at all when the
+/// files behind the paths are gone — a row of broken-image boxes says less
+/// than no row.
+class _ProfilePhotoStrip extends StatelessWidget {
+  const _ProfilePhotoStrip({required this.person, required this.onOpen});
+
+  final Person person;
+
+  /// Called with the photo's index in `person.photosPaths`, so the viewer can
+  /// open on the one that was tapped.
+  final ValueChanged<int> onOpen;
+
+  static const double _height = 96;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    // Indexed against the person's own list, not against the filtered one:
+    // the viewer pages over the same "files that exist" list, so a missing
+    // file in the middle must shift the rest here too.
+    final List<({int index, String path})> photos =
+        <({int index, String path})>[];
+    for (final String path in person.photosPaths) {
+      if (!File(path).existsSync()) {
+        continue;
+      }
+      photos.add((index: photos.length, path: path));
+    }
+
+    // The first photo is the face at the top of the page; this row is the rest.
+    if (photos.length < 2) {
+      return const SizedBox.shrink();
+    }
+    final List<({int index, String path})> rest = photos.sublist(1);
+
+    return Container(
+      color: _profileCanvasColor(theme),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 4, bottom: 8),
+            child: Text(
+              'תמונות נוספות',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: _profileMutedColor(theme),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: _height,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              itemCount: rest.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (BuildContext context, int position) {
+                final ({int index, String path}) photo = rest[position];
+                return GestureDetector(
+                  onTap: () => onOpen(photo.index),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.file(
+                      File(photo.path),
+                      width: _height,
+                      height: _height,
+                      cacheWidth: (_height * 3).round(),
+                      fit: BoxFit.cover,
+                      errorBuilder:
+                          (BuildContext context, Object _, StackTrace? _) {
+                            return Container(
+                              width: _height,
+                              height: _height,
+                              color: _profileWarmSurfaceColor(theme),
+                            );
+                          },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _OutsideDatabaseBanner extends StatelessWidget {
   const _OutsideDatabaseBanner({required this.person, required this.onAdd});
 
@@ -2430,7 +2570,11 @@ class _IdeaRow extends StatelessWidget {
                     height: 38,
                   ),
                   onWhatsApp: () => _openWhatsApp(context, otherPerson!),
-                  onEdit: () => context.push('/people/${otherPerson!.id}/edit'),
+                  onEdit: () => openPersonProfile(
+                    context,
+                    otherPerson!.id,
+                    editing: true,
+                  ),
                 ),
             ],
           ),
@@ -3047,14 +3191,23 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     final MatchPreferences preferences = MatchPreferences.forPerson(
       sourcePerson,
     );
-    final ({int minAge, int maxAge})? femaleAgeRange =
-        sourcePerson.gender == Gender.male
-        ? MatchSuggestionUtils.femaleAgeRangeForMale(sourcePerson.age)
-        : null;
+    // The age range the card sets, and where it sets none, the default the
+    // automatic list already uses — for a woman as well as for a man, so the
+    // sheet never opens blank on a list that is filtered by age.
+    final ({int minAge, int maxAge})? defaultAgeRange =
+        switch (sourcePerson.gender) {
+          Gender.male => MatchSuggestionUtils.femaleAgeRangeForMale(
+            sourcePerson.age,
+          ),
+          Gender.female => MatchSuggestionUtils.maleAgeRangeForFemale(
+            sourcePerson.age,
+          ),
+          Gender.unknown => null,
+        };
 
     return MatchProposalFilters(
-      minAge: preferences.minAge ?? femaleAgeRange?.minAge,
-      maxAge: preferences.maxAge ?? femaleAgeRange?.maxAge,
+      minAge: preferences.minAge ?? defaultAgeRange?.minAge,
+      maxAge: preferences.maxAge ?? defaultAgeRange?.maxAge,
       minHeight: preferences.minHeightCm,
       maxHeight: preferences.maxHeightCm,
       maritalStatuses: preferences.maritalStatuses,
@@ -3457,7 +3610,7 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                   child: Row(
                     children: <Widget>[
                       GestureDetector(
-                        onTap: () => context.push('/people/${candidate.id}'),
+                        onTap: () => openPersonProfile(context, candidate.id),
                         child: PersonAvatar(person: candidate, radius: 25),
                       ),
                       const SizedBox(width: 12),
@@ -4275,6 +4428,36 @@ class _PersonNotesTimeline extends StatelessWidget {
 
 String _eventDateShort(DateTime date) => '${date.day}.${date.month}';
 
+/// An event's line with the other side's full name in it.
+///
+/// Lines written before history used full names said "נפתח רעיון עם אהבה".
+/// Where the line names the related person by first name alone — after "עם",
+/// or at its start ("שושנה דחתה…") — that name is widened to the full one as it
+/// is drawn, so old and new entries read the same. Anything else is left as
+/// written.
+String _historyText(PersonEvent event, Person? related) {
+  if (related == null) {
+    return event.text;
+  }
+  final String first = related.firstName.trim();
+  final String full = related.fullName.trim();
+  if (first.isEmpty || full == first) {
+    return event.text;
+  }
+  for (final String prefix in const <String>[
+    'נפתח רעיון עם ',
+    'נסגר רעיון עם ',
+  ]) {
+    if (event.text == '$prefix$first') {
+      return '$prefix$full';
+    }
+  }
+  if (event.text.startsWith('$first ') && !event.text.startsWith(full)) {
+    return '$full${event.text.substring(first.length)}';
+  }
+  return event.text;
+}
+
 /// A small colour per event type, so the timeline reads at a glance.
 Color _eventColor(PersonEventType type) {
   switch (type) {
@@ -4368,6 +4551,10 @@ class _HistoryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color color = _eventColor(event.type);
+    final String? relatedId = event.relatedPersonId;
+    final Person? related = relatedId == null
+        ? null
+        : context.read<PersonRepository>().getById(relatedId);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -4394,7 +4581,7 @@ class _HistoryRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              event.text,
+              _historyText(event, related),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(

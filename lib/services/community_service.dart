@@ -240,56 +240,6 @@ abstract final class CommunityService {
 
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
-  /// TEMPORARY diagnostic, added 2026-09-13 for "community figures do not
-  /// update on the iPhone". The last few things this class did in this process
-  /// — every swallowed failure, and what each publish, total and board actually
-  /// came back with. Every catch below used to discard the error, and the
-  /// device is only reachable through TestFlight, so a support report is the
-  /// one way to see it: [diagnostics] rides along on every report — see
-  /// `SupportService.submitReport`. Remove once the cause is known.
-  static final List<String> _events = <String>[];
-  static const int _maxEvents = 30;
-
-  static void _note(String where, Object what) {
-    final String line =
-        '${DateTime.now().toIso8601String().substring(11, 19)} $where: $what';
-    _events.add(line.length > 220 ? line.substring(0, 220) : line);
-    if (_events.length > _maxEvents) {
-      _events.removeAt(0);
-    }
-    debugPrint('COMMUNITY $line');
-  }
-
-  static void _noteError(String where, Object error) =>
-      _note('ERROR $where', error);
-
-  /// The state that decides whether anything here could work, followed by the
-  /// newest events that fit in [maxChars] — oldest dropped first.
-  static String diagnostics({int maxChars = 2000}) {
-    final User? user = FirebaseBootstrap.isReady
-        ? FirebaseAuth.instance.currentUser
-        : null;
-    final List<String> header = <String>[
-      'firebase: ${FirebaseBootstrap.isReady ? 'ready' : 'not ready (${FirebaseBootstrap.failure})'}',
-      'appCheck: ${FirebaseBootstrap.appCheckError ?? 'ok'}',
-      user == null
-          ? 'user: none'
-          : 'user: ${user.uid} anon=${user.isAnonymous} '
-                'providers=${user.providerData.map((UserInfo p) => p.providerId).join(',')}',
-    ];
-    final List<String> events = List<String>.of(_events);
-    String joined() => <String>[
-      ...header,
-      if (events.isEmpty) 'no community calls recorded in this session',
-      ...events,
-    ].join('\n');
-    while (events.isNotEmpty && joined().length > maxChars) {
-      events.removeAt(0);
-    }
-    final String text = joined();
-    return text.length > maxChars ? text.substring(0, maxChars) : text;
-  }
-
   /// The account every read and write here goes through, or null.
   ///
   /// **An anonymous user is not an account.** Every device has one from the
@@ -373,7 +323,6 @@ abstract final class CommunityService {
   }) async {
     final User? user = await _account();
     if (user == null) {
-      _note('publish', 'skipped, no signed-in account');
       return false;
     }
 
@@ -436,7 +385,6 @@ abstract final class CommunityService {
     final bool needsJoinedAt = await _wantsJoinedAt(user.uid);
     if (!needsJoinedAt &&
         CommunityProfileStore.publishedFingerprint == fingerprint) {
-      _note('publish', 'unchanged, all=${counts.allTime.points}');
       return false;
     }
     if (needsJoinedAt) {
@@ -455,15 +403,8 @@ abstract final class CommunityService {
       // retried by the next publish, not skipped because we already decided it
       // had happened.
       CommunityProfileStore.rememberPublished(fingerprint);
-      _note(
-        'publish',
-        'written day=${counts.day.points} week=${counts.week.points} '
-            'month=${counts.month.points} all=${counts.allTime.points} '
-            'hidden=$hidden joinedAt=$needsJoinedAt',
-      );
       return true;
     } on FirebaseException catch (error) {
-      _noteError('publish', error);
       // **A refusal here is usually not a permission problem — it is an old
       // document.** `noStrayFields` in the security rules is a whitelist, and
       // `set(merge: true)` leaves whatever is already on the document inside
@@ -484,8 +425,7 @@ abstract final class CommunityService {
         CommunityProfileStore.rememberPublished(fingerprint);
         return true;
       }
-    } catch (error) {
-      _noteError('publish', error);
+    } catch (_) {
       // A community figure is never worth an error in front of somebody who
       // came here to do matchmaking.
     }
@@ -514,8 +454,7 @@ abstract final class CommunityService {
         return false;
       }
       return true;
-    } catch (error) {
-      _noteError('joinedAt read', error);
+    } catch (_) {
       return false;
     }
   }
@@ -581,8 +520,7 @@ abstract final class CommunityService {
         for (final String key in strays) key: FieldValue.delete(),
       });
       return true;
-    } catch (error) {
-      _noteError('publish repair', error);
+    } catch (_) {
       return false;
     }
   }
@@ -637,8 +575,7 @@ abstract final class CommunityService {
           .get();
       final Object? hidden = doc.data()?['hidden'];
       return hidden is bool ? hidden : null;
-    } catch (error) {
-      _noteError('fetchHidden', error);
+    } catch (_) {
       return null;
     }
   }
@@ -703,8 +640,7 @@ abstract final class CommunityService {
       if (hidden) {
         await _deleteAvatar(user.uid);
       }
-    } catch (error) {
-      _noteError('setHidden', error);
+    } catch (_) {
       // Left to the next publish, which writes both fields too.
     } finally {
       // This row no longer matches the one [publish] last fingerprinted —
@@ -759,8 +695,7 @@ abstract final class CommunityService {
       final String url = await ref.getDownloadURL();
       CommunityProfileStore.rememberAvatar(path: path, url: url);
       return url;
-    } catch (error) {
-      _noteError('uploadAvatar', error);
+    } catch (_) {
       // The row simply keeps the default avatar. Nothing else is affected.
       return CommunityProfileStore.uploadedAvatarUrl;
     }
@@ -796,8 +731,7 @@ abstract final class CommunityService {
       CommunityProfileStore.forgetPublished();
       invalidate();
       return true;
-    } catch (error) {
-      _noteError('deleteMyData', error);
+    } catch (_) {
       return false;
     }
   }
@@ -863,12 +797,6 @@ abstract final class CommunityService {
       return cached.value;
     }
     if (await _account() == null) {
-      _noteError(
-        'totals ${period.name}',
-        FirebaseBootstrap.isReady
-            ? 'no signed-in account (anonymous or null)'
-            : 'firebase not ready: ${FirebaseBootstrap.failure}',
-      );
       return CommunityTotals.empty;
     }
 
@@ -892,7 +820,6 @@ abstract final class CommunityService {
       }
     }
     if (!anyResolved) {
-      _note('totals ${period.name}', 'unresolved');
       return cached?.value ?? CommunityTotals.empty;
     }
     // One more count, and it is not part of the sum above: the newcomers are
@@ -903,11 +830,6 @@ abstract final class CommunityService {
       parts,
     ).withNewMatchmakers(await _newMatchmakers(period));
     _totalsCache[cacheKey] = _Cached<CommunityTotals>(merged);
-    _note(
-      'totals ${period.name}',
-      'points=${merged.points} active=${merged.activeMatchmakers} '
-          'new=${merged.newMatchmakers}',
-    );
     return merged;
   }
 
@@ -933,8 +855,7 @@ abstract final class CommunityService {
       }
       final AggregateQuerySnapshot snapshot = await query.count().get();
       return snapshot.count ?? 0;
-    } catch (error) {
-      _noteError('newMatchmakers ${period.name}', error);
+    } catch (_) {
       return 0;
     }
   }
@@ -1030,12 +951,10 @@ abstract final class CommunityService {
       if (_aggregatesTrusted.contains(cacheKey)) {
         return result;
       }
-    } catch (error) {
-      _noteError('totals aggregate ${period.name}', error);
+    } catch (_) {
       // And so is a failure. Both roads lead to the scan below.
     }
 
-    _note('totals ${period.name} key=$key', 'aggregate gave nothing, scanning');
     final CommunityTotals scanned = await _totalsByScan(period, key);
     if (scanned.resolved && scanned.isEmpty) {
       // The scan agreed there is nothing here, so the aggregate was telling
@@ -1122,8 +1041,7 @@ abstract final class CommunityService {
         couples: couples,
         engagements: engagements,
       );
-    } catch (error) {
-      _noteError('totals scan ${period.name}', error);
+    } catch (_) {
       return CommunityTotals.empty;
     }
   }
@@ -1239,13 +1157,8 @@ abstract final class CommunityService {
         activeMatchmakers: window.activeMatchmakers,
       );
       _boardCache[cacheKey] = _Cached<CommunityLeaderboard>(result);
-      _note(
-        'leaderboard ${period.name}',
-        'rows=${rows.length} myPoints=$myPoints rank=$rank includeMe=$includeMe',
-      );
       return result;
-    } catch (error) {
-      _noteError('leaderboard ${period.name}', error);
+    } catch (_) {
       return cached?.value ?? CommunityLeaderboard.empty;
     }
   }

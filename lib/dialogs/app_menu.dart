@@ -8,6 +8,7 @@ import 'package:shadchan/dialogs/privacy_policy_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 
 /// What the overflow menu can do.
@@ -215,7 +216,7 @@ class AppMenuButton extends StatelessWidget {
         // reminders.
         UpdatesGroupDialog.show(context);
       case AppMenuAction.share:
-        shareTheApp();
+        shareTheApp(origin: ShareUtils.originOf(context));
       case AppMenuAction.help:
         context.push('/support/help');
       case AppMenuAction.contact:
@@ -420,9 +421,12 @@ class _BarMenuIcon extends StatelessWidget {
 /// The message and the download link are one string rather than a subject and a
 /// body: this is forwarded in WhatsApp far more often than it is emailed, and
 /// WhatsApp keeps only the text.
-Future<void> shareTheApp() async {
+Future<void> shareTheApp({Rect? origin}) async {
   try {
-    await Share.share(CommunityLinks.shareMessage);
+    await Share.share(
+      CommunityLinks.shareMessage,
+      sharePositionOrigin: origin,
+    );
   } on Object {
     // A phone with nothing to share to throws rather than returning. There is
     // nothing useful to say about it, and nothing was lost.

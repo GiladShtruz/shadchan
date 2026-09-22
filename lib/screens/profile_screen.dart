@@ -106,12 +106,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // 2. The account, immediately under the person it belongs to. It used to
       // be the last group on the page, which put the one row that protects
       // everything else below every row it protects.
-      _AccountGroup(
-        account: account,
-        onSignIn: () => context.push('/sign-in'),
-        onSignOut: () => _confirmSignOut(account, sync),
-        onDeleteAccount: () => _confirmDeleteAccount(account, sync),
-      ),
+      // Who is signed in, and nothing that ends it: leaving, switching and
+      // deleting are at the foot of the page — see [_AccountActions].
+      _AccountGroup(account: account, onSignIn: () => context.push('/sign-in')),
 
       // 3. A single matchmaker's own card — one row, and a page behind it. The
       // card used to be previewed here in full, above the settings, whether or
@@ -189,6 +186,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
+
+      if (account.isSignedIn)
+        _AccountActions(
+          busy: account.isBusy,
+          onSwitchAccount: () =>
+              _confirmSignOut(account, sync, switching: true),
+          onSignOut: () => _confirmSignOut(account, sync),
+          onDeleteAccount: () => _confirmDeleteAccount(account, sync),
+        ),
 
       const SettingsVersionFooter(),
     ];
@@ -377,15 +383,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ///
   /// See [AccountSwitch.signOutAndClear] for the order, and for why a failed
   /// final backup abandons the whole thing rather than pressing on.
+  ///
+  /// [switching] is the same act reached from "התחברות לחשבון אחר": leaving
+  /// this account is how another one is signed into, so only the title changes.
   Future<void> _confirmSignOut(
     AccountProvider account,
-    SyncProvider sync,
-  ) async {
+    SyncProvider sync, {
+    bool switching = false,
+  }) async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('יציאה מהחשבון?'),
+          title: Text(switching ? 'מעבר לחשבון אחר?' : 'יציאה מהחשבון?'),
           content: const Text(
             'לפני היציאה נגבה את המאגר לחשבון שלך, ואז ננקה אותו מהמכשיר הזה — '
             'כדי שמי שיתחבר כאן אחריך יראה את המאגר שלו בלבד.\n\n'
@@ -555,17 +565,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 class _AccountGroup extends StatelessWidget {
-  const _AccountGroup({
-    required this.account,
-    required this.onSignIn,
-    required this.onSignOut,
-    required this.onDeleteAccount,
-  });
+  const _AccountGroup({required this.account, required this.onSignIn});
 
   final AccountProvider account;
   final VoidCallback onSignIn;
-  final VoidCallback onSignOut;
-  final VoidCallback onDeleteAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -578,31 +581,14 @@ class _AccountGroup extends StatelessWidget {
         children: <Widget>[
           SettingsRow(
             icon: Icons.account_circle_outlined,
-            leadingOverride: _AccountAvatar(
-              photoUrl: account.photoUrl,
-              displayName: account.displayName ?? email,
-            ),
+            leadingOverride: account.isBusy
+                ? const SettingsSpinner()
+                : _AccountAvatar(
+                    photoUrl: account.photoUrl,
+                    displayName: account.displayName ?? email,
+                  ),
             title: account.displayName ?? email ?? 'מחובר',
             subtitle: email,
-          ),
-          SettingsRow(
-            icon: Icons.logout,
-            leadingOverride: account.isBusy ? const SettingsSpinner() : null,
-            title: 'יציאה והתחברות לחשבון אחר',
-            subtitle: 'המאגר מגובה לחשבון הזה ומנוקה מהמכשיר',
-            destructive: true,
-            enabled: !account.isBusy,
-            trailing: const SizedBox.shrink(),
-            onTap: onSignOut,
-          ),
-          SettingsRow(
-            icon: Icons.delete_forever_outlined,
-            title: 'מחיקת החשבון והנתונים',
-            subtitle: 'מחיקה לצמיתות מהשרת ומהמכשיר הזה',
-            destructive: true,
-            enabled: !account.isBusy,
-            trailing: const SizedBox.shrink(),
-            onTap: onDeleteAccount,
           ),
         ],
       );
@@ -656,12 +642,61 @@ class _AccountGroup extends StatelessWidget {
   }
 }
 
-/// The two lines at the foot of the settings, in the smallest type on the
-/// page. Nobody comes here for them, and everybody expects to find them here.
+/// "התחברות לחשבון אחר", "יציאה מהחשבון" and "מחיקת החשבון והנתונים", at the
+/// very foot of the page.
 ///
-/// **One link, not two.** It used to offer "תנאי שימוש" beside the privacy
-/// policy, and both pushed `/privacy-policy` — the app has no terms of use, and
-/// a link that promises a document that does not exist is worse than no link.
+/// **Quiet on purpose.** They used to be rows of the account group near the top
+/// of the page, drawn in red — the loudest thing on a page about the matchmaker
+/// themselves, and a row away from a tap by mistake. They are small grey text
+/// buttons under everything else now. None of them does anything on the tap:
+/// each opens a dialog that says what will happen, and the red belongs to that
+/// dialog's confirm button, once somebody has actually chosen to delete.
+class _AccountActions extends StatelessWidget {
+  const _AccountActions({
+    required this.busy,
+    required this.onSwitchAccount,
+    required this.onSignOut,
+    required this.onDeleteAccount,
+  });
+
+  final bool busy;
+  final VoidCallback onSwitchAccount;
+  final VoidCallback onSignOut;
+  final VoidCallback onDeleteAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    Widget action(String label, VoidCallback onPressed) {
+      return TextButton(
+        onPressed: busy ? null : onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurfaceVariant,
+          visualDensity: VisualDensity.compact,
+          textStyle: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        child: Text(label),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      child: Column(
+        children: <Widget>[
+          Divider(color: theme.colorScheme.outlineVariant),
+          const SizedBox(height: 4),
+          action('התחברות לחשבון אחר', onSwitchAccount),
+          action('יציאה מהחשבון', onSignOut),
+          action('מחיקת החשבון והנתונים', onDeleteAccount),
+        ],
+      ),
+    );
+  }
+}
+
 /// The Google profile picture, falling back to the initial and then to a
 /// generic icon — the photo is a remote URL and may simply not load.
 class _AccountAvatar extends StatelessWidget {

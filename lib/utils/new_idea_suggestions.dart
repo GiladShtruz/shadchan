@@ -174,6 +174,92 @@ abstract final class NewIdeaSuggestions {
     return rounds;
   }
 
+  /// A stable name for a pair on screen, male first.
+  static String keyOf(NewIdeaSuggestion idea) =>
+      '${idea.male.id}|${idea.female.id}';
+
+  /// The next round to add under what is already on screen.
+  ///
+  /// **Added, not swapped.** "רעיונות נוספים" used to replace the ten on screen
+  /// with the next ten, so a pair somebody meant to come back to was gone the
+  /// moment they asked for more. The next round is built exactly like the
+  /// first — the same ranking, one idea per friend — out of whatever has not
+  /// been shown yet.
+  static List<NewIdeaSuggestion> nextRound(
+    List<NewIdeaSuggestion> ranked, {
+    required Set<String> shownKeys,
+    int size = batchSize,
+  }) {
+    final List<List<NewIdeaSuggestion>> rounds = batches(<NewIdeaSuggestion>[
+      for (final NewIdeaSuggestion idea in ranked)
+        if (!shownKeys.contains(keyOf(idea))) idea,
+    ], size: size);
+    return rounds.isEmpty ? const <NewIdeaSuggestion>[] : rounds.first;
+  }
+
+  /// The pair that takes the place of one just turned down.
+  ///
+  /// **It alternates which side stays.** With [keepMale] the next idea is for
+  /// the same man with somebody else; without it, for the same woman. The
+  /// caller flips the side on every "לא מתאים", so turning down pair after pair
+  /// moves on through both halves of the database instead of offering one
+  /// popular friend again and again until something sticks.
+  ///
+  /// A partner who is already on screen is avoided where possible, and when the
+  /// kept side has nobody left the other side is tried, then any fresh pair.
+  /// Null only when nothing unseen is left.
+  static NewIdeaSuggestion? replacementFor(
+    List<NewIdeaSuggestion> ranked, {
+    required NewIdeaSuggestion dismissed,
+    required bool keepMale,
+    Set<String> shownKeys = const <String>{},
+  }) {
+    final String dismissedKey = keyOf(dismissed);
+    final List<NewIdeaSuggestion> fresh = <NewIdeaSuggestion>[
+      for (final NewIdeaSuggestion idea in ranked)
+        if (keyOf(idea) != dismissedKey && !shownKeys.contains(keyOf(idea)))
+          idea,
+    ];
+    if (fresh.isEmpty) {
+      return null;
+    }
+
+    final Set<String> onScreen = <String>{
+      for (final String key in shownKeys)
+        if (key != dismissedKey) ...key.split('|'),
+    };
+    bool free(String id) => !onScreen.contains(id);
+    bool involves(NewIdeaSuggestion idea, String id) =>
+        idea.male.id == id || idea.female.id == id;
+    String partnerOf(NewIdeaSuggestion idea, String id) =>
+        idea.male.id == id ? idea.female.id : idea.male.id;
+    NewIdeaSuggestion? firstWhere(bool Function(NewIdeaSuggestion) test) {
+      for (final NewIdeaSuggestion idea in fresh) {
+        if (test(idea)) {
+          return idea;
+        }
+      }
+      return null;
+    }
+
+    final String kept = keepMale ? dismissed.male.id : dismissed.female.id;
+    final String other = keepMale ? dismissed.female.id : dismissed.male.id;
+    return firstWhere(
+          (NewIdeaSuggestion idea) =>
+              involves(idea, kept) && free(partnerOf(idea, kept)),
+        ) ??
+        firstWhere(
+          (NewIdeaSuggestion idea) =>
+              involves(idea, other) && free(partnerOf(idea, other)),
+        ) ??
+        firstWhere(
+          (NewIdeaSuggestion idea) =>
+              free(idea.male.id) && free(idea.female.id),
+        ) ??
+        firstWhere((NewIdeaSuggestion idea) => involves(idea, kept)) ??
+        fresh.first;
+  }
+
   static NewIdeaSuggestion _describe({
     required Person male,
     required Person female,

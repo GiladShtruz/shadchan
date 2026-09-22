@@ -1,9 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:shadchan/services/community_service.dart';
+import 'package:provider/provider.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/device_facts.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/support_service.dart';
@@ -33,15 +32,6 @@ import 'package:shadchan/widgets/app_notice.dart';
 /// the page that asked the sender to read plumbing: a person reporting that a
 /// button does nothing does not need to be told the app version they are running
 /// before they may press "שליחה".
-///
-/// **The report is shared, not submitted (since 2026-09-13).** The button
-/// copies the whole report — text, device facts and the community diagnostics —
-/// and opens the system share sheet, so it can go out over WhatsApp, Telegram or
-/// anything else the phone offers. The app is not in production yet, and the
-/// iPhone build is only reachable through TestFlight with no Mac attached; a
-/// message that can be pasted anywhere is the shortest path from that phone to
-/// a readable report. `SupportService.submitReport` is left in place for when
-/// the Firestore route comes back.
 class SupportReportScreen extends StatefulWidget {
   const SupportReportScreen({
     super.key,
@@ -75,6 +65,8 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
   late SupportReportKind _kind = widget.initialKind;
 
   String? _screenshotPath;
+  bool _sending = false;
+  bool _sent = false;
 
   @override
   void initState() {
@@ -95,6 +87,8 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
     _text.dispose();
     super.dispose();
   }
+
+  bool get _canSend => !_sending && _text.text.trim().length >= 5;
 
   Future<void> _attachScreenshot() async {
     final String? path = await PhotoPickerService.pickSinglePhoto(
@@ -117,41 +111,33 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
     setState(() => _screenshotPath = null);
   }
 
-  /// Copies the report and opens the share sheet.
-  ///
-  /// Copied first, because some targets drop the text half of a share — most
-  /// visibly WhatsApp once an image is attached — and a report that only
-  /// arrived as a screenshot is missing the part that says what went wrong.
-  Future<void> _share() async {
-    final String report = _composeReport();
+  Future<void> _send() async {
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    final OverlayState? notices = AppNotice.capture(context);
     final String? path = _screenshotPath;
-    await Clipboard.setData(ClipboardData(text: report));
+
+    setState(() => _sending = true);
+    final bool sent = await SupportService.submitReport(
+      text: _text.text,
+      authorName: profile.name ?? '',
+      facts: _facts,
+      kind: _kind,
+      screenshot: path == null ? null : File(path),
+    );
     if (!mounted) {
       return;
     }
-    AppNotice.show(context, 'הדיווח הועתק, אפשר גם להדביק אותו');
-    if (path != null && File(path).existsSync()) {
-      await Share.shareXFiles(<XFile>[XFile(path)], text: report);
-    } else {
-      await Share.share(report);
+    setState(() {
+      _sending = false;
+      _sent = sent;
+    });
+    if (sent) {
+      return;
     }
-  }
-
-  /// What was typed, then the facts that make it actionable. The community
-  /// block is TEMPORARY — see `CommunityService.diagnostics`.
-  String _composeReport() {
-    final String typed = _text.text.trim();
-    return <String>[
-      if (typed.isNotEmpty) typed,
-      '---',
-      'סוג: ${_kind.label}',
-      'מכשיר: ${_facts.device}',
-      'מערכת: ${_facts.os}',
-      'גרסה: ${_facts.appVersion}',
-      '',
-      '[community]',
-      CommunityService.diagnostics(maxChars: 6000),
-    ].join('\n');
+    AppNotice.showOn(
+      notices,
+      'לא הצלחנו לשלוח כרגע. אפשר לנסות שוב או לכתוב לנו במייל.',
+    );
   }
 
   /// The way out when the form cannot reach us — no network, or a device with
@@ -176,64 +162,72 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-          children: <Widget>[
-            _Intro(theme: theme),
-            const SizedBox(height: 16),
-            _KindPicker(
-              selected: _kind,
-              onChanged: (SupportReportKind kind) =>
-                  setState(() => _kind = kind),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _text,
-              minLines: 6,
-              maxLines: 14,
-              maxLength: SupportService.maxReportLength,
-              textInputAction: TextInputAction.newline,
-              decoration: const InputDecoration(
-                labelText: 'מה קרה, או מה היה עוזר?',
-                hintText:
-                    'אפשר לכתוב בחופשיות — מה ניסית לעשות, מה קרה בפועל, '
-                    'ומה היית מצפה שיקרה.',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
+        child: _sent
+            ? _SentView(onClose: () => Navigator.of(context).maybePop())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                children: <Widget>[
+                  _Intro(theme: theme),
+                  const SizedBox(height: 16),
+                  _KindPicker(
+                    selected: _kind,
+                    onChanged: (SupportReportKind kind) =>
+                        setState(() => _kind = kind),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _text,
+                    minLines: 6,
+                    maxLines: 14,
+                    maxLength: SupportService.maxReportLength,
+                    textInputAction: TextInputAction.newline,
+                    decoration: const InputDecoration(
+                      labelText: 'מה קרה, או מה היה עוזר?',
+                      hintText:
+                          'אפשר לכתוב בחופשיות — מה ניסית לעשות, מה קרה בפועל, '
+                          'ומה היית מצפה שיקרה.',
+                      alignLabelWithHint: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  _ScreenshotField(
+                    path: _screenshotPath,
+                    onPick: _attachScreenshot,
+                    onRemove: _removeScreenshot,
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _canSend ? _send : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.brightness == Brightness.dark
+                            ? theme.colorScheme.primary
+                            : AppColors.primaryDark,
+                        foregroundColor: theme.colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: const StadiumBorder(),
+                      ),
+                      icon: _sending
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_rounded, size: 18),
+                      label: const Text('שליחה'),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: _openEmail,
+                      icon: const Icon(Icons.mail_outline, size: 18),
+                      label: const Text('או כתבו לנו במייל'),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            _ScreenshotField(
-              path: _screenshotPath,
-              onPick: _attachScreenshot,
-              onRemove: _removeScreenshot,
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _share,
-                style: FilledButton.styleFrom(
-                  backgroundColor: theme.brightness == Brightness.dark
-                      ? theme.colorScheme.primary
-                      : AppColors.primaryDark,
-                  foregroundColor: theme.colorScheme.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: const StadiumBorder(),
-                ),
-                icon: const Icon(Icons.ios_share_rounded, size: 18),
-                label: const Text('העתקה ושיתוף'),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Center(
-              child: TextButton.icon(
-                onPressed: _openEmail,
-                icon: const Icon(Icons.mail_outline, size: 18),
-                label: const Text('או כתבו לנו במייל'),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -374,7 +368,7 @@ class _ScreenshotField extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'התמונה תשותף יחד עם הפנייה',
+              'התמונה תישלח יחד עם הפנייה',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -386,6 +380,50 @@ class _ScreenshotField extends StatelessWidget {
             icon: const Icon(Icons.close),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SentView extends StatelessWidget {
+  const _SentView({required this.onClose});
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.mark_email_read_outlined,
+              size: 72,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'תודה רבה!',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'במידה ונצטרך פרטים נוספים נכתוב לכם במייל.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton(onPressed: onClose, child: const Text('סגירה')),
+          ],
+        ),
       ),
     );
   }

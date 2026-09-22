@@ -7,10 +7,12 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/widgets/candidate_card_view.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/extended_filter_toggle.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
+import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 
 typedef PersonFilter = bool Function(Person person);
@@ -209,6 +211,25 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
 
   /// Whose card is open inline right now.
   final Set<String> _expandedIds = <String>{};
+
+  /// Squares rather than rows: the same people, the same search, the same
+  /// filters and the same order — only the shape changes, so many more faces
+  /// fit on the screen at once. Remembered across pickers.
+  bool _grid = _readGridChoice();
+
+  static const String _gridKey = 'personPicker.grid';
+
+  static bool _readGridChoice() {
+    final Object? raw = Hive.isBoxOpen('settings')
+        ? Hive.box<dynamic>('settings').get(_gridKey)
+        : null;
+    return raw == true || raw == 'true';
+  }
+
+  void _toggleView() {
+    setState(() => _grid = !_grid);
+    persistHomeSetting(_gridKey, _grid.toString());
+  }
 
   @override
   void initState() {
@@ -456,6 +477,14 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                     ),
                   ),
                 ],
+                // The icon names the view it switches *to*.
+                IconButton(
+                  tooltip: _grid ? 'תצוגת רשימה' : 'תצוגת ריבועים',
+                  onPressed: _toggleView,
+                  icon: Icon(
+                    _grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                  ),
+                ),
               ],
             ),
             // Not while a filter the matchmaker set by hand is on: that one
@@ -503,6 +532,12 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
                       subtitle: autoMatching
                           ? 'אף אחד במאגר לא מתאים לסינון — אפשר לעבור לכל המאגר למעלה'
                           : widget.emptySubtitle,
+                    )
+                  : _grid
+                  ? _PickerGrid(
+                      entries: entries,
+                      onPick: (Person person) =>
+                          Navigator.of(context).pop(person),
                     )
                   : ListView.builder(
                       itemCount: entries.length,
@@ -647,6 +682,122 @@ class _PickerSectionLabel extends StatelessWidget {
         style: theme.textTheme.labelMedium?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// The picker's squares: the same entries as the list, section labels and all,
+/// laid out as a grid of small cards under each label.
+class _PickerGrid extends StatelessWidget {
+  const _PickerGrid({required this.entries, required this.onPick});
+
+  final List<_PickerEntry> entries;
+  final ValueChanged<Person> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    // Tall enough for a face, two lines of name and the age under them, grown
+    // with the system font rather than clipped by it.
+    final double textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1).clamp(1.0, 1.6);
+    final double tileHeight = 70 + 58 * textScale;
+
+    final List<Widget> slivers = <Widget>[];
+    List<Person> run = <Person>[];
+
+    void flush() {
+      if (run.isEmpty) {
+        return;
+      }
+      final List<Person> people = run;
+      run = <Person>[];
+      slivers.add(
+        SliverGrid.builder(
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 108,
+            mainAxisExtent: tileHeight,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+          ),
+          itemCount: people.length,
+          itemBuilder: (BuildContext context, int index) => _PickerTile(
+            person: people[index],
+            onTap: () => onPick(people[index]),
+          ),
+        ),
+      );
+    }
+
+    for (final _PickerEntry entry in entries) {
+      final Person? person = entry.person;
+      if (person == null) {
+        flush();
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _PickerSectionLabel(label: entry.sectionLabel!),
+          ),
+        );
+      } else {
+        run.add(person);
+      }
+    }
+    flush();
+
+    return CustomScrollView(slivers: slivers);
+  }
+}
+
+/// One candidate as a square: the photo, the name, and the age under it.
+class _PickerTile extends StatelessWidget {
+  const _PickerTile({required this.person, required this.onTap});
+
+  final Person person;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final int? age = person.age;
+
+    return Material(
+      color: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+          child: Column(
+            children: <Widget>[
+              PersonAvatar(person: person, radius: 26),
+              const SizedBox(height: 6),
+              Text(
+                person.fullName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.15,
+                ),
+              ),
+              if (age != null) ...<Widget>[
+                const SizedBox(height: 2),
+                Text(
+                  '$age',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -824,20 +975,27 @@ abstract final class MatchProposalFilterSheet {
   /// The clamp is what keeps a remembered window usable after the database has
   /// moved on: filters saved as 30–34 against a list whose oldest candidate is
   /// now 28 would otherwise hand `RangeSlider` values outside its own track.
+  ///
+  /// **A range with one end is still a range.** A card that says "from 24"
+  /// and nothing more used to open the sheet with no age filter at all, which
+  /// looked as though the friend's settings had been ignored. The missing end
+  /// is the edge of the track instead.
   static RangeValues? _rangeIn(
     int? min,
     int? max,
     ({int min, int max})? bounds,
   ) {
-    if (min == null || max == null || bounds == null || min > max) {
+    if ((min == null && max == null) || bounds == null) {
       return null;
     }
     final double low = bounds.min.toDouble();
     final double high = bounds.max.toDouble();
-    return RangeValues(
-      min.toDouble().clamp(low, high),
-      max.toDouble().clamp(low, high),
-    );
+    final double start = (min ?? bounds.min).toDouble().clamp(low, high);
+    final double end = (max ?? bounds.max).toDouble().clamp(low, high);
+    if (start > end) {
+      return null;
+    }
+    return RangeValues(start, end);
   }
 
   /// The age span the slider spans: the youngest and oldest candidate on the

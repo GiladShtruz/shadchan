@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
+import 'dart:ui' show Rect;
+
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -40,10 +42,12 @@ class ExcelExportService {
     return excelFile;
   }
 
-  static Future<void> shareExport(File excelFile) async {
-    await Share.shareXFiles(<XFile>[
-      XFile(excelFile.path),
-    ], subject: 'ייצוא אקסל שדכן');
+  static Future<void> shareExport(File excelFile, {Rect? origin}) async {
+    await Share.shareXFiles(
+      <XFile>[XFile(excelFile.path)],
+      subject: 'ייצוא אקסל שדכן',
+      sharePositionOrigin: origin,
+    );
   }
 
   @visibleForTesting

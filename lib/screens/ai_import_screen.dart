@@ -10,6 +10,7 @@ import 'package:shadchan/dialogs/import_file_kind_dialog.dart';
 import 'package:shadchan/dialogs/import_problem_dialog.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/screens/ai_import_review_screen.dart';
+import 'package:shadchan/screens/whatsapp_export_guide_screen.dart';
 import 'package:shadchan/utils/import_file_kind.dart';
 import 'package:shadchan/services/ai_import_memory.dart';
 import 'package:shadchan/services/ai_import_runner.dart';
@@ -621,6 +622,23 @@ class _AiImportScreenState extends State<AiImportScreen> {
     );
   }
 
+  /// What a source card does.
+  ///
+  /// Every source but one goes straight to its picker. "ייצוא מוואטסאפ" cannot:
+  /// the file it needs does not exist yet on most phones, and opening a file
+  /// picker at somebody who has never exported a chat drops them into Drive
+  /// with nothing to choose. So that one opens the guide first, and the guide
+  /// carries the picker for whoever already has the file.
+  Future<void> _open(AiImportSource source) async {
+    if (source != AiImportSource.whatsapp) {
+      return _start(source);
+    }
+    final bool pickFile = await WhatsAppExportGuideScreen.open(context);
+    if (pickFile && mounted) {
+      await _start(source);
+    }
+  }
+
   /// A wrong tap, not a fault: no report, no dialog to dismiss.
   void _fail(String message) {
     if (!mounted) {
@@ -692,7 +710,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
                       dark: dark,
                       enabled:
                           AiImportScreen._available.contains(source) && ready,
-                      onTap: () => _start(source),
+                      onTap: () => _open(source),
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -700,8 +718,6 @@ class _AiImportScreenState extends State<AiImportScreen> {
               );
             },
           ),
-          const SizedBox(height: 8),
-          _WhatsAppExportGuide(slate: slate),
           const SizedBox(height: 8),
           _PrivacyNote(slate: slate),
         ],
@@ -830,93 +846,6 @@ class _SourceCard extends StatelessWidget {
     AiImportSource.camera => 'צילום של כרטיסייה מודפסת',
     AiImportSource.gallery => 'צילום מסך או תמונה שכבר שמורה',
   };
-}
-
-/// How to get a WhatsApp export into the app, step by step.
-///
-/// Folded away by default: it is a one-time thing to learn, and it should not
-/// stand between someone who already knows it and the file picker.
-///
-/// It ends at WhatsApp's own share sheet rather than at "save the file, then
-/// come back and find it" — the app is registered for a shared `.zip`, so
-/// handing it straight over is both shorter to describe and the route with
-/// nowhere to lose the file along the way.
-class _WhatsAppExportGuide extends StatelessWidget {
-  const _WhatsAppExportGuide({required this.slate});
-
-  final Color slate;
-
-  static const List<String> _steps = <String>[
-    'פותחים ב־WhatsApp את הקבוצה או השיחה שרוצים לייבא.',
-    'לוחצים על שלוש הנקודות בתפריט העליון.',
-    'בוחרים "עוד" ואז "ייצוא צ׳אט".',
-    'בוחרים "לכלול מדיה".',
-    'במסך השיתוף בוחרים את אפליקציית השדכן – והיא כבר תמשיך מכאן.',
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsetsDirectional.only(start: 4, bottom: 8),
-        leading: Icon(Icons.help_outline_rounded, size: 20, color: slate),
-        title: Text(
-          'איך מייבאים מ־WhatsApp?',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: slate,
-          ),
-        ),
-        children: <Widget>[
-          for (int i = 0; i < _steps.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Container(
-                    width: 22,
-                    height: 22,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: slate.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '${i + 1}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: slate,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _steps[i],
-                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsetsDirectional.only(start: 32, top: 2),
-            child: Text(
-              'בקבוצה גדולה הייצוא לוקח רגע — שווה לחכות.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// Says plainly what leaves the phone. The app is local-first everywhere else,

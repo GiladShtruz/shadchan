@@ -3,9 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
@@ -236,14 +236,15 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         session.recordAdded();
         entry.importedPersonId = staged.person.id;
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
-          // The full card ends on that person's profile, not back at the deck.
+          // The full card comes back to the deck with a confirmation. Pushing
+          // the profile from here — above the tabs — drew a blank screen.
           await openExtendedPersonEditor(
             context,
             staged.person.id,
             isNewFriend: true,
           );
           if (mounted) {
-            context.push('/people/${staged.person.id}');
+            ContactsAddedCelebration.showNewFriend(context, staged.person);
           }
         }
         return;

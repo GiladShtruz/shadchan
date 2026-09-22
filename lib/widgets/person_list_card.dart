@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/contact_channel_button.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -115,17 +116,11 @@ class PersonListCard extends StatelessWidget {
             ),
             child: Row(
               children: <Widget>[
-                // The gender hint: a thin accent bar on the reading-start edge.
-                Container(
-                  width: 4,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    borderRadius: const BorderRadiusDirectional.horizontal(
-                      end: Radius.circular(12),
-                    ),
-                  ),
-                ),
+                // The gender hint: the app's one accent bar, on the
+                // reading-start edge. See [AccentStripe] — every coloured rule
+                // in the app is that one, so a row here and a row on the home
+                // screen are evidently the same kind of thing.
+                AccentStripe(color: accent, height: AccentBar.rowHeight),
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 10),
                   child: heroEnabled

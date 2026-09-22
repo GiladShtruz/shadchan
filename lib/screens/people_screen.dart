@@ -9,6 +9,7 @@ import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/think_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -485,13 +486,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
       try {
         await repository.activatePendingContactDraft(person);
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
-          // The full card ends on that person's profile, so the rest of the
-          // batch is left rather than resumed behind it.
+          // The full card comes back here with a confirmation, and the batch
+          // carries on after it.
           await openExtendedPersonEditor(context, person.id, isNewFriend: true);
           if (mounted) {
-            context.push('/people/${person.id}');
+            ContactsAddedCelebration.showNewFriend(context, person);
           }
-          return;
         }
       } catch (_) {
         if (mounted) {

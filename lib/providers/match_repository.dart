@@ -210,8 +210,10 @@ class MatchRepository extends ChangeNotifier {
     // The fallback only stands in for a record that vanished between the
     // proposal being made and this line being written, so it is deliberately
     // the one word that fits either side.
-    final String nameA = _shortName(resolve?.call(personAId), 'הצד השני');
-    final String nameB = _shortName(resolve?.call(personBId), 'הצד השני');
+    // Full names: a candidate's history is read months later, and "נפתח רעיון
+    // עם אהבה" leaves the reader to guess which אהבה.
+    final String nameA = _fullName(resolve?.call(personAId), 'הצד השני');
+    final String nameB = _fullName(resolve?.call(personBId), 'הצד השני');
     await logPersonEvent?.call(
       personAId,
       PersonEventType.proposalOpened,
@@ -464,6 +466,62 @@ class MatchRepository extends ChangeNotifier {
     DateTime? createdAt,
   })?
   logPersonEvent;
+
+  /// Deletes what a proposal wrote into its candidates' histories from a given
+  /// moment on. Wired to [PersonRepository.deleteMatchEventsSince] in
+  /// `main.dart`; used only by [undoClose].
+  Future<void> Function(String matchId, DateTime since)?
+  deletePersonEventsSince;
+
+  /// Takes back a closing made a moment ago — "ביטול" on "הרעיון עבר לארכיון".
+  ///
+  /// **As though it never happened, not as a second move.** Reopening would
+  /// leave "הרעיון נסגר" and "הרעיון נפתח מחדש" one above the other in the
+  /// journal, two status moves in the activity ledger and a closing line on
+  /// both candidates. So the status is put back through [updateStatus] — which
+  /// is what re-marks a dating couple "תפוס" — and then everything written from
+  /// [since] on is removed: journal lines, status events and history events,
+  /// including the ones that put-back itself just wrote.
+  Future<void> undoClose(
+    String matchId, {
+    required MatchStatus previousStatus,
+    required DateTime previousUpdatedAt,
+    required DateTime since,
+    String? waitingReason,
+  }) async {
+    final MatchIdea? match = getById(matchId);
+    if (match == null) {
+      return;
+    }
+    await updateStatus(matchId, previousStatus, journal: false);
+
+    bool written(DateTime at) => !at.isBefore(since);
+    final List<dynamic> noteKeys = _noteBox.keys.where((dynamic key) {
+      final MatchNote? note = _noteBox.get(key);
+      return note != null && note.matchId == matchId && written(note.createdAt);
+    }).toList();
+    await _noteBox.deleteAll(noteKeys);
+
+    final Box<MatchStatusEvent>? statusEvents = _statusEventBox;
+    if (statusEvents != null) {
+      final List<dynamic> eventKeys = statusEvents.keys.where((dynamic key) {
+        final MatchStatusEvent? event = statusEvents.get(key);
+        return event != null &&
+            event.matchId == matchId &&
+            written(event.createdAt);
+      }).toList();
+      await statusEvents.deleteAll(eventKeys);
+    }
+    await deletePersonEventsSince?.call(matchId, since);
+
+    match
+      ..updatedAt = previousUpdatedAt
+      ..waitingReason = previousStatus == MatchStatus.unavailable
+          ? waitingReason
+          : match.waitingReason;
+    await match.save();
+    notifyListeners();
+  }
 
   /// Sets (or clears, with a null [date]) the reminder on a proposal. Clearing
   /// is also how a due reminder is marked as handled, which takes the proposal
@@ -884,7 +942,7 @@ class MatchRepository extends ChangeNotifier {
     await _logOutcomeHistory(
       person: male,
       otherPerson: female,
-      otherName: femaleName,
+      otherName: _fullName(female, 'הבחורה'),
       selfIsMale: true,
       eventType: eventType,
       party: party,
@@ -895,7 +953,7 @@ class MatchRepository extends ChangeNotifier {
     await _logOutcomeHistory(
       person: female,
       otherPerson: male,
-      otherName: maleName,
+      otherName: _fullName(male, 'הבחור'),
       selfIsMale: false,
       eventType: eventType,
       party: party,
@@ -1016,6 +1074,12 @@ class MatchRepository extends ChangeNotifier {
 
   String _shortName(Person? person, String fallback) {
     final String name = (person?.firstName ?? '').trim();
+    return name.isEmpty ? fallback : name;
+  }
+
+  /// The name a candidate's own history uses for the other side.
+  String _fullName(Person? person, String fallback) {
+    final String name = (person?.fullName ?? '').trim();
     return name.isEmpty ? fallback : name;
   }
 

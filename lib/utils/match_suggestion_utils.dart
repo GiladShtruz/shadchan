@@ -170,6 +170,39 @@ abstract final class MatchSuggestionUtils {
     return (minAge: maleAge - 5, maxAge: maleAge + 1);
   }
 
+  /// The ages of men a woman of [femaleAge] is shown by default.
+  ///
+  /// Worked out from [femaleAgeRangeForMale] rather than written as a second
+  /// rule, so the filter a woman's matches open on can never disagree with the
+  /// one a man's do: it runs from the youngest to the oldest man whose own
+  /// default range includes her. That is an envelope — at the 30 and 40 tier
+  /// boundaries the men's rule leaves a one-year seam (a woman of 24 fits men
+  /// of 23–29 and 31, not 30) — which is right for a slider, which cannot have
+  /// a hole in it.
+  static ({int minAge, int maxAge})? maleAgeRangeForFemale(int? femaleAge) {
+    if (femaleAge == null) {
+      return null;
+    }
+    int? low;
+    int? high;
+    for (int male = femaleAge - 20; male <= femaleAge + 20; male++) {
+      if (male < 16) {
+        continue;
+      }
+      final ({int minAge, int maxAge})? range = femaleAgeRangeForMale(male);
+      if (range != null &&
+          femaleAge >= range.minAge &&
+          femaleAge <= range.maxAge) {
+        low ??= male;
+        high = male;
+      }
+    }
+    if (low == null || high == null) {
+      return null;
+    }
+    return (minAge: low, maxAge: high);
+  }
+
   static bool isSuggestedCandidate({
     required Person source,
     required Person candidate,

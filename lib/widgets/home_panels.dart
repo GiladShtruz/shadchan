@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// The full-width blocks of the home screen: the database's own suggestions,
@@ -19,13 +20,22 @@ Color _leadTone(ThemeData theme) {
 }
 
 /// The couples banner's own palette — the one block on the page that wears
-/// colour. Blue paper, a warm gold glint, and nothing that introduces a new
-/// visual language to the rest of the screen.
-const Color _datingPaper = Color(0xFFF1F6F8);
-const Color _datingPaperWarm = Color(0xFFFFFBF4);
-const Color _datingInk = Color(0xFF4F7D99);
-const Color _datingInkDm = Color(0xFFA9C9DC);
-const Color _celebrationGold = Color(0xFFD4A34B);
+/// colour. Blue paper, a warm glint, and nothing that introduces a new visual
+/// language to the rest of the screen.
+///
+/// **Named here, chosen in [AppColors].** These were five hand-picked tones,
+/// each a shade off a brand colour it sat next to; the whole point of the page
+/// having a palette is that the blue in one block is the blue in the next.
+const Color _datingPaper = AppColors.primaryLight;
+const Color _datingPaperWarm = AppColors.surface;
+
+/// `primaryInk` and not `primaryDark`, because everything written in it sits
+/// on [_datingPaper] — a light wash of its own colour, where the brand tone
+/// itself does not hold a readable contrast. That is the case `primaryInk`
+/// exists for.
+const Color _datingInk = AppColors.primaryInk;
+const Color _datingInkDm = AppColors.primaryDarkDm;
+const Color _celebrationGold = AppColors.secondary;
 
 /// "רעיונות שהמאגר מציע לך" — the pairs the database worked out on its own.
 ///
@@ -129,7 +139,7 @@ class HomeHeroBand extends StatelessWidget {
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 26,
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: AppColors.muted(dark: dark),
                   ),
                 ],
               ),
@@ -228,15 +238,14 @@ class HomeActionCards extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(
           context,
         ).scale(1).clamp(1, 1.8);
-        final double bandHeight = (narrow ? 46.0 : 50.0) * textScale;
-        // Squatter than the drawing would like, on purpose. These two are the
-        // top of a page that has to show what is under them too, and a tile
-        // tall enough to give a line drawing room is a tile that pushes
-        // everything else off the first screen.
-        final double artHeight = (constraints.maxWidth * 0.33).clamp(88, 132);
+        final double bandHeight = (narrow ? 40.0 : 44.0) * textScale;
+        // Short on purpose. The two are still the loudest thing on the page —
+        // by colour and by lifting off it — but a tile tall enough to give a
+        // line drawing room pushed everything under it off the first screen.
+        final double artHeight = (constraints.maxWidth * 0.2).clamp(56, 80);
 
         return SizedBox(
-          height: artHeight + bandHeight,
+          height: artHeight + bandHeight + AccentBar.thickness,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -246,15 +255,14 @@ class HomeActionCards extends StatelessWidget {
                 child: _AddTile(
                   onTap: onAddPeople,
                   compact: narrow,
-                  // The notepad, which came off "הוספת רעיון". Adding a
-                  // friend is the moment somebody writes a person down —
-                  // the name, the age, the two lines that will one day make
-                  // a match possible — so the page of ruled lines with a
-                  // pencil beside it is the more literal of the two
-                  // drawings for the more literal of the two actions.
-                  art: 'assets/home_add_idea2.png',
-                  band: AppColors.addPeopleBand,
-                  ornament: Icons.favorite,
+                  // The notepad. Adding a friend is the moment somebody
+                  // writes a person down — the name, the age, the two lines
+                  // that will one day make a match possible — so the page of
+                  // ruled lines with a pencil beside it is the more literal
+                  // of the two drawings for the more literal of the two
+                  // actions. The "+" in the corner is what says it adds.
+                  art: 'assets/add_friends_icon.png',
+                  accent: AppColors.addPeopleAccent,
                   label: 'הוספת חברים',
                   bandHeight: bandHeight,
                   primary: true,
@@ -266,13 +274,11 @@ class HomeActionCards extends StatelessWidget {
                 child: _AddTile(
                   onTap: onAddIdea,
                   compact: narrow,
-                  // The heart beside a pencil, which used to head "טיפ
-                  // לשדכן". A notepad is a place to write anything down; a
-                  // heart being drawn *is* the idea, which is what this card
-                  // opens. The tip block took a bulb in its place.
-                  art: 'assets/shadchan-tip.png',
-                  band: AppColors.addIdeaBand,
-                  ornament: Icons.star_rounded,
+                  // The heart beside a pencil. A notepad is a place to
+                  // write anything down; a heart being drawn *is* the idea,
+                  // which is what this card opens.
+                  art: 'assets/add_idea_icon.png',
+                  accent: AppColors.addIdeaAccent,
                   label: 'הוספת רעיון',
                   bandHeight: bandHeight,
                   primary: false,
@@ -287,8 +293,21 @@ class HomeActionCards extends StatelessWidget {
   }
 }
 
-/// One of the two entry tiles: its drawing, its band, and one tap target over
+/// One of the two entry tiles: its drawing, its label and one tap target over
 /// the whole of it.
+///
+/// **White paper, not a coloured card.** Each one used to be a solid band of
+/// brand colour carrying its label in cream, with the drawing on a tinted
+/// wash above it — two saturated blocks side by side, directly under a
+/// greeting, competing with everything below them. What is left says the same
+/// thing more quietly: the paper the rest of the page is made of, a soft
+/// shadow lifting it off, the drawing in the card's own accent, and a single
+/// rule of that accent along the foot. The accent is where all the colour went,
+/// and there is one of it.
+///
+/// The little heart and star that sat under the labels are gone with the band.
+/// They decorated a strip that no longer exists, and a card that already has a
+/// drawing on it does not need a second, smaller picture underneath.
 ///
 /// The drawing is a black-on-white line illustration recoloured at draw time —
 /// see [HomeLineArt] — so the paper under it is the card's own, and in the dark
@@ -298,8 +317,7 @@ class _AddTile extends StatelessWidget {
     required this.onTap,
     required this.compact,
     required this.art,
-    required this.band,
-    required this.ornament,
+    required this.accent,
     required this.label,
     required this.bandHeight,
     required this.primary,
@@ -309,14 +327,20 @@ class _AddTile extends StatelessWidget {
   final VoidCallback onTap;
   final bool compact;
   final String art;
-  final Color band;
-  final IconData ornament;
+
+  /// The one colour on the card: its drawing, its chevron and its rule.
+  final Color accent;
+
   final String label;
   final double bandHeight;
   final bool primary;
 
-  /// Drawn to be picked first: a tinted ground behind the illustration instead
-  /// of the plain paper, and a deeper shadow under the card.
+  /// Drawn to be picked first — by a deeper shadow, and nothing else.
+  ///
+  /// It used to tint the ground as well. Both cards are plain paper now, so a
+  /// wash on one of them would be the only coloured panel left on the page and
+  /// would read as a state rather than as emphasis. It is a difference in
+  /// weight, never in size: the two are always equal halves of the row.
   final bool loud;
 
   @override
@@ -324,38 +348,25 @@ class _AddTile extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
 
-    // The ground the drawing sits on, and what its strokes are drawn in. In the
-    // dark theme the two swap over: pale ink on the card's own dark paper.
-    final Color paper = dark
-        ? Color.alphaBlend(
-            band.withValues(alpha: loud ? 0.22 : 0.12),
-            theme.colorScheme.surface,
-          )
-        : Color.alphaBlend(
-            band.withValues(alpha: loud ? 0.16 : 0.07),
-            AppColors.surface,
-          );
     final Color ink = dark
-        ? Color.alphaBlend(band.withValues(alpha: 0.55), Colors.white)
-        : band;
+        ? Color.alphaBlend(accent.withValues(alpha: 0.75), Colors.white)
+        : accent;
+    final Color paper = theme.colorScheme.surface;
 
     return Material(
-      // The band's own colour, so the corners the drawing does not reach are
-      // never the page showing through.
-      color: band,
-      borderRadius: BorderRadius.circular(22),
-      elevation: loud ? 3 : (primary ? 2 : 0),
-      // A neutral shadow, not one tinted with the band. Tinting worked while
-      // the tile was a flat blue rectangle; under an illustration the same
-      // shadow reads as a coloured halo drawn around the card rather than as
-      // the card sitting above the page.
-      shadowColor: AppColors.onSurface.withValues(alpha: 0.4),
+      color: paper,
+      borderRadius: BorderRadius.circular(20),
+      elevation: loud ? 5 : 2,
+      // A neutral shadow, not one tinted with the accent. Under an
+      // illustration a tinted shadow reads as a coloured halo drawn around the
+      // card rather than as the card sitting above the page.
+      shadowColor: AppColors.onSurface.withValues(alpha: 0.22),
       // **No elevation overlay.** Material 3 lightens a raised surface towards
       // `surfaceTint`, which in the dark theme is a pale blue — so a raised
-      // card's band would drift off the brand colour and take the contrast of
-      // the white label on it with it. The band is a brand colour, not a
-      // surface: it means the same thing at any elevation.
+      // card would drift off the paper colour the rest of the page uses.
       surfaceTintColor: Colors.transparent,
+      // The rule sits flush on the bottom edge and is rounded by this clip,
+      // which is the whole of [AccentUnderline]'s shape.
       clipBehavior: Clip.antiAlias,
       child: Stack(
         fit: StackFit.expand,
@@ -363,61 +374,68 @@ class _AddTile extends StatelessWidget {
           Column(
             children: <Widget>[
               Expanded(
-                child: ColoredBox(
-                  color: paper,
-                  child: Padding(
-                    // The drawings are line art with very little margin of
-                    // their own, so the breathing room is given here rather
-                    // than baked into three separate files.
-                    padding: EdgeInsets.fromLTRB(
-                      compact ? 10 : 14,
-                      compact ? 8 : 10,
-                      compact ? 10 : 14,
-                      compact ? 6 : 8,
-                    ),
-                    child: SizedBox.expand(
-                      child: HomeLineArt(asset: art, ink: ink, paper: paper),
-                    ),
+                child: Padding(
+                  // The drawings are line art with very little margin of their
+                  // own, so the breathing room is given here rather than baked
+                  // into the files.
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 14 : 20,
+                    compact ? 8 : 10,
+                    compact ? 14 : 20,
+                    compact ? 2 : 3,
+                  ),
+                  child: SizedBox.expand(
+                    child: HomeLineArt(asset: art, ink: ink, paper: paper),
                   ),
                 ),
               ),
               SizedBox(
                 height: bandHeight,
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
+                  padding: EdgeInsetsDirectional.fromSTEB(
+                    compact ? 8 : 12,
+                    0,
+                    compact ? 4 : 6,
+                    0,
+                  ),
+                  child: Row(
                     children: <Widget>[
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          textAlign: TextAlign.center,
-                          // No size of its own: the page decides that once,
-                          // for every block on it — see [HomeTypography]. The
-                          // `FittedBox` above still shrinks the label on a
-                          // narrow card, which is what `compact` used to do by
-                          // hand.
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1.2,
-                            color: AppColors.onPrimary,
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            // No size and no colour of its own: the page
+                            // decides both, once, for every block on it — see
+                            // [HomeTypography].
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      _BandRule(icon: ornament),
+                      // Points the way the page reads — leftwards, in RTL. It
+                      // is the only thing on the card that says it opens
+                      // somewhere, now that the band that used to say so by
+                      // looking like a button has gone.
+                      Icon(
+                        Icons.chevron_left_rounded,
+                        size: 20,
+                        color: AppColors.muted(dark: dark),
+                      ),
                     ],
                   ),
                 ),
               ),
+              AccentUnderline(color: accent),
             ],
           ),
           // Above the picture rather than under it: the ripple of an `InkWell`
           // is painted by the `Material` behind it, so an image in between
-          // would leave the tap looking dead everywhere except the band.
+          // would leave the tap looking dead everywhere except the label row.
           Positioned.fill(
             child: Material(
               type: MaterialType.transparency,
@@ -426,40 +444,6 @@ class _AddTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// The little rule under a tile's label — two strokes with a mark between them.
-///
-/// It is the one piece of the artwork's band that is redrawn rather than
-/// cropped away, because without it the band is a plain colour bar and the two
-/// cards stop looking like the pair they were drawn as.
-class _BandRule extends StatelessWidget {
-  const _BandRule({required this.icon});
-
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color ink = AppColors.onPrimary.withValues(alpha: 0.6);
-
-    Widget stroke() => Container(width: 16, height: 1, color: ink);
-    Widget dot() => Container(
-      width: 3,
-      height: 3,
-      decoration: BoxDecoration(color: ink, shape: BoxShape.circle),
-    );
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        dot(),
-        stroke(),
-        Icon(icon, size: 10, color: ink),
-        stroke(),
-        dot(),
-      ],
     );
   }
 }
@@ -719,7 +703,6 @@ class _DatingPage extends StatelessWidget {
                     style: theme.textTheme.titleLarge?.copyWith(
                       height: 1.15,
                       fontWeight: FontWeight.w900,
-                      color: theme.colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 3),

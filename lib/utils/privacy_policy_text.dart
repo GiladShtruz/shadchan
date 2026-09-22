@@ -110,7 +110,7 @@ Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואס�
 
 14. מחיקת החשבון
 
-אפשר להתחיל ולסיים מחיקת חשבון בתוך האפליקציה: הפרופיל שלי → חשבון → מחיקת החשבון והנתונים. האפליקציה מבקשת אימות מחדש באמצעות Apple, Google או הסיסמה, לפי החשבון. בחשבון Apple מתקבל קוד הרשאה חדש ונשלח ל-Firebase כדי לבטל את אסימוני Apple לפני מחיקת המשתמש.
+אפשר להתחיל ולסיים מחיקת חשבון בתוך האפליקציה: הפרופיל שלי → בתחתית העמוד → מחיקת החשבון והנתונים. האפליקציה מבקשת אימות מחדש באמצעות Apple, Google או הסיסמה, לפי החשבון. בחשבון Apple מתקבל קוד הרשאה חדש ונשלח ל-Firebase כדי לבטל את אסימוני Apple לפני מחיקת המשתמש.
 
 המחיקה מסירה את חשבון Firebase, הגיבוי והתמונות בענן, נתוני הקהילה והתמונה הציבורית, פרסומי האירוסין, הברכות הממתינות והטיפים, ולאחר מכן מנקה את המאגר המקומי. היא אינה הפיכה. פניות תמיכה נשמרות לפי סעיף 8, וקבצים שייצאתם או מידע ששיתפתם מחוץ לאפליקציה אינם בשליטתנו.
 
@@ -241,7 +241,7 @@ Information may be processed outside your country. Firebase Authentication opera
 
 14. Account deletion
 
-Account deletion can be completed inside the Application: My profile → Account → Delete account and data. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.
+Account deletion can be completed inside the Application: My profile → bottom of the page → Delete account and data. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.
 
 Deletion removes the Firebase user, cloud backup and photographs, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
 

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/person_navigation.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -455,7 +456,7 @@ class PersonReminderCard extends StatelessWidget {
       child: InkWell(
         onTap: () {
           onOpenPerson?.call();
-          context.push('/people/${person.id}');
+          openPersonProfile(context, person.id);
         },
         child: Padding(
           padding: const EdgeInsets.all(14),

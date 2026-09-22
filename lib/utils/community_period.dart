@@ -179,6 +179,48 @@ abstract final class CommunityPeriods {
     return <String>['${t.year}-${_two(t.month)}'];
   }
 
+  /// The windows "פעילות הקהילה" offers on a given day, all-time always last.
+  ///
+  /// **A window that has barely started is not offered.** Through the first
+  /// seven days of a Hebrew month "החודש" is the week under another name, so
+  /// only השבוע and כל הזמנים are shown. On the Sunday of that week the week
+  /// itself is a few hours old, and "היום" is the honest name for it.
+  static List<CommunityPeriod> communityWindows([DateTime? at]) {
+    final DateTime t = at ?? now();
+    final DateTime today = DateTime(t.year, t.month, t.day);
+    final DateTime? monthStart = startOf(CommunityPeriod.month, t);
+    final int daysIntoMonth = monthStart == null
+        ? t.day - 1
+        : (today
+                      .difference(
+                        DateTime(
+                          monthStart.year,
+                          monthStart.month,
+                          monthStart.day,
+                        ),
+                      )
+                      .inHours /
+                  24)
+              .round();
+    if (daysIntoMonth >= 7) {
+      return const <CommunityPeriod>[
+        CommunityPeriod.week,
+        CommunityPeriod.month,
+        CommunityPeriod.allTime,
+      ];
+    }
+    if (t.weekday == DateTime.sunday) {
+      return const <CommunityPeriod>[
+        CommunityPeriod.day,
+        CommunityPeriod.allTime,
+      ];
+    }
+    return const <CommunityPeriod>[
+      CommunityPeriod.week,
+      CommunityPeriod.allTime,
+    ];
+  }
+
   static String keyFor(CommunityPeriod period, [DateTime? at]) {
     switch (period) {
       case CommunityPeriod.day:

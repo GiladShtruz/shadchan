@@ -482,6 +482,19 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _commit(() {});
   }
 
+  /// The candidate's own number, picked from the phone's contacts.
+  Future<void> _pickOwnPhoneFromContacts() async {
+    FocusScope.of(context).unfocus();
+    final DeviceContactChoice? picked = await DeviceContactPickerSheet.show(
+      context,
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    _phone.text = picked.phone;
+    _commit(() {});
+  }
+
   void _addManualAdditionalContact() {
     _commit(
       () => _additionalContacts = <MatchContact>[
@@ -752,6 +765,28 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           // from "הוספת שם מחוץ למאגר" — who arrives with nothing but a name —
           // had no way to be given one at all.
           _field(controller: _phone, label: 'טלפון', phone: true),
+          // With no number yet, the phone's own contacts are the quickest
+          // place to find one.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _phone,
+            builder: (BuildContext context, TextEditingValue value, _) {
+              if (value.text.trim().isNotEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _pickOwnPhoneFromContacts,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                  icon: const Icon(Icons.contact_phone_outlined, size: 18),
+                  label: const Text('הוספת מספר מאנשי הקשר'),
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 16),
           _label(theme, 'אזור בארץ'),
           const SizedBox(height: 6),

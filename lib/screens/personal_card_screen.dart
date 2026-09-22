@@ -73,7 +73,11 @@ class _PersonalCardScreenState extends State<PersonalCardScreen> {
     if (card.isEmpty && photos.isEmpty) {
       return;
     }
-    await ShareUtils.shareText(card, photoPaths: photos);
+    await ShareUtils.shareText(
+      card,
+      photoPaths: photos,
+      origin: ShareUtils.originOf(context),
+    );
   }
 }
 

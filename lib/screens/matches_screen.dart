@@ -116,24 +116,12 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// How long the reader has to stay away before the filters come back.
   static const Duration _awayAfter = Duration(seconds: 10);
 
-  /// Whether the category tiles are folded away right now.
+  /// Whether the two banners at the head of the page are folded away.
   ///
-  /// **Exactly one thing decides this, and it is not the scroll.** The tiles
-  /// used to hide on the way down the list and come back on the way up, which
-  /// meant the map of the screen — five counts, and the only way between the
-  /// five shelves — was missing at the moment somebody was furthest into a
-  /// list and most likely to want to switch shelves. They are pinned under the
-  /// search row now and stay there. The one time they go away is while a
-  /// proposal's actions are open, because that panel is a promotion row, three
-  /// status tiles and a journal, and it needs the third of the screen the
-  /// filters were holding.
-  ///
-  /// **And they come back when the panel stops being what is being looked
-  /// at.** A panel left open at the top of a list of forty went on holding the
-  /// filters hostage for the rest of the session, however far down the reader
-  /// had gone since. So: scroll a screenful away from it, leave it alone for
-  /// ten seconds, and the map of the screen returns — without closing anything,
-  /// because the panel is still where it was left.
+  /// Only while a proposal's actions are open, and only until the reader has
+  /// scrolled a screenful away from that panel and left it for [_awayAfter].
+  /// The category row is **not** part of this any more: it is one compact line
+  /// pinned under the search field and stays there whatever is open.
   bool get _headerHidden => _openCards.isNotEmpty && !_awayFromOpenCard;
 
   @override
@@ -428,24 +416,25 @@ class _MatchesScreenState extends State<MatchesScreen> {
         // two open, one closed — is exactly what somebody typing their name
         // wants to know, and hiding the split at the moment they ask was the
         // one time it mattered most.
-        if (!_headerHidden)
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _PinnedCategories(
-              // Opaque, because the banners pass underneath it.
-              background: theme.scaffoldBackgroundColor,
-              extent: _CategoryButtons.heightFor(context),
-              child: _CategoryButtons(
-                selected: _category,
-                counts: <MatchCategory, int>{
-                  for (final MatchCategory category in MatchCategory.values)
-                    category: groups[category]!.length,
-                },
-                onSelected: (MatchCategory category) =>
-                    setState(() => _category = category),
-              ),
+        // Always pinned, including while a proposal's actions are open: it is
+        // the way between the shelves, and it is one compact line.
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _PinnedCategories(
+            // Opaque, because the banners pass underneath it.
+            background: theme.scaffoldBackgroundColor,
+            extent: _CategoryChips.heightFor(context),
+            child: _CategoryChips(
+              selected: _category,
+              counts: <MatchCategory, int>{
+                for (final MatchCategory category in MatchCategory.values)
+                  category: groups[category]!.length,
+              },
+              onSelected: (MatchCategory category) =>
+                  setState(() => _category = category),
             ),
           ),
+        ),
         ..._categorySlivers(
           theme,
           groups,
@@ -953,20 +942,19 @@ class _MatchesScreenState extends State<MatchesScreen> {
   }
 }
 
-/// The five category buttons, each carrying its own count.
+/// The five categories on one compact line, each carrying its own count.
 ///
-/// **They do not scroll.** They used to sit in a horizontal strip, which meant
-/// that on any ordinary phone the last one or two were off the edge — so the
-/// closed pile, and sometimes "יוצאים", were invisible until somebody thought
-/// to swipe a row that gives no sign it can be swiped. Five buttons fit across
-/// a phone if the label goes above the number instead of beside it, so that is
-/// what they do: the whole map of the screen, visible at once.
-/// The pinned host for [_CategoryButtons].
+/// **Chips again, and all five on screen.** The row was a strip of chips that
+/// scrolled sideways, which hid the last one or two on an ordinary phone, and
+/// then five tall two-line buttons, which were a third of the header. Now each
+/// chip is a share of the row, its name and count on one line and scaled down
+/// rather than cut, so the whole map of the screen fits in one short line.
+/// The pinned host for [_CategoryChips].
 ///
 /// A `SliverPersistentHeader` has to be told its height in advance — a sliver
 /// negotiates extent before it lays its child out — so the row's height is
 /// computed from the text styles it is about to use rather than measured. See
-/// [_CategoryButtons.heightFor]; the row centres itself in whatever it is
+/// [_CategoryChips.heightFor]; the row centres itself in whatever it is
 /// given, so an over-estimate is a few spare pixels and never a clipped
 /// button.
 ///
@@ -1012,31 +1000,26 @@ class _PinnedCategories extends SliverPersistentHeaderDelegate {
   }
 }
 
-class _CategoryButtons extends StatelessWidget {
-  const _CategoryButtons({
+class _CategoryChips extends StatelessWidget {
+  const _CategoryChips({
     required this.selected,
     required this.counts,
     required this.onSelected,
   });
 
-  /// What [_PinnedCategories] has to promise the sliver protocol.
-  ///
-  /// Built from the two text styles the buttons draw, put through the reader's
-  /// own text scale, plus the paddings and borders around them — with a little
-  /// slack, because being a few pixels tall costs nothing and being a few
-  /// pixels short clips the count off the bottom of every button.
+  /// What [_PinnedCategories] has to promise the sliver protocol: the one line
+  /// of type through the reader's own text scale, plus paddings and borders,
+  /// with a little slack — a few spare pixels cost nothing, a few missing ones
+  /// clip every chip.
   static double heightFor(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final TextScaler scaler = MediaQuery.textScalerOf(context);
-    // Material's own line heights for the two roles, rounded up: 1.33 for
-    // `labelMedium` and 1.50 for `titleMedium`.
-    final double label =
-        scaler.scale(theme.textTheme.labelMedium?.fontSize ?? 12) * 1.45;
-    final double count =
-        scaler.scale(theme.textTheme.titleMedium?.fontSize ?? 16) * 1.55;
-    // 10 + 6 around the row, 7 + 7 inside a button, 1 + 1 of border, 2 between
-    // the two lines, and 4 of slack.
-    return 38 + label + count;
+    final double line =
+        MediaQuery.textScalerOf(
+          context,
+        ).scale(theme.textTheme.labelLarge?.fontSize ?? 14) *
+        1.45;
+    // 6 + 6 around the row, 6 + 6 inside a chip, 1 + 1 of border, 4 of slack.
+    return 30 + line;
   }
 
   final MatchCategory selected;
@@ -1048,14 +1031,14 @@ class _CategoryButtons extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       child: Row(
         children: <Widget>[
           for (final MatchCategory category in MatchCategory.values)
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: _CategoryButton(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: _CategoryChip(
                   label: category.displayName,
                   count: counts[category] ?? 0,
                   isSelected: selected == category,
@@ -1072,8 +1055,8 @@ class _CategoryButtons extends StatelessWidget {
   }
 }
 
-class _CategoryButton extends StatelessWidget {
-  const _CategoryButton({
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
     required this.label,
     required this.count,
     required this.isSelected,
@@ -1099,55 +1082,46 @@ class _CategoryButton extends StatelessWidget {
       color: isSelected
           ? accent.withValues(alpha: 0.14)
           : theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: isSelected
                   ? accent.withValues(alpha: 0.5)
                   : theme.colorScheme.outlineVariant,
             ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // The name on top and the number under it. Scaled down rather
-              // than wrapped, so "בהמתנה" in a narrow column stays one line and
-              // every button keeps the same height.
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
+          // Scaled down rather than wrapped, so "בהמתנה 12" stays one line and
+          // every chip keeps the height promised in [_CategoryChips.heightFor].
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
                   label,
                   maxLines: 1,
-                  style: theme.textTheme.labelMedium?.copyWith(
+                  style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                     color: isSelected ? accent : theme.colorScheme.onSurface,
                   ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              // Scaled down like the name above it. The row's height is
-              // promised to a sliver before anything is laid out — see
-              // [_CategoryButtons.heightFor] — so neither line may be allowed
-              // to argue with the answer.
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
+                const SizedBox(width: 4),
+                Text(
                   '$count',
                   maxLines: 1,
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w900,
                     color: accent,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

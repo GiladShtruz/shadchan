@@ -18,15 +18,29 @@ import 'package:shadchan/widgets/app_notice.dart';
 /// the profile photo. Its app bar exposes card sharing and a direct WhatsApp
 /// conversation without forcing the user back to the profile.
 class PersonCardViewer extends StatefulWidget {
-  const PersonCardViewer({super.key, required this.personId});
+  const PersonCardViewer({
+    super.key,
+    required this.personId,
+    this.initialIndex = 0,
+  });
 
   final String personId;
 
-  static Future<void> open(BuildContext context, String personId) {
+  /// Which photo opens first. The profile's thumbnail strip passes the one
+  /// that was tapped, so a photo opens as itself rather than as the first of
+  /// a gallery somebody then has to swipe back through.
+  final int initialIndex;
+
+  static Future<void> open(
+    BuildContext context,
+    String personId, {
+    int initialIndex = 0,
+  }) {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (BuildContext context) => PersonCardViewer(personId: personId),
+        builder: (BuildContext context) =>
+            PersonCardViewer(personId: personId, initialIndex: initialIndex),
       ),
     );
   }
@@ -36,9 +50,11 @@ class PersonCardViewer extends StatefulWidget {
 }
 
 class _PersonCardViewerState extends State<PersonCardViewer> {
-  final PageController _pageController = PageController();
+  late final PageController _pageController = PageController(
+    initialPage: widget.initialIndex,
+  );
 
-  int _currentIndex = 0;
+  late int _currentIndex = widget.initialIndex;
 
   /// Whether the card text is opened to its full height. Collapsed it shows a
   /// few lines over the photo; expanded it scrolls on its own.
@@ -106,7 +122,10 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
                 : null,
             showActions: true,
             channel: ContactChannels.forPerson(person),
-            onShare: () => ShareUtils.sharePerson(person),
+            onShare: () => ShareUtils.sharePerson(
+              person,
+              origin: ShareUtils.originOf(context),
+            ),
             onWhatsApp: () => _openWhatsApp(person),
             onSms: () => ContactChannels.openSms(person.phone),
           ),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/app_celebration.dart';
 
 /// The confirmation after a batch of contacts was added — from the multi-add
@@ -25,6 +27,22 @@ abstract final class ContactsAddedCelebration {
       context,
       headline: 'מעולה!',
       message: count == 1 ? 'הוספת חבר אחד למאגר' : 'הוספת $count חברים למאגר',
+    );
+  }
+
+  /// One friend who was added through the full card.
+  ///
+  /// Shown back on the screen the matchmaker started from, which is where the
+  /// full editor now returns to instead of opening the friend's profile.
+  static void showNewFriend(BuildContext context, Person person) {
+    final String name = person.fullName.trim();
+    final String joined = person.gender == Gender.female ? 'נוספה' : 'נוסף';
+    AppCelebration.show(
+      context,
+      headline: 'הוספת חבר חדש למאגר!',
+      message: name.isEmpty
+          ? 'הכרטיס נשמר במאגר שלך'
+          : '$name $joined למאגר שלך',
     );
   }
 }

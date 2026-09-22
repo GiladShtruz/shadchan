@@ -13,6 +13,8 @@ import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/dialogs/duplicate_person_sheet.dart';
+import 'package:shadchan/utils/person_duplicates.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
@@ -802,6 +804,32 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       return;
     }
 
+    // **A new card that looks like one already there is offered as a merge.**
+    // Shown side by side first, because two friends can share a name.
+    if (!_isEditMode) {
+      final List<Person> similar = PersonDuplicates.similarTo(
+        context.read<PersonRepository>().getAll(),
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
+        gender: _selectedGender,
+        excludingId: _draftPersonId,
+      );
+      if (similar.isNotEmpty) {
+        final DuplicateChoice? choice = await DuplicatePersonSheet.show(
+          context,
+          draft: _buildNewPerson(DateTime.now()),
+          candidates: similar,
+        );
+        if (!mounted || choice == null) {
+          return;
+        }
+        if (choice.existing case final Person existing) {
+          await _mergeInto(existing);
+          return;
+        }
+      }
+    }
+
     setState(() {
       _isSaving = true;
     });
@@ -843,36 +871,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
 
         await repository.update(_person!);
       } else {
-        final DateTime now = DateTime.now();
-        final Person person = Person(
-          id: _draftPersonId,
-          firstName: firstName,
-          lastName: lastName,
-          gender: _selectedGender,
-          manualAge: manualAge,
-          manualAgeUpdatedAt: manualAge != null ? now : null,
-          religiousLevel: _selectedReligiousLevel,
-          religiousLevelOther: _religiousLevelOther,
-          city: _normalizedText(_cityController.text),
-          phone: _normalizedText(_phoneController.text),
-          source: _normalizedText(_sourceController.text),
-          notes: _normalizedText(_notesController.text),
-          description: _normalizedText(_descriptionController.text),
-          inquiryContactName: _normalizedText(
-            _inquiryContactNameController.text,
-          ),
-          inquiryContactPhone: _normalizedText(
-            _inquiryContactPhoneController.text,
-          ),
-          heightCm: heightCm,
-          maritalStatus: _selectedMaritalStatus,
-          profileStatus: _selectedProfileStatus,
-          photosPaths: List<String>.from(_photoPaths),
-          createdAt: now,
-          updatedAt: now,
-        );
-
-        await repository.add(person);
+        await repository.add(_buildNewPerson(DateTime.now()));
       }
 
       // A personal note typed in the form is appended straight to the person's
@@ -915,6 +914,64 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
         setState(() {
           _isSaving = false;
         });
+      }
+    }
+  }
+
+  /// The card this form describes, as a new record.
+  Person _buildNewPerson(DateTime now) {
+    final int? manualAge = int.tryParse(_manualAgeController.text.trim());
+    return Person(
+      id: _draftPersonId,
+      firstName: _firstNameController.text.trim(),
+      lastName: _lastNameController.text.trim(),
+      gender: _selectedGender,
+      manualAge: manualAge,
+      manualAgeUpdatedAt: manualAge != null ? now : null,
+      religiousLevel: _selectedReligiousLevel,
+      religiousLevelOther: _religiousLevelOther,
+      city: _normalizedText(_cityController.text),
+      phone: _normalizedText(_phoneController.text),
+      source: _normalizedText(_sourceController.text),
+      notes: _normalizedText(_notesController.text),
+      description: _normalizedText(_descriptionController.text),
+      inquiryContactName: _normalizedText(_inquiryContactNameController.text),
+      inquiryContactPhone: _normalizedText(_inquiryContactPhoneController.text),
+      heightCm: int.tryParse(_heightController.text.trim()),
+      maritalStatus: _selectedMaritalStatus,
+      profileStatus: _selectedProfileStatus,
+      photosPaths: List<String>.from(_photoPaths),
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  /// Folds this form into [existing] instead of adding a second card for the
+  /// same friend. Only empty fields are filled — see [PersonMerge.fillGaps] —
+  /// and the photos staged here join the existing card.
+  Future<void> _mergeInto(Person existing) async {
+    setState(() => _isSaving = true);
+    try {
+      final PersonRepository repository = context.read<PersonRepository>();
+      PersonMerge.fillGaps(existing, _buildNewPerson(DateTime.now()));
+      await repository.update(existing);
+      final String personalNote = _personalNotesController.text.trim();
+      if (personalNote.isNotEmpty) {
+        await repository.addNote(existing.id, personalNote);
+      }
+      if (!mounted) {
+        return;
+      }
+      _personalNotesController.clear();
+      // The photos belong to the existing card now, so leaving must not delete
+      // their files.
+      _newPhotoPaths.clear();
+      _initialSnapshot = _currentSnapshot();
+      AppNotice.show(context, 'הפרטים אוחדו לכרטיס של ${existing.fullName}');
+      context.pushReplacement('/people/${existing.id}');
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
       }
     }
   }

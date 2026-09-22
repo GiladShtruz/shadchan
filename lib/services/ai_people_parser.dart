@@ -296,6 +296,9 @@ person for it.
   genuinely unisex name such as שי or אורי with no gendered wording, leave both
   gender and genderSource null. genderSource must never be "stated" unless a
   word in that row says the gender.
+- A line that lists choices before the colon is a form, not a fact: in
+  "רווק / אלמן / גרוש: רווק" only what follows the colon is this person's
+  answer. Never take a value from the list of options itself.
 - maritalStatus: only from an explicit word — רווק/רווקה is single,
   גרוש/גרושה is divorced, אלמן/אלמנה is widowed. Never default to single.
 - heightCm: whole centimetres. "1.78" and "178" are both 178.
@@ -349,6 +352,9 @@ them twice.
   usage is unambiguous and set genderSource to "inferred". For a genuinely
   unisex name with no gendered wording, leave both null. genderSource must
   never be "stated" unless a word about that person says the gender.
+- A line that lists choices before the colon is a form, not a fact: in
+  "רווק / אלמן / גרוש: רווק" only what follows the colon is this person's
+  answer. Never take a value from the list of options itself.
 - maritalStatus: only from an explicit word — רווק/רווקה is single,
   גרוש/גרושה is divorced, אלמן/אלמנה is widowed. Never default to single.
 - heightCm: whole centimetres. "1.78" and "178" are both 178.

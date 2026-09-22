@@ -10,6 +10,7 @@ import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
+import 'package:shadchan/utils/person_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -190,7 +191,9 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
                 for (final Person person in people)
                   _PersonRow(
                     person: person,
-                    onTap: () => context.push('/people/${person.id}'),
+                    // Not `context.push`: this screen is above the tabs, where
+                    // a tab route cannot be pushed — see [openPersonProfile].
+                    onTap: () => openPersonProfile(context, person.id),
                   )
               else if (metric == MonthlyStatMetric.dating)
                 for (final DatingCoupleRecord record in couples)

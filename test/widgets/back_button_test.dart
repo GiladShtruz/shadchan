@@ -20,6 +20,7 @@ import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/first_visit_tip.dart';
 
 /// What the Android back key does, and — much more importantly — what it must
 /// never do.
@@ -64,6 +65,10 @@ void main() {
     await settings.put('signIn.hasAccount', 'true');
     await settings.put('signIn.promptAnswered', 'true');
     await settings.put('community.inWhatsAppGroup', 'true');
+    // This test is about the back button, not about the screen's
+    // one-time explanation — which opens as a dialog and would eat the
+    // first back press.
+    await settings.put(FirstVisitTopic.addFriends.key, 'true');
   });
 
   tearDownAll(() async {

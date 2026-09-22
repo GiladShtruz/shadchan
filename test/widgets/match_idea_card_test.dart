@@ -377,7 +377,7 @@ void main() {
     expect(afterBoth, isEmpty);
   });
 
-  testWidgets('a week with nothing happening says so, without reordering', (
+  testWidgets('a quiet week adds no line under "יאללה לקדם"', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
@@ -408,12 +408,10 @@ void main() {
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    // In the promote area, where somebody is already deciding what to do — and
-    // nowhere else. The list stays in its own order.
-    expect(
-      find.text('עבר שבוע בלי עדכון – שווה לקדם את הרעיון'),
-      findsOneWidget,
-    );
+    // The row is the action and nothing under it: the staleness sentence was
+    // one line too many on a panel already full of information.
+    expect(find.text('יאללה לקדם — לשאול את דוד'), findsOneWidget);
+    expect(find.textContaining('בלי עדכון'), findsNothing);
   });
 
   testWidgets('a couple who are out are asked about, not promoted', (

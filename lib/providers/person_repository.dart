@@ -605,6 +605,29 @@ class PersonRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes the history a proposal wrote on its candidates from [since] on.
+  ///
+  /// Only for a move that is taken back straight away — "ביטול" on the notice
+  /// after closing an idea — so the candidates' histories read as though it
+  /// never happened. Wired to [MatchRepository.deletePersonEventsSince].
+  Future<void> deleteMatchEventsSince(String matchId, DateTime since) async {
+    final Box<PersonEvent>? eventBox = _eventBox;
+    if (eventBox == null) {
+      return;
+    }
+    final List<dynamic> keys = eventBox.keys.where((dynamic key) {
+      final PersonEvent? event = eventBox.get(key);
+      return event != null &&
+          event.relatedMatchId == matchId &&
+          !event.createdAt.isBefore(since);
+    }).toList();
+    if (keys.isEmpty) {
+      return;
+    }
+    await eventBox.deleteAll(keys);
+    notifyListeners();
+  }
+
   /// The "check on them again" reminder date for a person, or null when none.
   DateTime? personReminderFor(String id) => PersonReminders.forPerson(id);
 

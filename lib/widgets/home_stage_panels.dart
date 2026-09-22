@@ -130,10 +130,7 @@ class HomeMilestoneCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             milestone.message,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.4,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
           ),
         ],
       ),
@@ -190,10 +187,7 @@ class HomeFirstIdeaCard extends StatelessWidget {
           Text(
             'יש כבר $friends חברים במאגר. אולי שניים מהם מתאימים זה לזה — '
             'רעיון ראשון הוא רק מחשבה שנשמרת.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.4,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
           ),
           const SizedBox(height: 12),
           SizedBox(
@@ -271,32 +265,19 @@ class HomeImportInvite extends StatelessWidget {
 }
 
 /// "עוצרים רגע לחשוב על החברים" — the invitation into the continuous
-/// think-about-someone view, and the warmest thing on the home screen.
+/// think-about-someone view, at the head of המאגר שלי.
 ///
-/// **A card with a picture in it, not a banner with an icon on it.** It was one
-/// tinted strip with a small glyph and the word "מתחילים" — legible, and
-/// completely interchangeable with the six other tinted strips the page has had
-/// at one time or another. This is the one block on the home screen that is an
-/// invitation rather than a control, so it is allowed to look like one: painted
-/// paper, a title, and a real button.
+/// **Two lines on the reading edge, and one quiet mark at the other.** The
+/// heading and the button under it both start at the right, so the block reads
+/// as one sentence with its answer beneath it; a centred pill under a
+/// right-aligned heading read as two things that happened to share a card.
 ///
-/// **Its own illustration: somebody thinking, over a cup of coffee.** It used
-/// to reuse the notepad from "הוספת רעיון", and then a pair of profile
-/// cards — but a pair of cards is what a *match* looks like, and this block is
-/// not about a pair, it is about the minute before one. A figure sitting with a
-/// coffee and a thought rising off it is what the block actually asks for, and
-/// it is drawn in the same warm paper-and-copper palette as the photographs
-/// beside it so the page still looks drawn rather than assembled.
+/// **The mark is a line drawing of a cup of coffee**, recoloured the way the
+/// home cards are — see [HomeLineArt]. It replaced a painted figure-with-a-cup
+/// that was too detailed to read at this size.
 ///
-/// **Kept short, and one line high in the title.** Title, button, picture —
-/// nothing else, the title scaled to stay on a single line rather than wrapping
-/// into a two-line heading that pushed the card taller than anything around it.
-/// The sentence under the title and the heart in the corner are both gone for
-/// the same reason: on a page whose whole job is to get out of the way, this
-/// block is an invitation, not a poster.
-///
-/// It drops the picture entirely below 300px of card or above 1.3x text, where
-/// keeping it would leave the title three words wide.
+/// It drops the mark below 300px of card or above 1.3x text, where keeping it
+/// would leave the title three words wide.
 class HomeThinkBanner extends StatelessWidget {
   const HomeThinkBanner({super.key, required this.onTap});
 
@@ -315,115 +296,83 @@ class HomeThinkBanner extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool showPicture =
             constraints.maxWidth >= 300 && textScale <= 1.3;
-        // Smaller than it was, for the same reason the padding is: the title
-        // is one line now, so the block is two lines tall, and a picture sized
-        // for a three-line card would be the only thing setting its height.
-        final double pictureWidth = (constraints.maxWidth * 0.18).clamp(
-          52.0,
-          66.0,
-        );
+        final Color paper = dark
+            ? theme.colorScheme.surfaceContainerHighest
+            : AppColors.surface;
 
         return Material(
-          color: dark ? theme.colorScheme.surface : AppColors.surface,
-          borderRadius: BorderRadius.circular(24),
+          color: paper,
+          borderRadius: BorderRadius.circular(22),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             child: Ink(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                // No outline. The wash is already a different colour from the
-                // page, which is all a block needs to be told apart from it —
-                // and a tinted fill inside a tinted line reads as a component
-                // with a frame drawn round it rather than as a piece of the
-                // page.
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: accent.withValues(alpha: dark ? 0.20 : 0.12),
+                ),
                 gradient: LinearGradient(
-                  begin: AlignmentDirectional.topEnd,
-                  end: AlignmentDirectional.bottomStart,
+                  begin: AlignmentDirectional.topStart,
+                  end: AlignmentDirectional.bottomEnd,
                   colors: <Color>[
-                    accent.withValues(alpha: dark ? 0.15 : 0.08),
-                    dark ? theme.colorScheme.surface : AppColors.surface,
+                    accent.withValues(alpha: dark ? 0.14 : 0.07),
+                    paper,
                   ],
                 ),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 12, 12),
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          // A statement, not a question. The block is an
-                          // open door, and a question mark on the home screen
-                          // asks for an answer the matchmaker did not come
-                          // here to give.
-                          //
-                          // **One line, whatever it costs in size.** The
-                          // rule it used to follow — a fixed size, and let
-                          // the number of lines give — was written when this
-                          // block and "רעיונות שהמאגר מציע לך" sat one above
-                          // the other on the home screen and had to be headed
-                          // identically. They are on two different pages now
-                          // (המאגר שלי and הרעיונות שלי), so nothing is left
-                          // for this heading to match, and what wrapping cost
-                          // was real: a two-line heading over a button made
-                          // the block a third taller than the invitation in
-                          // it is worth. See [HomeBannerTitle.singleLine].
+                          // One line, shrunk rather than wrapped — see
+                          // [HomeBannerTitle.singleLine].
                           HomeBannerTitle(
                             text: 'עוצרים רגע לחשוב על החברים',
                             color: dark ? theme.colorScheme.onSurface : accent,
                             singleLine: true,
                           ),
-                          const SizedBox(height: 6),
-                          // Centred in its own column rather than pinned to
-                          // the reading edge: the invitation is the middle of
-                          // the block, and a pill hard against the right edge
-                          // under a two-line heading reads as a footnote to
-                          // it.
-                          Align(
-                            alignment: Alignment.center,
-                            child: FilledButton(
-                              onPressed: onTap,
-                              // Scaled down rather than wrapped. The
-                              // label is a question, and a question
-                              // broken across two lines inside a pill
-                              // reads as two half-sentences; at 1.5x
-                              // system text on a 320px phone there is no
-                              // room for it at full size and no room to
-                              // wrap it either. No glyph beside it either:
-                              // the picture on the card already says what
-                              // this is, and the symbol only made the pill
-                              // wider.
-                              style: FilledButton.styleFrom(
-                                backgroundColor: dark
-                                    ? AppColors.secondaryDarkDm
-                                    : AppColors.secondary,
-                                foregroundColor: dark
-                                    ? AppColors.onSecondary
-                                    : AppColors.surface,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                shape: const StadiumBorder(),
-                                textStyle: theme.textTheme.labelMedium
-                                    ?.copyWith(fontWeight: FontWeight.w800),
+                          const SizedBox(height: 8),
+                          FilledButton(
+                            onPressed: onTap,
+                            // Scaled down rather than wrapped: a question
+                            // broken across two lines inside a pill reads as
+                            // two half-sentences.
+                            style: FilledButton.styleFrom(
+                              backgroundColor: dark
+                                  ? AppColors.secondaryDarkDm
+                                  : AppColors.secondary,
+                              foregroundColor: dark
+                                  ? AppColors.onSecondary
+                                  : AppColors.surface,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 7,
                               ),
-                              child: const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text('על מי חושבים עכשיו?', maxLines: 1),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                              shape: const StadiumBorder(),
+                              textStyle: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
                               ),
+                            ),
+                            child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('על מי חושבים עכשיו?', maxLines: 1),
                             ),
                           ),
                         ],
                       ),
                     ),
                     if (showPicture) ...<Widget>[
-                      const SizedBox(width: 10),
-                      _ThinkingArt(size: pictureWidth, accent: accent),
+                      const SizedBox(width: 12),
+                      _CoffeeMark(accent: accent, dark: dark),
                     ],
                   ],
                 ),
@@ -436,213 +385,32 @@ class HomeThinkBanner extends StatelessWidget {
   }
 }
 
-/// Somebody sitting with a coffee, thinking — the picture for
-/// "עוצרים רגע לחשוב על החברים".
-///
-/// **Drawn, not photographed.** Every other picture on this page is a painted
-/// asset, and there is no painted asset for *stopping to think*. Drawing it
-/// here costs nothing to ship, follows the text size and the theme on its own,
-/// and keeps the block to the palette of the photographs next to it — warm
-/// paper, a copper line, the stone blue of the app — so it reads as one more
-/// piece of the same vintage set rather than as an icon that wandered in.
-///
-/// **A person and a cup, not a pair of profile cards.** Two cards with a heart
-/// between them is what a *match* looks like, and this block is about the
-/// minute before one: one person, chin on hand, over a coffee that is still
-/// steaming. Everything is one stroke weight and flat fills — the tell of a
-/// generated illustration is fussy shading and too many little flourishes, so
-/// there are five shapes here and no gradients.
-class _ThinkingArt extends StatelessWidget {
-  const _ThinkingArt({required this.size, required this.accent});
+/// The cup of coffee beside "עוצרים רגע לחשוב על החברים", in a disc of the
+/// block's own tint so the drawing's white ground never shows.
+class _CoffeeMark extends StatelessWidget {
+  const _CoffeeMark({required this.accent, required this.dark});
 
-  final double size;
   final Color accent;
+  final bool dark;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
+    final Color disc = Color.alphaBlend(
+      accent.withValues(alpha: dark ? 0.22 : 0.10),
+      dark ? theme.colorScheme.surfaceContainerHighest : AppColors.surface,
+    );
 
-    return SizedBox.square(
-      dimension: size,
-      child: CustomPaint(
-        painter: _ThinkingPainter(
-          paper: dark
-              ? Color.alphaBlend(
-                  Colors.white.withValues(alpha: 0.07),
-                  theme.colorScheme.surface,
-                )
-              : AppColors.surface,
-          line: accent.withValues(alpha: dark ? 0.55 : 0.45),
-          figure: dark
-              ? AppColors.primaryDarkDm.withValues(alpha: 0.85)
-              : AppColors.primaryDark,
-          brew: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
-        ),
-        // The picture is decoration for a block whose title already says what
-        // it is; a screen reader announcing "a person with a cup of coffee"
-        // here would only be reading the wallpaper out loud.
-        isComplex: false,
+    return Container(
+      width: 54,
+      height: 54,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: disc),
+      child: HomeLineArt(
+        asset: 'assets/coffee_icon.png',
+        ink: dark ? AppColors.secondaryDarkDm : accent,
+        paper: disc,
       ),
     );
-  }
-}
-
-class _ThinkingPainter extends CustomPainter {
-  const _ThinkingPainter({
-    required this.paper,
-    required this.line,
-    required this.figure,
-    required this.brew,
-  });
-
-  /// The face of the cup.
-  final Color paper;
-
-  /// The drawn outline — one weight for the whole picture, the way the painted
-  /// assets beside it are outlined.
-  final Color line;
-
-  /// The person.
-  final Color figure;
-
-  /// The coffee, and the thought rising off it.
-  final Color brew;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double u = size.width / 100;
-    final Paint stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4 * u
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = line;
-
-    _thought(canvas, u: u, stroke: stroke);
-    _person(canvas, u: u, stroke: stroke);
-    _table(canvas, u: u);
-    _cup(canvas, u: u, stroke: stroke);
-  }
-
-  /// Two small rings drifting up off the head. The one piece of the picture
-  /// that says *thinking* rather than *sitting*.
-  void _thought(Canvas canvas, {required double u, required Paint stroke}) {
-    canvas.drawCircle(Offset(14 * u, 20 * u), 4.5 * u, stroke);
-    canvas.drawCircle(Offset(6 * u, 9 * u), 2.4 * u, stroke);
-  }
-
-  /// A head and a pair of shoulders, outlined.
-  ///
-  /// **Two shapes and no arm.** The obvious drawing of somebody thinking is
-  /// chin-on-hand — and at 80 pixels, in one flat colour, a hand touching a
-  /// chin is a lump: every attempt at it read as a blob with a bump. The
-  /// thought rising off the head says *thinking* on its own, and two clean
-  /// shapes beside a cup of coffee is a picture rather than a puzzle.
-  ///
-  /// Outlined in the same copper as the cup, so the whole illustration is one
-  /// weight of line around flat fills — the look of the painted assets beside
-  /// it, and the opposite of a soft-shaded generated image.
-  void _person(Canvas canvas, {required double u, required Paint stroke}) {
-    final Paint body = Paint()..color = figure;
-
-    // Shoulders, cut off by the table rather than floating above it. The
-    // corners are rounded well short of a half-circle: a dome reads as a hill,
-    // and what makes a bust a person is a short flat top with a shoulder
-    // falling away on each side.
-    final RRect torso = RRect.fromLTRBAndCorners(
-      8 * u,
-      42 * u,
-      58 * u,
-      92 * u,
-      topLeft: Radius.circular(16 * u),
-      topRight: Radius.circular(16 * u),
-    );
-    canvas.drawRRect(torso, body);
-    canvas.drawRRect(torso, stroke);
-
-    // The head sits *on* the shoulders rather than above them — a gap between
-    // the two is the difference between a person and a balloon. The outline is
-    // what keeps the two shapes apart where they meet.
-    canvas.drawCircle(Offset(33 * u, 26 * u), 13 * u, body);
-    canvas.drawCircle(Offset(33 * u, 26 * u), 13 * u, stroke);
-  }
-
-  /// The tabletop: one bar across the bottom, drawn after the figure so the
-  /// person sits behind it.
-  void _table(Canvas canvas, {required double u}) {
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(2 * u, 84 * u, 96 * u, 6 * u),
-        Radius.circular(3 * u),
-      ),
-      Paint()..color = brew.withValues(alpha: 0.7),
-    );
-  }
-
-  /// The cup on the table, with two curls of steam.
-  void _cup(Canvas canvas, {required double u, required Paint stroke}) {
-    // A tapered body — wider at the rim than at the base, which is the whole
-    // difference between a cup and a box.
-    final Path cup = Path()
-      ..moveTo(60 * u, 58 * u)
-      ..lineTo(86 * u, 58 * u)
-      ..lineTo(82.5 * u, 80 * u)
-      ..quadraticBezierTo(82 * u, 84 * u, 78.5 * u, 84 * u)
-      ..lineTo(67.5 * u, 84 * u)
-      ..quadraticBezierTo(64 * u, 84 * u, 63.5 * u, 80 * u)
-      ..close();
-    canvas.drawPath(cup, Paint()..color = paper);
-    canvas.drawPath(cup, stroke);
-
-    // The coffee itself, a band just under the rim.
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(63 * u, 60 * u, 20 * u, 5.5 * u),
-        Radius.circular(2.5 * u),
-      ),
-      Paint()..color = brew,
-    );
-
-    // The handle, on the outer side so it never crowds the figure.
-    canvas.drawArc(
-      Rect.fromCenter(
-        center: Offset(87 * u, 68 * u),
-        width: 15 * u,
-        height: 17 * u,
-      ),
-      -1.3,
-      2.6,
-      false,
-      stroke,
-    );
-
-    // Steam: two short waves, the second shorter, so it reads as rising rather
-    // than as a pair of brackets.
-    final Paint wisp = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2 * u
-      ..strokeCap = StrokeCap.round
-      ..color = brew.withValues(alpha: 0.65);
-    canvas.drawPath(
-      Path()
-        ..moveTo(71 * u, 52 * u)
-        ..quadraticBezierTo(67 * u, 45 * u, 71 * u, 38 * u),
-      wisp,
-    );
-    canvas.drawPath(
-      Path()
-        ..moveTo(80 * u, 52 * u)
-        ..quadraticBezierTo(76 * u, 46 * u, 80 * u, 41 * u),
-      wisp,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_ThinkingPainter old) {
-    return old.paper != paper ||
-        old.line != line ||
-        old.figure != figure ||
-        old.brew != brew;
   }
 }

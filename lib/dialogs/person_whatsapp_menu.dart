@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 
 /// What one candidate's WhatsApp button does, wherever it is drawn.
@@ -32,6 +33,10 @@ abstract final class PersonWhatsAppMenu {
 
     final String name = _firstName(person);
     final String otherName = _firstName(other);
+
+    // Read before the sheet opens: by the time a choice comes back the sheet
+    // is gone, and iOS still needs somewhere to hang the share sheet from.
+    final Rect origin = ShareUtils.originOf(context);
 
     final bool? sendCard = await showModalBottomSheet<bool>(
       context: context,
@@ -79,7 +84,7 @@ abstract final class PersonWhatsAppMenu {
       return true;
     }
     return sendCard
-        ? WhatsAppUtils.sendCardTo(person, other)
+        ? WhatsAppUtils.sendCardTo(person, other, origin: origin)
         : WhatsAppUtils.openChat(person);
   }
 }
@@ -135,13 +140,18 @@ abstract final class MatchWhatsAppSheet {
   static Future<MatchShareResult> approach({
     required Person target,
     required Person? other,
+    Rect? origin,
   }) async {
     if (!_hasPhone(target)) {
       return const MatchShareResult(opened: false);
     }
     final String name = _firstName(target);
     if (other != null && _hasCard(other)) {
-      final bool sent = await WhatsAppUtils.sendCardTo(target, other);
+      final bool sent = await WhatsAppUtils.sendCardTo(
+        target,
+        other,
+        origin: origin,
+      );
       return MatchShareResult(
         opened: sent,
         label: sent ? 'הכרטיס של ${_firstName(other)} נשלח ל$name' : null,
@@ -163,6 +173,9 @@ abstract final class MatchWhatsAppSheet {
     required Person? female,
     required Person? male,
   }) async {
+    // Read before the sheet opens: by the time a choice comes back the sheet
+    // is gone, and iOS still needs somewhere to hang the share sheet from.
+    final Rect origin = ShareUtils.originOf(context);
     final _WhatsAppChoice? choice = await showModalBottomSheet<_WhatsAppChoice>(
       context: context,
       showDragHandle: true,
@@ -238,7 +251,11 @@ abstract final class MatchWhatsAppSheet {
         toGender: opened ? choice.person.gender : null,
       );
     }
-    final bool sent = await WhatsAppUtils.sendCardTo(choice.person, other);
+    final bool sent = await WhatsAppUtils.sendCardTo(
+      choice.person,
+      other,
+      origin: origin,
+    );
     return MatchShareResult(
       opened: sent,
       label: sent ? 'הכרטיס של ${_firstName(other)} נשלח ל$name' : null,

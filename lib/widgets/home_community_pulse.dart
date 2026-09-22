@@ -10,6 +10,7 @@ import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/mazel_tov_service.dart';
 import 'package:shadchan/services/community_service.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_challenge.dart';
 import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/utils/community_period.dart';
@@ -456,7 +457,7 @@ class _ChallengeBar extends StatelessWidget {
   /// The one colour in the app that means "the community did it": the same
   /// green the dating band wears, because reaching a shared target is the same
   /// kind of good news.
-  static const Color _done = Color(0xFF6F7A55);
+  static const Color _done = AppColors.statusDating;
 
   @override
   Widget build(BuildContext context) {
@@ -584,7 +585,10 @@ class _LivePulseState extends State<_LivePulse>
 
   @override
   Widget build(BuildContext context) {
-    const Color live = Color(0xFF4CAF50);
+    // The palette's own green, not Material's: this dot sits a few pixels
+    // from blocks drawn in `statusDating`, and a second green there is one
+    // green too many.
+    const Color live = AppColors.statusDating;
 
     return AnimatedBuilder(
       animation: _controller,

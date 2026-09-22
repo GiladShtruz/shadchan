@@ -6,6 +6,7 @@ import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/dating_check_in.dart';
@@ -295,25 +296,25 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
   }
 }
 
+/// The card's two gender bars.
+///
+/// [AccentStripe] with this card's own height, and at full strength: it used
+/// to be drawn here by hand at 75% opacity, which made the same bar a
+/// different colour on a proposal than on the person it is about. One bar,
+/// one colour, everywhere.
 class _EdgeStripe extends StatelessWidget {
   const _EdgeStripe({required this.color, required this.atStart});
 
   final Color color;
   final bool atStart;
 
+  /// Taller than an ordinary row: a proposal card carries two faces and their
+  /// names, not one line of type.
+  static const double height = 72;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 4,
-      height: 72,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.75),
-        borderRadius: BorderRadiusDirectional.horizontal(
-          end: atStart ? const Radius.circular(12) : Radius.zero,
-          start: atStart ? Radius.zero : const Radius.circular(12),
-        ),
-      ),
-    );
+    return AccentStripe(color: color, atStart: atStart, height: height);
   }
 }
 
@@ -790,22 +791,12 @@ class _CardActionBar extends StatelessWidget {
 /// advanced through this button would be wrong on half the list. The little
 /// menu is how it gets put right.
 ///
-/// **And a proposal nothing has happened to for a week says so, here.** Not by
-/// moving up the list — the order stays chronological, because a list that
-/// rearranges itself is a list nobody can keep their place in — but by wearing
-/// the sentence in the one place somebody is already looking when they decide
-/// what to do next.
-///
-/// **Quiet paper, not a green slab.** This was a block of mint filling the top
-/// of every open panel, with the stage chip, an alternative side and a line
-/// about what was last sent all stacked inside the same tinted area — the
-/// loudest thing on a screen full of cards, and busy enough that the one
-/// button in it had to compete with three other controls painted on the same
-/// colour. It is the card's own surface now with a thin green edge, the green
-/// kept to a small square behind the icon and to the words on the button
-/// itself. Everything that is *not* the action moved below a hairline into one
-/// quiet footer line, so the panel opens on a single unmistakable next step
-/// with its context underneath rather than around it.
+/// **One line, in the app's own blue.** It used to carry a second line under
+/// the button about how long the proposal had been left alone, and it wore
+/// WhatsApp green — on a panel that already carries three status tiles, the
+/// two sides and a journal, that was one sentence and one colour too many. The
+/// action is the brand's deep blue on the card's own surface; everything that
+/// is *not* the action sits below a hairline in one quiet footer line.
 class _PromoteRow extends StatelessWidget {
   const _PromoteRow({
     required this.match,
@@ -834,8 +825,7 @@ class _PromoteRow extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final bool bothAsked = step == MatchNextStep.startDating;
-    final Color ink = bothAsked ? AppColors.statusDating : kWhatsAppGreen;
-    final String? nudge = MatchStaleness.nudge(match);
+    final Color ink = dark ? theme.colorScheme.primary : AppColors.primaryDark;
     final String? sent = match.lastShareLabel;
     final bool hasFooter =
         onSetStage != null ||
@@ -881,41 +871,12 @@ class _PromoteRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          MatchStages.buttonLabel(
-                            step,
-                            male: male,
-                            female: female,
-                          ),
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: ink,
-                          ),
-                        ),
-                        // **Only the nudge gets a second line.** What the
-                        // button does was written under it on every open
-                        // proposal in the list — a caption explaining a button
-                        // whose own words already say it. That a proposal has
-                        // not been touched in a week is the one thing here
-                        // that cannot be read off the row itself.
-                        if (nudge != null) ...<Widget>[
-                          const SizedBox(height: 2),
-                          Text(
-                            nudge,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: AppColors.statusChecking,
-                              fontWeight: FontWeight.w700,
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
-                      ],
+                    child: Text(
+                      MatchStages.buttonLabel(step, male: male, female: female),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: ink,
+                      ),
                     ),
                   ),
                   // `chevron_right` and not `chevron_left`: Material's chevrons
@@ -956,8 +917,11 @@ class _PromoteRow extends StatelessWidget {
                       current: MatchStage.of(match),
                       onSelected: onSetStage!,
                     ),
+                  // The glyph says what the tap does: it opens her chat, the
+                  // same as the button above does for his. In the button's own
+                  // grey so the footer stays one quiet colour.
                   if (onOther != null)
-                    TextButton(
+                    TextButton.icon(
                       onPressed: onOther,
                       style: TextButton.styleFrom(
                         foregroundColor: theme.colorScheme.onSurfaceVariant,
@@ -969,7 +933,12 @@ class _PromoteRow extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      child: const Text('לפנות קודם לבחורה'),
+                      icon: FaIcon(
+                        FontAwesomeIcons.whatsapp,
+                        size: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      label: const Text('לפנות קודם לבחורה'),
                     ),
                   // What already went out, once something has — on the same
                   // quiet line as the rest of the context rather than as a

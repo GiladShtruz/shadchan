@@ -10,10 +10,12 @@ import 'package:shadchan/widgets/person_avatar.dart';
 ///
 /// The page is deliberately *not* one repeated card, but neither is it a
 /// different card per area — the previous version had drifted into five
-/// variations on a rounded white rectangle. What is left is three shapes that
-/// each earn their difference: the corkboard, the wave the open ideas float on,
-/// and the plain bordered surface everything else uses. One section header, one
-/// inset, one gap, one "הצגת הכל".
+/// variations on a rounded white rectangle, and then into a corkboard with
+/// paper notes pinned to it, which was a sixth. What is left is two shapes
+/// that earn their difference: the wave the suggestions float on, and the
+/// plain bordered surface everything else uses. One section header, one inset,
+/// one gap, one "הצגת הכל" — and one accent bar, which lives in
+/// `accent_stripe.dart` because it is not only this page's.
 
 bool homeIsNarrow(BuildContext context) {
   final double width = MediaQuery.sizeOf(context).width;
@@ -25,18 +27,6 @@ double homeHorizontalInset(BuildContext context) =>
 
 double homeCardGap(BuildContext context) =>
     homeIsNarrow(context) ? 8 : HomeConfig.cardGap;
-
-double homeBoardCardWidth(BuildContext context) =>
-    homeIsNarrow(context) ? 144 : HomeConfig.cardWidth;
-
-/// Every note on the board is exactly this tall.
-///
-/// It follows the *system font* and nothing else. Following the content would
-/// bring back the board whose height depended on the longest note on it; not
-/// following the font would clip a note for anyone reading at 1.5×, which is
-/// the one reason a fixed box is ever allowed to grow.
-double homeBoardCardHeight(BuildContext context) =>
-    homeScaled(context, HomeConfig.cardHeight);
 
 /// A fixed dimension, grown with the system font and nothing else.
 ///
@@ -118,7 +108,9 @@ class HomeSectionHeader extends StatelessWidget {
             open
                 ? Icons.keyboard_arrow_up_rounded
                 : Icons.keyboard_arrow_down_rounded,
-            color: theme.colorScheme.onSurfaceVariant,
+            color: AppColors.muted(
+              dark: theme.brightness == Brightness.dark,
+            ),
           ),
       ],
     );
@@ -153,428 +145,10 @@ class HomeSectionHeader extends StatelessWidget {
               sub,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                height: 1.25,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: theme.textTheme.labelSmall?.copyWith(height: 1.25),
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-/// A real corkboard: a warm granular surface inside a thin wooden frame.
-///
-/// Fixed height by construction — the notes are one row and the row is one card
-/// tall, so a board with twenty notes is exactly as tall as a board with one.
-/// The vertical padding above the notes is what keeps every drawing pin whole.
-class HomeNoteBoard extends StatelessWidget {
-  const HomeNoteBoard({super.key, required this.child});
-
-  final Widget child;
-
-  /// The whole surface, notes and padding included. Independent of how many
-  /// notes are pinned — that is the point of the row.
-  static double height(BuildContext context) =>
-      homeBoardCardHeight(context) +
-      HomeConfig.boardPaddingTop +
-      HomeConfig.boardPaddingBottom;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    // Cork is three browns, not one: a base, a darker grain and a lighter fleck.
-    final Color base = dark ? const Color(0xFF6A5946) : const Color(0xFFD9B888);
-    final Color grain = dark
-        ? const Color(0xFF4A3D2F)
-        : const Color(0xFFA97F4F);
-    final Color fleck = dark
-        ? const Color(0xFF8C7A62)
-        : const Color(0xFFF0DCBB);
-    final Color frame = dark
-        ? const Color(0xFF3E3226)
-        : const Color(0xFF9C7448);
-
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: homeHorizontalInset(context)),
-      child: Container(
-        height: height(context),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          // The frame is a border rather than a second box, so the cork fills
-          // the surface right up to the wood.
-          border: Border.all(color: frame, width: 5),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: dark ? 0.30 : 0.18),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(13),
-          child: CustomPaint(
-            painter: _CorkPainter(base: base, grain: grain, fleck: fleck),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                0,
-                HomeConfig.boardPaddingTop,
-                0,
-                HomeConfig.boardPaddingBottom,
-              ),
-              child: child,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Cork, drawn rather than photographed.
-///
-/// Three passes over one deterministic pseudo-random sequence: coarse darker
-/// granules, finer light flecks, then a soft vignette. A repeatable sequence
-/// matters — a texture that reshuffles on every repaint shimmers while the page
-/// is scrolled.
-class _CorkPainter extends CustomPainter {
-  const _CorkPainter({
-    required this.base,
-    required this.grain,
-    required this.fleck,
-  });
-
-  final Color base;
-  final Color grain;
-  final Color fleck;
-
-  /// A cheap deterministic hash — the same board draws the same grain forever.
-  static double _noise(int seed) {
-    int x = (seed * 1103515245 + 12345) & 0x7fffffff;
-    x ^= x >> 13;
-    return ((x * 1103515245) & 0x7fffffff) / 0x7fffffff;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) {
-      return;
-    }
-    final Rect area = Offset.zero & size;
-    canvas.drawRect(area, Paint()..color = base);
-
-    // Coarse granules.
-    final Paint dark = Paint()..color = grain.withValues(alpha: 0.20);
-    for (int i = 0; i < 520; i++) {
-      final double x = _noise(i * 3 + 1) * size.width;
-      final double y = _noise(i * 3 + 2) * size.height;
-      final double r = 0.9 + _noise(i * 3 + 3) * 2.2;
-      canvas.drawOval(
-        Rect.fromCenter(center: Offset(x, y), width: r * 2.1, height: r * 1.4),
-        dark,
-      );
-    }
-
-    // Light flecks, half as many and half as strong.
-    final Paint light = Paint()..color = fleck.withValues(alpha: 0.22);
-    for (int i = 0; i < 260; i++) {
-      final double x = _noise(i * 5 + 7001) * size.width;
-      final double y = _noise(i * 5 + 7002) * size.height;
-      final double r = 0.6 + _noise(i * 5 + 7003) * 1.4;
-      canvas.drawOval(
-        Rect.fromCenter(center: Offset(x, y), width: r * 2, height: r * 1.3),
-        light,
-      );
-    }
-
-    // A gentle darkening towards the frame, which is what makes it read as a
-    // surface rather than as a flat swatch.
-    canvas.drawRect(
-      area,
-      Paint()
-        ..shader = RadialGradient(
-          radius: 0.85,
-          colors: <Color>[Colors.transparent, grain.withValues(alpha: 0.18)],
-        ).createShader(area),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_CorkPainter oldDelegate) =>
-      oldDelegate.base != base ||
-      oldDelegate.grain != grain ||
-      oldDelegate.fleck != fleck;
-}
-
-/// One item on the board, drawn as a paper note: a small pin at the top,
-/// the avatars and every line of text centred as one balanced group, and a
-/// small arrow-only menu along the bottom edge.
-class HomeBoardNote extends StatelessWidget {
-  const HomeBoardNote({
-    super.key,
-    required this.leading,
-    required this.title,
-    required this.onTap,
-    required this.actions,
-    this.subtitle,
-    this.footnote,
-    this.tintSeed = '',
-  });
-
-  /// The avatar (or pair of avatars) at the top of the note.
-  final Widget leading;
-
-  final String title;
-  final VoidCallback onTap;
-
-  /// The small arrow menu along the bottom.
-  final Widget actions;
-
-  /// The pinned note in the matchmaker's words.
-  final String? subtitle;
-
-  /// The one line the app itself has to say about this item — today that is
-  /// "השלב הבא" on a proposal, in exactly the words the ideas page uses for it.
-  ///
-  /// Drawn under the note rather than instead of it: what the matchmaker wrote
-  /// and what the proposal is waiting for are two different things, and a note
-  /// that quietly replaced one with the other would be the app editing
-  /// somebody's own words. The two share the note's text budget instead — each
-  /// gets one line when both are there.
-  final String? footnote;
-
-  /// Keeps the same person or proposal on the same paper colour between
-  /// builds, so the board looks hand-arranged rather than random.
-  final String tintSeed;
-
-  /// Cream, pale blue and pale pink papers, matching the app palette.
-  static const List<Color> _papers = <Color>[
-    AppColors.softYellow,
-    AppColors.softRose,
-    AppColors.softBlue,
-  ];
-
-  int get _stableHash {
-    int hash = 0;
-    for (final int unit in tintSeed.codeUnits) {
-      hash = (hash * 31 + unit) & 0x7fffffff;
-    }
-    return hash;
-  }
-
-  Color _paperFor(ThemeData theme) {
-    final Color paper = _papers[_stableHash % _papers.length];
-    return theme.brightness == Brightness.dark
-        ? Color.alphaBlend(
-            paper.withValues(alpha: 0.16),
-            theme.colorScheme.surface,
-          )
-        : paper.withValues(alpha: 0.55);
-  }
-
-  /// The full height the pin needs, reserved inside the note so no part of it
-  /// can ever be cut by the paper's own clip.
-  static const double _pinLane = 22;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String? sub = subtitle?.trim();
-    final String? foot = footnote?.trim();
-    final bool hasFoot = foot != null && foot.isNotEmpty;
-    final bool hasSub = sub != null && sub.isNotEmpty;
-    final Color paper = _paperFor(theme);
-
-    // A hand-pinned note is never quite straight, but it is also never askew:
-    // under a degree in either direction.
-    final double angle = ((_stableHash % 7) - 3) * 0.005;
-
-    return Transform.rotate(
-      angle: angle,
-      child: SizedBox(
-        width: homeBoardCardWidth(context),
-        height: homeBoardCardHeight(context),
-        child: Material(
-          color: paper,
-          // A note is torn paper: square-ish corners, only barely rounded.
-          borderRadius: BorderRadius.circular(6),
-          clipBehavior: Clip.antiAlias,
-          elevation: 3,
-          shadowColor: Colors.black.withValues(alpha: 0.5),
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 5, 8, 6),
-              child: Column(
-                key: const ValueKey<String>('home-board-note-content'),
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  const SizedBox(
-                    height: _pinLane,
-                    child: Center(child: _NotePin()),
-                  ),
-                  // The name, face and note ride the space that is left, so a
-                  // one-line note and a two-line note produce the same box.
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        leading,
-                        const SizedBox(height: 7),
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            height: 1.2,
-                          ),
-                        ),
-                        if (hasSub) ...<Widget>[
-                          const SizedBox(height: 3),
-                          Text(
-                            sub,
-                            // One line each when the note and the next step are
-                            // both there, two when the note is on its own. The
-                            // note is a fixed box, so the text budget is fixed
-                            // with it.
-                            maxLines: hasFoot ? 1 : 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              height: 1.25,
-                            ),
-                          ),
-                        ],
-                        if (hasFoot) ...<Widget>[
-                          SizedBox(height: hasSub ? 2 : 3),
-                          Text(
-                            foot,
-                            maxLines: hasSub ? 1 : 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              // The one coloured line on a note. It is the only
-                              // thing on the board the app wrote rather than
-                              // the matchmaker, and it is the thing they are
-                              // looking for.
-                              color: theme.brightness == Brightness.dark
-                                  ? AppColors.primaryDarkDm
-                                  : AppColors.primaryDark,
-                              fontWeight: FontWeight.w800,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  Center(child: actions),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The drawing pin holding a note to the cork: a domed head with a highlight
-/// and the shadow it casts on the paper. Always drawn whole — it lives inside
-/// the note's own padding rather than hanging off its top edge.
-class _NotePin extends StatelessWidget {
-  const _NotePin();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(width: 20, height: 20, child: _PinDot());
-  }
-}
-
-class _PinDot extends StatelessWidget {
-  const _PinDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: const _PinPainter(), child: const SizedBox());
-  }
-}
-
-class _PinPainter extends CustomPainter {
-  const _PinPainter();
-
-  /// One pin colour for the whole board. Three colours competing with three
-  /// paper colours was the busiest thing on the surface.
-  static const Color _body = Color(0xFFB0525C);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Offset centre = Offset(size.width / 2, size.height / 2);
-    final double r = size.shortestSide * 0.36;
-
-    canvas
-      ..drawOval(
-        Rect.fromCenter(
-          center: centre.translate(1.5, 3),
-          width: r * 2.2,
-          height: r * 1.2,
-        ),
-        Paint()..color = Colors.black.withValues(alpha: 0.18),
-      )
-      ..drawCircle(
-        centre,
-        r,
-        Paint()
-          ..shader = RadialGradient(
-            center: const Alignment(-0.4, -0.5),
-            colors: <Color>[
-              Color.lerp(_body, Colors.white, 0.45)!,
-              _body,
-              Color.lerp(_body, Colors.black, 0.30)!,
-            ],
-            stops: const <double>[0, 0.55, 1],
-          ).createShader(Rect.fromCircle(center: centre, radius: r)),
-      )
-      ..drawCircle(
-        centre.translate(-r * 0.32, -r * 0.34),
-        r * 0.22,
-        Paint()..color = Colors.white.withValues(alpha: 0.55),
-      );
-  }
-
-  @override
-  bool shouldRepaint(_PinPainter oldDelegate) => false;
-}
-
-/// The board note's clean, arrow-only menu banner.
-class HomeNoteActionsButton extends StatelessWidget {
-  const HomeNoteActionsButton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Container(
-      width: 48,
-      height: 26,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-        ),
-      ),
-      child: Icon(
-        Icons.keyboard_arrow_down_rounded,
-        size: 20,
-        color: theme.colorScheme.onSurfaceVariant,
       ),
     );
   }
@@ -909,7 +483,9 @@ class HomeCardFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = color ?? theme.colorScheme.onSurfaceVariant;
+    final Color tone =
+        color ??
+        AppColors.muted(dark: theme.brightness == Brightness.dark);
 
     final Widget line = Row(
       mainAxisSize: MainAxisSize.min,

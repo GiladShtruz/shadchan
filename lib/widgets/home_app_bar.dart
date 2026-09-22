@@ -14,7 +14,11 @@ class ShadchanLogo extends StatelessWidget {
 
   final double size;
 
-  /// Defaults to the brand blue, lightened in the dark theme.
+  /// Defaults to the palette's light blue, lightened again in the dark theme.
+  ///
+  /// The mark wears `primary` and the word beside it `primaryInk`: the two are
+  /// the palette's light blue and its deep blue, one pair rather than two
+  /// neighbouring blue-greys that only look like the same decision.
   final Color? color;
 
   @override
@@ -24,7 +28,7 @@ class ShadchanLogo extends StatelessWidget {
         color ??
         (theme.brightness == Brightness.dark
             ? AppColors.primaryDarkDm
-            : AppColors.primaryDark);
+            : AppColors.primary);
 
     return ColorFiltered(
       colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
@@ -67,12 +71,15 @@ class ShadchanWordmark extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             'שדכן',
+            // The page's heading ink: the app's own name is the first
+            // heading on the screen, and a second blue for it would be one
+            // more "nearly the same" tone — see [AppColors.headingInk].
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w800,
               letterSpacing: 0.2,
-              color: theme.brightness == Brightness.dark
-                  ? theme.colorScheme.onSurface
-                  : AppColors.primaryInk,
+              color: AppColors.heading(
+                dark: theme.brightness == Brightness.dark,
+              ),
             ),
           ),
         ],
@@ -143,9 +150,7 @@ class HomeBarButton extends StatelessWidget {
                 IconTheme.merge(
                   data: IconThemeData(
                     size: 20,
-                    color: dark
-                        ? theme.colorScheme.onSurface
-                        : AppColors.primaryInk,
+                    color: AppColors.heading(dark: dark),
                   ),
                   child: icon,
                 ),
@@ -224,7 +229,8 @@ class HomeGreeting extends StatelessWidget {
             children: <InlineSpan>[
               TextSpan(text: '$greeting, '),
               // The name in the warm accent: the one word on the line that is
-              // about this particular person.
+              // about this particular person. The palette's brown, not a
+              // near-miss of it — see [AppColors.secondary].
               TextSpan(
                 text: name,
                 style: TextStyle(
@@ -235,10 +241,13 @@ class HomeGreeting extends StatelessWidget {
           ),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
+          // No colour of its own: the greeting is the page's largest heading
+          // and takes the page's heading ink with every other one. It used to
+          // name `onSurface`, which is a warm near-black — the one brown on
+          // the page that was not the palette's.
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.w800,
             height: 1.2,
-            color: theme.colorScheme.onSurface,
           ),
         ),
         if (warm != null && warm.isNotEmpty) ...<Widget>[
@@ -247,10 +256,7 @@ class HomeGreeting extends StatelessWidget {
             warm,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.3,
-            ),
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.3),
           ),
         ],
       ],

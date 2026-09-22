@@ -50,23 +50,6 @@ abstract final class HomeConfig {
   /// row simply falls back to its other reasons.
   static const int matchScanMaxPeople = 500;
 
-  /// "הלוח שלי": a paper note — the pin at the top, avatars and text centred
-  /// under it, and the actions button along the bottom edge.
-  ///
-  /// Both are *fixed*. The board is one row however many notes are on it, so
-  /// its height must not depend on the longest note's text — a board that grows
-  /// taller as it fills is the thing the redesign set out to remove.
-  /// Both are *fixed* at the base text size and scale together with the system
-  /// font — never with the content. Two notes are always the same box; a longer
-  /// note is clamped, not taller.
-  static const double cardWidth = 152;
-  static const double cardHeight = 198;
-
-  /// The cork surface's own padding above and below the notes. The top figure
-  /// is what guarantees the drawing pin is never clipped.
-  static const double boardPaddingTop = 16;
-  static const double boardPaddingBottom = 14;
-
   /// "הפעולות האחרונות שלך": the maximum phone-width strip card. Height is
   /// content-driven.
   static const double activityCardWidth = 186;

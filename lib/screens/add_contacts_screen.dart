@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/add_contacts_intro_dialog.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -8,6 +9,7 @@ import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/screens/import_contacts_screen.dart';
 import 'package:shadchan/screens/swipe_import_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/first_visit_tip.dart';
 
 enum _AddContactsMode { swipe, list }
 
@@ -27,11 +29,32 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
   _AddContactsMode _mode = _AddContactsMode.list;
   bool _listMounted = true;
 
+  /// The one-time explanation, opened over the screen on the first visit.
+  /// Taken here rather than in the frame callback so the answer belongs to
+  /// this mount and a rebuild cannot ask for it a second time.
+  final bool _showIntro = FirstVisitTips.takeFirstVisit(
+    FirstVisitTopic.addFriends,
+  );
+
   /// The one store both views read and write. Owned here so the two halves of
   /// the screen are literally looking at the same contacts, the same progress
   /// and the same statuses — switching views never reloads or resets anything.
   AddContactsSession? _session;
   bool _sessionStarting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_showIntro) {
+      // After the first frame: the dialog needs a Navigator, and the screen
+      // behind it should already be drawn when it opens.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          AddContactsIntroDialog.show(context);
+        }
+      });
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -205,16 +228,22 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
             ),
           ),
           body: SafeArea(
-            child: IndexedStack(
-              index: _mode == _AddContactsMode.list ? 1 : 0,
+            child: Column(
               children: <Widget>[
-                SwipeImportScreen(
-                  embedded: true,
-                  isActive: _mode == _AddContactsMode.swipe,
+                Expanded(
+                  child: IndexedStack(
+                    index: _mode == _AddContactsMode.list ? 1 : 0,
+                    children: <Widget>[
+                      SwipeImportScreen(
+                        embedded: true,
+                        isActive: _mode == _AddContactsMode.swipe,
+                      ),
+                      _listMounted
+                          ? const ImportContactsScreen(embedded: true)
+                          : const SizedBox.shrink(),
+                    ],
+                  ),
                 ),
-                _listMounted
-                    ? const ImportContactsScreen(embedded: true)
-                    : const SizedBox.shrink(),
               ],
             ),
           ),
