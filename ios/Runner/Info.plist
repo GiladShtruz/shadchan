@@ -164,5 +164,12 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- Lets a push that carries data wake the app to deliver it; the
+		     personal card's pushes are drawn by iOS from their notification
+		     payload either way. -->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+		</array>
 	</dict>
 </plist>

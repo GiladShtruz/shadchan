@@ -1012,12 +1012,8 @@ class _CategoryChips extends StatelessWidget {
   /// with a little slack — a few spare pixels cost nothing, a few missing ones
   /// clip every chip.
   static double heightFor(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final double line =
-        MediaQuery.textScalerOf(
-          context,
-        ).scale(theme.textTheme.labelLarge?.fontSize ?? 14) *
-        1.45;
+        MediaQuery.textScalerOf(context).scale(_labelSize) * 1.45;
     // 6 + 6 around the row, 6 + 6 inside a chip, 1 + 1 of border, 4 of slack.
     return 30 + line;
   }
@@ -1026,31 +1022,101 @@ class _CategoryChips extends StatelessWidget {
   final Map<MatchCategory, int> counts;
   final ValueChanged<MatchCategory> onSelected;
 
+  /// The label size every chip is written at.
+  static const double _labelSize = 14;
+
+  /// How small a count is drawn, by how many digits it has.
+  ///
+  /// **This is the only thing on the row that changes size.** Every chip used
+  /// to scale its whole contents down to fit, so a shelf holding 128 proposals
+  /// ended up with a smaller *heading* than the shelf beside it holding 3 —
+  /// five headings at five sizes for one row of equals. The words are one size
+  /// now and the figure gives way instead, which is the part that is genuinely
+  /// variable.
+  static double countSize(int count) {
+    final int digits = count.abs().toString().length;
+    if (digits <= 1) {
+      return 14;
+    }
+    return digits == 2 ? 12 : 10;
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      child: Row(
-        children: <Widget>[
-          for (final MatchCategory category in MatchCategory.values)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: _CategoryChip(
-                  label: category.displayName,
-                  count: counts[category] ?? 0,
-                  isSelected: selected == category,
-                  // The closed pile is deliberately quieter than the live ones.
-                  isMuted: category == MatchCategory.closed,
-                  theme: theme,
-                  onTap: () => onSelected(category),
-                ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // One size for all five labels, worked out from the longest of them
+        // against the narrowest chip — so they shrink together on a small
+        // phone and stay equal, rather than each shrinking to its own
+        // leftovers.
+        final double chip = (constraints.maxWidth - 24) / 5 - 4;
+        double widest = 0;
+        double widestCount = 0;
+        for (final MatchCategory category in MatchCategory.values) {
+          final TextPainter painter = TextPainter(
+            text: TextSpan(
+              text: category.displayName,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontSize: _labelSize,
+                fontWeight: FontWeight.w800,
               ),
             ),
-        ],
-      ),
+            textDirection: Directionality.of(context),
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          widest = widest > painter.width ? widest : painter.width;
+          painter.dispose();
+          final int count = counts[category] ?? 0;
+          final TextPainter figure = TextPainter(
+            text: TextSpan(
+              text: '$count',
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontSize: countSize(count),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            textDirection: Directionality.of(context),
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          widestCount = widestCount > figure.width ? widestCount : figure.width;
+          figure.dispose();
+        }
+        // 12 of inner padding, 2 of border, 4 between the word and the figure.
+        final double room = chip - widestCount - 18;
+        final double scale = widest <= 0 || room <= 0 || room >= widest
+            ? 1
+            : room / widest;
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          child: Row(
+            children: <Widget>[
+              for (final MatchCategory category in MatchCategory.values)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: _CategoryChip(
+                      label: category.displayName,
+                      labelSize: _labelSize * scale,
+                      count: counts[category] ?? 0,
+                      isSelected: selected == category,
+                      // The closed pile is deliberately quieter than the live
+                      // ones.
+                      isMuted: category == MatchCategory.closed,
+                      theme: theme,
+                      onTap: () => onSelected(category),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -1058,6 +1124,7 @@ class _CategoryChips extends StatelessWidget {
 class _CategoryChip extends StatelessWidget {
   const _CategoryChip({
     required this.label,
+    required this.labelSize,
     required this.count,
     required this.isSelected,
     required this.isMuted,
@@ -1066,6 +1133,11 @@ class _CategoryChip extends StatelessWidget {
   });
 
   final String label;
+
+  /// Decided once for the whole row — see [_CategoryChips]. Every chip is
+  /// handed the same figure.
+  final double labelSize;
+
   final int count;
   final bool isSelected;
   final bool isMuted;
@@ -1096,32 +1168,37 @@ class _CategoryChip extends StatelessWidget {
                   : theme.colorScheme.outlineVariant,
             ),
           ),
-          // Scaled down rather than wrapped, so "בהמתנה 12" stays one line and
-          // every chip keeps the height promised in [_CategoryChips.heightFor].
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
+          // One line, and nothing here scales itself: the row above handed
+          // every chip the same label size, and the figure takes the size its
+          // own number of digits earns — see [_CategoryChips.countSize].
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Flexible(
+                child: Text(
                   label,
                   maxLines: 1,
+                  overflow: TextOverflow.clip,
+                  softWrap: false,
                   style: theme.textTheme.labelLarge?.copyWith(
+                    fontSize: labelSize,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                     color: isSelected ? accent : theme.colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  '$count',
-                  maxLines: 1,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: accent,
-                  ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '$count',
+                maxLines: 1,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontSize: _CategoryChips.countSize(count),
+                  fontWeight: FontWeight.w900,
+                  color: accent,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

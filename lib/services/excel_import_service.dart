@@ -132,9 +132,7 @@ abstract final class ExcelImportService {
     // the very thing this method exists to stop.
     return <List<String>>[
       for (final List<String> row in kept)
-        _trimTrailing(<String>[
-          for (final int col in columns) row[col],
-        ]),
+        _trimTrailing(<String>[for (final int col in columns) row[col]]),
     ];
   }
 

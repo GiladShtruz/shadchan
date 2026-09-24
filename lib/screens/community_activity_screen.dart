@@ -1248,7 +1248,7 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
       // it?", and until now there was no answer anywhere near where the
       // question is asked.
       trailing: TextButton(
-        onPressed: () => context.push('/profile'),
+        onPressed: () => context.go('/profile'),
         style: TextButton.styleFrom(
           visualDensity: VisualDensity.compact,
           padding: const EdgeInsets.symmetric(horizontal: 6),

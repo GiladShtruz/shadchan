@@ -16,6 +16,7 @@ import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/card_link_panel.dart';
 import 'package:shadchan/widgets/candidate_card_view.dart';
 import 'package:shadchan/widgets/extended_filter_toggle.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
@@ -27,7 +28,6 @@ import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/delete_person_dialog.dart';
@@ -68,8 +68,15 @@ Future<void> openExtendedPersonEditor(
   BuildContext context,
   String personId, {
   bool isNewFriend = false,
-}) {
-  return Navigator.of(context).push(
+}) async {
+  final Person? person = context.read<PersonRepository>().getById(personId);
+  if (person != null && !await confirmEditSyncedCard(context, person)) {
+    return;
+  }
+  if (!context.mounted) {
+    return;
+  }
+  await Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
       builder: (BuildContext context) => PersonExtendedEditScreen(
         personId: personId,
@@ -333,107 +340,125 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 20),
-          children: <Widget>[
-            _ProfileSummaryHeader(
-              person: person,
-              editing: _editingDetails,
-              onAvatarTap: () => PersonCardViewer.open(context, person.id),
-              onStatusChanged: (ProfileStatus status) =>
-                  _changeProfileStatus(context, person, status),
-              onEdit: () {
-                setState(() {
-                  _editingDetails = true;
-                  _editingFullCard = false;
-                });
-              },
-              onEditingDone: () => setState(() => _editingDetails = false),
-              onExtendedEdit: () async {
-                setState(() {
-                  _editingDetails = false;
-                  _editingFullCard = false;
-                });
-                await _openCardEditPage(context);
-              },
-            ),
-            _ProfilePhotoStrip(
-              person: person,
-              onOpen: (int index) => PersonCardViewer.open(
-                context,
-                person.id,
-                initialIndex: index,
-              ),
-            ),
-            if (person.hidden)
-              _OutsideDatabaseBanner(
+      // Everything below here is drawn in this person's own colour — see
+      // [ProfilePersonAccent].
+      body: ProfilePersonAccent(
+        gender: person.gender,
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            controller: _scrollController,
+            padding: const EdgeInsets.only(bottom: 20),
+            children: <Widget>[
+              _ProfileSummaryHeader(
                 person: person,
-                onAdd: () => _admitToDatabase(context, person),
+                editing: _editingDetails,
+                onAvatarTap: () => PersonCardViewer.open(context, person.id),
+                onStatusChanged: (ProfileStatus status) =>
+                    _changeProfileStatus(context, person, status),
+                onEdit: () async {
+                  if (!await confirmEditSyncedCard(context, person)) {
+                    return;
+                  }
+                  setState(() {
+                    _editingDetails = true;
+                    _editingFullCard = false;
+                  });
+                },
+                onEditingDone: () => setState(() => _editingDetails = false),
+                onExtendedEdit: () async {
+                  setState(() {
+                    _editingDetails = false;
+                    _editingFullCard = false;
+                  });
+                  await _openCardEditPage(context);
+                },
               ),
-            _ProfileInlineActions(
-              person: person,
-              whatsappLabel: _firstNameOr(person, 'WhatsApp'),
-              onWhatsApp: () => _openWhatsAppMessage(context, person),
-              onSms: () => ContactChannels.openSms(person.phone),
-              onCompleteCard: () => setState(() => _editingDetails = true),
-              onMatches: () => _openSuggestions(context, person),
-              onAddProposal: () => _openAddProposal(context, person),
-            ),
-            // Above the card it is about: most of what a profile needs is
-            // already sitting in a WhatsApp chat.
-            if (_showShareTip)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                child: FirstVisitTip(
-                  icon: Icons.ios_share_rounded,
-                  headline:
-                      '{שתף|שתפי} מתוך הווטסאפ תמונה וכמה מילים על '
-                              '${person.gender == Gender.female ? 'החברה' : 'החבר'} '
-                              'שלך!'
-                          .forGender(context.userGender),
-                  lines: const <String>[
-                    'בווטסאפ: לחיצה ארוכה על התמונה ← שיתוף ← שדכן, ובוחרים '
-                        'להוסיף לכרטיס קיים.',
-                  ],
-                  onDismiss: () => setState(() => _showShareTip = false),
+              _ProfilePhotoStrip(
+                person: person,
+                onOpen: (int index) => PersonCardViewer.open(
+                  context,
+                  person.id,
+                  initialIndex: index,
                 ),
               ),
-            _WhatsAppCardSection(
-              person: person,
-              editing: _editingFullCard,
-              expanded: _showFullCard,
-              onToggleFull: () {
-                setState(() => _showFullCard = !_showFullCard);
-              },
-              onRequestDetails: () => _requestDetails(context, person),
-              onEditMessage: () => _editDetailsMessage(context, person),
-              onEditCard: () {
-                setState(() {
-                  _editingFullCard = true;
-                  _editingDetails = false;
-                });
-              },
-              onEditingDone: () => setState(() => _editingFullCard = false),
-            ),
-            _ProposalContactsCard(person: person),
-            _PersonalNotesCard(
-              person: person,
-              notes: personNotes,
-              onShowAll: () => _openPersonNotes(context, person),
-            ),
-            _IdeasSection(
-              person: person,
-              matches: relatedMatches,
-              personRepository: personRepository,
-            ),
-            _HistorySection(
-              events: personEvents,
-              onShowAll: () => _openPersonHistory(context, person),
-            ),
-          ],
+              if (person.hidden)
+                _OutsideDatabaseBanner(
+                  person: person,
+                  onAdd: () => _admitToDatabase(context, person),
+                ),
+              _ProfileInlineActions(
+                person: person,
+                whatsappLabel: _firstNameOr(person, 'WhatsApp'),
+                onWhatsApp: () => _openWhatsAppMessage(context, person),
+                onSms: () => ContactChannels.openSms(person.phone),
+                onCompleteCard: () async {
+                  if (await confirmEditSyncedCard(context, person)) {
+                    setState(() => _editingDetails = true);
+                  }
+                },
+                onMatches: () => _openSuggestions(context, person),
+                onAddProposal: () => _openAddProposal(context, person),
+              ),
+              // Where this card's details come from, and the one next step:
+              // ask for access, wait, or invite the friend to write a card.
+              CardLinkPanel(person: person),
+              // Above the card it is about: most of what a profile needs is
+              // already sitting in a WhatsApp chat.
+              if (_showShareTip)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                  child: FirstVisitTip(
+                    icon: Icons.ios_share_rounded,
+                    headline:
+                        '{שתף|שתפי} מתוך הווטסאפ תמונה וכמה מילים על '
+                                '${person.gender == Gender.female ? 'החברה' : 'החבר'} '
+                                'שלך!'
+                            .forGender(context.userGender),
+                    lines: const <String>[
+                      'בווטסאפ: לחיצה ארוכה על התמונה ← שיתוף ← שדכן, ובוחרים '
+                          'להוסיף לכרטיס קיים.',
+                    ],
+                    onDismiss: () => setState(() => _showShareTip = false),
+                  ),
+                ),
+              _WhatsAppCardSection(
+                person: person,
+                editing: _editingFullCard,
+                expanded: _showFullCard,
+                onToggleFull: () {
+                  setState(() => _showFullCard = !_showFullCard);
+                },
+                onRequestDetails: () => _requestDetails(context, person),
+                onEditMessage: () => _editDetailsMessage(context, person),
+                onEditCard: () async {
+                  if (!await confirmEditSyncedCard(context, person)) {
+                    return;
+                  }
+                  setState(() {
+                    _editingFullCard = true;
+                    _editingDetails = false;
+                  });
+                },
+                onEditingDone: () => setState(() => _editingFullCard = false),
+              ),
+              _ProposalContactsCard(person: person),
+              _PersonalNotesCard(
+                person: person,
+                notes: personNotes,
+                onShowAll: () => _openPersonNotes(context, person),
+              ),
+              _IdeasSection(
+                person: person,
+                matches: relatedMatches,
+                personRepository: personRepository,
+              ),
+              _HistorySection(
+                events: personEvents,
+                onShowAll: () => _openPersonHistory(context, person),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -442,8 +467,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Future<void> _openPersonHistory(BuildContext context, Person person) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            _PersonHistoryPage(personId: person.id),
+        builder: (BuildContext context) => ProfilePersonAccent(
+          gender: person.gender,
+          child: _PersonHistoryPage(personId: person.id),
+        ),
       ),
     );
   }
@@ -451,8 +478,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Future<void> _openSuggestions(BuildContext context, Person person) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            _SuggestionsPage(personId: person.id),
+        builder: (BuildContext context) => ProfilePersonAccent(
+          gender: person.gender,
+          child: _SuggestionsPage(personId: person.id),
+        ),
       ),
     );
   }
@@ -467,6 +496,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   ) async {
     final PersonRepository personRepository = context.read<PersonRepository>();
     await personRepository.updateProfileStatus(person.id, status);
+    if (status == ProfileStatus.mazelTov && context.mounted) {
+      await offerMazelTovWhatsApp(context, person);
+    }
 
     if (!status.pausesMatches) {
       return;
@@ -549,7 +581,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (BuildContext context) {
-          return _PersonNotesPage(personId: person.id);
+          return ProfilePersonAccent(
+            gender: person.gender,
+            child: _PersonNotesPage(personId: person.id),
+          );
         },
       ),
     );
@@ -620,11 +655,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 const Color _profileCanvasLight = AppColors.background;
 const Color _profileSurfaceLight = AppColors.surface;
 const Color _profileSurfaceWarmLight = AppColors.secondaryLight;
-const Color _profileBlushLight = AppColors.softPink;
-const Color _profileGoldLight = AppColors.primaryLight;
-const Color _profileTextLight = AppColors.onSurface;
-const Color _profileMutedLight = AppColors.onSurfaceVariant;
-const Color _profileGoldTextLight = AppColors.primaryDark;
+// The page's one accent — what used to be a pale blue on every card, whoever
+// it belonged to — is picked per person now. See [ProfilePersonAccent].
+const Color _profileTextLight = AppColors.headingInk;
+const Color _profileMutedLight = AppColors.mutedInk;
 
 Color _profileCanvasColor(ThemeData theme) {
   return theme.brightness == Brightness.dark
@@ -668,11 +702,59 @@ Color _profileMutedColor(ThemeData theme) {
       : _profileMutedLight;
 }
 
-/// The ink a link or a selected chip on this page is written in.
-Color _profileAccentColor(ThemeData theme) {
-  return theme.brightness == Brightness.dark
-      ? theme.colorScheme.primary
-      : _profileGoldTextLight;
+/// **Whose card is open, published to the whole page.**
+///
+/// The profile was drawn in the brand's blue whoever it belonged to: the chips,
+/// the links, the rail down the notes, the wash behind the emphasised button —
+/// all of it the same pale sky, on a girl's card as much as on a boy's. Every
+/// other surface in the app already tells the two apart (the accent bar on a
+/// row, the ring round an avatar, the two edges of a proposal card), so the one
+/// page that is entirely *about* one person was the one page that would not say
+/// which.
+///
+/// It is an inherited fact rather than a parameter because the colour is wanted
+/// a dozen levels down, in chips and rails and counters that have no business
+/// knowing whose page they are on — and a page pushed from here (the notes, the
+/// history) carries it by being wrapped in one of its own.
+class ProfilePersonAccent extends InheritedWidget {
+  const ProfilePersonAccent({
+    super.key,
+    required this.gender,
+    required super.child,
+  });
+
+  final Gender gender;
+
+  /// Unknown outside a profile, which reads as the app's own blue.
+  static Gender of(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<ProfilePersonAccent>()
+            ?.gender ??
+        Gender.unknown;
+  }
+
+  @override
+  bool updateShouldNotify(covariant ProfilePersonAccent oldWidget) {
+    return oldWidget.gender != gender;
+  }
+}
+
+/// The ink a link or a selected chip on this page is written in — the brand
+/// blue on a man's card, the palette's rose on a woman's.
+Color _profileAccentColor(BuildContext context) {
+  return AppColors.genderAccent(
+    ProfilePersonAccent.of(context),
+    dark: Theme.of(context).brightness == Brightness.dark,
+  );
+}
+
+/// The light wash of that same accent: what was `primaryContainer` — the pale
+/// blue — everywhere on this page.
+Color _profileAccentWash(BuildContext context) {
+  return AppColors.genderSurface(
+    ProfilePersonAccent.of(context),
+    dark: Theme.of(context).brightness == Brightness.dark,
+  );
 }
 
 List<BoxShadow> _profileSoftShadow(ThemeData theme) {
@@ -833,13 +915,9 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String summary = _personSummary(widget.person);
-    final ReligiousLevelsProvider levelsProvider = context
-        .watch<ReligiousLevelsProvider>();
     final List<ReligiousLevelChoice> religiousChoices = <ReligiousLevelChoice>[
-      for (final ReligiousLevel level in levelsProvider.enabledLevels)
+      for (final ReligiousLevel level in ReligiousLevels.global)
         ReligiousLevelChoice(level),
-      for (final String label in levelsProvider.customLabels)
-        ReligiousLevelChoice(ReligiousLevel.other, label),
     ];
     if (_religiousLevel != null &&
         !religiousChoices.any(
@@ -1122,6 +1200,7 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
               const SizedBox(height: 12),
               _ProfileStatusSwitcher(
                 status: widget.person.profileStatus,
+                gender: widget.person.gender,
                 onStatusChanged: widget.onStatusChanged,
               ),
               const SizedBox(height: 10),
@@ -1320,7 +1399,6 @@ class _ProfileInlineActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     // The first action follows the number, not the app's favourite messenger.
     final ({Widget icon, String label, VoidCallback onTap, Color? ink})
     messaging = switch (ContactChannels.forPerson(person)) {
@@ -1334,7 +1412,7 @@ class _ProfileInlineActions extends StatelessWidget {
         icon: const Icon(Icons.sms_outlined, size: 21),
         label: 'הודעה',
         onTap: onSms,
-        ink: theme.colorScheme.primary,
+        ink: _profileAccentColor(context),
       ),
       ContactChannel.none => (
         icon: const Icon(Icons.edit_outlined, size: 20),
@@ -1406,7 +1484,7 @@ class _ProfileActionButton extends StatelessWidget {
 
     return Material(
       color: emphasized
-          ? theme.colorScheme.primaryContainer
+          ? _profileAccentWash(context)
           : subtle
           ? Colors.transparent
           : _profileSurfaceColor(theme),
@@ -1421,7 +1499,7 @@ class _ProfileActionButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: emphasized
-                  ? theme.colorScheme.primary.withValues(alpha: 0.18)
+                  ? _profileAccentColor(context).withValues(alpha: 0.30)
                   : _profileMutedColor(
                       theme,
                     ).withValues(alpha: subtle ? 0.18 : 0.12),
@@ -1589,17 +1667,13 @@ class _PersonalNotesCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: theme.brightness == Brightness.dark
-                          ? theme.colorScheme.surfaceContainerHighest
-                          : _profileBlushLight,
+                      color: _profileAccentWash(context),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       entries.length.toString(),
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.brightness == Brightness.dark
-                            ? theme.colorScheme.onSurfaceVariant
-                            : AppColors.primaryDark,
+                        color: _profileAccentColor(context),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1859,10 +1933,16 @@ class _NotePreviewRow extends StatelessWidget {
 class _ProfileStatusSwitcher extends StatefulWidget {
   const _ProfileStatusSwitcher({
     required this.status,
+    required this.gender,
     required this.onStatusChanged,
   });
 
   final ProfileStatus status;
+
+  /// Whose card this is: the tag is written in their own colour — see
+  /// [ProfileStatusTag].
+  final Gender gender;
+
   final ValueChanged<ProfileStatus> onStatusChanged;
 
   @override
@@ -1882,7 +1962,10 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
 
   @override
   Widget build(BuildContext context) {
-    final Color statusColor = AppColors.profileStatusColor(widget.status);
+    final Color statusColor = AppColors.genderAccent(
+      widget.gender,
+      dark: Theme.of(context).brightness == Brightness.dark,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1895,7 +1978,7 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                ProfileStatusTag(status: widget.status),
+                ProfileStatusTag(status: widget.status, gender: widget.gender),
                 const SizedBox(width: 3),
                 Icon(
                   _expanded ? Icons.expand_less : Icons.expand_more,
@@ -1925,7 +2008,10 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
                           horizontal: 2,
                           vertical: 2,
                         ),
-                        child: ProfileStatusTag(status: status),
+                        child: ProfileStatusTag(
+                          status: status,
+                          gender: widget.gender,
+                        ),
                       ),
                     );
                   })
@@ -2436,7 +2522,7 @@ class _IdeaFilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color accent = _profileAccentColor(theme);
+    final Color accent = _profileAccentColor(context);
 
     return Padding(
       padding: const EdgeInsetsDirectional.only(end: 6),
@@ -2505,7 +2591,7 @@ class _IdeaExpander extends StatelessWidget {
                   expanded ? 'הצגה מקוצרת' : 'עוד $hidden רעיונות',
                   style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: _profileAccentColor(theme),
+                    color: _profileAccentColor(context),
                   ),
                 ),
               ),
@@ -2514,7 +2600,7 @@ class _IdeaExpander extends StatelessWidget {
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
                 size: 22,
-                color: _profileAccentColor(theme),
+                color: _profileAccentColor(context),
               ),
             ],
           ),
@@ -3685,8 +3771,8 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                       _SuggestionIconButton(
                         icon: Icons.favorite_outline,
                         tooltip: 'הוספת רעיון',
-                        backgroundColor: _profileGoldLight,
-                        foregroundColor: _profileGoldTextLight,
+                        backgroundColor: _profileAccentWash(context),
+                        foregroundColor: _profileAccentColor(context),
                         onPressed: () => widget.onAccept(candidate),
                       ),
                     ],
@@ -3891,7 +3977,7 @@ class _TabEmptyState extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Icon(icon, size: 56, color: theme.colorScheme.primary),
+                    Icon(icon, size: 56, color: _profileAccentColor(context)),
                     const SizedBox(height: 14),
                     Text(
                       title,
@@ -4089,7 +4175,7 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: theme.colorScheme.primaryContainer,
+          color: _profileAccentWash(context),
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(entries.length.toString()),
@@ -4120,7 +4206,7 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
                 icon: Icon(
                   Icons.send,
                   color: _canSend
-                      ? theme.colorScheme.primary
+                      ? _profileAccentColor(context)
                       : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
@@ -4292,10 +4378,7 @@ class _PersonNotesTimeline extends StatelessWidget {
           top: 0,
           bottom: 0,
           start: 5,
-          child: Container(
-            width: 2,
-            color: Theme.of(context).colorScheme.primaryContainer,
-          ),
+          child: Container(width: 2, color: _profileAccentWash(context)),
         ),
         Column(
           children: entries.map((_PersonNoteEntry entry) {
@@ -4311,7 +4394,7 @@ class _PersonNotesTimeline extends StatelessWidget {
                         width: 12,
                         height: 12,
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
+                          color: _profileAccentColor(context),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -4472,6 +4555,7 @@ Color _eventColor(PersonEventType type) {
     case PersonEventType.note:
       return AppColors.statusChecking;
     case PersonEventType.cardChanged:
+    case PersonEventType.cardSynced:
       return AppColors.onSurfaceVariant;
     case PersonEventType.reminderSet:
       return AppColors.profileOnBreak;

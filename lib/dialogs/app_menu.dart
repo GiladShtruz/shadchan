@@ -165,6 +165,7 @@ class AppMenuButton extends StatelessWidget {
   /// address to write to, the privacy policy.
   static List<PopupMenuEntry<AppMenuAction>> _homeRows() {
     return <PopupMenuEntry<AppMenuAction>>[
+      _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי'),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
@@ -203,7 +204,7 @@ class AppMenuButton extends StatelessWidget {
       case AppMenuAction.marriedFriends:
         context.push('/married');
       case AppMenuAction.profile:
-        context.push('/profile');
+        context.go('/profile');
       case AppMenuAction.settings:
         // The settings are a page of their own now, so this goes straight to
         // them rather than to the profile that used to contain them.
@@ -423,10 +424,7 @@ class _BarMenuIcon extends StatelessWidget {
 /// WhatsApp keeps only the text.
 Future<void> shareTheApp({Rect? origin}) async {
   try {
-    await Share.share(
-      CommunityLinks.shareMessage,
-      sharePositionOrigin: origin,
-    );
+    await Share.share(CommunityLinks.shareMessage, sharePositionOrigin: origin);
   } on Object {
     // A phone with nothing to share to throws rather than returning. There is
     // nothing useful to say about it, and nothing was lost.

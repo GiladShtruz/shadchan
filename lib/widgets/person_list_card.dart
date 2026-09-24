@@ -264,6 +264,7 @@ class _StatusPill extends StatelessWidget {
     final void Function(Person, ProfileStatus)? picked = onStatusPicked;
     final Widget tag = ProfileStatusTag(
       status: person.profileStatus,
+      gender: person.gender,
       compact: true,
     );
     if (picked == null) {
@@ -281,7 +282,7 @@ class _StatusPill extends StatelessWidget {
             value: status,
             child: Row(
               children: <Widget>[
-                ProfileStatusTag(status: status),
+                ProfileStatusTag(status: status, gender: person.gender),
                 const Spacer(),
                 if (status == person.profileStatus)
                   Icon(
@@ -298,69 +299,116 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-/// The availability status shown as a small coloured pill: green when
-/// available, red when taken, amber while on a break.
+/// The availability status: a dot for the state, and the word itself in the
+/// person's own colour.
+///
+/// **Two things are being said at once, so two things say them.** The tag used
+/// to be drawn entirely in the state's colour — green, red, amber — which made
+/// a list of friends a list of traffic lights, and left nothing on the row
+/// saying whose status it was. Now the *word* is the person: blue for a man,
+/// rose for a woman, the same two colours the accent bar, the avatar tint and
+/// the proposal cards use. The *dot* is the state: green free, brown on a
+/// break, red taken. So "פנויה" in rose with a green dot is read as one
+/// glance — a woman, available — where a green "פנויה" was read as neither.
 class ProfileStatusTag extends StatelessWidget {
   const ProfileStatusTag({
     super.key,
     required this.status,
+    this.gender,
     this.compact = false,
   });
 
   final ProfileStatus status;
+
+  /// Whose status this is. Null — a row that is not about one person — leaves
+  /// the word in the page's own ink.
+  final Gender? gender;
 
   /// The quiet variant used in the people list: a fixed-width pill in the
   /// palette's muted tones, borderless and a size smaller. The fixed width is
   /// what keeps a column of them lined up whatever the names next to them are.
   final bool compact;
 
-  /// Width of the [compact] pill. Wide enough for "בהפסקה" and "מזל טוב".
-  static const double compactWidth = 52;
+  /// Width of the [compact] pill. Wide enough for the dot plus "בהפסקה" or
+  /// "מזל טוב".
+  static const double compactWidth = 64;
+
+  /// The dot, at whatever size the tag is drawn.
+  Widget _dot(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: AppColors.profileStatusDotColor(status),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Gender? whose = gender;
+    final Color ink = whose == null
+        ? AppColors.heading(dark: dark)
+        : AppColors.genderAccent(whose, dark: dark);
 
     if (compact) {
-      final Color color = AppColors.profileStatusSoftColor(status);
       return Container(
         width: compactWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.13),
+          // The person's own tint, so the pill belongs to the row rather than
+          // to the state — which the dot inside it already carries.
+          color: ink.withValues(alpha: 0.11),
           borderRadius: BorderRadius.circular(999),
         ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            status.displayName,
-            maxLines: 1,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 10,
-              color: color,
-              fontWeight: FontWeight.w600,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _dot(5),
+            const SizedBox(width: 4),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  status.displayName,
+                  maxLines: 1,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    color: ink,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       );
     }
 
-    final Color color = AppColors.profileStatusColor(status);
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
+        color: ink.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.45)),
+        border: Border.all(color: ink.withValues(alpha: 0.40)),
       ),
-      child: Text(
-        status.displayName,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _dot(6),
+          const SizedBox(width: 5),
+          Text(
+            status.displayName,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: ink,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

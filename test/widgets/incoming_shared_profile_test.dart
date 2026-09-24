@@ -13,11 +13,13 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:shadchan/utils/app_router.dart';
@@ -149,11 +151,20 @@ Widget _app(IncomingSharedProfileSource shares) {
       ChangeNotifierProvider<ThemeModeProvider>(
         create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
       ),
-      ChangeNotifierProvider<ReligiousLevelsProvider>(
-        create: (_) => ReligiousLevelsProvider(Hive.box<dynamic>('settings')),
-      ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<PersonalCardProvider>(
+        create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<CardAccessProvider>(
+        create: (BuildContext context) => CardAccessProvider(
+          people: context.read<PersonRepository>(),
+          enabled: false,
+        ),
+      ),
+      ChangeNotifierProvider<InboxProvider>(
+        create: (_) => InboxProvider(enabled: false),
       ),
       ChangeNotifierProvider<AccountProvider>(
         create: (_) => AccountProvider(connect: () async {}),

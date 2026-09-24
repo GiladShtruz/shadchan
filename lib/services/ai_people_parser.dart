@@ -23,13 +23,14 @@ abstract final class AiPeopleParser {
 
   /// The religious styles the app itself knows, offered to the model by name.
   ///
-  /// Taken from [ReligiousLevel] rather than written out again, so a style
-  /// added to the app is immediately one the import can recognise instead of
-  /// silently landing in `religiousLevelOther` forever.
+  /// Taken from [ReligiousLevels.global] rather than written out again, so
+  /// the import offers exactly the list every card chooses from. A style the
+  /// model cannot place on it is kept as the card's own words
+  /// (`religiousLevelOther`) instead of being forced onto a neighbour.
   static final Map<String, ReligiousLevel> _religiousLevels =
       <String, ReligiousLevel>{
-        for (final ReligiousLevel level in ReligiousLevel.values)
-          if (level != ReligiousLevel.other) level.name: level,
+        for (final ReligiousLevel level in ReligiousLevels.global)
+          level.name: level,
       };
 
   static Iterable<String> get religiousLevelKeys => _religiousLevels.keys;

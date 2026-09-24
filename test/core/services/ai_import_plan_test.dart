@@ -105,10 +105,7 @@ void main() {
 
       expect(plan.skipped, 1);
       expect(plan.messageCount, 1);
-      expect(
-        plan.batches.single.single.message.text,
-        contains('דוד לוי'),
-      );
+      expect(plan.batches.single.single.message.text, contains('דוד לוי'));
     });
 
     test('a re-export with nothing new in it plans no requests at all', () {

@@ -112,10 +112,7 @@ abstract final class ShareUtils {
 
   /// Shares the person's contact ("איש קשר") as plain text. Returns false when
   /// there is no contact recorded.
-  static Future<bool> shareInquiryContact(
-    Person person, {
-    Rect? origin,
-  }) async {
+  static Future<bool> shareInquiryContact(Person person, {Rect? origin}) async {
     final String contact = inquiryContactText(person);
     if (contact.isEmpty) {
       return false;

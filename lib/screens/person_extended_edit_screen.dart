@@ -7,7 +7,8 @@ import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/photo_edit_screen.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
@@ -15,6 +16,8 @@ import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/card_parser.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/invisible_marks.dart';
 import 'package:shadchan/utils/match_preferences.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -36,9 +39,30 @@ class PersonExtendedEditScreen extends StatefulWidget {
     super.key,
     required this.personId,
     this.isNewFriend = false,
-  });
+  }) : ownerCard = false,
+       onFinished = null;
+
+  /// The signed-in user's own card, edited by its owner.
+  ///
+  /// The same page, not a second form: a card owner sees exactly the areas a
+  /// matchmaker sees for a friend, minus the two that are the matchmaker's
+  /// alone — "הערות אישיות – לעיניי בלבד" and "איש קשר להעברת הצעות" — and
+  /// with a date of birth in place of an age and no phone field (the number
+  /// is the account's, not the card's).
+  const PersonExtendedEditScreen.ownerCard({super.key, this.onFinished})
+    : personId = PersonalCardProvider.cardId,
+      isNewFriend = false,
+      ownerCard = true;
 
   final String personId;
+
+  /// Whether this edits the user's own card rather than a friend in the
+  /// matchmaker's database.
+  final bool ownerCard;
+
+  /// Called instead of popping when the owner is done — the first card is
+  /// written inside sign-up, where there is nothing to pop back to.
+  final VoidCallback? onFinished;
 
   /// True when this is the last step of adding someone to the database. Only
   /// then does the ✓ insist on a full name, an age, a gender and a style — an
@@ -65,7 +89,6 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   final TextEditingController _prefMaxAge = TextEditingController();
   final TextEditingController _prefMinHeight = TextEditingController();
   final TextEditingController _prefMaxHeight = TextEditingController();
-  final TextEditingController _prefCity = TextEditingController();
   final TextEditingController _contactName = TextEditingController();
   final TextEditingController _contactPhone = TextEditingController();
   final TextEditingController _newNote = TextEditingController();
@@ -84,7 +107,6 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           _prefMaxAge,
           _prefMinHeight,
           _prefMaxHeight,
-          _prefCity,
           _contactName,
           _contactPhone,
         ])
@@ -117,6 +139,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   bool _readingWithAi = false;
   bool _loaded = false;
 
+  /// The owner's date of birth. Only drawn in [PersonExtendedEditScreen.ownerCard].
+  DateTime? _birthDate;
+
+  /// The height warning is a question asked once per visit, not a gate.
+  bool _heightWarningShown = false;
+
+  bool get _owner => widget.ownerCard;
+
   @override
   void initState() {
     super.initState();
@@ -133,7 +163,24 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       return;
     }
     _loaded = true;
-    _loadFrom(context.read<PersonRepository>().getById(widget.personId));
+    _loadFrom(_readPerson());
+  }
+
+  /// The record this page edits: the friend in the database, or the owner's
+  /// own card — a first draft when there is none yet.
+  Person? _readPerson() {
+    if (_owner) {
+      final PersonalCardProvider cards = context.read<PersonalCardProvider>();
+      return cards.card ?? cards.draftFrom(context.read<UserProfileProvider>());
+    }
+    return context.read<PersonRepository>().getById(widget.personId);
+  }
+
+  Future<void> _writePerson(Person person) {
+    if (_owner) {
+      return context.read<PersonalCardProvider>().save(person);
+    }
+    return context.read<PersonRepository>().update(person);
   }
 
   @override
@@ -156,7 +203,6 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       _prefMaxAge,
       _prefMinHeight,
       _prefMaxHeight,
-      _prefCity,
       _contactName,
       _contactPhone,
       _newNote,
@@ -176,7 +222,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _height.text = person.heightCm?.toString() ?? '';
     _city.text = person.city ?? '';
     _phone.text = person.phone ?? '';
-    _description.text = person.description ?? '';
+    _description.text = InvisibleMarks.strip(person.description ?? '');
     _contactName.text = person.inquiryContactName ?? '';
     _contactPhone.text = person.inquiryContactPhone ?? '';
     _gender = person.gender;
@@ -184,6 +230,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _religiousLevelOther = person.religiousLevelOther;
     _maritalStatus = person.maritalStatus;
     _region = person.region;
+    _birthDate = person.birthDate;
     _photoPaths = List<String>.from(person.photosPaths);
     _additionalContacts = List<MatchContact>.from(person.additionalContacts);
 
@@ -194,7 +241,6 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _prefMaxAge.text = preferences.maxAge?.toString() ?? '';
     _prefMinHeight.text = preferences.minHeightCm?.toString() ?? '';
     _prefMaxHeight.text = preferences.maxHeightCm?.toString() ?? '';
-    _prefCity.text = preferences.city ?? '';
     _prefRegions.addAll(preferences.regions);
     _prefMaritalStatuses.addAll(preferences.maritalStatuses);
     _prefLevels.addAll(preferences.religiousLevels);
@@ -218,6 +264,11 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   }
 
   void _handleDescriptionChanged() {
+    // An owner writes a few sentences about themselves; nothing in them is a
+    // label to be read into the fields below.
+    if (_owner) {
+      return;
+    }
     final ParsedCard parsed = CardParser.parse(_description.text);
     if (parsed.isEmpty) {
       return;
@@ -274,8 +325,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       int.tryParse(controller.text.trim());
 
   Future<void> _save() async {
-    final PersonRepository repository = context.read<PersonRepository>();
-    final Person? person = repository.getById(widget.personId);
+    final Person? person = _readPerson();
     if (person == null) {
       return;
     }
@@ -283,8 +333,17 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     person
       ..firstName = _firstName.text.trim()
       ..lastName = _lastName.text.trim()
-      ..gender = _gender
-      ..setManualAge(_number(_age))
+      ..gender = _gender;
+    if (_owner) {
+      // The age is the date of birth; a manual age alongside it could only
+      // ever disagree with it.
+      person
+        ..birthDate = _birthDate
+        ..setManualAge(null);
+    } else {
+      person.setManualAge(_number(_age));
+    }
+    person
       ..heightCm = _number(_height)
       ..city = _text(_city)
       ..phone = _text(_phone)
@@ -301,13 +360,15 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       ..preferredMaxAge = _number(_prefMaxAge)
       ..preferredMinHeightCm = _number(_prefMinHeight)
       ..preferredMaxHeightCm = _number(_prefMaxHeight)
-      ..preferredCity = _text(_prefCity)
+      // "עיר מועדפת" is gone from the card; a value left over from before
+      // is dropped on the next save rather than filtering silently.
+      ..preferredCity = null
       ..preferredRegions = _prefRegions.toList()
       ..preferredMaritalStatuses = _prefMaritalStatuses.toList()
       ..preferredReligiousLevels = _prefLevels.toList()
       ..preferredReligiousLevelOtherLabels = _prefOtherLabels.toList();
 
-    await repository.update(person);
+    await _writePerson(person);
     _newPhotoPaths.clear();
     if (mounted && _missing.isNotEmpty) {
       setState(() => _missing = _missingRequiredFields());
@@ -327,7 +388,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     return <String>{
       if (_firstName.text.trim().isEmpty) 'firstName',
       if (_lastName.text.trim().isEmpty) 'lastName',
-      if (_number(_age) == null) 'age',
+      if (_owner ? _birthDate == null : _number(_age) == null) 'age',
       if (_gender == Gender.unknown) 'gender',
       if (_religiousLevel == null) 'religiousLevel',
     };
@@ -340,7 +401,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       return;
     }
 
-    if (widget.isNewFriend) {
+    if (widget.isNewFriend || _owner) {
       final Set<String> missing = _missingRequiredFields();
       if (missing.isNotEmpty) {
         setState(() {
@@ -349,15 +410,62 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
         });
         AppNotice.show(
           context,
-          'כדי להוסיף את החבר למאגר, יש להשלים שם מלא, גיל, מגדר '
-          'וסגנון דתי.',
+          _owner
+              ? 'כדי לשמור את הכרטיס, יש להשלים שם מלא, תאריך לידה, מגדר '
+                    'וסגנון דתי.'
+              : 'כדי להוסיף את החבר למאגר, יש להשלים שם מלא, גיל, מגדר '
+                    'וסגנון דתי.',
           duration: Duration(seconds: 4),
         );
         return;
       }
     }
 
+    if (_owner && _number(_height) == null && !_heightWarningShown) {
+      _heightWarningShown = true;
+      final bool fillIn = await _askAboutHeight();
+      if (!mounted) {
+        return;
+      }
+      if (fillIn) {
+        setState(() => _open.add(_Area.basics));
+        _focusNodes[_height]?.requestFocus();
+        return;
+      }
+    }
+
+    final VoidCallback? onFinished = widget.onFinished;
+    if (onFinished != null) {
+      onFinished();
+      return;
+    }
     Navigator.of(context).pop();
+  }
+
+  /// A gentle word, not a gate: the card is saved either way.
+  Future<bool> _askAboutHeight() async {
+    final bool? fillIn = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('לא מילאת גובה'),
+        content: Text(
+          'בלי הפרט הזה {ייתכן שתופיע|ייתכן שתופיעי} בפחות התאמות אצל שדכנים '
+                  'שמשתמשים בסינון לפי גובה.'
+              .forGender(_gender),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('להמשיך בלי'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('מילוי גובה'),
+          ),
+        ],
+      ),
+    );
+    return fillIn ?? false;
   }
 
   // ----------------------------------------------------------------- photos
@@ -537,7 +645,10 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final PersonRepository repository = context.watch<PersonRepository>();
-    final Person? person = repository.getById(widget.personId);
+    if (_owner) {
+      context.watch<PersonalCardProvider>();
+    }
+    final Person? person = _readPerson();
 
     if (person == null) {
       return Scaffold(
@@ -560,7 +671,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           backgroundColor: ProfilePalette.canvas(theme),
           foregroundColor: ProfilePalette.text(theme),
           titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
-          title: const Text('עריכת כרטיס'),
+          title: Text(_owner ? 'הכרטיס שלי' : 'עריכת כרטיס'),
           centerTitle: true,
           actions: <Widget>[
             IconButton(
@@ -578,8 +689,13 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               _buildPhotos(theme),
               _buildBasics(theme),
               _buildLookingFor(theme),
-              _buildNotes(theme, repository.getNotesForPerson(person.id)),
-              _buildContacts(theme),
+              // The matchmaker's own working notes and the go-between for
+              // proposals are the matchmaker's alone; they never belong to
+              // the card, so they are not on the owner's page at all.
+              if (!_owner) ...<Widget>[
+                _buildNotes(theme, repository.getNotesForPerson(person.id)),
+                _buildContacts(theme),
+              ],
             ],
           ),
         ),
@@ -610,6 +726,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
 
   Widget _buildSendCard(ThemeData theme) {
     final bool canReadWithAi =
+        !_owner &&
         AiCardParser.isAvailable &&
         FirebaseBootstrap.readyListenable.value &&
         _description.text.trim().isNotEmpty;
@@ -618,18 +735,38 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       area: _Area.sendCard,
       title: 'כרטיסייה לשליחה',
       icon: Icons.article_outlined,
-      subtitle: 'הטקסט שנשלח לאחרים. הפרטים שלמטה יתמלאו ממנו אוטומטית.',
+      subtitle: _owner
+          ? 'כמה משפטים {עליך|עלייך} שאפשר להעביר {למי שמתעניין|למי שמתעניינת}.'
+                .forGender(_gender)
+          : 'הטקסט שנשלח לאחרים. הפרטים שלמטה יתמלאו ממנו אוטומטית.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // Grows with its text rather than scrolling inside the page's own
+          // list (two scrollables fight over a drag on the caret handle), with
+          // no letter spacing (it shifts hit-testing into the middle of a
+          // Hebrew letter) and with WhatsApp's invisible direction marks kept
+          // out — see [InvisibleMarks].
           TextField(
             controller: _description,
             focusNode: _focusNodes[_description],
             minLines: 5,
-            maxLines: 12,
+            maxLines: null,
+            keyboardType: TextInputType.multiline,
             textInputAction: TextInputAction.newline,
-            decoration: const InputDecoration(
-              hintText: 'הדביקו כאן את הכרטיסייה',
+            inputFormatters: const <TextInputFormatter>[
+              InvisibleMarksFormatter(),
+            ],
+            style: theme.textTheme.bodyLarge?.copyWith(
+              letterSpacing: 0,
+              height: 1.4,
+            ),
+            scrollPadding: const EdgeInsets.only(bottom: 120),
+            decoration: InputDecoration(
+              hintText: _owner
+                  ? 'מה חשוב לי, במה אני {עוסק|עוסקת}, מה אני {אוהב|אוהבת} לעשות'
+                        .forGender(_gender)
+                  : 'הדביקו כאן את הכרטיסייה',
               alignLabelWithHint: true,
             ),
           ),
@@ -740,12 +877,21 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           Row(
             children: <Widget>[
               Expanded(
-                child: _field(
-                  controller: _age,
-                  label: 'גיל',
-                  numeric: true,
-                  missing: _missing.contains('age'),
-                ),
+                child: _owner
+                    ? _BirthDateField(
+                        value: _birthDate,
+                        missing: _missing.contains('age'),
+                        onPicked: (DateTime picked) => _commit(() {
+                          _birthDate = picked;
+                          _missing = _missing.difference(<String>{'age'});
+                        }),
+                      )
+                    : _field(
+                        controller: _age,
+                        label: 'גיל',
+                        numeric: true,
+                        missing: _missing.contains('age'),
+                      ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -758,35 +904,37 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          _field(controller: _city, label: 'עיר או יישוב'),
-          const SizedBox(height: 16),
-          // The candidate's *own* number. The card used to offer only the
-          // "איש קשר להעברת הצעות" phone further down, so a person created
-          // from "הוספת שם מחוץ למאגר" — who arrives with nothing but a name —
-          // had no way to be given one at all.
-          _field(controller: _phone, label: 'טלפון', phone: true),
-          // With no number yet, the phone's own contacts are the quickest
-          // place to find one.
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: _phone,
-            builder: (BuildContext context, TextEditingValue value, _) {
-              if (value.text.trim().isNotEmpty) {
-                return const SizedBox.shrink();
-              }
-              return Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton.icon(
-                  onPressed: _pickOwnPhoneFromContacts,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
+          _field(controller: _city, label: 'עיר / יישוב'),
+          if (!_owner) ...<Widget>[
+            const SizedBox(height: 16),
+            // The candidate's *own* number. The card used to offer only the
+            // "איש קשר להעברת הצעות" phone further down, so a person created
+            // from "הוספת שם מחוץ למאגר" — who arrives with nothing but a name —
+            // had no way to be given one at all.
+            _field(controller: _phone, label: 'טלפון', phone: true),
+            // With no number yet, the phone's own contacts are the quickest
+            // place to find one.
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _phone,
+              builder: (BuildContext context, TextEditingValue value, _) {
+                if (value.text.trim().isNotEmpty) {
+                  return const SizedBox.shrink();
+                }
+                return Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    onPressed: _pickOwnPhoneFromContacts,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                    icon: const Icon(Icons.contact_phone_outlined, size: 18),
+                    label: const Text('הוספת מספר מאנשי הקשר'),
                   ),
-                  icon: const Icon(Icons.contact_phone_outlined, size: 18),
-                  label: const Text('הוספת מספר מאנשי הקשר'),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 16),
           _label(theme, 'אזור בארץ'),
           const SizedBox(height: 6),
@@ -794,7 +942,12 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              for (final Region region in Region.values)
+              // An older, finer region stays visible until it is replaced —
+              // it is never mapped onto one of the four from the city.
+              for (final Region region in <Region>[
+                if (Regions.isLegacy(_region)) _region!,
+                ...Regions.selectable,
+              ])
                 ChoiceChip(
                   label: Text(region.displayName),
                   selected: _region == region,
@@ -835,7 +988,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               _religiousLevel,
               _religiousLevelOther,
             ),
-            showSettingsShortcut: false,
+            showTitle: false,
             onChanged: (ReligiousLevelChoice choice) => _commit(() {
               _religiousLevel = choice.level;
               _religiousLevelOther = choice.customLabel;
@@ -868,14 +1021,15 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   };
 
   Widget _buildLookingFor(ThemeData theme) {
-    final ReligiousLevelsProvider levels = context
-        .watch<ReligiousLevelsProvider>();
-
     return _area(
       area: _Area.looking,
-      title: 'מה המועמד מחפש',
+      title: _owner
+          ? '{מה אני מחפש|מה אני מחפשת}'.forGender(_gender)
+          : 'מה המועמד מחפש',
       icon: Icons.filter_alt_outlined,
-      subtitle: 'לפי אלה יוצגו ההתאמות עבורו. משנה רק אותו, לא את שאר המאגר.',
+      subtitle: _owner
+          ? 'לפי זה שדכנים יראו לך התאמות.'
+          : 'לפי אלה יוצגו ההתאמות עבורו. משנה רק אותו, לא את שאר המאגר.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -895,15 +1049,16 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             toFocus: _focusNodes[_prefMaxHeight]!,
           ),
           const SizedBox(height: 16),
-          _field(controller: _prefCity, label: 'עיר מועדפת'),
-          const SizedBox(height: 16),
           _label(theme, 'אזורים בארץ'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              for (final Region region in Region.values)
+              for (final Region region in <Region>[
+                ..._prefRegions.where(Regions.isLegacy),
+                ...Regions.selectable,
+              ])
                 FilterChip(
                   label: Text(region.displayName),
                   selected: _prefRegions.contains(region),
@@ -947,7 +1102,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              for (final ReligiousLevel level in levels.enabledLevels)
+              for (final ReligiousLevel level in <ReligiousLevel>[
+                ..._prefLevels.where(
+                  (ReligiousLevel level) =>
+                      ReligiousLevels.isLegacy(level) &&
+                      level != ReligiousLevel.other,
+                ),
+                ...ReligiousLevels.global,
+              ])
                 FilterChip(
                   label: Text(level.displayName),
                   selected: _prefLevels.contains(level),
@@ -959,7 +1121,10 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                     }
                   }),
                 ),
-              for (final String label in levels.customLabels)
+              // Labels a matchmaker once typed for "אחר" are no longer
+              // offered, but a card that already asks for one keeps showing it
+              // until it is taken off.
+              for (final String label in _prefOtherLabels.toList())
                 FilterChip(
                   label: Text(label),
                   selected: _prefOtherLabels.contains(label),
@@ -1687,3 +1852,61 @@ class _PrimaryPhoto extends StatelessWidget {
 /// The colour the areas sit on. Exported for the profile page, which draws the
 /// same paper behind its own cards.
 const Color extendedEditorCanvas = AppColors.background;
+
+/// The owner's date of birth: a tappable field that opens the date picker.
+///
+/// A calendar rather than three typed numbers — an age is derived from it and
+/// a Hebrew birthday later, so a typo here is a wrong birthday for years.
+class _BirthDateField extends StatelessWidget {
+  const _BirthDateField({
+    required this.value,
+    required this.missing,
+    required this.onPicked,
+  });
+
+  final DateTime? value;
+  final bool missing;
+  final ValueChanged<DateTime> onPicked;
+
+  Future<void> _pick(BuildContext context) async {
+    FocusScope.of(context).unfocus();
+    final DateTime now = DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: value ?? DateTime(now.year - 25, now.month, now.day),
+      firstDate: DateTime(now.year - 100),
+      lastDate: DateTime(now.year - 15, now.month, now.day),
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      helpText: 'תאריך לידה',
+      cancelText: 'ביטול',
+      confirmText: 'אישור',
+    );
+    if (picked != null) {
+      onPicked(DateUtils.dateOnly(picked));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime? date = value;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return InkWell(
+      onTap: () => _pick(context),
+      borderRadius: BorderRadius.circular(12),
+      child: InputDecorator(
+        isEmpty: date == null,
+        decoration: InputDecoration(
+          labelText: 'תאריך לידה',
+          errorText: missing ? 'חובה' : null,
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+        ),
+        child: Text(
+          date == null
+              ? ''
+              : '${two(date.day)}.${two(date.month)}.${date.year}'
+                    ' (${Person.ageOn(date, DateTime.now())})',
+        ),
+      ),
+    );
+  }
+}

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/home_config.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 /// The shared building blocks of the home screen.
@@ -37,6 +38,75 @@ double homeScaled(BuildContext context, double base) {
     context,
   ).scale(1).clamp(1.0, 1.6);
   return base * scale;
+}
+
+/// **The one card the app's blocks are drawn on.**
+///
+/// Every panel worth reading on בית, המאגר שלי and הרעיונות שלי is this: the
+/// paper the page is made of, a soft shadow lifting it off the cream ground,
+/// and one coloured rule along its foot saying what kind of thing it is. It is
+/// the shape the two entry cards ("הוספת חברים", "הוספת רעיון") already wore,
+/// pulled out of them so that every other block can be evidently the same
+/// family rather than a tinted panel of its own invention.
+///
+/// No border and no coloured fill: a wash *and* an outline is two edges for one
+/// shape, and a page of five tinted panels reads as wallpaper. The colour is
+/// all in [stripe].
+class HomePaperCard extends StatelessWidget {
+  const HomePaperCard({
+    super.key,
+    required this.child,
+    this.stripe,
+    this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    this.onTap,
+    this.radius = 20,
+    this.elevation = 2,
+  });
+
+  final Widget child;
+
+  /// The rule along the foot, in one of the palette's colours. Null draws no
+  /// rule — for a card that is only a container for other carded things.
+  final Color? stripe;
+
+  final EdgeInsetsGeometry padding;
+  final VoidCallback? onTap;
+  final double radius;
+  final double elevation;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color? rule = stripe;
+
+    final Widget body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Padding(padding: padding, child: child),
+        if (rule != null) AccentUnderline(color: rule),
+      ],
+    );
+
+    return Material(
+      color: dark
+          ? theme.colorScheme.surfaceContainerHighest
+          : theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(radius),
+      elevation: dark ? 0 : elevation,
+      // A neutral shadow, never one tinted with the rule's colour: a tinted
+      // shadow reads as a halo drawn round the card rather than as the card
+      // sitting above the page.
+      shadowColor: AppColors.onSurface.withValues(alpha: 0.20),
+      // Material 3 would otherwise lighten a raised surface towards
+      // `surfaceTint`, drifting the paper off the colour the page uses.
+      surfaceTintColor: Colors.transparent,
+      // The rule is flush to the bottom edge; this clip is what rounds it.
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null ? body : InkWell(onTap: onTap, child: body),
+    );
+  }
 }
 
 /// A section title, optionally with a "הצג הכל" shortcut.
@@ -108,9 +178,7 @@ class HomeSectionHeader extends StatelessWidget {
             open
                 ? Icons.keyboard_arrow_up_rounded
                 : Icons.keyboard_arrow_down_rounded,
-            color: AppColors.muted(
-              dark: theme.brightness == Brightness.dark,
-            ),
+            color: AppColors.muted(dark: theme.brightness == Brightness.dark),
           ),
       ],
     );
@@ -484,8 +552,7 @@ class HomeCardFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color tone =
-        color ??
-        AppColors.muted(dark: theme.brightness == Brightness.dark);
+        color ?? AppColors.muted(dark: theme.brightness == Brightness.dark);
 
     final Widget line = Row(
       mainAxisSize: MainAxisSize.min,

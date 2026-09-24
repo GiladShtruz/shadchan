@@ -58,12 +58,6 @@ abstract final class MatchSuggestionUtils {
       return false;
     }
 
-    final String city = (preferences.city ?? '').trim().toLowerCase();
-    if (city.isNotEmpty &&
-        (candidate.city ?? '').trim().toLowerCase() != city) {
-      return false;
-    }
-
     if (preferences.maritalStatuses.isNotEmpty &&
         (candidate.maritalStatus == null ||
             !preferences.maritalStatuses.contains(candidate.maritalStatus))) {
@@ -134,7 +128,6 @@ abstract final class MatchSuggestionUtils {
         source.preferredMaxAge != null ||
         source.preferredMinHeightCm != null ||
         source.preferredMaxHeightCm != null ||
-        (source.preferredCity ?? '').trim().isNotEmpty ||
         source.preferredRegions.isNotEmpty ||
         source.preferredMaritalStatuses.isNotEmpty ||
         source.preferredReligiousLevels.isNotEmpty ||

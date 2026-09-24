@@ -13,14 +13,17 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/sign_in_screen.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
+import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
@@ -83,6 +86,12 @@ void main() {
     // The store's write-through cache is static and outlives the box, so a
     // test that wants a fresh install has to drop it as well as the key.
     SignInPromptStore.resetForTest();
+    await Hive.box<dynamic>('settings').deleteAll(<String>[
+      'workspace.entry',
+      'workspace.matchmakerEnabled',
+      'workspace.lastArea',
+    ]);
+    WorkspaceStore.resetForTest();
     AppRouter.router.go('/home');
   });
 
@@ -114,6 +123,36 @@ void main() {
     // fail if somebody put the skip back.
     expect(find.text('המשך בלי להתחבר'), findsNothing);
     expect(find.text('המאגר שלי'), findsNothing);
+  });
+
+  testWidgets('a fresh install opens on the two ways in, before sign-in', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    await tester.runAsync(
+      () => settings.deleteAll(<String>['userName', 'userGender']),
+    );
+    try {
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+
+      expect(find.text('ברוך הבא!'), findsOneWidget);
+      expect(find.text('כניסה לשדכן'), findsOneWidget);
+      expect(find.text('כניסה לרווק/ה'), findsOneWidget);
+
+      await tester.tap(find.text('כניסה לרווק/ה'));
+      await tester.pumpAndSettle();
+
+      // Both routes sign in the same way.
+      expect(WorkspaceStore.entryRoute, EntryRoute.cardOwner);
+      expect(find.text('המשך עם Google'), findsOneWidget);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() async {
+        await settings.put('userName', 'בודק');
+        await settings.put('userGender', 'male');
+      });
+    }
   });
 
   testWidgets('Apple platforms use the guideline-compliant Apple button', (
@@ -211,9 +250,14 @@ void main() {
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
+    // "ברוך הבא!" first; the matchmaker's route then signs in as always.
+    await tester.tap(find.text('כניסה לשדכן'));
+    await tester.pumpAndSettle();
+
     expect(find.text(SignInScreen.headline), findsOneWidget);
     expect(find.text(SignInScreen.returningHeadline), findsNothing);
 
+    await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userName', 'בודק'));
   });
 }
@@ -233,11 +277,20 @@ Widget _buildTestApp() {
       ChangeNotifierProvider<ThemeModeProvider>(
         create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
       ),
-      ChangeNotifierProvider<ReligiousLevelsProvider>(
-        create: (_) => ReligiousLevelsProvider(Hive.box<dynamic>('settings')),
-      ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<PersonalCardProvider>(
+        create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<CardAccessProvider>(
+        create: (BuildContext context) => CardAccessProvider(
+          people: context.read<PersonRepository>(),
+          enabled: false,
+        ),
+      ),
+      ChangeNotifierProvider<InboxProvider>(
+        create: (_) => InboxProvider(enabled: false),
       ),
       // `connect: () async {}` for the reason documented on AccountProvider:
       // `Firebase.initializeApp` never completes inside the fake-async zone.

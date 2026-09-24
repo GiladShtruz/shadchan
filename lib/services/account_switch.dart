@@ -1,17 +1,24 @@
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/account_remote_data_service.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
+import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/personal_card_sync.dart';
+import 'package:shadchan/services/push_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
+import 'package:shadchan/services/workspace_store.dart';
 
 /// Leaving one account and handing the phone to the next.
 ///
@@ -51,6 +58,9 @@ abstract final class AccountSwitch {
     required PersonRepository people,
     required MatchRepository matches,
     required UserProfileProvider profile,
+    PersonalCardProvider? personalCard,
+    CardAccessProvider? cardAccess,
+    InboxProvider? inbox,
     required CommunityProvider community,
   }) async {
     // Step 1. The one step that is allowed to stop the rest.
@@ -64,12 +74,18 @@ abstract final class AccountSwitch {
       return AccountSwitchResult.syncFailed;
     }
 
+    // While the account is still signed in, so its push list can be edited:
+    // the next person on this phone must not receive this one's news.
+    await PushService.stop();
+    await cardAccess?.stop();
+    await inbox?.stop();
     await account.signOut();
     await _clearLocalData(
       sync: sync,
       people: people,
       matches: matches,
       profile: profile,
+      personalCard: personalCard,
       community: community,
     );
     return AccountSwitchResult.done;
@@ -86,6 +102,7 @@ abstract final class AccountSwitch {
     required PersonRepository people,
     required MatchRepository matches,
     required UserProfileProvider profile,
+    PersonalCardProvider? personalCard,
     required CommunityProvider community,
     String? password,
   }) async {
@@ -102,6 +119,7 @@ abstract final class AccountSwitch {
       people: people,
       matches: matches,
       profile: profile,
+      personalCard: personalCard,
       community: community,
     );
     return result;
@@ -112,12 +130,17 @@ abstract final class AccountSwitch {
     required PersonRepository people,
     required MatchRepository matches,
     required UserProfileProvider profile,
+    PersonalCardProvider? personalCard,
     required CommunityProvider community,
   }) async {
     await sync.forget();
     await people.clearAll();
     await matches.clearAll();
     await profile.clear();
+    await personalCard?.clear();
+    await WorkspaceStore.reset();
+    await PersonalCardSync.forget();
+    await ContactHashUpload.forget();
     await CommunityProfileStore.reset();
     HomeBoardStore.instance.reset();
     RecentActivityStore.instance.reset();

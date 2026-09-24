@@ -394,7 +394,7 @@ class _Side extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        _NameWithAge(fullName: name, firstName: first, age: age),
+        _NameWithAge(fullName: name, firstName: first, age: age, ink: ring),
         if (current != null) ...<Widget>[
           const SizedBox(height: 4),
           _StatusPicker(person: current, onStatusPicked: onStatusPicked),
@@ -423,18 +423,28 @@ class _NameWithAge extends StatelessWidget {
     required this.fullName,
     required this.firstName,
     required this.age,
+    required this.ink,
   });
 
   final String fullName;
   final String firstName;
   final int? age;
 
+  /// This side's own colour: the brand blue for the boy, the palette's rose
+  /// for the girl — the same pair the ring round the photo, the bar down the
+  /// edge of the card and the availability under the name are drawn in, so one
+  /// glance at a card says which half is which.
+  final Color ink;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final TextStyle style =
-        theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700) ??
-        const TextStyle(fontWeight: FontWeight.w700);
+        theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: ink,
+        ) ??
+        TextStyle(fontWeight: FontWeight.w700, color: ink);
     final String suffix = age == null ? '' : ', $age';
 
     return LayoutBuilder(
@@ -506,7 +516,10 @@ class _StatusPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final void Function(Person, ProfileStatus)? picked = onStatusPicked;
-    final Widget tag = ProfileStatusTag(status: person.profileStatus);
+    final Widget tag = ProfileStatusTag(
+      status: person.profileStatus,
+      gender: person.gender,
+    );
     if (picked == null) {
       return tag;
     }
@@ -522,7 +535,7 @@ class _StatusPicker extends StatelessWidget {
             value: status,
             child: Row(
               children: <Widget>[
-                ProfileStatusTag(status: status),
+                ProfileStatusTag(status: status, gender: person.gender),
                 const Spacer(),
                 if (status == person.profileStatus)
                   Icon(
@@ -570,7 +583,15 @@ class _StatusLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color color = AppColors.statusColor(match.status.name);
+    // **Where a proposal stands is always written in the palette's copper.**
+    // It used to take a colour per status — blue for an idea, amber while it
+    // waits, olive once they are out — and a list of proposals came out as a
+    // column of differently coloured pills for one kind of thing. Copper is
+    // what an idea is drawn in everywhere in this app, and the word itself
+    // says which stage it is at.
+    final Color color = theme.brightness == Brightness.dark
+        ? AppColors.secondaryDarkDm
+        : AppColors.secondary;
     final String reason = (match.waitingReason ?? '').trim();
 
     return Padding(
@@ -612,9 +633,7 @@ class _StatusLine extends StatelessWidget {
                 reason,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                style: theme.textTheme.labelSmall,
               ),
             ),
           ],
@@ -1635,10 +1654,15 @@ class _Middle extends StatelessWidget {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: <Widget>[
+          // **One heart, one colour.** It used to wear the proposal's status,
+          // so the same mark meant blue on one card and olive on the next and
+          // the list read as a row of unrelated badges. The heart is what the
+          // app is *for*; it is the palette's copper on every card, and where
+          // the proposal stands is said in the line under it.
           Icon(
             Icons.favorite,
             size: dating ? 25 : 20,
-            color: AppColors.statusColor(status.name),
+            color: AppColors.secondary,
           ),
           if (dating) ...<Widget>[
             const Positioned(

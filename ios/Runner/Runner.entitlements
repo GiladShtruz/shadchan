@@ -23,6 +23,14 @@
 		     App ID in the Apple Developer portal, or signing fails. -->
 		<key>com.apple.developer.devicecheck.appattest-environment</key>
 		<string>production</string>
+		<!-- Push notifications for the personal card (access requests and
+		     answers, a friend's wedding or birthday). `production` for
+		     TestFlight and the App Store, like App Attest above. Needs the
+		     Push Notifications capability on this App ID in the Apple
+		     Developer portal and an APNs key uploaded to Firebase Cloud
+		     Messaging — until then the app simply receives no pushes. -->
+		<key>aps-environment</key>
+		<string>production</string>
 		<key>com.apple.developer.applesignin</key>
 		<array>
 			<string>Default</string>

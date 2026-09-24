@@ -71,6 +71,11 @@ class PersonAdapter extends TypeAdapter<Person> {
       needsReview: fields[20] == null ? false : fields[20] as bool,
       hidden: fields[23] == null ? false : fields[23] as bool,
       importBatchId: fields[40] as String?,
+      birthDate: fields[41] as DateTime?,
+      cardOwnerUid: fields[42] as String?,
+      cardSyncDetached: fields[43] == null ? false : fields[43] as bool,
+      preSyncSnapshot: fields[44] as String?,
+      cardRemoteStatus: fields[45] as String?,
       avatarIndex: fields[28] as int?,
     );
   }
@@ -78,7 +83,7 @@ class PersonAdapter extends TypeAdapter<Person> {
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(41)
+      ..writeByte(46)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -159,6 +164,16 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..write(obj.additionalContacts)
       ..writeByte(40)
       ..write(obj.importBatchId)
+      ..writeByte(41)
+      ..write(obj.birthDate)
+      ..writeByte(42)
+      ..write(obj.cardOwnerUid)
+      ..writeByte(43)
+      ..write(obj.cardSyncDetached)
+      ..writeByte(44)
+      ..write(obj.preSyncSnapshot)
+      ..writeByte(45)
+      ..write(obj.cardRemoteStatus)
       ..writeByte(28)
       ..write(obj.avatarIndex);
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/card_inbox_list.dart';
 import 'package:shadchan/widgets/reminders_list.dart';
 import 'package:shadchan/widgets/support_inbox_list.dart';
 
@@ -18,6 +19,7 @@ class RemindersScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: const <Widget>[
+          CardInboxList(),
           SupportInboxList(),
           RemindersList(padding: EdgeInsets.zero, shrinkWrap: true),
         ],

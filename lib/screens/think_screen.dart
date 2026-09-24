@@ -532,8 +532,8 @@ class _PersonThought extends StatelessWidget {
   final Person person;
   final String reason;
 
-  /// The proposals already open for this friend. Drawn above the suggestions,
-  /// because an idea that exists outranks one the database imagined.
+  /// The proposals already open for this friend. They lead the one row of
+  /// matches, because an idea that exists outranks one the database imagined.
   final List<_OpenIdea> openIdeas;
 
   /// At most [_MatchLookup.shown]. Empty for a friend with nobody to pair them
@@ -630,97 +630,96 @@ class _PersonThought extends StatelessWidget {
                 ),
               ],
             ),
-            // The proposals that already exist, above the ones the database
-            // imagined: a friend waiting on an answer is not a friend to think
-            // of new pairs for. Each one goes straight to that proposal.
-            if (openIdeas.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                openIdeas.length == 1 ? 'רעיון פתוח' : 'רעיונות פתוחים',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: ProfilePalette.accent(theme),
-                ),
-              ),
-              const SizedBox(height: 4),
-              IntrinsicHeight(
-                child: Row(
-                  children: <Widget>[
-                    for (int i = 0; i < openIdeas.length; i++)
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsetsDirectional.only(
-                            end: i == openIdeas.length - 1 ? 0 : 6,
-                          ),
-                          child: _CandidateChip(
-                            person: openIdeas[i].other,
-                            status: openIdeas[i].match.status.stateLabel,
-                            onTap: () => onOpenIdea(openIdeas[i]),
-                          ),
-                        ),
-                      ),
-                    // Fewer than three open ideas leaves the row ragged
-                    // otherwise, and a half-width tile beside two full ones
-                    // reads as a tile that failed to load.
-                    for (int i = openIdeas.length; i < 3; i++)
-                      const Expanded(child: SizedBox.shrink()),
-                  ],
-                ),
-              ),
-            ],
             const SizedBox(height: 8),
-            // Named only when there is something above it to be told apart
-            // from. On a card with no open proposal the row of faces is the
-            // only row there is, and a heading over the one thing on a card is
-            // a label on a box.
-            if (openIdeas.isNotEmpty) ...<Widget>[
-              Text(
-                'התאמות אפשריות',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: ProfilePalette.muted(theme),
-                ),
-              ),
-              const SizedBox(height: 4),
-            ],
-            // The matches, three across. Every tile is exactly one line of
-            // name tall now (see `_CandidateChip`), so the row is level by
-            // construction; `IntrinsicHeight` stays only to hold that true if
-            // a tile ever grows something else.
-            IntrinsicHeight(
-              child: Row(
-                children: <Widget>[
-                  if (candidates.isEmpty)
-                    Expanded(
-                      child: Text(
-                        'עוד לא נמצאו התאמות מתאימות במאגר',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: ProfilePalette.muted(theme),
-                        ),
-                      ),
-                    )
-                  else
-                    for (int i = 0; i < candidates.length; i++)
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsetsDirectional.only(
-                            end: i == candidates.length - 1 ? 0 : 6,
-                          ),
-                          child: _CandidateChip(
-                            person: candidates[i],
-                            onTap: () => onCandidate(candidates[i]),
-                          ),
-                        ),
-                      ),
-                ],
-              ),
+            // **One row of matches, and a proposal that already exists is one
+            // of them.** Open ideas used to get a row and a heading of their
+            // own above the suggestions, which made a friend with a live
+            // proposal twice as tall as the next one and said the same thing —
+            // "who they could go with" — in two voices. They now lead the one
+            // row, in the same tile, marked "רעיון פתוח"; the suggestions fill
+            // whatever is left of the three places.
+            _MatchRow(
+              openIdeas: openIdeas,
+              candidates: candidates,
+              onOpenIdea: onOpenIdea,
+              onCandidate: onCandidate,
             ),
             const SizedBox(height: 6),
             _ThoughtActions(onMore: onTap, onSkip: onLater),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A friend's one row of matches: the proposals already open for them first,
+/// then as many suggestions as fit in the [_MatchLookup.shown] places left.
+class _MatchRow extends StatelessWidget {
+  const _MatchRow({
+    required this.openIdeas,
+    required this.candidates,
+    required this.onOpenIdea,
+    required this.onCandidate,
+  });
+
+  final List<_OpenIdea> openIdeas;
+  final List<Person> candidates;
+  final ValueChanged<_OpenIdea> onOpenIdea;
+  final ValueChanged<Person> onCandidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<_OpenIdea> open = openIdeas.take(_MatchLookup.shown).toList();
+    // A suggestion for somebody who is already the other side of an open
+    // proposal would be the same face twice in one row.
+    final Set<String> taken = <String>{
+      for (final _OpenIdea idea in open) idea.other.id,
+    };
+    final List<Person> suggested = candidates
+        .where((Person p) => !taken.contains(p.id))
+        .take(_MatchLookup.shown - open.length)
+        .toList();
+
+    final List<Widget> tiles = <Widget>[
+      for (final _OpenIdea idea in open)
+        _CandidateChip(
+          person: idea.other,
+          status: 'רעיון פתוח',
+          onTap: () => onOpenIdea(idea),
+        ),
+      for (final Person person in suggested)
+        _CandidateChip(person: person, onTap: () => onCandidate(person)),
+    ];
+
+    if (tiles.isEmpty) {
+      return Text(
+        'עוד לא נמצאו התאמות מתאימות במאגר',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: ProfilePalette.muted(theme),
+        ),
+      );
+    }
+
+    // Level by construction: an open idea's tile carries one small line more
+    // than a suggestion's, and the row stretches the others to meet it.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int i = 0; i < tiles.length; i++)
+            Expanded(
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  end: i == tiles.length - 1 ? 0 : 6,
+                ),
+                child: tiles[i],
+              ),
+            ),
+        ],
       ),
     );
   }

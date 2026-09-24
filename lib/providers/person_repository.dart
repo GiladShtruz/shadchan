@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/phone_identity.dart';
+import 'package:shadchan/services/card_sync_engine.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -31,6 +33,12 @@ class PersonRepository extends ChangeNotifier {
   /// [MatchRepository] in `main.dart` to avoid a hard dependency between the
   /// two repositories.
   Future<void> Function(String personId)? onPersonStatusChanged;
+
+  /// Called when the matchmaker — not the card's owner — changes the status of
+  /// somebody whose own card this record follows. The owner is asked to
+  /// confirm it; see `CardAccessProvider.reportStatus`.
+  Future<void> Function(Person person, ProfileStatus status)?
+  onStatusChangedForCardOwner;
 
   int get count => _box.length;
 
@@ -108,6 +116,48 @@ class PersonRepository extends ChangeNotifier {
 
   Person? getById(String id) {
     return _box.get(id);
+  }
+
+  /// The record that follows [ownerUid]'s own card, if any.
+  Person? findByCardOwner(String ownerUid) {
+    for (final Person person in _box.values) {
+      if (person.cardOwnerUid == ownerUid) {
+        return person;
+      }
+    }
+    return null;
+  }
+
+  /// A person whose saved number has [phoneHash] as its identity — the way a
+  /// friend already in the database is recognised when their card arrives, so
+  /// no second record is ever made for them.
+  Person? findByPhoneHash(String phoneHash) {
+    for (final Person person in _box.values) {
+      if (PhoneIdentity.hash(person.phone) == phoneHash) {
+        return person;
+      }
+    }
+    return null;
+  }
+
+  /// Saves a change that arrived from the owner's card.
+  ///
+  /// Not [update]: that is the matchmaker editing, and an owner's change must
+  /// neither stamp the record as edited here nor count as the matchmaker's
+  /// activity. It still refreshes whatever depends on the status.
+  Future<void> saveSynced(Person person) async {
+    if (!_box.containsKey(person.id)) {
+      await _box.put(person.id, person);
+    } else {
+      await person.save();
+    }
+    await _settings?.put(
+      '$_syncPrintPrefix${person.id}',
+      CardSyncEngine.printOf(person),
+    );
+    notifyListeners();
+    await onPersonStatusChanged?.call(person.id);
+    _refreshPersonRemindersInBackground();
   }
 
   bool containsId(String id) {
@@ -359,7 +409,22 @@ class PersonRepository extends ChangeNotifier {
     _refreshBirthdayNotificationsInBackground();
   }
 
+  static const String _syncPrintPrefix = 'cardSyncPrint.';
+
+  static Box<dynamic>? get _settings =>
+      Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
+
   Future<void> update(Person person) async {
+    // A matchmaker who edits and saves a card that follows its owner makes it
+    // their own from here on (the owner's status keeps arriving). Only a save
+    // that actually changed the card counts — a reminder or a favourite is
+    // not an edit of the card.
+    if (person.isCardSynced) {
+      final Object? synced = _settings?.get('$_syncPrintPrefix${person.id}');
+      if (synced is String && synced != CardSyncEngine.printOf(person)) {
+        person.cardSyncDetached = true;
+      }
+    }
     person.updatedAt = DateTime.now();
     person.needsReview = false;
     // A card created by "הוספת שם מחוץ למאגר" is kept out of המאגר שלי on
@@ -552,6 +617,9 @@ class PersonRepository extends ChangeNotifier {
     notifyListeners();
     await onPersonStatusChanged?.call(id);
     _refreshPersonRemindersInBackground();
+    if (person.cardOwnerUid != null) {
+      await onStatusChangedForCardOwner?.call(person, newStatus);
+    }
   }
 
   /// The history events for a person, newest first. Backs the profile's

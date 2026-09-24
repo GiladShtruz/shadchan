@@ -3,6 +3,11 @@ import 'package:shadchan/utils/app_colors.dart';
 
 abstract final class AppTheme {
   static ThemeData lightTheme() {
+    // **The page's two inks, and no third one.** `onSurface` is the blue the
+    // app writes every heading, name and figure in, and `onSurfaceVariant` the
+    // neutral grey every small explanatory line takes — the same pair
+    // [HomeTypography] folds the home screen onto, stated here so the whole
+    // app inherits it rather than the one screen that was reworked by hand.
     const ColorScheme colorScheme = ColorScheme.light(
       primary: AppColors.primary,
       onPrimary: AppColors.onPrimary,
@@ -11,9 +16,9 @@ abstract final class AppTheme {
       secondary: AppColors.secondary,
       onSecondary: AppColors.onSecondary,
       secondaryContainer: AppColors.secondaryLight,
-      onSecondaryContainer: AppColors.onSurface,
+      onSecondaryContainer: AppColors.headingInk,
       surface: AppColors.surface,
-      onSurface: AppColors.onSurface,
+      onSurface: AppColors.headingInk,
       error: AppColors.error,
       onError: AppColors.surface,
       outline: AppColors.outline,
@@ -23,7 +28,7 @@ abstract final class AppTheme {
       colorScheme: colorScheme.copyWith(
         surfaceContainerHighest: AppColors.primaryLight,
         surfaceContainerLow: AppColors.secondaryLight,
-        onSurfaceVariant: AppColors.onSurfaceVariant,
+        onSurfaceVariant: AppColors.mutedInk,
         outlineVariant: AppColors.divider,
       ),
       scaffoldBackgroundColor: AppColors.background,
@@ -36,9 +41,9 @@ abstract final class AppTheme {
       dividerColor: AppColors.divider,
       bottomNavigationBackgroundColor: AppColors.surface,
       bottomNavigationSelectedColor: AppColors.primary,
-      bottomNavigationUnselectedColor: AppColors.onSurfaceVariant,
-      textColor: AppColors.onSurface,
-      secondaryTextColor: AppColors.onSurfaceVariant,
+      bottomNavigationUnselectedColor: AppColors.mutedInk,
+      textColor: AppColors.headingInk,
+      secondaryTextColor: AppColors.mutedInk,
     );
   }
 
@@ -76,9 +81,9 @@ abstract final class AppTheme {
       dividerColor: AppColors.dividerDm,
       bottomNavigationBackgroundColor: AppColors.surfaceDm,
       bottomNavigationSelectedColor: AppColors.primaryDarkDm,
-      bottomNavigationUnselectedColor: AppColors.onSurfaceVariantDm,
-      textColor: AppColors.onSurfaceDm,
-      secondaryTextColor: AppColors.onSurfaceVariantDm,
+      bottomNavigationUnselectedColor: AppColors.mutedInkDm,
+      textColor: AppColors.headingInkDm,
+      secondaryTextColor: AppColors.mutedInkDm,
     );
   }
 
@@ -105,7 +110,21 @@ abstract final class AppTheme {
       fontFamily: fontFamily,
     );
 
+    // **Two inks, folded onto the roles once.** Everything that titles, names
+    // or counts is written in [textColor] — the brand's blue — and everything
+    // that explains, dates or qualifies in [secondaryTextColor], a neutral
+    // grey. The split is by *role*, which is the app's stand-in for size:
+    // `titleSmall` and above plus `bodyLarge`/`labelLarge` lead, and the
+    // smaller `body`/`label` roles are the quiet ones. A widget that means
+    // something specific by a colour — a status, a gender, a warning — still
+    // says so, and an explicit colour always wins over this fold.
     final TextTheme textTheme = baseTextTheme.copyWith(
+      displayLarge: baseTextTheme.displayLarge?.copyWith(color: textColor),
+      displayMedium: baseTextTheme.displayMedium?.copyWith(color: textColor),
+      displaySmall: baseTextTheme.displaySmall?.copyWith(color: textColor),
+      headlineLarge: baseTextTheme.headlineLarge?.copyWith(color: textColor),
+      headlineMedium: baseTextTheme.headlineMedium?.copyWith(color: textColor),
+      headlineSmall: baseTextTheme.headlineSmall?.copyWith(color: textColor),
       titleLarge: baseTextTheme.titleLarge?.copyWith(
         fontSize: 20,
         fontWeight: FontWeight.bold,
@@ -115,15 +134,25 @@ abstract final class AppTheme {
         fontWeight: FontWeight.bold,
         color: textColor,
       ),
+      titleSmall: baseTextTheme.titleSmall?.copyWith(color: textColor),
+      // No letter spacing: `bodyLarge` is what every text field types in, and
+      // Material's 0.5 is a Latin setting that Hebrew never uses — in a field
+      // it is what lets a tap put the caret in the middle of a letter.
       bodyLarge: baseTextTheme.bodyLarge?.copyWith(
         fontSize: 16,
         height: 1.5,
+        letterSpacing: 0,
         color: textColor,
       ),
+      labelLarge: baseTextTheme.labelLarge?.copyWith(color: textColor),
       bodyMedium: baseTextTheme.bodyMedium?.copyWith(
         fontSize: 14,
         height: 1.4,
-        color: textColor,
+        color: secondaryTextColor,
+      ),
+      bodySmall: baseTextTheme.bodySmall?.copyWith(color: secondaryTextColor),
+      labelMedium: baseTextTheme.labelMedium?.copyWith(
+        color: secondaryTextColor,
       ),
       labelSmall: baseTextTheme.labelSmall?.copyWith(
         fontSize: 12,

@@ -7,8 +7,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/my_phone_dialog.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/intro_screens.dart';
+import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -75,6 +80,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
+    // Somebody who came in as a card owner is not walked through the
+    // matchmaker's introduction at all: the first thing they fill in is their
+    // own card, and the name and gender on it become their profile.
+    if (WorkspaceStore.entryRoute == EntryRoute.cardOwner) {
+      return PersonExtendedEditScreen.ownerCard(onFinished: _finishAsCardOwner);
+    }
+
     // The welcome comes first, on the very first launch only. It says what the
     // app is and — the part that actually changes behaviour — that the database
     // is private, before anybody is asked to type anything into it.
@@ -96,7 +108,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               // The greeting follows the gender chosen just below it, so the
               // app is speaking to the right person from its very first line.
               Text(
-                '{ברוך הבא שדכן|ברוכה הבאה שדכנית}!'.forGender(_selectedGender),
+                'נעים להכיר!',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
@@ -219,7 +231,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                 ),
               Text(
-                'למשתמשים רווקים תופיע בפרופיל אפשרות לשמור ולשתף כרטיס אישי.',
+                '{גרוש או אלמן|גרושה או אלמנה}? {סמן|סמני} '
+                        '{רווק|רווקה} — כך תופיע בפרופיל אפשרות ליצור כרטיס אישי.'
+                    .forGender(_selectedGender),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                   height: 1.35,
@@ -317,6 +331,39 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (mounted) {
         setState(() => _saving = false);
       }
+    }
+  }
+
+  /// The card owner's sign-up ends when their first card is saved: the card's
+  /// name and gender are the profile, and the app opens on their own area.
+  Future<void> _finishAsCardOwner() async {
+    final PersonalCardProvider cards = context.read<PersonalCardProvider>();
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    final Person? card = cards.card;
+    if (card == null) {
+      return;
+    }
+    await profile.saveProfile(
+      name: card.firstName,
+      lastName: card.lastName,
+      gender: card.gender,
+      isSingle: true,
+    );
+    WorkspaceStore.setMatchmakerEnabled(false);
+    WorkspaceStore.setLastArea(WorkArea.personal);
+    if (!mounted) {
+      return;
+    }
+    // The number is what lets friends who match find this card. Asked here,
+    // once, and skippable — the personal area asks again while it is missing.
+    if (profile.myPhone == null) {
+      final String? phone = await MyPhoneDialog.show(context, required: true);
+      if (phone != null) {
+        await profile.setMyPhone(phone);
+      }
+    }
+    if (mounted) {
+      context.go('/me');
     }
   }
 

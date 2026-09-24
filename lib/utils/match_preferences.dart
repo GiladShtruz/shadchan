@@ -14,7 +14,6 @@ class MatchPreferences {
     this.maxAge,
     this.minHeightCm,
     this.maxHeightCm,
-    this.city,
     this.regions = const <Region>[],
     this.maritalStatuses = const <MaritalStatus>[],
     this.religiousLevels = const <ReligiousLevel>[],
@@ -25,7 +24,6 @@ class MatchPreferences {
   final int? maxAge;
   final int? minHeightCm;
   final int? maxHeightCm;
-  final String? city;
   final List<Region> regions;
   final List<MaritalStatus> maritalStatuses;
   final List<ReligiousLevel> religiousLevels;
@@ -43,7 +41,6 @@ class MatchPreferences {
       maxAge: person.preferredMaxAge,
       minHeightCm: person.preferredMinHeightCm,
       maxHeightCm: person.preferredMaxHeightCm,
-      city: person.preferredCity,
       regions: person.preferredRegions,
       maritalStatuses: person.preferredMaritalStatuses,
       religiousLevels: hasChosenStyles
@@ -60,7 +57,6 @@ class MatchPreferences {
       maxAge != null ||
       minHeightCm != null ||
       maxHeightCm != null ||
-      (city ?? '').trim().isNotEmpty ||
       regions.isNotEmpty ||
       maritalStatuses.isNotEmpty ||
       religiousLevels.isNotEmpty ||

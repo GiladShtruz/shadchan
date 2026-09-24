@@ -79,6 +79,8 @@ class PersonEventTypeAdapter extends TypeAdapter<PersonEventType> {
         return PersonEventType.cardChanged;
       case 6:
         return PersonEventType.reminderSet;
+      case 7:
+        return PersonEventType.cardSynced;
       default:
         return PersonEventType.proposalOpened;
     }
@@ -107,6 +109,9 @@ class PersonEventTypeAdapter extends TypeAdapter<PersonEventType> {
         break;
       case PersonEventType.reminderSet:
         writer.writeByte(6);
+        break;
+      case PersonEventType.cardSynced:
+        writer.writeByte(7);
         break;
     }
   }

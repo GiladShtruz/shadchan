@@ -96,6 +96,32 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // A personal card's photos, uploaded by the card's owner. Readable by the
+    // owner and by the matchmakers the owner approved — the same approval the
+    // card document itself is read under, checked in Firestore. The app reads
+    // them through the SDK rather than by download URL, so revoking access
+    // revokes the photos too.
+    match /personalCards/{ownerUid}/{fileName} {
+      function isOwner() {
+        return request.auth != null
+            && request.auth.uid == ownerUid
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+
+      function approved() {
+        return request.auth != null
+            && firestore.exists(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + request.auth.uid))
+            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + request.auth.uid)).data.status == 'approved'
+            && firestore.get(/databases/(default)/documents/personalCards/$(ownerUid)).data.deleted == false;
+      }
+
+      allow read: if isOwner() || approved();
+      allow delete: if isOwner();
+      allow write: if isOwner()
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

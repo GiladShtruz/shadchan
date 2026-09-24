@@ -59,11 +59,6 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => context.push('/profile/appearance'),
                 ),
                 SettingsRow(
-                  icon: Icons.style_outlined,
-                  title: 'עריכת סגנונות דתיים',
-                  onTap: () => context.push('/profile/religious-levels'),
-                ),
-                SettingsRow(
                   icon: Icons.folder_outlined,
                   title: 'גיבוי וייצוא',
                   subtitle: 'גיבוי בענן, שחזור, ייצוא לאקסל וייבוא',

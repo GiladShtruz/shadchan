@@ -1,17 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
 
 void main() {
-  test('religious styles start with the configured product defaults', () {
-    expect(ReligiousLevelsProvider.defaultLevels, <ReligiousLevel>[
-      ReligiousLevel.haredi,
-      ReligiousLevel.datiLeumiTorani,
-      ReligiousLevel.datiLeumi,
-      ReligiousLevel.datiOpen,
+  test('religious styles are one fixed global list', () {
+    expect(ReligiousLevels.global, <ReligiousLevel>[
       ReligiousLevel.hiloni,
+      ReligiousLevel.masorti,
+      ReligiousLevel.datlashi,
+      ReligiousLevel.datiOpen,
+      ReligiousLevel.datiLeumi,
+      ReligiousLevel.datiLeumiTorani,
+      ReligiousLevel.chardal,
+      ReligiousLevel.haredi,
+    ]);
+    expect(ReligiousLevels.isLegacy(ReligiousLevel.chabad), isTrue);
+    expect(ReligiousLevels.isLegacy(ReligiousLevel.haredi), isFalse);
+    expect(Regions.selectable, <Region>[
+      Region.jerusalem,
+      Region.center,
+      Region.north,
+      Region.south,
     ]);
   });
 

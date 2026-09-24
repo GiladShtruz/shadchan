@@ -32,6 +32,10 @@ abstract final class AppColors {
   static const Color statusDated = Color(0xFF948577);
   static const Color statusMarried = Color(0xFF6F7A55);
 
+  /// The one green the app means "done, together" by, lifted for the dark
+  /// theme. Named here so no widget picks its own shade of it.
+  static const Color statusDatingDm = Color(0xFF9DB07A);
+
   static const Color softBlue = Color(0xFFD7E4EA);
   static const Color softPink = Color(0xFFE6D4C0);
   static const Color softGreen = Color(0xFFDDE3CF);
@@ -51,6 +55,26 @@ abstract final class AppColors {
   /// the light brand blue for friends, the brand brown for an idea.
   static const Color addPeopleAccent = primary;
   static const Color addIdeaAccent = secondary;
+
+  /// **The four figures at the head of הלוח שלי, one palette colour each.**
+  ///
+  /// They were all four brown once, on the reasoning that a colour per metric
+  /// invites the reader to work out what each one means. What settled it the
+  /// other way is that the app already says these four things in colour
+  /// everywhere else — a friend is the brand blue, an idea is the copper, a
+  /// couple wears the rose the women's side is drawn in, and a wedding is the
+  /// palest blue on the page. The rules under the tiles now simply agree with
+  /// the rest of the app instead of inventing a fifth convention.
+  static const Color metricFriends = primaryDark;
+  static const Color metricIdeas = secondary;
+  static const Color metricCouples = femaleAccent;
+  static const Color metricWeddings = primaryLight;
+
+  /// The same four in the dark theme, where the two light blues would vanish.
+  static const Color metricFriendsDm = primaryDarkDm;
+  static const Color metricIdeasDm = secondaryDarkDm;
+  static const Color metricCouplesDm = femaleAccentDm;
+  static const Color metricWeddingsDm = Color(0xFF7FA3B2);
 
   /// **The two inks the home page is written in.**
   ///
@@ -154,6 +178,27 @@ abstract final class AppColors {
         return statusRejected;
       case ProfileStatus.onBreak:
         return statusChecking;
+      case ProfileStatus.mazelTov:
+        return secondary;
+    }
+  }
+
+  /// **The dot beside an availability tag.** Three states, three plain
+  /// colours: free is green, on a break is the palette's brown, taken is red.
+  ///
+  /// It exists because the *word* beside it no longer carries the state — the
+  /// tag is written in the person's own gender colour, blue for a man and rose
+  /// for a woman, so that a list can be read as "who" before it is read as
+  /// "what". The dot is what puts the state back, in the one form that is read
+  /// without reading.
+  static Color profileStatusDotColor(ProfileStatus status) {
+    switch (status) {
+      case ProfileStatus.available:
+        return profileAvailable;
+      case ProfileStatus.busy:
+        return profileBusy;
+      case ProfileStatus.onBreak:
+        return secondary;
       case ProfileStatus.mazelTov:
         return secondary;
     }

@@ -82,14 +82,11 @@ abstract final class HomeBoardActions {
     HomeItemKind kind,
     String targetId,
   ) async {
-    final HomeBoardEntry? entry = HomeBoardStore.instance.entryFor(
-      kind,
-      targetId,
-    );
+    final String? current = HomeBoardStore.instance.noteFor(kind, targetId);
     final String? note = await showDialog<String>(
       context: context,
       builder: (BuildContext dialogContext) {
-        return _BoardNoteDialog(initialText: entry?.note ?? '');
+        return _BoardNoteDialog(initialText: current ?? '');
       },
     );
     if (note == null) {

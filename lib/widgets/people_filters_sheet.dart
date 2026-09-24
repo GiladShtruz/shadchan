@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// The result of the people-filters bottom sheet. Returned when the user taps
@@ -107,13 +105,15 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
         widget.initialMaritalStatuses.isNotEmpty;
   }
 
-  /// Only styles enabled in settings are offered.
+  /// The one global list, every time.
   List<ReligiousLevel> _filterableLevels(BuildContext context) {
-    return context.watch<ReligiousLevelsProvider>().enabledLevels;
+    return ReligiousLevels.global;
   }
 
+  /// Custom "אחר" labels are no longer offered; one already inside a saved
+  /// filter stays visible so it can be taken off.
   List<String> _filterableCustomLabels(BuildContext context) {
-    return context.watch<ReligiousLevelsProvider>().customLabels;
+    return widget.initialReligiousLevelOtherLabels;
   }
 
   RangeValues? _normalizedAgeRange() =>

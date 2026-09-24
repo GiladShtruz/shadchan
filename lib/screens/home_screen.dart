@@ -1,6 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
@@ -11,6 +12,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -18,6 +20,13 @@ import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/tips_service.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/think_rotation.dart';
+import 'package:shadchan/utils/suggestion_dismissals.dart';
+import 'package:shadchan/utils/new_idea_suggestions.dart';
+import 'package:shadchan/utils/home_suggestions.dart';
+import 'package:shadchan/utils/home_board_feed.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
 import 'package:shadchan/utils/dating_history.dart';
@@ -75,6 +84,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _homeScrollController = ScrollController();
   final GlobalKey _boardSectionKey = GlobalKey();
+
+  /// Bumped by a tap on the wordmark, which deals the board again.
+  int _boardRefresh = 0;
 
   /// The single vertical gap between every block on the page.
   static const double _blockGap = 14;
@@ -234,6 +246,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // see [ShadchanTabActions]. Only the "+" differs: this page is above both
     // of the other two, so its "+" asks which of them is meant.
     return ShadchanAppBar(
+      onTitleTap: _backToTop,
       actions: const <Widget>[
         // בית keeps its own overflow menu — the app itself, the community
         // group, the guide, the privacy policy. המאגר שלי and הרעיונות שלי
@@ -251,6 +264,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// The wordmark's tap: home, as if it had just been opened — search closed,
+  /// the page back at its top, and the board dealt again.
+  void _backToTop() {
+    if (_searchController.text.isNotEmpty) {
+      _closeSearch();
+    } else {
+      FocusScope.of(context).unfocus();
+    }
+    setState(() => _boardRefresh++);
+    if (_homeScrollController.hasClients) {
+      _homeScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   /// Leaves search: the results and the keyboard.
   void _closeSearch() {
     FocusScope.of(context).unfocus();
@@ -266,6 +297,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final UserProfileProvider userProfile = context
         .watch<UserProfileProvider>();
     final Gender? userGender = userProfile.gender;
+    final bool hasOwnCard =
+        userProfile.isSingle && context.watch<PersonalCardProvider>().hasCard;
     final HomeBoardStore board = HomeBoardStore.instance;
 
     if (board.takeFocusRequest()) {
@@ -362,6 +395,25 @@ class _HomeScreenState extends State<HomeScreen> {
           top: 8,
         ),
 
+        // A matchmaker who also keeps a card of their own gets one small way
+        // into it — a quiet link, never the thing this page is about.
+        if (hasOwnCard)
+          block(
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: () => context.go('/me'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+                icon: const Icon(Icons.badge_outlined, size: 18),
+                label: const Text('ניהול הכרטיס שלי'),
+              ),
+            ),
+            top: 2,
+          ),
+
         // A brand-new matchmaker lands on the real home screen with one
         // welcoming card on it, not on a wizard that has to be got through.
         if (friends == 0)
@@ -399,6 +451,7 @@ class _HomeScreenState extends State<HomeScreen> {
           openIdeas: openIdeas,
           personRepository: personRepository,
           matchRepository: matchRepository,
+          refresh: _boardRefresh,
         ),
 
         // 4. What has been done — the matchmaker's own score beside the
@@ -592,34 +645,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
 /// Everything the matchmaker is working on right now, on one surface.
 ///
-/// Three sources, one board. **Every open proposal is on it by itself** — that
-/// is what replaced "רעיונות פתוחים" as a row of its own further down the page:
-/// the answer to "what is open?" and the answer to "what did I park?" were two
-/// separate strips saying overlapping things, and the board is the one the
-/// matchmaker already treats as their desk. To that are added the reminders
-/// whose date has arrived, and whatever was pinned by hand.
+/// **The figures first, then the board.** Four all-time counts head the
+/// section — the same ones "הנתונים שלך" shows — and under them one window
+/// onto a mixed feed.
 ///
-/// The order is the order of urgency: a reminder that came due leads, then what
-/// was pinned deliberately, then the rest of the open proposals.
+/// **One feed, dealt from five sources.** Reminders whose date has arrived,
+/// every open proposal, whatever was pinned, and reminders that have been
+/// overdue for a while — in that order of priority, but interleaved rather
+/// than shelved, so a busy morning is not twelve reminders before the first
+/// proposal. See [HomeBoardFeed.mix]. When the matchmaker's own work comes to
+/// fewer than [HomeBoardFeed.target] rows, the board is topped up with what the
+/// app would offer anyway: a pair from "רעיונות שהמאגר מציע לך" and a friend
+/// from "עוצרים רגע לחשוב על החברים".
 ///
-/// **A proposal's note carries its next step**, in exactly the words the ideas
-/// page uses for it — see [MatchStages.buttonLabel]. Nothing new decides what
-/// that step is; the board reads the same stage the card does.
+/// **A pin is a promise to put it first.** Something pinned in the last
+/// [_BoardSectionState._pinLeads] leads the board with a small pin on it;
+/// after that it joins the mix as one of the matchmaker's own items and keeps
+/// the pin. Without the window a matchmaker who had pinned eight things a
+/// month ago would never see anything else at the top.
 ///
-/// **A list, not a pinboard.** The cork surface with paper notes pinned to it
-/// was the one thing on this page drawn in a language of its own: it scrolled
-/// sideways while the page scrolled down, it could only ever show two items at
-/// a time, and every item on it was a different shape from the same item in
-/// המאגר שלי or רעיונות שלי. The rows here are the rows those screens use — one
-/// accent bar down the edge of a person, one down each edge of a couple — so a
-/// friend looks like themselves wherever the app draws them.
-///
-/// **Open unless it was closed.** The board opens by default, empty or not,
-/// and folds only when the matchmaker folds it — that choice is kept and
-/// nothing overrides it.
-///
-/// **Four figures head it**: the same all-time counts as "הנתונים שלך" on the
-/// activity screen, small, each opening the records behind it.
+/// **Always open, and five rows high.** The board used to fold; now it is a
+/// fixed window of five rows that scrolls inside itself, and nothing on it
+/// opens or expands.
 class _BoardSection extends StatefulWidget {
   const _BoardSection({
     required this.focusKey,
@@ -627,9 +674,12 @@ class _BoardSection extends StatefulWidget {
     required this.openIdeas,
     required this.personRepository,
     required this.matchRepository,
+    required this.refresh,
   });
 
   final Key focusKey;
+
+  /// The pinned entries, newest first.
   final List<HomeBoardEntry> entries;
 
   /// Every proposal that is open right now, already ranked — the ones asking
@@ -639,238 +689,372 @@ class _BoardSection extends StatefulWidget {
   final PersonRepository personRepository;
   final MatchRepository matchRepository;
 
+  /// Bumped by a tap on the wordmark: a new deal of the same board.
+  final int refresh;
+
   @override
   State<_BoardSection> createState() => _BoardSectionState();
 }
 
 class _BoardSectionState extends State<_BoardSection> {
-  /// Where the matchmaker's own open/closed choice is kept. Absent means they
-  /// have never touched it, which is not the same as "closed".
-  static const String _foldKey = 'home.boardExpanded';
+  /// How many rows fit in the board's window before it starts scrolling.
+  static const int _windowRows = 5;
 
-  bool? _choice;
+  /// One row: a two-line card plus the gap under it.
+  static const double _rowExtent = AccentBar.rowHeight + 12;
 
-  /// How many rows the section shows before "עוד N". Long enough that a
-  /// working matchmaker sees their whole day without opening anything, short
-  /// enough that a database with forty open proposals does not bury every
-  /// other block on the page under them.
-  static const int _collapsedRows = 5;
+  /// How long a fresh pin holds the top of the board.
+  static const Duration _pinLeads = Duration(hours: 48);
 
-  bool _showAll = false;
+  /// A reminder that came due within this long is news; older than this it is
+  /// a reminder that has been left, and ranks below everything else of the
+  /// matchmaker's own.
+  static const Duration _freshFor = Duration(days: 7);
+
+  /// The board's own scroll, kept alive across rebuilds so a matchmaker who
+  /// scrolled down it does not lose their place every time a reminder ticks
+  /// over.
+  final ScrollController _listScroll = ScrollController();
+
+  /// The app's own suggestions, worked out once per state of the database —
+  /// pairing the whole database is not something to redo on every rebuild.
+  String? _fillerKey;
+  List<NewIdeaSuggestion> _pairs = const <NewIdeaSuggestion>[];
+  List<HomeSuggestion> _thoughts = const <HomeSuggestion>[];
 
   @override
-  void initState() {
-    super.initState();
-    final Object? raw = Hive.isBoxOpen('settings')
-        ? Hive.box<dynamic>('settings').get(_foldKey)
-        : null;
-    _choice = switch (raw) {
-      true || 'true' => true,
-      false || 'false' => false,
-      _ => null,
-    };
-  }
-
-  void _setChoice(bool expanded) {
-    setState(() => _choice = expanded);
-    persistHomeSetting(_foldKey, expanded.toString());
-  }
-
-  /// The pinned entries, the due reminders and every open proposal, without
-  /// repeating an item that is more than one of those.
-  List<HomeBoardEntry> _live() {
-    // A pinned record that has since been deleted simply drops out.
-    final List<HomeBoardEntry> pinned = widget.entries.where((
-      HomeBoardEntry entry,
-    ) {
-      return entry.kind == HomeItemKind.person
-          ? widget.personRepository.getById(entry.targetId) != null
-          : widget.matchRepository.getById(entry.targetId) != null;
-    }).toList();
-
-    final Set<String> seen = <String>{
-      for (final HomeBoardEntry entry in pinned)
-        '${entry.kind.name}:${entry.targetId}',
-    };
-    final List<HomeBoardEntry> due = <HomeBoardEntry>[];
-
-    void addDue(HomeItemKind kind, String id, DateTime at, String? note) {
-      if (!seen.add('${kind.name}:$id')) {
-        return;
-      }
-      due.add(
-        HomeBoardEntry(
-          kind: kind,
-          targetId: id,
-          addedAt: at,
-          note: (note ?? '').trim().isEmpty ? 'הגיע מועד התזכורת' : note,
-        ),
-      );
+  void didUpdateWidget(covariant _BoardSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refresh != oldWidget.refresh && _listScroll.hasClients) {
+      _listScroll.jumpTo(0);
     }
+  }
 
-    PersonReminders.all().forEach((String personId, DateTime at) {
-      if (at.isAfter(DateTime.now()) ||
-          widget.personRepository.getById(personId) == null) {
-        return;
+  @override
+  void dispose() {
+    _listScroll.dispose();
+    super.dispose();
+  }
+
+  double _boardHeight(BuildContext context, int rows) {
+    return homeScaled(context, _rowExtent * math.min(rows, _windowRows));
+  }
+
+  bool _exists(HomeItemKind kind, String id) {
+    return kind == HomeItemKind.person
+        ? widget.personRepository.getById(id) != null
+        : widget.matchRepository.getById(id) != null;
+  }
+
+  void _loadFillers() {
+    final List<Person> everyone = widget.personRepository.getAll();
+    final List<MatchIdea> matches = widget.matchRepository.getAll();
+    DateTime latest = DateTime(2000);
+    for (final Person p in everyone) {
+      if (p.updatedAt.isAfter(latest)) {
+        latest = p.updatedAt;
       }
-      addDue(
-        HomeItemKind.person,
-        personId,
-        at,
-        PersonReminders.noteFor(personId),
-      );
+    }
+    for (final MatchIdea m in matches) {
+      if (m.updatedAt.isAfter(latest)) {
+        latest = m.updatedAt;
+      }
+    }
+    final String key =
+        '${everyone.length}|${matches.length}|'
+        '${latest.millisecondsSinceEpoch}|${widget.refresh}|'
+        '${DateUtils.dateOnly(DateTime.now())}';
+    if (key == _fillerKey) {
+      return;
+    }
+    _fillerKey = key;
+
+    final List<List<NewIdeaSuggestion>> rounds = NewIdeaSuggestions.batches(
+      NewIdeaSuggestions.build(
+        people: everyone,
+        matches: matches,
+        dismissedFor: SuggestionDismissals.dismissedFor,
+      ),
+    );
+    _pairs = rounds.isEmpty ? const <NewIdeaSuggestion>[] : rounds.first;
+
+    final Set<String> later = ThinkLater.activeIds();
+    _thoughts = HomeSuggestions.build(
+      people: everyone
+          .where(
+            (Person p) =>
+                !p.hidden &&
+                !p.needsReview &&
+                p.profileStatus == ProfileStatus.available &&
+                !later.contains(p.id),
+          )
+          .toList(),
+      matches: matches,
+      events: widget.personRepository.getAllEvents(),
+      activity: RecentActivityStore.instance.entries,
+      limit: HomeBoardFeed.target,
+    );
+  }
+
+  /// The whole board, in the order it is drawn.
+  List<_BoardItem> _feed() {
+    final DateTime now = DateTime.now();
+
+    // A pinned record that has since been deleted simply drops out.
+    final List<HomeBoardEntry> pinned = widget.entries
+        .where((HomeBoardEntry e) => _exists(e.kind, e.targetId))
+        .toList();
+    final Set<String> seen = <String>{
+      for (final HomeBoardEntry e in pinned) '${e.kind.name}:${e.targetId}',
+    };
+    final List<_BoardItem> leading = <_BoardItem>[
+      for (final HomeBoardEntry e in pinned)
+        if (now.difference(e.addedAt) < _pinLeads)
+          _BoardItem.entry(e, pinned: true),
+    ];
+    final List<_BoardItem> olderPins = <_BoardItem>[
+      for (final HomeBoardEntry e in pinned)
+        if (now.difference(e.addedAt) >= _pinLeads)
+          _BoardItem.entry(e, pinned: true),
+    ];
+
+    // Reminders whose date has arrived, the most recent first.
+    final List<(HomeItemKind, String, DateTime, String?)> due =
+        <(HomeItemKind, String, DateTime, String?)>[];
+    PersonReminders.all().forEach((String personId, DateTime at) {
+      if (!at.isAfter(now) &&
+          widget.personRepository.getById(personId) != null) {
+        due.add((
+          HomeItemKind.person,
+          personId,
+          at,
+          PersonReminders.noteFor(personId),
+        ));
+      }
     });
     for (final MatchIdea match in widget.matchRepository.getAll()) {
       final DateTime? at = match.reminderDate;
-      if (at == null || at.isAfter(DateTime.now())) {
+      if (at != null && !at.isAfter(now)) {
+        due.add((HomeItemKind.idea, match.id, at, match.reminderNote));
+      }
+    }
+    due.sort(
+      (
+        (HomeItemKind, String, DateTime, String?) a,
+        (HomeItemKind, String, DateTime, String?) b,
+      ) => b.$3.compareTo(a.$3),
+    );
+    final List<_BoardItem> fresh = <_BoardItem>[];
+    final List<_BoardItem> stale = <_BoardItem>[];
+    for (final (HomeItemKind kind, String id, DateTime at, String? note)
+        in due) {
+      if (!seen.add('${kind.name}:$id')) {
         continue;
       }
-      addDue(HomeItemKind.idea, match.id, at, match.reminderNote);
+      final String text = (note ?? '').trim();
+      final _BoardItem item = _BoardItem.entry(
+        HomeBoardEntry(kind: kind, targetId: id, addedAt: at),
+        hint: text.isEmpty ? 'הגיע מועד התזכורת' : text,
+        reminder: true,
+      );
+      (now.difference(at) <= _freshFor ? fresh : stale).add(item);
     }
 
-    due.sort(
-      (HomeBoardEntry a, HomeBoardEntry b) => a.addedAt.compareTo(b.addedAt),
-    );
-
-    // And every open proposal, in the order the row already ranked them —
-    // whatever is not already on the board because it was pinned or because its
-    // reminder came due. They carry no note of their own: what a proposal has
-    // to say for itself is its next step, and the card reads that live.
-    final List<HomeBoardEntry> open = <HomeBoardEntry>[
+    // Every open proposal, in the order [HomeOpenIdeas] ranked them. What a
+    // proposal has to say for itself is its next step, read live by the row.
+    final List<_BoardItem> open = <_BoardItem>[
       for (final HomeOpenIdea idea in widget.openIdeas)
         if (seen.add('${HomeItemKind.idea.name}:${idea.match.id}'))
-          HomeBoardEntry(
-            kind: HomeItemKind.idea,
-            targetId: idea.match.id,
-            addedAt: idea.match.updatedAt,
+          _BoardItem.entry(
+            HomeBoardEntry(
+              kind: HomeItemKind.idea,
+              targetId: idea.match.id,
+              addedAt: idea.match.updatedAt,
+            ),
           ),
     ];
 
-    return <HomeBoardEntry>[...due, ...pinned, ...open];
+    final int own =
+        leading.length +
+        olderPins.length +
+        fresh.length +
+        stale.length +
+        open.length;
+    List<_BoardItem> pairs = const <_BoardItem>[];
+    List<_BoardItem> thoughts = const <_BoardItem>[];
+    final int room = HomeBoardFeed.fillerRoom(own);
+    if (room > 0) {
+      _loadFillers();
+      final List<NewIdeaSuggestion> livePairs = _pairs
+          .where(
+            (NewIdeaSuggestion s) =>
+                widget.matchRepository.findExisting(s.male.id, s.female.id) ==
+                    null &&
+                !SuggestionDismissals.isDismissed(s.male.id, s.female.id),
+          )
+          .toList();
+      final List<HomeSuggestion> liveThoughts = _thoughts
+          .where(
+            (HomeSuggestion s) =>
+                !seen.contains('${HomeItemKind.person.name}:${s.person.id}'),
+          )
+          .toList();
+      final (List<NewIdeaSuggestion>, List<HomeSuggestion>) split =
+          HomeBoardFeed.splitFillers(livePairs, liveThoughts, room);
+      pairs = <_BoardItem>[
+        for (final NewIdeaSuggestion s in split.$1) _BoardItem.pair(s),
+      ];
+      thoughts = <_BoardItem>[
+        for (final HomeSuggestion s in split.$2)
+          _BoardItem.entry(
+            HomeBoardEntry(
+              kind: HomeItemKind.person,
+              targetId: s.person.id,
+              addedAt: now,
+            ),
+            hint: s.reason,
+            suggested: true,
+          ),
+      ];
+    }
+
+    final List<BoardFeedItem<_BoardItem>> mixed =
+        HomeBoardFeed.mix(<BoardFeedKind, List<_BoardItem>>{
+          BoardFeedKind.freshReminder: fresh,
+          BoardFeedKind.openIdea: open,
+          BoardFeedKind.pinned: olderPins,
+          BoardFeedKind.oldReminder: stale,
+          BoardFeedKind.suggestedIdea: pairs,
+          BoardFeedKind.thinkAbout: thoughts,
+        }, seed: HomeBoardFeed.seedFor(now, widget.refresh));
+    return <_BoardItem>[
+      ...leading,
+      for (final BoardFeedItem<_BoardItem> item in mixed) item.value,
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final List<HomeBoardEntry> live = _live();
-    // The board is drawn from the first friend on, empty or not — unlike every
-    // other block on this page, which is hidden when it has nothing in it. It
-    // is the one area the matchmaker fills *by hand*, and a surface that only
-    // appears once something is already on it can never be the place you go to
-    // put the first thing there.
-    if (live.isEmpty && widget.personRepository.databaseCount == 0) {
+    // Nothing to put on a board before the first friend.
+    if (widget.personRepository.databaseCount == 0 && widget.entries.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
-
-    // Open until the matchmaker closes it, and then closed until they open it.
-    final bool expanded = _choice ?? true;
-    final List<HomeBoardEntry> shown = _showAll
-        ? live
-        : live.take(_collapsedRows).toList();
-    final int hidden = live.length - shown.length;
+    final List<_BoardItem> live = _feed();
 
     return SliverToBoxAdapter(
       child: Column(
         key: widget.focusKey,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          HomeSectionHeader(
-            title: 'הלוח שלי',
-            subtitle: expanded
-                ? 'הרעיונות הפתוחים, התזכורות ומה שהצמדתי'
-                : null,
-            expanded: expanded,
-            onToggle: () => _setChoice(!expanded),
+          const HomeSectionHeader(title: 'הלוח שלי'),
+          _BoardStats(
+            people: widget.personRepository,
+            matches: widget.matchRepository,
           ),
-          if (!expanded)
-            const SizedBox(height: 4)
-          else ...<Widget>[
-            _BoardStats(
-              people: widget.personRepository,
-              matches: widget.matchRepository,
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: homeHorizontalInset(context),
             ),
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: homeHorizontalInset(context),
-              ),
-              child: live.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 18,
-                      ),
-                      child: Text(
-                        'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    )
-                  : Column(
-                      children: <Widget>[
-                        for (final HomeBoardEntry entry in shown)
-                          _BoardRow(
-                            entry: entry,
+            child: live.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 18,
+                    ),
+                    child: Text(
+                      'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  )
+                : SizedBox(
+                    height: _boardHeight(context, live.length),
+                    child: Scrollbar(
+                      controller: _listScroll,
+                      child: ListView.builder(
+                        controller: _listScroll,
+                        padding: EdgeInsets.zero,
+                        itemCount: live.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          return _BoardRow(
+                            item: live[index],
                             personRepository: widget.personRepository,
                             matchRepository: widget.matchRepository,
-                          ),
-                      ],
-                    ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                homeHorizontalInset(context),
-                4,
-                homeHorizontalInset(context),
-                0,
-              ),
-              child: Row(
-                children: <Widget>[
-                  TextButton.icon(
-                    onPressed: () => BoardAddSheet.show(context),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      textStyle: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
+                            onPairDismissed: () => setState(() {}),
+                          );
+                        },
                       ),
                     ),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('הוספה ללוח'),
                   ),
-                  const Spacer(),
-                  // The rest of the list opens in place. There is no screen
-                  // behind this section to send anybody to — the board *is*
-                  // the list — so a "הצגת הכל" that navigated would have
-                  // nowhere to go.
-                  if (hidden > 0)
-                    TextButton(
-                      onPressed: () => setState(() => _showAll = true),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      child: Text('עוד $hidden'),
-                    )
-                  else if (_showAll && live.length > _collapsedRows)
-                    TextButton(
-                      onPressed: () => setState(() => _showAll = false),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      child: const Text('הצגה מקוצרת'),
-                    ),
-                ],
-              ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              homeHorizontalInset(context),
+              4,
+              homeHorizontalInset(context),
+              0,
             ),
-          ],
+            child: Row(
+              children: <Widget>[
+                TextButton.icon(
+                  onPressed: () => BoardAddSheet.show(context),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('הוספה ללוח'),
+                ),
+                const Spacer(),
+                if (live.length > _windowRows)
+                  Text(
+                    '${live.length} על הלוח',
+                    style: theme.textTheme.labelSmall,
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+/// One row of the board: a person or a proposal (an [entry]), or a pair the
+/// database suggests ([pair]).
+class _BoardItem {
+  const _BoardItem.entry(
+    HomeBoardEntry this.entry, {
+    this.pinned = false,
+    this.hint,
+    this.reminder = false,
+    this.suggested = false,
+  }) : pair = null;
+
+  const _BoardItem.pair(NewIdeaSuggestion this.pair)
+    : entry = null,
+      pinned = false,
+      hint = null,
+      reminder = false,
+      suggested = true;
+
+  final HomeBoardEntry? entry;
+  final NewIdeaSuggestion? pair;
+
+  /// Drawn with a small pin beside the name.
+  final bool pinned;
+
+  /// What the row says when the matchmaker has written nothing on it.
+  final String? hint;
+
+  /// On the board because a reminder came due.
+  final bool reminder;
+
+  /// Offered by the app rather than put there by the matchmaker.
+  final bool suggested;
 }
 
 /// "חברים", "רעיונות", "זוגות שיצאו", "חתונות" — all time, in a row of four
@@ -901,12 +1085,21 @@ class _BoardStats extends StatelessWidget {
     );
     final double inset = homeHorizontalInset(context);
 
-    Widget tile(int value, String label, MonthlyStatMetric m) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+
+    Widget tile(int value, String label, MonthlyStatMetric m, Color accent) {
       return Expanded(
         child: _BoardStatTile(
           value: value,
           label: label,
-          onTap: () => context.push('/stats/month/${m.name}?window=all'),
+          accent: accent,
+          // Friends and ideas are a tab each: the figure is a shortcut to the
+          // list itself. The other two open the records behind them.
+          onTap: switch (m) {
+            MonthlyStatMetric.people => () => context.go('/people'),
+            MonthlyStatMetric.ideas => () => context.go('/matches'),
+            _ => () => context.push('/stats/month/${m.name}?window=all'),
+          },
         ),
       );
     }
@@ -918,13 +1111,33 @@ class _BoardStats extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            tile(all.friends, 'חברים', MonthlyStatMetric.people),
+            tile(
+              all.friends,
+              'חברים',
+              MonthlyStatMetric.people,
+              dark ? AppColors.metricFriendsDm : AppColors.metricFriends,
+            ),
             const SizedBox(width: 8),
-            tile(all.ideas, 'רעיונות', MonthlyStatMetric.ideas),
+            tile(
+              all.ideas,
+              'רעיונות',
+              MonthlyStatMetric.ideas,
+              dark ? AppColors.metricIdeasDm : AppColors.metricIdeas,
+            ),
             const SizedBox(width: 8),
-            tile(all.couples, 'זוגות שיצאו', MonthlyStatMetric.dating),
+            tile(
+              all.couples,
+              'זוגות שיצאו',
+              MonthlyStatMetric.dating,
+              dark ? AppColors.metricCouplesDm : AppColors.metricCouples,
+            ),
             const SizedBox(width: 8),
-            tile(all.engagements, 'חתונות', MonthlyStatMetric.weddings),
+            tile(
+              all.engagements,
+              'חתונות',
+              MonthlyStatMetric.weddings,
+              dark ? AppColors.metricWeddingsDm : AppColors.metricWeddings,
+            ),
           ],
         ),
       ),
@@ -935,25 +1148,31 @@ class _BoardStats extends StatelessWidget {
 /// One figure: the number, the noun under it, and the page's one rule along
 /// the foot.
 ///
-/// **Brown on all four**, and not a colour per metric. A different accent per
-/// tile turns a row of four into four unrelated things and invites the reader
-/// to work out what each colour means, which is nothing — the four are one
-/// set of figures about one database.
+/// **A colour per metric, from the palette and nowhere else** — blue for
+/// friends, copper for ideas, rose for the couples who went out, the palest
+/// blue for a wedding. The four rules are the one place the row wears colour;
+/// the figures themselves are the page's ink, like every other heading on it,
+/// so the row reads as four counts about one database rather than as four
+/// competing badges.
 class _BoardStatTile extends StatelessWidget {
   const _BoardStatTile({
     required this.value,
     required this.label,
+    required this.accent,
     required this.onTap,
   });
 
   final int value;
   final String label;
+
+  /// The rule under this figure. See [AppColors.metricFriends] and friends.
+  final Color accent;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
 
     return Material(
       color: theme.colorScheme.surface,
@@ -1012,9 +1231,7 @@ class _BoardStatTile extends StatelessWidget {
                 ),
               ),
             ),
-            AccentUnderline(
-              color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
-            ),
+            AccentUnderline(color: accent),
           ],
         ),
       ),
@@ -1025,24 +1242,76 @@ class _BoardStatTile extends StatelessWidget {
 /// One item on the board, drawn as the app draws a row.
 ///
 /// A person carries one accent bar on the reading-start edge, in their own
-/// gender's colour — exactly the row המאגר שלי draws. A proposal carries two,
-/// one on each edge, exactly as רעיונות שלי draws a couple. Nothing else about
-/// the two rows differs, so the board reads as the same list as the rest of
-/// the app rather than as a surface of its own.
+/// gender's colour — exactly the row המאגר שלי draws. A proposal, or a pair the
+/// database suggests, carries two, one on each edge, exactly as רעיונות שלי
+/// draws a couple.
+///
+/// **One small mark beside the name says why the row is there**: a pin for
+/// what was pinned, a bell for a reminder that came due, a spark for what the
+/// app suggests. An open proposal carries none — it is the board's default.
 class _BoardRow extends StatelessWidget {
   const _BoardRow({
-    required this.entry,
+    required this.item,
     required this.personRepository,
     required this.matchRepository,
+    required this.onPairDismissed,
   });
 
-  final HomeBoardEntry entry;
+  final _BoardItem item;
   final PersonRepository personRepository;
   final MatchRepository matchRepository;
+
+  /// A suggested pair was turned down; the board deals again.
+  final VoidCallback onPairDismissed;
 
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final IconData? mark = item.pinned
+        ? Icons.push_pin
+        : item.reminder
+        ? Icons.notifications_active_outlined
+        : item.suggested
+        ? Icons.auto_awesome_outlined
+        : null;
+
+    final NewIdeaSuggestion? pair = item.pair;
+    if (pair != null) {
+      final String why = pair.reasons.isEmpty
+          ? 'רעיון שהמאגר מציע לך'
+          : 'רעיון מהמאגר · ${pair.reasons.join(' · ')}';
+      return _row(
+        context,
+        leading: HomeCardCoupleAvatars(
+          personA: pair.female,
+          personB: pair.male,
+          radius: 16,
+        ),
+        title: '${_firstName(pair.female)} & ${_firstName(pair.male)}',
+        subtitle: why,
+        mark: mark,
+        startAccent: AppColors.genderAccent(Gender.female, dark: dark),
+        endAccent: AppColors.genderAccent(Gender.male, dark: dark),
+        onTap: () => _considerPair(context, pair),
+        menu: _SuggestedPairMenu(
+          onOpen: () => _considerPair(context, pair),
+          onDismiss: () async {
+            await SuggestionDismissals.dismiss(pair.male.id, pair.female.id);
+            onPairDismissed();
+          },
+        ),
+      );
+    }
+
+    final HomeBoardEntry entry = item.entry!;
+    final String? note = HomeBoardStore.instance
+        .noteFor(entry.kind, entry.targetId)
+        ?.trim();
+    final bool hasNote = note != null && note.isNotEmpty;
+    final Widget menu = _BoardRowMenu(
+      kind: entry.kind,
+      targetId: entry.targetId,
+    );
 
     if (entry.kind == HomeItemKind.person) {
       final Person person = personRepository.getById(entry.targetId)!;
@@ -1050,9 +1319,15 @@ class _BoardRow extends StatelessWidget {
         context,
         leading: HomeCardAvatar(person: person, radius: 20),
         title: person.fullName.trim(),
-        subtitle: entry.note,
+        subtitle: hasNote ? note : item.hint,
+        mark: mark,
         startAccent: AppColors.genderAccent(person.gender, dark: dark),
-        onTap: () => context.push('/people/${person.id}'),
+        // A friend the app suggests thinking about opens the question that
+        // page asks — who they could go with. Everyone else opens their card.
+        onTap: item.suggested
+            ? () => openSuggestionsFor(context, person.id)
+            : () => context.push('/people/${person.id}'),
+        menu: menu,
       );
     }
 
@@ -1066,11 +1341,7 @@ class _BoardRow extends StatelessWidget {
         personA?.gender == Gender.female || personB?.gender == Gender.male;
     final Person? male = swap ? personB : personA;
     final Person? female = swap ? personA : personB;
-    // The proposal's next step, decided by exactly what decides it on the
-    // ideas page — [MatchStages] reads the same stage the card does — and said
-    // in as few words as a row can hold.
     final MatchNextStep? step = MatchStages.nextStep(match);
-    final String? note = entry.note?.trim();
 
     return _row(
       context,
@@ -1080,19 +1351,50 @@ class _BoardRow extends StatelessWidget {
         radius: 16,
       ),
       title: '${_firstName(personA)} & ${_firstName(personB)}',
-      // What the matchmaker wrote wins the line; the step the app worked out
-      // fills it when they wrote nothing. Both on one row would be two
-      // sentences competing in a space that holds one.
-      subtitle: note != null && note.isNotEmpty
+      // What the matchmaker wrote wins the line, then why the row is here,
+      // then the step the app worked out.
+      subtitle: hasNote
           ? note
-          : step == null
-          ? null
-          // Already reads "השלב הבא: …" — see [MatchStages.shortLabel].
-          : MatchStages.shortLabel(step, male: male, female: female),
+          : item.hint ??
+                (step == null
+                    ? null
+                    // Already reads "השלב הבא: …" — see [MatchStages.shortLabel].
+                    : MatchStages.shortLabel(step, male: male, female: female)),
+      mark: mark,
       // Women lead in RTL, which is the side רעיונות שלי puts them on too.
       startAccent: AppColors.genderAccent(Gender.female, dark: dark),
       endAccent: AppColors.genderAccent(Gender.male, dark: dark),
       onTap: () => context.push('/matches/${match.id}'),
+      menu: menu,
+    );
+  }
+
+  /// The two cards facing each other, and a proposal if the matchmaker agrees
+  /// — the same route "רעיונות שהמאגר מציע לך" takes.
+  Future<void> _considerPair(
+    BuildContext context,
+    NewIdeaSuggestion pair,
+  ) async {
+    final bool? open = await openMatchComparison(
+      context,
+      source: pair.male,
+      candidate: pair.female,
+    );
+    if (open != true || !context.mounted) {
+      return;
+    }
+    final MatchIdea? created = await matchRepository.create(
+      pair.male.id,
+      pair.female.id,
+    );
+    if (created == null || !context.mounted) {
+      return;
+    }
+    await MatchQuickActions.promote(
+      context,
+      created,
+      female: pair.female,
+      male: pair.male,
     );
   }
 
@@ -1102,8 +1404,10 @@ class _BoardRow extends StatelessWidget {
     required String title,
     required Color startAccent,
     required VoidCallback onTap,
+    required Widget menu,
     Color? endAccent,
     String? subtitle,
+    IconData? mark,
   }) {
     final ThemeData theme = Theme.of(context);
     final String? sub = subtitle?.trim();
@@ -1138,13 +1442,27 @@ class _BoardRow extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          children: <Widget>[
+                            Flexible(
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (mark != null) ...<Widget>[
+                              const SizedBox(width: 5),
+                              Icon(
+                                mark,
+                                size: 14,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ],
                         ),
                         if (sub != null && sub.isNotEmpty) ...<Widget>[
                           const SizedBox(height: 2),
@@ -1159,7 +1477,7 @@ class _BoardRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                _BoardRowMenu(kind: entry.kind, targetId: entry.targetId),
+                menu,
                 if (endAccent != null) ...<Widget>[
                   const SizedBox(width: 4),
                   AccentStripe(
@@ -1178,13 +1496,10 @@ class _BoardRow extends StatelessWidget {
   }
 }
 
-/// The note's own options, opened from the button along its bottom edge. It is
-/// only ever a closed button at rest, so the home screen stays free of open
-/// menus.
+/// Every row's own three answers: a reminder, a note, and the pin.
 ///
-/// A note that is on the board because its reminder came due is not pinned, so
-/// it is offered the pin rather than "הסרה מהלוח" — removing it from a board it
-/// was never put on would have nothing to remove.
+/// The same three whatever put the row on the board. Pinning moves it to the
+/// top with a small pin on it, and the item then offers "הסרת הצמדה" instead.
 class _BoardRowMenu extends StatelessWidget {
   const _BoardRowMenu({required this.kind, required this.targetId});
 
@@ -1202,42 +1517,36 @@ class _BoardRowMenu extends StatelessWidget {
       iconSize: 20,
       onSelected: (String value) async {
         switch (value) {
-          case 'note':
-            await HomeBoardActions.editNote(context, kind, targetId);
           case 'reminder':
             await HomeBoardActions.editReminder(context, kind, targetId);
+          case 'note':
+            await HomeBoardActions.editNote(context, kind, targetId);
           case 'pin':
             HomeBoardStore.instance.add(kind, targetId);
-          case 'remove':
+          case 'unpin':
             HomeBoardActions.remove(context, kind, targetId);
         }
       },
       itemBuilder: (BuildContext context) {
-        final HomeBoardEntry? pinned = HomeBoardStore.instance.entryFor(
-          kind,
-          targetId,
-        );
-        final bool hasNote = (pinned?.note ?? '').isNotEmpty;
+        final HomeBoardStore store = HomeBoardStore.instance;
+        final bool pinned = store.contains(kind, targetId);
+        final bool hasNote = (store.noteFor(kind, targetId) ?? '').isNotEmpty;
         return <PopupMenuEntry<String>>[
-          if (pinned != null)
-            PopupMenuItem<String>(
-              value: 'note',
-              child: Text(hasNote ? 'עריכת הערה' : 'הוספת הערה'),
-            ),
           PopupMenuItem<String>(
             value: 'reminder',
             child: Text(
               _hasReminder(context) ? 'עריכת תזכורת' : 'הוספת תזכורת',
             ),
           ),
+          PopupMenuItem<String>(
+            value: 'note',
+            child: Text(hasNote ? 'עריכת הערה' : 'הוספת הערה'),
+          ),
           const PopupMenuDivider(),
-          if (pinned == null)
-            const PopupMenuItem<String>(value: 'pin', child: Text('הצמדה ללוח'))
-          else
-            const PopupMenuItem<String>(
-              value: 'remove',
-              child: Text('הסרה מהלוח'),
-            ),
+          PopupMenuItem<String>(
+            value: pinned ? 'unpin' : 'pin',
+            child: Text(pinned ? 'הסרת הצמדה' : 'הצמדה ללוח'),
+          ),
         ];
       },
     );
@@ -1250,6 +1559,39 @@ class _BoardRowMenu extends StatelessWidget {
     }
     return context.read<MatchRepository>().getById(targetId)?.reminderDate !=
         null;
+  }
+}
+
+/// A pair the database suggests is not a record yet, so there is nothing to
+/// remind about, write on or pin until it is one. Its menu offers the two
+/// answers the suggestion itself asks for.
+class _SuggestedPairMenu extends StatelessWidget {
+  const _SuggestedPairMenu({required this.onOpen, required this.onDismiss});
+
+  final VoidCallback onOpen;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'פעולות',
+      position: PopupMenuPosition.under,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 190),
+      icon: const Icon(Icons.more_horiz, size: 20),
+      iconSize: 20,
+      onSelected: (String value) {
+        if (value == 'open') {
+          onOpen();
+        } else {
+          onDismiss();
+        }
+      },
+      itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(value: 'open', child: Text('פתיחת רעיון')),
+        PopupMenuItem<String>(value: 'dismiss', child: Text('לא מתאים')),
+      ],
+    );
   }
 }
 

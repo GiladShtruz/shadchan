@@ -43,6 +43,7 @@ class UserProfileProvider extends ChangeNotifier {
   static const String _sharesKey = 'userCommunityShares';
   static const String _benefitKey = 'userCommunityBenefit';
   static const String _contactPhoneKey = 'userCommunityPhone';
+  static const String _myPhoneKey = 'userMyPhone';
 
   final Box<dynamic> _box;
 
@@ -277,6 +278,27 @@ class UserProfileProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The user's own phone number — the account's, not a card's.
+  ///
+  /// It is how the app recognises this person across accounts: a card owner's
+  /// friends find their card by it, and a card owner's address book finds the
+  /// matchmakers among their friends by it. Typed by the user; there is no
+  /// SMS check behind it, so it identifies, it does not prove.
+  String? get myPhone {
+    final String? value = (_box.get(_myPhoneKey) as String?)?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> setMyPhone(String? value) async {
+    final String trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty) {
+      await _box.delete(_myPhoneKey);
+    } else {
+      await _box.put(_myPhoneKey, trimmed);
+    }
+    notifyListeners();
+  }
+
   /// Whether the first-launch introduction has been read.
   ///
   /// Kept apart from [isOnboarded] because they answer different questions: the
@@ -367,6 +389,7 @@ class UserProfileProvider extends ChangeNotifier {
       _sharesKey,
       _benefitKey,
       _contactPhoneKey,
+      _myPhoneKey,
     ]);
     notifyListeners();
   }

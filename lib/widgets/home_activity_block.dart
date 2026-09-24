@@ -6,6 +6,7 @@ import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
+import 'package:shadchan/widgets/home_section.dart';
 
 /// "הפעילות שלי" beside "פעילות הקהילה" — two tiles, one number each.
 ///
@@ -185,8 +186,7 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
     final CommunityPeriod period = _period;
     final CommunityTotals? totals = _totals[period];
 
-    return CommunityCard(
-      surface: CommunitySurface.plain,
+    return HomePaperCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -213,7 +213,8 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
                   // The warm tone the matchmaker's own surfaces wear, so the
                   // two tiles are told apart by colour as well as by their
                   // labels: this half is yours, the one beside it is
-                  // everybody's.
+                  // everybody's. It is a rule under the tile now, not a wash
+                  // behind it — see [_Tile].
                   accent: theme.brightness == Brightness.dark
                       ? AppColors.secondaryDarkDm
                       : AppColors.secondary,
@@ -305,10 +306,13 @@ class _FigureTile extends StatelessWidget {
               child: Text(
                 CommunityFigure.format(value),
                 maxLines: 1,
+                // The page's own ink, like every other figure on it. The
+                // tile's accent is the rule under it now — a number in one
+                // colour and a heading in another, on a card the size of a
+                // thumb, is two colours saying the same thing.
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w900,
                   height: 1.0,
-                  color: accent,
                 ),
               ),
             ),
@@ -377,6 +381,13 @@ class _JoinTile extends StatelessWidget {
 /// which is what made the pair the tallest thing on the home screen; the height
 /// is the three lines of type inside it now, and it grows with the system font
 /// instead of being clamped against it.
+///
+/// **White paper with a rule under it**, exactly as "הוספת חברים" and "הוספת
+/// רעיון" are drawn. Each half used to be a tinted, outlined panel in its own
+/// accent — two coloured boxes on a page whose language is plain paper, and a
+/// wash *and* an outline is two edges for one shape. The colour is all in the
+/// rule now, and it still says the same thing: this half is yours, the one
+/// beside it is everybody's.
 class _Tile extends StatelessWidget {
   const _Tile({required this.accent, required this.onTap, required this.child});
 
@@ -386,38 +397,12 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-
-    return Material(
-      color: dark
-          ? theme.colorScheme.surfaceContainerHighest
-          : theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accent.withValues(alpha: 0.22)),
-            gradient: LinearGradient(
-              begin: AlignmentDirectional.topStart,
-              end: AlignmentDirectional.bottomEnd,
-              colors: <Color>[
-                accent.withValues(alpha: dark ? 0.16 : 0.08),
-                dark
-                    ? theme.colorScheme.surfaceContainerHighest
-                    : theme.colorScheme.surface,
-              ],
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: child,
-          ),
-        ),
-      ),
+    return HomePaperCard(
+      stripe: accent,
+      radius: 16,
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: child,
     );
   }
 }

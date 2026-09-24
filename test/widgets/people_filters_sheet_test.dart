@@ -4,28 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
-import 'package:provider/provider.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 
 void main() {
   late Directory hiveDirectory;
-  late Box<dynamic> settingsBox;
-  late ReligiousLevelsProvider religiousLevelsProvider;
 
   setUpAll(() async {
     hiveDirectory = await Directory.systemTemp.createTemp(
       'people_filters_sheet_test_',
     );
     Hive.init(hiveDirectory.path);
-    settingsBox = await Hive.openBox<dynamic>('settings');
-    religiousLevelsProvider = ReligiousLevelsProvider(settingsBox);
+    await Hive.openBox<dynamic>('settings');
   });
 
   tearDownAll(() async {
-    religiousLevelsProvider.dispose();
     await Hive.close();
     await hiveDirectory.delete(recursive: true);
   });
@@ -37,25 +31,22 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<ReligiousLevelsProvider>.value(
-        value: religiousLevelsProvider,
-        child: MaterialApp(
-          theme: AppTheme.lightTheme(),
-          home: Directionality(
-            textDirection: TextDirection.rtl,
-            child: Scaffold(
-              body: PeopleFiltersSheet(
-                initialGender: Gender.male,
-                initialAgeRange: const RangeValues(20, 55),
-                ageBounds: (min: 18, max: 70),
-                initialReligiousLevels: const <ReligiousLevel>[
-                  ReligiousLevel.haredi,
-                ],
-                initialProfileStatuses: const <ProfileStatus>[
-                  ProfileStatus.available,
-                ],
-                heightBounds: (min: 120, max: 200),
-              ),
+      MaterialApp(
+        theme: AppTheme.lightTheme(),
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: PeopleFiltersSheet(
+              initialGender: Gender.male,
+              initialAgeRange: const RangeValues(20, 55),
+              ageBounds: (min: 18, max: 70),
+              initialReligiousLevels: const <ReligiousLevel>[
+                ReligiousLevel.haredi,
+              ],
+              initialProfileStatuses: const <ProfileStatus>[
+                ProfileStatus.available,
+              ],
+              heightBounds: (min: 120, max: 200),
             ),
           ),
         ),
@@ -96,21 +87,18 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<ReligiousLevelsProvider>.value(
-        value: religiousLevelsProvider,
-        child: MaterialApp(
-          theme: AppTheme.lightTheme(),
-          home: Directionality(
-            textDirection: TextDirection.rtl,
-            child: Scaffold(
-              body: PeopleFiltersSheet(
-                initialGender: Gender.male,
-                initialAgeRange: const RangeValues(20, 55),
-                ageBounds: (min: 18, max: 70),
-                initialReligiousLevels: const <ReligiousLevel>[],
-                initialProfileStatuses: const <ProfileStatus>[],
-                heightBounds: (min: 120, max: 200),
-              ),
+      MaterialApp(
+        theme: AppTheme.lightTheme(),
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: PeopleFiltersSheet(
+              initialGender: Gender.male,
+              initialAgeRange: const RangeValues(20, 55),
+              ageBounds: (min: 18, max: 70),
+              initialReligiousLevels: const <ReligiousLevel>[],
+              initialProfileStatuses: const <ProfileStatus>[],
+              heightBounds: (min: 120, max: 200),
             ),
           ),
         ),

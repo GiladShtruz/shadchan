@@ -5,20 +5,27 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/about_me_sheet.dart';
 import 'package:shadchan/dialogs/matchmaker_shares_sheet.dart';
+import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/account_switch.dart';
+import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// "הפרופיל שלי" — the matchmaker's own page, and the one place the app's
@@ -82,9 +89,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final AccountProvider account = context.watch<AccountProvider>();
     final SyncProvider sync = context.watch<SyncProvider>();
-    final bool hasCard =
-        (profile.personalCard ?? '').trim().isNotEmpty ||
-        profile.personalCardPhotos.isNotEmpty;
+    final bool hasCard = context.watch<PersonalCardProvider>().hasCard;
+    final bool matchmaker = WorkspaceStore.matchmakerEnabled;
 
     final List<Widget> sections = <Widget>[
       // 1. Who this is: the photograph, the full name, and the one line they
@@ -101,7 +107,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
         profile: profile,
         onChangeRequested: () => _changePersonalStatus(profile),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 16),
+
+      // 1.5. The user's own card, where it cannot be missed. A married user
+      // has no card to manage, so has no entry at all.
+      if (profile.isSingle) ...<Widget>[
+        _MyCardEntry(
+          hasCard: hasCard,
+          gender: profile.gender,
+          onTap: () => hasCard ? context.go('/me') : context.push('/me/card'),
+        ),
+        const SizedBox(height: 16),
+      ],
+
+      // Somebody who came only to manage their card can switch the
+      // matchmaker's system on — same account, nothing new to sign up for.
+      if (!matchmaker) ...<Widget>[
+        SettingsGroup(
+          title: 'שדכנות',
+          children: <Widget>[
+            SettingsRow(
+              icon: Icons.diversity_1_outlined,
+              title: 'להתחיל להכיר בין חברים',
+              subtitle: 'לנהל מאגר של חברים ולחשוב על רעיונות לשידוכים',
+              onTap: _startMatchmaking,
+            ),
+          ],
+        ),
+      ],
+
+      // The user's own number — how friends' accounts find this one, for
+      // the personal card in both directions.
+      SettingsGroup(
+        title: 'המספר שלי',
+        children: <Widget>[
+          SettingsRow(
+            icon: Icons.phone_outlined,
+            title: profile.myPhone ?? 'הוספת המספר שלי',
+            subtitle: profile.myPhone == null
+                ? 'כדי שחברים יוכלו למצוא את הכרטיס שלך, ולהפך'
+                : 'לא מופיע בכרטיס ולא נשלח בשיתוף',
+            onTap: () async {
+              final String? phone = await MyPhoneDialog.show(
+                context,
+                initial: profile.myPhone,
+              );
+              if (phone != null) {
+                await profile.setMyPhone(phone);
+              }
+            },
+          ),
+        ],
+      ),
 
       // 2. The account, immediately under the person it belongs to. It used to
       // be the last group on the page, which put the one row that protects
@@ -109,24 +166,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Who is signed in, and nothing that ends it: leaving, switching and
       // deleting are at the foot of the page — see [_AccountActions].
       _AccountGroup(account: account, onSignIn: () => context.push('/sign-in')),
-
-      // 3. A single matchmaker's own card — one row, and a page behind it. The
-      // card used to be previewed here in full, above the settings, whether or
-      // not there was anything in it.
-      if (profile.isSingle)
-        SettingsGroup(
-          title: 'הכרטיס שלי',
-          children: <Widget>[
-            SettingsRow(
-              icon: Icons.badge_outlined,
-              title: 'כרטיס השידוכים שלי',
-              subtitle: hasCard
-                  ? 'צפייה, שיתוף ועריכה'
-                  : 'עוד לא מילאת אותו — אפשר למלא עכשיו',
-              onTap: () => context.push('/profile/card'),
-            ),
-          ],
-        ),
 
       // 3.5. What other matchmakers see.
       //
@@ -136,33 +175,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // the page that other people read, and it is drawn as a group of its own
       // so that is never in doubt: three rows, each saying what is currently
       // filled in, and the whole of the public page behind them.
-      SettingsGroup(
-        title: 'מה שדכנים אחרים רואים',
-        children: <Widget>[
-          SettingsRow(
-            icon: Icons.badge_outlined,
-            title: 'מה תרצה ששדכנים אחרים ידעו עליך?',
-            subtitle: _sharesSummary(profile.communityShares),
-            onTap: () => _editShares(profile),
-          ),
-          SettingsRow(
-            icon: Icons.card_giftcard_rounded,
-            title: 'הטבה לקהילה',
-            subtitle:
-                profile.communityBenefit ??
-                'לא חובה — משהו שתרצה להציע לשדכנים אחרים',
-            onTap: () => _editBenefit(profile),
-          ),
-          SettingsRow(
-            icon: Icons.chat_bubble_outline_rounded,
-            title: 'מספר לפנייה בוואטסאפ',
-            subtitle:
-                profile.communityPhone ??
-                'לא חובה — בלעדיו פשוט לא יופיע כפתור',
-            onTap: () => _editCommunityPhone(profile),
-          ),
-        ],
-      ),
+      if (matchmaker)
+        SettingsGroup(
+          title: 'מה שדכנים אחרים רואים',
+          children: <Widget>[
+            SettingsRow(
+              icon: Icons.badge_outlined,
+              title: 'מה תרצה ששדכנים אחרים ידעו עליך?',
+              subtitle: _sharesSummary(profile.communityShares),
+              onTap: () => _editShares(profile),
+            ),
+            SettingsRow(
+              icon: Icons.card_giftcard_rounded,
+              title: 'הטבה לקהילה',
+              subtitle:
+                  profile.communityBenefit ??
+                  'לא חובה — משהו שתרצה להציע לשדכנים אחרים',
+              onTap: () => _editBenefit(profile),
+            ),
+            SettingsRow(
+              icon: Icons.chat_bubble_outline_rounded,
+              title: 'מספר לפנייה בוואטסאפ',
+              subtitle:
+                  profile.communityPhone ??
+                  'לא חובה — בלעדיו פשוט לא יופיע כפתור',
+              onTap: () => _editCommunityPhone(profile),
+            ),
+          ],
+        ),
 
       // 4. The settings — one row, and a page behind it.
       //
@@ -209,6 +249,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  /// Switches the matchmaker's system on for a card-only user and takes them
+  /// to its home screen, through the matchmaker's introduction the first time.
+  Future<void> _startMatchmaking() async {
+    WorkspaceStore.setMatchmakerEnabled(true);
+    WorkspaceStore.setLastArea(WorkArea.matchmaker);
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    if (!profile.hasSeenIntro) {
+      await Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute<void>(
+          builder: (BuildContext introContext) => IntroScreens(
+            onFinished: () async {
+              await profile.markIntroSeen();
+              if (introContext.mounted) {
+                Navigator.of(introContext).pop();
+              }
+            },
+          ),
+        ),
+      );
+    }
+    if (mounted) {
+      context.go('/home');
+    }
   }
 
   // --- The photo ----------------------------------------------------------
@@ -425,6 +490,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       people: context.read<PersonRepository>(),
       matches: context.read<MatchRepository>(),
       profile: context.read<UserProfileProvider>(),
+      personalCard: context.read<PersonalCardProvider>(),
+      cardAccess: context.read<CardAccessProvider>(),
+      inbox: context.read<InboxProvider>(),
       community: context.read<CommunityProvider>(),
     );
     if (!mounted) {
@@ -499,6 +567,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           people: context.read<PersonRepository>(),
           matches: context.read<MatchRepository>(),
           profile: context.read<UserProfileProvider>(),
+          personalCard: context.read<PersonalCardProvider>(),
           community: context.read<CommunityProvider>(),
           password: password,
         );
@@ -956,6 +1025,68 @@ class UserProfileAvatar extends StatelessWidget {
       onTap: onTap,
       customBorder: const CircleBorder(),
       child: avatar,
+    );
+  }
+}
+
+/// "הכרטיס שלי" at the top of the profile — the way into the personal area,
+/// or the invitation to write a first card.
+class _MyCardEntry extends StatelessWidget {
+  const _MyCardEntry({
+    required this.hasCard,
+    required this.gender,
+    required this.onTap,
+  });
+
+  final bool hasCard;
+  final Gender? gender;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return HomePaperCard(
+      stripe: AppColors.secondary,
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.secondary.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              hasCard ? Icons.badge_outlined : Icons.add_card_outlined,
+              color: AppColors.secondary,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  hasCard ? 'הכרטיס שלי' : 'יצירת הכרטיס שלי',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasCard
+                      ? 'ניהול הכרטיס, הסטטוס ומי רואה אותו'
+                      : 'כרטיס אחד שרק {אתה מעדכן|את מעדכנת}, לחברים שמשדכים'
+                            .forGender(gender),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded),
+        ],
+      ),
     );
   }
 }

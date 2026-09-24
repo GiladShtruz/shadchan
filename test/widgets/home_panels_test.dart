@@ -198,10 +198,7 @@ void main() {
       Material cardFor(String label) {
         return tester.widget<Material>(
           find
-              .ancestor(
-                of: find.text(label),
-                matching: find.byType(Material),
-              )
+              .ancestor(of: find.text(label), matching: find.byType(Material))
               .first,
         );
       }

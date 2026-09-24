@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/utils/enums.dart';
 
-/// A person's religious style: either one of the built-in levels or a custom
-/// label the matchmaker defined ([ReligiousLevel.other] plus the text).
+/// A person's religious style: one of [ReligiousLevels.global], or — only on
+/// an older record — a style that is no longer offered ([ReligiousLevel.other]
+/// plus the label a matchmaker once typed, or a retired built-in).
 class ReligiousLevelChoice {
   const ReligiousLevelChoice(this.level, [this.customLabel]);
 
@@ -15,76 +13,63 @@ class ReligiousLevelChoice {
   bool get isEmpty => level == null;
 }
 
-/// The chip row used wherever a person's religious style is chosen. It offers
-/// only the styles enabled in settings, plus a shortcut into that screen.
+/// The chip row used wherever a person's religious style is chosen.
+///
+/// It offers the one global list. A record that still carries a retired style
+/// shows it as an extra, already-selected chip at the start, so opening an
+/// older card never silently changes what it says; picking any other chip
+/// replaces it for good.
 class ReligiousLevelPicker extends StatelessWidget {
   const ReligiousLevelPicker({
     super.key,
     required this.selected,
     required this.onChanged,
-    this.showSettingsShortcut = true,
+    this.showTitle = true,
   });
 
   final ReligiousLevelChoice selected;
   final ValueChanged<ReligiousLevelChoice> onChanged;
-  final bool showSettingsShortcut;
+
+  /// Off where the surrounding form already heads the row with its own label —
+  /// two "סגנון דתי" titles one above the other is what this flag exists for.
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ReligiousLevelsProvider provider = context
-        .watch<ReligiousLevelsProvider>();
-    final List<ReligiousLevel> levels = provider.enabledLevels;
-    final List<String> customLabels = provider.customLabels;
-
     final ReligiousLevel? current = selected.level;
+    final bool legacy = ReligiousLevels.isLegacy(current);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        if (showSettingsShortcut)
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 12,
-            runSpacing: 2,
-            children: <Widget>[
-              Text('סגנון דתי', style: theme.textTheme.titleMedium),
-              TextButton.icon(
-                onPressed: () => context.push('/profile/religious-levels'),
-                icon: const Icon(Icons.tune, size: 18),
-                label: const Text('עריכת הגדרות דתיות'),
-              ),
-            ],
-          )
-        else
+        if (showTitle) ...<Widget>[
           Text('סגנון דתי', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+          const SizedBox(height: 8),
+        ],
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: <Widget>[
-            for (final ReligiousLevel level in levels)
+            if (legacy)
+              ChoiceChip(
+                label: Text(
+                  ReligiousLevels.labelOf(current!, selected.customLabel),
+                ),
+                selected: true,
+                onSelected: (bool value) {
+                  if (!value) {
+                    onChanged(const ReligiousLevelChoice(null));
+                  }
+                },
+              ),
+            for (final ReligiousLevel level in ReligiousLevels.global)
               ChoiceChip(
                 label: Text(level.displayName),
                 selected: current == level,
                 onSelected: (bool value) => onChanged(
                   value && current != level
                       ? ReligiousLevelChoice(level)
-                      : const ReligiousLevelChoice(null),
-                ),
-              ),
-            for (final String label in customLabels)
-              ChoiceChip(
-                label: Text(label),
-                selected:
-                    current == ReligiousLevel.other &&
-                    selected.customLabel == label,
-                onSelected: (bool value) => onChanged(
-                  value &&
-                          !(current == ReligiousLevel.other &&
-                              selected.customLabel == label)
-                      ? ReligiousLevelChoice(ReligiousLevel.other, label)
                       : const ReligiousLevelChoice(null),
                 ),
               ),

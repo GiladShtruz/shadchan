@@ -70,80 +70,59 @@ class HomeHeroBand extends StatelessWidget {
         // type is the row.
         final bool showMark = constraints.maxWidth >= 300 && textScale <= 1.4;
 
-        return Material(
-          color: dark
-              ? theme.colorScheme.surfaceContainerHighest
-              : theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onShowIdeas,
-            child: Ink(
-              padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                // No outline — the same rule as the block above it: the wash
-                // separates it from the page on its own, and a line round a
-                // tinted fill is a second edge for one shape.
-                gradient: LinearGradient(
-                  begin: AlignmentDirectional.topStart,
-                  end: AlignmentDirectional.bottomEnd,
-                  colors: <Color>[
-                    lead.withValues(alpha: dark ? 0.14 : 0.06),
-                    dark
-                        ? theme.colorScheme.surfaceContainerHighest
-                        : theme.colorScheme.surface,
+        // The same white card the home page's blocks wear, with the copper
+        // rule under it: an idea is what this row opens, and copper is what an
+        // idea is drawn in everywhere else in the app.
+        return HomePaperCard(
+          stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+          padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+          onTap: onShowIdeas,
+          child: Row(
+            children: <Widget>[
+              // **The sealed envelope**, which used to be the drawing on
+              // "הוספת חברים". It is the one mark in the set that means
+              // *something arrived for you* rather than *do something* —
+              // which is exactly what this row is, and is why the pair of
+              // portraits that stood at the other end of it has gone: two
+              // marks for one destination, and the couple was the vaguer
+              // of them. Recoloured at draw time so the strokes wear the
+              // row's own lead in either theme — see [HomeLineArt].
+              if (showMark) ...<Widget>[
+                _HeroMark(lead: lead, dark: dark),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    // Named for what it is: pairs the database worked out
+                    // on its own, not ideas the matchmaker opened.
+                    //
+                    // **Exactly the size of "עוצרים רגע לחשוב על חברים"
+                    // above it.** These two blocks sit one on top of the
+                    // other and are the two invitations at the top of the
+                    // page; each was scaled to whatever width its own card
+                    // had left over, so the pair read as a banner with a
+                    // footnote under it. One size, fixed — see
+                    // [HomeBannerTitle].
+                    //
+                    // The line that used to sit under it, "שווה הצצה,
+                    // אולי מחכה שם חיבור", is gone: the heading already
+                    // says what the row is.
+                    const HomeBannerTitle(text: 'רעיונות שהמאגר מציע לך'),
                   ],
                 ),
               ),
-              child: Row(
-                children: <Widget>[
-                  // **The sealed envelope**, which used to be the drawing on
-                  // "הוספת חברים". It is the one mark in the set that means
-                  // *something arrived for you* rather than *do something* —
-                  // which is exactly what this row is, and is why the pair of
-                  // portraits that stood at the other end of it has gone: two
-                  // marks for one destination, and the couple was the vaguer
-                  // of them. Recoloured at draw time so the strokes wear the
-                  // row's own lead in either theme — see [HomeLineArt].
-                  if (showMark) ...<Widget>[
-                    _HeroMark(lead: lead, dark: dark),
-                    const SizedBox(width: 12),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        // Named for what it is: pairs the database worked out
-                        // on its own, not ideas the matchmaker opened.
-                        //
-                        // **Exactly the size of "עוצרים רגע לחשוב על חברים"
-                        // above it.** These two blocks sit one on top of the
-                        // other and are the two invitations at the top of the
-                        // page; each was scaled to whatever width its own card
-                        // had left over, so the pair read as a banner with a
-                        // footnote under it. One size, fixed — see
-                        // [HomeBannerTitle].
-                        //
-                        // The line that used to sit under it, "שווה הצצה,
-                        // אולי מחכה שם חיבור", is gone: the heading already
-                        // says what the row is.
-                        const HomeBannerTitle(text: 'רעיונות שהמאגר מציע לך'),
-                      ],
-                    ),
-                  ),
-                  // `chevron_right` and not `chevron_left`: Material's
-                  // directional icons mirror themselves, so in this RTL app
-                  // this is the one that points the way the page is going.
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 26,
-                    color: AppColors.muted(dark: dark),
-                  ),
-                ],
+              // `chevron_right` and not `chevron_left`: Material's
+              // directional icons mirror themselves, so in this RTL app
+              // this is the one that points the way the page is going.
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 26,
+                color: AppColors.muted(dark: dark),
               ),
-            ),
+            ],
           ),
         );
       },
@@ -242,7 +221,7 @@ class HomeActionCards extends StatelessWidget {
         // Short on purpose. The two are still the loudest thing on the page —
         // by colour and by lifting off it — but a tile tall enough to give a
         // line drawing room pushed everything under it off the first screen.
-        final double artHeight = (constraints.maxWidth * 0.2).clamp(56, 80);
+        final double artHeight = (constraints.maxWidth * 0.23).clamp(62, 92);
 
         return SizedBox(
           height: artHeight + bandHeight + AccentBar.thickness,
@@ -400,13 +379,24 @@ class _AddTile extends StatelessWidget {
                   ),
                   child: Row(
                     children: <Widget>[
+                      // Balances the chevron at the other end, so "centred"
+                      // means centred on the card rather than on whatever is
+                      // left over beside an icon.
+                      const SizedBox(width: 20),
+                      // **Centred under its own drawing.** The label used to
+                      // start at the reading edge, which on a card whose
+                      // picture is centred left it hanging off one corner. The
+                      // chevron keeps the outer edge and the name sits under
+                      // the middle of the drawing, which is how the pair is
+                      // drawn.
                       Expanded(
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
+                          alignment: Alignment.center,
                           child: Text(
                             label,
                             maxLines: 1,
+                            textAlign: TextAlign.center,
                             // No size and no colour of its own: the page
                             // decides both, once, for every block on it — see
                             // [HomeTypography].

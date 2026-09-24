@@ -19,8 +19,10 @@ import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
@@ -141,6 +143,11 @@ Future<void> _startNotifications() async {
         AppRouter.router.go('/reminders');
       });
     };
+    NotificationService.onOpenRoute = (String route) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppRouter.router.go(route);
+      });
+    };
     await NotificationService.initialize();
 
     await NotificationService.requestPermissions();
@@ -208,11 +215,36 @@ Widget _buildApp() {
       ChangeNotifierProvider<ThemeModeProvider>(
         create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
       ),
-      ChangeNotifierProvider<ReligiousLevelsProvider>(
-        create: (_) => ReligiousLevelsProvider(Hive.box<dynamic>('settings')),
-      ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<PersonalCardProvider>(
+        create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<InboxProvider>(
+        lazy: false,
+        create: (_) => InboxProvider(),
+      ),
+      // Access to personal cards, both sides. Constructing it touches nothing;
+      // `CloudSyncScheduler` connects it once Firebase is up.
+      ChangeNotifierProvider<CardAccessProvider>(
+        lazy: false,
+        create: (BuildContext context) {
+          final PersonRepository people = context.read<PersonRepository>();
+          final CardAccessProvider provider = CardAccessProvider(
+            people: people,
+          );
+          // A status the matchmaker sets for somebody whose own card they
+          // follow is put to the owner as a question.
+          people.onStatusChangedForCardOwner =
+              (Person person, ProfileStatus status) => provider.reportStatus(
+                person,
+                status,
+                matchmakerName:
+                    context.read<UserProfileProvider>().fullName ?? '',
+              );
+          return provider;
+        },
       ),
       // Lazy on purpose: constructing this is what starts Firebase, and
       // nothing outside Settings watches it, so the first frame never pays for

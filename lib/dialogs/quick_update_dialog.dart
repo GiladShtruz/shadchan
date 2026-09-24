@@ -152,7 +152,6 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                 _religiousLevel,
                 _religiousLevelOther,
               ),
-              showSettingsShortcut: false,
               onChanged: (ReligiousLevelChoice choice) {
                 setState(() {
                   _religiousLevel = choice.level;

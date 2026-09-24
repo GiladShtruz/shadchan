@@ -219,160 +219,121 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color ink = dark ? _tipInkDm : _tipInk;
+    // The bulb and its disc wear the copper the rule under the card is drawn
+    // in — one colour per block, and it is the palette's, not a shade beside
+    // it.
+    final Color mark = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
     final List<HomeTip> tips = widget.tips;
     if (tips.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final Widget card = Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        // Deeper than it was, but still a hairline: a fractional border width
-        // leaves the page inside a fractional number of pixels wide, and the
-        // carousel's viewport then rounds its way into building a second page
-        // it never shows.
-        border: Border.all(color: ink.withValues(alpha: dark ? 0.38 : 0.26)),
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: dark
-              ? <Color>[
-                  theme.colorScheme.surfaceContainerHighest,
-                  theme.colorScheme.surface,
-                ]
-              : <Color>[_tipPaper, AppColors.surface.withValues(alpha: 0.96)],
-        ),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: ink.withValues(alpha: dark ? 0.10 : 0.14),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Stack(
+    // The page's own card: plain paper, a soft shadow, and the copper rule
+    // along the foot that says what kind of block this is. It used to be an
+    // outlined, gradient-filled box with a tinted corner — the one shape on
+    // the page that was drawn its own way.
+    final Widget card = HomePaperCard(
+      stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+      radius: 22,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          // The warm corner. Nothing is written on it and nothing sits inside
-          // it — it is there so the card reads as a small, friendly piece of
-          // paper rather than as an outlined rectangle with a sentence in it.
-          PositionedDirectional(
-            top: -26,
-            start: -22,
-            child: Container(
-              width: 92,
-              height: 92,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.secondary.withValues(
-                  alpha: dark ? 0.10 : 0.09,
+          // The mark leads the block rather than trailing the
+          // sentence. It used to be an emoji appended to the tip text,
+          // which is the one place a mark cannot be relied on: a device
+          // without a colour emoji font drew a blank box at the end of
+          // every tip, and even where it rendered it read as a typo in
+          // somebody's sentence. In its own tinted disc it is part of
+          // the card's furniture — the thing that says "this box is
+          // advice" before a word of it is read.
+          //
+          // **The bulb, back where it started.** The heart-and-pencil
+          // drawing that stood here belongs to "הוספת רעיון" now — a
+          // pencil is what you pick up to *write* something down, and
+          // that card is the one asking for it. What a tip is is an
+          // idea somebody had and passed on, and the bulb says that in
+          // one glyph at 18px, which no line drawing does.
+          Row(
+            children: <Widget>[
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _tipDisc(theme, mark),
+                ),
+                child: Icon(
+                  Icons.lightbulb_outline_rounded,
+                  size: 17,
+                  color: mark,
                 ),
               ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: ink,
+                  ),
+                ),
+              ),
+              // One small warm mark at the far edge, balancing the bulb.
+              Icon(
+                Icons.favorite_rounded,
+                size: 13,
+                color: AppColors.secondary.withValues(alpha: 0.45),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // A fixed height so the block does not jump between a short tip
+          // and a long one as the pages turn. Measured from what a tip
+          // actually is — two or three lines — rather than rounded up to
+          // something comfortable.
+          SizedBox(
+            // Tall enough for three lines at the tip's own size, which
+            // is a size larger than it used to be drawn at.
+            height: homeScaled(context, 86),
+            child: PageView.builder(
+              controller: _controller,
+              onPageChanged: (int page) {
+                setState(() => _page = page);
+                // A manual swipe should buy the full dwell time again.
+                _restartTimer();
+              },
+              itemBuilder: (BuildContext context, int page) {
+                final HomeTip tip = tips[page % tips.length];
+                return _TipPage(tip: tip, ink: ink);
+              },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+          // A short ring gets dots. A long one does not: forty dots say
+          // nothing except that there are forty of something.
+          if (tips.length > 1 && tips.length <= 8) ...<Widget>[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                // The mark leads the block rather than trailing the
-                // sentence. It used to be an emoji appended to the tip text,
-                // which is the one place a mark cannot be relied on: a device
-                // without a colour emoji font drew a blank box at the end of
-                // every tip, and even where it rendered it read as a typo in
-                // somebody's sentence. In its own tinted disc it is part of
-                // the card's furniture — the thing that says "this box is
-                // advice" before a word of it is read.
-                //
-                // **The bulb, back where it started.** The heart-and-pencil
-                // drawing that stood here belongs to "הוספת רעיון" now — a
-                // pencil is what you pick up to *write* something down, and
-                // that card is the one asking for it. What a tip is is an
-                // idea somebody had and passed on, and the bulb says that in
-                // one glyph at 18px, which no line drawing does.
-                Row(
-                  children: <Widget>[
-                    Container(
-                      width: 28,
-                      height: 28,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _tipDisc(theme, ink),
+                for (int i = 0; i < tips.length; i++)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: i == _page % tips.length ? 14 : 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: ink.withValues(
+                        alpha: i == _page % tips.length ? 0.8 : 0.22,
                       ),
-                      child: Icon(
-                        Icons.lightbulb_outline_rounded,
-                        size: 17,
-                        color: ink,
-                      ),
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: ink,
-                        ),
-                      ),
-                    ),
-                    // One small warm mark at the far edge, balancing the bulb.
-                    Icon(
-                      Icons.favorite_rounded,
-                      size: 13,
-                      color: AppColors.secondary.withValues(alpha: 0.45),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                // A fixed height so the block does not jump between a short tip
-                // and a long one as the pages turn. Measured from what a tip
-                // actually is — two or three lines — rather than rounded up to
-                // something comfortable.
-                SizedBox(
-                  // Tall enough for three lines at the tip's own size, which
-                  // is a size larger than it used to be drawn at.
-                  height: homeScaled(context, 86),
-                  child: PageView.builder(
-                    controller: _controller,
-                    onPageChanged: (int page) {
-                      setState(() => _page = page);
-                      // A manual swipe should buy the full dwell time again.
-                      _restartTimer();
-                    },
-                    itemBuilder: (BuildContext context, int page) {
-                      final HomeTip tip = tips[page % tips.length];
-                      return _TipPage(tip: tip, ink: ink);
-                    },
                   ),
-                ),
-                // A short ring gets dots. A long one does not: forty dots say
-                // nothing except that there are forty of something.
-                if (tips.length > 1 && tips.length <= 8) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      for (int i = 0; i < tips.length; i++)
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          width: i == _page % tips.length ? 14 : 5,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: ink.withValues(
-                              alpha: i == _page % tips.length ? 0.8 : 0.22,
-                            ),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
               ],
             ),
-          ),
+          ],
         ],
       ),
     );

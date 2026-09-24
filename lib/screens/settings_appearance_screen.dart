@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
@@ -114,17 +113,6 @@ class SettingsAppearanceScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-            SettingsGroup(
-              title: 'המאגר',
-              children: <Widget>[
-                SettingsRow(
-                  icon: Icons.style_outlined,
-                  title: 'סגנונות דתיים',
-                  subtitle: 'אילו סגנונות יופיעו באפליקציה',
-                  onTap: () => context.push('/profile/religious-levels'),
                 ),
               ],
             ),

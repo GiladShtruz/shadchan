@@ -24,24 +24,13 @@ class HomeWelcomeCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
 
-    return Container(
+    // The page's one card: plain paper, a soft shadow, the brand blue along
+    // the foot. It was a blue-washed panel — the first thing a new matchmaker
+    // saw, and the one block on the page drawn unlike the rest of it.
+    return HomePaperCard(
+      stripe: dark ? AppColors.primaryDarkDm : AppColors.primary,
+      radius: 24,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: dark
-              ? <Color>[
-                  theme.colorScheme.primary.withValues(alpha: 0.20),
-                  theme.colorScheme.surface,
-                ]
-              : <Color>[
-                  AppColors.primaryLight.withValues(alpha: 0.8),
-                  AppColors.surface,
-                ],
-        ),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -91,13 +80,9 @@ class HomeMilestoneCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Color lead = _lead(theme);
 
-    return Container(
+    return HomePaperCard(
+      stripe: lead,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: lead.withValues(alpha: 0.22)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -157,15 +142,12 @@ class HomeFirstIdeaCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     final Color lead = _lead(theme);
 
-    return Container(
+    return HomePaperCard(
+      stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: lead.withValues(alpha: 0.22)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -217,48 +199,38 @@ class HomeImportInvite extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Color lead = _lead(theme);
 
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: lead.withValues(alpha: 0.35)),
+    return HomePaperCard(
+      stripe: lead,
+      onTap: onTap,
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: lead.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(Icons.auto_awesome, color: lead, size: 20),
           ),
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: lead.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(Icons.auto_awesome, color: lead, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'יש לך מאגר אישי בקבוצת ווטסאפ או באקסל? ייבא אותו באמצעות '
+              'כלי ה-AI',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                height: 1.35,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'יש לך מאגר אישי בקבוצת ווטסאפ או באקסל? ייבא אותו באמצעות '
-                  'כלי ה-AI',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              HomeArrowButton(
-                background: lead.withValues(alpha: 0.12),
-                foreground: lead,
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 6),
+          HomeArrowButton(
+            background: lead.withValues(alpha: 0.12),
+            foreground: lead,
+          ),
+        ],
       ),
     );
   }
@@ -296,88 +268,67 @@ class HomeThinkBanner extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool showPicture =
             constraints.maxWidth >= 300 && textScale <= 1.3;
-        final Color paper = dark
-            ? theme.colorScheme.surfaceContainerHighest
-            : AppColors.surface;
-
-        return Material(
-          color: paper,
-          borderRadius: BorderRadius.circular(22),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Ink(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: accent.withValues(alpha: dark ? 0.20 : 0.12),
-                ),
-                gradient: LinearGradient(
-                  begin: AlignmentDirectional.topStart,
-                  end: AlignmentDirectional.bottomEnd,
-                  colors: <Color>[
-                    accent.withValues(alpha: dark ? 0.14 : 0.07),
-                    paper,
-                  ],
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 12, 12),
-                child: Row(
+        // The page's own card: plain paper, a soft shadow, and the copper rule
+        // along the foot. It used to be a tinted, outlined panel — the same
+        // wash the block below it wore, which made the head of המאגר שלי two
+        // coloured boxes in a row.
+        return HomePaperCard(
+          stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+          radius: 22,
+          onTap: onTap,
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 12, 12),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          // One line, shrunk rather than wrapped — see
-                          // [HomeBannerTitle.singleLine].
-                          HomeBannerTitle(
-                            text: 'עוצרים רגע לחשוב על החברים',
-                            color: dark ? theme.colorScheme.onSurface : accent,
-                            singleLine: true,
-                          ),
-                          const SizedBox(height: 8),
-                          FilledButton(
-                            onPressed: onTap,
-                            // Scaled down rather than wrapped: a question
-                            // broken across two lines inside a pill reads as
-                            // two half-sentences.
-                            style: FilledButton.styleFrom(
-                              backgroundColor: dark
-                                  ? AppColors.secondaryDarkDm
-                                  : AppColors.secondary,
-                              foregroundColor: dark
-                                  ? AppColors.onSecondary
-                                  : AppColors.surface,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 7,
-                              ),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                              shape: const StadiumBorder(),
-                              textStyle: theme.textTheme.labelMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            child: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text('על מי חושבים עכשיו?', maxLines: 1),
-                            ),
-                          ),
-                        ],
+                    // One line, shrunk rather than wrapped — see
+                    // [HomeBannerTitle.singleLine].
+                    HomeBannerTitle(
+                      text: 'עוצרים רגע לחשוב על החברים',
+                      color: dark ? theme.colorScheme.onSurface : accent,
+                      singleLine: true,
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: onTap,
+                      // Scaled down rather than wrapped: a question
+                      // broken across two lines inside a pill reads as
+                      // two half-sentences.
+                      style: FilledButton.styleFrom(
+                        backgroundColor: dark
+                            ? AppColors.secondaryDarkDm
+                            : AppColors.secondary,
+                        foregroundColor: dark
+                            ? AppColors.onSecondary
+                            : AppColors.surface,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 7,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                        shape: const StadiumBorder(),
+                        textStyle: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('על מי חושבים עכשיו?', maxLines: 1),
                       ),
                     ),
-                    if (showPicture) ...<Widget>[
-                      const SizedBox(width: 12),
-                      _CoffeeMark(accent: accent, dark: dark),
-                    ],
                   ],
                 ),
               ),
-            ),
+              if (showPicture) ...<Widget>[
+                const SizedBox(width: 12),
+                _CoffeeMark(accent: accent, dark: dark),
+              ],
+            ],
           ),
         );
       },

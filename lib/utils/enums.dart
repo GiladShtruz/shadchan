@@ -73,7 +73,7 @@ enum ReligiousLevel {
   String get displayName {
     switch (this) {
       case ReligiousLevel.datlashi:
-        return 'דתלש';
+        return 'דתל״ש';
       case ReligiousLevel.masorti:
         return 'מסורתי';
       case ReligiousLevel.datiOpen:
@@ -99,6 +99,41 @@ enum ReligiousLevel {
       case ReligiousLevel.other:
         return 'אחר';
     }
+  }
+}
+
+/// The one list of religious styles every matchmaker and every card owner
+/// chooses from. It used to be configurable per matchmaker, which made a
+/// shared card impossible: a style one matchmaker had switched off simply did
+/// not exist on another's phone.
+///
+/// The other [ReligiousLevel] values are kept only so records that already
+/// carry them still open and still display; nothing offers them as a choice.
+abstract final class ReligiousLevels {
+  static const List<ReligiousLevel> global = <ReligiousLevel>[
+    ReligiousLevel.hiloni,
+    ReligiousLevel.masorti,
+    ReligiousLevel.datlashi,
+    ReligiousLevel.datiOpen,
+    ReligiousLevel.datiLeumi,
+    ReligiousLevel.datiLeumiTorani,
+    ReligiousLevel.chardal,
+    ReligiousLevel.haredi,
+  ];
+
+  /// Whether [level] is one the app no longer offers — a record keeps it, and
+  /// shows it, until somebody picks a style from [global] instead.
+  static bool isLegacy(ReligiousLevel? level) =>
+      level != null && !global.contains(level);
+
+  /// How a person's style reads: the built-in name, or the label a matchmaker
+  /// once typed for [ReligiousLevel.other].
+  static String labelOf(ReligiousLevel level, String? otherLabel) {
+    if (level == ReligiousLevel.other) {
+      final String label = (otherLabel ?? '').trim();
+      return label.isEmpty ? level.displayName : label;
+    }
+    return level.displayName;
   }
 }
 
@@ -474,6 +509,22 @@ enum Region {
         return 'חו״ל';
     }
   }
+}
+
+/// The four parts of the country anybody can choose from, in the order they
+/// are offered. The other [Region] values are older, finer divisions kept so
+/// records that carry one still open; they are never offered and never
+/// guessed from a city.
+abstract final class Regions {
+  static const List<Region> selectable = <Region>[
+    Region.jerusalem,
+    Region.center,
+    Region.north,
+    Region.south,
+  ];
+
+  static bool isLegacy(Region? region) =>
+      region != null && !selectable.contains(region);
 }
 
 @HiveType(typeId: 6)

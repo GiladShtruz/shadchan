@@ -155,14 +155,21 @@ class CommunityPeriodTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color lead = communityLead(theme);
+    final bool dark = theme.brightness == Brightness.dark;
+    // Straight out of the palette, both states: the brand blue carries the
+    // chosen window in cream, and the other two are written in the page's own
+    // quiet grey. No near-miss tones and nothing tinted "about right".
+    final Color lead = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    final Color onLead = dark ? AppColors.onSecondary : AppColors.onPrimary;
 
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: dark ? theme.colorScheme.surface : AppColors.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(
+          color: dark ? AppColors.dividerDm : AppColors.divider,
+        ),
       ),
       child: Row(
         children: <Widget>[
@@ -185,8 +192,8 @@ class CommunityPeriodTabs extends StatelessWidget {
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: period == selected
-                            ? theme.colorScheme.onPrimary
-                            : theme.colorScheme.onSurfaceVariant,
+                            ? onLead
+                            : AppColors.muted(dark: dark),
                       ),
                     ),
                   ),

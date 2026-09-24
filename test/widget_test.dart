@@ -28,13 +28,15 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/religious_levels_provider.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/screens/personal_card_screen.dart';
+import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/privacy_overview_screen.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/screens/profile_screen.dart';
@@ -42,6 +44,7 @@ import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
 import 'package:shadchan/widgets/search_results_panel.dart';
@@ -164,8 +167,12 @@ void main() {
     expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
     expect(find.text('רווק'), findsOneWidget);
     expect(find.text('נשוי'), findsOneWidget);
+    // Divorced and widowed users count as single here; the detail is on the
+    // card itself.
     expect(
-      find.text('למשתמשים רווקים תופיע בפרופיל אפשרות לשמור ולשתף כרטיס אישי.'),
+      find.text(
+        'גרוש או אלמן? סמן רווק — כך תופיע בפרופיל אפשרות ליצור כרטיס אישי.',
+      ),
       findsOneWidget,
     );
     // The button is never dead: it is pressable with the answer missing, and
@@ -289,7 +296,7 @@ void main() {
     },
   );
 
-  testWidgets('Only a single user sees and edits a personal card', (
+  testWidgets('Only a single user is offered a personal card', (
     WidgetTester tester,
   ) async {
     final Box<dynamic> settings = Hive.box<dynamic>('settings');
@@ -300,38 +307,41 @@ void main() {
     // The personal status is a quiet line under the name, not a titled section.
     expect(find.text('מצב אישי'), findsNothing);
     expect(find.textContaining('· שינוי'), findsOneWidget);
-    // The card is one row on the profile now, and a married matchmaker has no
-    // row at all.
-    expect(find.text('כרטיס השידוכים שלי'), findsNothing);
+    // A married user has no card to create or manage.
+    expect(find.text('יצירת הכרטיס שלי'), findsNothing);
+    expect(find.text('הכרטיס שלי'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userIsSingle', true));
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
-    expect(find.text('כרטיס השידוכים שלי'), findsOneWidget);
-    expect(find.text('עוד לא מילאת אותו — אפשר למלא עכשיו'), findsOneWidget);
+    // Near the top of the page, not a row among the settings.
+    expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(() => settings.put('userIsSingle', false));
+  });
 
-    // What that row opens: the card's own page, in its empty state.
+  testWidgets('The owner card editor has no matchmaker-only areas', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
-      _buildProfileTestApp(home: const PersonalCardScreen()),
+      _buildProfileTestApp(home: const PersonExtendedEditScreen.ownerCard()),
     );
     await tester.pumpAndSettle();
-    expect(find.text('עוד לא מילאת את הכרטיס שלך'), findsOneWidget);
-    expect(find.text('מילוי הכרטיס שלי'), findsOneWidget);
 
-    await tester.tap(find.text('מילוי הכרטיס שלי'));
-    await tester.pumpAndSettle();
-    expect(find.text('עריכת הכרטיס האישי'), findsOneWidget);
-    expect(find.text('הוספת תמונות'), findsOneWidget);
-    expect(find.text('שמירת הכרטיס'), findsOneWidget);
-
-    await tester.enterText(
-      find.byType(TextField).last,
-      'זה הכרטיס האישי שלי לשיתוף מהיר',
-    );
-    expect(find.text('זה הכרטיס האישי שלי לשיתוף מהיר'), findsOneWidget);
-    await tester.tap(find.text('ביטול'));
-    await tester.pumpAndSettle();
+    expect(find.text('הכרטיס שלי'), findsOneWidget);
+    expect(find.text('כרטיסייה לשליחה'), findsOneWidget);
+    // The matchmaker's own notes and go-between never belong to the card.
+    expect(find.text('הערות אישיות – לעיניי בלבד'), findsNothing);
+    expect(find.text('איש קשר להעברת הצעות'), findsNothing);
+    // A date of birth instead of an age, and no phone field.
+    expect(find.text('תאריך לידה'), findsOneWidget);
+    expect(find.text('גיל'), findsNothing);
+    expect(find.text('טלפון'), findsNothing);
+    // "סגנון דתי" is headed once, not twice.
+    expect(find.text('סגנון דתי'), findsOneWidget);
+    // No "עיר מועדפת" anywhere.
+    expect(find.text('עיר מועדפת'), findsNothing);
   });
 
   test('Personal card photo order is stored exactly as arranged', () async {
@@ -360,7 +370,8 @@ void main() {
     expect(shouldShowBottomNavigationBar('/people/import'), isFalse);
     expect(shouldShowBottomNavigationBar('/matches/add'), isFalse);
     expect(shouldShowBottomNavigationBar('/dashboard'), isFalse);
-    expect(shouldShowBottomNavigationBar('/profile'), isFalse);
+    expect(shouldShowBottomNavigationBar('/profile'), isTrue);
+    expect(shouldShowBottomNavigationBar('/profile/settings'), isFalse);
   });
 
   testWidgets('Manual add uses the current card design without Mazel Tov', (
@@ -453,7 +464,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('עריכת כרטיס'), findsOneWidget);
       expect(find.text('שם פרטי'), findsOneWidget);
-      expect(find.text('עיר או יישוב'), findsOneWidget);
+      expect(find.text('עיר / יישוב'), findsOneWidget);
       // The page is a stack of collapsible areas; the basics start open and
       // the rest are one tap away.
       expect(find.text('כרטיסייה לשליחה'), findsOneWidget);
@@ -787,36 +798,20 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The board is drawn even with nothing on it, and open: it folds only when
-    // the matchmaker folds it. It is the one area filled by hand, and a
-    // surface that has to be found and opened first is never where the first
-    // thing goes.
+    // The board is drawn from the first friend on, always open, and a thin
+    // board is topped up with what the app suggests — here, the one friend to
+    // think about.
     expect(find.text('הלוח שלי'), findsOneWidget);
-    await tester.ensureVisible(
-      find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'),
-    );
+    await tester.ensureVisible(find.text('הוספה ללוח'));
     await tester.pump();
-    expect(
-      find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'),
-      findsOneWidget,
-    );
+    expect(find.text('נעמי שגב'), findsWidgets);
+    expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
     // The same four all-time figures as "הנתונים שלך" head it — one noun
     // each, with no sentence and no icon around it.
     expect(find.text('חברים'), findsOneWidget);
     expect(find.text('חתונות'), findsOneWidget);
     expect(find.text('חברים שהוספת'), findsNothing);
     expect(find.text('רעיונות שפתחת'), findsNothing);
-
-    // Folding it is remembered, and nothing opens it again by itself.
-    await tester.ensureVisible(find.text('הלוח שלי'));
-    await tester.pump();
-    await tester.tap(find.text('הלוח שלי'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('הלוח ריק — אפשר להצמיד אליו חבר או רעיון'), findsNothing);
-    await tester.tap(find.text('הלוח שלי'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
 
     await tester.ensureVisible(find.text('הוספה ללוח'));
     await tester.pump();
@@ -917,17 +912,14 @@ void main() {
     // reading start, the man's at the other end, exactly as רעיונות שלי draws
     // a couple. See [AccentStripe].
     final Finder stripes = find.descendant(
-      of: find.ancestor(
-        of: find.text('דוד & שרה'),
-        matching: find.byType(Row),
-      ),
+      of: find.ancestor(of: find.text('דוד & שרה'), matching: find.byType(Row)),
       matching: find.byType(AccentStripe),
     );
     expect(stripes, findsNWidgets(2));
     expect(
-      tester.widgetList<AccentStripe>(stripes).map(
-        (AccentStripe s) => (s.color, s.atStart),
-      ),
+      tester
+          .widgetList<AccentStripe>(stripes)
+          .map((AccentStripe s) => (s.color, s.atStart)),
       <(Color, bool)>[
         (AppColors.genderAccent(Gender.female), true),
         (AppColors.genderAccent(Gender.male), false),
@@ -1819,19 +1811,16 @@ void main() {
     QuickUpdateOutcome? result;
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<ReligiousLevelsProvider>(
-        create: (_) => ReligiousLevelsProvider(Hive.box<dynamic>('settings')),
-        child: MaterialApp(
-          home: Builder(
-            builder: (BuildContext context) {
-              return TextButton(
-                onPressed: () async {
-                  result = await QuickUpdateDialog.show(context, draft);
-                },
-                child: const Text('פתיחה'),
-              );
-            },
-          ),
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            return TextButton(
+              onPressed: () async {
+                result = await QuickUpdateDialog.show(context, draft);
+              },
+              child: const Text('פתיחה'),
+            );
+          },
         ),
       ),
     );
@@ -2000,6 +1989,59 @@ void main() {
       expect(find.text(entry.$1), findsOneWidget, reason: entry.$1);
       expect(find.text(entry.$2), findsOneWidget, reason: entry.$2);
     }
+  });
+
+  testWidgets('A card-only user lands on the personal area, never the tabs', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    await tester.runAsync(
+      () => settings.put('workspace.matchmakerEnabled', 'false'),
+    );
+    WorkspaceStore.resetForTest();
+    try {
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pump();
+      AppRouter.router.go('/home');
+      await tester.pumpAndSettle();
+
+      expect(find.text('האזור האישי'), findsOneWidget);
+      expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
+      expect(find.byType(BottomNavigationBar), findsNothing);
+      // No way to switch to a matchmaker area that was never switched on.
+      expect(find.text('לעבור לאזור השדכן'), findsNothing);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => settings.delete('workspace.matchmakerEnabled'),
+      );
+      await tester.runAsync(() => settings.delete('workspace.lastArea'));
+      WorkspaceStore.resetForTest();
+      AppRouter.router.go('/home');
+    }
+  });
+
+  testWidgets('The matchmaker bar ends with a profile tab', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/home');
+    await tester.pumpAndSettle();
+
+    final BottomNavigationBar bar = tester.widget<BottomNavigationBar>(
+      find.byType(BottomNavigationBar),
+    );
+    expect(
+      bar.items.map((BottomNavigationBarItem item) => item.label),
+      <String>['בית', 'המאגר שלי', 'הרעיונות שלי', 'פרופיל'],
+    );
+
+    await tester.tap(find.text('פרופיל'));
+    await tester.pumpAndSettle();
+    expect(find.text('הפרופיל שלי'), findsOneWidget);
+    // The bar stays: the profile is a tab now, not a page on top of them.
+    expect(find.byType(BottomNavigationBar), findsOneWidget);
   });
 
   testWidgets('All three tabs carry the same three controls, in one order', (
@@ -2240,11 +2282,20 @@ Widget _buildTestApp() {
       ChangeNotifierProvider<ThemeModeProvider>(
         create: (_) => ThemeModeProvider(Hive.box<dynamic>('settings')),
       ),
-      ChangeNotifierProvider<ReligiousLevelsProvider>(
-        create: (_) => ReligiousLevelsProvider(Hive.box<dynamic>('settings')),
-      ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<PersonalCardProvider>(
+        create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<CardAccessProvider>(
+        create: (BuildContext context) => CardAccessProvider(
+          people: context.read<PersonRepository>(),
+          enabled: false,
+        ),
+      ),
+      ChangeNotifierProvider<InboxProvider>(
+        create: (_) => InboxProvider(enabled: false),
       ),
       // Lazy, so this only costs anything if a test actually routes to the
       // profile. See `_buildProfileTestApp` for why Firebase is kept out.
@@ -2296,6 +2347,18 @@ Widget _buildProfileTestApp({Widget? home}) {
       ),
       ChangeNotifierProvider<UserProfileProvider>(
         create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<PersonalCardProvider>(
+        create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+      ),
+      ChangeNotifierProvider<CardAccessProvider>(
+        create: (BuildContext context) => CardAccessProvider(
+          people: context.read<PersonRepository>(),
+          enabled: false,
+        ),
+      ),
+      ChangeNotifierProvider<InboxProvider>(
+        create: (_) => InboxProvider(enabled: false),
       ),
       // Firebase is never reached under `flutter test`: `initializeApp` would
       // hang inside the fake-async zone and leave its deadline timer pending.

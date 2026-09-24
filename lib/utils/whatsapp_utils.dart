@@ -136,6 +136,19 @@ abstract final class WhatsAppUtils {
     );
   }
 
+  /// Opens a chat with [rawPhone] with [text] already typed in the composer.
+  /// Nothing is sent until the person presses send.
+  static Future<bool> openChatWithText(String? rawPhone, String text) async {
+    final String? phone = PhoneUtils.toWhatsAppNumber(rawPhone);
+    if (phone == null) {
+      return false;
+    }
+    return launchUrl(
+      Uri.https('wa.me', '/$phone', <String, String>{'text': text}),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   /// Sends [card]'s saved card — **its text and every one of its photos** — to
   /// [recipient]. Returns false when the recipient has no valid number and the
   /// card has nothing worth sending.

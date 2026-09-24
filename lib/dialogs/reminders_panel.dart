@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/reminders_list.dart';
+import 'package:shadchan/widgets/card_inbox_list.dart';
 import 'package:shadchan/widgets/support_inbox_list.dart';
 
 /// The reminders list shown as a panel that drops down from the top banner, so
@@ -65,6 +66,9 @@ abstract final class RemindersPanel {
                             // Reports and answers sit above the reminders:
                             // both are "something happened that you have not
                             // seen", which is the whole job of this panel.
+                            CardInboxList(
+                              onOpen: () => Navigator.of(dialogContext).pop(),
+                            ),
                             SupportInboxList(
                               onOpen: () => Navigator.of(dialogContext).pop(),
                             ),

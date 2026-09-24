@@ -324,6 +324,30 @@ void main() {
     });
   });
 
+  group('retired preferences', () {
+    test('a preferred city left over from before no longer filters', () {
+      final Person source = person(
+        level: ReligiousLevel.datiLeumi,
+        prefCity: 'ירושלים',
+      );
+      final Person candidate = person(
+        id: 'b',
+        gender: Gender.female,
+        age: 25,
+        level: ReligiousLevel.datiLeumi,
+        city: 'חיפה',
+      );
+      expect(MatchSuggestionUtils.hasExtendedPreferences(source), isFalse);
+      expect(
+        MatchSuggestionUtils.matchesOwnPreferences(
+          source: source,
+          candidate: candidate,
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('required details', () {
     test('a friend needs a full name, an age, a gender and a style', () {
       expect(

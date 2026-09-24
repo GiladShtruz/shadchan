@@ -11,6 +11,9 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/community_activity_screen.dart';
 import 'package:shadchan/services/community_profile_store.dart';
@@ -98,6 +101,18 @@ void main() {
         ),
         ChangeNotifierProvider<UserProfileProvider>(
           create: (_) => UserProfileProvider(Hive.box<dynamic>('settings')),
+        ),
+        ChangeNotifierProvider<PersonalCardProvider>(
+          create: (_) => PersonalCardProvider(Hive.box<dynamic>('settings')),
+        ),
+        ChangeNotifierProvider<CardAccessProvider>(
+          create: (BuildContext context) => CardAccessProvider(
+            people: context.read<PersonRepository>(),
+            enabled: false,
+          ),
+        ),
+        ChangeNotifierProvider<InboxProvider>(
+          create: (_) => InboxProvider(enabled: false),
         ),
         ChangeNotifierProvider<CommunityProvider>(
           create: (_) => CommunityProvider(connect: () async {}),

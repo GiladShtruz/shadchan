@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/dialogs/reminders_panel.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -39,7 +40,9 @@ class RemindersBellButton extends StatelessWidget {
     // Reports and answers are under the same bell as the reminders — see
     // `SupportInboxList` for why there is only one inbox in this app.
     final int due =
-        _dueCount(matches) + context.watch<SupportInboxProvider>().unreadCount;
+        _dueCount(matches) +
+        context.watch<SupportInboxProvider>().unreadCount +
+        _cardInboxUnread(context);
 
     if (boxed) {
       return HomeBarButton(
@@ -96,5 +99,15 @@ class RemindersBellButton extends StatelessWidget {
     final int people = PersonReminders.all().values.where(isDue).length;
 
     return ideas + people;
+  }
+
+  /// Unread notices about personal cards. Tolerates a tree without the
+  /// provider, like the widget tests that draw this bar on its own.
+  static int _cardInboxUnread(BuildContext context) {
+    try {
+      return context.watch<InboxProvider>().unreadCount;
+    } on ProviderNotFoundException {
+      return 0;
+    }
   }
 }

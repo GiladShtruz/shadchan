@@ -3,14 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/mazel_tov_inbox.dart';
+import 'package:shadchan/services/personal_card_sync.dart';
+import 'package:shadchan/services/push_service.dart';
 
 /// Runs the cloud backup when the app opens and when it goes away.
 ///
@@ -44,7 +50,10 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
   /// the timer that stops a burst of them becoming a burst of writes.
   PersonRepository? _people;
   MatchRepository? _matches;
+  PersonalCardProvider? _cards;
+  UserProfileProvider? _profile;
   Timer? _activityTimer;
+  Timer? _cardTimer;
 
   /// How long the app waits after the last change before republishing.
   ///
@@ -82,8 +91,45 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
         // either is exactly the moment the row is stale.
         _people = context.read<PersonRepository>()..addListener(_noteActivity);
         _matches = context.read<MatchRepository>()..addListener(_noteActivity);
+        // The personal card goes to the server shortly after it is saved —
+        // its owner expects the matchmakers they approved to see a change
+        // without waiting for the app to be closed.
+        _cards = context.read<PersonalCardProvider>()
+          ..addListener(_noteCardChange);
+        _profile = context.read<UserProfileProvider>()
+          ..addListener(_noteCardChange);
+        // The first sync starts Firebase and cannot wait for it; everything
+        // that only runs once it is up gets its turn here.
+        FirebaseBootstrap.readyListenable.addListener(_onFirebaseReady);
+        _onFirebaseReady();
       }
     });
+  }
+
+  void _onFirebaseReady() {
+    if (FirebaseBootstrap.isReady) {
+      _syncPersonalCard();
+      unawaited(PushService.start());
+      unawaited(context.read<CardAccessProvider>().start());
+      unawaited(context.read<InboxProvider>().start());
+    }
+  }
+
+  void _noteCardChange() {
+    _cardTimer?.cancel();
+    _cardTimer = Timer(const Duration(seconds: 2), _syncPersonalCard);
+  }
+
+  void _syncPersonalCard() {
+    if (!mounted) {
+      return;
+    }
+    unawaited(
+      PersonalCardSync.run(
+        cards: context.read<PersonalCardProvider>(),
+        profile: context.read<UserProfileProvider>(),
+      ),
+    );
   }
 
   @override
@@ -91,7 +137,11 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     _account?.removeListener(_refreshSupportInbox);
     _people?.removeListener(_noteActivity);
     _matches?.removeListener(_noteActivity);
+    _cards?.removeListener(_noteCardChange);
+    _profile?.removeListener(_noteCardChange);
+    FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
     _activityTimer?.cancel();
+    _cardTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -178,6 +228,10 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // for the same reason — it is warm news, not urgent news, and it costs one
     // query against an inbox that is empty for almost everybody.
     unawaited(MazelTovInbox.drain(context.read<MatchRepository>()));
+
+    // The personal card and this account's phone identity. A no-op until
+    // Firebase is up, and a no-op again when nothing changed since last time.
+    _syncPersonalCard();
 
     // And the support inbox: a report that arrived for an administrator, or an
     // answer that came back for whoever sent one. Same two moments again —

@@ -16,6 +16,7 @@ import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
+import 'package:shadchan/widgets/home_section.dart';
 
 /// "מה קורה בקהילה עכשיו" — the one live thing on the home screen.
 ///
@@ -312,40 +313,45 @@ class CommunityPulseCard extends StatelessWidget {
     final CommunityPulseLine? current = line;
     final int beat = this.beat;
 
-    return CommunityCard(
-      child: InkWell(
-        onTap: onOpen,
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                _LivePulse(beat: beat),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+    final bool dark = theme.brightness == Brightness.dark;
+
+    // **White paper, like every other block on the page.** This was the one
+    // card still wearing a blue wash of its own, which on a page of plain
+    // cards read as a panel from somewhere else. What says the block is about
+    // everybody is the blue rule under it and the live dot at its head — not
+    // a coloured ground.
+    return HomePaperCard(
+      stripe: dark ? AppColors.primaryDarkDm : AppColors.primary,
+      onTap: onOpen,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              _LivePulse(beat: beat),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-            if (current != null) ...<Widget>[
-              const SizedBox(height: 10),
-              _RotatingLine(line: current, onTap: onLine, sent: sent),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: AppColors.muted(dark: dark),
+              ),
             ],
-            const SizedBox(height: 14),
-            _ChallengeBar(challenge: challenge),
+          ),
+          if (current != null) ...<Widget>[
+            const SizedBox(height: 10),
+            _RotatingLine(line: current, onTap: onLine, sent: sent),
           ],
-        ),
+          const SizedBox(height: 14),
+          _ChallengeBar(challenge: challenge),
+        ],
       ),
     );
   }
@@ -465,7 +471,7 @@ class _ChallengeBar extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
     final Color lead = communityLead(theme);
     final bool won = challenge.reachedTarget || challenge.beatsRecord;
-    final Color fill = won ? (dark ? const Color(0xFF9DB07A) : _done) : lead;
+    final Color fill = won ? (dark ? AppColors.statusDatingDm : _done) : lead;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -501,7 +507,9 @@ class _ChallengeBar extends StatelessWidget {
               return LinearProgressIndicator(
                 value: value,
                 minHeight: 9,
-                backgroundColor: theme.colorScheme.surface,
+                backgroundColor: dark
+                    ? AppColors.dividerDm
+                    : AppColors.primaryLight,
                 valueColor: AlwaysStoppedAnimation<Color>(fill),
               );
             },
@@ -518,10 +526,7 @@ class _ChallengeBar extends StatelessWidget {
               flex: 5,
               child: Text(
                 challenge.subline,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.4,
-                ),
+                style: theme.textTheme.labelSmall?.copyWith(height: 1.4),
               ),
             ),
             const SizedBox(width: 10),

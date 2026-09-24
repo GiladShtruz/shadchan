@@ -81,6 +81,11 @@ dependencies:
   # native SDK exactly; 6.4.1 resolves forward to 12.14 but calls its old API.
   cloud_firestore: 6.5.0
   firebase_storage: 13.4.0
+  # Push notifications for the personal card: an access request, an approval,
+  # a friend's wedding or birthday. Pinned with the rest of the family above —
+  # 16.3.0 is what resolves against firebase_core 4.10.0 and platform
+  # interface 7.0.1; a newer one expects the core that crashes iOS.
+  firebase_messaging: 16.3.0
   crypto: ^3.0.7
   upgrader: ^13.6.0
 

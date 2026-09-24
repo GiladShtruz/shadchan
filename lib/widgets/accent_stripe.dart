@@ -68,7 +68,9 @@ class AccentStripe extends StatelessWidget {
         color: color,
         borderRadius: BorderRadiusDirectional.horizontal(
           end: atStart ? const Radius.circular(AccentBar.radius) : Radius.zero,
-          start: atStart ? Radius.zero : const Radius.circular(AccentBar.radius),
+          start: atStart
+              ? Radius.zero
+              : const Radius.circular(AccentBar.radius),
         ),
       ),
     );

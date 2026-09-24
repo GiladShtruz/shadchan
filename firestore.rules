@@ -1,6 +1,8 @@
 rules_version = '2';
 
 // Every matchmaker's database is private to their own account, full stop.
+// The one deliberate exception is the personal card near the end of this file:
+// a card its *owner* writes and shares with the matchmakers they approve.
 //
 // The data behind these rules is other people's names, ages, phone numbers and
 // private notes about their shidduchim — collected by a matchmaker who was
@@ -57,6 +59,23 @@ service cloud.firestore {
       // The matchmaker's own profile — one document, `main`.
       match /profile/{documentId} {
         allow read, write: if isOwner();
+      }
+
+      // News addressed to this account — an access request, an answer, a
+      // friend's wedding or birthday. Written only by Cloud Functions (which
+      // bypass these rules), read and cleared by the account itself.
+      match /inbox/{itemId} {
+        allow read, update, delete: if isOwner();
+        allow create: if false;
+      }
+
+      // What the server worked out for this account and only this account —
+      // `helpers`: the matchmakers among a card owner's contacts. Written by
+      // Cloud Functions, which can see the phone directory whole; the client
+      // never can.
+      match /private/{documentId} {
+        allow read: if isOwner();
+        allow write: if false;
       }
     }
 
@@ -609,6 +628,200 @@ service cloud.firestore {
       allow delete: if isSignedIn()
                     && (resource.data.toUid == request.auth.uid
                         || resource.data.fromUid == request.auth.uid);
+    }
+
+    // ------------------------------------------------------------------
+    // The personal card — the one place a candidate's details are written by
+    // the candidate, for the matchmakers they approve.
+    //
+    // Everything below is checked here, on the server, and never only in the
+    // app: who may read a card, who may ask for it, and who may answer.
+    // ------------------------------------------------------------------
+
+    function durable() {
+      return request.auth != null
+          && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function accessPath(ownerUid, matchmakerUid) {
+      return /databases/$(database)/documents/cardAccess/$(ownerUid + '_' + matchmakerUid);
+    }
+
+    function hasApprovedAccess(ownerUid) {
+      return exists(accessPath(ownerUid, request.auth.uid))
+          && get(accessPath(ownerUid, request.auth.uid)).data.status == 'approved';
+    }
+
+    // The contacts rule: a matchmaker may ask for a card only if the card's
+    // owner has them saved in their phone. Checked against the hashes the
+    // owner published, and against the phone this account published as its
+    // own — which must be this account's entry in the directory, so a phone
+    // hash cannot be borrowed from somebody else's entry.
+    function inOwnersContacts(ownerUid) {
+      let myPhone = get(/databases/$(database)/documents/userPhones/$(request.auth.uid)).data.phoneHash;
+      return exists(/databases/$(database)/documents/contactHashes/$(ownerUid))
+          && get(/databases/$(database)/documents/phoneDirectory/$(myPhone)).data.uid == request.auth.uid
+          && get(/databases/$(database)/documents/contactHashes/$(ownerUid)).data.hashes.hasAny([myPhone]);
+    }
+
+    // The owner's card. The field list is the whitelist in
+    // `PersonalCardCodec.cardFields` plus the bookkeeping around it: nothing
+    // a matchmaker keeps privately can be written here, by construction.
+    match /personalCards/{ownerUid} {
+      allow read: if durable()
+                  && (request.auth.uid == ownerUid
+                      || (resource.data.deleted == false
+                          && hasApprovedAccess(ownerUid)));
+      allow create, update: if durable()
+                            && request.auth.uid == ownerUid
+                            && request.resource.data.ownerUid == ownerUid
+                            && request.resource.data.deleted is bool
+                            && request.resource.data.status in
+                                 ['available', 'busy', 'onBreak', 'mazelTov']
+                            && request.resource.data.keys().hasOnly([
+                                 'ownerUid', 'firstName', 'lastName', 'gender',
+                                 'dateOfBirth', 'religiousLevel',
+                                 'religiousLevelOther', 'city', 'description',
+                                 'heightCm', 'maritalStatus', 'region',
+                                 'preferredMinAge', 'preferredMaxAge',
+                                 'preferredMinHeightCm', 'preferredMaxHeightCm',
+                                 'preferredRegions', 'preferredMaritalStatuses',
+                                 'preferredReligiousLevels',
+                                 'preferredReligiousLevelOtherLabels',
+                                 'photoPaths', 'status', 'deleted', 'updatedAt'])
+                            && (request.resource.data.get('description', null) == null
+                                || request.resource.data.description.size() <= 4000);
+      // Deleting a card is a flag, never an erasure — it has to be
+      // restorable. The document itself goes only with the account, which
+      // is a Cloud Function's job.
+      allow delete: if false;
+    }
+
+    // Who this account is, by phone. Looked up one number at a time and
+    // never listed, so the directory cannot be read out as a whole. An entry
+    // belongs to the account that wrote it.
+    match /phoneDirectory/{phoneHash} {
+      allow get: if durable();
+      allow list: if false;
+      allow create: if durable()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'name', 'matchmaker', 'hasCard', 'updatedAt'])
+                    && request.resource.data.matchmaker is bool
+                    && request.resource.data.hasCard is bool
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() <= 80;
+      allow update: if durable()
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'name', 'matchmaker', 'hasCard', 'updatedAt'])
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() <= 80;
+      allow delete: if durable() && resource.data.uid == request.auth.uid;
+    }
+
+    match /userPhones/{uid} {
+      allow read, write: if durable() && request.auth.uid == uid;
+    }
+
+    // The owner's address book as hashes. Read by the rules above, and by
+    // nobody else.
+    match /contactHashes/{uid} {
+      allow read, write: if durable() && request.auth.uid == uid;
+    }
+
+    match /fcmTokens/{uid} {
+      allow read, write: if durable() && request.auth.uid == uid;
+    }
+
+    // One document per owner and matchmaker, named `{ownerUid}_{matchmakerUid}`.
+    //
+    // The owner decides everything: approve, decline, block, revoke, or grant
+    // access unasked. The matchmaker may only ask — and only when saved in
+    // the owner's contacts and not blocked.
+    match /cardAccess/{accessId} {
+      function fieldsOk() {
+        return request.resource.data.keys().hasOnly([
+                 'ownerUid', 'matchmakerUid', 'status', 'requestedBy',
+                 'ownerName', 'matchmakerName', 'ownerPhoneHash', 'ownerPhone',
+                 'invited', 'updatedAt'])
+            && accessId == request.resource.data.ownerUid + '_'
+                           + request.resource.data.matchmakerUid
+            && request.resource.data.status in
+                 ['pending', 'approved', 'declined', 'blocked', 'revoked']
+            && request.resource.data.updatedAt == request.time;
+      }
+
+      function isOwner() {
+        return request.auth.uid == resource.data.ownerUid;
+      }
+
+      function isMatchmaker() {
+        return request.auth.uid == resource.data.matchmakerUid;
+      }
+
+      allow read: if durable() && (isOwner() || isMatchmaker());
+
+      allow create: if durable() && fieldsOk()
+                    && (
+                      // The owner granting (or blocking) on their own.
+                      request.resource.data.ownerUid == request.auth.uid
+                      ||
+                      // A matchmaker asking.
+                      (request.resource.data.matchmakerUid == request.auth.uid
+                       && request.resource.data.ownerUid != request.auth.uid
+                       && request.resource.data.status == 'pending'
+                       && request.resource.data.requestedBy == 'matchmaker'
+                       && inOwnersContacts(request.resource.data.ownerUid))
+                    );
+
+      allow update: if durable() && fieldsOk()
+                    && request.resource.data.ownerUid == resource.data.ownerUid
+                    && request.resource.data.matchmakerUid == resource.data.matchmakerUid
+                    && (
+                      isOwner()
+                      ||
+                      // Asking again after a "not now" or a revoked grant.
+                      // Never after a block: that is the owner's to lift.
+                      (isMatchmaker()
+                       && resource.data.status in ['declined', 'revoked']
+                       && request.resource.data.status == 'pending'
+                       && request.resource.data.requestedBy == 'matchmaker'
+                       && inOwnersContacts(resource.data.ownerUid))
+                    );
+
+      // The owner may remove any row. A matchmaker may withdraw a request or
+      // leave a card — never delete a block, which would lift it.
+      allow delete: if durable()
+                    && (isOwner()
+                        || (isMatchmaker() && resource.data.status != 'blocked'));
+    }
+
+    // "Yitzchak marked you as 'busy' on his phone — is that right?" A
+    // matchmaker with access asks; only the owner answers.
+    match /statusReports/{reportId} {
+      allow read: if durable()
+                  && (request.auth.uid == resource.data.ownerUid
+                      || request.auth.uid == resource.data.matchmakerUid);
+      allow create: if durable()
+                    && request.resource.data.matchmakerUid == request.auth.uid
+                    && hasApprovedAccess(request.resource.data.ownerUid)
+                    && request.resource.data.keys().hasOnly([
+                         'ownerUid', 'matchmakerUid', 'matchmakerName',
+                         'status', 'resolution', 'createdAt'])
+                    && request.resource.data.status in
+                         ['available', 'busy', 'onBreak', 'mazelTov']
+                    && request.resource.data.resolution == null
+                    && request.resource.data.createdAt == request.time;
+      allow update: if durable()
+                    && request.auth.uid == resource.data.ownerUid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['resolution'])
+                    && request.resource.data.resolution in ['confirmed', 'rejected'];
+      allow delete: if durable()
+                    && (request.auth.uid == resource.data.ownerUid
+                        || request.auth.uid == resource.data.matchmakerUid);
     }
 
     // Anything not named above is closed. Without this, a path added later

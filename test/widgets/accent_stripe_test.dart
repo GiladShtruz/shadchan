@@ -34,11 +34,7 @@ void main() {
           children: <Widget>[
             AccentStripe(color: Color(0xFF112233), height: 40),
             Spacer(),
-            AccentStripe(
-              color: Color(0xFF332211),
-              atStart: false,
-              height: 40,
-            ),
+            AccentStripe(color: Color(0xFF332211), atStart: false, height: 40),
           ],
         ),
       ),
@@ -77,7 +73,9 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      wrap(const Column(children: <Widget>[AccentUnderline(color: Colors.red)])),
+      wrap(
+        const Column(children: <Widget>[AccentUnderline(color: Colors.red)]),
+      ),
     );
 
     expect(

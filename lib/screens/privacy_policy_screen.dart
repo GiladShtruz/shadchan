@@ -55,9 +55,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
                 _english
                     ? PrivacyPolicyText.englishTitle
                     : PrivacyPolicyText.hebrewTitle,
-                textDirection: _english
-                    ? TextDirection.ltr
-                    : TextDirection.rtl,
+                textDirection: _english ? TextDirection.ltr : TextDirection.rtl,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
@@ -66,9 +64,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
               // The English text is laid out left-to-right inside an otherwise
               // right-to-left app.
               Directionality(
-                textDirection: _english
-                    ? TextDirection.ltr
-                    : TextDirection.rtl,
+                textDirection: _english ? TextDirection.ltr : TextDirection.rtl,
                 child: Text(
                   _english
                       ? PrivacyPolicyText.english

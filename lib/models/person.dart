@@ -48,6 +48,11 @@ class Person extends HiveObject {
     this.needsReview = false,
     this.hidden = false,
     this.importBatchId,
+    this.birthDate,
+    this.cardOwnerUid,
+    this.cardSyncDetached = false,
+    this.preSyncSnapshot,
+    this.cardRemoteStatus,
     int? avatarIndex,
   }) : photosPaths = List<String>.from(photosPaths),
        preferredRegions = List<Region>.from(preferredRegions),
@@ -228,6 +233,45 @@ class Person extends HiveObject {
   @HiveField(40)
   String? importBatchId;
 
+  /// A full date of birth, only ever filled by a card owner on their own card
+  /// (and carried to the matchmakers they approve). When present it is the
+  /// age: it never goes stale and it is what a Hebrew birthday is computed
+  /// from. Cards a matchmaker keeps for somebody without a card of their own
+  /// go on using [manualAge], exactly as before.
+  @HiveField(41)
+  DateTime? birthDate;
+
+  // --- The link to a card its owner manages ------------------------------
+  //
+  // Set on the matchmaker's copy of a friend once the friend approved access
+  // to their own card. None of this is ever part of the card, and none of it
+  // is shared: it is this device's bookkeeping about where the details come
+  // from.
+
+  /// The account of the friend whose own card this record follows. Null for
+  /// every card a matchmaker keeps by hand.
+  @HiveField(42)
+  String? cardOwnerUid;
+
+  /// True once the matchmaker edited a synced card and saved: from then on the
+  /// details are theirs again, and only the owner's status keeps arriving.
+  @HiveField(43, defaultValue: false)
+  bool cardSyncDetached;
+
+  /// The record exactly as the matchmaker had it before the owner's card
+  /// replaced it — backup JSON — put back if access is ever withdrawn.
+  @HiveField(44)
+  String? preSyncSnapshot;
+
+  /// The owner's status as last received. A status only overwrites the local
+  /// one when the owner changed it, so a matchmaker's own marking survives
+  /// until the owner says otherwise.
+  @HiveField(45)
+  String? cardRemoteStatus;
+
+  /// Whether the details on this record currently come from its owner.
+  bool get isCardSynced => cardOwnerUid != null && !cardSyncDetached;
+
   /// Everyone a proposal can be passed through, the primary contact first.
   List<MatchContact> get proposalContacts {
     final String name = (inquiryContactName ?? '').trim();
@@ -244,7 +288,7 @@ class Person extends HiveObject {
   bool get hasRequiredDetails =>
       firstName.trim().isNotEmpty &&
       lastName.trim().isNotEmpty &&
-      manualAge != null &&
+      (manualAge != null || birthDate != null) &&
       gender != Gender.unknown &&
       religiousLevel != null;
 
@@ -274,7 +318,23 @@ class Person extends HiveObject {
 
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 
-  int? get age => _effectiveManualAge;
+  int? get age {
+    final DateTime? born = birthDate;
+    if (born != null) {
+      return ageOn(born, DateTime.now());
+    }
+    return _effectiveManualAge;
+  }
+
+  /// Whole years between [born] and [today].
+  static int ageOn(DateTime born, DateTime today) {
+    int years = today.year - born.year;
+    if (today.month < born.month ||
+        (today.month == born.month && today.day < born.day)) {
+      years -= 1;
+    }
+    return years;
+  }
 
   /// The manually-entered age advanced by one year for every 365 days elapsed
   /// since it was last set. Falls back to the raw value when no anchor exists
@@ -354,6 +414,11 @@ class Person extends HiveObject {
     bool? needsReview,
     bool? hidden,
     Object? importBatchId = _sentinel,
+    Object? birthDate = _sentinel,
+    Object? cardOwnerUid = _sentinel,
+    bool? cardSyncDetached,
+    Object? preSyncSnapshot = _sentinel,
+    Object? cardRemoteStatus = _sentinel,
     int? avatarIndex,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -427,6 +492,19 @@ class Person extends HiveObject {
       importBatchId: identical(importBatchId, _sentinel)
           ? this.importBatchId
           : importBatchId as String?,
+      birthDate: identical(birthDate, _sentinel)
+          ? this.birthDate
+          : birthDate as DateTime?,
+      cardOwnerUid: identical(cardOwnerUid, _sentinel)
+          ? this.cardOwnerUid
+          : cardOwnerUid as String?,
+      cardSyncDetached: cardSyncDetached ?? this.cardSyncDetached,
+      preSyncSnapshot: identical(preSyncSnapshot, _sentinel)
+          ? this.preSyncSnapshot
+          : preSyncSnapshot as String?,
+      cardRemoteStatus: identical(cardRemoteStatus, _sentinel)
+          ? this.cardRemoteStatus
+          : cardRemoteStatus as String?,
       avatarIndex: avatarIndex ?? this.avatarIndex,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

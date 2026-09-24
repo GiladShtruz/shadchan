@@ -27,6 +27,11 @@ enum PersonEventType {
 
   @HiveField(6)
   reminderSet,
+
+  /// The owner of a synced card changed something on it — "דניאל החליף
+  /// תמונה". Shown as the profile's short list of recent updates.
+  @HiveField(7)
+  cardSynced,
 }
 
 /// A single entry in a person's history log. This is the dedicated event store

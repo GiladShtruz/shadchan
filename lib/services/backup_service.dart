@@ -258,6 +258,16 @@ class BackupService {
       // Carried so a restored database still knows which friends arrived in
       // one import, and the weekly record keeps refusing to be set by them.
       'importBatchId': person.importBatchId,
+      // Not `birthDate`: that key is what pre-age backups carried, and it is
+      // still read as a legacy value to convert into an age.
+      'dateOfBirth': person.birthDate?.toIso8601String(),
+      // The link to a friend's own card. Carried so a restored database keeps
+      // following the cards it followed, and can still put back what the
+      // matchmaker had before if access is withdrawn.
+      'cardOwnerUid': person.cardOwnerUid,
+      'cardSyncDetached': person.cardSyncDetached,
+      'preSyncSnapshot': person.preSyncSnapshot,
+      'cardRemoteStatus': person.cardRemoteStatus,
       'additionalContacts': person.additionalContacts
           .map(
             (MatchContact contact) => <String, Object?>{
@@ -427,6 +437,11 @@ class BackupService {
       maritalStatus: _enumByName(MaritalStatus.values, json['maritalStatus']),
       region: _enumByName(Region.values, json['region']),
       importBatchId: json['importBatchId'] as String?,
+      birthDate: _date(json['dateOfBirth']),
+      cardOwnerUid: json['cardOwnerUid'] as String?,
+      cardSyncDetached: json['cardSyncDetached'] == true,
+      preSyncSnapshot: json['preSyncSnapshot'] as String?,
+      cardRemoteStatus: json['cardRemoteStatus'] as String?,
       additionalContacts: _parseContacts(json['additionalContacts']),
       preferredMinAge: _int(json['preferredMinAge']),
       preferredMaxAge: _int(json['preferredMaxAge']),

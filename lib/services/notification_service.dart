@@ -80,6 +80,64 @@ class NotificationService {
         iOS: _iosMatchDetails,
       );
 
+  /// The personal card's news: an access request or answer, a friend's card,
+  /// a wedding, a birthday. Created up front (see [initialize]) because a
+  /// push that arrives while the app is closed is drawn by the system into
+  /// whatever channel the server names, and a channel that does not exist yet
+  /// silently becomes "Miscellaneous".
+  static const String personalCardChannelId = 'personal_card';
+
+  static const AndroidNotificationDetails _androidPersonalCardDetails =
+      AndroidNotificationDetails(
+        personalCardChannelId,
+        'הכרטיס האישי',
+        channelDescription: 'בקשות גישה, אישורים ועדכונים מחברים',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+
+  static const NotificationDetails _personalCardNotificationDetails =
+      NotificationDetails(
+        android: _androidPersonalCardDetails,
+        iOS: _iosMatchDetails,
+      );
+
+  static const String _routePayloadPrefix = 'route:';
+
+  /// What a tapped push does: go to the route the server attached to it.
+  static void Function(String route)? onOpenRoute;
+
+  /// Draws a push that arrived while the app was open — the system only draws
+  /// them itself while it is in the background.
+  static Future<void> showRemote({
+    required int id,
+    required String title,
+    required String body,
+    String? route,
+  }) async {
+    if (!_isInitialized || title.trim().isEmpty) {
+      return;
+    }
+    try {
+      await _plugin.show(
+        id,
+        title,
+        body,
+        _personalCardNotificationDetails,
+        payload: route == null ? null : '$_routePayloadPrefix$route',
+      );
+    } catch (error) {
+      debugPrint('NotificationService.showRemote failed: $error');
+    }
+  }
+
+  /// Hands a route from a tapped push to the app.
+  static void openRoute(String route) {
+    if (route.startsWith('/')) {
+      onOpenRoute?.call(route);
+    }
+  }
+
   /// Reminders are picked as a plain date, which would otherwise fire at
   /// midnight. They go out at this hour of the reminder day instead.
   static const int _reminderHour = 9;
@@ -128,6 +186,18 @@ class NotificationService {
             _handleTap(response.payload),
       );
       _isInitialized = true;
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(
+            const AndroidNotificationChannel(
+              personalCardChannelId,
+              'הכרטיס האישי',
+              description: 'בקשות גישה, אישורים ועדכונים מחברים',
+              importance: Importance.high,
+            ),
+          );
       // A tap that *launched* the app is not delivered to the callback above —
       // the plugin was not listening yet when it happened. It is waiting here
       // instead, and without this the one notification in the app that has
@@ -405,6 +475,10 @@ class NotificationService {
     }
     if (payload == _supportPayload) {
       onOpenSupport?.call();
+      return;
+    }
+    if (payload.startsWith(_routePayloadPrefix)) {
+      openRoute(payload.substring(_routePayloadPrefix.length));
       return;
     }
     if (!payload.startsWith(_matchPayloadPrefix)) {

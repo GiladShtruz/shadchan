@@ -87,13 +87,9 @@ void main() {
     });
 
     test('an options list longer than a label still yields its answer', () {
-      const String card =
-          'רווקה / גרושה / אלמנה / פרודה: גרושה';
+      const String card = 'רווקה / גרושה / אלמנה / פרודה: גרושה';
 
-      expect(
-        CardParser.parse(card).maritalStatus,
-        MaritalStatus.divorced,
-      );
+      expect(CardParser.parse(card).maritalStatus, MaritalStatus.divorced);
     });
 
     test('a gender options list answers the gender', () {

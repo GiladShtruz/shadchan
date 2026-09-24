@@ -17,6 +17,7 @@ import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
+import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
@@ -1103,64 +1104,60 @@ class _MembersBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => context.push('/people/import'),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+    final bool dark = theme.brightness == Brightness.dark;
+
+    // The same white card as "עוצרים רגע לחשוב על החברים" above it and as the
+    // two entry cards on בית — with the brand blue under it, because what this
+    // row counts and opens is friends.
+    return HomePaperCard(
+      stripe: dark ? AppColors.primaryDarkDm : AppColors.primary,
+      radius: 16,
+      onTap: () => context.push('/people/import'),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'יש לך כבר $count חברים במאגר!',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
-                      'יש לך כבר $count חברים במאגר!',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                      'הוספת חברים נוספים',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          'הוספת חברים נוספים',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        Icon(
-                          Icons.chevron_right,
-                          size: 18,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ],
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: theme.colorScheme.primary,
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Image.asset(
-                'assets/match_icon.png',
-                width: 56,
-                height: 56,
-                fit: BoxFit.contain,
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: 12),
+          Image.asset(
+            'assets/match_icon.png',
+            width: 56,
+            height: 56,
+            fit: BoxFit.contain,
+          ),
+        ],
       ),
     );
   }

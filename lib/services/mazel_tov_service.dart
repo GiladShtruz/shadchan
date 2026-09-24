@@ -209,7 +209,9 @@ abstract final class MazelTovService {
     // already in the journal, already remembered by id, and skipped rather
     // than filed twice on the next drain.
     for (int start = 0; start < pending.length; start += 450) {
-      final int end = start + 450 > pending.length ? pending.length : start + 450;
+      final int end = start + 450 > pending.length
+          ? pending.length
+          : start + 450;
       try {
         final WriteBatch batch = _db.batch();
         for (final String id in pending.sublist(start, end)) {

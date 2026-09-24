@@ -112,7 +112,14 @@ class HomeBoardStore extends ChangeNotifier {
 
   static const String _key = 'home.board';
 
+  /// Notes on items that are on the board without being pinned — a due
+  /// reminder, an open proposal. Kept apart from the pinned entries so a note
+  /// never pins anything by itself, and moved across when an item is pinned or
+  /// unpinned so it is never lost on the way.
+  static const String _notesKey = 'home.boardNotes';
+
   List<HomeBoardEntry>? _cache;
+  Map<String, String>? _notesCache;
   bool _focusPending = false;
 
   /// Brings the already-mounted home tab to the board after an item is pinned.
@@ -155,22 +162,44 @@ class HomeBoardStore extends ChangeNotifier {
     if (contains(kind, targetId)) {
       return;
     }
+    final String key = _noteKey(kind, targetId);
+    final String? loose = _notes[key];
+    if (loose != null) {
+      _writeNotes(Map<String, String>.of(_notes)..remove(key));
+    }
     _write(<HomeBoardEntry>[
-      HomeBoardEntry(kind: kind, targetId: targetId, addedAt: DateTime.now()),
+      HomeBoardEntry(
+        kind: kind,
+        targetId: targetId,
+        addedAt: DateTime.now(),
+        note: loose,
+      ),
       ...entries,
     ]);
   }
 
   void remove(HomeItemKind kind, String targetId) {
-    final List<HomeBoardEntry> next = entries
-        .where(
-          (HomeBoardEntry e) => !(e.kind == kind && e.targetId == targetId),
-        )
-        .toList();
-    if (next.length == entries.length) {
+    final HomeBoardEntry? entry = entryFor(kind, targetId);
+    if (entry == null) {
       return;
     }
-    _write(next);
+    // Unpinning is not deleting what was written on it.
+    final String? note = entry.note;
+    if ((note ?? '').isNotEmpty) {
+      _writeNotes(<String, String>{..._notes, _noteKey(kind, targetId): note!});
+    }
+    _write(
+      entries
+          .where(
+            (HomeBoardEntry e) => !(e.kind == kind && e.targetId == targetId),
+          )
+          .toList(),
+    );
+  }
+
+  /// The note on an item, pinned or not.
+  String? noteFor(HomeItemKind kind, String targetId) {
+    return entryFor(kind, targetId)?.note ?? _notes[_noteKey(kind, targetId)];
   }
 
   /// Adds when missing, removes when already there. Returns whether the item is
@@ -189,17 +218,62 @@ class HomeBoardStore extends ChangeNotifier {
   void setNote(HomeItemKind kind, String targetId, String? note) {
     final List<HomeBoardEntry> current = entries;
     final int index = _indexOf(current, kind, targetId);
+    final String? trimmed = (note ?? '').trim().isEmpty ? null : note!.trim();
     if (index < 0) {
+      final Map<String, String> notes = Map<String, String>.of(_notes);
+      final String key = _noteKey(kind, targetId);
+      if (trimmed == null) {
+        notes.remove(key);
+      } else {
+        notes[key] = trimmed;
+      }
+      _writeNotes(notes);
+      notifyListeners();
       return;
     }
-    final String? trimmed = (note ?? '').trim().isEmpty ? null : note!.trim();
     final List<HomeBoardEntry> next = List<HomeBoardEntry>.from(current);
     next[index] = current[index].copyWith(note: trimmed);
     _write(next);
   }
 
-  /// Drops a deleted person / proposal off the board.
-  void forget(HomeItemKind kind, String targetId) => remove(kind, targetId);
+  /// Drops a deleted person / proposal off the board, note and all.
+  void forget(HomeItemKind kind, String targetId) {
+    remove(kind, targetId);
+    final String key = _noteKey(kind, targetId);
+    if (_notes.containsKey(key)) {
+      _writeNotes(Map<String, String>.of(_notes)..remove(key));
+    }
+  }
+
+  static String _noteKey(HomeItemKind kind, String targetId) =>
+      '${kind.name}:$targetId';
+
+  Map<String, String> get _notes => _notesCache ??= _readNotes();
+
+  Map<String, String> _readNotes() {
+    final Object? stored = _box?.get(_notesKey);
+    if (stored is! String || stored.isEmpty) {
+      return <String, String>{};
+    }
+    try {
+      final Object? decoded = jsonDecode(stored);
+      if (decoded is! Map) {
+        return <String, String>{};
+      }
+      return <String, String>{
+        for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+          if (e.key is String && e.value is String)
+            e.key as String: e.value as String,
+      };
+    } catch (_) {
+      return <String, String>{};
+    }
+  }
+
+  void _writeNotes(Map<String, String> notes) {
+    _notesCache = notes;
+    persistHomeSetting(_notesKey, jsonEncode(notes));
+  }
 
   int _indexOf(List<HomeBoardEntry> list, HomeItemKind kind, String targetId) {
     for (int i = 0; i < list.length; i++) {
@@ -236,7 +310,10 @@ class HomeBoardStore extends ChangeNotifier {
   /// Only for signing out: the board points at people and proposals that are
   /// about to stop existing on this device, and a board of dangling ids is
   /// worse than an empty one.
-  void reset() => _write(const <HomeBoardEntry>[]);
+  void reset() {
+    _writeNotes(const <String, String>{});
+    _write(const <HomeBoardEntry>[]);
+  }
 
   void _write(List<HomeBoardEntry> entries) {
     _cache = entries;

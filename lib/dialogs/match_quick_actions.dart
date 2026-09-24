@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/card_link_panel.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
@@ -334,6 +335,9 @@ abstract final class MatchQuickActions {
     }
     final PersonRepository repository = context.read<PersonRepository>();
     await repository.updateProfileStatus(person.id, status);
+    if (status == ProfileStatus.mazelTov && context.mounted) {
+      await offerMazelTovWhatsApp(context, person);
+    }
     if (!status.pausesMatches || !context.mounted) {
       return;
     }
