@@ -238,12 +238,12 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
           // The full card comes back to the deck with a confirmation. Pushing
           // the profile from here — above the tabs — drew a blank screen.
-          await openExtendedPersonEditor(
+          final bool kept = await openExtendedPersonEditor(
             context,
             staged.person.id,
             isNewFriend: true,
           );
-          if (mounted) {
+          if (mounted && kept) {
             ContactsAddedCelebration.showNewFriend(context, staged.person);
           }
         }

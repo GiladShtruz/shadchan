@@ -111,10 +111,21 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
   }
 
   /// An invitation link opened the app. On a fresh install it answers the
-  /// "ברוך הבא!" question on the user's behalf and moves on to signing in.
+  /// "ברוך הבא!" question on the user's behalf and moves on to signing in;
+  /// with an account already there it opens the personal area, where the
+  /// invitation or the access request waits.
   Future<void> _checkInvites() async {
-    if (await InviteLinkService.check() && mounted) {
-      AppRouter.router.go('/sign-in');
+    final InviteArrival arrival = await InviteLinkService.check();
+    if (!mounted) {
+      return;
+    }
+    switch (arrival) {
+      case InviteArrival.freshInstall:
+        AppRouter.router.go('/sign-in');
+      case InviteArrival.signedIn:
+        AppRouter.router.go('/me');
+      case InviteArrival.none:
+        break;
     }
   }
 

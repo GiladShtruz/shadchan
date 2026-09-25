@@ -674,6 +674,25 @@ class PersonRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes one line from a person's history — a long press on it.
+  Future<void> deleteEvent(String eventId) async {
+    final Box<PersonEvent>? eventBox = _eventBox;
+    if (eventBox == null || !eventBox.containsKey(eventId)) {
+      return;
+    }
+    await eventBox.delete(eventId);
+    notifyListeners();
+  }
+
+  /// The history lines worth showing on a profile: everything but notes,
+  /// which have their own list and are not history. Older installs logged
+  /// every note as an event; those are simply not drawn.
+  List<PersonEvent> getHistoryForPerson(String personId) {
+    return getEventsForPerson(
+      personId,
+    ).where((PersonEvent e) => e.type != PersonEventType.note).toList();
+  }
+
   /// Removes the history a proposal wrote on its candidates from [since] on.
   ///
   /// Only for a move that is taken back straight away — "ביטול" on the notice
@@ -790,10 +809,10 @@ class PersonRepository extends ChangeNotifier {
       await person.save();
     }
 
-    // A note the matchmaker wrote is history worth surfacing; the automatic
-    // history lines that other flows create are logged as events directly.
+    // Notes are not history: the profile's history is about the friend's
+    // ideas and proposals, and a note already lives in the notes list. Only
+    // the activity trail hears about it.
     if (!isAutomatic) {
-      await logEvent(personId, PersonEventType.note, text);
       _recordActivity(personId, HomeActivityAction.addedNote);
     }
 
@@ -930,7 +949,6 @@ class PersonRepository extends ChangeNotifier {
       person.updatedAt = now;
       await person.save();
     }
-    await logEvent(personId, PersonEventType.note, 'נוספה הערה קולית');
     _recordActivity(personId, HomeActivityAction.addedNote);
     notifyListeners();
   }

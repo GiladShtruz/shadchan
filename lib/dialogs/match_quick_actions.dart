@@ -61,7 +61,7 @@ enum MatchQuickAction {
     MatchActionGroup.tools,
   ),
   contact(
-    'הוספת איש קשר שקשור לרעיון',
+    'הוספת איש קשר להעברת ההצעה',
     Icons.person_add_alt_1_outlined,
     MatchActionGroup.tools,
   );
@@ -675,15 +675,27 @@ class _ContactRoleDialogState extends State<_ContactRoleDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.contactName),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          labelText: 'מה הקשר לרעיון?',
-          hintText: 'אמא של שרה, חבר של דוד…',
-        ),
-        onSubmitted: (String value) => Navigator.of(context).pop(value),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'איש קשר להעברת ההצעה — מישהו שמכיר אותו/ה אישית ויכול לחבר '
+            'ביניכם.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: 'איך הוא/היא מכיר/ה אותם?',
+              hintText: 'חבר של דוד, אחות של שרה…',
+            ),
+            onSubmitted: (String value) => Navigator.of(context).pop(value),
+          ),
+        ],
       ),
       actions: <Widget>[
         TextButton(

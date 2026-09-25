@@ -472,7 +472,7 @@ void main() {
       for (final String area in <String>[
         'מה המועמד מחפש',
         'הערות אישיות – לעיניי בלבד',
-        'איש קשר להעברת הצעות',
+        'איש קשר להעברת ההצעה',
       ]) {
         for (int i = 0; i < 12 && find.text(area).evaluate().isEmpty; i++) {
           await tester.drag(find.byType(ListView).last, const Offset(0, -260));
@@ -798,6 +798,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
+    // The same four all-time figures as "הנתונים שלך" sit at the top of the
+    // page, above the two add buttons — one noun each.
+    expect(find.text('חתונות'), findsOneWidget);
+    expect(find.text('חברים שהוספת'), findsNothing);
+    expect(
+      tester.getCenter(find.text('חתונות')).dy,
+      lessThan(tester.getCenter(find.text('הוספת חברים')).dy),
+    );
+
     // The board is drawn from the first friend on, always open, and a thin
     // board is topped up with what the app suggests — here, the one friend to
     // think about.
@@ -806,12 +815,8 @@ void main() {
     await tester.pump();
     expect(find.text('נעמי שגב'), findsWidgets);
     expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
-    // The same four all-time figures as "הנתונים שלך" head it — one noun
-    // each, with no sentence and no icon around it.
-    expect(find.text('חברים'), findsOneWidget);
-    expect(find.text('חתונות'), findsOneWidget);
-    expect(find.text('חברים שהוספת'), findsNothing);
-    expect(find.text('רעיונות שפתחת'), findsNothing);
+    // The heading line under the board's name says what is on it.
+    expect(find.text('הרעיונות הפתוחים, התזכורות ומה שהצמדתי'), findsOneWidget);
 
     await tester.ensureVisible(find.text('הוספה ללוח'));
     await tester.pump();
@@ -1097,8 +1102,8 @@ void main() {
 
     expect(find.text('הלל אבולעפיה'), findsOneWidget);
     expect(find.text('כרמל לוי'), findsOneWidget);
-    // The status is on the card itself now, in the word a matchmaker uses.
-    expect(find.text('פתוח'), findsOneWidget);
+    // The status is on the card itself, as the stage a matchmaker reads.
+    expect(find.text('רעיון חדש'), findsOneWidget);
     // A candidate's city is not part of the proposal card.
     expect(find.textContaining('ירושלים'), findsNothing);
 
@@ -1110,13 +1115,10 @@ void main() {
     // The promotion leads the panel: the same fixed heading and question on
     // every open idea, with a button per side.
     expect(find.text('יאללה לקדם'), findsOneWidget);
-    // Named for the act rather than the state, so a tile cannot be read as a
-    // label saying where the proposal already is.
-    expect(find.text('מתחילים לצאת'), findsOneWidget);
-    expect(find.text('העברה להמתנה'), findsOneWidget);
-    expect(find.text('סגירת רעיון'), findsOneWidget);
-    expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('הוספת איש קשר שקשור לרעיון'), findsOneWidget);
+    // Then, in the same box, the next reminder and the go-between. The
+    // status moves are not repeated here: they live on the card's status.
+    expect(find.text('העברה להמתנה'), findsNothing);
+    expect(find.text('איש קשר להעברת ההצעה'), findsOneWidget);
     // The journal is not a seventh button — opening the panel is what opens
     // the journal.
     expect(find.text('יומן הרעיון'), findsOneWidget);
@@ -1638,8 +1640,8 @@ void main() {
     expect(find.text('את מי תרצה לשאול על הרעיון?'), findsOneWidget);
     expect(find.text('פתיחת שיחה עם נהרה'), findsNothing);
 
-    // The status stays one small control, at the foot of the panel.
-    expect(find.text('סטטוס: רעיון חדש'), findsOneWidget);
+    // The status is one small control, on the card itself.
+    expect(find.text('רעיון חדש'), findsOneWidget);
   });
 
   testWidgets('The journal is a chat that writes itself, and stays editable', (

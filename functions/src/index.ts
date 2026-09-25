@@ -155,10 +155,21 @@ export const onCardAccessWritten = onDocumentWritten(
         route: '/me',
       });
     } else if (now === 'approved') {
+      // "יצחק אישר גישה לכרטיס שלו" — the owner's first name, in the owner's
+      // own grammatical gender, read off their card.
+      const card = await db.collection('personalCards').doc(ownerUid).get();
+      const ownerGender = card.get('gender') as Gender | undefined;
+      const ownerFirst =
+        (card.exists ? firstName(card) : '') ||
+        ownerName.trim().split(/\s+/)[0] ||
+        '';
       await notify(matchmakerUid, {
         kind: 'accessApproved',
-        title: 'קיבלת גישה לכרטיס',
-        body: `הכרטיס של ${ownerName} מתעדכן אצלך מעכשיו`,
+        title: g(
+          `${ownerFirst} {אישר|אישרה} גישה לכרטיס {שלו|שלה}`,
+          ownerGender,
+        ),
+        body: `הכרטיס של ${ownerFirst} מתעדכן אצלך מעכשיו`,
         route: '/reminders',
         ownerUid,
       });

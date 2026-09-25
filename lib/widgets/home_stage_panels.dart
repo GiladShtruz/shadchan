@@ -174,8 +174,12 @@ class HomeFirstIdeaCard extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: FilledButton.tonalIcon(
+            child: FilledButton.icon(
               onPressed: onOpenIdea,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: const StadiumBorder(),
+              ),
               icon: const Icon(Icons.add, size: 18),
               label: const Text('פתיחת רעיון ראשון'),
             ),

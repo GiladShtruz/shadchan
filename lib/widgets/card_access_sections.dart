@@ -318,7 +318,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
         ),
         if (widget.hasCard)
           SettingsGroup(
-            title: 'חברים שיכולים לעזור לי',
+            title: 'החברים שלי שכבר בשדכן',
             children: <Widget>[
               if (_permission == null)
                 const SizedBox.shrink()
@@ -352,16 +352,17 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
               else if (helpers.isEmpty)
                 const SettingsRow(
                   icon: Icons.diversity_3_outlined,
-                  title: 'עוד לא מצאנו חברים שמשדכים',
+                  title: 'עוד לא מצאנו חברים שלך בשדכן',
                   subtitle:
-                      'כשחברים מאנשי הקשר שלך יתחילו לשדך בשדכן, הם יופיעו כאן',
+                      'כשחברים מאנשי הקשר שלך יירשמו לשדכן, הם יופיעו כאן — '
+                      'ואפשר יהיה לתת להם גישה לכרטיס',
                 )
               else
                 for (final CardHelper helper in helpers)
                   SettingsRow(
                     icon: Icons.diversity_3_outlined,
                     title: helper.name,
-                    subtitle: 'מאנשי הקשר שלך, משתמשים בשדכן לשידוכים',
+                    subtitle: 'מאנשי הקשר שלך, נרשמו לשדכן',
                     trailing: _busyOr(
                       access.isBusy('helper:${helper.uid}'),
                       FilledButton.tonal(

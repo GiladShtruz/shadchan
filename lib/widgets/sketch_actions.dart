@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/art_tint.dart';
 
 /// The three hand-drawn answers a suggested match can be given: "כרטיס מלא",
 /// "לפתוח רעיון" and "לא מתאים".
 ///
 /// **Drawn, not picked from an icon font.** The arrow, the heart and the cross
 /// are marker drawings (`action_arrow.png`, `action_heart.png`,
-/// `action_x.png`), shown exactly as drawn — thick, uneven and in their own
-/// colours. They are what makes a list of suggestions feel like somebody
+/// `action_x.png`), shown with their strokes as drawn — thick and uneven — but
+/// inked in the palette: the heart in the rose, the cross in the copper and
+/// the card in the blue. See [artTint]. They are what makes a list of suggestions feel like somebody
 /// thinking on paper rather than a dating app's swipe buttons.
 ///
 /// Read in RTL the row is: the card (right), the heart in the middle — the one
@@ -19,6 +21,7 @@ class SketchActionBar extends StatelessWidget {
     required this.onOpenIdea,
     required this.onNotSuitable,
     this.fullCardExpanded = false,
+    this.fullCardLabel,
     this.compact = false,
   });
 
@@ -30,19 +33,31 @@ class SketchActionBar extends StatelessWidget {
   /// For a card that opens in place: the label says it will close again.
   final bool fullCardExpanded;
 
+  /// What the first drawing is called, when it is not the full card —
+  /// "השוואת כרטיסים" for a pair, "להזמין למלא כרטיס" for a friend with no
+  /// card yet.
+  final String? fullCardLabel;
+
   /// A smaller drawing, for a row inside a list.
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: <Widget>[
         Expanded(
           child: SketchAction(
             asset: 'assets/action_arrow.png',
-            label: fullCardExpanded ? 'הסתרת הכרטיס' : 'כרטיס מלא',
+            label:
+                fullCardLabel ??
+                (fullCardExpanded ? 'הסתרת הכרטיס' : 'כרטיס מלא'),
             onTap: onFullCard,
             compact: compact,
+            tint: artTint(
+              dark ? AppColors.primaryDarkDm : AppColors.primaryDark,
+              ArtTint.actionArrow,
+            ),
           ),
         ),
         Expanded(
@@ -51,6 +66,10 @@ class SketchActionBar extends StatelessWidget {
             label: 'לפתוח רעיון',
             onTap: onOpenIdea,
             compact: compact,
+            tint: artTint(
+              dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
+              ArtTint.actionHeart,
+            ),
           ),
         ),
         Expanded(
@@ -59,6 +78,10 @@ class SketchActionBar extends StatelessWidget {
             label: 'לא מתאים',
             onTap: onNotSuitable,
             compact: compact,
+            tint: artTint(
+              dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+              ArtTint.actionX,
+            ),
           ),
         ),
       ],
@@ -74,12 +97,16 @@ class SketchAction extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.compact = false,
+    this.tint,
   });
 
   final String asset;
   final String label;
   final VoidCallback? onTap;
   final bool compact;
+
+  /// Recolours the drawing into a palette colour; null shows it as drawn.
+  final ColorFilter? tint;
 
   @override
   Widget build(BuildContext context) {
@@ -104,10 +131,12 @@ class SketchAction extends StatelessWidget {
               children: <Widget>[
                 SizedBox(
                   height: compact ? 26 : 34,
-                  child: Image.asset(
-                    asset,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.medium,
+                  child: _tinted(
+                    Image.asset(
+                      asset,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.medium,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -128,5 +157,12 @@ class SketchAction extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _tinted(Widget image) {
+    final ColorFilter? filter = tint;
+    return filter == null
+        ? image
+        : ColorFiltered(colorFilter: filter, child: image);
   }
 }

@@ -36,6 +36,27 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
   bool _playing = false;
   bool _missing = false;
 
+  /// The playback speed, kept for the next recording played in this session
+  /// too — somebody who listens at 1.5x listens to all of them at 1.5x.
+  static double _lastSpeed = 1;
+  double _speed = _lastSpeed;
+
+  /// The speeds on offer, in the order the menu lists them.
+  static const List<double> speeds = <double>[0.5, 1, 1.25, 1.5, 2];
+
+  static String speedLabel(double speed) {
+    final String number = speed == speed.roundToDouble()
+        ? speed.toStringAsFixed(0)
+        : speed.toString();
+    return '${number}x';
+  }
+
+  Future<void> _setSpeed(double speed) async {
+    _lastSpeed = speed;
+    setState(() => _speed = speed);
+    await _player?.setSpeed(speed);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +102,7 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
       if (duration != null) {
         _duration = duration;
       }
+      await player.setSpeed(_speed);
     } on Object {
       await player.dispose();
       _player = null;
@@ -190,6 +212,54 @@ class _VoiceNotePlayerState extends State<VoiceNotePlayer> {
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
             fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+          ),
+        ),
+        // The speed, as a small word that opens the five choices.
+        PopupMenuButton<double>(
+          tooltip: 'מהירות השמעה',
+          position: PopupMenuPosition.under,
+          padding: EdgeInsets.zero,
+          onSelected: _setSpeed,
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<double>>[
+            for (final double speed in speeds)
+              PopupMenuItem<double>(
+                value: speed,
+                height: 40,
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        speedLabel(speed),
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.start,
+                      ),
+                    ),
+                    if (speed == _speed)
+                      Icon(
+                        Icons.check,
+                        size: 18,
+                        color: theme.colorScheme.primary,
+                      ),
+                  ],
+                ),
+              ),
+          ],
+          child: Container(
+            margin: const EdgeInsetsDirectional.only(start: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: ink.withValues(alpha: _speed == 1 ? 0.06 : 0.14),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              speedLabel(_speed),
+              textDirection: TextDirection.ltr,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: ink,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
           ),
         ),
       ],

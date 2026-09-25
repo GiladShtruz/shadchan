@@ -3,11 +3,14 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/card_parser.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/models/person.dart';
@@ -66,6 +69,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   String? _religiousLevelOther;
   ProfileStatus _selectedProfileStatus = ProfileStatus.available;
   MaritalStatus? _selectedMaritalStatus;
+
+  /// "אזור בארץ" — the same four regions the full card offers, so a friend
+  /// added here (by hand or shared from WhatsApp) carries the same fields as
+  /// one added from the contacts.
+  Region? _selectedRegion;
 
   /// Fields last written by the card parser rather than by the user. They may
   /// be overwritten by a later parse; anything the user typed themselves is
@@ -417,10 +425,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     children: <Gender>[Gender.male, Gender.female].map((
                       Gender gender,
                     ) {
-                      return ChoiceChip(
-                        label: Text(gender.displayName),
+                      return TagChip(
+                        label: gender.displayName,
                         selected: _selectedGender == gender,
-                        onSelected: (bool selected) {
+                        onTap: () {
+                          final bool selected = !(_selectedGender == gender);
                           if (!selected) {
                             return;
                           }
@@ -486,10 +495,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     runSpacing: 8,
                     children: MaritalStatus.values.map((MaritalStatus status) {
                       final bool selected = _selectedMaritalStatus == status;
-                      return ChoiceChip(
-                        label: Text(status.displayNameFor(_selectedGender)),
+                      return TagChip(
+                        label: status.displayNameFor(_selectedGender),
                         selected: selected,
-                        onSelected: (bool value) {
+                        onTap: () {
+                          final bool value = !(selected);
                           setState(() {
                             _selectedMaritalStatus = value && !selected
                                 ? status
@@ -505,7 +515,29 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     controller: _cityController,
                     textInputAction: TextInputAction.next,
                     onChanged: (_) => _autoFilledFields.remove('city'),
-                    decoration: const InputDecoration(labelText: 'מיקום'),
+                    decoration: const InputDecoration(labelText: 'עיר / יישוב'),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('אזור בארץ', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: <Widget>[
+                      for (final Region region in <Region>[
+                        if (Regions.isLegacy(_selectedRegion)) _selectedRegion!,
+                        ...Regions.selectable,
+                      ])
+                        TagChip(
+                          label: region.displayName,
+                          selected: _selectedRegion == region,
+                          onTap: () => setState(() {
+                            _selectedRegion = _selectedRegion == region
+                                ? null
+                                : region;
+                          }),
+                        ),
+                    ],
                   ),
                   const _FormSectionDivider(),
                   const _FormSectionHeading(
@@ -535,7 +567,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
                       Text(
-                        'איש קשר להעברת הצעות',
+                        'איש קשר להעברת ההצעה',
                         style: theme.textTheme.titleMedium,
                       ),
                       TextButton.icon(
@@ -544,6 +576,10 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                         label: const Text('בחירה מאנשי הקשר'),
                       ),
                     ],
+                  ),
+                  Text(
+                    'מישהו שמכיר אותו/ה אישית ויכול לחבר ביניכם',
+                    style: theme.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -771,8 +807,32 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   Future<bool> _handleWillPop() async {
     FocusScope.of(context).unfocus();
 
-    if (!_hasUnsavedChanges) {
+    // A new friend with anything on it — even only what was shared from
+    // WhatsApp — is asked about before it is dropped.
+    final bool newWithContent =
+        !_isEditMode &&
+        (_photoPaths.isNotEmpty ||
+            _descriptionController.text.trim().isNotEmpty ||
+            _firstNameController.text.trim().isNotEmpty);
+    if (!_hasUnsavedChanges && !newWithContent) {
       return true;
+    }
+
+    // A new friend is not in the database until it is saved: say so plainly,
+    // whatever is still missing, and let the matchmaker go.
+    if (!_isEditMode) {
+      final bool female = _selectedGender == Gender.female;
+      return ConfirmDialog.show(
+        context,
+        title: 'לצאת בלי לשמור?',
+        message:
+            'אם {תצא|תצאי} עכשיו, ${female ? 'החברה' : 'החבר'} '
+                    'לא ${female ? 'תישמר' : 'יישמר'}.'
+                .forGender(context.userGender),
+        confirmText: 'יציאה בלי שמירה',
+        cancelText: 'להישאר בעריכה',
+        isDestructive: true,
+      );
     }
 
     return ConfirmDialog.show(
@@ -802,6 +862,20 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     if (_selectedGender == Gender.unknown) {
       _showSnackBar('יש לבחור זכר או נקבה');
       return;
+    }
+
+    // A new friend needs what every new friend needs, wherever they are added
+    // from: full name, age, gender and religious style — the same rule the
+    // full card applies.
+    if (!_isEditMode) {
+      if (int.tryParse(_manualAgeController.text.trim()) == null) {
+        _showSnackBar('יש להזין גיל');
+        return;
+      }
+      if (_selectedReligiousLevel == null) {
+        _showSnackBar('יש לבחור סגנון דתי');
+        return;
+      }
     }
 
     // **A new card that looks like one already there is offered as a merge.**
@@ -866,6 +940,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           )
           ..heightCm = heightCm
           ..maritalStatus = _selectedMaritalStatus
+          ..region = _selectedRegion
           ..profileStatus = _selectedProfileStatus
           ..photosPaths = List<String>.from(_photoPaths);
 
@@ -939,6 +1014,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       inquiryContactPhone: _normalizedText(_inquiryContactPhoneController.text),
       heightCm: int.tryParse(_heightController.text.trim()),
       maritalStatus: _selectedMaritalStatus,
+      region: _selectedRegion,
       profileStatus: _selectedProfileStatus,
       photosPaths: List<String>.from(_photoPaths),
       createdAt: now,
@@ -999,6 +1075,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _religiousLevelOther = person.religiousLevelOther;
     _selectedProfileStatus = person.profileStatus;
     _selectedMaritalStatus = person.maritalStatus;
+    _selectedRegion = person.region;
     _photoPaths = List<String>.from(person.photosPaths);
   }
 

@@ -384,7 +384,10 @@ abstract final class AppRouter {
                     path: ':id',
                     builder: (BuildContext context, GoRouterState state) {
                       final String personId = state.pathParameters['id']!;
-                      return PersonDetailScreen(personId: personId);
+                      return PersonDetailScreen(
+                        personId: personId,
+                        focus: state.uri.queryParameters['focus'],
+                      );
                     },
                     routes: <RouteBase>[
                       GoRoute(

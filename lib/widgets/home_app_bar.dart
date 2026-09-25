@@ -102,6 +102,7 @@ class HomeBarButton extends StatelessWidget {
     required this.tooltip,
     required this.onPressed,
     this.showDot = false,
+    this.badgeCount = 0,
   });
 
   final Widget icon;
@@ -113,6 +114,12 @@ class HomeBarButton extends StatelessWidget {
   /// a small square is read as "there is something" long before it is read as
   /// "there are four".
   final bool showDot;
+
+  /// A number on the corner of the square — how many open notifications wait
+  /// behind the bell. Drawn whenever it is above zero, in place of the dot,
+  /// and it moves the moment one arrives, is read, handled or deleted,
+  /// because the bell watches everything it counts.
+  final int badgeCount;
 
   /// Sized to leave the bar's middle slot room for the wordmark on a 320px
   /// phone: three of these, their gaps and the photograph opposite them are all
@@ -126,57 +133,92 @@ class HomeBarButton extends StatelessWidget {
 
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: dark
-            ? theme.colorScheme.surfaceContainerHighest
-            : theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(13),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: Ink(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(13),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.9),
-              ),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: <Widget>[
-                IconTheme.merge(
-                  data: IconThemeData(
-                    size: 20,
-                    color: AppColors.heading(dark: dark),
-                  ),
-                  child: icon,
-                ),
-                if (showDot)
-                  PositionedDirectional(
-                    top: 8,
-                    end: 8,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.error,
-                        border: Border.all(
-                          color: dark
-                              ? theme.colorScheme.surfaceContainerHighest
-                              : theme.colorScheme.surface,
-                          width: 1.5,
-                        ),
-                      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Material(
+            color: dark
+                ? theme.colorScheme.surfaceContainerHighest
+                : theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(13),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onPressed,
+              child: Ink(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.9,
                     ),
                   ),
-              ],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    IconTheme.merge(
+                      data: IconThemeData(
+                        size: 20,
+                        color: AppColors.heading(dark: dark),
+                      ),
+                      child: icon,
+                    ),
+                    if (showDot && badgeCount <= 0)
+                      PositionedDirectional(
+                        top: 8,
+                        end: 8,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.error,
+                            border: Border.all(
+                              color: dark
+                                  ? theme.colorScheme.surfaceContainerHighest
+                                  : theme.colorScheme.surface,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
+          if (badgeCount > 0)
+            PositionedDirectional(
+              top: -6,
+              end: -6,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 18),
+                height: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.error,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: theme.scaffoldBackgroundColor,
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : '$badgeCount',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -202,6 +244,7 @@ class HomeGreeting extends StatelessWidget {
     required this.greeting,
     required this.name,
     this.line,
+    this.trailing,
   });
 
   /// "בוקר טוב" / "צהריים טובים" / "ערב טוב" / "לילה טוב".
@@ -214,13 +257,18 @@ class HomeGreeting extends StatelessWidget {
   /// The warm line under the greeting — "בוא ניצור היום חיבורים חדשים".
   final String? line;
 
+  /// Something small at the other end of the greeting's first line — the far
+  /// top corner, left in RTL. Holds "ניהול הכרטיס שלי" for a matchmaker who
+  /// keeps a card of their own, so it costs the page no row of its own.
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final String? warm = line?.trim();
 
-    return Column(
+    final Widget greetingBlock = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -259,6 +307,19 @@ class HomeGreeting extends StatelessWidget {
             style: theme.textTheme.bodyMedium?.copyWith(height: 1.3),
           ),
         ],
+      ],
+    );
+
+    final Widget? corner = trailing;
+    if (corner == null) {
+      return greetingBlock;
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(child: greetingBlock),
+        const SizedBox(width: 6),
+        corner,
       ],
     );
   }

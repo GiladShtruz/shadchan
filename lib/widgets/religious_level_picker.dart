@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// A person's religious style: one of [ReligiousLevels.global], or — only on
@@ -52,26 +53,23 @@ class ReligiousLevelPicker extends StatelessWidget {
           runSpacing: 8,
           children: <Widget>[
             if (legacy)
-              ChoiceChip(
-                label: Text(
-                  ReligiousLevels.labelOf(current!, selected.customLabel),
-                ),
+              TagChip(
+                label: ReligiousLevels.labelOf(current!, selected.customLabel),
                 selected: true,
-                onSelected: (bool value) {
-                  if (!value) {
-                    onChanged(const ReligiousLevelChoice(null));
-                  }
-                },
+                onTap: () => onChanged(const ReligiousLevelChoice(null)),
               ),
             for (final ReligiousLevel level in ReligiousLevels.global)
-              ChoiceChip(
-                label: Text(level.displayName),
+              TagChip(
+                label: level.displayName,
                 selected: current == level,
-                onSelected: (bool value) => onChanged(
-                  value && current != level
-                      ? ReligiousLevelChoice(level)
-                      : const ReligiousLevelChoice(null),
-                ),
+                onTap: () {
+                  final bool value = !(current == level);
+                  onChanged(
+                    value && current != level
+                        ? ReligiousLevelChoice(level)
+                        : const ReligiousLevelChoice(null),
+                  );
+                },
               ),
           ],
         ),

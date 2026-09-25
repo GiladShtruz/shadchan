@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/enums.dart';
 
+/// The four all-time figures, in the order they are drawn.
+enum MetricKind { friends, ideas, couples, weddings }
+
 abstract final class AppColors {
   static const Color primary = Color(0xFF7F9EAA);
   static const Color primaryLight = Color(0xFFD7E4EA);
@@ -54,32 +57,45 @@ abstract final class AppColors {
   /// so all that is left is the accent itself, and it is simply the palette:
   /// the light brand blue for friends, the brand brown for an idea.
   ///
-  /// Since the hand-drawn icons (`add_friends_art.png`, `add_idea_art.png`)
-  /// arrived already coloured, the rule takes the icon's own ink, sampled off
-  /// the drawing — a rule a shade away from the picture above it reads as a
-  /// mistake. Both are deeper members of the brand's blue and brown.
-  static const Color addPeopleAccent = Color(0xFF115489);
-  static const Color addIdeaAccent = Color(0xFFB25130);
+  /// The hand-drawn icons (`add_friends_art.png`, `add_idea_art.png`) arrived
+  /// in inks of their own, a shade off the palette; they are now recoloured
+  /// at draw time into these two (see `ArtTint`), so the drawing, the rule
+  /// under it and the rest of the page share one blue and one copper.
+  static const Color addPeopleAccent = primaryDark;
+  static const Color addIdeaAccent = secondary;
 
-  /// **The four figures at the head of הלוח שלי, one palette colour each.**
+  /// **The four figures — on the home page and on "פעילות" — one palette
+  /// colour each, and the same four in both places.**
   ///
-  /// They were all four brown once, on the reasoning that a colour per metric
-  /// invites the reader to work out what each one means. What settled it the
-  /// other way is that the app already says these four things in colour
-  /// everywhere else — a friend is the brand blue, an idea is the copper, a
-  /// couple wears the rose the women's side is drawn in, and a wedding is the
-  /// palest blue on the page. The rules under the tiles now simply agree with
-  /// the rest of the app instead of inventing a fifth convention.
+  /// Friends are the deep brand blue, ideas the copper, the couples who went
+  /// out the palette's own light blue, and a wedding the rose. Every one of
+  /// them is a member of the palette above; none is sampled from artwork or
+  /// picked for the occasion, so the figures agree with the rest of the app
+  /// instead of inventing a fifth convention.
   static const Color metricFriends = primaryDark;
   static const Color metricIdeas = secondary;
-  static const Color metricCouples = femaleAccent;
-  static const Color metricWeddings = primaryLight;
+  static const Color metricCouples = primary;
+  static const Color metricWeddings = femaleAccent;
 
-  /// The same four in the dark theme, where the two light blues would vanish.
+  /// The same four in the dark theme.
   static const Color metricFriendsDm = primaryDarkDm;
   static const Color metricIdeasDm = secondaryDarkDm;
-  static const Color metricCouplesDm = femaleAccentDm;
-  static const Color metricWeddingsDm = Color(0xFF7FA3B2);
+  static const Color metricCouplesDm = Color(0xFF8FB0BC);
+  static const Color metricWeddingsDm = femaleAccentDm;
+
+  /// The metric colour for [dark] or light, in one call.
+  static Color metric(MetricKind kind, {bool dark = false}) {
+    switch (kind) {
+      case MetricKind.friends:
+        return dark ? metricFriendsDm : metricFriends;
+      case MetricKind.ideas:
+        return dark ? metricIdeasDm : metricIdeas;
+      case MetricKind.couples:
+        return dark ? metricCouplesDm : metricCouples;
+      case MetricKind.weddings:
+        return dark ? metricWeddingsDm : metricWeddings;
+    }
+  }
 
   /// **The two inks the home page is written in.**
   ///
@@ -90,14 +106,15 @@ abstract final class AppColors {
   /// [HomeTypography] folds them onto Material's roles; a block only names one
   /// of these directly when it is not going through that fold.
   ///
-  /// [headingInk] is [onSurface] taken round to the brand's blue — the same
-  /// near-black weight, so nothing loses contrast, in the hue the rest of the
-  /// page is built from. [mutedInk] is a true neutral grey rather than the
+  /// [headingInk] is the palette's deep blue, [primaryInk] — visibly the
+  /// brand's blue, and still dark enough to read as body text on the cream.
+  /// It is the colour of every name, heading and opening line in the app,
+  /// the wordmark included; no other blue is used for text. [mutedInk] is a true neutral grey rather than the
   /// warm taupe of [onSurfaceVariant]: beside navy, the warm one reads as a
   /// third colour instead of as quieter text.
-  static const Color headingInk = Color(0xFF0B2233);
+  static const Color headingInk = primaryInk;
   static const Color mutedInk = Color(0xFF5E5C58);
-  static const Color headingInkDm = Color(0xFFDCE6EC);
+  static const Color headingInkDm = primaryDarkDm;
   static const Color mutedInkDm = onSurfaceVariantDm;
 
   static Color heading({bool dark = false}) => dark ? headingInkDm : headingInk;
@@ -126,19 +143,21 @@ abstract final class AppColors {
     return initialsPastels[hash % initialsPastels.length];
   }
 
-  // Dark mode uses a clean, cool near-neutral slate rather than the old warm
-  // brown, which read as muddy. The blue-grey primary and copper secondary keep
-  // the brand accents; only the neutrals (background/surface/lines) are cooled.
+  // **Dark mode is the palette at night, not black.** The neutrals are a deep
+  // stone blue taken from [primary]'s own hue — the page reads as the same
+  // app with the lights down — and the copper, the rose and the light blue
+  // carry the warmth on top of it. Nothing is `#000`, and nothing is the cold
+  // near-black slate the theme used to be.
   static const Color primaryDarkDm = Color(0xFFAFC7D0);
   static const Color primaryLightDarkDm = Color(0xFF294C57);
   static const Color secondaryDarkDm = Color(0xFFD6A17A);
-  static const Color secondaryLightDarkDm = Color(0xFF2A2F36);
-  static const Color backgroundDm = Color(0xFF121418);
-  static const Color surfaceDm = Color(0xFF1B1E24);
-  static const Color onSurfaceDm = Color(0xFFE7E9ED);
-  static const Color onSurfaceVariantDm = Color(0xFF9BA1AB);
-  static const Color outlineDm = Color(0xFF3A3F48);
-  static const Color dividerDm = Color(0xFF272B32);
+  static const Color secondaryLightDarkDm = Color(0xFF33383A);
+  static const Color backgroundDm = Color(0xFF1D262B);
+  static const Color surfaceDm = Color(0xFF263239);
+  static const Color onSurfaceDm = Color(0xFFEDE6DA);
+  static const Color onSurfaceVariantDm = Color(0xFFA8A49C);
+  static const Color outlineDm = Color(0xFF41525B);
+  static const Color dividerDm = Color(0xFF33434B);
 
   /// Per-gender accents. Men keep the app's stone blue; women get a muted
   /// rose-mauve picked to sit next to the copper/cream palette rather than a

@@ -14,6 +14,62 @@ class VoiceRecording {
   final int durationMs;
 }
 
+/// Asks for a few words to keep beside a recording — who is speaking, when it
+/// was recorded, what it is about. Returns the words, empty when skipped.
+abstract final class VoiceNoteCaption {
+  static Future<String> ask(BuildContext context) async {
+    final String? caption = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => const _CaptionDialog(),
+    );
+    return (caption ?? '').trim();
+  }
+}
+
+class _CaptionDialog extends StatefulWidget {
+  const _CaptionDialog();
+
+  @override
+  State<_CaptionDialog> createState() => _CaptionDialogState();
+}
+
+class _CaptionDialogState extends State<_CaptionDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('הערה להקלטה'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 5,
+        textInputAction: TextInputAction.newline,
+        decoration: const InputDecoration(
+          hintText: 'מי מדבר, מתי הוקלט, על מה…',
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(''),
+          child: const Text('דילוג'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('שמירה'),
+        ),
+      ],
+    );
+  }
+}
+
 /// Records a voice note straight from a friend's profile.
 ///
 /// It starts recording as soon as it opens — the tap that opened it was the

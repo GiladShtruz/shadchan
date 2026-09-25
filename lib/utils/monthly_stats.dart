@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
@@ -197,11 +198,13 @@ enum MonthlyStatMetric {
 /// Counts are read straight from the records rather than kept as running
 /// totals, so they reset on their own every Rosh Chodesh.
 abstract final class MonthlyStats {
-  /// The accent already assigned to each metric across the app.
-  static const Color ideasColor = Color(0xFFE0A33C);
-  static const Color peopleColor = Color(0xFF5E86A6);
-  static const Color datingColor = Color(0xFF6FA07E);
-  static const Color weddingsColor = Color(0xFFCF87A9);
+  /// The accent assigned to each metric across the app — the same four
+  /// palette colours the home page and "פעילות" draw their figures in. See
+  /// [AppColors.metric].
+  static const Color ideasColor = AppColors.metricIdeas;
+  static const Color peopleColor = AppColors.metricFriends;
+  static const Color datingColor = AppColors.metricCouples;
+  static const Color weddingsColor = AppColors.metricWeddings;
 
   /// The last [count] Hebrew months, newest first.
   static List<MonthPeriod> buildPeriods(DateTime now, int count) {

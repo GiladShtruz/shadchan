@@ -488,6 +488,7 @@ class _IdeaCard extends StatelessWidget {
             // open the idea, or not suitable.
             SketchActionBar(
               onFullCard: onComparePair,
+              fullCardLabel: 'השוואת כרטיסים',
               onOpenIdea: onOpen,
               onNotSuitable: onSkip,
             ),

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:go_router/go_router.dart';
@@ -34,6 +32,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
+import 'package:shadchan/utils/home_search.dart';
 import 'package:shadchan/utils/home_stage.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/match_stage.dart';
@@ -50,9 +49,9 @@ import 'package:shadchan/widgets/home_community_pulse.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
 import 'package:shadchan/widgets/home_panels.dart';
+import 'package:shadchan/widgets/home_search_results.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
-import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 
 /// The landing screen: a calm workspace rather than a dashboard.
@@ -255,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bottom: ShadchanSearchBottom(
         child: ShadchanSearchField(
           controller: _searchController,
-          hintText: 'חיפוש במאגר שלך',
+          hintText: 'חיפוש בכל המאגר',
           onCleared: _closeSearch,
         ),
       ),
@@ -380,8 +379,9 @@ class _HomeScreenState extends State<HomeScreen> {
       controller: _homeScrollController,
       slivers: <Widget>[
         // 1. The greeting, and one warm line under it. On the page rather than
-        // in the bar, with nothing drawn around it. The search row that used to
-        // sit above it is in the banner now — see [_buildGreetingAppBar].
+        // in the bar, with nothing drawn around it. A matchmaker who also
+        // keeps a card of their own finds the way into it in the far corner of
+        // the same line — never a row of its own.
         block(
           HomeGreeting(
             greeting: _timeOfDayGreeting(
@@ -389,28 +389,20 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             name: greetingName,
             line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
+            trailing: hasOwnCard
+                ? TextButton.icon(
+                    onPressed: () => context.go('/me'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    icon: const Icon(Icons.badge_outlined, size: 18),
+                    label: const Text('ניהול הכרטיס שלי'),
+                  )
+                : null,
           ),
           top: 8,
         ),
-
-        // A matchmaker who also keeps a card of their own gets one small way
-        // into it — a quiet link, never the thing this page is about.
-        if (hasOwnCard)
-          block(
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                onPressed: () => context.go('/me'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                ),
-                icon: const Icon(Icons.badge_outlined, size: 18),
-                label: const Text('ניהול הכרטיס שלי'),
-              ),
-            ),
-            top: 2,
-          ),
 
         // A brand-new matchmaker lands on the real home screen with one
         // welcoming card on it, not on a wizard that has to be got through.
@@ -419,14 +411,24 @@ class _HomeScreenState extends State<HomeScreen> {
             HomeWelcomeCard(onAddPeople: () => AddPeopleDialog.show(context)),
           ),
 
-        // 2. The two entry actions — the largest, loudest thing on the page,
-        // because everything else on it is only possible once they have been
-        // used. Two equal cards; adding friends leads by colour, not by size.
+        // 2. The four all-time figures — friends, ideas, couples who went
+        // out, weddings — above the two ways to grow them.
+        if (friends > 0)
+          block(
+            ActivityFigureRow(
+              people: personRepository,
+              matches: matchRepository,
+            ),
+          ),
+
+        // 3. The two entry actions. Adding friends leads — a little deeper in
+        // colour and a little wider — because every other thing on the page is
+        // only possible once the database has people in it.
         block(
           HomeActionCards(
             onAddPeople: () => AddPeopleDialog.show(context),
             onAddIdea: () => context.push('/matches/add'),
-            emphasiseAddPeople: stage.leadsWithGrowth,
+            emphasiseAddPeople: true,
           ),
         ),
 
@@ -525,19 +527,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// to the search and no way out of it except the button in the bar — a tap
   /// on the page behind went to whatever card happened to be under the finger.
   Widget _buildSearchPanel(ThemeData theme, PersonRepository repository) {
-    final String query = _searchController.text.trim().toLowerCase();
+    final String query = _searchController.text.trim();
     if (query.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final List<Person> people =
-        repository.getAll().where((Person p) => !p.hidden).where((Person p) {
-          return p.fullName.toLowerCase().contains(query) ||
-              (p.phone ?? '').contains(query);
-        }).toList()..sort(
-          (Person a, Person b) =>
-              a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
-        );
+    // The whole database, word by word — see [HomeSearch].
+    final HomeSearchResults results = HomeSearch.run(
+      query,
+      repository.getAll(),
+      notesFor: repository.getNotesForPerson,
+    );
 
     return Stack(
       children: <Widget>[
@@ -565,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.5,
                 ),
-                child: people.isEmpty
+                child: results.isEmpty
                     ? Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 20,
@@ -583,27 +583,24 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                        shrinkWrap: true,
-                        itemCount: people.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          final Person person = people[index];
-                          return PersonListCard(
-                            person: person,
-                            heroEnabled: false,
-                            onTap: () {
-                              _closeSearch();
-                              pushLeavingSearch(
-                                context,
-                                '/people/${person.id}',
-                              );
-                            },
-                            onToggleFavorite: () =>
-                                repository.toggleFavorite(person.id),
-                            onOpenWhatsApp: () => _openWhatsApp(person),
+                    : HomeSearchResultsList(
+                        results: results,
+                        onOpenPerson: (Person person) {
+                          _closeSearch();
+                          pushLeavingSearch(context, '/people/${person.id}');
+                        },
+                        // A match inside the card opens the profile where the
+                        // words are: the full card open, or the notes.
+                        onOpenHit: (ContentHit hit) {
+                          _closeSearch();
+                          pushLeavingSearch(
+                            context,
+                            '/people/${hit.person.id}?focus=${hit.field.focus}',
                           );
                         },
+                        onToggleFavorite: (Person person) =>
+                            repository.toggleFavorite(person.id),
+                        onOpenWhatsApp: _openWhatsApp,
                       ),
               ),
             ),
@@ -662,9 +659,9 @@ class _HomeScreenState extends State<HomeScreen> {
 /// the pin. Without the window a matchmaker who had pinned eight things a
 /// month ago would never see anything else at the top.
 ///
-/// **Always open, and five rows high.** The board used to fold; now it is a
-/// fixed window of five rows that scrolls inside itself, and nothing on it
-/// opens or expands.
+/// **Always open, framed, and three and a half rows high.** The board used to
+/// fold; now it is a fixed, framed window that scrolls inside itself, short
+/// enough that its bottom edge is always on screen.
 class _BoardSection extends StatefulWidget {
   const _BoardSection({
     required this.focusKey,
@@ -695,8 +692,10 @@ class _BoardSection extends StatefulWidget {
 }
 
 class _BoardSectionState extends State<_BoardSection> {
-  /// How many rows fit in the board's window before it starts scrolling.
-  static const int _windowRows = 5;
+  /// How many whole rows the board's window shows before it scrolls. A half
+  /// row more peeks out under them, so the list plainly goes on — and the
+  /// window stays short enough that its frame always ends on screen.
+  static const int _windowRows = 3;
 
   /// One row: a two-line card plus the gap under it.
   static const double _rowExtent = AccentBar.rowHeight + 12;
@@ -735,7 +734,10 @@ class _BoardSectionState extends State<_BoardSection> {
   }
 
   double _boardHeight(BuildContext context, int rows) {
-    return homeScaled(context, _rowExtent * math.min(rows, _windowRows));
+    final double shown = rows > _windowRows
+        ? _windowRows + 0.5
+        : rows.toDouble();
+    return homeScaled(context, _rowExtent * shown);
   }
 
   bool _exists(HomeItemKind kind, String id) {
@@ -797,6 +799,20 @@ class _BoardSectionState extends State<_BoardSection> {
   /// The whole board, in the order it is drawn.
   List<_BoardItem> _feed() {
     final DateTime now = DateTime.now();
+    final HomeBoardStore store = HomeBoardStore.instance;
+
+    // A row taken off with "הסרה" stays off until what put it there changes:
+    // a reminder dated after the removal, a proposal that moved since.
+    bool removedSince(HomeItemKind kind, String id, DateTime changedAt) {
+      final DateTime? at = store.hiddenAt(HomeBoardStore.itemKey(kind, id));
+      return at != null && !changedAt.isAfter(at);
+    }
+
+    // A suggestion the app made is simply left alone for a month.
+    bool removedRecently(String key) {
+      final DateTime? at = store.hiddenAt(key);
+      return at != null && now.difference(at) < const Duration(days: 30);
+    }
 
     // A pinned record that has since been deleted simply drops out.
     final List<HomeBoardEntry> pinned = widget.entries
@@ -846,7 +862,7 @@ class _BoardSectionState extends State<_BoardSection> {
     final List<_BoardItem> stale = <_BoardItem>[];
     for (final (HomeItemKind kind, String id, DateTime at, String? note)
         in due) {
-      if (!seen.add('${kind.name}:$id')) {
+      if (removedSince(kind, id, at) || !seen.add('${kind.name}:$id')) {
         continue;
       }
       final String text = (note ?? '').trim();
@@ -862,7 +878,12 @@ class _BoardSectionState extends State<_BoardSection> {
     // proposal has to say for itself is its next step, read live by the row.
     final List<_BoardItem> open = <_BoardItem>[
       for (final HomeOpenIdea idea in widget.openIdeas)
-        if (seen.add('${HomeItemKind.idea.name}:${idea.match.id}'))
+        if (!removedSince(
+              HomeItemKind.idea,
+              idea.match.id,
+              idea.match.updatedAt,
+            ) &&
+            seen.add('${HomeItemKind.idea.name}:${idea.match.id}'))
           _BoardItem.entry(
             HomeBoardEntry(
               kind: HomeItemKind.idea,
@@ -888,13 +909,19 @@ class _BoardSectionState extends State<_BoardSection> {
             (NewIdeaSuggestion s) =>
                 widget.matchRepository.findExisting(s.male.id, s.female.id) ==
                     null &&
-                !SuggestionDismissals.isDismissed(s.male.id, s.female.id),
+                !SuggestionDismissals.isDismissed(s.male.id, s.female.id) &&
+                !removedRecently(
+                  HomeBoardStore.pairKey(s.male.id, s.female.id),
+                ),
           )
           .toList();
       final List<HomeSuggestion> liveThoughts = _thoughts
           .where(
             (HomeSuggestion s) =>
-                !seen.contains('${HomeItemKind.person.name}:${s.person.id}'),
+                !seen.contains('${HomeItemKind.person.name}:${s.person.id}') &&
+                !removedRecently(
+                  HomeBoardStore.itemKey(HomeItemKind.person, s.person.id),
+                ),
           )
           .toList();
       final (List<NewIdeaSuggestion>, List<HomeSuggestion>) split =
@@ -934,6 +961,7 @@ class _BoardSectionState extends State<_BoardSection> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     // Nothing to put on a board before the first friend.
     if (widget.personRepository.databaseCount == 0 && widget.entries.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
@@ -945,52 +973,71 @@ class _BoardSectionState extends State<_BoardSection> {
         key: widget.focusKey,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const HomeSectionHeader(title: 'הלוח שלי'),
-          ActivityFigureRow(
-            people: widget.personRepository,
-            matches: widget.matchRepository,
-            padding: EdgeInsets.fromLTRB(
-              homeHorizontalInset(context),
-              0,
-              homeHorizontalInset(context),
-              12,
-            ),
+          const HomeSectionHeader(
+            title: 'הלוח שלי',
+            subtitle: 'הרעיונות הפתוחים, התזכורות ומה שהצמדתי',
           ),
           Padding(
             padding: EdgeInsets.symmetric(
               horizontal: homeHorizontalInset(context),
             ),
-            child: live.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 18,
-                    ),
-                    child: Text(
-                      'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  )
-                : SizedBox(
-                    height: _boardHeight(context, live.length),
-                    child: Scrollbar(
-                      controller: _listScroll,
-                      child: ListView.builder(
-                        controller: _listScroll,
-                        padding: EdgeInsets.zero,
-                        itemCount: live.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          return _BoardRow(
-                            item: live[index],
-                            personRepository: widget.personRepository,
-                            matchRepository: widget.matchRepository,
-                            onPairDismissed: () => setState(() {}),
-                          );
-                        },
+            // **A frame, so the board reads as a box with its own scroll.** A
+            // window of rows cut straight into the page looked like the page
+            // itself carrying on, and a thumb scrolling the page got caught
+            // inside the board until it reached the end of the list. The frame
+            // and the always-visible scrollbar say "this scrolls on its own",
+            // and the window is short enough that its bottom edge is always on
+            // screen above whatever comes next.
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color.alphaBlend(
+                  (dark ? AppColors.primaryLightDarkDm : AppColors.primaryLight)
+                      .withValues(alpha: dark ? 0.35 : 0.45),
+                  theme.scaffoldBackgroundColor,
+                ),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: (dark ? AppColors.primaryDarkDm : AppColors.primary)
+                      .withValues(alpha: 0.55),
+                  width: 1.4,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
+                child: live.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 18,
+                        ),
+                        child: Text(
+                          'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      )
+                    : SizedBox(
+                        height: _boardHeight(context, live.length),
+                        child: Scrollbar(
+                          controller: _listScroll,
+                          thumbVisibility: live.length > _windowRows,
+                          child: ListView.builder(
+                            controller: _listScroll,
+                            padding: EdgeInsets.zero,
+                            itemCount: live.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              return _BoardRow(
+                                item: live[index],
+                                personRepository: widget.personRepository,
+                                matchRepository: widget.matchRepository,
+                                onPairDismissed: () => setState(() {}),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+              ),
+            ),
           ),
           Padding(
             padding: EdgeInsets.fromLTRB(
@@ -999,26 +1046,19 @@ class _BoardSectionState extends State<_BoardSection> {
               homeHorizontalInset(context),
               0,
             ),
-            child: Row(
-              children: <Widget>[
-                TextButton.icon(
-                  onPressed: () => BoardAddSheet.show(context),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    textStyle: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: () => BoardAddSheet.show(context),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
                   ),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('הוספה ללוח'),
                 ),
-                const Spacer(),
-                if (live.length > _windowRows)
-                  Text(
-                    '${live.length} על הלוח',
-                    style: theme.textTheme.labelSmall,
-                  ),
-              ],
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('הוספה ללוח'),
+              ),
             ),
           ),
         ],
@@ -1121,6 +1161,18 @@ class _BoardRow extends StatelessWidget {
             await SuggestionDismissals.dismiss(pair.male.id, pair.female.id);
             onPairDismissed();
           },
+          onRemove: () {
+            final String key = HomeBoardStore.pairKey(
+              pair.male.id,
+              pair.female.id,
+            );
+            HomeBoardStore.instance.hide(key);
+            onPairDismissed();
+            _announceRemoved(context, () {
+              HomeBoardStore.instance.unhide(key);
+              onPairDismissed();
+            });
+          },
         ),
       );
     }
@@ -1134,6 +1186,7 @@ class _BoardRow extends StatelessWidget {
       kind: entry.kind,
       targetId: entry.targetId,
     );
+    void togglePin() => _togglePin(context, entry.kind, entry.targetId);
 
     if (entry.kind == HomeItemKind.person) {
       final Person person = personRepository.getById(entry.targetId)!;
@@ -1149,6 +1202,7 @@ class _BoardRow extends StatelessWidget {
         onTap: item.suggested
             ? () => openSuggestionsFor(context, person.id)
             : () => context.push('/people/${person.id}'),
+        onLongPress: togglePin,
         menu: menu,
       );
     }
@@ -1187,8 +1241,20 @@ class _BoardRow extends StatelessWidget {
       startAccent: AppColors.genderAccent(Gender.female, dark: dark),
       endAccent: AppColors.genderAccent(Gender.male, dark: dark),
       onTap: () => context.push('/matches/${match.id}'),
+      onLongPress: togglePin,
       menu: menu,
     );
+  }
+
+  /// A long press pins a row, or unpins one that is pinned — the quick way to
+  /// the one thing the menu is opened for most.
+  static void _togglePin(
+    BuildContext context,
+    HomeItemKind kind,
+    String targetId,
+  ) {
+    final bool pinned = HomeBoardStore.instance.toggle(kind, targetId);
+    AppNotice.show(context, pinned ? 'הוצמד ללוח' : 'ההצמדה הוסרה');
   }
 
   /// The two cards facing each other, and a proposal if the matchmaker agrees
@@ -1227,6 +1293,7 @@ class _BoardRow extends StatelessWidget {
     required Color startAccent,
     required VoidCallback onTap,
     required Widget menu,
+    VoidCallback? onLongPress,
     Color? endAccent,
     String? subtitle,
     IconData? mark,
@@ -1242,6 +1309,7 @@ class _BoardRow extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
@@ -1318,10 +1386,11 @@ class _BoardRow extends StatelessWidget {
   }
 }
 
-/// Every row's own three answers: a reminder, a note, and the pin.
+/// Every row's own answers: a reminder, a note, the pin, and "הסרה".
 ///
-/// The same three whatever put the row on the board. Pinning moves it to the
-/// top with a small pin on it, and the item then offers "הסרת הצמדה" instead.
+/// The same whatever put the row on the board. Pinning moves it to the top
+/// with a small pin on it, and the item then offers "הסרת הצמדה" instead.
+/// "הסרה" takes the row off the board until whatever put it there changes.
 class _BoardRowMenu extends StatelessWidget {
   const _BoardRowMenu({required this.kind, required this.targetId});
 
@@ -1347,6 +1416,18 @@ class _BoardRowMenu extends StatelessWidget {
             HomeBoardStore.instance.add(kind, targetId);
           case 'unpin':
             HomeBoardActions.remove(context, kind, targetId);
+          case 'remove':
+            final HomeBoardStore store = HomeBoardStore.instance;
+            final bool wasPinned = store.contains(kind, targetId);
+            final String key = HomeBoardStore.itemKey(kind, targetId);
+            store.remove(kind, targetId);
+            store.hide(key);
+            _announceRemoved(context, () {
+              store.unhide(key);
+              if (wasPinned) {
+                store.add(kind, targetId);
+              }
+            });
         }
       },
       itemBuilder: (BuildContext context) {
@@ -1367,8 +1448,9 @@ class _BoardRowMenu extends StatelessWidget {
           const PopupMenuDivider(),
           PopupMenuItem<String>(
             value: pinned ? 'unpin' : 'pin',
-            child: Text(pinned ? 'הסרת הצמדה' : 'הצמדה ללוח'),
+            child: Text(pinned ? 'הסרת הצמדה' : 'הצמדה'),
           ),
+          const PopupMenuItem<String>(value: 'remove', child: Text('הסרה')),
         ];
       },
     );
@@ -1388,10 +1470,17 @@ class _BoardRowMenu extends StatelessWidget {
 /// remind about, write on or pin until it is one. Its menu offers the two
 /// answers the suggestion itself asks for.
 class _SuggestedPairMenu extends StatelessWidget {
-  const _SuggestedPairMenu({required this.onOpen, required this.onDismiss});
+  const _SuggestedPairMenu({
+    required this.onOpen,
+    required this.onDismiss,
+    required this.onRemove,
+  });
 
   final VoidCallback onOpen;
   final VoidCallback onDismiss;
+
+  /// Off the board for now, without saying the pair is wrong.
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1403,18 +1492,28 @@ class _SuggestedPairMenu extends StatelessWidget {
       icon: const Icon(Icons.more_horiz, size: 20),
       iconSize: 20,
       onSelected: (String value) {
-        if (value == 'open') {
-          onOpen();
-        } else {
-          onDismiss();
+        switch (value) {
+          case 'open':
+            onOpen();
+          case 'dismiss':
+            onDismiss();
+          case 'remove':
+            onRemove();
         }
       },
       itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
         PopupMenuItem<String>(value: 'open', child: Text('פתיחת רעיון')),
         PopupMenuItem<String>(value: 'dismiss', child: Text('לא מתאים')),
+        PopupMenuDivider(),
+        PopupMenuItem<String>(value: 'remove', child: Text('הסרה')),
       ],
     );
   }
+}
+
+/// "הוסר מהלוח", with the way back.
+void _announceRemoved(BuildContext context, VoidCallback undo) {
+  AppNotice.show(context, 'הוסר מהלוח', actionLabel: 'ביטול', onAction: undo);
 }
 
 String _firstName(Person? person) {

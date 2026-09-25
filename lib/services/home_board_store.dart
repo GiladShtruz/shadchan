@@ -118,8 +118,14 @@ class HomeBoardStore extends ChangeNotifier {
   /// unpinned so it is never lost on the way.
   static const String _notesKey = 'home.boardNotes';
 
+  /// Rows taken off the board with "הסרה", and when. A removed row stays off
+  /// until whatever put it there changes — a new reminder date, a proposal
+  /// that moved — or it is pinned again. See [hiddenAt].
+  static const String _hiddenKey = 'home.boardHidden';
+
   List<HomeBoardEntry>? _cache;
   Map<String, String>? _notesCache;
+  Map<String, int>? _hiddenCache;
   bool _focusPending = false;
 
   /// Brings the already-mounted home tab to the board after an item is pinned.
@@ -163,6 +169,9 @@ class HomeBoardStore extends ChangeNotifier {
       return;
     }
     final String key = _noteKey(kind, targetId);
+    if (_hidden.containsKey(key)) {
+      _writeHidden(Map<String, int>.of(_hidden)..remove(key));
+    }
     final String? loose = _notes[key];
     if (loose != null) {
       _writeNotes(Map<String, String>.of(_notes)..remove(key));
@@ -243,10 +252,72 @@ class HomeBoardStore extends ChangeNotifier {
     if (_notes.containsKey(key)) {
       _writeNotes(Map<String, String>.of(_notes)..remove(key));
     }
+    if (_hidden.containsKey(key)) {
+      _writeHidden(Map<String, int>.of(_hidden)..remove(key));
+    }
+  }
+
+  /// The key a row is hidden under: `person:<id>`, `idea:<id>`, or for a pair
+  /// the app suggests, [pairKey].
+  static String itemKey(HomeItemKind kind, String targetId) =>
+      _noteKey(kind, targetId);
+
+  static String pairKey(String maleId, String femaleId) =>
+      'pair:$maleId|$femaleId';
+
+  /// Takes a row off the board ("הסרה"). A pinned row is unpinned too.
+  void hide(String key) {
+    _writeHidden(<String, int>{
+      ..._hidden,
+      key: DateTime.now().millisecondsSinceEpoch,
+    });
+    notifyListeners();
+  }
+
+  /// Puts a removed row back — the undo of [hide].
+  void unhide(String key) {
+    if (!_hidden.containsKey(key)) {
+      return;
+    }
+    _writeHidden(Map<String, int>.of(_hidden)..remove(key));
+    notifyListeners();
+  }
+
+  /// When the row under [key] was removed, or null if it never was.
+  DateTime? hiddenAt(String key) {
+    final int? at = _hidden[key];
+    return at == null ? null : DateTime.fromMillisecondsSinceEpoch(at);
   }
 
   static String _noteKey(HomeItemKind kind, String targetId) =>
       '${kind.name}:$targetId';
+
+  Map<String, int> get _hidden => _hiddenCache ??= _readHidden();
+
+  Map<String, int> _readHidden() {
+    final Object? stored = _box?.get(_hiddenKey);
+    if (stored is! String || stored.isEmpty) {
+      return <String, int>{};
+    }
+    try {
+      final Object? decoded = jsonDecode(stored);
+      if (decoded is! Map) {
+        return <String, int>{};
+      }
+      return <String, int>{
+        for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+          if (e.key is String && e.value is int)
+            e.key as String: e.value as int,
+      };
+    } catch (_) {
+      return <String, int>{};
+    }
+  }
+
+  void _writeHidden(Map<String, int> hidden) {
+    _hiddenCache = hidden;
+    persistHomeSetting(_hiddenKey, jsonEncode(hidden));
+  }
 
   Map<String, String> get _notes => _notesCache ??= _readNotes();
 
@@ -311,6 +382,7 @@ class HomeBoardStore extends ChangeNotifier {
   /// about to stop existing on this device, and a board of dangling ids is
   /// worse than an empty one.
   void reset() {
+    _writeHidden(const <String, int>{});
     _writeNotes(const <String, String>{});
     _write(const <HomeBoardEntry>[]);
   }

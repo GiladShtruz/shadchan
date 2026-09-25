@@ -47,7 +47,7 @@ class RemindersBellButton extends StatelessWidget {
     if (boxed) {
       return HomeBarButton(
         tooltip: 'תזכורות',
-        showDot: due > 0,
+        badgeCount: due,
         onPressed: () => RemindersPanel.show(context),
         icon: Icon(
           due > 0

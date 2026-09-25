@@ -303,6 +303,9 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
         !filters.maritalStatuses.contains(person.maritalStatus)) {
       return false;
     }
+    if (!MatchProposalFilters.matchesRegion(person, filters)) {
+      return false;
+    }
     return true;
   }
 
@@ -854,6 +857,7 @@ class MatchProposalFilters {
     this.minHeight,
     this.maxHeight,
     this.maritalStatuses = const <MaritalStatus>[],
+    this.regions = const <Region>[],
   });
 
   final int? minAge;
@@ -868,6 +872,16 @@ class MatchProposalFilters {
   final int? minHeight;
   final int? maxHeight;
   final List<MaritalStatus> maritalStatuses;
+
+  /// Regions of the country — like height, only a card with one can match.
+  final List<Region> regions;
+
+  static bool matchesRegion(Person person, MatchProposalFilters filters) {
+    if (filters.regions.isEmpty) {
+      return true;
+    }
+    return person.region != null && filters.regions.contains(person.region);
+  }
 
   /// True when [person]'s height passes [filters] — false when a height window
   /// is set and their card has no height on it at all.
@@ -891,7 +905,8 @@ class MatchProposalFilters {
       profileStatuses.isEmpty &&
       minHeight == null &&
       maxHeight == null &&
-      maritalStatuses.isEmpty;
+      maritalStatuses.isEmpty &&
+      regions.isEmpty;
 }
 
 /// The candidate filter, which is the app's *one* filter sheet —
@@ -948,6 +963,7 @@ abstract final class MatchProposalFilterSheet {
           ),
           heightBounds: heightBounds,
           initialMaritalStatuses: initial.maritalStatuses,
+          initialRegions: initial.regions,
         );
       },
     );
@@ -965,6 +981,7 @@ abstract final class MatchProposalFilterSheet {
       minHeight: picked.heightRange?.start.round(),
       maxHeight: picked.heightRange?.end.round(),
       maritalStatuses: picked.maritalStatuses,
+      regions: picked.regions,
     );
     await saveFiltersFor(sourcePersonId, filters);
     return filters;
@@ -1068,6 +1085,10 @@ abstract final class MatchProposalFilterSheet {
         rawFilters['maritalStatuses'],
         MaritalStatus.values,
       ),
+      regions: _enumValuesFromNames<Region>(
+        rawFilters['regions'],
+        Region.values,
+      ),
     );
   }
 
@@ -1096,6 +1117,7 @@ abstract final class MatchProposalFilterSheet {
       'maritalStatuses': filters.maritalStatuses
           .map((MaritalStatus status) => status.name)
           .toList(),
+      'regions': filters.regions.map((Region region) => region.name).toList(),
     });
   }
 

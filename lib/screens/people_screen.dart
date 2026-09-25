@@ -70,6 +70,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   List<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>[];
   RangeValues? _selectedHeightRange;
   List<MaritalStatus> _selectedMaritalStatuses = <MaritalStatus>[];
+  List<Region> _selectedRegions = <Region>[];
   List<String> _selectedTags = <String>[];
   bool _showArchived = false;
   PeopleSortOption _sortOption = PeopleSortOption.alphabetical;
@@ -492,8 +493,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
           // The full card comes back here with a confirmation, and the batch
           // carries on after it.
-          await openExtendedPersonEditor(context, person.id, isNewFriend: true);
-          if (mounted) {
+          final bool kept = await openExtendedPersonEditor(
+            context,
+            person.id,
+            isNewFriend: true,
+          );
+          if (mounted && kept) {
             ContactsAddedCelebration.showNewFriend(context, person);
           }
         }
@@ -653,6 +658,21 @@ class _PeopleScreenState extends State<PeopleScreen> {
       );
     }
 
+    for (final Region region in _selectedRegions) {
+      chips.add(
+        InputChip(
+          label: Text(region.displayName),
+          onDeleted: () {
+            setState(() {
+              _selectedRegions = _selectedRegions
+                  .where((Region item) => item != region)
+                  .toList();
+            });
+          },
+        ),
+      );
+    }
+
     for (final String tag in _selectedTags) {
       chips.add(
         InputChip(
@@ -728,6 +748,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
           (person.maritalStatus != null &&
               _selectedMaritalStatuses.contains(person.maritalStatus));
 
+      // A region filter, like height, only matches a card that records one.
+      final bool matchesRegion =
+          _selectedRegions.isEmpty ||
+          (person.region != null && _selectedRegions.contains(person.region));
+
       // Any of the chosen tags. Tags are the matchmaker's own sorting, and
       // picking two means "show me both groups".
       final bool matchesTags =
@@ -742,6 +767,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
           matchesArchive &&
           matchesHeight &&
           matchesMaritalStatus &&
+          matchesRegion &&
           matchesTags;
     }).toList();
 
@@ -899,6 +925,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
               initialHeightRange: _selectedHeightRange,
               heightBounds: heightBounds,
               initialMaritalStatuses: _selectedMaritalStatuses,
+              initialRegions: _selectedRegions,
               availableTags: TagLibrary.inUse(repository.getAll()),
               initialTags: _selectedTags,
             );
@@ -917,6 +944,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
       _selectedProfileStatuses = result.profileStatuses;
       _selectedHeightRange = result.heightRange;
       _selectedMaritalStatuses = result.maritalStatuses;
+      _selectedRegions = result.regions;
       _selectedTags = result.tags;
     });
   }
@@ -1055,6 +1083,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         _selectedProfileStatuses.isNotEmpty ||
         _selectedHeightRange != null ||
         _selectedMaritalStatuses.isNotEmpty ||
+        _selectedRegions.isNotEmpty ||
         _selectedTags.isNotEmpty;
   }
 
@@ -1069,6 +1098,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     _selectedProfileStatuses = <ProfileStatus>[];
     _selectedHeightRange = null;
     _selectedMaritalStatuses = <MaritalStatus>[];
+    _selectedRegions = <Region>[];
     _selectedTags = <String>[];
   }
 }

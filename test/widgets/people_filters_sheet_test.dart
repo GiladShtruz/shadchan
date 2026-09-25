@@ -7,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
+import 'package:shadchan/widgets/person_tags_editor.dart';
 
 void main() {
   late Directory hiveDirectory;
@@ -69,6 +70,12 @@ void main() {
 
     expect(find.text('גובה'), findsOneWidget);
     expect(find.text('מצב משפחתי'), findsOneWidget);
+    // Regions of the country, the four the cards are written in.
+    expect(find.text('אזור בארץ'), findsOneWidget);
+    await tester.ensureVisible(find.text('מרכז'));
+    await tester.tap(find.text('מרכז'));
+    await tester.pumpAndSettle();
+    expect(_chip(tester, 'מרכז').selected, isTrue);
 
     await tester.tap(find.text('נקה'));
     await tester.pumpAndSettle();
@@ -77,6 +84,7 @@ void main() {
     expect(_chip(tester, 'זכר').selected, isFalse);
     expect(_chip(tester, 'פנוי').selected, isFalse);
     expect(_chip(tester, 'חרדי').selected, isFalse);
+    expect(_chip(tester, 'מרכז').selected, isFalse);
   });
 
   testWidgets('status filters stay whole on a single row', (
@@ -119,7 +127,7 @@ void main() {
       tops.add(
         tester
             .getTopLeft(
-              find.ancestor(of: text, matching: find.byType(ChoiceChip)).first,
+              find.ancestor(of: text, matching: find.byType(TagChip)).first,
             )
             .dy,
       );
@@ -128,10 +136,10 @@ void main() {
   });
 }
 
-ChoiceChip _chip(WidgetTester tester, String label) {
+TagChip _chip(WidgetTester tester, String label) {
   final Finder finder = find.ancestor(
     of: find.text(label),
-    matching: find.byType(ChoiceChip),
+    matching: find.byType(TagChip),
   );
-  return tester.widget<ChoiceChip>(finder.first);
+  return tester.widget<TagChip>(finder.first);
 }

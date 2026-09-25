@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
@@ -120,16 +121,22 @@ class _IncomingVoiceNoteScreenState extends State<IncomingVoiceNoteScreen> {
   }
 
   Future<void> _fileUnder(Person person) async {
-    setState(() => _saving = true);
     final PersonRepository repository = context.read<PersonRepository>();
     final OverlayState? notices = AppNotice.capture(context);
+    // A few words to keep beside it — who is speaking, when, about what. One
+    // caption for everything shared together.
+    final String caption = await VoiceNoteCaption.ask(context);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _saving = true);
     int saved = 0;
     for (final String path in _recordings) {
       final String? name = await VoiceNoteStore.importFile(path);
       if (name == null) {
         continue;
       }
-      await repository.addVoiceNote(person.id, fileName: name);
+      await repository.addVoiceNote(person.id, fileName: name, text: caption);
       saved++;
     }
     if (!mounted) {

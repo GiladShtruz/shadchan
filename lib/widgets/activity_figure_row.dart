@@ -72,28 +72,28 @@ class ActivityFigureRow extends StatelessWidget {
               all.friends,
               'חברים',
               MonthlyStatMetric.people,
-              dark ? AppColors.metricFriendsDm : AppColors.metricFriends,
+              AppColors.metric(MetricKind.friends, dark: dark),
             ),
             const SizedBox(width: 8),
             tile(
               all.ideas,
               'רעיונות',
               MonthlyStatMetric.ideas,
-              dark ? AppColors.metricIdeasDm : AppColors.metricIdeas,
+              AppColors.metric(MetricKind.ideas, dark: dark),
             ),
             const SizedBox(width: 8),
             tile(
               all.couples,
               'זוגות שיצאו',
               MonthlyStatMetric.dating,
-              dark ? AppColors.metricCouplesDm : AppColors.metricCouples,
+              AppColors.metric(MetricKind.couples, dark: dark),
             ),
             const SizedBox(width: 8),
             tile(
               all.engagements,
               'חתונות',
               MonthlyStatMetric.weddings,
-              dark ? AppColors.metricWeddingsDm : AppColors.metricWeddings,
+              AppColors.metric(MetricKind.weddings, dark: dark),
             ),
           ],
         ),
@@ -105,9 +105,9 @@ class ActivityFigureRow extends StatelessWidget {
 /// One figure: the number, the noun under it, and the page's one rule along
 /// the foot.
 ///
-/// **A colour per metric, from the palette and nowhere else** — blue for
-/// friends, copper for ideas, rose for the couples who went out, the palest
-/// blue for a wedding. The four rules are the one place the row wears colour;
+/// **A colour per metric, from the palette and nowhere else** — the deep blue
+/// for friends, copper for ideas, the light blue for the couples who went out
+/// and the rose for a wedding. The four rules are the one place the row wears colour;
 /// the figures themselves are the page's ink, like every other heading on it,
 /// so the row reads as four counts about one database rather than as four
 /// competing badges.

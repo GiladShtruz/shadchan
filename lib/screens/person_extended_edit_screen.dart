@@ -138,6 +138,10 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   /// filled, so the marks fade as the problem goes away.
   Set<String> _missing = <String>{};
 
+  /// Set once a new friend has been thrown away, so nothing writes the record
+  /// back on the way out.
+  bool _discarded = false;
+
   bool _readingWithAi = false;
   bool _loaded = false;
 
@@ -328,6 +332,9 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       int.tryParse(controller.text.trim());
 
   Future<void> _save() async {
+    if (_discarded) {
+      return;
+    }
     final Person? person = _readPerson();
     if (person == null) {
       return;
@@ -412,13 +419,19 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           _missing = missing;
           _open.add(_Area.basics);
         });
+        // **A new friend's card is never a trap.** Leaving with a required
+        // field still empty is allowed — after one clear sentence saying what
+        // it costs, and the choice to stay.
+        if (widget.isNewFriend && !_owner) {
+          if (await _confirmLeaveWithoutSaving()) {
+            await _discardNewFriend();
+          }
+          return;
+        }
         AppNotice.show(
           context,
-          _owner
-              ? 'כדי לשמור את הכרטיס, יש להשלים שם מלא, תאריך לידה, מגדר '
-                    'וסגנון דתי.'
-              : 'כדי להוסיף את החבר למאגר, יש להשלים שם מלא, גיל, מגדר '
-                    'וסגנון דתי.',
+          'כדי לשמור את הכרטיס, יש להשלים שם מלא, תאריך לידה, מגדר '
+          'וסגנון דתי.',
           duration: Duration(seconds: 4),
         );
         return;
@@ -444,6 +457,44 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       return;
     }
     Navigator.of(context).pop();
+  }
+
+  /// "אם תצא עכשיו, החבר לא יישמר." — stay, or leave without the friend.
+  Future<bool> _confirmLeaveWithoutSaving() async {
+    final bool? leave = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('חסרים פרטים'),
+        content: Text(
+          'אם {תצא|תצאי} עכשיו, ${_gender == Gender.female ? 'החברה' : 'החבר'} '
+                  'לא ${_gender == Gender.female ? 'תישמר' : 'יישמר'}.'
+              .forGender(dialogContext.userGender),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('יציאה בלי שמירה'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('להישאר בעריכה'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
+  /// Throws the half-written friend away and leaves, telling the flow that
+  /// opened this page that nobody was added.
+  Future<void> _discardNewFriend() async {
+    final PersonRepository repository = context.read<PersonRepository>();
+    _discarded = true;
+    await repository.delete(widget.personId);
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pop(false);
   }
 
   /// A gentle word, not a gate: the card is saved either way.
@@ -868,13 +919,16 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             spacing: 8,
             children: <Widget>[
               for (final Gender gender in <Gender>[Gender.male, Gender.female])
-                ChoiceChip(
-                  label: Text(gender.displayName),
+                TagChip(
+                  label: gender.displayName,
                   selected: _gender == gender,
-                  onSelected: (bool selected) => _commit(() {
-                    _gender = selected ? gender : Gender.unknown;
-                    _missing = _missing.difference(<String>{'gender'});
-                  }),
+                  onTap: () {
+                    final bool selected = !(_gender == gender);
+                    _commit(() {
+                      _gender = selected ? gender : Gender.unknown;
+                      _missing = _missing.difference(<String>{'gender'});
+                    });
+                  },
                 ),
             ],
           ),
@@ -953,11 +1007,13 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                 if (Regions.isLegacy(_region)) _region!,
                 ...Regions.selectable,
               ])
-                ChoiceChip(
-                  label: Text(region.displayName),
+                TagChip(
+                  label: region.displayName,
                   selected: _region == region,
-                  onSelected: (bool selected) =>
-                      _commit(() => _region = selected ? region : null),
+                  onTap: () {
+                    final bool selected = !(_region == region);
+                    _commit(() => _region = selected ? region : null);
+                  },
                 ),
             ],
           ),
@@ -973,11 +1029,13 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               // covers a whole group; this chip describes one person, and
               // reading a woman's card and being told "גרושים" is simply wrong.
               for (final MaritalStatus status in MaritalStatus.values)
-                ChoiceChip(
-                  label: Text(status.displayNameFor(_gender)),
+                TagChip(
+                  label: status.displayNameFor(_gender),
                   selected: _maritalStatus == status,
-                  onSelected: (bool selected) =>
-                      _commit(() => _maritalStatus = selected ? status : null),
+                  onTap: () {
+                    final bool selected = !(_maritalStatus == status);
+                    _commit(() => _maritalStatus = selected ? status : null);
+                  },
                 ),
             ],
           ),
@@ -1064,16 +1122,19 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                 ..._prefRegions.where(Regions.isLegacy),
                 ...Regions.selectable,
               ])
-                FilterChip(
-                  label: Text(region.displayName),
+                TagChip(
+                  label: region.displayName,
                   selected: _prefRegions.contains(region),
-                  onSelected: (bool selected) => _commit(() {
-                    if (selected) {
-                      _prefRegions.add(region);
-                    } else {
-                      _prefRegions.remove(region);
-                    }
-                  }),
+                  onTap: () {
+                    final bool selected = !(_prefRegions.contains(region));
+                    _commit(() {
+                      if (selected) {
+                        _prefRegions.add(region);
+                      } else {
+                        _prefRegions.remove(region);
+                      }
+                    });
+                  },
                 ),
             ],
           ),
@@ -1087,16 +1148,21 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               // What they are looking for is a person of the *other* gender,
               // so these read "גרושה" on a man's card and "גרוש" on a woman's.
               for (final MaritalStatus status in MaritalStatus.values)
-                FilterChip(
-                  label: Text(status.displayNameFor(_oppositeGender)),
+                TagChip(
+                  label: status.displayNameFor(_oppositeGender),
                   selected: _prefMaritalStatuses.contains(status),
-                  onSelected: (bool selected) => _commit(() {
-                    if (selected) {
-                      _prefMaritalStatuses.add(status);
-                    } else {
-                      _prefMaritalStatuses.remove(status);
-                    }
-                  }),
+                  onTap: () {
+                    final bool selected = !(_prefMaritalStatuses.contains(
+                      status,
+                    ));
+                    _commit(() {
+                      if (selected) {
+                        _prefMaritalStatuses.add(status);
+                      } else {
+                        _prefMaritalStatuses.remove(status);
+                      }
+                    });
+                  },
                 ),
             ],
           ),
@@ -1115,35 +1181,41 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                 ),
                 ...ReligiousLevels.global,
               ])
-                FilterChip(
-                  label: Text(level.displayName),
+                TagChip(
+                  label: level.displayName,
                   selected: _prefLevels.contains(level),
-                  onSelected: (bool selected) => _commit(() {
-                    if (selected) {
-                      _prefLevels.add(level);
-                    } else {
-                      _prefLevels.remove(level);
-                    }
-                  }),
+                  onTap: () {
+                    final bool selected = !(_prefLevels.contains(level));
+                    _commit(() {
+                      if (selected) {
+                        _prefLevels.add(level);
+                      } else {
+                        _prefLevels.remove(level);
+                      }
+                    });
+                  },
                 ),
               // Labels a matchmaker once typed for "אחר" are no longer
               // offered, but a card that already asks for one keeps showing it
               // until it is taken off.
               for (final String label in _prefOtherLabels.toList())
-                FilterChip(
-                  label: Text(label),
+                TagChip(
+                  label: label,
                   selected: _prefOtherLabels.contains(label),
-                  onSelected: (bool selected) => _commit(() {
-                    if (selected) {
-                      _prefOtherLabels.add(label);
-                      _prefLevels.add(ReligiousLevel.other);
-                    } else {
-                      _prefOtherLabels.remove(label);
-                      if (_prefOtherLabels.isEmpty) {
-                        _prefLevels.remove(ReligiousLevel.other);
+                  onTap: () {
+                    final bool selected = !(_prefOtherLabels.contains(label));
+                    _commit(() {
+                      if (selected) {
+                        _prefOtherLabels.add(label);
+                        _prefLevels.add(ReligiousLevel.other);
+                      } else {
+                        _prefOtherLabels.remove(label);
+                        if (_prefOtherLabels.isEmpty) {
+                          _prefLevels.remove(ReligiousLevel.other);
+                        }
                       }
-                    }
-                  }),
+                    });
+                  },
                 ),
             ],
           ),
@@ -1249,11 +1321,9 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   Widget _buildContacts(ThemeData theme) {
     return _area(
       area: _Area.contacts,
-      title: 'איש קשר להעברת הצעות',
+      title: 'איש קשר להעברת ההצעה',
       icon: Icons.contact_phone_outlined,
-      subtitle:
-          'אם אינך בקשר ישיר עם המועמד, אפשר להוסיף חבר משותף או אדם שדרכו '
-          'ניתן להעביר לו הצעות.',
+      subtitle: 'מישהו שמכיר אותו/ה אישית ויכול לחבר ביניכם',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[

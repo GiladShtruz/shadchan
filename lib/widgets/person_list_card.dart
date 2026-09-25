@@ -155,8 +155,19 @@ class PersonListCard extends StatelessWidget {
                                 person.fullName.trim(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
+                                // The name in its own gender's colour — the
+                                // palette's blue for a man, its rose for a
+                                // woman — so a list is read as "who" first.
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   fontWeight: FontWeight.bold,
+                                  color: person.gender == Gender.unknown
+                                      ? null
+                                      : AppColors.genderAccent(
+                                          person.gender,
+                                          dark:
+                                              theme.brightness ==
+                                              Brightness.dark,
+                                        ),
                                 ),
                               ),
                             ),

@@ -701,8 +701,12 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
   /// inside the tabs pushed from this screen, which sits above them, and
   /// go_router cannot build it there — the ✓ ended on a blank screen.
   Future<void> _continueToFullCard(Person person) async {
-    await openExtendedPersonEditor(context, person.id, isNewFriend: true);
-    if (!mounted) {
+    final bool kept = await openExtendedPersonEditor(
+      context,
+      person.id,
+      isNewFriend: true,
+    );
+    if (!mounted || !kept) {
       return;
     }
     ContactsAddedCelebration.showNewFriend(context, person);

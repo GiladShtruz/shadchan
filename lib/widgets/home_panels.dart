@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/art_tint.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
@@ -170,19 +171,20 @@ class _HeroMark extends StatelessWidget {
 /// "הוספת חברים" and "הוספת רעיון" — the two most important things on the page,
 /// because they are the two that make everything else on it possible.
 ///
-/// **One pair from one system.** Both are the same white card at the same
-/// size, radius and shadow, with the icon over the label as one centred unit
-/// and a small chevron at the outer edge. The only two things that differ are
-/// the drawing and the colour of the rule along the foot — and that colour is
-/// the drawing's own ink ([AppColors.addPeopleAccent] /
-/// [AppColors.addIdeaAccent]), so the rule and the picture are one colour.
+/// **One pair from one system.** Both are the same card at the same radius
+/// and shadow, with the icon beside the label as one centred unit. The
+/// drawing and the rule along the foot are one palette colour each — the deep
+/// brand blue for friends, the copper for an idea ([AppColors.addPeopleAccent]
+/// / [AppColors.addIdeaAccent]) — and nothing else on them is coloured.
 ///
-/// **The drawings are shown as they are.** They are hand-drawn with a line
-/// that thickens and thins along its length, already in their colour, and cut
-/// off their ground into transparent PNGs. They are never recoloured and never
-/// replaced by a library glyph: the unevenness is what gives the pair its
-/// warmth, and a uniform outline would be exactly the generic kit look these
-/// were drawn to avoid.
+/// **"הוספת חברים" leads, a little.** It is slightly wider, sits on a faint
+/// wash of its own blue and carries a heavier shadow: the database is what
+/// every other thing on the page is made from, so growing it should be the
+/// easier of the two to reach for — without the pair stopping being a pair.
+///
+/// **The drawings keep their line.** They are hand-drawn with a stroke that
+/// thickens and thins along its length; [artTint] moves them into the palette
+/// by luminance, so the texture survives and only the ink changes.
 ///
 /// **The label is text, not part of the picture**, so it grows with the
 /// system font and a screen reader can read it.
@@ -197,13 +199,19 @@ class HomeActionCards extends StatelessWidget {
   final VoidCallback onAddPeople;
   final VoidCallback onAddIdea;
 
-  /// Kept for the callers that still pass it. The pair is deliberately
-  /// identical now — the difference is the drawing and the rule, never the
-  /// weight — so this changes nothing.
+  /// Gives "הוספת חברים" the slightly larger share and the faint wash.
   final bool emphasiseAddPeople;
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color peopleInk = dark
+        ? AppColors.primaryDarkDm
+        : AppColors.addPeopleAccent;
+    final Color ideaInk = dark
+        ? AppColors.secondaryDarkDm
+        : AppColors.addIdeaAccent;
+
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool narrow = constraints.maxWidth < 350;
@@ -212,40 +220,46 @@ class HomeActionCards extends StatelessWidget {
         final double textScale = MediaQuery.textScalerOf(
           context,
         ).scale(1).clamp(1, 1.8);
-        final double labelHeight = 24 * textScale;
-        final double artHeight = (constraints.maxWidth * 0.14).clamp(44, 64);
-        final double padding = narrow ? 14 : 18;
-        const double gap = 8;
+        final double labelHeight = 22 * textScale;
+        // Icon and label sit side by side now, so the card is only as tall as
+        // the taller of the two — about half of what it was.
+        final double artHeight = (constraints.maxWidth * 0.085).clamp(30, 40);
+        final double padding = narrow ? 10 : 12;
 
         return SizedBox(
           height:
-              padding * 2 + artHeight + gap + labelHeight + AccentBar.thickness,
+              padding * 2 +
+              (artHeight > labelHeight ? artHeight : labelHeight) +
+              AccentBar.thickness,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Expanded(
+                flex: emphasiseAddPeople ? 11 : 1,
                 child: _AddTile(
                   onTap: onAddPeople,
                   art: 'assets/add_friends_art.png',
-                  accent: AppColors.addPeopleAccent,
+                  tint: artTint(peopleInk, ArtTint.addFriends),
+                  accent: peopleInk,
                   label: 'הוספת חברים',
                   artHeight: artHeight,
                   labelHeight: labelHeight,
                   padding: padding,
-                  gap: gap,
+                  emphasised: emphasiseAddPeople,
                 ),
               ),
-              SizedBox(width: narrow ? 10 : 14),
+              SizedBox(width: narrow ? 8 : 12),
               Expanded(
+                flex: emphasiseAddPeople ? 9 : 1,
                 child: _AddTile(
                   onTap: onAddIdea,
                   art: 'assets/add_idea_art.png',
-                  accent: AppColors.addIdeaAccent,
+                  tint: artTint(ideaInk, ArtTint.addIdea),
+                  accent: ideaInk,
                   label: 'הוספת רעיון',
                   artHeight: artHeight,
                   labelHeight: labelHeight,
                   padding: padding,
-                  gap: gap,
                 ),
               ),
             ],
@@ -265,25 +279,31 @@ class _AddTile extends StatefulWidget {
   const _AddTile({
     required this.onTap,
     required this.art,
+    required this.tint,
     required this.accent,
     required this.label,
     required this.artHeight,
     required this.labelHeight,
     required this.padding,
-    required this.gap,
+    this.emphasised = false,
   });
 
   final VoidCallback onTap;
   final String art;
 
-  /// The rule along the foot — the drawing's own ink.
+  /// Recolours the drawing into [accent].
+  final ColorFilter tint;
+
+  /// The rule along the foot, and the drawing's ink.
   final Color accent;
 
   final String label;
   final double artHeight;
   final double labelHeight;
   final double padding;
-  final double gap;
+
+  /// The lead tile: a faint wash of its own colour and a deeper shadow.
+  final bool emphasised;
 
   @override
   State<_AddTile> createState() => _AddTileState();
@@ -300,8 +320,14 @@ class _AddTileState extends State<_AddTile> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color paper = theme.colorScheme.surface;
-    final BorderRadius radius = BorderRadius.circular(20);
+    final Color paper = widget.emphasised
+        ? Color.alphaBlend(
+            widget.accent.withValues(alpha: dark ? 0.16 : 0.07),
+            theme.colorScheme.surface,
+          )
+        : theme.colorScheme.surface;
+    final BorderRadius radius = BorderRadius.circular(18);
+    final double rest = widget.emphasised ? 0.12 : 0.07;
 
     return Semantics(
       button: true,
@@ -323,10 +349,10 @@ class _AddTileState extends State<_AddTile> {
               BoxShadow(
                 // A neutral shadow, very soft: depth, not a 3D button.
                 color: Colors.black.withValues(
-                  alpha: dark ? 0.30 : (_pressed ? 0.05 : 0.08),
+                  alpha: dark ? 0.30 : (_pressed ? 0.05 : rest),
                 ),
-                blurRadius: _pressed ? 4 : 14,
-                offset: Offset(0, _pressed ? 1 : 5),
+                blurRadius: _pressed ? 4 : (widget.emphasised ? 16 : 12),
+                offset: Offset(0, _pressed ? 1 : 4),
               ),
             ],
           ),
@@ -336,72 +362,48 @@ class _AddTileState extends State<_AddTile> {
             child: Column(
               children: <Widget>[
                 Expanded(
-                  child: Stack(
-                    children: <Widget>[
-                      Positioned.fill(
-                        child: Padding(
-                          padding: EdgeInsets.all(widget.padding),
-                          // Icon and label are one unit, centred together
-                          // with a small, fixed gap — not spread over the
-                          // card's height.
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              SizedBox(
-                                height: widget.artHeight,
-                                child: Image.asset(
-                                  widget.art,
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.medium,
-                                ),
-                              ),
-                              SizedBox(height: widget.gap),
-                              SizedBox(
-                                height: widget.labelHeight,
-                                child: Padding(
-                                  // Clear of the chevron on both sides, so the
-                                  // label is centred on the card.
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                  ),
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      widget.label,
-                                      maxLines: 1,
-                                      textAlign: TextAlign.center,
-                                      style: theme.textTheme.titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                            height: 1.2,
-                                            color: AppColors.heading(
-                                              dark: dark,
-                                            ),
-                                          ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: widget.padding,
+                      vertical: widget.padding,
+                    ),
+                    // Icon and label side by side, as one centred unit.
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        SizedBox(
+                          height: widget.artHeight,
+                          width: widget.artHeight,
+                          child: ColorFiltered(
+                            colorFilter: widget.tint,
+                            child: Image.asset(
+                              widget.art,
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.medium,
+                            ),
                           ),
                         ),
-                      ),
-                      // Level with the label, at the edge the page reads
-                      // towards — left, in RTL. Dark, but lighter than the
-                      // label so it never competes with it. `chevron_right`
-                      // because Material mirrors its chevrons in RTL: this is
-                      // the one that draws pointing left.
-                      PositionedDirectional(
-                        end: 8,
-                        bottom: widget.padding,
-                        height: widget.labelHeight,
-                        child: Icon(
-                          Icons.chevron_right_rounded,
-                          size: 20,
-                          color: AppColors.muted(dark: dark),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: SizedBox(
+                            height: widget.labelHeight,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                widget.label,
+                                maxLines: 1,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.2,
+                                  color: AppColors.heading(dark: dark),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 AccentUnderline(color: widget.accent),

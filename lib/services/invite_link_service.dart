@@ -6,6 +6,18 @@ import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/workspace_store.dart';
 
 /// A matchmaker's invitation to write a personal card.
+/// What opening an invitation link came to.
+enum InviteArrival {
+  none,
+
+  /// A brand-new install: the card owner's route was chosen for them.
+  freshInstall,
+
+  /// Somebody already signed in opened the link — a friend's invitation or an
+  /// access request, both of which are answered in the personal area.
+  signedIn,
+}
+
 class PendingInvite {
   const PendingInvite({required this.fromUid, required this.name});
 
@@ -84,32 +96,36 @@ abstract final class InviteLinkService {
   /// every resume. A brand-new user who arrived through an invitation is put
   /// on the card owner's route — that is what the link was for.
   ///
-  /// Returns true when a new invitation arrived on a fresh install, so the
-  /// caller can move from "ברוך הבא!" to signing in.
-  static Future<bool> check() async {
+  /// Says what arrived, so the caller can move a fresh install from "ברוך
+  /// הבא!" to signing in — and send somebody already signed in straight to
+  /// their personal area, which is where an invitation or an access request
+  /// is answered.
+  static Future<InviteArrival> check() async {
     String? raw;
     try {
       raw = await _channel.invokeMethod<String>('takePendingInvite');
       raw ??= await _channel.invokeMethod<String>('takeInstallReferrer');
     } on MissingPluginException {
-      return false;
+      return InviteArrival.none;
     } on PlatformException catch (error) {
       debugPrint('InviteLinkService: $error');
-      return false;
+      return InviteArrival.none;
     }
     if (raw == null) {
-      return false;
+      return InviteArrival.none;
     }
     final PendingInvite? invite = parse(raw);
     if (invite == null) {
-      return false;
+      return InviteArrival.none;
     }
     _store(invite);
     if (!SignInPromptStore.hasAccount && WorkspaceStore.entryRoute == null) {
       WorkspaceStore.chooseEntry(EntryRoute.cardOwner);
-      return true;
+      return InviteArrival.freshInstall;
     }
-    return false;
+    return SignInPromptStore.hasAccount
+        ? InviteArrival.signedIn
+        : InviteArrival.none;
   }
 
   /// The invitation was acted on or put aside.

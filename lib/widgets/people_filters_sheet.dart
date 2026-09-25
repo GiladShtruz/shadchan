@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/person_tags_editor.dart';
 
 /// The result of the people-filters bottom sheet. Returned when the user taps
 /// "הצג תוצאות"; `null` is returned when the sheet is dismissed.
@@ -12,6 +13,7 @@ class PeopleFilterState {
     required this.profileStatuses,
     this.heightRange,
     this.maritalStatuses = const <MaritalStatus>[],
+    this.regions = const <Region>[],
     this.tags = const <String>[],
   });
 
@@ -22,6 +24,10 @@ class PeopleFilterState {
   final List<ProfileStatus> profileStatuses;
   final RangeValues? heightRange;
   final List<MaritalStatus> maritalStatuses;
+
+  /// Regions of the country: a person matches when theirs is any of these.
+  /// Like height, only a card that records a region can match.
+  final List<Region> regions;
 
   /// The matchmaker's own tags: a person matches when they carry any of them.
   final List<String> tags;
@@ -43,6 +49,7 @@ class PeopleFiltersSheet extends StatefulWidget {
     this.initialHeightRange,
     this.heightBounds,
     this.initialMaritalStatuses = const <MaritalStatus>[],
+    this.initialRegions = const <Region>[],
     this.availableTags = const <String>[],
     this.initialTags = const <String>[],
     this.title = 'סינון אנשים',
@@ -70,6 +77,7 @@ class PeopleFiltersSheet extends StatefulWidget {
   /// Fixed product range for height filtering: 120–200 cm.
   final ({int min, int max})? heightBounds;
   final List<MaritalStatus> initialMaritalStatuses;
+  final List<Region> initialRegions;
 
   /// Every tag in use in the database. Empty hides the "תגיות" card.
   final List<String> availableTags;
@@ -87,6 +95,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
   late List<String> tempReligiousLevelOtherLabels;
   late List<ProfileStatus> tempProfileStatuses;
   late List<MaritalStatus> tempMaritalStatuses;
+  late List<Region> tempRegions;
   late List<String> tempTags;
 
   /// Whether the extended section is open. It starts open when one of its
@@ -103,6 +112,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
       widget.initialMaritalStatuses,
     );
     tempTags = List<String>.from(widget.initialTags);
+    tempRegions = List<Region>.from(widget.initialRegions);
     tempReligiousLevels = List<ReligiousLevel>.from(
       widget.initialReligiousLevels,
     );
@@ -114,7 +124,8 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
     );
     _advancedExpanded =
         widget.initialHeightRange != null ||
-        widget.initialMaritalStatuses.isNotEmpty;
+        widget.initialMaritalStatuses.isNotEmpty ||
+        widget.initialRegions.isNotEmpty;
   }
 
   /// The one global list, every time.
@@ -160,11 +171,11 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
         child: Column(
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 18),
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
               child: Text(
                 widget.title,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.headlineSmall?.copyWith(
+                style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -178,41 +189,33 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                     if (widget.showGender) ...<Widget>[
                       _FilterSectionCard(
                         title: 'מין',
-                        child: Row(
+                        child: _ChipWrap(
                           children: <Widget>[
-                            Expanded(
-                              child: _FilterPill(
-                                label: 'הכל',
-                                selected: tempGender == null,
-                                onTap: () => setState(() {
-                                  tempGender = null;
-                                }),
-                              ),
+                            _FilterPill(
+                              label: 'הכל',
+                              selected: tempGender == null,
+                              onTap: () => setState(() {
+                                tempGender = null;
+                              }),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _FilterPill(
-                                label: Gender.male.displayName,
-                                selected: tempGender == Gender.male,
-                                onTap: () => setState(() {
-                                  tempGender = Gender.male;
-                                }),
-                              ),
+                            _FilterPill(
+                              label: Gender.male.displayName,
+                              selected: tempGender == Gender.male,
+                              onTap: () => setState(() {
+                                tempGender = Gender.male;
+                              }),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _FilterPill(
-                                label: Gender.female.displayName,
-                                selected: tempGender == Gender.female,
-                                onTap: () => setState(() {
-                                  tempGender = Gender.female;
-                                }),
-                              ),
+                            _FilterPill(
+                              label: Gender.female.displayName,
+                              selected: tempGender == Gender.female,
+                              onTap: () => setState(() {
+                                tempGender = Gender.female;
+                              }),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                     ],
                     if (widget.ageBounds != null) ...<Widget>[
                       _FilterSectionCard(
@@ -229,14 +232,11 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                     ],
                     _FilterSectionCard(
                       title: 'סגנון דתי',
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 9,
-                        alignment: WrapAlignment.start,
+                      child: _ChipWrap(
                         children: <Widget>[
                           for (final ReligiousLevel level in _filterableLevels(
                             context,
@@ -293,65 +293,49 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     _FilterSectionCard(
                       title: 'סטטוס',
-                      child: Row(
-                        children:
-                            <ProfileStatus>[
-                              ProfileStatus.available,
-                              ProfileStatus.busy,
-                              ProfileStatus.onBreak,
-                            ].indexed.expand((
-                              (int, ProfileStatus) entry,
-                            ) sync* {
-                              if (entry.$1 > 0) {
-                                yield const SizedBox(width: 8);
-                              }
-                              final ProfileStatus status = entry.$2;
-                              yield Expanded(
-                                child: _FilterPill(
-                                  label: status.displayName,
-                                  dense: true,
-                                  selected: tempProfileStatuses.contains(
-                                    status,
-                                  ),
-                                  onTap: () {
-                                    setState(() {
-                                      if (tempProfileStatuses.contains(
-                                        status,
-                                      )) {
-                                        tempProfileStatuses =
-                                            tempProfileStatuses
-                                                .where(
-                                                  (ProfileStatus item) =>
-                                                      item != status,
-                                                )
-                                                .toList();
-                                      } else {
-                                        tempProfileStatuses = <ProfileStatus>[
-                                          ...tempProfileStatuses,
-                                          status,
-                                        ];
-                                      }
-                                    });
-                                  },
-                                ),
-                              );
-                            }).toList(),
+                      child: _ChipWrap(
+                        children: <Widget>[
+                          for (final ProfileStatus status in <ProfileStatus>[
+                            ProfileStatus.available,
+                            ProfileStatus.busy,
+                            ProfileStatus.onBreak,
+                          ])
+                            _FilterPill(
+                              label: status.displayName,
+                              selected: tempProfileStatuses.contains(status),
+                              onTap: () {
+                                setState(() {
+                                  if (tempProfileStatuses.contains(status)) {
+                                    tempProfileStatuses = tempProfileStatuses
+                                        .where(
+                                          (ProfileStatus item) =>
+                                              item != status,
+                                        )
+                                        .toList();
+                                  } else {
+                                    tempProfileStatuses = <ProfileStatus>[
+                                      ...tempProfileStatuses,
+                                      status,
+                                    ];
+                                  }
+                                });
+                              },
+                            ),
+                        ],
                       ),
                     ),
                     if (widget.availableTags.isNotEmpty ||
                         tempTags.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       _FilterSectionCard(
                         title: 'תגיות',
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 150),
                           child: SingleChildScrollView(
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 9,
+                            child: _ChipWrap(
                               children: <Widget>[
                                 for (final String tag in <String>{
                                   ...tempTags,
@@ -374,7 +358,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     _AdvancedFilterCard(
                       expanded: _advancedExpanded,
                       onTap: () {
@@ -391,14 +375,14 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           Text(
                             'גובה',
-                            style: theme.textTheme.titleMedium?.copyWith(
+                            style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 4),
                           _RangeFilter(
                             bounds: widget.heightBounds ?? (min: 120, max: 200),
                             value: tempHeightRange,
@@ -411,17 +395,42 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                               });
                             },
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 14),
                           Text(
-                            'מצב משפחתי',
-                            style: theme.textTheme.titleMedium?.copyWith(
+                            'אזור בארץ',
+                            style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 9,
+                          const SizedBox(height: 8),
+                          _ChipWrap(
+                            children: <Widget>[
+                              for (final Region region in <Region>{
+                                ...Regions.selectable,
+                                ...tempRegions,
+                              })
+                                _FilterPill(
+                                  label: region.displayName,
+                                  selected: tempRegions.contains(region),
+                                  onTap: () => setState(() {
+                                    tempRegions = tempRegions.contains(region)
+                                        ? tempRegions
+                                              .where((Region r) => r != region)
+                                              .toList()
+                                        : <Region>[...tempRegions, region];
+                                  }),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'מצב משפחתי',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _ChipWrap(
                             children: MaritalStatus.values.map((
                               MaritalStatus status,
                             ) {
@@ -470,6 +479,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                     profileStatuses: tempProfileStatuses,
                     heightRange: _normalizedHeightRange(),
                     maritalStatuses: tempMaritalStatuses,
+                    regions: tempRegions,
                     tags: tempTags,
                   ),
                 );
@@ -487,6 +497,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                   tempReligiousLevelOtherLabels = <String>[];
                   tempProfileStatuses = <ProfileStatus>[];
                   tempMaritalStatuses = <MaritalStatus>[];
+                  tempRegions = <Region>[];
                   tempTags = <String>[];
                 });
               },
@@ -498,6 +509,11 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
   }
 }
 
+/// One group of the sheet: a small heading and its chips, on paper.
+///
+/// **Compact on purpose.** The groups were tall cards of large chips, and the
+/// sheet scrolled for a screenful before its last filter; the same choices now
+/// read at a glance, in the tag style the rest of the app uses.
 class _FilterSectionCard extends StatelessWidget {
   const _FilterSectionCard({required this.title, required this.child});
 
@@ -508,29 +524,22 @@ class _FilterSectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: theme.colorScheme.outlineVariant),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 9,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Text(
             title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w900,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           child,
         ],
       ),
@@ -538,54 +547,33 @@ class _FilterSectionCard extends StatelessWidget {
   }
 }
 
+/// The chips of one group, wrapping at the reading start.
+class _ChipWrap extends StatelessWidget {
+  const _ChipWrap({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(spacing: 6, runSpacing: 6, children: children);
+  }
+}
+
+/// One choice — the same small outlined chip the tags are drawn with.
 class _FilterPill extends StatelessWidget {
   const _FilterPill({
     required this.label,
     required this.selected,
     required this.onTap,
-    this.dense = false,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
-  /// Trims the chip's padding and type size for rows that split the card's
-  /// width evenly, so longer labels such as `בהפסקה` stay whole instead of
-  /// being cut off. The `FittedBox` below is only a last-resort guard - at this
-  /// size all three status labels fit unscaled, so they stay the same size as
-  /// each other.
-  final bool dense;
-
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return ChoiceChip(
-      label: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(label, maxLines: 1, textAlign: TextAlign.center),
-      ),
-      selected: selected,
-      showCheckmark: false,
-      onSelected: (_) => onTap(),
-      backgroundColor: theme.colorScheme.surface,
-      selectedColor: theme.colorScheme.primaryContainer,
-      side: BorderSide(
-        color: selected
-            ? theme.colorScheme.primary.withValues(alpha: 0.45)
-            : theme.colorScheme.primary.withValues(alpha: 0.34),
-      ),
-      shape: const StadiumBorder(),
-      padding: EdgeInsets.symmetric(horizontal: dense ? 4 : 12, vertical: 7),
-      labelPadding: dense ? EdgeInsets.zero : null,
-      visualDensity: dense ? VisualDensity.compact : null,
-      materialTapTargetSize: dense ? MaterialTapTargetSize.shrinkWrap : null,
-      labelStyle: theme.textTheme.bodyMedium?.copyWith(
-        color: theme.colorScheme.primary,
-        fontWeight: FontWeight.w700,
-        fontSize: dense ? 13 : null,
-      ),
-    );
+    return TagChip(label: label, selected: selected, onTap: onTap);
   }
 }
 
@@ -622,13 +610,13 @@ class _AdvancedFilterCard extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(18),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: <Widget>[
                   Expanded(
                     child: Text(
                       'סינון מורחב',
-                      style: theme.textTheme.titleMedium?.copyWith(
+                      style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -644,7 +632,7 @@ class _AdvancedFilterCard extends StatelessWidget {
           AnimatedCrossFade(
             firstChild: const SizedBox(width: double.infinity),
             secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
               child: child,
             ),
             crossFadeState: expanded

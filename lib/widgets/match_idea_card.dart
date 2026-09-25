@@ -16,7 +16,6 @@ import 'package:shadchan/widgets/contact_channel_button.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
-import 'package:shadchan/widgets/match_state_tag.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 /// One proposal, as a single shared card rather than two separate squares. The
@@ -274,9 +273,8 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                 ),
                 _StatusLine(
                   match: match,
-                  onReminder: widget.onQuickAction == null
-                      ? null
-                      : () => widget.onQuickAction!(MatchQuickAction.reminder),
+                  onSetStage: widget.onSetStage,
+                  onAction: widget.onQuickAction,
                 ),
                 _CardActionBar(
                   open: _actionsOpen,
@@ -290,7 +288,6 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                   },
                   onAction: widget.onQuickAction,
                   onAdvance: widget.onAdvance,
-                  onSetStage: widget.onSetStage,
                   onCheckInWith: widget.onCheckInWith,
                   onChangeCheckInFrequency: widget.onChangeCheckInFrequency,
                 ),
@@ -318,7 +315,7 @@ class _EdgeStripe extends StatelessWidget {
 
   /// Taller than an ordinary row: a proposal card carries two faces and their
   /// names, not one line of type.
-  static const double height = 72;
+  static const double height = 86;
 
   @override
   Widget build(BuildContext context) {
@@ -350,6 +347,10 @@ class _Side extends StatelessWidget {
   final void Function(Person person) onOpenWhatsApp;
   final void Function(Person person) onCompleteCard;
 
+  /// A little more presence than the 24 the faces had: large enough to know
+  /// who it is at a glance, small enough that a list still reads as a list.
+  static const double avatarRadius = 29;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -377,7 +378,7 @@ class _Side extends StatelessWidget {
               ),
               child: current == null
                   ? CircleAvatar(
-                      radius: 24,
+                      radius: _Side.avatarRadius,
                       backgroundColor:
                           theme.colorScheme.surfaceContainerHighest,
                       child: Icon(
@@ -386,7 +387,7 @@ class _Side extends StatelessWidget {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     )
-                  : PersonAvatar(person: current, radius: 24),
+                  : PersonAvatar(person: current, radius: _Side.avatarRadius),
             ),
             // Nothing to message when the record is gone.
             if (current != null)
@@ -447,12 +448,16 @@ class _NameWithAge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // One step up from the body size, and bold: the names are what a list of
+    // ideas is read by. The fallback to the first name below keeps it on one
+    // line whatever the name is.
     final TextStyle style =
         theme.textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w700,
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
           color: ink,
         ) ??
-        TextStyle(fontWeight: FontWeight.w700, color: ink);
+        TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: ink);
     final String suffix = age == null ? '' : ', $age';
 
     return LayoutBuilder(
@@ -586,7 +591,8 @@ class _AvailabilityWord extends StatelessWidget {
     return Text(
       status.displayNameFor(gender),
       maxLines: 1,
-      style: theme.textTheme.labelSmall?.copyWith(
+      style: theme.textTheme.bodySmall?.copyWith(
+        fontSize: 13,
         fontWeight: FontWeight.w800,
         color: AppColors.profileStatusColor(status),
       ),
@@ -594,85 +600,222 @@ class _AvailabilityWord extends StatelessWidget {
   }
 }
 
-/// Where the proposal stands — said once, quietly, inside the card.
+/// Where the proposal stands, at the foot of the card — and the way to change
+/// it.
 ///
-/// **Small, because the card already says most of it.** This was a full-width
-/// band with the status emoji in it, drawn across every card in the list, and
-/// on a screen of proposals it was the loudest thing on every one of them: a
-/// row of coloured bars with the two faces underneath. The status still has to
-/// be readable at a glance — that is why it exists at all — but "readable at a
-/// glance" is a dot and a word, not a banner.
+/// **The status lives on the card, bottom left, with an arrow.** It used to be
+/// a quiet word at the bottom right, a reminder date at the bottom left, and
+/// the ways to move the idea on inside the folded actions — so changing where
+/// an idea stood meant opening a panel to find a row of tiles. Now the status
+/// itself is the control: the stage as the card says it ("מחכים לתשובת
+/// הבחורה"), a dot in the status's own colour, and a menu of every status the
+/// idea can go to, ending with "העברה להמתנה" and "סגירת רעיון".
 ///
-/// The reason a waiting proposal is waiting rides on the same line, in muted
-/// text, because it is the sentence that finishes the word beside it.
-///
-/// One coarse word rather than the stored status: see [MatchStatus.stateLabel].
+/// The reason a waiting proposal is waiting sits at the other end, in muted
+/// text. The reminder date is not on the card at all any more; it lives in the
+/// actions, under the two WhatsApp buttons.
 class _StatusLine extends StatelessWidget {
-  const _StatusLine({required this.match, required this.onReminder});
+  const _StatusLine({
+    required this.match,
+    required this.onSetStage,
+    required this.onAction,
+  });
 
   final MatchIdea match;
-
-  /// Opens the reminder picker. Null leaves the reminder corner empty.
-  final VoidCallback? onReminder;
+  final void Function(MatchStage stage)? onSetStage;
+  final ValueChanged<MatchQuickAction>? onAction;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String reason = (match.waitingReason ?? '').trim();
-    final DateTime? reminder = match.reminderDate;
-    final bool live = !match.status.isArchived;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 8, 2),
       child: Row(
         children: <Widget>[
-          // Bottom right: where the proposal stands — a dot and a word in the
-          // status's own colour, nothing drawn round it.
-          MatchStateTag(status: match.status),
-          if (reason.isNotEmpty) ...<Widget>[
-            const SizedBox(width: 8),
+          // Bottom right: why a waiting idea is waiting, when it says.
+          if (reason.isNotEmpty)
             Flexible(
               child: Text(
                 reason,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall,
-              ),
-            ),
-          ],
-          const Spacer(),
-          // Bottom left: the reminder, reachable without opening anything.
-          if (live && onReminder != null)
-            InkWell(
-              onTap: onReminder,
-              borderRadius: BorderRadius.circular(999),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      reminder == null
-                          ? Icons.notifications_none_rounded
-                          : Icons.notifications_active_outlined,
-                      size: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      reminder == null
-                          ? 'הוספת תזכורת'
-                          : 'תזכורת ב־${AppDateUtils.formatDateShort(reminder)}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
+          const Spacer(),
+          // Bottom left: the status, and the menu behind it.
+          _CardStatusMenu(
+            match: match,
+            onSetStage: onSetStage,
+            onAction: onAction,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// One entry in the status menu: a stage the idea can be set to, or one of
+/// the moves that take it somewhere else.
+class _StatusChoice {
+  const _StatusChoice.stage(MatchStage this.stage) : action = null;
+  const _StatusChoice.action(MatchQuickAction this.action) : stage = null;
+
+  final MatchStage? stage;
+  final MatchQuickAction? action;
+}
+
+/// The status word with its dot and arrow, and the list of statuses behind it.
+class _CardStatusMenu extends StatelessWidget {
+  const _CardStatusMenu({
+    required this.match,
+    required this.onSetStage,
+    required this.onAction,
+  });
+
+  final MatchIdea match;
+  final void Function(MatchStage stage)? onSetStage;
+  final ValueChanged<MatchQuickAction>? onAction;
+
+  /// What the card says the idea is at: the stage while it is open, the
+  /// coarse state otherwise.
+  static String labelOf(MatchIdea match) {
+    switch (match.status) {
+      case MatchStatus.idea:
+      case MatchStatus.checking:
+        return MatchStage.of(match).label;
+      case MatchStatus.unavailable:
+      case MatchStatus.dating:
+      case MatchStatus.rejected:
+      case MatchStatus.dated:
+      case MatchStatus.married:
+        return match.status.stateLabel;
+    }
+  }
+
+  /// Every status the idea can be moved to from where it is, stages first and
+  /// the moves that leave the stages — "העברה להמתנה", "סגירת רעיון" — last.
+  List<_StatusChoice> _choices() {
+    final bool staged =
+        match.status == MatchStatus.idea ||
+        match.status == MatchStatus.checking ||
+        match.status == MatchStatus.dating;
+    return <_StatusChoice>[
+      if (staged && onSetStage != null)
+        for (final MatchStage stage in MatchStage.values)
+          if (stage.isSelectable) _StatusChoice.stage(stage),
+      if (onAction != null)
+        for (final MatchQuickAction action in MatchQuickAction.statusActionsFor(
+          match.status,
+        ))
+          // "מתחילים לצאת" is already in the list as a stage.
+          if (!(staged &&
+              onSetStage != null &&
+              action == MatchQuickAction.dating))
+            _StatusChoice.action(action),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = AppColors.matchState(
+      match.status,
+      dark: theme.brightness == Brightness.dark,
+    );
+    final List<_StatusChoice> choices = _choices();
+    final MatchStage current = MatchStage.of(match);
+
+    final Widget word = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            labelOf(match),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        if (choices.isNotEmpty)
+          Icon(Icons.arrow_drop_down_rounded, size: 22, color: color),
+      ],
+    );
+    if (choices.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        child: word,
+      );
+    }
+
+    final bool hasStages = choices.any((_StatusChoice c) => c.stage != null);
+    return PopupMenuButton<_StatusChoice>(
+      tooltip: 'שינוי סטטוס הרעיון',
+      position: PopupMenuPosition.under,
+      padding: EdgeInsets.zero,
+      onSelected: (_StatusChoice choice) {
+        final MatchStage? stage = choice.stage;
+        if (stage != null) {
+          onSetStage?.call(stage);
+        } else {
+          onAction?.call(choice.action!);
+        }
+      },
+      itemBuilder: (BuildContext context) {
+        final List<PopupMenuEntry<_StatusChoice>> items =
+            <PopupMenuEntry<_StatusChoice>>[];
+        bool dividerPlaced = false;
+        for (final _StatusChoice choice in choices) {
+          if (choice.action != null && hasStages && !dividerPlaced) {
+            items.add(const PopupMenuDivider());
+            dividerPlaced = true;
+          }
+          final MatchStage? stage = choice.stage;
+          final bool selected = stage != null && stage == current;
+          items.add(
+            PopupMenuItem<_StatusChoice>(
+              value: choice,
+              height: 44,
+              child: Row(
+                children: <Widget>[
+                  if (choice.action != null) ...<Widget>[
+                    Icon(
+                      choice.action!.icon,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(child: Text(stage?.label ?? choice.action!.label)),
+                  if (selected)
+                    Icon(
+                      Icons.check,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                ],
+              ),
+            ),
+          );
+        }
+        return items;
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        child: word,
       ),
     );
   }
@@ -681,22 +824,12 @@ class _StatusLine extends StatelessWidget {
 /// The panel under the pair: everything a proposal can have done to it, folded
 /// behind one line.
 ///
-/// **The promotion is the first thing under the fold, and the loudest.** It
-/// used to open onto a row of three status tiles — "העברה להמתנה", "מתחילים
-/// לצאת", "סגירת רעיון" — which are the three ways an idea *ends*, offered
-/// before the one thing it is actually waiting for. Somebody who opens the
-/// actions of an open proposal is nearly always there to move it on, so that
-/// is what meets the eye: one wide row naming the exact next step, with the
-/// stage beside it.
-///
-/// **A couple who are out get a different panel entirely.** Asking him, asking
-/// her and sending the card are finished business the moment the two of them
-/// are meeting; see [_DatingPanel].
-///
-/// Under the promotion, in descending order of how often it is wanted: the
-/// status moves as one row of same-shaped tiles, then one quiet line carrying
-/// the reminder and the related contact, then the journal lying open. Nothing
-/// below the promotion is shaped like it, so nothing below it competes with it.
+/// **One box, the same shape on every idea.** It is laid out the way a couple
+/// who are out have always had it: the one thing the idea is waiting for at
+/// the top — "יאללה לקדם" and a WhatsApp button for each side — then, inside
+/// the same box, when the app will ask about it next, and the person who can
+/// pass the proposal on. The status is not repeated here; it is on the card
+/// itself, where it can be changed. The journal lies open under the box.
 class _CardActionBar extends StatelessWidget {
   const _CardActionBar({
     required this.open,
@@ -707,7 +840,6 @@ class _CardActionBar extends StatelessWidget {
     required this.onToggle,
     required this.onAction,
     required this.onAdvance,
-    required this.onSetStage,
     required this.onCheckInWith,
     required this.onChangeCheckInFrequency,
   });
@@ -721,7 +853,6 @@ class _CardActionBar extends StatelessWidget {
   final VoidCallback onToggle;
   final ValueChanged<MatchQuickAction>? onAction;
   final void Function(MatchNextStep step)? onAdvance;
-  final void Function(MatchStage stage)? onSetStage;
   final void Function(Person person)? onCheckInWith;
   final void Function(int days)? onChangeCheckInFrequency;
 
@@ -733,9 +864,8 @@ class _CardActionBar extends StatelessWidget {
       return const SizedBox(height: 6);
     }
 
-    final List<MatchQuickAction> statusActions =
-        MatchQuickAction.statusActionsFor(match.status);
     final bool dating = match.status == MatchStatus.dating;
+    final bool archived = match.status.isArchived;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
@@ -751,7 +881,7 @@ class _CardActionBar extends StatelessWidget {
                 children: <Widget>[
                   Text(
                     open ? 'סגירת פעולות' : 'פעולות',
-                    style: theme.textTheme.labelSmall?.copyWith(
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -760,7 +890,7 @@ class _CardActionBar extends StatelessWidget {
                     open
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
-                    size: 18,
+                    size: 20,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ],
@@ -776,7 +906,6 @@ class _CardActionBar extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Column(
                       children: <Widget>[
-                        // 1. The one thing this proposal is waiting for.
                         if (dating)
                           _DatingPanel(
                             match: match,
@@ -785,47 +914,22 @@ class _CardActionBar extends StatelessWidget {
                             startedAt: datingSince,
                             onCheckInWith: onCheckInWith,
                             onChangeFrequency: onChangeCheckInFrequency,
-                            onSetStage: onSetStage,
+                            onAddContact: () =>
+                                action(MatchQuickAction.contact),
                           )
-                        else if (onAdvance != null &&
-                            match.status != MatchStatus.dating &&
-                            !match.status.isArchived) ...<Widget>[
+                        else
                           _AskPanel(
+                            match: match,
                             male: male,
                             female: female,
-                            onAsk: onAdvance!,
+                            onAsk: archived ? null : onAdvance,
+                            onChangeReminder: archived
+                                ? null
+                                : () => action(MatchQuickAction.reminder),
+                            onAddContact: () =>
+                                action(MatchQuickAction.contact),
                           ),
-                        ],
-                        if (dating ||
-                            (onAdvance != null && !match.status.isArchived))
-                          const SizedBox(height: 10),
-
-                        // 2. The status moves, and the only grid on the panel.
-                        _ActionRow(actions: statusActions, onTap: action),
-                        const SizedBox(height: 8),
-
-                        // 3. When the app will ask about this next, and who
-                        // else is around it.
-                        if (!dating && !match.status.isArchived) ...<Widget>[
-                          _ReminderSchedule(
-                            match: match,
-                            onChange: () => action(MatchQuickAction.reminder),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        _SecondaryActionsLine(
-                          match: match,
-                          onAddContact: () => action(MatchQuickAction.contact),
-                        ),
-                        if (onSetStage != null && !dating)
-                          Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: _StageMenu(
-                              current: MatchStage.of(match),
-                              onSelected: onSetStage!,
-                            ),
-                          ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         MatchJournalView(matchId: match.id),
                       ],
                     ),
@@ -838,44 +942,48 @@ class _CardActionBar extends StatelessWidget {
   }
 }
 
-/// "יאללה לקדם" — the same three lines on every open idea.
+/// "יאללה לקדם" — the one box an open idea's actions live in.
 ///
-/// **A fixed panel rather than a button that changes its mind.** It used to be
-/// one button naming the next step — "לשאול את הבחור", then "לשאול את הבחורה",
-/// then something else again — so the one control on the card moved and
-/// relabelled itself every time it was used. Now the panel never changes: a
-/// heading, one question, and a WhatsApp button for each side. Pressing one
-/// opens that side's chat with the other's card and records, behind the
-/// scenes, that they were asked — which is where the stage lives now.
+/// Top to bottom: the heading and its question, one WhatsApp button for each
+/// side, the next reminder with "שינוי", and the person who can pass the
+/// proposal on. Pressing a side's button opens their chat with the other's
+/// card and records, behind the scenes, that they were asked — which is where
+/// the stage lives.
+///
+/// A closed idea keeps only the contact row: there is nobody left to ask and
+/// nothing to be reminded of.
 class _AskPanel extends StatelessWidget {
   const _AskPanel({
+    required this.match,
     required this.male,
     required this.female,
     required this.onAsk,
+    required this.onChangeReminder,
+    required this.onAddContact,
   });
 
+  final MatchIdea match;
   final Person? male;
   final Person? female;
-  final void Function(MatchNextStep step) onAsk;
+  final void Function(MatchNextStep step)? onAsk;
+  final VoidCallback? onChangeReminder;
+  final VoidCallback onAddContact;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = AppColors.matchState(MatchStatus.idea, dark: dark);
+    final Color ink = AppColors.matchState(match.status, dark: dark);
+    final void Function(MatchNextStep step)? ask = onAsk;
+    final VoidCallback? changeReminder = onChangeReminder;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: ink.withValues(alpha: dark ? 0.14 : 0.06),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
+    return _ActionsBox(
+      tint: ink,
+      children: <Widget>[
+        if (ask != null) ...<Widget>[
           Text(
             'יאללה לקדם',
-            style: theme.textTheme.labelLarge?.copyWith(
+            style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w900,
               color: ink,
             ),
@@ -883,7 +991,7 @@ class _AskPanel extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             'את מי {תרצה|תרצי} לשאול על הרעיון?'.forGender(context.userGender),
-            style: theme.textTheme.labelSmall?.copyWith(
+            style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
@@ -895,7 +1003,7 @@ class _AskPanel extends StatelessWidget {
                 child: _CheckInButton(
                   person: female,
                   fallback: 'הבחורה',
-                  onTap: (_) => onAsk(MatchNextStep.askFemale),
+                  onTap: (_) => ask(MatchNextStep.askFemale),
                 ),
               ),
               const SizedBox(width: 8),
@@ -903,19 +1011,50 @@ class _AskPanel extends StatelessWidget {
                 child: _CheckInButton(
                   person: male,
                   fallback: 'הבחור',
-                  onTap: (_) => onAsk(MatchNextStep.askMale),
+                  onTap: (_) => ask(MatchNextStep.askMale),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 8),
         ],
+        if (changeReminder != null) ...<Widget>[
+          _ReminderSchedule(match: match, onChange: changeReminder),
+          const SizedBox(height: 2),
+        ],
+        _ContactsLine(match: match, onAddContact: onAddContact),
+      ],
+    );
+  }
+}
+
+/// The box every idea's actions are drawn in: a soft wash of the status's own
+/// colour, rounded, with a little air inside.
+class _ActionsBox extends StatelessWidget {
+  const _ActionsBox({required this.tint, required this.children});
+
+  final Color tint;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: dark ? 0.16 : 0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
       ),
     );
   }
 }
 
-/// "התזכורת הבאה בעוד חודש" and a way to change it — the same line a couple
-/// who are out already carry, on every idea that is still open.
+/// "התזכורת הבאה בעוד חודש · 24.10" and a way to change it.
 class _ReminderSchedule extends StatelessWidget {
   const _ReminderSchedule({required this.match, required this.onChange});
 
@@ -926,151 +1065,80 @@ class _ReminderSchedule extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final DateTime? date = match.reminderDate;
-    final String text = date == null
-        ? 'אין תזכורת לרעיון הזה'
-        : 'התזכורת הבאה ${AppDateUtils.futureReminderLabel(date)}'
-              ' · ${AppDateUtils.formatDateShort(date)}';
 
     return Row(
       children: <Widget>[
         Icon(
           Icons.notifications_none_rounded,
-          size: 14,
+          size: 18,
           color: theme.colorScheme.onSurfaceVariant,
         ),
-        const SizedBox(width: 5),
+        const SizedBox(width: 6),
         Expanded(
-          child: Text(
-            text,
+          child: Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(
+                  text: date == null
+                      ? 'אין תזכורת לרעיון הזה'
+                      : 'התזכורת הבאה ${AppDateUtils.futureReminderLabel(date)}',
+                ),
+                if (date != null)
+                  TextSpan(
+                    text: ' · ${AppDateUtils.formatDateShort(date)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface,
             ),
           ),
         ),
-        InkWell(
-          onTap: onChange,
-          borderRadius: BorderRadius.circular(999),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: Text(
-              date == null ? 'הוספה' : 'שינוי',
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-        ),
+        _BoxLink(label: date == null ? 'הוספה' : 'שינוי', onTap: onChange),
       ],
     );
   }
 }
 
-/// The proposal's status, as a chip that opens the list of statuses.
-///
-/// **It says "סטטוס" before it says the status.** The chip used to be the bare
-/// words — "שאלתי את הבחור" — sitting in a footer under a button, which reads
-/// as a caption on the button rather than as the one field on the panel that
-/// can be set. Naming it is what turns it into a control, and the arrow beside
-/// it is then a promise the reader can act on.
-///
-/// **The list goes backwards as well as forwards.** Every status is offered
-/// whatever the proposal is on now, which is the whole point: a "מתחילים לצאת"
-/// tapped by mistake has to be undoable, and it has to be undoable from the
-/// same place it was set. Still small and grey, because a correction is not an
-/// action — the button above it is what moves a proposal in the ordinary
-/// course of things.
-class _StageMenu extends StatelessWidget {
-  const _StageMenu({required this.current, required this.onSelected});
+/// A small word-button at the end of a row inside the actions box.
+class _BoxLink extends StatelessWidget {
+  const _BoxLink({required this.label, required this.onTap});
 
-  final MatchStage current;
-  final void Function(MatchStage stage) onSelected;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-
-    return PopupMenuButton<MatchStage>(
-      tooltip: 'עדכון סטטוס הרעיון',
-      position: PopupMenuPosition.under,
-      padding: EdgeInsets.zero,
-      onSelected: onSelected,
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<MatchStage>>[
-        PopupMenuItem<MatchStage>(
-          enabled: false,
-          height: 34,
-          child: Text(
-            'עדכון סטטוס',
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        for (final MatchStage stage in MatchStage.values)
-          if (stage.isSelectable)
-            PopupMenuItem<MatchStage>(
-              value: stage,
-              height: 42,
-              child: Row(
-                children: <Widget>[
-                  Expanded(child: Text(stage.label)),
-                  if (stage == current)
-                    Icon(
-                      Icons.check,
-                      size: 18,
-                      color: theme.colorScheme.primary,
-                    ),
-                ],
-              ),
-            ),
-      ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            // "סטטוס: מחכים לתשובת הבחורה" is a long chip on a narrow card at
-            // a large system font. It wraps rather than being cut: the whole
-            // point of the word "סטטוס" in front is that the control names
-            // itself, and half a name is worse than none.
-            Flexible(
-              child: Text(
-                'סטטוס: ${current.label}',
-                maxLines: 2,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  height: 1.25,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Icon(
-              Icons.arrow_drop_down_rounded,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: theme.colorScheme.primary,
+          ),
         ),
       ),
     );
   }
 }
 
-/// A couple who are out: how long it has been, and one tap to each of them.
+/// A couple who are out: how long it has been, one tap to each of them, when
+/// the app will ask next, and who can pass things on — the same box an open
+/// idea wears, in the couple's rose.
 ///
-/// **The proposal machinery is gone from this card.** "לשאול את הבחור",
-/// "לשלוח כרטיס", "מתחילים לצאת" are all things that have already happened, and
-/// leaving them on a couple who are meeting turns the best news on the screen
-/// into another row of admin. What replaces them is the only open question:
-/// they have been out for a while — have you asked how it is going?
-///
-/// The two chats are the action, and taking one books the next check-in, at a
-/// week for the first and monthly after that. Changing the status is still
-/// possible and deliberately quiet: it is on the tile row below, where every
-/// other status move lives.
+/// Taking one of the chats books the next check-in, at a week for the first
+/// and monthly after that. The status — including the way back out of
+/// "מתחילים לצאת" — is on the card.
 class _DatingPanel extends StatelessWidget {
   const _DatingPanel({
     required this.match,
@@ -1079,7 +1147,7 @@ class _DatingPanel extends StatelessWidget {
     required this.startedAt,
     required this.onCheckInWith,
     required this.onChangeFrequency,
-    required this.onSetStage,
+    required this.onAddContact,
   });
 
   final MatchIdea match;
@@ -1088,16 +1156,7 @@ class _DatingPanel extends StatelessWidget {
   final DateTime? startedAt;
   final void Function(Person person)? onCheckInWith;
   final void Function(int days)? onChangeFrequency;
-
-  /// The way back out of "מתחילים לצאת".
-  ///
-  /// **A couple who are out had no undo at all.** The status chip lives in the
-  /// promotion row's footer, and this panel replaces that row entirely — so a
-  /// proposal marked as dating by a mis-tap was stuck there, with both
-  /// candidates marked "תפוס" and the card offering nothing but a wedding or a
-  /// closure. It is the same menu it is everywhere else, at the foot of the
-  /// panel where it stays out of the way of the good news.
-  final void Function(MatchStage stage)? onSetStage;
+  final VoidCallback onAddContact;
 
   @override
   Widget build(BuildContext context) {
@@ -1107,134 +1166,117 @@ class _DatingPanel extends StatelessWidget {
     final DateTime? since = startedAt;
     final int every = match.checkInEveryDays ?? DatingCheckIn.defaultEveryDays;
 
-    return Material(
-      color: ink.withValues(alpha: dark ? 0.16 : 0.10),
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _ActionsBox(
+      tint: ink,
+      children: <Widget>[
+        Row(
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(Icons.favorite_rounded, size: 18, color: ink),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    since == null
-                        ? 'הם יוצאים 😊 בדקת איך הולך?'
-                        : DatingCheckIn.headline(DatingCheckIn.daysOut(since)),
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: ink,
-                      height: 1.3,
-                    ),
-                  ),
+            Icon(Icons.favorite_rounded, size: 20, color: ink),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                since == null
+                    ? 'הם יוצאים 😊 בדקת איך הולך?'
+                    : DatingCheckIn.headline(DatingCheckIn.daysOut(since)),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: ink,
+                  height: 1.3,
                 ),
-              ],
+              ),
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: <Widget>[
-                // In RTL the first child sits on the right, matching the two
-                // faces above it.
-                Expanded(
-                  child: _CheckInButton(
-                    person: female,
-                    fallback: 'הבחורה',
-                    onTap: onCheckInWith,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _CheckInButton(
-                    person: male,
-                    fallback: 'הבחור',
-                    onTap: onCheckInWith,
-                  ),
-                ),
-              ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: <Widget>[
+            // In RTL the first child sits on the right, matching the two
+            // faces above it.
+            Expanded(
+              child: _CheckInButton(
+                person: female,
+                fallback: 'הבחורה',
+                onTap: onCheckInWith,
+              ),
             ),
-            const SizedBox(height: 4),
-            Row(
-              children: <Widget>[
-                Icon(
-                  Icons.notifications_none_rounded,
-                  size: 14,
-                  color: theme.colorScheme.onSurfaceVariant,
+            const SizedBox(width: 8),
+            Expanded(
+              child: _CheckInButton(
+                person: male,
+                fallback: 'הבחור',
+                onTap: onCheckInWith,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: <Widget>[
+            Icon(
+              Icons.notifications_none_rounded,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                match.reminderDate == null
+                    ? 'נזכיר לך לבדוק ${DatingCheckIn.frequencyLabel(every)}'
+                    : 'התזכורת הבאה: '
+                          '${AppDateUtils.formatDateShort(match.reminderDate!)}'
+                          ' · ${DatingCheckIn.frequencyLabel(every)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface,
                 ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    match.reminderDate == null
-                        ? 'נזכיר לך לבדוק ${DatingCheckIn.frequencyLabel(every)}'
-                        : 'התזכורת הבאה: '
-                              '${AppDateUtils.formatDateShort(match.reminderDate!)}'
-                              ' · ${DatingCheckIn.frequencyLabel(every)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                if (onChangeFrequency != null)
-                  PopupMenuButton<int>(
-                    tooltip: 'תדירות התזכורות',
-                    position: PopupMenuPosition.under,
-                    padding: EdgeInsets.zero,
-                    onSelected: onChangeFrequency,
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<int>>[
-                          for (final int days in DatingCheckIn.frequencyOptions)
-                            PopupMenuItem<int>(
-                              value: days,
-                              height: 42,
-                              child: Row(
-                                children: <Widget>[
-                                  Expanded(
-                                    child: Text(
-                                      DatingCheckIn.frequencyLabel(days),
-                                    ),
-                                  ),
-                                  if (days == every)
-                                    Icon(
-                                      Icons.check,
-                                      size: 18,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                ],
-                              ),
+              ),
+            ),
+            if (onChangeFrequency != null)
+              PopupMenuButton<int>(
+                tooltip: 'תדירות התזכורות',
+                position: PopupMenuPosition.under,
+                padding: EdgeInsets.zero,
+                onSelected: onChangeFrequency,
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+                  for (final int days in DatingCheckIn.frequencyOptions)
+                    PopupMenuItem<int>(
+                      value: days,
+                      height: 42,
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(DatingCheckIn.frequencyLabel(days)),
+                          ),
+                          if (days == every)
+                            Icon(
+                              Icons.check,
+                              size: 18,
+                              color: theme.colorScheme.primary,
                             ),
                         ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      child: Text(
-                        'שינוי',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.primary,
-                        ),
                       ),
                     ),
+                ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
                   ),
-              ],
-            ),
-            if (onSetStage != null)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: _StageMenu(
-                  current: MatchStage.of(match),
-                  onSelected: onSetStage!,
+                  child: Text(
+                    'שינוי',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                 ),
               ),
           ],
         ),
-      ),
+        const SizedBox(height: 2),
+        _ContactsLine(match: match, onAddContact: onAddContact),
+      ],
     );
   }
 }
@@ -1271,13 +1313,13 @@ class _CheckInButton extends StatelessWidget {
       child: InkWell(
         onTap: reachable ? () => onTap!(current) : null,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               FaIcon(
                 FontAwesomeIcons.whatsapp,
-                size: 15,
+                size: 17,
                 color: reachable
                     ? kWhatsAppGreen
                     : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
@@ -1288,7 +1330,7 @@ class _CheckInButton extends StatelessWidget {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: reachable
                         ? theme.colorScheme.onSurface
@@ -1304,25 +1346,15 @@ class _CheckInButton extends StatelessWidget {
   }
 }
 
-/// The two small things, on one line: when to come back to this proposal, and
-/// who else is around it.
+/// The person who can pass this proposal on — somebody who knows one of the
+/// two personally — as the last row of the actions box, with "הוספה" at its
+/// end.
 ///
-/// **Both used to be rows of their own, and neither deserved one.** The
-/// reminder was a full-width bar with an icon and two lines of text, drawn on
-/// every open proposal whether or not one was set — the loudest thing on the
-/// panel after the promotion, for a feature most proposals never use. Adding a
-/// contact had a line to itself directly under it. Together they were two more
-/// bands between the button and the journal.
-///
-/// So: a chip that says "🔔 תזכורת 24.9" when there is one and "הוספת תזכורת"
-/// when there is not, and beside it the contact link at the size a secondary
-/// action should be. The contacts already on the proposal ride underneath,
-/// because they are worth seeing without opening anything.
-class _SecondaryActionsLine extends StatelessWidget {
-  const _SecondaryActionsLine({
-    required this.match,
-    required this.onAddContact,
-  });
+/// Each contact is its name (and who they are to the idea) with a WhatsApp
+/// button, because a contact is added to be *reached*, not to copy a number
+/// out of.
+class _ContactsLine extends StatelessWidget {
+  const _ContactsLine({required this.match, required this.onAddContact});
 
   final MatchIdea match;
   final VoidCallback onAddContact;
@@ -1332,21 +1364,39 @@ class _SecondaryActionsLine extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final List<MatchContact> contacts = match.relatedContacts;
 
-    // A contact is added to be *reached*, so each one is its name with a
-    // WhatsApp button beside it — not a line of text to copy a number out of.
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
-        for (final MatchContact contact in contacts)
-          _ContactPill(contact: contact),
-        _MiniAction(
-          icon: Icons.person_add_alt_1_outlined,
-          label: contacts.isEmpty
-              ? 'הוספת איש קשר שקשור לרעיון'
-              : 'איש קשר נוסף',
-          tint: theme.colorScheme.onSurfaceVariant,
+        Icon(
+          Icons.person_outline_rounded,
+          size: 18,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: contacts.isEmpty
+              ? Text(
+                  'איש קשר להעברת ההצעה',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: <Widget>[
+                      for (final MatchContact contact in contacts)
+                        _ContactPill(contact: contact),
+                    ],
+                  ),
+                ),
+        ),
+        _BoxLink(
+          label: contacts.isEmpty ? 'הוספה' : 'עוד',
           onTap: onAddContact,
         ),
       ],
@@ -1368,7 +1418,7 @@ class _ContactPill extends StatelessWidget {
     final bool reachable = contact.phone.trim().isNotEmpty;
 
     return Material(
-      color: Colors.transparent,
+      color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(999),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -1389,7 +1439,7 @@ class _ContactPill extends StatelessWidget {
                   role.isEmpty ? contact.name : '${contact.name} · $role',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: theme.colorScheme.onSurface,
                   ),
@@ -1407,91 +1457,6 @@ class _ContactPill extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// A small pill: an icon, a word, and nothing drawn around it but a thin edge.
-class _MiniAction extends StatelessWidget {
-  const _MiniAction({
-    required this.icon,
-    required this.label,
-    required this.tint,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color tint;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(999),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 14, color: tint),
-              const SizedBox(width: 5),
-              // **It wraps rather than being cut.** "הוספת איש קשר שקשור
-              // לרעיון" is wider than the inside of a proposal card on an
-              // ordinary phone, so clamping it to one line meant it was
-              // ellipsized to "הוספת איש קשר שקשור…" every time. Two lines
-              // cost a few pixels once; a label nobody can finish reading
-              // costs the action.
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 2,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    height: 1.25,
-                    color: tint,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionRow extends StatelessWidget {
-  const _ActionRow({required this.actions, required this.onTap});
-
-  final List<MatchQuickAction> actions;
-  final ValueChanged<MatchQuickAction> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        for (final MatchQuickAction action in actions)
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: _QuickActionButton(
-                action: action,
-                onTap: () => onTap(action),
-              ),
-            ),
-          ),
-      ],
     );
   }
 }
@@ -1568,76 +1533,6 @@ class _SideContactButton extends StatelessWidget {
   }
 }
 
-class _QuickActionButton extends StatelessWidget {
-  const _QuickActionButton({required this.action, required this.onTap});
-
-  final MatchQuickAction action;
-  final VoidCallback onTap;
-
-  /// One hue per action. The status moves keep the traffic-light reading they
-  /// have always had — amber waits, green goes, red stops — and the tools are
-  /// deliberately outside that language: they change nothing about where the
-  /// proposal stands, so colouring them like a status would be a lie about
-  /// what pressing them does.
-  Color _ink(ThemeData theme) {
-    switch (action) {
-      case MatchQuickAction.waiting:
-        return AppColors.statusChecking;
-      case MatchQuickAction.dating:
-      case MatchQuickAction.married:
-        return AppColors.statusDating;
-      case MatchQuickAction.close:
-      case MatchQuickAction.separated:
-        return AppColors.statusRejected;
-      case MatchQuickAction.reopen:
-        return AppColors.statusIdea;
-      case MatchQuickAction.reminder:
-      case MatchQuickAction.contact:
-        return theme.colorScheme.onSurfaceVariant;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = _ink(theme);
-
-    // Every tile in a row is drawn identically; only the hue moves. Filling
-    // "מתחילים לצאת" made it look like the status the proposal was already in,
-    // and `_StatusBanner` is the one place that says where it actually is.
-    return Material(
-      color: ink.withValues(alpha: dark ? 0.18 : 0.09),
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(action.icon, size: 17, color: ink),
-              const SizedBox(height: 4),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  action.label,
-                  maxLines: 1,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: ink,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// The column between the two people: just the heart. The last-updated date,
 /// reminders and status controls now live on the proposal-detail screen.
 class _Middle extends StatelessWidget {
@@ -1650,7 +1545,7 @@ class _Middle extends StatelessWidget {
     final bool dating = status == MatchStatus.dating;
     return Padding(
       // The top padding lands the heart level with the middle of the photos.
-      padding: const EdgeInsets.fromLTRB(6, 24, 6, 0),
+      padding: const EdgeInsets.fromLTRB(6, 30, 6, 0),
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,

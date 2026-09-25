@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -128,10 +129,11 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
               children: <Gender>[Gender.male, Gender.female].map((
                 Gender gender,
               ) {
-                return ChoiceChip(
-                  label: Text(gender.displayName),
+                return TagChip(
+                  label: gender.displayName,
                   selected: _gender == gender,
-                  onSelected: (bool selected) {
+                  onTap: () {
+                    final bool selected = !(_gender == gender);
                     if (selected) {
                       setState(() {
                         _gender = gender;

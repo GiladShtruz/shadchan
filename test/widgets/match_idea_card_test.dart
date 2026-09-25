@@ -244,14 +244,17 @@ void main() {
     expect(find.byType(FaIcon), findsNWidgets(2));
     expect(find.text('נסגרה'), findsOneWidget);
 
-    // The panel does not disappear with the proposal. A closed proposal still
-    // has a journal worth reading and a way back open; what it loses is the
-    // moves that no longer mean anything from where it stands.
+    // The panel does not disappear with the proposal: its journal is still
+    // worth reading.
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
-
-    expect(find.text('פתיחה מחדש'), findsOneWidget);
     expect(find.text('יומן הרעיון'), findsOneWidget);
+
+    // The way back open is on the card's own status, and nothing that no
+    // longer means anything from where it stands.
+    await tester.tap(find.text('נסגרה'));
+    await tester.pumpAndSettle();
+    expect(find.text('פתיחה מחדש'), findsOneWidget);
     expect(find.text('מתחילים לצאת'), findsNothing);
     expect(find.text('סגירת רעיון'), findsNothing);
   });
@@ -262,13 +265,12 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    // One coarse word, not the stored status: "רעיון" and "בבדיקה" are both a
-    // proposal that is open, and a matchmaker scanning the list reads the
-    // state, not the database value.
+    // An open idea says its stage — what it is waiting for — and anything
+    // else says its state.
     for (final (MatchStatus status, String label) expected
         in <(MatchStatus, String)>[
-          (MatchStatus.idea, 'פתוח'),
-          (MatchStatus.checking, 'פתוח'),
+          (MatchStatus.idea, 'רעיון חדש'),
+          (MatchStatus.checking, 'רעיון חדש'),
           (MatchStatus.unavailable, 'בהמתנה'),
           (MatchStatus.dated, 'נסגרה'),
         ]) {
@@ -313,7 +315,7 @@ void main() {
       expect(find.text('את מי תרצה לשאול על הרעיון?'), findsOneWidget);
       expect(
         tester.getCenter(find.text('יאללה לקדם')).dy,
-        lessThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
+        lessThan(tester.getCenter(find.text('יומן הרעיון')).dy),
       );
 
       // Her button is on the right, under her face; his on the left.
@@ -328,25 +330,37 @@ void main() {
     }
   });
 
-  testWidgets('the reminder sits at the foot of the card, beside the status', (
+  testWidgets('the status sits at the foot of the card, with its menu', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final List<MatchQuickAction> actions = <MatchQuickAction>[];
-    await tester.pumpWidget(wrap(card(onAction: actions.add)));
+    final List<MatchStage> stages = <MatchStage>[];
+    await tester.pumpWidget(
+      wrap(card(onAction: actions.add, onSetStage: stages.add)),
+    );
     await tester.pump();
 
-    expect(find.text('הוספת תזכורת'), findsOneWidget);
-    // Status on the right, reminder on the left.
+    // The reminder date is no longer on the card — only the status.
+    expect(find.text('הוספת תזכורת'), findsNothing);
+    expect(find.text('רעיון חדש'), findsOneWidget);
+
+    await tester.tap(find.text('רעיון חדש'));
+    await tester.pumpAndSettle();
+    // Every stage, and the two moves that leave them, last.
+    expect(find.text('מחכים לתשובת הבחור'), findsOneWidget);
+    expect(find.text('מתחילים לצאת'), findsOneWidget);
+    expect(find.text('העברה להמתנה'), findsOneWidget);
     expect(
-      tester.getCenter(find.text('פתוח')).dx,
-      greaterThan(tester.getCenter(find.text('הוספת תזכורת')).dx),
+      tester.getCenter(find.text('סגירת רעיון')).dy,
+      greaterThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
     );
-    await tester.tap(find.text('הוספת תזכורת'));
-    await tester.pump();
-    expect(actions, <MatchQuickAction>[MatchQuickAction.reminder]);
+
+    await tester.tap(find.text('סגירת רעיון'));
+    await tester.pumpAndSettle();
+    expect(actions, <MatchQuickAction>[MatchQuickAction.close]);
   });
 
   testWidgets('a couple who are out are asked about, not promoted', (
@@ -451,41 +465,40 @@ void main() {
   testWidgets('the proposal actions stay folded until asked for', (
     WidgetTester tester,
   ) async {
-    // The narrowest phone the app supports. Three status tiles across one row
-    // is where the panel would overflow if a label were allowed to set its own
-    // width.
     await tester.binding.setSurfaceSize(const Size(320, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final List<MatchQuickAction> ran = <MatchQuickAction>[];
-    await tester.pumpWidget(wrap(card(onAction: ran.add)));
+    await tester.pumpWidget(wrap(card(onAction: ran.add, onAdvance: (_) {})));
     await tester.pump();
 
-    // Closed: one line, no buttons. "פעולות" rather than "עדכון סטטוס",
-    // because what is behind it is no longer only the status.
+    // Closed: one line, no buttons.
     expect(find.text('פעולות'), findsOneWidget);
-    expect(find.text('מתחילים לצאת'), findsNothing);
+    expect(find.text('יאללה לקדם'), findsNothing);
 
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    // The three status moves are unchanged, and the rest of what the proposal
-    // screen used to hold is beside them.
-    expect(find.text('העברה להמתנה'), findsOneWidget);
-    expect(find.text('מתחילים לצאת'), findsOneWidget);
-    expect(find.text('סגירת רעיון'), findsOneWidget);
-    expect(find.text('הוספת תזכורת'), findsOneWidget);
-    expect(find.text('הוספת איש קשר שקשור לרעיון'), findsOneWidget);
-    // Not a button: the journal is simply open at the bottom of the panel.
+    // One box: the push, the reminder, the go-between — and no status in it,
+    // because the status is on the card.
+    expect(find.text('יאללה לקדם'), findsOneWidget);
+    expect(find.text('אין תזכורת לרעיון הזה'), findsOneWidget);
+    expect(find.text('איש קשר להעברת ההצעה'), findsOneWidget);
+    expect(find.text('העברה להמתנה'), findsNothing);
     expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('מתחילים לצאת'));
+    await tester.tap(find.text('הוספה').first);
     await tester.pump();
-    expect(ran, <MatchQuickAction>[MatchQuickAction.dating]);
+    await tester.tap(find.text('הוספה').last);
+    await tester.pump();
+    expect(ran, <MatchQuickAction>[
+      MatchQuickAction.reminder,
+      MatchQuickAction.contact,
+    ]);
   });
 
-  testWidgets('a couple already out are not offered "מתחילים לצאת" again', (
+  testWidgets('a couple already out are offered the wedding or the parting', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
@@ -495,7 +508,7 @@ void main() {
       wrap(card(status: MatchStatus.dating, onAction: (_) {})),
     );
     await tester.pump();
-    await tester.tap(find.text('פעולות'));
+    await tester.tap(find.text('יוצאים'));
     await tester.pumpAndSettle();
 
     expect(find.text('מתחילים לצאת'), findsNothing);
@@ -503,41 +516,6 @@ void main() {
     // A couple who stop are "נפרדו", not a proposal being closed.
     expect(find.text('נפרדו'), findsOneWidget);
     expect(find.text('סגירת רעיון'), findsNothing);
-  });
-
-  testWidgets('the status actions are drawn as peers, not a winner', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(390, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(wrap(card(onAction: (_) {})));
-    await tester.pump();
-    await tester.tap(find.text('פעולות'));
-    await tester.pumpAndSettle();
-
-    // "מתחילים לצאת" used to be filled and raised, which read as the status
-    // the proposal was already in rather than one of three things to do.
-    final List<Material> tiles = <Material>[
-      for (final String label in <String>[
-        'העברה להמתנה',
-        'מתחילים לצאת',
-        'סגירת רעיון',
-      ])
-        tester.widget<Material>(
-          find
-              .ancestor(of: find.text(label), matching: find.byType(Material))
-              .first,
-        ),
-    ];
-
-    expect(tiles.map((Material m) => m.elevation), everyElement(0.0));
-    // Same shape and the same weight of tint on all three; only the hue moves.
-    expect(
-      tiles.map((Material m) => m.color!.a).toSet(),
-      hasLength(1),
-      reason: 'all three tiles should carry the same tint strength',
-    );
   });
 
   testWidgets('a candidate with no number is offered nothing at all', (

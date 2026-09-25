@@ -70,7 +70,7 @@ class _MatchJournalViewState extends State<MatchJournalView> {
 
   /// About seven lines of journal, which is as much as a card in a scrolling
   /// list can hold without becoming the list.
-  static const double _compactMaxHeight = 190;
+  static const double _compactMaxHeight = 230;
 
   @override
   void initState() {
@@ -111,14 +111,14 @@ class _MatchJournalViewState extends State<MatchJournalView> {
             children: <Widget>[
               Icon(
                 Icons.forum_outlined,
-                size: 15,
+                size: 17,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'יומן הרעיון',
-                  style: theme.textTheme.labelSmall?.copyWith(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w900,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -172,7 +172,7 @@ class _MatchJournalViewState extends State<MatchJournalView> {
                   minLines: 1,
                   maxLines: 4,
                   textInputAction: TextInputAction.newline,
-                  style: theme.textTheme.bodySmall,
+                  style: theme.textTheme.bodyMedium,
                   decoration: const InputDecoration(
                     hintText: 'מה קרה עם הרעיון?',
                     isDense: true,
@@ -546,14 +546,14 @@ class _JournalLine extends StatelessWidget {
                       if (from != null)
                         TextSpan(
                           text: 'מזל טוב מ$from · ',
-                          style: theme.textTheme.bodySmall?.copyWith(
+                          style: theme.textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w900,
                             color: dot,
                           ),
                         ),
                       TextSpan(
                         text: note.text,
-                        style: theme.textTheme.bodySmall?.copyWith(
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           height: 1.35,
                           fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
                           color: mine
@@ -564,7 +564,7 @@ class _JournalLine extends StatelessWidget {
                       TextSpan(
                         text: '  $timestamp',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: 9,
+                          fontSize: 11,
                           height: 1.35,
                           fontWeight: FontWeight.w400,
                           color: theme.colorScheme.onSurfaceVariant.withValues(

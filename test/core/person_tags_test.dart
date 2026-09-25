@@ -53,9 +53,10 @@ void main() {
 
     test('a city from the matchmaker\'s own database is a place too', () {
       expect(
-        PersonTags.isCommunityShareable('נווה צוף', knownPlaces: <String>[
+        PersonTags.isCommunityShareable(
           'נווה צוף',
-        ]),
+          knownPlaces: <String>['נווה צוף'],
+        ),
         isFalse,
       );
     });

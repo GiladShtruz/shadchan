@@ -13,10 +13,12 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/card_access_sections.dart';
+import 'package:shadchan/utils/home_typography.dart';
+import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
-import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// The card owner's own area: their card, their status, and who may see it.
 ///
@@ -194,124 +196,323 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final Person? card = cards.card;
     final bool matchmaker = WorkspaceStore.matchmakerEnabled;
     final String firstName = profile.firstName ?? '';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('האזור האישי'),
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'הפרופיל שלי',
-            icon: const Icon(Icons.person_outline_rounded),
-            onPressed: () => context.go('/profile'),
-          ),
-        ],
+    // **The personal area speaks the home page's language**: the same paper
+    // cards, the same three type sizes and two inks, the same greeting — so
+    // moving between the two halves of the account never feels like moving
+    // between two apps.
+    return Theme(
+      data: theme.copyWith(
+        textTheme: HomeTypography.scale(theme.textTheme, dark: dark),
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-          children: <Widget>[
-            if (firstName.isNotEmpty) ...<Widget>[
-              Text(
-                'שלום, $firstName',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+      child: Builder(
+        builder: (BuildContext context) => Scaffold(
+          appBar: ShadchanAppBar(
+            title: 'האזור האישי',
+            actions: <Widget>[
+              HomeBarButton(
+                tooltip: 'הפרופיל שלי',
+                icon: const Icon(Icons.person_outline_rounded),
+                onPressed: () => context.go('/profile'),
               ),
-              const SizedBox(height: 14),
             ],
-            if (cards.isDeleted)
-              _RestoreCardPrompt(busy: _restoring, onRestore: _restoreCard)
-            else if (card == null)
-              _CreateCardPrompt(
-                gender: profile.gender,
-                onCreate: () => context.push('/me/card'),
-              )
-            else ...<Widget>[
-              _MyCardSummary(
-                card: card,
-                onEdit: () => context.push('/me/card'),
-              ),
-              const SizedBox(height: 18),
-              SettingsGroup(
-                title: 'הסטטוס שלי',
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        for (final ProfileStatus status in ProfileStatus.values)
-                          ChoiceChip(
-                            label: Text(status.displayName),
-                            selected: card.profileStatus == status,
-                            onSelected: _savingStatus
-                                ? null
-                                : (_) => _setStatus(card, status),
-                          ),
-                      ],
-                    ),
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+              children: <Widget>[
+                HomeGreeting(
+                  greeting: _greetingFor(TimeOfDay.now()),
+                  name: firstName.isEmpty ? 'שלום' : firstName,
+                  line: 'כאן {אתה מנהל|את מנהלת} את הכרטיס האישי שלך'.forGender(
+                    profile.gender,
+                  ),
+                ),
+                // **The way to the matchmaker's side is a card of its own,
+                // right under the greeting** — for somebody who is both, it is
+                // the other half of the account, not a footnote under it.
+                if (matchmaker) ...<Widget>[
+                  const SizedBox(height: 14),
+                  _SwitchAreaCard(onTap: _goToMatchmaker),
+                ],
+                const SizedBox(height: 14),
+                if (cards.isDeleted)
+                  _RestoreCardPrompt(busy: _restoring, onRestore: _restoreCard)
+                else if (card == null)
+                  _CreateCardPrompt(
+                    gender: profile.gender,
+                    onCreate: () => context.push('/me/card'),
+                  )
+                else ...<Widget>[
+                  _MyCardSummary(
+                    card: card,
+                    onEdit: () => context.push('/me/card'),
+                  ),
+                  const SizedBox(height: 14),
+                  _MyStatusCard(
+                    card: card,
+                    saving: _savingStatus,
+                    onSelected: (ProfileStatus status) =>
+                        _setStatus(card, status),
                   ),
                 ],
-              ),
-            ],
-            // Without the user's own number nobody can find the card, so the
-            // question stays here until it is answered.
-            if (profile.myPhone == null)
-              SettingsGroup(
-                title: 'המספר שלי',
-                children: <Widget>[
-                  SettingsRow(
-                    icon: Icons.phone_outlined,
-                    title: 'הוספת המספר שלי',
-                    subtitle:
-                        'בלעדיו חברים שמשדכים לא יוכלו למצוא את הכרטיס שלך',
+                // Without the user's own number nobody can find the card, so
+                // the question stays here until it is answered.
+                if (profile.myPhone == null) ...<Widget>[
+                  const SizedBox(height: 14),
+                  HomePaperCard(
+                    stripe: dark
+                        ? AppColors.secondaryDarkDm
+                        : AppColors.secondary,
                     onTap: () async {
                       final String? phone = await MyPhoneDialog.show(context);
                       if (phone != null) {
                         await profile.setMyPhone(phone);
                       }
                     },
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.phone_outlined, size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'הוספת המספר שלי',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                'בלעדיו חברים שמשדכים לא יוכלו למצוא את '
+                                'הכרטיס שלך',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded),
+                      ],
+                    ),
                   ),
                 ],
+                const SizedBox(height: 6),
+                // Status reports, requests, who can see the card, friends who
+                // could, and anybody blocked — all decided on the server.
+                if (!cards.isDeleted)
+                  CardAccessSections(hasCard: cards.hasCard),
+                // A secondary action, quiet and at the very end.
+                if (cards.hasCard) ...<Widget>[
+                  const SizedBox(height: 20),
+                  Center(
+                    child: _deleting
+                        ? const SizedBox.square(
+                            dimension: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : TextButton(
+                            onPressed: _deleteCard,
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.mutedInk,
+                            ),
+                            child: const Text('מחיקת הכרטיס שלי'),
+                          ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _greetingFor(TimeOfDay now) {
+    final int hour = now.hour;
+    if (hour >= 5 && hour < 12) {
+      return 'בוקר טוב';
+    }
+    if (hour >= 12 && hour < 17) {
+      return 'צהריים טובים';
+    }
+    if (hour >= 17 && hour < 21) {
+      return 'ערב טוב';
+    }
+    return 'לילה טוב';
+  }
+}
+
+/// "לעבור לאזור השדכן" — a whole card, near the top, for somebody who is also a
+/// matchmaker.
+class _SwitchAreaCard extends StatelessWidget {
+  const _SwitchAreaCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color ink = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+
+    return HomePaperCard(
+      stripe: ink,
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: ink.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(Icons.swap_horiz_rounded, color: ink),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'מעבר לאזור השדכן',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  'המאגר, הרעיונות והלוח שלך',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, color: ink),
+        ],
+      ),
+    );
+  }
+}
+
+/// "הסטטוס שלי" — three answers, and only three: פנוי, תפוס, בהפסקה.
+///
+/// "מזל טוב" is not one of them. It is news a matchmaker marks on their own
+/// side, and asking somebody to set it on their own card was a fourth button
+/// for a question nobody reaches for.
+class _MyStatusCard extends StatelessWidget {
+  const _MyStatusCard({
+    required this.card,
+    required this.saving,
+    required this.onSelected,
+  });
+
+  final Person card;
+  final bool saving;
+  final ValueChanged<ProfileStatus> onSelected;
+
+  static const List<ProfileStatus> choices = <ProfileStatus>[
+    ProfileStatus.available,
+    ProfileStatus.busy,
+    ProfileStatus.onBreak,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return HomePaperCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'הסטטוס שלי',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              for (final ProfileStatus status in choices) ...<Widget>[
+                Expanded(
+                  child: _StatusOption(
+                    status: status,
+                    gender: card.gender,
+                    selected: card.profileStatus == status,
+                    onTap: saving ? null : () => onSelected(status),
+                  ),
+                ),
+                if (status != choices.last) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusOption extends StatelessWidget {
+  const _StatusOption({
+    required this.status,
+    required this.gender,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ProfileStatus status;
+  final Gender gender;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = AppColors.profileStatusDotColor(status);
+    return Material(
+      color: selected ? color.withValues(alpha: 0.12) : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? color.withValues(alpha: 0.7)
+                  : theme.colorScheme.outlineVariant,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-            // Status reports, requests, who can see the card, friends who
-            // could, and anybody blocked — all decided on the server.
-            if (!cards.isDeleted) CardAccessSections(hasCard: cards.hasCard),
-            if (matchmaker) ...<Widget>[
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _goToMatchmaker,
-                icon: const Icon(Icons.swap_horiz_rounded),
-                label: const Text('לעבור לאזור השדכן'),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  status.displayNameFor(gender),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  ),
+                ),
               ),
             ],
-            // A secondary action, quiet and at the very end.
-            if (cards.hasCard) ...<Widget>[
-              const SizedBox(height: 20),
-              Center(
-                child: _deleting
-                    ? const SizedBox.square(
-                        dimension: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : TextButton(
-                        onPressed: _deleteCard,
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.mutedInk,
-                        ),
-                        child: const Text('מחיקת הכרטיס שלי'),
-                      ),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );

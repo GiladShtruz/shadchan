@@ -78,10 +78,7 @@ void main() {
     expect(find.text('הוספת חברים'), findsOneWidget);
     expect(find.text('הוספת רעיון'), findsOneWidget);
 
-    // **The two cards are exactly the same size.** They were split 13:9 while
-    // the database was small, which made the pair read as one card and its
-    // afterthought; adding friends leads by colour and by shadow now. Both sit
-    // in one row, level with each other.
+    // Unemphasised, the two cards are exactly the same size, side by side.
     final double addPeople = tester
         .getSize(
           find
@@ -103,23 +100,28 @@ void main() {
         )
         .width;
     expect(addPeople, closeTo(addIdea, 0.5));
-    // The chevron beside each label is a plain mark, not the round
-    // [HomeArrowButton] the banners use — the whole card is the button, so a
-    // second button drawn inside it would be a target within a target.
+    // Low: the icon beside the label rather than above it, so the pair takes
+    // a strip of the page rather than a block of it.
+    expect(
+      tester
+          .getSize(
+            find
+                .ancestor(
+                  of: find.text('הוספת חברים'),
+                  matching: find.byType(AnimatedContainer),
+                )
+                .first,
+          )
+          .height,
+      lessThan(80),
+    );
+    // The whole card is the button: no arrow drawn inside it.
     expect(
       find.descendant(
         of: find.byType(HomeActionCards),
         matching: find.byType(HomeArrowButton),
       ),
       findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(HomeActionCards),
-        // `chevron_right` is the one that draws pointing left in RTL.
-        matching: find.byIcon(Icons.chevron_right_rounded),
-      ),
-      findsNWidgets(2),
     );
     final double peopleTop = tester.getTopLeft(find.text('הוספת חברים')).dy;
     final double ideaTop = tester.getTopLeft(find.text('הוספת רעיון')).dy;
@@ -157,8 +159,8 @@ void main() {
         'assets/add_idea_art.png',
       ]);
 
-      // The drawings are hand-drawn and already coloured: shown as they are,
-      // never recoloured through [HomeLineArt].
+      // The drawings keep their hand-drawn line: recoloured into the palette
+      // by luminance (see `artTint`), never flattened through [HomeLineArt].
       expect(
         find.descendant(
           of: find.byType(HomeActionCards),
@@ -185,8 +187,6 @@ void main() {
           HomeActionCards(
             onAddPeople: () {},
             onAddIdea: () {},
-            // Even the emphasised card is plain paper: emphasis is the shadow
-            // under it and nothing else.
             emphasiseAddPeople: true,
           ),
         ),
@@ -207,7 +207,9 @@ void main() {
         return (card.decoration as BoxDecoration?)?.color;
       }
 
-      expect(cardFor('הוספת חברים'), AppColors.surface);
+      // Adding friends leads: a faint wash of its own blue. The idea card is
+      // plain paper.
+      expect(cardFor('הוספת חברים'), isNot(AppColors.surface));
       expect(cardFor('הוספת רעיון'), AppColors.surface);
 
       // The colour is all in the rule: the palette's light blue for friends,

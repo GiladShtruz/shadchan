@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
-import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// Warns before a matchmaker edits a card that follows its owner. Opening the
@@ -141,70 +139,13 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
     }
   }
 
-  Future<void> _request(CardAccessProvider access, String ownerUid) async {
-    final UserProfileProvider profile = context.read<UserProfileProvider>();
-    if (profile.myPhone == null) {
-      final String? phone = await MyPhoneDialog.show(context);
-      if (phone == null || !mounted) {
-        return;
-      }
-      await profile.setMyPhone(phone);
-    }
-    if (!mounted) {
-      return;
-    }
-    // The request is checked against the number this account published; make
-    // sure it has been published before asking.
-    await PersonalCardSync.run(
-      cards: context.read<PersonalCardProvider>(),
-      profile: profile,
-    );
-    final CardRequestOutcome outcome = await access.request(
+  Future<void> _request(String ownerUid) async {
+    await CardInviteFlow.requestAccess(
+      context,
+      widget.person,
       ownerUid: ownerUid,
-      ownerName: widget.person.fullName,
       ownerPhoneHash: _lookedUpHash ?? '',
-      matchmakerName: profile.fullName ?? '',
     );
-    if (!mounted) {
-      return;
-    }
-    switch (outcome) {
-      case CardRequestOutcome.sent:
-        AppNotice.show(context, 'הבקשה נשלחה');
-      case CardRequestOutcome.notAllowed:
-        final bool female = widget.person.gender == Gender.female;
-        AppNotice.show(
-          context,
-          'אפשר לבקש גישה רק אם ${widget.person.firstName.trim()} '
-          '${female ? 'שמרה' : 'שמר'} את המספר שלך באנשי הקשר',
-          duration: const Duration(seconds: 4),
-        );
-      case CardRequestOutcome.failed:
-        AppNotice.show(context, 'לא הצלחנו לשלוח את הבקשה. אפשר לנסות שוב.');
-    }
-  }
-
-  Future<void> _invite(CardAccessProvider access) async {
-    final String name = widget.person.firstName.trim();
-    final String myName = context.read<UserProfileProvider>().fullName ?? '';
-    final Uri link =
-        Uri.https('shadchan-gilad.web.app', '/join', <String, String>{
-          if (access.uid != null) 'from': access.uid!,
-          if (myName.isNotEmpty) 'name': myName,
-        });
-    final bool female = widget.person.gender == Gender.female;
-    final String me = '{משתמש|משתמשת}'.forGender(context.userGender);
-    final String message =
-        'היי $name! אני $me באפליקציית שדכן כדי לחשוב על שידוכים לחברים. '
-        'אפשר למלא בה כרטיס אישי ש${female ? 'רק את מנהלת ומעדכנת' : 'רק אתה מנהל ומעדכן'}, '
-        'ולתת גישה רק לחברים ש${female ? 'את בוחרת' : 'אתה בוחר'}: $link';
-    final bool opened = await WhatsAppUtils.openChatWithText(
-      widget.person.phone,
-      message,
-    );
-    if (!opened && mounted) {
-      AppNotice.show(context, 'אין מספר וואטסאפ תקין לחבר הזה');
-    }
   }
 
   Future<void> _resume(PersonRepository people) async {
@@ -272,7 +213,12 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
       final Object? ownerUid = _entry?['uid'];
       final bool hasCard = _entry?['hasCard'] == true && ownerUid is String;
       if (!hasCard) {
-        if (PhoneIdentity.hash(person.phone) == null) {
+        // A friend with no card of their own is invited from the card section
+        // under this panel, when the matchmaker has no card for them either.
+        // Only a friend whose card was written here by hand is invited from
+        // this panel — so the invitation is offered once, never twice.
+        if (PhoneIdentity.hash(person.phone) == null ||
+            (person.description ?? '').trim().isEmpty) {
           return const SizedBox.shrink();
         }
         body = Row(
@@ -284,10 +230,8 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
               ),
             ),
             TextButton(
-              onPressed: () => _invite(access),
-              child: Text(
-                'להזמין {אותו|אותה} למלא כרטיס'.forGender(person.gender),
-              ),
+              onPressed: () => CardInviteFlow.invite(context, person),
+              child: const Text('להזמין למלא כרטיס'),
             ),
           ],
         );
@@ -332,12 +276,12 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : FilledButton.tonalIcon(
-                        onPressed: () => _request(access, ownerUid),
+                        onPressed: () => _request(ownerUid),
                         icon: const Icon(Icons.lock_open_rounded, size: 18),
                         label: Text(
                           row?.status == CardAccessStatus.declined
                               ? 'לבקש שוב'
-                              : 'לבקש גישה לכרטיס',
+                              : 'בקשת גישה לכרטיס',
                         ),
                       ),
               ],

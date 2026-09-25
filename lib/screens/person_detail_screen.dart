@@ -20,6 +20,7 @@ import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/card_link_panel.dart';
 import 'package:shadchan/widgets/candidate_card_view.dart';
 import 'package:shadchan/widgets/extended_filter_toggle.dart';
@@ -30,12 +31,12 @@ import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/delete_person_dialog.dart';
-import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -68,26 +69,30 @@ Future<void> openSuggestionsFor(BuildContext context, String personId) {
 /// Reachable from the profile's own menu and from the add-friends flow, where
 /// choosing "לעדכון פרטים מלאים" continues straight into the full card instead
 /// of settling for the four quick fields.
-Future<void> openExtendedPersonEditor(
+///
+/// Returns false when a new friend was left without being saved — the card
+/// editor then threw the record away — and true otherwise.
+Future<bool> openExtendedPersonEditor(
   BuildContext context,
   String personId, {
   bool isNewFriend = false,
 }) async {
   final Person? person = context.read<PersonRepository>().getById(personId);
   if (person != null && !await confirmEditSyncedCard(context, person)) {
-    return;
+    return true;
   }
   if (!context.mounted) {
-    return;
+    return true;
   }
-  await Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
+  final bool? kept = await Navigator.of(context).push<bool>(
+    MaterialPageRoute<bool>(
       builder: (BuildContext context) => PersonExtendedEditScreen(
         personId: personId,
         isNewFriend: isNewFriend,
       ),
     ),
   );
+  return kept ?? true;
 }
 
 /// The same view, raised as a sheet over the list it was opened from.
@@ -123,10 +128,16 @@ class PersonDetailScreen extends StatefulWidget {
     super.key,
     required this.personId,
     this.initiallyEditing = false,
+    this.focus,
   });
 
   final String personId;
   final bool initiallyEditing;
+
+  /// Where to open: `card` (the full card, expanded), `notes`, or `details`.
+  /// Set by a home-search result, so the profile opens on the words that
+  /// were found.
+  final String? focus;
 
   @override
   State<PersonDetailScreen> createState() => _PersonDetailScreenState();
@@ -148,12 +159,34 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     FirstVisitTopic.friendProfile,
   );
 
+  final GlobalKey _cardSectionKey = GlobalKey();
+  final GlobalKey _notesSectionKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
     if (widget.initiallyEditing) {
       _editingDetails = true;
+    }
+    final String? focus = widget.focus;
+    if (focus == 'card') {
+      _showFullCard = true;
+    }
+    if (focus == 'card' || focus == 'notes') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final BuildContext? target =
+            (focus == 'card' ? _cardSectionKey : _notesSectionKey)
+                .currentContext;
+        if (target != null && target.mounted) {
+          Scrollable.ensureVisible(
+            target,
+            alignment: 0.05,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
     }
   }
 
@@ -225,7 +258,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final List<PersonNote> personNotes = personRepository.getNotesForPerson(
       person.id,
     );
-    final List<PersonEvent> personEvents = personRepository.getEventsForPerson(
+    final List<PersonEvent> personEvents = personRepository.getHistoryForPerson(
       person.id,
     );
 
@@ -257,7 +290,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               person,
               origin: ShareUtils.originOf(context),
             ),
-            icon: const Icon(Icons.share_outlined),
+            icon: const Icon(Icons.ios_share_rounded),
             tooltip: 'שיתוף כרטיס',
           ),
           PopupMenuButton<String>(
@@ -429,14 +462,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   ),
                 ),
               _WhatsAppCardSection(
+                key: _cardSectionKey,
                 person: person,
                 editing: _editingFullCard,
                 expanded: _showFullCard,
                 onToggleFull: () {
                   setState(() => _showFullCard = !_showFullCard);
                 },
-                onRequestDetails: () => _requestDetails(context, person),
-                onEditMessage: () => _editDetailsMessage(context, person),
                 onEditCard: () async {
                   if (!await confirmEditSyncedCard(context, person)) {
                     return;
@@ -455,9 +487,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               if (inquiry == null || person.proposalContacts.length > 1)
                 _ProposalContactsCard(person: person),
               _PersonalNotesCard(
+                key: _notesSectionKey,
                 person: person,
                 notes: personNotes,
                 onShowAll: () => _openPersonNotes(context, person),
+                onOpenVoice: (String noteId) =>
+                    _openPersonNotes(context, person, focusNoteId: noteId),
               ),
               _IdeasSection(
                 person: person,
@@ -540,61 +575,20 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     }
   }
 
-  /// Opens WhatsApp with the request-details message pre-filled, and records
-  /// the outreach on the person's "last updated" stamp.
-  Future<void> _requestDetails(BuildContext context, Person person) async {
-    if (PhoneUtils.toWhatsAppNumber(person.phone) == null) {
-      _showSnackBar(context, 'אין מספר טלפון תקין לאיש הקשר');
-      return;
-    }
-
-    final PersonRepository personRepository = context.read<PersonRepository>();
-    // Persist while the Flutter route is still fully active. Updating the
-    // provider after returning from an external-app transition could rebuild
-    // the root Navigator while its overlay was being deactivated.
-    await personRepository.touch(person.id);
-    if (!context.mounted) {
-      return;
-    }
-
-    final bool launched = await WhatsAppUtils.openDetailsRequest(person);
-    if (!launched && context.mounted) {
-      _showSnackBar(context, 'לא הצלחנו לפתוח את WhatsApp');
-    }
-  }
-
-  /// A small editor for the fixed request-details wording. Saving overrides the
-  /// gendered default for everyone; clearing restores the default.
-  Future<void> _editDetailsMessage(BuildContext context, Person person) async {
-    final String? result = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) => DetailsMessageDialog(
-        initialMessage: WhatsAppUtils.currentDetailsRequestMessage(
-          person.gender,
-        ),
-        showReset: WhatsAppUtils.hasCustomDetailsRequestMessage(),
-      ),
-    );
-
-    if (result == null) {
-      return;
-    }
-    if (result == '__reset__') {
-      await WhatsAppUtils.resetDetailsRequestMessage();
-      return;
-    }
-    if (result.isNotEmpty) {
-      await WhatsAppUtils.saveDetailsRequestMessage(result);
-    }
-  }
-
-  Future<void> _openPersonNotes(BuildContext context, Person person) async {
+  Future<void> _openPersonNotes(
+    BuildContext context,
+    Person person, {
+    String? focusNoteId,
+  }) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (BuildContext context) {
           return ProfilePersonAccent(
             gender: person.gender,
-            child: _PersonNotesPage(personId: person.id),
+            child: _PersonNotesPage(
+              personId: person.id,
+              focusNoteId: focusNoteId,
+            ),
           );
         },
       ),
@@ -1413,7 +1407,7 @@ MatchContact? _inquiryContactFor(Person person, List<MatchIdea> matches) {
   return null;
 }
 
-/// "לבירורים: רבקה כהן" with a WhatsApp button beside the name.
+/// "איש קשר להעברת ההצעה: רבקה כהן" with a WhatsApp button beside the name.
 class _InquiryLine extends StatelessWidget {
   const _InquiryLine({required this.contact});
 
@@ -1432,7 +1426,7 @@ class _InquiryLine extends StatelessWidget {
         children: <Widget>[
           Flexible(
             child: Text(
-              'לבירורים: $name',
+              'להעברת ההצעה: $name',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -1668,10 +1662,17 @@ class _ProposalContactsCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'איש קשר להעברת הצעות',
+              'איש קשר להעברת ההצעה',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: _profileTextColor(theme),
+              ),
+            ),
+            Text(
+              'מישהו שמכיר ${person.gender == Gender.female ? 'אותה' : 'אותו'} '
+              'אישית ויכול לחבר ביניכם',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _profileMutedColor(theme),
               ),
             ),
             const SizedBox(height: 4),
@@ -1711,14 +1712,19 @@ class _ProposalContactsCard extends StatelessWidget {
 
 class _PersonalNotesCard extends StatelessWidget {
   const _PersonalNotesCard({
+    super.key,
     required this.person,
     required this.notes,
     required this.onShowAll,
+    required this.onOpenVoice,
   });
 
   final Person person;
   final List<PersonNote> notes;
   final VoidCallback onShowAll;
+
+  /// Opens the notes page on one recording, scrolled to it.
+  final ValueChanged<String> onOpenVoice;
 
   static const int _previewCount = 5;
 
@@ -1787,6 +1793,30 @@ class _PersonalNotesCard extends StatelessWidget {
                 ),
               ],
             ),
+            // A recording that already exists is nearly always sitting in a
+            // WhatsApp chat with this friend. One tap there, and the share
+            // sheet brings it back here.
+            if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: () => _shareVoiceFromWhatsApp(context, person),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    foregroundColor: muted,
+                    textStyle: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  icon: const FaIcon(
+                    FontAwesomeIcons.whatsapp,
+                    size: 14,
+                    color: _whatsappGreen,
+                  ),
+                  label: const Text('שתף ושמור הקלטה קיימת מ־WhatsApp'),
+                ),
+              ),
             if (entries.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
@@ -1803,7 +1833,14 @@ class _PersonalNotesCard extends StatelessWidget {
               for (final _PersonNoteEntry entry in preview)
                 _NotePreviewRow(
                   entry: entry,
-                  onTap: () => _editNote(context, entry),
+                  onTap: () => entry.isVoice && entry.noteId != null
+                      ? onOpenVoice(entry.noteId!)
+                      : _showNoteReader(context, person, entry),
+                  // Deleting a recording is a long press and nothing else — a
+                  // tap on a row is for listening, never for losing it.
+                  onLongPress: entry.isVoice
+                      ? () => _confirmDeleteVoice(context, entry)
+                      : null,
                 ),
             if (entries.length > _previewCount)
               Align(
@@ -1866,92 +1903,6 @@ class _PersonalNotesCard extends StatelessWidget {
     await repository.addNote(person.id, trimmed);
   }
 
-  Future<void> _editNote(BuildContext context, _PersonNoteEntry entry) async {
-    if (entry.isAutomatic) {
-      // Automatic notes are a log line, not something the user hand-edits.
-      return;
-    }
-    final PersonRepository repository = context.read<PersonRepository>();
-    if (entry.isVoice) {
-      final bool confirmed = await ConfirmDialog.show(
-        context,
-        title: 'מחיקת הקלטה',
-        message: 'למחוק את ההערה הקולית?',
-        confirmText: 'מחיקה',
-        isDestructive: true,
-      );
-      if (confirmed && entry.noteId != null) {
-        await repository.deleteNote(entry.noteId!);
-      }
-      return;
-    }
-    final _NoteEditResult? result = await showDialog<_NoteEditResult>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final TextEditingController controller = TextEditingController(
-          text: entry.text,
-        );
-        return AlertDialog(
-          title: const Text('עריכת הערה'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 2,
-            maxLines: 6,
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(
-                dialogContext,
-              ).pop(const _NoteEditResult.delete()),
-              child: Text(
-                'מחיקה',
-                style: TextStyle(
-                  color: Theme.of(dialogContext).colorScheme.error,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(
-                dialogContext,
-              ).pop(_NoteEditResult.save(controller.text.trim())),
-              child: const Text('שמירה'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result == null) {
-      return;
-    }
-
-    if (result.delete) {
-      if (entry.noteId != null) {
-        await repository.deleteNote(entry.noteId!);
-      } else {
-        person.notes = null;
-        await repository.update(person);
-      }
-      return;
-    }
-
-    final String trimmed = result.text.trim();
-    if (trimmed.isEmpty || trimmed == entry.text) {
-      return;
-    }
-    if (entry.noteId != null) {
-      await repository.updateNote(entry.noteId!, trimmed);
-    } else {
-      person.notes = trimmed;
-      await repository.update(person);
-    }
-  }
-
   Future<String?> _promptNoteText(
     BuildContext context, {
     required String title,
@@ -1986,6 +1937,240 @@ class _PersonalNotesCard extends StatelessWidget {
   }
 }
 
+/// The first [count] words of [text], with an ellipsis when there is more.
+String _firstWords(String text, int count) {
+  final List<String> words = text
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((String w) => w.isNotEmpty)
+      .toList();
+  if (words.length <= count) {
+    return text.trim();
+  }
+  return '${words.take(count).join(' ')}…';
+}
+
+/// Opens WhatsApp on this friend's chat, where the recording already is,
+/// after one line saying what to do there.
+Future<void> _shareVoiceFromWhatsApp(
+  BuildContext context,
+  Person person,
+) async {
+  final bool? go = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) => AlertDialog(
+      title: const Text('שמירת הקלטה מ־WhatsApp'),
+      content: const Text(
+        'בצ׳אט: לחיצה ארוכה על ההקלטה ← שיתוף ← שדכן. ההקלטה תישמר '
+        'בהערות של החבר.',
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('ביטול'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
+          label: const Text('לצ׳אט'),
+        ),
+      ],
+    ),
+  );
+  if (go != true) {
+    return;
+  }
+  final bool opened = await WhatsAppUtils.openChatWithPhone(person.phone);
+  if (!opened && context.mounted) {
+    AppNotice.show(context, 'לא הצלחנו לפתוח את וואטסאפ');
+  }
+}
+
+/// Asks, then deletes one recording. Only ever reached by a long press.
+Future<void> _confirmDeleteVoice(
+  BuildContext context,
+  _PersonNoteEntry entry,
+) async {
+  final String? id = entry.noteId;
+  if (id == null) {
+    return;
+  }
+  final PersonRepository repository = context.read<PersonRepository>();
+  final bool confirmed = await ConfirmDialog.show(
+    context,
+    title: 'מחיקת הקלטה',
+    message: 'למחוק את ההקלטה?',
+    confirmText: 'מחיקה',
+    isDestructive: true,
+  );
+  if (confirmed) {
+    await repository.deleteNote(id);
+  }
+}
+
+/// One note, large and quiet, to be read rather than edited.
+///
+/// **A tap on a note reads it.** It used to open straight into a small
+/// scrolling dialog already in edit mode, so reading a long note meant
+/// scrolling a text field with the keyboard up and a cursor in it. Now the
+/// whole note is laid out at a comfortable size, and editing is one small
+/// pencil in the corner.
+Future<void> _showNoteReader(
+  BuildContext context,
+  Person person,
+  _PersonNoteEntry entry,
+) {
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      final ThemeData theme = Theme.of(dialogContext);
+      return Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+        backgroundColor: _profileSurfaceColor(theme),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.8,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 8, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        DateFormat(
+                          'dd.MM.yyyy · HH:mm',
+                        ).format(entry.createdAt),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: _profileMutedColor(theme),
+                        ),
+                      ),
+                    ),
+                    if (!entry.isAutomatic)
+                      IconButton(
+                        tooltip: 'עריכת ההערה',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        color: _profileMutedColor(theme),
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () async {
+                          Navigator.of(dialogContext).pop();
+                          await _editPersonNote(context, person, entry);
+                        },
+                      ),
+                    IconButton(
+                      tooltip: 'סגירה',
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 20,
+                      color: _profileMutedColor(theme),
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsetsDirectional.only(end: 12),
+                    child: SelectableText(
+                      entry.text,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontSize: 18,
+                        height: 1.65,
+                        color: _profileTextColor(theme),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// The note's editor: the text, "שמירה", and the way to delete it.
+Future<void> _editPersonNote(
+  BuildContext context,
+  Person person,
+  _PersonNoteEntry entry,
+) async {
+  if (entry.isAutomatic || entry.isVoice) {
+    // Automatic notes are a log line, not something the user hand-edits.
+    return;
+  }
+  final PersonRepository repository = context.read<PersonRepository>();
+  final _NoteEditResult? result = await showDialog<_NoteEditResult>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      final TextEditingController controller = TextEditingController(
+        text: entry.text,
+      );
+      return AlertDialog(
+        title: const Text('עריכת הערה'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 6,
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(const _NoteEditResult.delete()),
+            child: Text(
+              'מחיקה',
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('ביטול'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(_NoteEditResult.save(controller.text.trim())),
+            child: const Text('שמירה'),
+          ),
+        ],
+      );
+    },
+  );
+
+  if (result == null) {
+    return;
+  }
+
+  if (result.delete) {
+    if (entry.noteId != null) {
+      await repository.deleteNote(entry.noteId!);
+    } else {
+      person.notes = null;
+      await repository.update(person);
+    }
+    return;
+  }
+
+  final String trimmed = result.text.trim();
+  if (trimmed.isEmpty || trimmed == entry.text) {
+    return;
+  }
+  if (entry.noteId != null) {
+    await repository.updateNote(entry.noteId!, trimmed);
+  } else {
+    person.notes = trimmed;
+    await repository.update(person);
+  }
+}
+
 /// Result of the inline note editor: either a saved text or a delete request.
 class _NoteEditResult {
   const _NoteEditResult.save(this.text) : delete = false;
@@ -1995,20 +2180,31 @@ class _NoteEditResult {
   final bool delete;
 }
 
-/// A single compact note item in the inline preview.
+/// A single compact note item in the inline preview: the first twenty words
+/// of a written note, or a recording with its caption.
 class _NotePreviewRow extends StatelessWidget {
-  const _NotePreviewRow({required this.entry, required this.onTap});
+  const _NotePreviewRow({
+    required this.entry,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   final _PersonNoteEntry entry;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  /// How much of a written note the profile shows before the tap.
+  static const int previewWords = 20;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color muted = _profileMutedColor(theme);
+    final String caption = entry.text.trim();
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(10),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -2030,18 +2226,33 @@ class _NotePreviewRow extends StatelessWidget {
             const SizedBox(width: 10),
             if (entry.isVoice)
               Expanded(
-                child: VoiceNotePlayer(
-                  fileName: entry.audioFile!,
-                  durationMs: entry.audioDurationMs,
-                  compact: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    VoiceNotePlayer(
+                      fileName: entry.audioFile!,
+                      durationMs: entry.audioDurationMs,
+                      compact: true,
+                    ),
+                    if (caption.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          caption,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: muted,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               )
             else
               Expanded(
                 child: Text(
-                  entry.text,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  _firstWords(entry.text, previewWords),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: entry.isAutomatic ? muted : _profileTextColor(theme),
                     fontStyle: entry.isAutomatic
@@ -2095,6 +2306,9 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
       dark: Theme.of(context).brightness == Brightness.dark,
     );
 
+    // **The word and a small arrow, nothing drawn round them.** It was a
+    // tinted, framed pill — one more box on a page of boxes — for what is a
+    // single word the matchmaker can tap to change.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
@@ -2102,15 +2316,18 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
           borderRadius: BorderRadius.circular(999),
           onTap: () => setState(() => _expanded = !_expanded),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                ProfileStatusTag(status: widget.status, gender: widget.gender),
-                const SizedBox(width: 3),
+                _StatusWord(status: widget.status, gender: widget.gender),
+                const SizedBox(width: 2),
+                // After the word, which in RTL is its left.
                 Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 17,
+                  _expanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
                   color: statusColor,
                 ),
               ],
@@ -2136,7 +2353,7 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
                           horizontal: 2,
                           vertical: 2,
                         ),
-                        child: ProfileStatusTag(
+                        child: _StatusWord(
                           status: status,
                           gender: widget.gender,
                         ),
@@ -2156,16 +2373,37 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
   }
 }
 
+/// "פנויה" / "תפוס" / "בהפסקה" — the word alone, in the state's own colour
+/// and the person's own grammatical gender, exactly as the idea cards write it.
+class _StatusWord extends StatelessWidget {
+  const _StatusWord({required this.status, required this.gender});
+
+  final ProfileStatus status;
+  final Gender gender;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Text(
+      status.displayNameFor(gender),
+      maxLines: 1,
+      style: theme.textTheme.bodyMedium?.copyWith(
+        fontWeight: FontWeight.w800,
+        color: AppColors.profileStatusColor(status),
+      ),
+    );
+  }
+}
+
 /// Inline preview of the person's send-card. Its quick edit mode keeps this
 /// exact surface in place and swaps only the text for an editor.
 class _WhatsAppCardSection extends StatefulWidget {
   const _WhatsAppCardSection({
+    super.key,
     required this.person,
     required this.editing,
     required this.expanded,
     required this.onToggleFull,
-    required this.onRequestDetails,
-    required this.onEditMessage,
     required this.onEditCard,
     required this.onEditingDone,
   });
@@ -2174,8 +2412,6 @@ class _WhatsAppCardSection extends StatefulWidget {
   final bool editing;
   final bool expanded;
   final VoidCallback onToggleFull;
-  final VoidCallback onRequestDetails;
-  final VoidCallback onEditMessage;
   final VoidCallback onEditCard;
   final VoidCallback onEditingDone;
 
@@ -2332,48 +2568,13 @@ class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: widget.onRequestDetails,
-                            icon: const FaIcon(
-                              FontAwesomeIcons.whatsapp,
-                              size: 16,
-                            ),
-                            label: const Text(
-                              'בקש פרטים ב-WhatsApp',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _profileTextColor(theme),
-                              side: BorderSide(
-                                color: _profileMutedColor(
-                                  theme,
-                                ).withValues(alpha: 0.2),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                          ),
-                        ),
-                        // A pencil beside the button reads as "edit this
-                        // person's message"; it is the app-wide wording that is
-                        // being changed, so it is a quiet line of its own.
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: TextButton(
-                            onPressed: widget.onEditMessage,
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              foregroundColor: _profileMutedColor(theme),
-                              textStyle: theme.textTheme.bodySmall,
-                            ),
-                            child: const Text('לעריכת ההודעה'),
-                          ),
+                        // One action where there used to be two: the
+                        // invitation to write a card of their own. A friend who
+                        // already keeps one is offered access instead, by the
+                        // card panel above — see [CardInviteFlow].
+                        CardInviteButton(
+                          person: widget.person,
+                          onlyInvite: true,
                         ),
                       ],
                     ),
@@ -2599,6 +2800,7 @@ class _IdeasSectionState extends State<_IdeasSection> {
                 for (int index = 0; index < shown.length; index++) ...<Widget>[
                   _IdeaRow(
                     match: shown[index],
+                    person: widget.person,
                     otherPerson: widget.personRepository.getById(
                       shown[index].personAId == widget.person.id
                           ? shown[index].personBId
@@ -2741,10 +2943,17 @@ class _IdeaExpander extends StatelessWidget {
 /// One compact idea row: the other side, where the idea stands, and a single
 /// WhatsApp shortcut for that other side.
 class _IdeaRow extends StatelessWidget {
-  const _IdeaRow({required this.match, required this.otherPerson});
+  const _IdeaRow({
+    required this.match,
+    required this.otherPerson,
+    required this.person,
+  });
 
   final MatchIdea match;
   final Person? otherPerson;
+
+  /// Whose profile this is — the other half of the idea.
+  final Person person;
 
   @override
   Widget build(BuildContext context) {
@@ -2752,6 +2961,14 @@ class _IdeaRow extends StatelessWidget {
     final String otherName = otherPerson?.fullName.trim().isNotEmpty == true
         ? otherPerson!.fullName.trim()
         : 'אדם נמחק';
+    final Person? other = otherPerson;
+    // Both cards together, for an idea that is still open and has at least one
+    // card worth sending.
+    final bool canShareBoth =
+        !match.status.isArchived &&
+        other != null &&
+        (ShareUtils.hasShareableCard(person) ||
+            ShareUtils.hasShareableCard(other));
 
     return Material(
       color: Colors.transparent,
@@ -2775,6 +2992,25 @@ class _IdeaRow extends StatelessWidget {
               const SizedBox(width: 8),
               _StatusChip(status: match.status),
               const SizedBox(width: 4),
+              if (canShareBoth)
+                Builder(
+                  builder: (BuildContext buttonContext) => IconButton(
+                    tooltip: 'שיתוף שני הכרטיסים',
+                    iconSize: 18,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 38,
+                      height: 38,
+                    ),
+                    padding: EdgeInsets.zero,
+                    color: _profileMutedColor(theme),
+                    icon: const Icon(Icons.ios_share_rounded),
+                    onPressed: () => ShareUtils.shareCouple(
+                      person,
+                      other,
+                      origin: ShareUtils.originOf(buttonContext),
+                    ),
+                  ),
+                ),
               if (otherPerson != null)
                 ContactChannelButton(
                   person: otherPerson!,
@@ -2873,7 +3109,7 @@ abstract final class _MatchPreviewSheet {
                     children: <Widget>[
                       Expanded(
                         child: Text(
-                          showOpenIdeaAction ? 'הוספת רעיון' : 'השוואת כרטיסים',
+                          'השוואת כרטיסים',
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: _profileTextColor(theme),
                             fontWeight: FontWeight.w800,
@@ -3058,6 +3294,13 @@ class _MatchPreviewHalf extends StatelessWidget {
                 height: 1.5,
               ),
             ),
+            if (description.isEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: CardInviteButton(person: person, dense: true),
+              ),
+            ],
           ],
         ),
       ),
@@ -3358,6 +3601,9 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
         !filters.maritalStatuses.contains(candidate.maritalStatus)) {
       return false;
     }
+    if (!MatchProposalFilters.matchesRegion(candidate, filters)) {
+      return false;
+    }
 
     return true;
   }
@@ -3425,6 +3671,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
       minHeight: preferences.minHeightCm,
       maxHeight: preferences.maxHeightCm,
       maritalStatuses: preferences.maritalStatuses,
+      regions: preferences.regions,
       religiousLevels: preferences.religiousLevels,
       religiousLevelOtherLabels: preferences.religiousLevelOtherLabels,
       profileStatuses: const <ProfileStatus>[],
@@ -3793,6 +4040,21 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
   /// Candidates whose quick-view card is currently expanded inline.
   final Set<String> _expandedIds = <String>{};
 
+  /// Where each card-less candidate stands with a card of their own, worked
+  /// out once per visit — see [CardInviteFlow].
+  final Map<String, Future<CardInviteState>> _inviteStates =
+      <String, Future<CardInviteState>>{};
+
+  Future<CardInviteState> _inviteStateFor(Person candidate) {
+    return _inviteStates.putIfAbsent(
+      candidate.id,
+      () => CardInviteFlow.stateFor(
+        context.read<CardAccessProvider>(),
+        candidate,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
@@ -3876,19 +4138,58 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
               // about: the card, the idea, or not suitable.
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-                child: SketchActionBar(
-                  compact: true,
-                  fullCardExpanded: expanded,
-                  onFullCard: hasCard
-                      ? () => setState(() {
+                // No card to open: the first answer becomes the invitation to
+                // write one — or, for a friend who keeps one already, the
+                // request for access to it.
+                child: hasCard
+                    ? SketchActionBar(
+                        compact: true,
+                        fullCardExpanded: expanded,
+                        onFullCard: () => setState(() {
                           if (!_expandedIds.remove(candidate.id)) {
                             _expandedIds.add(candidate.id);
                           }
-                        })
-                      : null,
-                  onOpenIdea: () => widget.onAccept(candidate),
-                  onNotSuitable: () => widget.onReject(candidate),
-                ),
+                        }),
+                        onOpenIdea: () => widget.onAccept(candidate),
+                        onNotSuitable: () => widget.onReject(candidate),
+                      )
+                    : FutureBuilder<CardInviteState>(
+                        future: _inviteStateFor(candidate),
+                        builder:
+                            (
+                              BuildContext context,
+                              AsyncSnapshot<CardInviteState> snapshot,
+                            ) {
+                              final CardInviteState state =
+                                  snapshot.data ?? CardInviteState.noCard;
+                              final String? label = CardInviteFlow.labelFor(
+                                state,
+                              );
+                              return SketchActionBar(
+                                compact: true,
+                                fullCardLabel: label ?? 'להזמין למלא כרטיס',
+                                onFullCard:
+                                    state == CardInviteState.pending ||
+                                        label == null
+                                    ? null
+                                    : () async {
+                                        await CardInviteFlow.run(
+                                          context,
+                                          candidate,
+                                        );
+                                        if (mounted) {
+                                          setState(
+                                            () => _inviteStates.remove(
+                                              candidate.id,
+                                            ),
+                                          );
+                                        }
+                                      },
+                                onOpenIdea: () => widget.onAccept(candidate),
+                                onNotSuitable: () => widget.onReject(candidate),
+                              );
+                            },
+                      ),
               ),
               if (expanded)
                 Padding(
@@ -4137,9 +4438,12 @@ String _personSummary(Person person) {
 }
 
 class _PersonNotesPage extends StatelessWidget {
-  const _PersonNotesPage({required this.personId});
+  const _PersonNotesPage({required this.personId, this.focusNoteId});
 
   final String personId;
+
+  /// A recording tapped on the profile: the page opens scrolled to it.
+  final String? focusNoteId;
 
   @override
   Widget build(BuildContext context) {
@@ -4168,7 +4472,11 @@ class _PersonNotesPage extends StatelessWidget {
               child: _PersonalNotesNotice(),
             ),
             const SizedBox(height: 16),
-            _PersonNotesSection(person: person, notes: notes),
+            _PersonNotesSection(
+              person: person,
+              notes: notes,
+              focusNoteId: focusNoteId,
+            ),
           ],
         ),
       ),
@@ -4213,10 +4521,15 @@ class _PersonalNotesNotice extends StatelessWidget {
 }
 
 class _PersonNotesSection extends StatefulWidget {
-  const _PersonNotesSection({required this.person, required this.notes});
+  const _PersonNotesSection({
+    required this.person,
+    required this.notes,
+    this.focusNoteId,
+  });
 
   final Person person;
   final List<PersonNote> notes;
+  final String? focusNoteId;
 
   @override
   State<_PersonNotesSection> createState() => _PersonNotesSectionState();
@@ -4225,11 +4538,25 @@ class _PersonNotesSection extends StatefulWidget {
 class _PersonNotesSectionState extends State<_PersonNotesSection> {
   final TextEditingController _controller = TextEditingController();
   final DateFormat _dateFormat = DateFormat('dd.MM.yyyy HH:mm');
+  final GlobalKey _focusKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_handleChanged);
+    if (widget.focusNoteId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final BuildContext? target = _focusKey.currentContext;
+        if (target != null && target.mounted) {
+          Scrollable.ensureVisible(
+            target,
+            alignment: 0.3,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+    }
   }
 
   @override
@@ -4260,8 +4587,14 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
           _PersonNotesTimeline(
             entries: entries,
             dateFormat: _dateFormat,
+            focusNoteId: widget.focusNoteId,
+            focusKey: _focusKey,
+            onRead: (_PersonNoteEntry entry) =>
+                _showNoteReader(context, widget.person, entry),
             onEdit: _editNote,
             onDelete: _deleteNote,
+            onDeleteVoice: (_PersonNoteEntry entry) =>
+                _confirmDeleteVoice(context, entry),
           ),
           const SizedBox(height: 16),
           Row(
@@ -4341,51 +4674,8 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
     _controller.clear();
   }
 
-  Future<void> _editNote(_PersonNoteEntry entry) async {
-    if (entry.isVoice) {
-      return;
-    }
-    final TextEditingController editController = TextEditingController(
-      text: entry.text,
-    );
-    final String? newText = await showDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('עריכת הערה'),
-          content: TextField(
-            controller: editController,
-            autofocus: true,
-            minLines: 2,
-            maxLines: 6,
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('ביטול'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(editController.text),
-              child: const Text('שמירה'),
-            ),
-          ],
-        );
-      },
-    );
-    editController.dispose();
-
-    final String trimmed = (newText ?? '').trim();
-    if (trimmed.isEmpty || trimmed == entry.text || !mounted) {
-      return;
-    }
-
-    final PersonRepository repository = context.read<PersonRepository>();
-    if (entry.noteId != null) {
-      await repository.updateNote(entry.noteId!, trimmed);
-    } else {
-      widget.person.notes = trimmed;
-      await repository.update(widget.person);
-    }
+  Future<void> _editNote(_PersonNoteEntry entry) {
+    return _editPersonNote(context, widget.person, entry);
   }
 
   Future<void> _deleteNote(_PersonNoteEntry entry) async {
@@ -4444,14 +4734,26 @@ class _PersonNotesTimeline extends StatelessWidget {
   const _PersonNotesTimeline({
     required this.entries,
     required this.dateFormat,
+    required this.onRead,
     required this.onEdit,
     required this.onDelete,
+    required this.onDeleteVoice,
+    this.focusNoteId,
+    this.focusKey,
   });
 
   final List<_PersonNoteEntry> entries;
   final DateFormat dateFormat;
+  final ValueChanged<_PersonNoteEntry> onRead;
   final ValueChanged<_PersonNoteEntry> onEdit;
   final ValueChanged<_PersonNoteEntry> onDelete;
+
+  /// A recording is deleted by a long press and in no other way.
+  final ValueChanged<_PersonNoteEntry> onDeleteVoice;
+
+  /// The recording the page was opened on, marked and scrolled to.
+  final String? focusNoteId;
+  final Key? focusKey;
 
   @override
   Widget build(BuildContext context) {
@@ -4477,7 +4779,10 @@ class _PersonNotesTimeline extends StatelessWidget {
         ),
         Column(
           children: entries.map((_PersonNoteEntry entry) {
+            final bool focused =
+                focusNoteId != null && entry.noteId == focusNoteId;
             return Padding(
+              key: focused ? focusKey : null,
               padding: const EdgeInsets.only(bottom: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4498,103 +4803,129 @@ class _PersonNotesTimeline extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            if (entry.isVoice)
-                              VoiceNotePlayer(
-                                fileName: entry.audioFile!,
-                                durationMs: entry.audioDurationMs,
-                              )
-                            else if (entry.isAutomatic)
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Icon(
-                                    Icons.info_outline,
-                                    size: 16,
-                                    color: Theme.of(
+                      shape: focused
+                          ? RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: _profileAccentColor(context),
+                                width: 1.6,
+                              ),
+                            )
+                          : null,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: entry.isVoice ? null : () => onRead(entry),
+                        onLongPress: entry.isVoice
+                            ? () => onDeleteVoice(entry)
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              if (entry.isVoice) ...<Widget>[
+                                VoiceNotePlayer(
+                                  fileName: entry.audioFile!,
+                                  durationMs: entry.audioDurationMs,
+                                ),
+                                if (entry.text.trim().isNotEmpty) ...<Widget>[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    entry.text.trim(),
+                                    style: Theme.of(
                                       context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      entry.text,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                    ),
+                                    ).textTheme.bodyMedium,
                                   ),
                                 ],
-                              )
-                            else
-                              Text(
-                                entry.text,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: Text(
-                                    dateFormat.format(entry.createdAt),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: 24,
-                                  width: 32,
-                                  child: PopupMenuButton<String>(
-                                    padding: EdgeInsets.zero,
-                                    tooltip: 'פעולות הערה',
-                                    icon: Icon(
-                                      Icons.more_horiz,
-                                      size: 18,
+                              ] else if (entry.isAutomatic)
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Icon(
+                                      Icons.info_outline,
+                                      size: 16,
                                       color: Theme.of(
                                         context,
                                       ).colorScheme.onSurfaceVariant,
                                     ),
-                                    onSelected: (String value) {
-                                      if (value == 'edit') {
-                                        onEdit(entry);
-                                      } else if (value == 'delete') {
-                                        onDelete(entry);
-                                      }
-                                    },
-                                    itemBuilder: (BuildContext context) {
-                                      return <PopupMenuEntry<String>>[
-                                        if (!entry.isAutomatic)
-                                          const PopupMenuItem<String>(
-                                            value: 'edit',
-                                            child: Text('עריכת הערה'),
-                                          ),
-                                        const PopupMenuItem<String>(
-                                          value: 'delete',
-                                          child: Text('מחיקת הערה'),
-                                        ),
-                                      ];
-                                    },
-                                  ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        entry.text,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Text(
+                                  entry.text,
+                                  style: Theme.of(context).textTheme.bodyMedium,
                                 ),
-                              ],
-                            ),
-                          ],
+                              const SizedBox(height: 8),
+                              Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: Text(
+                                      dateFormat.format(entry.createdAt),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ),
+                                  if (!entry.isVoice)
+                                    SizedBox(
+                                      height: 24,
+                                      width: 32,
+                                      child: PopupMenuButton<String>(
+                                        padding: EdgeInsets.zero,
+                                        tooltip: 'פעולות הערה',
+                                        icon: Icon(
+                                          Icons.more_horiz,
+                                          size: 18,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                        onSelected: (String value) {
+                                          if (value == 'edit') {
+                                            onEdit(entry);
+                                          } else if (value == 'delete') {
+                                            onDelete(entry);
+                                          }
+                                        },
+                                        itemBuilder: (BuildContext context) {
+                                          return <PopupMenuEntry<String>>[
+                                            if (!entry.isAutomatic)
+                                              const PopupMenuItem<String>(
+                                                value: 'edit',
+                                                child: Text('עריכת הערה'),
+                                              ),
+                                            const PopupMenuItem<String>(
+                                              value: 'delete',
+                                              child: Text('מחיקת הערה'),
+                                            ),
+                                          ];
+                                        },
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -4725,11 +5056,25 @@ class _HistorySection extends StatelessWidget {
 }
 
 /// One dense line in the history timeline: small date, a type-coloured dot, and
-/// the event text.
+/// the event text. A long press offers to delete the line.
 class _HistoryRow extends StatelessWidget {
   const _HistoryRow({required this.event});
 
   final PersonEvent event;
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final PersonRepository repository = context.read<PersonRepository>();
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'מחיקה מההיסטוריה',
+      message: 'למחוק את השורה הזאת מההיסטוריה?',
+      confirmText: 'מחיקה',
+      isDestructive: true,
+    );
+    if (confirmed) {
+      await repository.deleteEvent(event.id);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4740,41 +5085,45 @@ class _HistoryRow extends StatelessWidget {
         ? null
         : context.read<PersonRepository>().getById(relatedId);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SizedBox(
-            width: 34,
-            child: Text(
-              _eventDateShort(event.createdAt),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: _profileMutedColor(theme),
+    return InkWell(
+      onLongPress: () => _confirmDelete(context),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            SizedBox(
+              width: 34,
+              child: Text(
+                _eventDateShort(event.createdAt),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: _profileMutedColor(theme),
+                ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 5),
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _historyText(event, related),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: _profileTextColor(theme),
-                height: 1.35,
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _historyText(event, related),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: _profileTextColor(theme),
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4785,8 +5134,7 @@ enum _HistoryFilter {
   all('הכל'),
   proposals('רעיונות'),
   dated('יצאו'),
-  rejected('שלילות'),
-  notes('הערות');
+  rejected('שלילות');
 
   const _HistoryFilter(this.label);
 
@@ -4802,14 +5150,12 @@ enum _HistoryFilter {
         return event.type == PersonEventType.dated;
       case _HistoryFilter.rejected:
         return event.type == PersonEventType.rejected;
-      case _HistoryFilter.notes:
-        return event.type == PersonEventType.note;
     }
   }
 }
 
 /// The full history screen for a person, with the filter row from the spec
-/// (הכל / רעיונות / יצאו / שלילות / הערות).
+/// (הכל / רעיונות / יצאו / שלילות). Notes are not history and are not here.
 class _PersonHistoryPage extends StatefulWidget {
   const _PersonHistoryPage({required this.personId});
 
@@ -4829,7 +5175,7 @@ class _PersonHistoryPageState extends State<_PersonHistoryPage> {
     final Person? person = personRepository.getById(widget.personId);
     final List<PersonEvent> events = person == null
         ? const <PersonEvent>[]
-        : personRepository.getEventsForPerson(person.id);
+        : personRepository.getHistoryForPerson(person.id);
     final List<PersonEvent> filtered = events.where(_filter.matches).toList();
 
     return Scaffold(
@@ -4936,9 +5282,13 @@ Future<void> recordVoiceNote(BuildContext context, String personId) async {
   if (recording == null) {
     return;
   }
+  final String caption = context.mounted
+      ? await VoiceNoteCaption.ask(context)
+      : '';
   await repository.addVoiceNote(
     personId,
     fileName: recording.fileName,
     durationMs: recording.durationMs,
+    text: caption,
   );
 }

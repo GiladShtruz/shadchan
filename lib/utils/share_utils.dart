@@ -98,6 +98,55 @@ abstract final class ShareUtils {
     await Share.share(shareText, sharePositionOrigin: origin);
   }
 
+  /// Whether [person] has anything a card share would carry.
+  static bool hasShareableCard(Person? person) {
+    if (person == null) {
+      return false;
+    }
+    return _shareText(person).isNotEmpty ||
+        _existingPhotoPaths(person).isNotEmpty;
+  }
+
+  /// Shares the two cards of one idea together: each side's text under their
+  /// name, every photo of both, and the credit once at the foot.
+  ///
+  /// A side with nothing to send is simply left out, so this also works when
+  /// only one of the two has a card. Returns false when neither has one.
+  static Future<bool> shareCouple(
+    Person first,
+    Person second, {
+    Rect? origin,
+  }) async {
+    final List<Person> sides = <Person>[
+      first,
+      second,
+    ].where(hasShareableCard).toList();
+    if (sides.isEmpty) {
+      return false;
+    }
+    final String text = <String>[
+      for (final Person side in sides)
+        <String>[
+          side.fullName.trim(),
+          _shareText(side),
+        ].where((String part) => part.isNotEmpty).join('\n'),
+    ].join('\n\n———\n\n');
+    final List<String> photos = <String>[
+      for (final Person side in sides) ..._existingPhotoPaths(side),
+    ];
+    final String shareText = CommunityLinks.creditCard(text);
+    if (photos.isNotEmpty) {
+      await Share.shareXFiles(
+        photos.map((String path) => XFile(path)).toList(),
+        text: shareText,
+        sharePositionOrigin: origin,
+      );
+    } else {
+      await Share.share(shareText, sharePositionOrigin: origin);
+    }
+    return true;
+  }
+
   static List<String> _existingPhotoPaths(Person person) {
     return person.photosPaths
         .where((String path) => File(path).existsSync())
