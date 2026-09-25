@@ -144,6 +144,18 @@ th { background: var(--accent-soft); }
 .cards a:hover { border-color: var(--accent); }
 .cards strong { display: block; color: var(--accent); font-size: 18px; margin-bottom: 2px; }
 .cards span { color: var(--muted); font-size: 15px; }
+.button {
+  display: inline-block;
+  padding: 12px 22px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  margin: 4px 0 4px 8px;
+}
+.button.secondary { background: var(--accent-soft); color: var(--accent); }
+.note { color: var(--muted); font-size: 14px; }
 footer.site {
   max-width: 760px;
   margin: 26px auto 0;
@@ -383,6 +395,53 @@ INDEX_HE = f"""
 """
 
 
+# The invitation a matchmaker sends from a friend's profile:
+# https://shadchan-gilad.web.app/join?from=<uid>&name=<name>. Installed, the
+# app opens through its own scheme; not installed, the store — and on Android
+# the Play Store carries the invitation through the install as its referrer.
+# iOS has no such channel, so the page says to open the link again afterwards.
+PLAY_URL = "https://play.google.com/store/apps/details?id=com.gilad.shadchan"
+APP_STORE_URL = ""  # fill in once the App Store listing exists
+
+JOIN_HE = f"""
+<h1>הוזמנת לשדכן</h1>
+<p id="lead">חבר שמשדך רוצה לעזור לך. בשדכן אפשר למלא כרטיס אישי שרק את/ה
+מנהל/ת ומעדכן/ת, ולתת גישה רק לחברים שבוחרים.</p>
+<p><a class="button" id="open" href="#">פתיחה באפליקציה</a></p>
+<p id="stores">
+  <a class="button secondary" id="play" href="{PLAY_URL}">הורדה מ־Google Play</a>
+  <span id="ios"></span>
+</p>
+<p class="note">אחרי ההתקנה באייפון, חזרו לקישור ולחצו שוב על "פתיחה באפליקציה".
+ההזמנה לא נותנת גישה לאף אחד — את/ה מחליט/ה למי לתת.</p>
+<script>
+(function () {{
+  var q = new URLSearchParams(location.search);
+  var from = q.get('from') || '';
+  var name = q.get('name') || '';
+  if (!/^[A-Za-z0-9_-]{{6,128}}$/.test(from)) {{ from = ''; }}
+  var pair = 'from=' + encodeURIComponent(from) + '&name=' + encodeURIComponent(name);
+  if (name) {{
+    document.getElementById('lead').textContent =
+      name + ' משדך/ת בשדכן ורוצה לעזור לך. בשדכן אפשר למלא כרטיס אישי שרק את/ה ' +
+      'מנהל/ת ומעדכן/ת, ולתת גישה רק לחברים שבוחרים.';
+  }}
+  document.getElementById('open').href = 'shadchan-invite://join?' + pair;
+  document.getElementById('play').href =
+    '{PLAY_URL}&referrer=' + encodeURIComponent(pair);
+  var appStore = '{APP_STORE_URL}';
+  if (appStore) {{
+    var a = document.createElement('a');
+    a.className = 'button secondary';
+    a.href = appStore;
+    a.textContent = 'הורדה מ־App Store';
+    document.getElementById('ios').appendChild(a);
+  }}
+}})();
+</script>
+"""
+
+
 def write(name: str, contents: str) -> None:
     path = OUT / name
     path.write_text(contents, encoding="utf-8")
@@ -432,6 +491,16 @@ def main() -> None:
             body=render(DELETE_HE),
             lang="he",
             description="איך למחוק את החשבון באפליקציית שדכן ואת הנתונים המשויכים אליו.",
+        ),
+    )
+
+    write(
+        "join.html",
+        page(
+            title="הוזמנת לשדכן",
+            body=JOIN_HE,
+            lang="he",
+            description="הזמנה למלא כרטיס אישי באפליקציית שדכן.",
         ),
     )
 

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -74,5 +75,25 @@ abstract final class MatchMigrations {
     }
 
     await settings.put(availabilityMigrationKey, true);
+  }
+
+  /// Gives every idea that is not closed and has no reminder its monthly one.
+  ///
+  /// Runs at every launch rather than once: it is idempotent (an idea with a
+  /// date is never touched), and running it again is what covers an idea
+  /// restored from a backup, imported, or left with none by an older build.
+  static Future<void> giveLiveIdeasMonthlyReminder(
+    Box<MatchIdea> matches,
+  ) async {
+    final DateTime now = DateTime.now();
+    for (final MatchIdea match in matches.values.toList()) {
+      if (match.status.isArchived || match.reminderDate != null) {
+        continue;
+      }
+      match
+        ..reminderDate = MatchRepository.defaultReminderFrom(now)
+        ..reminderNote = MatchRepository.defaultReminderNote;
+      await match.save();
+    }
   }
 }

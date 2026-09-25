@@ -9,6 +9,7 @@ import 'package:shadchan/screens/ai_import_screen.dart';
 import 'package:shadchan/screens/onboarding_screen.dart';
 import 'package:shadchan/screens/create_match_screen.dart';
 import 'package:shadchan/screens/incoming_shared_profile_screen.dart';
+import 'package:shadchan/screens/incoming_voice_note_screen.dart';
 import 'package:shadchan/screens/matches_screen.dart';
 import 'package:shadchan/screens/matchmaker_profile_screen.dart';
 import 'package:shadchan/screens/people_screen.dart';
@@ -90,6 +91,7 @@ bool shouldShowBottomNavigationBar(String path) {
     'swipe',
     'pending',
     'shared-import',
+    'shared-voice',
   }.contains(segments.last);
 }
 
@@ -354,6 +356,21 @@ abstract final class AppRouter {
                         return const PeopleScreen();
                       }
                       return IncomingSharedProfileScreen(draft: draft);
+                    },
+                  ),
+                  // A WhatsApp voice note, filed under a friend's notes.
+                  GoRoute(
+                    path: 'shared-voice',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (BuildContext context, GoRouterState state) {
+                      final IncomingSharedProfileDraft? draft =
+                          state.extra is IncomingSharedProfileDraft
+                          ? state.extra as IncomingSharedProfileDraft
+                          : null;
+                      if (draft == null || !draft.hasFiles) {
+                        return const PeopleScreen();
+                      }
+                      return IncomingVoiceNoteScreen(draft: draft);
                     },
                   ),
                   // "בהמתנה לעדכון" no longer has its own screen — those

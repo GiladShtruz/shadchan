@@ -824,6 +824,26 @@ service cloud.firestore {
                         || request.auth.uid == resource.data.matchmakerUid);
     }
 
+    // "השראה מהקהילה". One document per matchmaker holding the *words* of the
+    // general tags they use — never who a tag is on. Owner-only: nobody else
+    // can read which words a given matchmaker uses.
+    match /tagUsage/{uid} {
+      allow read, delete: if durable() && request.auth.uid == uid;
+      allow create, update: if durable()
+                            && request.auth.uid == uid
+                            && request.resource.data.keys().hasOnly(['tags', 'updatedAt'])
+                            && request.resource.data.tags is list
+                            && request.resource.data.tags.size() <= 200;
+    }
+
+    // The words and how many different matchmakers use each, written only by
+    // the `onTagUsageWritten` function. A word becomes readable once three or
+    // more matchmakers use it, so a query must carry `users >= 3`.
+    match /communityTags/{tagKey} {
+      allow read: if durable() && resource.data.users >= 3;
+      allow write: if false;
+    }
+
     // Anything not named above is closed. Without this, a path added later
     // starts life world-readable.
     match /{document=**} {

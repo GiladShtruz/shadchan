@@ -7,6 +7,7 @@ import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/person_note.dart';
+import 'package:shadchan/services/voice_note_store.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -818,8 +819,11 @@ class PersonRepository extends ChangeNotifier {
       return;
     }
 
-    final String? personId = noteBox.get(noteId)?.personId;
+    final PersonNote? note = noteBox.get(noteId);
+    final String? personId = note?.personId;
     await noteBox.delete(noteId);
+    // A voice note's recording goes with it — it is nobody's but this note's.
+    await VoiceNoteStore.delete(note?.audioFile);
     if (personId != null) {
       await _touchPerson(personId);
     }
@@ -896,6 +900,39 @@ class PersonRepository extends ChangeNotifier {
       targetId: personId,
       action: action,
     );
+  }
+
+  /// Files a recording as one of [personId]'s notes — recorded in the app or
+  /// shared in from WhatsApp. [fileName] is already in `VoiceNoteStore`.
+  Future<void> addVoiceNote(
+    String personId, {
+    required String fileName,
+    int? durationMs,
+    String text = '',
+  }) async {
+    final Box<PersonNote>? noteBox = _noteBox;
+    if (noteBox == null) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    final PersonNote note = PersonNote(
+      id: _uuid.v4(),
+      personId: personId,
+      text: text.trim(),
+      createdAt: now,
+      isAutomatic: false,
+      audioFile: fileName,
+      audioDurationMs: durationMs,
+    );
+    await noteBox.put(note.id, note);
+    final Person? person = getById(personId);
+    if (person != null) {
+      person.updatedAt = now;
+      await person.save();
+    }
+    await logEvent(personId, PersonEventType.note, 'נוספה הערה קולית');
+    _recordActivity(personId, HomeActivityAction.addedNote);
+    notifyListeners();
   }
 
   Future<void> _createNote({

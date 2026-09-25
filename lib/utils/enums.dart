@@ -336,6 +336,21 @@ enum ProfileStatus {
     }
   }
 
+  /// The same word in the person's own grammatical gender: "פנויה",
+  /// "תפוסה" for a woman. "בהפסקה" and "מזל טוב" are the same for both.
+  String displayNameFor(Gender gender) {
+    final bool female = gender == Gender.female;
+    switch (this) {
+      case ProfileStatus.available:
+        return female ? 'פנויה' : 'פנוי';
+      case ProfileStatus.busy:
+        return female ? 'תפוסה' : 'תפוס';
+      case ProfileStatus.onBreak:
+      case ProfileStatus.mazelTov:
+        return displayName;
+    }
+  }
+
   String get emoji {
     switch (this) {
       case ProfileStatus.available:
@@ -385,19 +400,16 @@ enum MaritalStatus {
   /// Neutral label used where the gender is unknown or irrelevant.
   String get displayName => displayNameFor(Gender.male);
 
-  /// Label for filters, which cover both genders at once.
-  ///
-  /// Plural rather than "רווק/ה": a filter selects a group, and the Hebrew
-  /// plural already covers a mixed one — which spares the reader a slash in the
-  /// middle of every chip.
+  /// Label for filters: the plain singular — "רווק", "גרוש", "אלמן" — which
+  /// reads as the name of the status rather than as a crowd of people.
   String get filterLabel {
     switch (this) {
       case MaritalStatus.single:
-        return 'רווקים';
+        return 'רווק';
       case MaritalStatus.divorced:
-        return 'גרושים';
+        return 'גרוש';
       case MaritalStatus.widowed:
-        return 'אלמנים';
+        return 'אלמן';
     }
   }
 }

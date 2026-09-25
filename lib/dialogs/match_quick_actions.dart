@@ -49,6 +49,10 @@ enum MatchQuickAction {
   waiting('העברה להמתנה', Icons.pause_rounded, MatchActionGroup.status),
   dating('מתחילים לצאת', Icons.celebration_outlined, MatchActionGroup.status),
   close('סגירת רעיון', Icons.close_rounded, MatchActionGroup.status),
+
+  /// A couple who were out and stopped. The same closing as [close] — it is
+  /// only named for what actually happened.
+  separated('נפרדו', Icons.heart_broken_outlined, MatchActionGroup.status),
   married('חתונה', Icons.favorite_rounded, MatchActionGroup.status),
   reopen('פתיחה מחדש', Icons.refresh_rounded, MatchActionGroup.status),
   reminder(
@@ -84,7 +88,7 @@ enum MatchQuickAction {
       case MatchStatus.unavailable:
         return <MatchQuickAction>[reopen, dating, close];
       case MatchStatus.dating:
-        return <MatchQuickAction>[married, close];
+        return <MatchQuickAction>[married, separated];
       case MatchStatus.rejected:
       case MatchStatus.dated:
       case MatchStatus.married:
@@ -119,6 +123,7 @@ abstract final class MatchQuickActions {
       case MatchQuickAction.dating:
         await repository.updateStatus(match.id, MatchStatus.dating);
       case MatchQuickAction.close:
+      case MatchQuickAction.separated:
         await _close(context, repository, match);
       case MatchQuickAction.married:
         await _markMarried(context, repository, match, female, male);
@@ -158,15 +163,16 @@ abstract final class MatchQuickActions {
       return;
     }
     final String? label = result.label;
-    if (label != null) {
-      await repository.recordCardShared(match.id, label);
-    }
     // The sheet is the other way to do what the card's own button does, so it
-    // moves the stage the same way — otherwise a proposal whose card went out
-    // through here would go on asking to be promoted to the side that already
-    // has it.
+    // moves the stage the same way. **One line in the journal**: what was
+    // sent is the line, and being asked is what it means.
     if (result.toGender case final Gender side) {
-      await repository.markSideAsked(match.id, side);
+      if (label != null) {
+        await repository.recordCardShared(match.id, label, journal: false);
+      }
+      await repository.markSideAsked(match.id, side, note: label);
+    } else if (label != null) {
+      await repository.recordCardShared(match.id, label);
     }
   }
 
@@ -221,12 +227,15 @@ abstract final class MatchQuickActions {
       return;
     }
     final String? label = result.label;
+    // One journal line for one approach: "הכרטיס של שרה נשלח לדוד" already
+    // says he was asked.
     if (label != null) {
-      await repository.recordCardShared(match.id, label);
+      await repository.recordCardShared(match.id, label, journal: false);
     }
     await repository.markSideAsked(
       match.id,
       askingMale ? Gender.male : Gender.female,
+      note: label,
     );
   }
 

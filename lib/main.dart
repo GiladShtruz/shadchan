@@ -105,6 +105,9 @@ Future<void> _bootstrap() async {
       people: Hive.box<Person>('people'),
       settings: Hive.box<dynamic>('settings'),
     );
+    await MatchMigrations.giveLiveIdeasMonthlyReminder(
+      Hive.box<MatchIdea>('matches'),
+    );
   });
 }
 

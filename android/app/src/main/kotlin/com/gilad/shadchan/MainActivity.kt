@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -16,6 +17,7 @@ import java.io.FileOutputStream
 import java.util.UUID
 
 class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
+    private var pendingInvite: String? = null
     private val pendingFilePaths = mutableListOf<String>()
     private val pendingSharedProfiles = mutableListOf<Map<String, Any>>()
     private var eventSink: EventChannel.EventSink? = null
@@ -57,6 +59,40 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             }
         }
 
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            INVITE_CHANNEL_NAME,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "takePendingInvite" -> {
+                    result.success(pendingInvite)
+                    pendingInvite = null
+                }
+
+                "takeInstallReferrer" -> takeInstallReferrer(result)
+
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            WHATSAPP_CHANNEL_NAME,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "sendToChat" -> {
+                    val phone = call.argument<String>("phone")
+                    val text = call.argument<String>("text") ?: ""
+                    val paths = call.argument<List<String>>("paths") ?: emptyList()
+                    result.success(
+                        if (phone.isNullOrBlank()) false else sendToWhatsAppChat(phone, text, paths),
+                    )
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             EVENT_CHANNEL_NAME,
@@ -89,7 +125,13 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
 
         val handled = when {
-            // Checked first: a spreadsheet or a chat export is a batch of
+            // Before everything else: isBackupIntent claims every ACTION_VIEW.
+            isInviteIntent(intent) -> {
+                pendingInvite = intent.data?.toString()
+                true
+            }
+
+            // Then: a spreadsheet or a chat export is a batch of
             // people for the AI import, and it would otherwise be claimed by
             // isBackupIntent (which accepts any ACTION_VIEW) and fed to the
             // backup restore, where it fails as unreadable JSON.
@@ -169,6 +211,115 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         flushPendingSharedProfiles()
     }
 
+    /// Opens one WhatsApp chat — [phone] in international digits — with a card's
+    /// text and photos already in the composer, without the share sheet.
+    ///
+    /// WhatsApp accepts a `jid` extra on its SEND intent that names the chat,
+    /// which is the only way on Android to address a file share to one
+    /// person. Tried on WhatsApp, then WhatsApp Business; false when neither is
+    /// installed, so the caller can fall back to a text-only chat link.
+    private fun sendToWhatsAppChat(phone: String, text: String, paths: List<String>): Boolean {
+        val digits = phone.filter { it.isDigit() }
+        if (digits.isEmpty()) return false
+
+        val shareDirectory = File(cacheDir, "card_share")
+        shareDirectory.deleteRecursively()
+        shareDirectory.mkdirs()
+        val uris = ArrayList<Uri>()
+        for (path in paths) {
+            try {
+                val source = File(path)
+                if (!source.exists()) continue
+                val copy = File(shareDirectory, "${UUID.randomUUID()}_${sanitizeFileName(source.name)}")
+                source.copyTo(copy, overwrite = true)
+                uris.add(FileProvider.getUriForFile(this, "$packageName.cardshare", copy))
+            } catch (_: Exception) {
+            }
+        }
+
+        for (target in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+            val intent = if (uris.size > 1) {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                    type = "image/*"
+                }
+            } else if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    putExtra(Intent.EXTRA_STREAM, uris[0])
+                    type = "image/*"
+                }
+            } else {
+                Intent(Intent.ACTION_SEND).apply { type = "text/plain" }
+            }
+            intent.setPackage(target)
+            intent.putExtra(Intent.EXTRA_TEXT, text)
+            intent.putExtra("jid", "$digits@s.whatsapp.net")
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (intent.resolveActivity(packageManager) == null) continue
+            return try {
+                startActivity(intent)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+        return false
+    }
+
+    private fun isInviteIntent(intent: Intent): Boolean {
+        return intent.action == Intent.ACTION_VIEW &&
+            intent.data?.scheme == INVITE_SCHEME
+    }
+
+    /// The Play Store referrer of this install, read once ever. A matchmaker's
+    /// invitation link sends a new user to the store with
+    /// `referrer=from=<uid>&name=<name>`; this is how it survives the install.
+    private fun takeInstallReferrer(result: MethodChannel.Result) {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        if (prefs.getBoolean(REFERRER_READ_KEY, false)) {
+            result.success(null)
+            return
+        }
+        val client = com.android.installreferrer.api.InstallReferrerClient
+            .newBuilder(this)
+            .build()
+        var answered = false
+        fun answer(value: String?) {
+            if (answered) return
+            answered = true
+            runOnUiThread { result.success(value) }
+        }
+        try {
+            client.startConnection(object :
+                com.android.installreferrer.api.InstallReferrerStateListener {
+                override fun onInstallReferrerSetupFinished(responseCode: Int) {
+                    var referrer: String? = null
+                    if (responseCode ==
+                        com.android.installreferrer.api.InstallReferrerClient
+                            .InstallReferrerResponse.OK
+                    ) {
+                        try {
+                            referrer = client.installReferrer.installReferrer
+                        } catch (_: Exception) {
+                        }
+                        prefs.edit().putBoolean(REFERRER_READ_KEY, true).apply()
+                    }
+                    try {
+                        client.endConnection()
+                    } catch (_: Exception) {
+                    }
+                    answer(referrer)
+                }
+
+                override fun onInstallReferrerServiceDisconnected() {
+                    answer(null)
+                }
+            })
+        } catch (_: Exception) {
+            answer(null)
+        }
+    }
+
     private fun isBackupIntent(intent: Intent): Boolean {
         return when (intent.action) {
             Intent.ACTION_VIEW -> true
@@ -186,7 +337,10 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
 
         val mimeType = intent.type?.lowercase() ?: return false
-        return mimeType == "text/plain" || mimeType.startsWith("image/")
+        return mimeType == "text/plain" ||
+            mimeType.startsWith("image/") ||
+            mimeType.startsWith("audio/") ||
+            mimeType == "application/ogg"
     }
 
     /// A file meant for the AI import: a spreadsheet, or a WhatsApp chat
@@ -352,6 +506,10 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             "application/vnd.ms-excel" -> ".xlsx"
             "application/zip", "application/x-zip-compressed", "multipart/x-zip" -> ".zip"
             "text/plain" -> ".txt"
+            "audio/ogg", "audio/opus", "application/ogg" -> ".opus"
+            "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/aac" -> ".m4a"
+            "audio/mpeg" -> ".mp3"
+            "audio/amr" -> ".amr"
             else -> documentExtension(uri) ?: ".jpg"
         }
         return "shared_${UUID.randomUUID()}$extension"
@@ -423,6 +581,11 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             "multipart/x-zip",
         )
 
+        private const val INVITE_CHANNEL_NAME = "shadchan/invite_links"
+        private const val WHATSAPP_CHANNEL_NAME = "shadchan/whatsapp_direct"
+        private const val INVITE_SCHEME = "shadchan-invite"
+        private const val PREFS_NAME = "shadchan_native"
+        private const val REFERRER_READ_KEY = "installReferrerRead"
         private const val METHOD_CHANNEL_NAME = "shadchan/incoming_backup_files/methods"
         private const val EVENT_CHANNEL_NAME = "shadchan/incoming_backup_files/events"
         private const val SHARED_PROFILES_METHOD_CHANNEL_NAME =

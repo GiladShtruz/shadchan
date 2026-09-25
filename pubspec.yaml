@@ -99,6 +99,8 @@ dependencies:
   # my phone" is only actionable once the phone has a name. Read at the moment
   # a report is sent and nowhere else.
   device_info_plus: ^11.3.0
+  record: ^6.2.1
+  just_audio: ^0.10.6
 
 dev_dependencies:
   flutter_test:
@@ -168,19 +170,22 @@ flutter:
     # sits directly on the page rather than inside a coloured tile the way the
     # launcher icon does.
     - assets/logo_mark.png
-    # The two home entry cards and the tip block's mark. Line drawings on white:
+    # The tip block's mark and the older home drawings. Line drawings on white:
     # black ink on a white ground, tinted at draw time rather than baked — see
     # `HomeLineArt`, which screens the brand tone into the strokes and multiplies
     # the paper tone into the ground, so one file serves the light and the dark
     # theme and the same drawing can wear either card's colour.
     #
-    # The two `*_icon.png` are the current entry-card drawings: cropped out of
-    # `assets/add-friends-icon.jpeg` and `assets/add-idea-icon.jpeg` (neither of
-    # which is bundled) with the JPEG's off-white ground flattened to pure
-    # white, because `HomeLineArt` multiplies the card's paper into whatever
-    # ground it is given and a grey one tints the whole tile.
-    - assets/add_friends_icon.png
-    - assets/add_idea_icon.png
+    # The two home entry cards and the suggestion-card actions are different.
+    # Hand-drawn, already coloured, cut off their black JPEG ground
+    # (`note1.jpeg`, `heart1.jpeg`, `heart2.jpeg`, `arrow2.jpeg`, `x2.jpeg`,
+    # none of them bundled) into transparent PNGs. Drawn as they are — never
+    # recoloured — because the uneven line weight is the point of them.
+    - assets/add_friends_art.png
+    - assets/add_idea_art.png
+    - assets/action_heart.png
+    - assets/action_arrow.png
+    - assets/action_x.png
     - assets/home_add_people2.png
     - assets/home_add_idea2.png
     - assets/shadchan-tip.png

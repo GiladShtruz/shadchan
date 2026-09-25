@@ -292,7 +292,18 @@ class ReminderCard extends StatelessWidget {
     final MatchRepository repository = context.read<MatchRepository>();
     final String? previousNote = match.reminderNote;
 
-    await repository.setReminder(match.id, null);
+    // A live idea is looked at once a month by default, so handling this
+    // reminder books the next one rather than leaving the idea with none.
+    if (match.status.isArchived) {
+      await repository.setReminder(match.id, null);
+    } else {
+      await repository.setReminder(
+        match.id,
+        MatchRepository.defaultReminderFrom(DateTime.now()),
+        note: MatchRepository.defaultReminderNote,
+        journal: false,
+      );
+    }
 
     _showHandledNotice(
       notices,

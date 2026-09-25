@@ -1007,39 +1007,24 @@ class _CategoryChips extends StatelessWidget {
     required this.onSelected,
   });
 
-  /// What [_PinnedCategories] has to promise the sliver protocol: the one line
-  /// of type through the reader's own text scale, plus paddings and borders,
-  /// with a little slack — a few spare pixels cost nothing, a few missing ones
-  /// clip every chip.
+  /// What [_PinnedCategories] has to promise the sliver protocol: two lines of
+  /// type through the reader's own text scale, plus paddings and borders, with
+  /// a little slack — a few spare pixels cost nothing, a few missing ones clip
+  /// every button.
   static double heightFor(BuildContext context) {
-    final double line =
-        MediaQuery.textScalerOf(context).scale(_labelSize) * 1.45;
-    // 6 + 6 around the row, 6 + 6 inside a chip, 1 + 1 of border, 4 of slack.
-    return 30 + line;
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final double lines =
+        scaler.scale(_labelSize) * 1.3 + scaler.scale(_countSize) * 1.3;
+    // 6 + 6 around the row, 5 + 5 inside a button, 1 + 1 of border, 4 slack.
+    return 28 + lines;
   }
 
   final MatchCategory selected;
   final Map<MatchCategory, int> counts;
   final ValueChanged<MatchCategory> onSelected;
 
-  /// The label size every chip is written at.
-  static const double _labelSize = 14;
-
-  /// How small a count is drawn, by how many digits it has.
-  ///
-  /// **This is the only thing on the row that changes size.** Every chip used
-  /// to scale its whole contents down to fit, so a shelf holding 128 proposals
-  /// ended up with a smaller *heading* than the shelf beside it holding 3 —
-  /// five headings at five sizes for one row of equals. The words are one size
-  /// now and the figure gives way instead, which is the part that is genuinely
-  /// variable.
-  static double countSize(int count) {
-    final int digits = count.abs().toString().length;
-    if (digits <= 1) {
-      return 14;
-    }
-    return digits == 2 ? 12 : 10;
-  }
+  static const double _labelSize = 13;
+  static const double _countSize = 13;
 
   @override
   Widget build(BuildContext context) {
@@ -1049,12 +1034,11 @@ class _CategoryChips extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         // One size for all five labels, worked out from the longest of them
-        // against the narrowest chip — so they shrink together on a small
+        // against the narrowest button — so they shrink together on a small
         // phone and stay equal, rather than each shrinking to its own
         // leftovers.
-        final double chip = (constraints.maxWidth - 24) / 5 - 4;
+        final double inner = (constraints.maxWidth - 24) / 5 - 4 - 10;
         double widest = 0;
-        double widestCount = 0;
         for (final MatchCategory category in MatchCategory.values) {
           final TextPainter painter = TextPainter(
             text: TextSpan(
@@ -1070,31 +1054,15 @@ class _CategoryChips extends StatelessWidget {
           )..layout();
           widest = widest > painter.width ? widest : painter.width;
           painter.dispose();
-          final int count = counts[category] ?? 0;
-          final TextPainter figure = TextPainter(
-            text: TextSpan(
-              text: '$count',
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontSize: countSize(count),
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            textDirection: Directionality.of(context),
-            textScaler: scaler,
-            maxLines: 1,
-          )..layout();
-          widestCount = widestCount > figure.width ? widestCount : figure.width;
-          figure.dispose();
         }
-        // 12 of inner padding, 2 of border, 4 between the word and the figure.
-        final double room = chip - widestCount - 18;
-        final double scale = widest <= 0 || room <= 0 || room >= widest
+        final double scale = widest <= 0 || inner <= 0 || inner >= widest
             ? 1
-            : room / widest;
+            : inner / widest;
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               for (final MatchCategory category in MatchCategory.values)
                 Expanded(
@@ -1121,6 +1089,12 @@ class _CategoryChips extends StatelessWidget {
   }
 }
 
+/// One category: its name on the first line, its count on the second.
+///
+/// **Every button is the same shape and the same size, whatever its number.**
+/// The button's size comes from the row — five equal fifths, one fixed height
+/// — and never from what is written in it; a count of 128 scales itself down
+/// inside its own line rather than widening the button it sits in.
 class _CategoryChip extends StatelessWidget {
   const _CategoryChip({
     required this.label,
@@ -1134,7 +1108,7 @@ class _CategoryChip extends StatelessWidget {
 
   final String label;
 
-  /// Decided once for the whole row — see [_CategoryChips]. Every chip is
+  /// Decided once for the whole row — see [_CategoryChips]. Every button is
   /// handed the same figure.
   final double labelSize;
 
@@ -1149,53 +1123,54 @@ class _CategoryChip extends StatelessWidget {
     final Color accent = isMuted
         ? theme.colorScheme.onSurfaceVariant
         : theme.colorScheme.primary;
+    final BorderRadius radius = BorderRadius.circular(12);
 
     return Material(
       color: isSelected
           ? accent.withValues(alpha: 0.14)
           : theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: radius,
       child: InkWell(
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: radius,
         onTap: onTap,
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: radius,
             border: Border.all(
               color: isSelected
                   ? accent.withValues(alpha: 0.5)
                   : theme.colorScheme.outlineVariant,
             ),
           ),
-          // One line, and nothing here scales itself: the row above handed
-          // every chip the same label size, and the figure takes the size its
-          // own number of digits earns — see [_CategoryChips.countSize].
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.clip,
-                  softWrap: false,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontSize: labelSize,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? accent : theme.colorScheme.onSurface,
-                  ),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                softWrap: false,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontSize: labelSize,
+                  height: 1.3,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? accent : theme.colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(width: 4),
-              Text(
-                '$count',
-                maxLines: 1,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontSize: _CategoryChips.countSize(count),
-                  fontWeight: FontWeight.w900,
-                  color: accent,
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '$count',
+                    maxLines: 1,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontSize: _CategoryChips._countSize,
+                      height: 1.3,
+                      fontWeight: FontWeight.w900,
+                      color: accent,
+                    ),
+                  ),
                 ),
               ),
             ],

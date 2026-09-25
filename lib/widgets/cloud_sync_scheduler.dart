@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/community_tags_service.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -14,6 +15,8 @@ import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/invite_link_service.dart';
+import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/mazel_tov_inbox.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/services/push_service.dart';
@@ -74,6 +77,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // ends in a network call, and the opening frame should not wait behind any
     // of that.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_checkInvites());
       _sync();
       // "Is this an administrator?" is a Firestore read, so on the frame the
       // first sync runs the answer is still no. When it arrives the support
@@ -106,13 +110,35 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     });
   }
 
+  /// An invitation link opened the app. On a fresh install it answers the
+  /// "ברוך הבא!" question on the user's behalf and moves on to signing in.
+  Future<void> _checkInvites() async {
+    if (await InviteLinkService.check() && mounted) {
+      AppRouter.router.go('/sign-in');
+    }
+  }
+
   void _onFirebaseReady() {
     if (FirebaseBootstrap.isReady) {
       _syncPersonalCard();
       unawaited(PushService.start());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());
+      _publishTags();
     }
+  }
+
+  /// The general tag words in use, for "השראה מהקהילה" — see
+  /// [CommunityTagsService]. A no-op when nothing changed.
+  void _publishTags() {
+    if (!mounted) {
+      return;
+    }
+    unawaited(
+      CommunityTagsService.publishFrom(
+        context.read<PersonRepository>().getAll(),
+      ),
+    );
   }
 
   void _noteCardChange() {
@@ -167,6 +193,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
           profile: context.read<UserProfileProvider>(),
         ),
       );
+      _publishTags();
     });
   }
 
@@ -190,6 +217,12 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.resumed) {
       _sync();
+    }
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_checkInvites());
+    }
+    if (state == AppLifecycleState.resumed && FirebaseBootstrap.isReady) {
+      unawaited(context.read<CardAccessProvider>().resume());
     }
   }
 

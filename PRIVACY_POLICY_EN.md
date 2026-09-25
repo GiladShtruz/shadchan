@@ -1,6 +1,6 @@
 # Privacy Policy — Shadchan
 
-Last updated: August 30, 2026
+Last updated: September 25, 2026
 
 This policy applies to the **Shadchan** application and its information website. The Application is developed and operated by Gilad Shtruzman ("we"), the controller of the processing described here. Privacy contact: **giladsh22@gmail.com**.
 
@@ -47,6 +47,18 @@ Only when you start an AI-assisted import, text extracted from an Excel file, ch
 
 Use is governed by the Google Cloud and Generative AI service terms. Google states that it will not use customer data to train or fine-tune AI/ML models without permission or instruction, but may process or retain data as needed for security, abuse monitoring, operation or caching under its settings and terms. If you do not want to send text to a model, use the manual and non-AI import paths.
 
+## 4A. The personal card and access by friends
+
+Someone who signs in as a single person may write a personal card about themselves and manage it themselves. The card is stored in Cloud Firestore under `personalCards/{uid}` and its photographs in Cloud Storage. It contains what the owner filled in: name, gender, date of birth, religious style, city, region, marital status, height, the card text, photographs, "what I am looking for" and a status. The phone number is not part of the card.
+
+- **Who sees the card:** only its owner and matchmakers the owner approved. Access is checked on the server, in Firebase Security Rules, not only in the Application. Access covers the whole card and can be withdrawn, or a matchmaker blocked, at any time.
+- **Your number:** so that friends can recognise you, a hash of the phone number you entered is stored with your name and whether you have a card or match. Numbers can be looked up one at a time; the list cannot be read out. A hash of a phone number is not a strong secret — it hides the number from reading, not from a determined attempt.
+- **The owner's contacts:** only if the owner grants contacts access, hashes of the numbers in their contacts are sent to the server — no names and no numbers. The server uses them to find which friends match, and to verify that a matchmaker requesting access is saved in the owner's contacts. The list is replaced on every update and is visible only to the server's rules.
+- **On the matchmaker's device:** an approved matchmaker's device keeps the card's details and photographs so the matchmaker can work with and share them like any card. Notes, ideas and information the matchmaker wrote themselves stay with that matchmaker only and never reach the owner or another matchmaker. When access is withdrawn or the card is deleted, the details and photographs received from it are removed from the matchmaker's device and the matchmaker's earlier version is restored.
+- **Deleting the card:** removes the card only, not the account. The card is kept flagged as deleted so it can be restored, and matchmakers stop seeing it at once. It is erased completely with account deletion.
+- **Notifications:** server functions (Cloud Functions) write notices to the account about access requests, approvals or declines, a friend's card, a wedding and a Hebrew birthday, and send them as push notifications through Firebase Cloud Messaging. A device notification token is stored for this. Ordinary changes to a card send no notification.
+- **Invitations:** a matchmaker may send a friend an invitation link containing the matchmaker's identifier and name. An invitation grants access to nobody; the card owner decides.
+
 ## 5. Community and public profile
 
 An account may have a community document with period activity counters: points, friends, ideas, couples dating and engagements. Other signed-in users read those counters to produce community totals and the leaderboard.
@@ -79,13 +91,15 @@ Firebase App Check sends attestation material and tokens to Google or Apple to v
 
 The static website on Firebase Hosting has no accounts, forms, cookies, advertising or analytics. Firebase Hosting and Google may process technical connection information, such as IP address and user-agent, to deliver pages, secure the service and prevent abuse under Google's terms.
 
+**Tags:** tags you put on friends are an internal tool — they stay in your database and your own backup and are not part of any card. For "community inspiration" only the list of general tag *words* in use is sent (not linked to any person, and excluding tags that look like the name of a place, institution, unit or group). Nobody but you can read your list; the service counts how many different matchmakers use each word and shows a word to others only once at least three use it — without revealing who. Nothing is sent in private mode, and the list is deleted with the account.
+
 ## 11. Permissions
 
-The Application may request contacts, photos/media and notifications only when the related feature is used. You may revoke a permission in device settings, although the dependent feature may stop working.
+The Application may request contacts, photos/media, the microphone and notifications only when the related feature is used. The microphone is used only to record a voice note about a friend from their profile; recordings (including ones shared into the Application from WhatsApp) stay on the device, are not included in the cloud backup, are not sent anywhere, and are deleted with the note. For the personal card, contacts are needed only to find friends who match and to give or request access; the rest of the Application works without that permission. You may revoke a permission in device settings, although the dependent feature may stop working.
 
 ## 12. Providers and international transfers
 
-The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Firebase App Check, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.
+The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Firebase Cloud Messaging, Firebase App Check, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.
 
 Information may be processed outside your country. Firebase Authentication operates from US data centres; global and AI services may process data in other locations. Where required, we rely on Google data-processing agreements and transfer mechanisms and other lawful safeguards.
 
@@ -96,6 +110,7 @@ Information may be processed outside your country. Firebase Authentication opera
 - Community data can be erased immediately from the privacy screen.
 - Engagement records and congratulations follow section 6.
 - Your tips are erased with the account.
+- A deleted personal card is kept flagged as deleted until restored or until account deletion. Contact hashes are replaced on every update and erased with the account. Notices in the account remain until you remove them or the account.
 - Support correspondence follows section 8.
 - Firebase Authentication may keep logged IP addresses for a few weeks. Firebase states that after user deletion, Authentication data is removed from live and backup systems within 180 days.
 
@@ -103,7 +118,7 @@ Information may be processed outside your country. Firebase Authentication opera
 
 Account deletion can be completed inside the Application: **My profile → bottom of the page → Delete account and data**. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.
 
-Deletion removes the Firebase user, cloud backup and photographs, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
+Deletion removes the Firebase user, cloud backup and photographs, the personal card and its photographs, access grants, the phone and contact hashes, notices, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
 
 If you no longer have access to the Application, request deletion at **giladsh22@gmail.com**. We will verify ownership first.
 

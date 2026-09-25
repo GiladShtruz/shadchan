@@ -268,6 +268,7 @@ class BackupService {
       'cardSyncDetached': person.cardSyncDetached,
       'preSyncSnapshot': person.preSyncSnapshot,
       'cardRemoteStatus': person.cardRemoteStatus,
+      'tags': person.tags,
       'additionalContacts': person.additionalContacts
           .map(
             (MatchContact contact) => <String, Object?>{
@@ -379,6 +380,10 @@ class BackupService {
       'text': note.text,
       'createdAt': note.createdAt.toIso8601String(),
       'isAutomatic': note.isAutomatic,
+      // The recording itself is a local file and does not travel; the name is
+      // kept so a restore on the same phone finds it again.
+      if (note.audioFile != null) 'audioFile': note.audioFile,
+      if (note.audioDurationMs != null) 'audioDurationMs': note.audioDurationMs,
     };
   }
 
@@ -442,6 +447,11 @@ class BackupService {
       cardSyncDetached: json['cardSyncDetached'] == true,
       preSyncSnapshot: json['preSyncSnapshot'] as String?,
       cardRemoteStatus: json['cardRemoteStatus'] as String?,
+      tags: <String>[
+        if (json['tags'] case final List<dynamic> tags)
+          for (final Object? tag in tags)
+            if (tag is String && tag.trim().isNotEmpty) tag.trim(),
+      ],
       additionalContacts: _parseContacts(json['additionalContacts']),
       preferredMinAge: _int(json['preferredMinAge']),
       preferredMaxAge: _int(json['preferredMaxAge']),
@@ -533,6 +543,8 @@ class BackupService {
       text: _string(json['text']) ?? '',
       createdAt: _date(json['createdAt']) ?? DateTime.now(),
       isAutomatic: _bool(json['isAutomatic']),
+      audioFile: _string(json['audioFile']),
+      audioDurationMs: _int(json['audioDurationMs']),
     );
   }
 

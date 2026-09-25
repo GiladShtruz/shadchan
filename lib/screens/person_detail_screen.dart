@@ -3,6 +3,10 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
+import 'package:shadchan/widgets/voice_note_player.dart';
+import 'package:shadchan/widgets/match_state_tag.dart';
+import 'package:shadchan/widgets/sketch_actions.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -217,6 +221,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final List<MatchIdea> relatedMatches = matchRepository.getByPersonId(
       widget.personId,
     );
+    final MatchContact? inquiry = _inquiryContactFor(person, relatedMatches);
     final List<PersonNote> personNotes = personRepository.getNotesForPerson(
       person.id,
     );
@@ -389,6 +394,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 ),
               _ProfileInlineActions(
                 person: person,
+                inquiry: inquiry,
                 whatsappLabel: _firstNameOr(person, 'WhatsApp'),
                 onWhatsApp: () => _openWhatsAppMessage(context, person),
                 onSms: () => ContactChannels.openSms(person.phone),
@@ -442,7 +448,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 },
                 onEditingDone: () => setState(() => _editingFullCard = false),
               ),
-              _ProposalContactsCard(person: person),
+              // A card with no number of its own, but somebody to ask about
+              // it: that person, one tap from WhatsApp, directly under the
+              // card — rather than a button asking for details nobody has.
+              if (inquiry != null) _InquiryLine(contact: inquiry),
+              if (inquiry == null || person.proposalContacts.length > 1)
+                _ProposalContactsCard(person: person),
               _PersonalNotesCard(
                 person: person,
                 notes: personNotes,
@@ -1376,11 +1387,82 @@ class _OutsideDatabaseBanner extends StatelessWidget {
   }
 }
 
+/// Who to ask about [person] when they have a card but no number of their
+/// own: their own "איש קשר להעברת הצעות" first, then anybody attached to one
+/// of their ideas. Null when they can be written to directly, have no card,
+/// or nobody with a number is around them.
+MatchContact? _inquiryContactFor(Person person, List<MatchIdea> matches) {
+  if (ContactChannels.forPerson(person) != ContactChannel.none ||
+      !hasCandidateCard(person)) {
+    return null;
+  }
+  bool reachable(MatchContact contact) =>
+      PhoneUtils.toWhatsAppNumber(contact.phone) != null;
+  for (final MatchContact contact in person.proposalContacts) {
+    if (reachable(contact)) {
+      return contact;
+    }
+  }
+  for (final MatchIdea match in matches) {
+    for (final MatchContact contact in match.relatedContacts) {
+      if (reachable(contact)) {
+        return contact;
+      }
+    }
+  }
+  return null;
+}
+
+/// "לבירורים: רבקה כהן" with a WhatsApp button beside the name.
+class _InquiryLine extends StatelessWidget {
+  const _InquiryLine({required this.contact});
+
+  final MatchContact contact;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String name = contact.name.trim().isEmpty
+        ? contact.phone.trim()
+        : contact.name.trim();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 16, 10),
+      child: Row(
+        children: <Widget>[
+          Flexible(
+            child: Text(
+              'לבירורים: $name',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: _profileTextColor(theme),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'WhatsApp עם $name',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => WhatsAppUtils.openChatWithPhone(contact.phone),
+            icon: const FaIcon(
+              FontAwesomeIcons.whatsapp,
+              size: 18,
+              color: Color(0xFF25D366),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The profile's three primary actions, placed in the scrolling content so the
 /// app-level bottom navigation remains the only persistent bottom bar.
 class _ProfileInlineActions extends StatelessWidget {
   const _ProfileInlineActions({
     required this.person,
+    this.inquiry,
     required this.whatsappLabel,
     required this.onWhatsApp,
     required this.onSms,
@@ -1390,6 +1472,11 @@ class _ProfileInlineActions extends StatelessWidget {
   });
 
   final Person person;
+
+  /// Somebody to ask about a card with no number — see [_inquiryContactFor].
+  /// When there is one, "השלמת פרטים" is not offered: the line under the card
+  /// is the way to reach them.
+  final MatchContact? inquiry;
   final String whatsappLabel;
   final VoidCallback onWhatsApp;
   final VoidCallback onSms;
@@ -1422,19 +1509,25 @@ class _ProfileInlineActions extends StatelessWidget {
       ),
     };
 
+    final bool showMessaging =
+        inquiry == null ||
+        ContactChannels.forPerson(person) != ContactChannel.none;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: Row(
         children: <Widget>[
-          Expanded(
-            child: _ProfileActionButton(
-              icon: messaging.icon,
-              label: messaging.label,
-              onPressed: messaging.onTap,
-              foregroundColor: messaging.ink,
+          if (showMessaging) ...<Widget>[
+            Expanded(
+              child: _ProfileActionButton(
+                icon: messaging.icon,
+                label: messaging.label,
+                onPressed: messaging.onTap,
+                foregroundColor: messaging.ink,
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: _ProfileActionButton(
               icon: const Icon(Icons.group_outlined, size: 22),
@@ -1679,6 +1772,13 @@ class _PersonalNotesCard extends StatelessWidget {
                     ),
                   ),
                 IconButton(
+                  icon: const Icon(Icons.mic_none_rounded),
+                  tooltip: 'הקלטת הערה',
+                  visualDensity: VisualDensity.compact,
+                  color: muted,
+                  onPressed: () => recordVoiceNote(context, person.id),
+                ),
+                IconButton(
                   icon: const Icon(Icons.add),
                   tooltip: 'הוספת הערה',
                   visualDensity: VisualDensity.compact,
@@ -1731,6 +1831,8 @@ class _PersonalNotesCard extends StatelessWidget {
         text: note.text,
         createdAt: note.createdAt,
         isAutomatic: note.isAutomatic,
+        audioFile: note.audioFile,
+        audioDurationMs: note.audioDurationMs,
       );
     }).toList();
 
@@ -1770,6 +1872,19 @@ class _PersonalNotesCard extends StatelessWidget {
       return;
     }
     final PersonRepository repository = context.read<PersonRepository>();
+    if (entry.isVoice) {
+      final bool confirmed = await ConfirmDialog.show(
+        context,
+        title: 'מחיקת הקלטה',
+        message: 'למחוק את ההערה הקולית?',
+        confirmText: 'מחיקה',
+        isDestructive: true,
+      );
+      if (confirmed && entry.noteId != null) {
+        await repository.deleteNote(entry.noteId!);
+      }
+      return;
+    }
     final _NoteEditResult? result = await showDialog<_NoteEditResult>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -1903,26 +2018,39 @@ class _NotePreviewRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Icon(
-                entry.isAutomatic ? Icons.auto_awesome_outlined : Icons.circle,
-                size: entry.isAutomatic ? 14 : 7,
+                entry.isVoice
+                    ? Icons.mic_none_rounded
+                    : entry.isAutomatic
+                    ? Icons.auto_awesome_outlined
+                    : Icons.circle,
+                size: entry.isVoice || entry.isAutomatic ? 14 : 7,
                 color: muted,
               ),
             ),
             const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                entry.text,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: entry.isAutomatic ? muted : _profileTextColor(theme),
-                  fontStyle: entry.isAutomatic
-                      ? FontStyle.italic
-                      : FontStyle.normal,
-                  height: 1.4,
+            if (entry.isVoice)
+              Expanded(
+                child: VoiceNotePlayer(
+                  fileName: entry.audioFile!,
+                  durationMs: entry.audioDurationMs,
+                  compact: true,
+                ),
+              )
+            else
+              Expanded(
+                child: Text(
+                  entry.text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: entry.isAutomatic ? muted : _profileTextColor(theme),
+                    fontStyle: entry.isAutomatic
+                        ? FontStyle.italic
+                        : FontStyle.normal,
+                    height: 1.4,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -3717,23 +3845,6 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                                     ),
                                   ),
                                 ),
-                                // The card expander sits up on the name line
-                                // rather than as a third round button — the
-                                // action row stays "לא מתאים" and "הוספת רעיון"
-                                // only.
-                                if (hasCard)
-                                  CandidateCardButton(
-                                    expanded: expanded,
-                                    onPressed: () {
-                                      setState(() {
-                                        if (!_expandedIds.remove(
-                                          candidate.id,
-                                        )) {
-                                          _expandedIds.add(candidate.id);
-                                        }
-                                      });
-                                    },
-                                  ),
                               ],
                             ),
                             const SizedBox(height: 3),
@@ -3757,26 +3868,26 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      _SuggestionIconButton(
-                        icon: Icons.close,
-                        tooltip: 'לא מתאים',
-                        backgroundColor: theme.colorScheme.error.withValues(
-                          alpha: 0.12,
-                        ),
-                        foregroundColor: theme.colorScheme.error,
-                        onPressed: () => widget.onReject(candidate),
-                      ),
-                      const SizedBox(width: 8),
-                      _SuggestionIconButton(
-                        icon: Icons.favorite_outline,
-                        tooltip: 'הוספת רעיון',
-                        backgroundColor: _profileAccentWash(context),
-                        foregroundColor: _profileAccentColor(context),
-                        onPressed: () => widget.onAccept(candidate),
-                      ),
                     ],
                   ),
+                ),
+              ),
+              // The three answers, drawn by hand, under the person they are
+              // about: the card, the idea, or not suitable.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+                child: SketchActionBar(
+                  compact: true,
+                  fullCardExpanded: expanded,
+                  onFullCard: hasCard
+                      ? () => setState(() {
+                          if (!_expandedIds.remove(candidate.id)) {
+                            _expandedIds.add(candidate.id);
+                          }
+                        })
+                      : null,
+                  onOpenIdea: () => widget.onAccept(candidate),
+                  onNotSuitable: () => widget.onReject(candidate),
                 ),
               ),
               if (expanded)
@@ -3792,42 +3903,6 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
           ),
         );
       },
-    );
-  }
-}
-
-class _SuggestionIconButton extends StatelessWidget {
-  const _SuggestionIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final Color backgroundColor;
-  final Color foregroundColor;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: backgroundColor,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: SizedBox(
-            width: 40,
-            height: 40,
-            child: Icon(icon, color: foregroundColor, size: 22),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -4200,7 +4275,15 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
                   onSubmitted: (_) => _addNote(),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'הקלטת הערה',
+                onPressed: () => recordVoiceNote(context, widget.person.id),
+                icon: Icon(
+                  Icons.mic_none_rounded,
+                  color: _profileAccentColor(context),
+                ),
+              ),
               IconButton(
                 onPressed: _canSend ? _addNote : null,
                 icon: Icon(
@@ -4224,6 +4307,8 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
         text: note.text,
         createdAt: note.createdAt,
         isAutomatic: note.isAutomatic,
+        audioFile: note.audioFile,
+        audioDurationMs: note.audioDurationMs,
       );
     }).toList();
 
@@ -4257,6 +4342,9 @@ class _PersonNotesSectionState extends State<_PersonNotesSection> {
   }
 
   Future<void> _editNote(_PersonNoteEntry entry) async {
+    if (entry.isVoice) {
+      return;
+    }
     final TextEditingController editController = TextEditingController(
       text: entry.text,
     );
@@ -4336,7 +4424,14 @@ class _PersonNoteEntry {
     required this.text,
     required this.createdAt,
     required this.isAutomatic,
+    this.audioFile,
+    this.audioDurationMs,
   });
+
+  /// A voice note's recording, when this entry is one.
+  final String? audioFile;
+  final int? audioDurationMs;
+  bool get isVoice => (audioFile ?? '').isNotEmpty;
 
   /// Null for the legacy note stored directly on the person.
   final String? noteId;
@@ -4408,7 +4503,12 @@ class _PersonNotesTimeline extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            if (entry.isAutomatic)
+                            if (entry.isVoice)
+                              VoiceNotePlayer(
+                                fileName: entry.audioFile!,
+                                durationMs: entry.audioDurationMs,
+                              )
+                            else if (entry.isAutomatic)
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
@@ -4790,21 +4890,7 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color baseColor = AppColors.statusColor(status.name);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.statusBackgroundColor(status.name),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        status.displayName,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: baseColor,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+    return MatchStateTag(status: status);
   }
 }
 
@@ -4841,4 +4927,18 @@ class _Section extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Records a voice note for [personId] and files it with their notes.
+Future<void> recordVoiceNote(BuildContext context, String personId) async {
+  final PersonRepository repository = context.read<PersonRepository>();
+  final VoiceRecording? recording = await VoiceRecorderSheet.record(context);
+  if (recording == null) {
+    return;
+  }
+  await repository.addVoiceNote(
+    personId,
+    fileName: recording.fileName,
+    durationMs: recording.durationMs,
+  );
 }

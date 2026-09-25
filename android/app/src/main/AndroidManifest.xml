@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
+    <!-- Voice notes recorded on a friend's profile. Asked for only when the
+         microphone button is pressed. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="שדכן"
         android:name="${applicationName}"
@@ -24,6 +27,15 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- An invitation from a matchmaker to write a personal card:
+                 shadchan-invite://join?from=<uid>&name=<name>, opened from
+                 the page at shadchan-gilad.web.app/join. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="shadchan-invite" android:host="join"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
@@ -63,6 +75,14 @@
                 <action android:name="android.intent.action.SEND_MULTIPLE"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="image/*"/>
+            </intent-filter>
+            <!-- A voice note shared out of WhatsApp, filed into an existing
+                 friend's notes. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="audio/*"/>
+                <data android:mimeType="application/ogg"/>
             </intent-filter>
             <!-- AI import: a spreadsheet, or a WhatsApp chat export as either
                  the .zip with its media or the bare .txt. Declared for both
@@ -111,6 +131,17 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Hands a card's photos to WhatsApp when a card is sent straight
+             into one person's chat. Only the app's cache is exposed. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.cardshare"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/card_share_paths"/>
+        </provider>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -118,6 +149,10 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- Sending a card into one WhatsApp chat addresses WhatsApp by
+             package, which Android 11+ only resolves when it is declared. -->
+        <package android:name="com.whatsapp"/>
+        <package android:name="com.whatsapp.w4b"/>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

@@ -13,8 +13,11 @@ import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/widgets/contact_channel_button.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/match_state_tag.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
-import 'package:shadchan/widgets/person_list_card.dart';
 
 /// One proposal, as a single shared card rather than two separate squares. The
 /// two sides are told apart only by the ring around each photo — stone blue for
@@ -269,7 +272,12 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                     ),
                   ],
                 ),
-                _StatusLine(match: match),
+                _StatusLine(
+                  match: match,
+                  onReminder: widget.onQuickAction == null
+                      ? null
+                      : () => widget.onQuickAction!(MatchQuickAction.reminder),
+                ),
                 _CardActionBar(
                   open: _actionsOpen,
                   match: match,
@@ -516,12 +524,12 @@ class _StatusPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final void Function(Person, ProfileStatus)? picked = onStatusPicked;
-    final Widget tag = ProfileStatusTag(
+    final Widget word = _AvailabilityWord(
       status: person.profileStatus,
       gender: person.gender,
     );
     if (picked == null) {
-      return tag;
+      return word;
     }
 
     return PopupMenuButton<ProfileStatus>(
@@ -535,7 +543,7 @@ class _StatusPicker extends StatelessWidget {
             value: status,
             child: Row(
               children: <Widget>[
-                ProfileStatusTag(status: status, gender: person.gender),
+                _AvailabilityWord(status: status, gender: person.gender),
                 const Spacer(),
                 if (status == person.profileStatus)
                   Icon(
@@ -550,13 +558,37 @@ class _StatusPicker extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          tag,
+          word,
           Icon(
             Icons.arrow_drop_down_rounded,
             size: 18,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "פנויה" / "תפוס" / "בהפסקה" — the word alone, in the status's own colour
+/// (green, red, amber), in the person's own grammatical gender. No frame and no
+/// tinted ground: under a name on a card that already has two faces, a pill
+/// was one more box.
+class _AvailabilityWord extends StatelessWidget {
+  const _AvailabilityWord({required this.status, required this.gender});
+
+  final ProfileStatus status;
+  final Gender gender;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Text(
+      status.displayNameFor(gender),
+      maxLines: 1,
+      style: theme.textTheme.labelSmall?.copyWith(
+        fontWeight: FontWeight.w800,
+        color: AppColors.profileStatusColor(status),
       ),
     );
   }
@@ -576,59 +608,30 @@ class _StatusPicker extends StatelessWidget {
 ///
 /// One coarse word rather than the stored status: see [MatchStatus.stateLabel].
 class _StatusLine extends StatelessWidget {
-  const _StatusLine({required this.match});
+  const _StatusLine({required this.match, required this.onReminder});
 
   final MatchIdea match;
+
+  /// Opens the reminder picker. Null leaves the reminder corner empty.
+  final VoidCallback? onReminder;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    // **Where a proposal stands is always written in the palette's copper.**
-    // It used to take a colour per status — blue for an idea, amber while it
-    // waits, olive once they are out — and a list of proposals came out as a
-    // column of differently coloured pills for one kind of thing. Copper is
-    // what an idea is drawn in everywhere in this app, and the word itself
-    // says which stage it is at.
-    final Color color = theme.brightness == Brightness.dark
-        ? AppColors.secondaryDarkDm
-        : AppColors.secondary;
     final String reason = (match.waitingReason ?? '').trim();
+    final DateTime? reminder = match.reminderDate;
+    final bool live = !match.status.isArchived;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+      padding: const EdgeInsets.fromLTRB(14, 0, 8, 2),
       child: Row(
         children: <Widget>[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  match.status.stateLabel,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Bottom right: where the proposal stands — a dot and a word in the
+          // status's own colour, nothing drawn round it.
+          MatchStateTag(status: match.status),
           if (reason.isNotEmpty) ...<Widget>[
             const SizedBox(width: 8),
-            Expanded(
+            Flexible(
               child: Text(
                 reason,
                 maxLines: 1,
@@ -637,6 +640,38 @@ class _StatusLine extends StatelessWidget {
               ),
             ),
           ],
+          const Spacer(),
+          // Bottom left: the reminder, reachable without opening anything.
+          if (live && onReminder != null)
+            InkWell(
+              onTap: onReminder,
+              borderRadius: BorderRadius.circular(999),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      reminder == null
+                          ? Icons.notifications_none_rounded
+                          : Icons.notifications_active_outlined,
+                      size: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      reminder == null
+                          ? 'הוספת תזכורת'
+                          : 'תזכורת ב־${AppDateUtils.formatDateShort(reminder)}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -700,7 +735,6 @@ class _CardActionBar extends StatelessWidget {
 
     final List<MatchQuickAction> statusActions =
         MatchQuickAction.statusActionsFor(match.status);
-    final MatchNextStep? next = MatchStages.nextStep(match);
     final bool dating = match.status == MatchStatus.dating;
 
     return Padding(
@@ -753,35 +787,44 @@ class _CardActionBar extends StatelessWidget {
                             onChangeFrequency: onChangeCheckInFrequency,
                             onSetStage: onSetStage,
                           )
-                        else if (next != null && onAdvance != null) ...<Widget>[
-                          _PromoteRow(
-                            match: match,
-                            step: next,
+                        else if (onAdvance != null &&
+                            match.status != MatchStatus.dating &&
+                            !match.status.isArchived) ...<Widget>[
+                          _AskPanel(
                             male: male,
                             female: female,
-                            onTap: () => onAdvance!(next),
-                            onOther: MatchStages.otherFirstStep(match) == null
-                                ? null
-                                : () => onAdvance!(
-                                    MatchStages.otherFirstStep(match)!,
-                                  ),
-                            onSetStage: onSetStage,
+                            onAsk: onAdvance!,
                           ),
                         ],
-                        if (dating || (next != null && onAdvance != null))
+                        if (dating ||
+                            (onAdvance != null && !match.status.isArchived))
                           const SizedBox(height: 10),
 
                         // 2. The status moves, and the only grid on the panel.
                         _ActionRow(actions: statusActions, onTap: action),
                         const SizedBox(height: 8),
 
-                        // 3. The two small things, on one line: when to come
-                        // back to this, and who else is around it.
+                        // 3. When the app will ask about this next, and who
+                        // else is around it.
+                        if (!dating && !match.status.isArchived) ...<Widget>[
+                          _ReminderSchedule(
+                            match: match,
+                            onChange: () => action(MatchQuickAction.reminder),
+                          ),
+                          const SizedBox(height: 6),
+                        ],
                         _SecondaryActionsLine(
                           match: match,
-                          onReminder: () => action(MatchQuickAction.reminder),
                           onAddContact: () => action(MatchQuickAction.contact),
                         ),
+                        if (onSetStage != null && !dating)
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: _StageMenu(
+                              current: MatchStage.of(match),
+                              onSelected: onSetStage!,
+                            ),
+                          ),
                         const SizedBox(height: 8),
                         MatchJournalView(matchId: match.id),
                       ],
@@ -795,193 +838,132 @@ class _CardActionBar extends StatelessWidget {
   }
 }
 
-/// "יאללה לקדם" — the exact next step, and the stage it comes from.
+/// "יאללה לקדם" — the same three lines on every open idea.
 ///
-/// **One button that changes its mind, rather than a prompt that never
-/// changes.** The row used to say "יאללה לקדם!" for the life of the proposal
-/// and open a sheet asking who to message — a question the app can answer, and
-/// one it had to ask again every single time because nothing was written down
-/// about who had already been told. Now the proposal carries the two dates
-/// behind [MatchStage], so the button names the side whose turn it is, sends
-/// them the other one's card, and moves the stage on by itself.
-///
-/// **The stage sits beside the button, and it is editable.** Most matchmaking
-/// happens on a phone call the app never sees; a stage that could only be
-/// advanced through this button would be wrong on half the list. The little
-/// menu is how it gets put right.
-///
-/// **One line, in the app's own blue.** It used to carry a second line under
-/// the button about how long the proposal had been left alone, and it wore
-/// WhatsApp green — on a panel that already carries three status tiles, the
-/// two sides and a journal, that was one sentence and one colour too many. The
-/// action is the brand's deep blue on the card's own surface; everything that
-/// is *not* the action sits below a hairline in one quiet footer line.
-class _PromoteRow extends StatelessWidget {
-  const _PromoteRow({
-    required this.match,
-    required this.step,
+/// **A fixed panel rather than a button that changes its mind.** It used to be
+/// one button naming the next step — "לשאול את הבחור", then "לשאול את הבחורה",
+/// then something else again — so the one control on the card moved and
+/// relabelled itself every time it was used. Now the panel never changes: a
+/// heading, one question, and a WhatsApp button for each side. Pressing one
+/// opens that side's chat with the other's card and records, behind the
+/// scenes, that they were asked — which is where the stage lives now.
+class _AskPanel extends StatelessWidget {
+  const _AskPanel({
     required this.male,
     required this.female,
-    required this.onTap,
-    required this.onOther,
-    required this.onSetStage,
+    required this.onAsk,
   });
 
-  final MatchIdea match;
-  final MatchNextStep step;
   final Person? male;
   final Person? female;
-  final VoidCallback onTap;
-
-  /// "לפנות דווקא אל הבחורה" — only on a brand-new idea, where there is still a
-  /// choice of which side to start with.
-  final VoidCallback? onOther;
-
-  final void Function(MatchStage stage)? onSetStage;
+  final void Function(MatchNextStep step) onAsk;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final bool bothAsked = step == MatchNextStep.startDating;
-    final Color ink = dark ? theme.colorScheme.primary : AppColors.primaryDark;
-    final String? sent = match.lastShareLabel;
-    final bool hasFooter =
-        onSetStage != null ||
-        onOther != null ||
-        (sent != null && sent.trim().isNotEmpty);
+    final Color ink = AppColors.matchState(MatchStatus.idea, dark: dark);
 
     return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ink.withValues(alpha: dark ? 0.45 : 0.30)),
+        color: ink.withValues(alpha: dark ? 0.14 : 0.06),
+        borderRadius: BorderRadius.circular(12),
       ),
-      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          InkWell(
-            // Nothing to press once both sides have been asked: the row is a
-            // statement of where the proposal stands, and what happens next is
-            // one of the three status tiles under it.
-            onTap: bothAsked ? null : onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
-              child: Row(
-                children: <Widget>[
-                  // The colour lives here and on the row's own words, and
-                  // nowhere else on the panel.
-                  Container(
-                    width: 34,
-                    height: 34,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: ink.withValues(alpha: dark ? 0.22 : 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: bothAsked
-                        ? Icon(Icons.done_all_rounded, size: 18, color: ink)
-                        : FaIcon(
-                            FontAwesomeIcons.whatsapp,
-                            size: 18,
-                            color: ink,
-                          ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      MatchStages.buttonLabel(step, male: male, female: female),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: ink,
-                      ),
-                    ),
-                  ),
-                  // `chevron_right` and not `chevron_left`: Material's chevrons
-                  // carry `matchTextDirection`, so each one is mirrored in this
-                  // RTL app, and this is the one that actually draws pointing
-                  // left — the way the row reads and the way the card goes out.
-                  if (!bothAsked)
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.7,
-                      ),
-                    ),
-                ],
+          Text(
+            'יאללה לקדם',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: ink,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'את מי {תרצה|תרצי} לשאול על הרעיון?'.forGender(context.userGender),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              // In RTL the first child sits on the right, under her face.
+              Expanded(
+                child: _CheckInButton(
+                  person: female,
+                  fallback: 'הבחורה',
+                  onTap: (_) => onAsk(MatchNextStep.askFemale),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _CheckInButton(
+                  person: male,
+                  fallback: 'הבחור',
+                  onTap: (_) => onAsk(MatchNextStep.askMale),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "התזכורת הבאה בעוד חודש" and a way to change it — the same line a couple
+/// who are out already carry, on every idea that is still open.
+class _ReminderSchedule extends StatelessWidget {
+  const _ReminderSchedule({required this.match, required this.onChange});
+
+  final MatchIdea match;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final DateTime? date = match.reminderDate;
+    final String text = date == null
+        ? 'אין תזכורת לרעיון הזה'
+        : 'התזכורת הבאה ${AppDateUtils.futureReminderLabel(date)}'
+              ' · ${AppDateUtils.formatDateShort(date)}';
+
+    return Row(
+      children: <Widget>[
+        Icon(
+          Icons.notifications_none_rounded,
+          size: 14,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        InkWell(
+          onTap: onChange,
+          borderRadius: BorderRadius.circular(999),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text(
+              date == null ? 'הוספה' : 'שינוי',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.primary,
               ),
             ),
           ),
-          if (hasFooter) ...<Widget>[
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
-            ),
-            Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(8, 4, 8, 4),
-              // A `Wrap` and not a `Row`: the stage can be five words long and
-              // the alternative side is four more, which is wider than a 320px
-              // card at any text scale. Side by side while they fit, stacked
-              // when they do not — never clipped, and never overflowing.
-              child: Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                children: <Widget>[
-                  if (onSetStage != null)
-                    _StageMenu(
-                      current: MatchStage.of(match),
-                      onSelected: onSetStage!,
-                    ),
-                  // The glyph says what the tap does: it opens her chat, the
-                  // same as the button above does for his. In the button's own
-                  // grey so the footer stays one quiet colour.
-                  if (onOther != null)
-                    TextButton.icon(
-                      onPressed: onOther,
-                      style: TextButton.styleFrom(
-                        foregroundColor: theme.colorScheme.onSurfaceVariant,
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        textStyle: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      icon: FaIcon(
-                        FontAwesomeIcons.whatsapp,
-                        size: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      label: const Text('לפנות קודם לבחורה'),
-                    ),
-                  // What already went out, once something has — on the same
-                  // quiet line as the rest of the context rather than as a
-                  // paragraph of its own under the button. A card sent last
-                  // week does not answer the question of what to do next, but
-                  // it is the context for it.
-                  if (sent != null && sent.trim().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 0),
-                      child: Text(
-                        sent,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1339,75 +1321,93 @@ class _CheckInButton extends StatelessWidget {
 class _SecondaryActionsLine extends StatelessWidget {
   const _SecondaryActionsLine({
     required this.match,
-    required this.onReminder,
     required this.onAddContact,
   });
 
   final MatchIdea match;
-  final VoidCallback onReminder;
   final VoidCallback onAddContact;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final DateTime? date = match.reminderDate;
-    final String note = (match.reminderNote ?? '').trim();
     final List<MatchContact> contacts = match.relatedContacts;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // A contact is added to be *reached*, so each one is its name with a
+    // WhatsApp button beside it — not a line of text to copy a number out of.
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        // **A `Wrap`, so neither pill is ever cut.** Side by side in a `Row`
-        // the second one took whatever the first left, which on any ordinary
-        // phone was not enough: "הוספת איש קשר שקשור לרעיון" was ellipsized to
-        // "הוספת איש קשר שקשור…" on every open proposal in the list. Stacked
-        // when they do not fit, side by side when they do, and each of them
-        // always shows its whole label.
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: <Widget>[
-            _MiniAction(
-              icon: date != null
-                  ? Icons.notifications_active_rounded
-                  : Icons.notifications_none_rounded,
-              label: date == null
-                  ? 'הוספת תזכורת'
-                  : 'תזכורת ${AppDateUtils.formatDateShort(date)}',
-              tint: date != null
-                  ? AppColors.statusChecking
-                  : theme.colorScheme.onSurfaceVariant,
-              onTap: onReminder,
-            ),
-            _MiniAction(
-              icon: Icons.person_add_alt_1_outlined,
-              label: 'הוספת איש קשר שקשור לרעיון',
-              tint: theme.colorScheme.onSurfaceVariant,
-              onTap: onAddContact,
-            ),
-          ],
+        for (final MatchContact contact in contacts)
+          _ContactPill(contact: contact),
+        _MiniAction(
+          icon: Icons.person_add_alt_1_outlined,
+          label: contacts.isEmpty
+              ? 'הוספת איש קשר שקשור לרעיון'
+              : 'איש קשר נוסף',
+          tint: theme.colorScheme.onSurfaceVariant,
+          onTap: onAddContact,
         ),
-        if (note.isNotEmpty || contacts.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 4),
-          Text(
-            <String>[
-              if (note.isNotEmpty) note,
-              if (contacts.isNotEmpty) contacts.map(_contactLabel).join(' · '),
-            ].join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
       ],
     );
   }
+}
 
-  static String _contactLabel(MatchContact contact) {
+/// A related contact: the name (and who they are to the proposal), and a
+/// WhatsApp button that opens a chat with them.
+class _ContactPill extends StatelessWidget {
+  const _ContactPill({required this.contact});
+
+  final MatchContact contact;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
     final String role = (contact.description ?? '').trim();
-    return role.isEmpty ? contact.name : '${contact.name} · $role';
+    final bool reachable = contact.phone.trim().isNotEmpty;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: reachable
+            ? () => WhatsAppUtils.openChatWithPhone(contact.phone)
+            : null,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Flexible(
+                child: Text(
+                  role.isEmpty ? contact.name : '${contact.name} · $role',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              if (reachable) ...<Widget>[
+                const SizedBox(width: 6),
+                const FaIcon(
+                  FontAwesomeIcons.whatsapp,
+                  size: 15,
+                  color: kWhatsAppGreen,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1587,6 +1587,7 @@ class _QuickActionButton extends StatelessWidget {
       case MatchQuickAction.married:
         return AppColors.statusDating;
       case MatchQuickAction.close:
+      case MatchQuickAction.separated:
         return AppColors.statusRejected;
       case MatchQuickAction.reopen:
         return AppColors.statusIdea;
@@ -1654,15 +1655,17 @@ class _Middle extends StatelessWidget {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: <Widget>[
-          // **One heart, one colour.** It used to wear the proposal's status,
-          // so the same mark meant blue on one card and olive on the next and
-          // the list read as a row of unrelated badges. The heart is what the
-          // app is *for*; it is the palette's copper on every card, and where
-          // the proposal stands is said in the line under it.
+          // **The heart wears the proposal's status and nothing else** —
+          // blue while open, brown while waiting, copper once they are out —
+          // through [AppColors.matchState]. The stage inside an open idea
+          // (who has been asked) never changes it.
           Icon(
             Icons.favorite,
             size: dating ? 25 : 20,
-            color: AppColors.secondary,
+            color: AppColors.matchState(
+              status,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
           ),
           if (dating) ...<Widget>[
             const Positioned(

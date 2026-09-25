@@ -192,6 +192,11 @@ class MatchRepository extends ChangeNotifier {
       createdAt: now,
       updatedAt: now,
     );
+    // **Every idea that is not closed is looked at once a month** unless the
+    // matchmaker says otherwise — see [defaultReminderFrom].
+    match
+      ..reminderDate = defaultReminderFrom(now)
+      ..reminderNote = defaultReminderNote;
 
     await _matchBox.put(match.id, match);
     // The journal opens with the proposal. It used to start empty on purpose,
@@ -267,6 +272,18 @@ class MatchRepository extends ChangeNotifier {
     if (newStatus != MatchStatus.unavailable) {
       match.waitingReason = null;
     }
+    // A closed idea has nothing left to be reminded about; one that comes back
+    // to life gets its monthly check back.
+    if (newStatus.isArchived) {
+      match
+        ..reminderDate = null
+        ..reminderNote = null;
+    } else if (newStatus != MatchStatus.dating &&
+        (match.reminderDate == null || match.reminderDate!.isBefore(now))) {
+      match
+        ..reminderDate = defaultReminderFrom(now)
+        ..reminderNote = defaultReminderNote;
+    }
     await match.save();
     await _logStatusChange(
       matchId: matchId,
@@ -312,11 +329,16 @@ class MatchRepository extends ChangeNotifier {
       //
       // Only when nothing is already booked: a reminder the matchmaker set by
       // hand is a decision, and overwriting it here would silently undo it.
-      if (match.reminderDate == null || match.reminderDate!.isBefore(now)) {
+      // The default monthly check is not a decision anybody made, so going
+      // out replaces it with the first-week one.
+      if (match.reminderDate == null ||
+          match.reminderDate!.isBefore(now) ||
+          match.reminderNote == defaultReminderNote) {
         await setReminder(
           matchId,
           now.add(DatingCheckIn.first),
           note: 'לבדוק איך הולך לזוג',
+          journal: false,
         );
       }
     } else if (newStatus == MatchStatus.married) {
@@ -530,6 +552,7 @@ class MatchRepository extends ChangeNotifier {
     String matchId,
     DateTime? date, {
     String? note,
+    bool journal = true,
   }) async {
     final MatchIdea? match = getById(matchId);
     if (match == null) {
@@ -553,7 +576,7 @@ class MatchRepository extends ChangeNotifier {
     // one. Clearing it is the same decision in reverse and is worth a line for
     // the same reason: six months on, "handled it" and "gave up on it" look
     // identical unless the journal says which.
-    if (date != previous) {
+    if (journal && date != previous) {
       await _createNote(
         matchId: matchId,
         text: date == null
@@ -585,7 +608,11 @@ class MatchRepository extends ChangeNotifier {
   /// The status moves to "בבדיקה" only from "רעיון" — a proposal that is
   /// waiting, out, or closed is not put back into circulation by somebody
   /// forwarding a card from it.
-  Future<void> recordCardShared(String matchId, String label) async {
+  Future<void> recordCardShared(
+    String matchId,
+    String label, {
+    bool journal = true,
+  }) async {
     final MatchIdea? match = getById(matchId);
     final String trimmed = label.trim();
     if (match == null || trimmed.isEmpty) {
@@ -610,12 +637,14 @@ class MatchRepository extends ChangeNotifier {
         at: now,
       );
     }
-    await _createNote(
-      matchId: matchId,
-      text: trimmed,
-      createdAt: now,
-      isAutomatic: true,
-    );
+    if (journal) {
+      await _createNote(
+        matchId: matchId,
+        text: trimmed,
+        createdAt: now,
+        isAutomatic: true,
+      );
+    }
     _recordActivity(matchId, HomeActivityAction.changedStatus);
     notifyListeners();
     _refreshNotifications();
@@ -835,7 +864,12 @@ class MatchRepository extends ChangeNotifier {
       createdAt: now,
       isAutomatic: true,
     );
-    await setReminder(matchId, next, note: 'לבדוק איך הולך לזוג');
+    await setReminder(
+      matchId,
+      next,
+      note: 'לבדוק איך הולך לזוג',
+      journal: false,
+    );
     _recordActivity(matchId, HomeActivityAction.changedStatus);
   }
 
@@ -912,23 +946,29 @@ class MatchRepository extends ChangeNotifier {
     await updateStatus(matchId, newStatus, journal: false);
 
     // A human-readable summary line for the proposal journal.
-    final String who = switch (party) {
-      MatchOutcomeParty.him => maleName,
-      MatchOutcomeParty.her => femaleName,
-      MatchOutcomeParty.mutual => 'שני הצדדים',
-      MatchOutcomeParty.unknown => 'לא ידוע',
-    };
     // "שני הצדדים" on a proposal that never got off the ground is not two
     // people who each said no — it is the one answer the dialog offers for
     // "מהבירור עלה שזה פחות מתאים", and six months from now that is the fact
     // worth reading back. So it is written as the sentence rather than as a
     // name slotted into the generic rejection line.
     final bool fromInquiry = !dated && party == MatchOutcomeParty.mutual;
+    // **One event, one line.** "הזוג נפרדו" and, under it, why — were two
+    // entries for one moment. The reason now finishes the sentence it belongs
+    // to.
     final String journalText = dated
-        ? 'יצאו ולא המשיכו (החליט: $who)'
+        ? switch (party) {
+            MatchOutcomeParty.him => '$maleName החליט להיפרד',
+            MatchOutcomeParty.her => '$femaleName החליטה להיפרד',
+            MatchOutcomeParty.mutual => 'הזוג החליטו להיפרד',
+            MatchOutcomeParty.unknown => 'הזוג נפרדו',
+          }
         : fromInquiry
         ? _inquiryOutcomeLine
-        : 'הרעיון נדחה (מי: $who)';
+        : switch (party) {
+            MatchOutcomeParty.him => 'הרעיון נסגר — $maleName לא רצה להמשיך',
+            MatchOutcomeParty.her => 'הרעיון נסגר — $femaleName לא רצתה להמשיך',
+            _ => 'הרעיון נסגר',
+          };
     await addNote(
       matchId,
       trimmedNote.isEmpty ? journalText : '$journalText — $trimmedNote',
@@ -1430,6 +1470,33 @@ class MatchRepository extends ChangeNotifier {
     required bool isAutomatic,
     String? mazelTovFrom,
   }) async {
+    // **One act, one line.** A single tap can write several automatic lines
+    // within the same moment — a status move, the reminder it books, the
+    // availability it changes. Those are one event, so a line written within
+    // [sameEventWindow] of the previous automatic line is folded into it
+    // rather than stacked under it, and a line that says nothing new is
+    // dropped.
+    if (isAutomatic && mazelTovFrom == null) {
+      MatchNote? last;
+      for (final MatchNote existing in _noteBox.values) {
+        if (existing.matchId == matchId &&
+            (last == null || existing.createdAt.isAfter(last.createdAt))) {
+          last = existing;
+        }
+      }
+      final String line = text.trim();
+      if (last != null &&
+          last.isAutomatic &&
+          last.mazelTovFrom == null &&
+          createdAt.difference(last.createdAt).abs() < sameEventWindow) {
+        if (!last.text.contains(line)) {
+          last.text = '${last.text} — $line';
+          await last.save();
+        }
+        return;
+      }
+    }
+
     DateTime at = createdAt;
     for (final MatchNote existing in _noteBox.values) {
       if (existing.matchId == matchId && !existing.createdAt.isBefore(at)) {
@@ -1484,6 +1551,21 @@ class MatchRepository extends ChangeNotifier {
     notifyListeners();
     return true;
   }
+
+  /// How close together two automatic lines must be to count as one event.
+  ///
+  /// Settable only so a test can write one line per call and read each on its
+  /// own; the app never changes it.
+  @visibleForTesting
+  static Duration sameEventWindow = const Duration(seconds: 3);
+
+  static const String defaultReminderNote = 'לבדוק מה קורה עם הרעיון';
+
+  /// **Every idea that is not closed is looked at once a month.** A proposal
+  /// with no date on it is one nobody comes back to; the default is a month
+  /// from [from], and the matchmaker can move it from the card.
+  static DateTime defaultReminderFrom(DateTime from) =>
+      DateTime(from.year, from.month + 1, from.day, 10);
 
   Future<void> _touchMatch(String matchId, DateTime updatedAt) async {
     final MatchIdea? match = getById(matchId);

@@ -22,13 +22,15 @@ class PersonNoteAdapter extends TypeAdapter<PersonNote> {
       text: fields[2] as String,
       createdAt: fields[3] as DateTime,
       isAutomatic: fields[4] == null ? false : fields[4] as bool,
+      audioFile: fields[5] as String?,
+      audioDurationMs: fields[6] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, PersonNote obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -38,7 +40,11 @@ class PersonNoteAdapter extends TypeAdapter<PersonNote> {
       ..writeByte(3)
       ..write(obj.createdAt)
       ..writeByte(4)
-      ..write(obj.isAutomatic);
+      ..write(obj.isAutomatic)
+      ..writeByte(5)
+      ..write(obj.audioFile)
+      ..writeByte(6)
+      ..write(obj.audioDurationMs);
   }
 
   @override

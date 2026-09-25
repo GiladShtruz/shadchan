@@ -43,6 +43,7 @@ abstract final class AppNotice {
     VoidCallback? onAction,
     Duration? duration,
     bool isError = false,
+    bool atBottom = false,
   }) {
     showOn(
       capture(context),
@@ -51,6 +52,7 @@ abstract final class AppNotice {
       onAction: onAction,
       duration: duration,
       isError: isError,
+      atBottom: atBottom,
     );
   }
 
@@ -64,6 +66,10 @@ abstract final class AppNotice {
       Overlay.maybeOf(context, rootOverlay: true);
 
   /// [show], against an overlay taken earlier with [capture].
+  ///
+  /// [atBottom] puts the card above the bottom edge instead of over the app
+  /// bar — for a notice raised from a list the reader is working down, where a
+  /// card at the top lands on the very thing they are looking at next.
   static void showOn(
     OverlayState? overlay,
     String message, {
@@ -71,6 +77,7 @@ abstract final class AppNotice {
     VoidCallback? onAction,
     Duration? duration,
     bool isError = false,
+    bool atBottom = false,
   }) {
     final String text = message.trim();
     if (overlay == null || text.isEmpty || !overlay.mounted) {
@@ -84,6 +91,7 @@ abstract final class AppNotice {
         message: text,
         actionLabel: actionLabel,
         isError: isError,
+        atBottom: atBottom,
         duration: duration ?? _defaultDuration,
         onAction: onAction == null
             ? null
@@ -121,8 +129,10 @@ class _NoticeCard extends StatefulWidget {
     required this.onDismiss,
     required this.isError,
     required this.duration,
+    this.atBottom = false,
   });
 
+  final bool atBottom;
   final String message;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -163,8 +173,11 @@ class _NoticeCardState extends State<_NoticeCard>
         ? theme.colorScheme.error
         : theme.colorScheme.onSurface;
 
+    final MediaQueryData media = MediaQuery.of(context);
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 8,
+      top: widget.atBottom ? null : media.padding.top + 8,
+      // Clear of the bottom bar and the gesture area.
+      bottom: widget.atBottom ? media.padding.bottom + 72 : null,
       left: 12,
       right: 12,
       child: FadeTransition(
@@ -172,7 +185,7 @@ class _NoticeCardState extends State<_NoticeCard>
         child: SlideTransition(
           position:
               Tween<Offset>(
-                begin: const Offset(0, -0.35),
+                begin: Offset(0, widget.atBottom ? 0.35 : -0.35),
                 end: Offset.zero,
               ).animate(
                 CurvedAnimation(

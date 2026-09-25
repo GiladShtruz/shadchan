@@ -65,6 +65,7 @@
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>shadchan-share</string>
+					<string>shadchan-invite</string>
 				</array>
 			</dict>
 			<!-- Where Google returns to after the sign-in sheet. This is
@@ -120,6 +121,8 @@
 		     reach this prompt, so the string is never actually shown. -->
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>האפליקציה אינה עושה שימוש במיקום ולא תבקש אותו</string>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>כדי להקליט הערה קולית על חבר. ההקלטה נשמרת במכשיר שלך בלבד</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>כדי לבחור תמונה מהגלריה ולהוסיף אותה לכרטיס האישי</string>
 		<key>UIApplicationSceneManifest</key>

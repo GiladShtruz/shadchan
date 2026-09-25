@@ -70,6 +70,21 @@ final class ShareViewController: UIViewController {
           continue
         }
 
+        // A voice note — WhatsApp's are .opus. Kept under its own name so
+        // the extension tells the app what kind of file it is.
+        if let audioType = Self.audioTypeIdentifier(of: attachment) {
+          if let fileName = await copyFile(
+            from: attachment,
+            typeIdentifier: audioType,
+            into: shareDirectory,
+            index: fileNames.count,
+            fallbackName: "voice.opus"
+          ) {
+            fileNames.append(fileName)
+          }
+          continue
+        }
+
         if let text = await loadText(from: attachment) {
           textFragments.append(text)
         }
@@ -139,6 +154,49 @@ final class ShareViewController: UIViewController {
         return nil
       }
       return write(data, named: "\(index)_shared_image.jpg", into: shareDirectory)
+    default:
+      return nil
+    }
+  }
+
+  /// The audio type an attachment carries, or nil when it is not audio.
+  private static func audioTypeIdentifier(of attachment: NSItemProvider) -> String? {
+    for identifier in attachment.registeredTypeIdentifiers {
+      if let type = UTType(identifier), type.conforms(to: .audio) {
+        return identifier
+      }
+      if identifier == "org.xiph.opus" || identifier == "org.xiph.ogg" {
+        return identifier
+      }
+    }
+    return nil
+  }
+
+  /// Copies any file-like attachment — a URL or raw data — into the share.
+  private func copyFile(
+    from attachment: NSItemProvider,
+    typeIdentifier: String,
+    into shareDirectory: URL,
+    index: Int,
+    fallbackName: String
+  ) async -> String? {
+    guard let item = await loadItem(from: attachment, typeIdentifier: typeIdentifier) else {
+      return nil
+    }
+    switch item {
+    case let url as URL:
+      let didAccess = url.startAccessingSecurityScopedResource()
+      defer {
+        if didAccess {
+          url.stopAccessingSecurityScopedResource()
+        }
+      }
+      guard let data = try? Data(contentsOf: url) else {
+        return nil
+      }
+      return write(data, named: "\(index)_\(sanitized(url.lastPathComponent))", into: shareDirectory)
+    case let data as Data:
+      return write(data, named: "\(index)_\(fallbackName)", into: shareDirectory)
     default:
       return nil
     }

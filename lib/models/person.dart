@@ -53,8 +53,10 @@ class Person extends HiveObject {
     this.cardSyncDetached = false,
     this.preSyncSnapshot,
     this.cardRemoteStatus,
+    List<String> tags = const <String>[],
     int? avatarIndex,
   }) : photosPaths = List<String>.from(photosPaths),
+       tags = List<String>.from(tags),
        preferredRegions = List<Region>.from(preferredRegions),
        preferredMaritalStatuses = List<MaritalStatus>.from(
          preferredMaritalStatuses,
@@ -269,6 +271,13 @@ class Person extends HiveObject {
   @HiveField(45)
   String? cardRemoteStatus;
 
+  /// The matchmaker's own labels for this person — "עירוניסט", "חו״ל",
+  /// whatever language they sort their database in. **Private to the
+  /// matchmaker**: never part of the card, never synced to the card's owner
+  /// and never published; only the matchmaker's own backup carries them.
+  @HiveField(46, defaultValue: <String>[])
+  List<String> tags;
+
   /// Whether the details on this record currently come from its owner.
   bool get isCardSynced => cardOwnerUid != null && !cardSyncDetached;
 
@@ -419,6 +428,7 @@ class Person extends HiveObject {
     bool? cardSyncDetached,
     Object? preSyncSnapshot = _sentinel,
     Object? cardRemoteStatus = _sentinel,
+    List<String>? tags,
     int? avatarIndex,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -505,6 +515,7 @@ class Person extends HiveObject {
       cardRemoteStatus: identical(cardRemoteStatus, _sentinel)
           ? this.cardRemoteStatus
           : cardRemoteStatus as String?,
+      tags: tags ?? this.tags,
       avatarIndex: avatarIndex ?? this.avatarIndex,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

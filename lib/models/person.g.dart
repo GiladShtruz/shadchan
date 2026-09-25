@@ -76,6 +76,7 @@ class PersonAdapter extends TypeAdapter<Person> {
       cardSyncDetached: fields[43] == null ? false : fields[43] as bool,
       preSyncSnapshot: fields[44] as String?,
       cardRemoteStatus: fields[45] as String?,
+      tags: fields[46] == null ? [] : (fields[46] as List).cast<String>(),
       avatarIndex: fields[28] as int?,
     );
   }
@@ -83,7 +84,7 @@ class PersonAdapter extends TypeAdapter<Person> {
   @override
   void write(BinaryWriter writer, Person obj) {
     writer
-      ..writeByte(46)
+      ..writeByte(47)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -174,6 +175,8 @@ class PersonAdapter extends TypeAdapter<Person> {
       ..write(obj.preSyncSnapshot)
       ..writeByte(45)
       ..write(obj.cardRemoteStatus)
+      ..writeByte(46)
+      ..write(obj.tags)
       ..writeByte(28)
       ..write(obj.avatarIndex);
   }

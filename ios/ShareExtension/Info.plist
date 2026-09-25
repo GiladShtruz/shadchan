@@ -32,18 +32,14 @@
 		<dict>
 			<key>NSExtensionAttributes</key>
 			<dict>
-				<!-- Mirrors the Android intent filters: text/plain, image/*, and
-				     multiple images. Links are accepted too, since a WhatsApp
-				     share can be a bare link. -->
+				<!-- Mirrors the Android intent filters: text, links, images
+				     and audio — a WhatsApp voice note is an .opus file, filed
+				     into an existing friend's notes. A predicate rather than
+				     the plain keys, because the plain keys have no way to name
+				     audio short of accepting every file. The image count is
+				     capped in ShareViewController instead. -->
 				<key>NSExtensionActivationRule</key>
-				<dict>
-					<key>NSExtensionActivationSupportsText</key>
-					<true/>
-					<key>NSExtensionActivationSupportsImageWithMaxCount</key>
-					<integer>20</integer>
-					<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
-					<integer>1</integer>
-				</dict>
+				<string>SUBQUERY(extensionItems, $extensionItem, SUBQUERY($extensionItem.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.audio" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.xiph.opus" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.xiph.ogg").@count &gt;= 1).@count &gt;= 1</string>
 			</dict>
 			<key>NSExtensionPointIdentifier</key>
 			<string>com.apple.share-services</string>

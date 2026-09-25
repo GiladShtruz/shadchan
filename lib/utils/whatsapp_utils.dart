@@ -1,8 +1,7 @@
 import 'dart:io';
-import 'dart:ui' show Rect;
 
+import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -149,25 +148,19 @@ abstract final class WhatsAppUtils {
     );
   }
 
-  /// Sends [card]'s saved card — **its text and every one of its photos** — to
-  /// [recipient]. Returns false when the recipient has no valid number and the
-  /// card has nothing worth sending.
+  /// Sends [card]'s saved card to [recipient] — **straight into their chat**,
+  /// never through the share sheet. Returns false when the recipient has no
+  /// valid number or the card has nothing worth sending.
   ///
-  /// **A card is its photos as much as its words**, and this path used to drop
-  /// them. It built a `wa.me` link, which can carry text and nothing else, so
-  /// the one route a card travels most often — straight into the chat of the
-  /// person being proposed to — was the one route that arrived without a face.
-  /// Everywhere else in the app a card leaves through [ShareUtils], with the
-  /// gallery attached.
+  /// "שיתוף הכרטיס של X ל־Y" used to open the system share sheet whenever the
+  /// card had photos, and the matchmaker then had to find Y a second time in
+  /// WhatsApp's own contact picker. Now:
   ///
-  /// So it now splits on whether there is anything to attach:
-  ///
-  /// * **photos** → the system share sheet, carrying the text and the whole
-  ///   gallery. WhatsApp is one tap inside it, and the recipient is picked
-  ///   there; no share API can hand files to one named chat, and arriving with
-  ///   the photos is worth the extra tap;
-  /// * **text only** → the direct chat, exactly as before. There is nothing to
-  ///   attach, so there is no reason to make anybody pick a contact twice.
+  /// * **Android** hands WhatsApp the text *and* the photos with the chat
+  ///   already chosen (the `jid` extra — see `MainActivity.sendToWhatsAppChat`);
+  /// * **iOS**, and Android without WhatsApp installed, opens Y's chat with the
+  ///   card's text ready to send. No iOS API can put files into one named
+  ///   chat, so there the photos are not attached.
   static Future<bool> sendCardTo(
     Person recipient,
     Person card, {
@@ -180,28 +173,39 @@ abstract final class WhatsAppUtils {
     if (text.isEmpty && photos.isEmpty) {
       return false;
     }
-
-    // Credited like every other way a card leaves the app.
-    final String message = CommunityLinks.creditCard(text);
-
-    if (photos.isNotEmpty) {
-      await Share.shareXFiles(
-        photos.map((String path) => XFile(path)).toList(),
-        text: message,
-        sharePositionOrigin: origin,
-      );
-      return true;
-    }
-
     final String? phone = PhoneUtils.toWhatsAppNumber(recipient.phone);
     if (phone == null) {
       return false;
     }
+
+    // Credited like every other way a card leaves the app.
+    final String message = CommunityLinks.creditCard(text);
+
+    if (Platform.isAndroid) {
+      try {
+        final bool? sent = await _directChannel.invokeMethod<bool>(
+          'sendToChat',
+          <String, Object>{'phone': phone, 'text': message, 'paths': photos},
+        );
+        if (sent == true) {
+          return true;
+        }
+      } on PlatformException {
+        // Falls through to the text-only chat link.
+      } on MissingPluginException {
+        // Same — a test, or an engine without the channel.
+      }
+    }
+
     return launchUrl(
       Uri.https('wa.me', '/$phone', <String, String>{'text': message}),
       mode: LaunchMode.externalApplication,
     );
   }
+
+  static const MethodChannel _directChannel = MethodChannel(
+    'shadchan/whatsapp_direct',
+  );
 
   /// Whether [card] has anything to send at all — text, photos, or both.
   static bool hasSendableCard(Person? card) {

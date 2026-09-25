@@ -1107,9 +1107,9 @@ void main() {
     await tester.tap(find.text('פעולות'));
     await tester.pumpAndSettle();
 
-    // The promotion leads the panel, and it names the step this proposal is
-    // actually waiting for rather than repeating one prompt for ever.
-    expect(find.text('יאללה לקדם — לשאול את הלל'), findsOneWidget);
+    // The promotion leads the panel: the same fixed heading and question on
+    // every open idea, with a button per side.
+    expect(find.text('יאללה לקדם'), findsOneWidget);
     // Named for the act rather than the state, so a tile cannot be read as a
     // label saying where the proposal already is.
     expect(find.text('מתחילים לצאת'), findsOneWidget);
@@ -1580,7 +1580,7 @@ void main() {
     expect(find.text('הטקסט וכל התמונות של הכרטיס'), findsOneWidget);
   });
 
-  testWidgets('"יאללה לקדם" goes straight to the side whose turn it is', (
+  testWidgets('"יאללה לקדם" asks about both sides, one button each', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
@@ -1632,12 +1632,14 @@ void main() {
     // whose card, on a proposal nobody had been told about — a question with
     // one sensible answer, asked every single time because nothing was written
     // down about who already knew. The button names the side itself now.
-    expect(find.text('יאללה לקדם — לשאול את נדיב'), findsOneWidget);
+    // A fixed panel now: the heading, the question, and a WhatsApp button
+    // for each side — the stage moves behind the scenes when one is used.
+    expect(find.text('יאללה לקדם'), findsOneWidget);
+    expect(find.text('את מי תרצה לשאול על הרעיון?'), findsOneWidget);
     expect(find.text('פתיחת שיחה עם נהרה'), findsNothing);
 
-    // The status sits beside it, named, and the alternative side under it.
+    // The status stays one small control, at the foot of the panel.
     expect(find.text('סטטוס: רעיון חדש'), findsOneWidget);
-    expect(find.text('לפנות קודם לבחורה'), findsOneWidget);
   });
 
   testWidgets('The journal is a chat that writes itself, and stays editable', (

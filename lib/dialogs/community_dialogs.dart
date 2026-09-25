@@ -106,7 +106,7 @@ abstract final class RateAppDialog {
                 // to the store is the one thing this must never do.
                 CommunityPromptsStore.markRatingDone();
                 Navigator.of(dialogContext).pop();
-                CommunityLinks.openLink(CommunityLinks.downloadUrl);
+                CommunityLinks.openLink(CommunityLinks.storeUrl);
               },
               child: const Text('לדירוג'),
             ),

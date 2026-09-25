@@ -58,6 +58,9 @@ void main() {
   });
 
   setUp(() async {
+    // Each call is its own event here, however fast the test runs; the
+    // folding of one act's lines into one is tested on its own below.
+    MatchRepository.sameEventWindow = Duration.zero;
     people = await Hive.openBox<Person>('people');
     matches = await Hive.openBox<MatchIdea>('matches');
     notes = await Hive.openBox<MatchNote>('match_notes');
@@ -130,10 +133,13 @@ void main() {
     // happened in is a fact the file holds — two lines written in the same
     // millisecond used to come out in whichever order `Box.values` happened to
     // yield, and a different one after the next restart.
-    expect(journalOf(match.id).take(2), <String>['הרעיון נפתח', 'התחילו לצאת']);
-    expect(journalOf(match.id), hasLength(3));
-    expect(journalOf(match.id).last, startsWith('נקבעה תזכורת'));
-    expect(journalOf(match.id).last, contains('לבדוק איך הולך לזוג'));
+    // The check-in a week out is booked, but silently: it is part of going
+    // out, not a second event.
+    expect(journalOf(match.id), <String>['הרעיון נפתח', 'התחילו לצאת']);
+    expect(
+      matchRepository.getById(match.id)?.reminderNote,
+      'לבדוק איך הולך לזוג',
+    );
 
     // A move that had no warmer sentence of its own used to write nothing at
     // all — the status changed and the journal did not notice.
@@ -163,11 +169,54 @@ void main() {
       // generic line for this caller.
       final List<String> journal = journalOf(match.id);
       expect(journal, hasLength(2));
-      expect(journal.last, contains('נדחה'));
-      expect(journal.last, contains('הוא רחוק מדי'));
-      expect(journal, isNot(contains('הרעיון נסגר')));
+      expect(
+        journal.last,
+        'הרעיון נסגר — שםfemale לא רצתה להמשיך — הוא רחוק מדי',
+      );
     },
   );
+
+  test('a couple who separate get one line, with the reason in it', () async {
+    final MatchIdea match = await openProposal();
+    await matchRepository.updateStatus(match.id, MatchStatus.dating);
+    await matchRepository.recordOutcome(
+      match.id,
+      newStatus: MatchStatus.dated,
+      party: MatchOutcomeParty.mutual,
+      note: 'לא התחברו',
+    );
+    expect(journalOf(match.id).last, 'הזוג החליטו להיפרד — לא התחברו');
+    // A closed idea has nothing left to be reminded about.
+    expect(matchRepository.getById(match.id)?.reminderDate, isNull);
+  });
+
+  test('one act writes one line, however many things it recorded', () async {
+    MatchRepository.sameEventWindow = const Duration(seconds: 3);
+    final MatchIdea match = await openProposal();
+    await matchRepository.markSideAsked(
+      match.id,
+      Gender.female,
+      note: 'הכרטיס של שםmale נשלח לשםfemale',
+    );
+    // Written the same instant as the opening line, so it folds into it;
+    // then a second approach a moment later says nothing new about the
+    // first and is dropped.
+    expect(journalOf(match.id), hasLength(1));
+    expect(journalOf(match.id).single, contains('הכרטיס של שםmale נשלח'));
+    await matchRepository.addNote(
+      match.id,
+      'הכרטיס של שםmale נשלח לשםfemale',
+      isAutomatic: true,
+    );
+    expect(journalOf(match.id), hasLength(1));
+  });
+
+  test('a new idea is looked at again in a month', () async {
+    final MatchIdea match = await openProposal();
+    final DateTime? date = matchRepository.getById(match.id)?.reminderDate;
+    expect(date, isNotNull);
+    expect(date!.difference(DateTime.now()).inDays, inInclusiveRange(27, 31));
+  });
 
   test('reminders, contacts and their removal all file themselves', () async {
     final MatchIdea match = await openProposal();

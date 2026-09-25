@@ -89,7 +89,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final AccountProvider account = context.watch<AccountProvider>();
     final SyncProvider sync = context.watch<SyncProvider>();
-    final bool hasCard = context.watch<PersonalCardProvider>().hasCard;
+    final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
+    final bool hasCard = cards.hasCard;
     final bool matchmaker = WorkspaceStore.matchmakerEnabled;
 
     final List<Widget> sections = <Widget>[
@@ -114,8 +115,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (profile.isSingle) ...<Widget>[
         _MyCardEntry(
           hasCard: hasCard,
+          deleted: cards.isDeleted,
           gender: profile.gender,
-          onTap: () => hasCard ? context.go('/me') : context.push('/me/card'),
+          onTap: () => hasCard || cards.isDeleted
+              ? context.go('/me')
+              : context.push('/me/card'),
         ),
         const SizedBox(height: 16),
       ],
@@ -1034,11 +1038,15 @@ class UserProfileAvatar extends StatelessWidget {
 class _MyCardEntry extends StatelessWidget {
   const _MyCardEntry({
     required this.hasCard,
+    required this.deleted,
     required this.gender,
     required this.onTap,
   });
 
   final bool hasCard;
+
+  /// A card that was deleted: the entry offers to restore it.
+  final bool deleted;
   final Gender? gender;
   final VoidCallback onTap;
 
@@ -1068,14 +1076,20 @@ class _MyCardEntry extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  hasCard ? 'הכרטיס שלי' : 'יצירת הכרטיס שלי',
+                  deleted
+                      ? 'שחזור הכרטיס שלי'
+                      : hasCard
+                      ? 'הכרטיס שלי'
+                      : 'יצירת הכרטיס שלי',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  hasCard
+                  deleted
+                      ? 'הכרטיס שמור, ואפשר להחזיר אותו'
+                      : hasCard
                       ? 'ניהול הכרטיס, הסטטוס ומי רואה אותו'
                       : 'כרטיס אחד שרק {אתה מעדכן|את מעדכנת}, לחברים שמשדכים'
                             .forGender(gender),

@@ -44,9 +44,19 @@ abstract final class CommunityLinks {
   /// fall back to the Play listing rather than to a dead link.
   static const String appStoreUrl = '';
 
-  /// Where a friend should be sent to download it, from whichever phone the
-  /// invitation is being written on.
-  static String get downloadUrl {
+  /// The app's own landing page. It sends an Android phone to Play and an
+  /// iPhone to the App Store by itself, so it is the one link that is right
+  /// whichever phone the message is read on — which is why the invitation and
+  /// every shared card carry it rather than a store listing.
+  static const String landingUrl = 'https://shadchan-app-eosin.vercel.app';
+
+  /// Where a friend should be sent to download it — the landing page, which
+  /// picks the right store for the phone it is opened on.
+  static String get downloadUrl => landingUrl;
+
+  /// The store listing for this phone, for the rating prompt, which has to
+  /// land on the listing itself rather than on a page about it.
+  static String get storeUrl {
     if (Platform.isIOS && appStoreUrl.trim().isNotEmpty) {
       return appStoreUrl;
     }

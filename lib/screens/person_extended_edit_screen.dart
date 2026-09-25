@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_contact.dart';
@@ -75,7 +76,7 @@ class PersonExtendedEditScreen extends StatefulWidget {
 }
 
 /// The areas of the page, in the order they are drawn.
-enum _Area { sendCard, photos, basics, looking, notes, contacts }
+enum _Area { sendCard, photos, basics, looking, tags, notes, contacts }
 
 class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   final TextEditingController _firstName = TextEditingController();
@@ -127,6 +128,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   List<String> _photoPaths = <String>[];
   final Set<String> _newPhotoPaths = <String>{};
   List<MatchContact> _additionalContacts = <MatchContact>[];
+  List<String> _tags = <String>[];
 
   /// Only the basics start open: it is the area the profile itself already
   /// edits, and the one the required fields live in.
@@ -233,6 +235,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _birthDate = person.birthDate;
     _photoPaths = List<String>.from(person.photosPaths);
     _additionalContacts = List<MatchContact>.from(person.additionalContacts);
+    _tags = List<String>.from(person.tags);
 
     // Falls back to the default for their own style, so the area is never blank
     // and the matchmaker sees what the app would do on their behalf.
@@ -355,6 +358,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       ..inquiryContactName = _text(_contactName)
       ..inquiryContactPhone = _text(_contactPhone)
       ..additionalContacts = List<MatchContact>.from(_additionalContacts)
+      ..tags = List<String>.from(_tags)
       ..photosPaths = List<String>.from(_photoPaths)
       ..preferredMinAge = _number(_prefMinAge)
       ..preferredMaxAge = _number(_prefMaxAge)
@@ -693,6 +697,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               // proposals are the matchmaker's alone; they never belong to
               // the card, so they are not on the owner's page at all.
               if (!_owner) ...<Widget>[
+                _buildTags(),
                 _buildNotes(theme, repository.getNotesForPerson(person.id)),
                 _buildContacts(theme),
               ],
@@ -1143,6 +1148,21 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// The matchmaker's own labels for this friend. Private: never part of the
+  /// card, never on the owner's page.
+  Widget _buildTags() {
+    return _area(
+      area: _Area.tags,
+      title: _tags.isEmpty ? 'תגיות' : 'תגיות (${_tags.length})',
+      icon: Icons.sell_outlined,
+      subtitle: 'לסידור וסינון המאגר שלך. לא מופיעות בכרטיס.',
+      child: PersonTagsEditor(
+        selected: _tags,
+        onChanged: (List<String> tags) => _commit(() => _tags = tags),
       ),
     );
   }

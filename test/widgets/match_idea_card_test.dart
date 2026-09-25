@@ -170,8 +170,9 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    // One chip per side, showing that side's own status.
-    expect(find.byType(ProfileStatusTag), findsNWidgets(2));
+    // One word per side, in that side's own grammatical gender and with no
+    // pill drawn round it.
+    expect(find.byType(ProfileStatusTag), findsNothing);
     expect(find.text('פנוי'), findsOneWidget);
     expect(find.text('בהפסקה'), findsOneWidget);
 
@@ -277,141 +278,75 @@ void main() {
     }
   });
 
-  testWidgets('"יאללה לקדם" names the next step and leads the panel', (
+  testWidgets('"יאללה לקדם" is the same panel at every stage', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final List<MatchNextStep> steps = <MatchNextStep>[];
-    await tester.pumpWidget(
-      wrap(card(onAction: (_) {}, onAdvance: steps.add, onSetStage: (_) {})),
-    );
-    await tester.pump();
-    await tester.tap(find.text('פעולות'));
-    await tester.pumpAndSettle();
-
-    // Nobody has been asked yet, so the step is the boy — by name, because the
-    // card knows who he is. And it is the *first* thing under the fold: the
-    // three status tiles are the three ways a proposal ends, and offering them
-    // above the one thing it is waiting for was the wrong way round.
-    expect(find.text('יאללה לקדם — לשאול את דוד'), findsOneWidget);
-    expect(
-      tester.getCenter(find.text('יאללה לקדם — לשאול את דוד')).dy,
-      lessThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
-    );
-    // The status, beside it, named and editable — most matchmaking happens on
-    // a call the app never sees, and a status that can only move forwards is
-    // one that goes wrong and stays wrong.
-    expect(find.text('סטטוס: רעיון חדש'), findsOneWidget);
-    // And the way to start with her instead, offered only while it is still a
-    // choice.
-    expect(find.text('לפנות קודם לבחורה'), findsOneWidget);
-
-    await tester.tap(find.text('יאללה לקדם — לשאול את דוד'));
-    await tester.pump();
-    expect(steps, <MatchNextStep>[MatchNextStep.askMale]);
-
-    // With him already asked, the same button offers the other side. A fresh
-    // key, so the panel starts folded again rather than inheriting the open
-    // state of the card above.
-    await tester.pumpWidget(
-      wrap(
-        card(
-          key: const ValueKey<String>('asked-him'),
-          status: MatchStatus.checking,
-          askedMaleAt: DateTime(2026, 8, 20),
-          shareLabel: 'הכרטיס של שרה נשלח לדוד',
-          onAction: (_) {},
-          onAdvance: (_) {},
-          onSetStage: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(find.text('פעולות'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('יאללה לקדם — לשאול את שרה'), findsOneWidget);
-    // Named for what is being waited for, not for the call that was made.
-    expect(find.text('סטטוס: מחכים לתשובת הבחור'), findsOneWidget);
-    expect(find.text('לפנות קודם לבחורה'), findsNothing);
-    // What already went out is context under the button, not the button.
-    expect(find.text('הכרטיס של שרה נשלח לדוד'), findsOneWidget);
-
-    // Both asked: there is nothing left for the app to do on anybody's behalf,
-    // so the row stops being a button and says where the proposal stands. What
-    // happens next is one of the three status tiles under it.
-    final List<MatchNextStep> afterBoth = <MatchNextStep>[];
-    await tester.pumpWidget(
-      wrap(
-        card(
-          key: const ValueKey<String>('asked-both'),
-          status: MatchStatus.checking,
-          askedMaleAt: DateTime(2026, 8, 20),
-          askedFemaleAt: DateTime(2026, 8, 21),
-          onAction: (_) {},
-          onAdvance: afterBoth.add,
-          onSetStage: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(find.text('פעולות'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('יאללה לקדם — מתחילים לצאת'), findsNothing);
-    expect(find.text('שאלתי את שניהם'), findsOneWidget);
-    expect(find.text('סטטוס: בבדיקה'), findsOneWidget);
-    // The three answers that can come back, and nothing else.
-    for (final String action in <String>[
-      'העברה להמתנה',
-      'מתחילים לצאת',
-      'סגירת רעיון',
+    for (final (DateTime?, DateTime?) asked in <(DateTime?, DateTime?)>[
+      (null, null),
+      (DateTime(2026, 8, 20), null),
+      (DateTime(2026, 8, 20), DateTime(2026, 8, 21)),
     ]) {
-      expect(find.text(action), findsOneWidget, reason: action);
-    }
+      final List<MatchNextStep> steps = <MatchNextStep>[];
+      await tester.pumpWidget(
+        wrap(
+          card(
+            key: ValueKey<String>('${asked.$1}-${asked.$2}'),
+            status: asked.$1 == null ? MatchStatus.idea : MatchStatus.checking,
+            askedMaleAt: asked.$1,
+            askedFemaleAt: asked.$2,
+            onAction: (_) {},
+            onAdvance: steps.add,
+            onSetStage: (_) {},
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('פעולות'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('שאלתי את שניהם'));
-    await tester.pump();
-    expect(afterBoth, isEmpty);
+      // Heading, question, one WhatsApp button per side — whatever the stage
+      // behind it is.
+      expect(find.text('יאללה לקדם'), findsOneWidget);
+      expect(find.text('את מי תרצה לשאול על הרעיון?'), findsOneWidget);
+      expect(
+        tester.getCenter(find.text('יאללה לקדם')).dy,
+        lessThan(tester.getCenter(find.text('מתחילים לצאת')).dy),
+      );
+
+      // Her button is on the right, under her face; his on the left.
+      await tester.tap(find.text('שרה').last);
+      await tester.pump();
+      await tester.tap(find.text('דוד').last);
+      await tester.pump();
+      expect(steps, <MatchNextStep>[
+        MatchNextStep.askFemale,
+        MatchNextStep.askMale,
+      ]);
+    }
   });
 
-  testWidgets('a quiet week adds no line under "יאללה לקדם"', (
+  testWidgets('the reminder sits at the foot of the card, beside the status', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final MatchIdea stale = match()
-      ..updatedAt = DateTime.now().subtract(const Duration(days: 9));
-    await tester.pumpWidget(
-      wrap(
-        MatchIdeaCard(
-          match: stale,
-          male: person('male', 'דוד', Gender.male, ProfileStatus.available),
-          female: person(
-            'female',
-            'שרה',
-            Gender.female,
-            ProfileStatus.available,
-          ),
-          onTap: () {},
-          onOpenPersonWhatsApp: (_) {},
-          onCompletePersonCard: (_) {},
-          onQuickAction: (_) {},
-          onAdvance: (_) {},
-        ),
-      ),
-    );
+    final List<MatchQuickAction> actions = <MatchQuickAction>[];
+    await tester.pumpWidget(wrap(card(onAction: actions.add)));
     await tester.pump();
-    await tester.tap(find.text('פעולות'));
-    await tester.pumpAndSettle();
 
-    // The row is the action and nothing under it: the staleness sentence was
-    // one line too many on a panel already full of information.
-    expect(find.text('יאללה לקדם — לשאול את דוד'), findsOneWidget);
-    expect(find.textContaining('בלי עדכון'), findsNothing);
+    expect(find.text('הוספת תזכורת'), findsOneWidget);
+    // Status on the right, reminder on the left.
+    expect(
+      tester.getCenter(find.text('פתוח')).dx,
+      greaterThan(tester.getCenter(find.text('הוספת תזכורת')).dx),
+    );
+    await tester.tap(find.text('הוספת תזכורת'));
+    await tester.pump();
+    expect(actions, <MatchQuickAction>[MatchQuickAction.reminder]);
   });
 
   testWidgets('a couple who are out are asked about, not promoted', (
@@ -565,7 +500,9 @@ void main() {
 
     expect(find.text('מתחילים לצאת'), findsNothing);
     expect(find.text('חתונה'), findsOneWidget);
-    expect(find.text('סגירת רעיון'), findsOneWidget);
+    // A couple who stop are "נפרדו", not a proposal being closed.
+    expect(find.text('נפרדו'), findsOneWidget);
+    expect(find.text('סגירת רעיון'), findsNothing);
   });
 
   testWidgets('the status actions are drawn as peers, not a winner', (

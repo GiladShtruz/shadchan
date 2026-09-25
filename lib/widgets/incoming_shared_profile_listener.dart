@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/voice_note_store.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/utils/import_file_kind.dart';
@@ -95,9 +96,18 @@ class _IncomingSharedProfileListenerState
         final String? importable = ImportFileKinds.firstSupported(
           draft.filePaths,
         );
+        // A voice note is filed under a friend's notes, not made into a card.
+        final bool voice =
+            draft.filePaths.isNotEmpty &&
+            draft.filePaths.any(VoiceNoteStore.isAudioPath);
         unawaited(
           importable != null
               ? AppRouter.router.push<void>('/people/ai', extra: importable)
+              : voice
+              ? AppRouter.router.push<void>(
+                  '/people/shared-voice',
+                  extra: draft,
+                )
               : AppRouter.router.push<void>(
                   '/people/shared-import',
                   extra: draft,

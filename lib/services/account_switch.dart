@@ -14,6 +14,7 @@ import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/invite_link_service.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/services/push_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -141,6 +142,7 @@ abstract final class AccountSwitch {
     await WorkspaceStore.reset();
     await PersonalCardSync.forget();
     await ContactHashUpload.forget();
+    InviteLinkService.clear();
     await CommunityProfileStore.reset();
     HomeBoardStore.instance.reset();
     RecentActivityStore.instance.reset();

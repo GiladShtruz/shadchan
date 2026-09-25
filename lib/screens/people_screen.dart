@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/tag_library.dart';
+import 'package:shadchan/utils/person_tags.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
@@ -68,6 +70,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   List<ProfileStatus> _selectedProfileStatuses = <ProfileStatus>[];
   RangeValues? _selectedHeightRange;
   List<MaritalStatus> _selectedMaritalStatuses = <MaritalStatus>[];
+  List<String> _selectedTags = <String>[];
   bool _showArchived = false;
   PeopleSortOption _sortOption = PeopleSortOption.alphabetical;
 
@@ -650,6 +653,22 @@ class _PeopleScreenState extends State<PeopleScreen> {
       );
     }
 
+    for (final String tag in _selectedTags) {
+      chips.add(
+        InputChip(
+          avatar: const Icon(Icons.sell_outlined, size: 16),
+          label: Text(tag),
+          onDeleted: () {
+            setState(() {
+              _selectedTags = _selectedTags
+                  .where((String item) => item != tag)
+                  .toList();
+            });
+          },
+        ),
+      );
+    }
+
     chips.add(
       ActionChip(
         avatar: const Icon(Icons.close, size: 18),
@@ -709,10 +728,21 @@ class _PeopleScreenState extends State<PeopleScreen> {
           (person.maritalStatus != null &&
               _selectedMaritalStatuses.contains(person.maritalStatus));
 
+      // Any of the chosen tags. Tags are the matchmaker's own sorting, and
+      // picking two means "show me both groups".
+      final bool matchesTags =
+          _selectedTags.isEmpty ||
+          person.tags.any(
+            (String tag) => _selectedTags.any(
+              (String chosen) => PersonTags.sameTag(tag, chosen),
+            ),
+          );
+
       return matchesSearch &&
           matchesArchive &&
           matchesHeight &&
-          matchesMaritalStatus;
+          matchesMaritalStatus &&
+          matchesTags;
     }).toList();
 
     _sortPeople(visiblePeople);
@@ -869,6 +899,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
               initialHeightRange: _selectedHeightRange,
               heightBounds: heightBounds,
               initialMaritalStatuses: _selectedMaritalStatuses,
+              availableTags: TagLibrary.inUse(repository.getAll()),
+              initialTags: _selectedTags,
             );
           },
         );
@@ -885,6 +917,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
       _selectedProfileStatuses = result.profileStatuses;
       _selectedHeightRange = result.heightRange;
       _selectedMaritalStatuses = result.maritalStatuses;
+      _selectedTags = result.tags;
     });
   }
 
@@ -1021,7 +1054,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
         _selectedReligiousLevelOtherLabels.isNotEmpty ||
         _selectedProfileStatuses.isNotEmpty ||
         _selectedHeightRange != null ||
-        _selectedMaritalStatuses.isNotEmpty;
+        _selectedMaritalStatuses.isNotEmpty ||
+        _selectedTags.isNotEmpty;
   }
 
   void _handleSearchChanged() {
@@ -1035,6 +1069,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     _selectedProfileStatuses = <ProfileStatus>[];
     _selectedHeightRange = null;
     _selectedMaritalStatuses = <MaritalStatus>[];
+    _selectedTags = <String>[];
   }
 }
 

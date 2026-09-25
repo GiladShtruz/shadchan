@@ -87,7 +87,7 @@ void main() {
           find
               .ancestor(
                 of: find.text('הוספת חברים'),
-                matching: find.byType(Material),
+                matching: find.byType(AnimatedContainer),
               )
               .first,
         )
@@ -97,7 +97,7 @@ void main() {
           find
               .ancestor(
                 of: find.text('הוספת רעיון'),
-                matching: find.byType(Material),
+                matching: find.byType(AnimatedContainer),
               )
               .first,
         )
@@ -116,7 +116,8 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(HomeActionCards),
-        matching: find.byIcon(Icons.chevron_left_rounded),
+        // `chevron_right` is the one that draws pointing left in RTL.
+        matching: find.byIcon(Icons.chevron_right_rounded),
       ),
       findsNWidgets(2),
     );
@@ -152,19 +153,18 @@ void main() {
       // that used to be here heads "רעיונות שהמאגר מציע לך" now — see
       // [HomeHeroBand].
       expect(assets, <String>[
-        'assets/add_friends_icon.png',
-        'assets/add_idea_icon.png',
+        'assets/add_friends_art.png',
+        'assets/add_idea_art.png',
       ]);
 
-      // The drawings are black ink on a white ground and are recoloured at
-      // draw time, which is what keeps a white rectangle off a coloured card
-      // and a lightbox out of the dark theme. See [HomeLineArt].
+      // The drawings are hand-drawn and already coloured: shown as they are,
+      // never recoloured through [HomeLineArt].
       expect(
         find.descendant(
           of: find.byType(HomeActionCards),
           matching: find.byType(HomeLineArt),
         ),
-        findsNWidgets(2),
+        findsNothing,
       );
 
       // The artwork these replaced had the Hebrew painted into it. If it ever
@@ -195,16 +195,20 @@ void main() {
 
       // `.first` is the card itself; the ancestors past it are the scaffold
       // and the app.
-      Material cardFor(String label) {
-        return tester.widget<Material>(
+      Color? cardFor(String label) {
+        final AnimatedContainer card = tester.widget<AnimatedContainer>(
           find
-              .ancestor(of: find.text(label), matching: find.byType(Material))
+              .ancestor(
+                of: find.text(label),
+                matching: find.byType(AnimatedContainer),
+              )
               .first,
         );
+        return (card.decoration as BoxDecoration?)?.color;
       }
 
-      expect(cardFor('הוספת חברים').color, AppColors.surface);
-      expect(cardFor('הוספת רעיון').color, AppColors.surface);
+      expect(cardFor('הוספת חברים'), AppColors.surface);
+      expect(cardFor('הוספת רעיון'), AppColors.surface);
 
       // The colour is all in the rule: the palette's light blue for friends,
       // the palette's brown for an idea, and no band behind the label.
@@ -217,7 +221,11 @@ void main() {
           )
           .map((AccentUnderline rule) => rule.color)
           .toList();
-      expect(rules, <Color>[AppColors.primary, AppColors.secondary]);
+      // Each rule is its own drawing's ink.
+      expect(rules, <Color>[
+        AppColors.addPeopleAccent,
+        AppColors.addIdeaAccent,
+      ]);
 
       // The little heart and star that used to sit under the labels went with
       // the band they decorated.
@@ -631,14 +639,15 @@ void main() {
         // first two Materials would compare a tile with its own overlay and
         // pass however wrong the row was.
         final Iterable<Size> cards = tester
-            .widgetList<Material>(
+            .widgetList<AnimatedContainer>(
               find.descendant(
                 of: find.byType(HomeActionCards),
-                matching: find.byType(Material),
+                matching: find.byType(AnimatedContainer),
               ),
             )
-            .where((Material card) => card.type != MaterialType.transparency)
-            .map((Material card) => tester.getSize(find.byWidget(card)));
+            .map(
+              (AnimatedContainer card) => tester.getSize(find.byWidget(card)),
+            );
         expect(cards.length, 2);
         expect(cards.first.height, closeTo(cards.last.height, 1));
 

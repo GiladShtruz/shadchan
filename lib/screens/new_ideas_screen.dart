@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/sketch_actions.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
@@ -7,7 +8,6 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
-import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
@@ -292,14 +292,17 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
       _keepMaleNext = !keepMale;
     });
 
-    // A small banner for three seconds, with a way back. The dismissal is
+    // A small banner for two seconds, with a way back. The dismissal is
     // permanent — the pair never returns as a suggestion — which is exactly why
     // a mis-tap on a button sitting beside "פתיחת רעיון" needs an answer that
     // is not "go and find the two of them and undo it by hand".
+    // At the foot of the screen, where it covers nothing the reader is about
+    // to look at — at the top it sat on the next card down.
     AppNotice.showOn(
       notices,
       'הרעיון הוסר',
-      duration: const Duration(seconds: 3),
+      atBottom: true,
+      duration: const Duration(seconds: 2),
       actionLabel: 'ביטול',
       onAction: () => _restoreIdea(idea, index: index, replacedBy: nextKey),
     );
@@ -480,32 +483,13 @@ class _IdeaCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: onOpen,
-                    icon: const Icon(Icons.favorite_outline, size: 18),
-                    label: const Text('פתיחת רעיון'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: theme.brightness == Brightness.dark
-                          ? theme.colorScheme.primary
-                          : AppColors.primaryDark,
-                      foregroundColor: theme.colorScheme.onPrimary,
-                      shape: const StadiumBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: onSkip,
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  child: const Text('לא מתאים'),
-                ),
-              ],
+            const SizedBox(height: 8),
+            // The three answers, drawn by hand: both full cards side by side,
+            // open the idea, or not suitable.
+            SketchActionBar(
+              onFullCard: onComparePair,
+              onOpenIdea: onOpen,
+              onNotSuitable: onSkip,
             ),
           ],
         ),

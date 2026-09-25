@@ -64,6 +64,11 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Carries a matchmaker's invitation through a Play Store install: the
+    // join page links to the store with `referrer=from=<uid>&name=<name>`.
+    implementation("com.android.installreferrer:installreferrer:2.2")
+    // FileProvider, for handing a card's photos straight to one WhatsApp chat.
+    implementation("androidx.core:core-ktx:1.13.1")
 }
 
 flutter {

@@ -17,7 +17,10 @@ import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
+import 'package:shadchan/utils/home_typography.dart';
+import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
+import 'package:shadchan/widgets/home_section.dart';
 
 /// "הפעילות שלי" — everything the app counts, on one screen, in the order a
 /// matchmaker cares about it.
@@ -129,61 +132,115 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
       excludedFromDating: excluded,
     );
 
-    return Scaffold(
-      // Named for the screen, not for one card on it. "הפעילות שלי" is the
-      // heading of the home block that opens this page and of the personal
-      // half of it; the page itself is the matchmaker's figures *and* the
-      // community's, so the narrower of the two names was a promise the
-      // second half of the screen kept breaking.
-      appBar: AppBar(title: const Text('פעילות'), centerTitle: true),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-            children: <Widget>[
-              _CelebrationHeader(
-                week: community.myBreakdown(CommunityPeriod.week),
-                month: community.myBreakdown(CommunityPeriod.month),
-                allTime: everything,
-                cursor: _greetingCursor,
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
+    // **The home page's language, all of it.** The same paper and bar, the
+    // same three-size type scale (see [HomeTypography]), the same cards with
+    // one rule along the foot, the same four figure tiles.
+    return Theme(
+      data: theme.copyWith(
+        textTheme: HomeTypography.scale(theme.textTheme, dark: dark),
+      ),
+      child: Builder(
+        builder: (BuildContext context) => Scaffold(
+          // Named for the screen, not for one card on it. "הפעילות שלי" is the
+          // heading of the home block that opens this page and of the personal
+          // half of it; the page itself is the matchmaker's figures *and* the
+          // community's, so the narrower of the two names was a promise the
+          // second half of the screen kept breaking.
+          appBar: AppBar(
+            title: Text(
+              'פעילות',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppColors.heading(dark: dark),
               ),
-              const SizedBox(height: 16),
-              _MyNumbersCard(breakdown: everything),
-              const SizedBox(height: 16),
-              _MyActivityCard(
-                period: _minePeriod,
-                onPeriod: (CommunityPeriod period) =>
-                    setState(() => _minePeriod = period),
-                points: community.myPoints(_minePeriod),
-                bars: bars,
-                onMonth: (ActivityBucket bucket) => _MonthSheet.show(
-                  context,
-                  label: bucket.period.label,
-                  breakdown: ActivityStats.breakdownBetween(
-                    start: bucket.period.start,
-                    end: bucket.period.end,
-                    people: people,
-                    matches: matches,
-                    matchStatusEvents: statusEvents,
-                    excludedFromDating: excluded,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (signedIn) ...<Widget>[
-                _CommunityActivityCard(
-                  key: ValueKey<int>(_liveGeneration),
-                  private: community.isPrivate,
-                ),
-                const SizedBox(height: 16),
-                _LeaderboardCard(key: ValueKey<int>(-1 - _liveGeneration)),
-              ] else
-                const CommunityCard(
-                  child: CommunitySignInCard.communityIsForMembers(),
-                ),
-            ],
+            ),
+            centerTitle: true,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            surfaceTintColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            foregroundColor: AppColors.heading(dark: dark),
           ),
+          body: SafeArea(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+                children: <Widget>[
+                  _CelebrationHeader(
+                    week: community.myBreakdown(CommunityPeriod.week),
+                    month: community.myBreakdown(CommunityPeriod.month),
+                    allTime: everything,
+                    cursor: _greetingCursor,
+                  ),
+                  const SizedBox(height: 18),
+                  // Four small tiles, exactly as on the home page's board — the
+                  // personal figures take a row, not a panel.
+                  const _Heading('הנתונים שלך'),
+                  ActivityFigureRow(
+                    people: personRepository,
+                    matches: matchRepository,
+                  ),
+                  const SizedBox(height: 18),
+                  _MyActivityCard(
+                    period: _minePeriod,
+                    onPeriod: (CommunityPeriod period) =>
+                        setState(() => _minePeriod = period),
+                    points: community.myPoints(_minePeriod),
+                    bars: bars,
+                    onMonth: (ActivityBucket bucket) => _MonthSheet.show(
+                      context,
+                      label: bucket.period.label,
+                      breakdown: ActivityStats.breakdownBetween(
+                        start: bucket.period.start,
+                        end: bucket.period.end,
+                        people: people,
+                        matches: matches,
+                        matchStatusEvents: statusEvents,
+                        excludedFromDating: excluded,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (signedIn) ...<Widget>[
+                    _CommunityActivityCard(
+                      key: ValueKey<int>(_liveGeneration),
+                      private: community.isPrivate,
+                    ),
+                    const SizedBox(height: 16),
+                    _LeaderboardCard(key: ValueKey<int>(-1 - _liveGeneration)),
+                  ] else
+                    const CommunityCard(
+                      child: CommunitySignInCard.communityIsForMembers(),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A section's name over its card, as the home page writes one.
+class _Heading extends StatelessWidget {
+  const _Heading(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+      child: Text(
+        title,
+        style: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          height: 1.2,
         ),
       ),
     );
@@ -210,21 +267,6 @@ const Color _friendsTone = AppColors.primaryDark;
 const Color _ideasTone = AppColors.statusChecking;
 const Color _couplesTone = AppColors.statusDating;
 const Color _weddingsTone = AppColors.secondary;
-
-/// The one warm wash every tile on "הנתונים שלך" sits on: the app's own cream,
-/// which is the background of half the screens in it.
-Color _numbersWash(ThemeData theme) => theme.brightness == Brightness.dark
-    ? AppColors.secondaryDarkDm.withValues(alpha: 0.10)
-    : AppColors.secondaryLight.withValues(alpha: 0.55);
-
-/// Its outline, and the ink the four figures are written in.
-Color _numbersEdge(ThemeData theme) => theme.brightness == Brightness.dark
-    ? AppColors.secondaryDarkDm.withValues(alpha: 0.24)
-    : AppColors.secondary.withValues(alpha: 0.26);
-
-Color _numbersInk(ThemeData theme) => theme.brightness == Brightness.dark
-    ? AppColors.secondaryDarkDm
-    : AppColors.secondaryInk;
 
 // --- 0. The one sentence worth opening on ------------------------------------
 
@@ -388,40 +430,21 @@ class _CelebrationHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
     final _ActivityStory story = _story;
     final Color tone = _tone(story.tone, theme);
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: tone.withValues(alpha: 0.28)),
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: <Color>[
-            tone.withValues(alpha: dark ? 0.20 : 0.14),
-            theme.colorScheme.surface,
-          ],
-        ),
-      ),
+    // Paper with one rule in the story's own colour — the home page's card —
+    // rather than a tinted gradient panel of its own.
+    return HomePaperCard(
+      stripe: tone,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              Container(
-                width: 46,
-                height: 46,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: tone.withValues(alpha: dark ? 0.22 : 0.16),
-                ),
-                child: Icon(story.icon, size: 24, color: tone),
-              ),
-              const SizedBox(width: 12),
+              Icon(story.icon, size: 22, color: tone),
+              const SizedBox(width: 10),
               // The exclamation on its own, with no name after it. "יש על מי
               // לסמוך!" and "כל הכבוד, זה מדהים" are said to the person
               // reading them — appending their name turns a spoken line into a
@@ -440,10 +463,10 @@ class _CelebrationHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           Text(
             story.headline,
-            style: theme.textTheme.titleLarge?.copyWith(
+            style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w900,
               height: 1.25,
             ),
@@ -454,192 +477,10 @@ class _CelebrationHeader extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               story.body,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                height: 1.55,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-// --- 1. הנתונים שלך ---------------------------------------------------------
-
-/// Four real counts, all-time, and no period switch.
-///
-/// **These are not points.** "3 חתונות" is a fact about three homes; turning it
-/// into 150 anything is the second question, and it is asked in the card below
-/// rather than here. There is no week/month switch either: a couple you married
-/// last year is still a couple you married, and a matchmaker looking at their
-/// own history should not have to choose a window to see it.
-///
-/// **One warm wash, four figures.** The tiles used to carry a colour each — the
-/// stone blue, the amber, the olive and the copper — which put four saturated
-/// tints in a two-by-two grid and made the calmest card on the screen the
-/// loudest thing on it. The tint is now the app's own cream on all four, and
-/// what tells them apart is the icon and the word, as everywhere else.
-///
-/// **Each tile opens its own records, over its own window.** They are all-time
-/// figures, so the drill-down is asked for all time too; it used to open this
-/// Hebrew month's list under an all-time number.
-class _MyNumbersCard extends StatelessWidget {
-  const _MyNumbersCard({required this.breakdown});
-
-  final ActivityBreakdown breakdown;
-
-  @override
-  Widget build(BuildContext context) {
-    return CommunityCard(
-      title: 'הנתונים שלך',
-      // The warm side of the page: these four figures are this matchmaker's
-      // own record, and the card now carries the same cream its tiles do
-      // rather than sitting them on a blue panel that fights them.
-      surface: CommunitySurface.warm,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // **`IntrinsicHeight`, and it has to be.** The two tiles have to come
-          // out the same height — a label that wraps to two lines beside one
-          // that does not is what stops four figures reading as a grid — and
-          // `CrossAxisAlignment.stretch` alone cannot do it here: this `Row`
-          // sits in a `Column` with no height of its own, so stretching would
-          // hand each tile an infinite one.
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Expanded(
-                  child: _NumberTile(
-                    value: breakdown.friends,
-                    label: 'חברים שהוספת',
-                    icon: Icons.people_alt_outlined,
-                    metric: MonthlyStatMetric.people,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _NumberTile(
-                    value: breakdown.ideas,
-                    label: 'רעיונות שפתחת',
-                    icon: Icons.lightbulb_outline_rounded,
-                    metric: MonthlyStatMetric.ideas,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Expanded(
-                  child: _NumberTile(
-                    value: breakdown.couples,
-                    label: 'זוגות שהוצאת לדייט',
-                    icon: Icons.favorite_outline_rounded,
-                    metric: MonthlyStatMetric.dating,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _NumberTile(
-                    value: breakdown.engagements,
-                    label: 'חתונות',
-                    icon: Icons.diamond_outlined,
-                    metric: MonthlyStatMetric.weddings,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One of the four, and the way into the records behind it.
-///
-/// A tile with its own tint rather than a figure in a row: four counts of four
-/// different things, drawn identically, read as one table of numbers, and the
-/// wedding count deserves not to look like the contact count.
-class _NumberTile extends StatelessWidget {
-  const _NumberTile({
-    required this.value,
-    required this.label,
-    required this.icon,
-    required this.metric,
-  });
-
-  final int value;
-  final String label;
-  final IconData icon;
-
-  /// Which list of records this number opens. The drill-downs already exist on
-  /// the monthly stats screen and are the honest answer to "which ones?".
-  ///
-  /// Opened with `?window=all`, because the figure over it is all-time. Without
-  /// it the screen answers with this Hebrew month's records, which is a
-  /// different question and a different number.
-  final MonthlyStatMetric metric;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color ink = _numbersInk(theme);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => context.push('/stats/month/${metric.name}?window=all'),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: _numbersWash(theme),
-          border: Border.all(color: _numbersEdge(theme)),
-        ),
-        // **Centred on one axis down the middle of the tile.** Everything
-        // used to hang off the reading edge, which is right for a paragraph
-        // and wrong for a figure: the mark, the number and the word under it
-        // are three lines of three different widths, and ragged against the
-        // edge they read as a list that has lost its bullets. Stacked on the
-        // tile's own centre the four tiles become one grid of four figures.
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            Icon(icon, size: 18, color: ink),
-            const SizedBox(height: 8),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                CommunityFigure.format(value),
-                maxLines: 1,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  height: 1.05,
-                  color: ink,
-                ),
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-                height: 1.25,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -736,11 +577,10 @@ class _GradeChip extends StatelessWidget {
     final Color lead = communityLead(theme);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        color: lead.withValues(alpha: 0.14),
-        border: Border.all(color: lead.withValues(alpha: 0.24)),
+        color: lead.withValues(alpha: 0.10),
       ),
       child: Text(
         ActivityStats.grade(points),

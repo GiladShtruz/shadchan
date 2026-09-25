@@ -53,8 +53,13 @@ abstract final class AppColors {
   /// only nearly the brand's. The cards are white with a rule under them now,
   /// so all that is left is the accent itself, and it is simply the palette:
   /// the light brand blue for friends, the brand brown for an idea.
-  static const Color addPeopleAccent = primary;
-  static const Color addIdeaAccent = secondary;
+  ///
+  /// Since the hand-drawn icons (`add_friends_art.png`, `add_idea_art.png`)
+  /// arrived already coloured, the rule takes the icon's own ink, sampled off
+  /// the drawing — a rule a shade away from the picture above it reads as a
+  /// mistake. Both are deeper members of the brand's blue and brown.
+  static const Color addPeopleAccent = Color(0xFF115489);
+  static const Color addIdeaAccent = Color(0xFFB25130);
 
   /// **The four figures at the head of הלוח שלי, one palette colour each.**
   ///
@@ -218,28 +223,38 @@ abstract final class AppColors {
     }
   }
 
-  static Color statusColor(String status) {
+  /// **The one colour a proposal's status is drawn in, everywhere.**
+  ///
+  /// Colour says where a proposal stands and nothing else: open is the
+  /// palette's blue, waiting its brown, a couple who are out keep the copper
+  /// they have always worn, and anything that is over is the quiet grey. The
+  /// finer stored distinctions ("רעיון" / "בבדיקה", the stage inside an open
+  /// idea) never change the colour — a heart that turned a different shade
+  /// every time somebody was asked read as five kinds of thing.
+  static Color matchState(MatchStatus status, {bool dark = false}) {
     switch (status) {
-      case 'idea':
-        return statusIdea;
-      case 'checking':
-        return statusChecking;
-      case 'unavailable':
-        return statusUnavailable;
-      case 'rejected':
-        return statusRejected;
-      case 'dating':
-        return statusDating;
-      case 'dated':
-        return statusDated;
-      case 'married':
-        return statusMarried;
-      default:
-        return statusColor(MatchStatus.idea.name);
+      case MatchStatus.idea:
+      case MatchStatus.checking:
+        return dark ? primaryDarkDm : primaryDark;
+      case MatchStatus.unavailable:
+        return dark ? secondaryDarkDm : secondary;
+      case MatchStatus.dating:
+        return dark ? secondaryDarkDm : secondary;
+      case MatchStatus.married:
+        return dark ? statusDatingDm : statusMarried;
+      case MatchStatus.rejected:
+      case MatchStatus.dated:
+        return muted(dark: dark);
     }
   }
 
-  static Color statusBackgroundColor(String status) {
-    return statusColor(status).withValues(alpha: 0.15);
+  /// [matchState] by the status's stored name, for the callers that hold one.
+  static Color statusColor(String status) {
+    for (final MatchStatus value in MatchStatus.values) {
+      if (value.name == status) {
+        return matchState(value);
+      }
+    }
+    return matchState(MatchStatus.idea);
   }
 }

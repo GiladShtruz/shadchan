@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/home_section.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:provider/provider.dart';
@@ -74,36 +75,19 @@ class CommunityCard extends StatelessWidget {
     final String? heading = title;
     final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
 
-    final BoxDecoration decoration = switch (surface) {
-      CommunitySurface.tinted => BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: lead.withValues(alpha: 0.22)),
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: <Color>[
-            lead.withValues(alpha: dark ? 0.14 : 0.07),
-            theme.colorScheme.surface,
-          ],
-        ),
-      ),
-      CommunitySurface.warm => BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: dark
-            ? AppColors.secondaryDarkDm.withValues(alpha: 0.10)
-            : AppColors.secondaryLight.withValues(alpha: 0.55),
-        border: Border.all(color: warm.withValues(alpha: dark ? 0.24 : 0.26)),
-      ),
-      CommunitySurface.plain => BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: theme.colorScheme.surface,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
+    // **The home page's card.** Paper, a soft neutral shadow, no border, and
+    // one rule along the foot in a palette colour saying what kind of thing
+    // it is — blue for the community, brown for the matchmaker's own, none
+    // for a card whose content already carries colour. See [HomePaperCard].
+    final Color? rule = switch (surface) {
+      CommunitySurface.tinted => lead,
+      CommunitySurface.warm => warm,
+      CommunitySurface.plain => null,
     };
 
-    return Container(
+    return HomePaperCard(
+      stripe: rule,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 15),
-      decoration: decoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -114,7 +98,8 @@ class CommunityCard extends StatelessWidget {
                   child: Text(
                     heading,
                     style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.heading(dark: dark),
                     ),
                   ),
                 ),

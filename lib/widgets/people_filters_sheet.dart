@@ -12,6 +12,7 @@ class PeopleFilterState {
     required this.profileStatuses,
     this.heightRange,
     this.maritalStatuses = const <MaritalStatus>[],
+    this.tags = const <String>[],
   });
 
   final Gender? gender;
@@ -21,6 +22,9 @@ class PeopleFilterState {
   final List<ProfileStatus> profileStatuses;
   final RangeValues? heightRange;
   final List<MaritalStatus> maritalStatuses;
+
+  /// The matchmaker's own tags: a person matches when they carry any of them.
+  final List<String> tags;
 }
 
 /// Bottom sheet used to filter the people list. The basic filters — gender,
@@ -39,6 +43,8 @@ class PeopleFiltersSheet extends StatefulWidget {
     this.initialHeightRange,
     this.heightBounds,
     this.initialMaritalStatuses = const <MaritalStatus>[],
+    this.availableTags = const <String>[],
+    this.initialTags = const <String>[],
     this.title = 'סינון אנשים',
     this.showGender = true,
   });
@@ -65,6 +71,10 @@ class PeopleFiltersSheet extends StatefulWidget {
   final ({int min, int max})? heightBounds;
   final List<MaritalStatus> initialMaritalStatuses;
 
+  /// Every tag in use in the database. Empty hides the "תגיות" card.
+  final List<String> availableTags;
+  final List<String> initialTags;
+
   @override
   State<PeopleFiltersSheet> createState() => _PeopleFiltersSheetState();
 }
@@ -77,6 +87,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
   late List<String> tempReligiousLevelOtherLabels;
   late List<ProfileStatus> tempProfileStatuses;
   late List<MaritalStatus> tempMaritalStatuses;
+  late List<String> tempTags;
 
   /// Whether the extended section is open. It starts open when one of its
   /// filters is already applied, so an active filter is never hidden.
@@ -91,6 +102,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
     tempMaritalStatuses = List<MaritalStatus>.from(
       widget.initialMaritalStatuses,
     );
+    tempTags = List<String>.from(widget.initialTags);
     tempReligiousLevels = List<ReligiousLevel>.from(
       widget.initialReligiousLevels,
     );
@@ -329,6 +341,39 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                             }).toList(),
                       ),
                     ),
+                    if (widget.availableTags.isNotEmpty ||
+                        tempTags.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 12),
+                      _FilterSectionCard(
+                        title: 'תגיות',
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 150),
+                          child: SingleChildScrollView(
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 9,
+                              children: <Widget>[
+                                for (final String tag in <String>{
+                                  ...tempTags,
+                                  ...widget.availableTags,
+                                })
+                                  _FilterPill(
+                                    label: tag,
+                                    selected: tempTags.contains(tag),
+                                    onTap: () => setState(() {
+                                      tempTags = tempTags.contains(tag)
+                                          ? tempTags
+                                                .where((String t) => t != tag)
+                                                .toList()
+                                          : <String>[...tempTags, tag];
+                                    }),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     _AdvancedFilterCard(
                       expanded: _advancedExpanded,
@@ -425,6 +470,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                     profileStatuses: tempProfileStatuses,
                     heightRange: _normalizedHeightRange(),
                     maritalStatuses: tempMaritalStatuses,
+                    tags: tempTags,
                   ),
                 );
               },
@@ -441,6 +487,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                   tempReligiousLevelOtherLabels = <String>[];
                   tempProfileStatuses = <ProfileStatus>[];
                   tempMaritalStatuses = <MaritalStatus>[];
+                  tempTags = <String>[];
                 });
               },
             ),

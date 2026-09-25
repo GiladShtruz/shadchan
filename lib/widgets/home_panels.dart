@@ -170,24 +170,22 @@ class _HeroMark extends StatelessWidget {
 /// "הוספת חברים" and "הוספת רעיון" — the two most important things on the page,
 /// because they are the two that make everything else on it possible.
 ///
-/// Each is one illustrated card: the drawing is the top of it, a coloured band
-/// across the bottom carries the name of the action, and the whole surface is
-/// the button. There is no chevron and no inner badge — a card that is entirely
-/// a tap target does not need an arrow to say so.
+/// **One pair from one system.** Both are the same white card at the same
+/// size, radius and shadow, with the icon over the label as one centred unit
+/// and a small chevron at the outer edge. The only two things that differ are
+/// the drawing and the colour of the rule along the foot — and that colour is
+/// the drawing's own ink ([AppColors.addPeopleAccent] /
+/// [AppColors.addIdeaAccent]), so the rule and the picture are one colour.
 ///
-/// **The two are exactly the same size.** They used to be split 13:9 while the
-/// database was small, on the reasoning that adding friends is what moves
-/// anything forward — but two cards drawn as a pair and then set at two
-/// different widths read as one card and its afterthought. They are halves of
-/// the row now, and what makes adding friends lead is what it is *drawn* in:
-/// the deeper of the two tones, and the shadow. See [emphasiseAddPeople].
+/// **The drawings are shown as they are.** They are hand-drawn with a line
+/// that thickens and thins along its length, already in their colour, and cut
+/// off their ground into transparent PNGs. They are never recoloured and never
+/// replaced by a library glyph: the unevenness is what gives the pair its
+/// warmth, and a uniform outline would be exactly the generic kit look these
+/// were drawn to avoid.
 ///
-/// **The label is text, not part of the picture.** The artwork these came from
-/// had the Hebrew drawn into it, which would have been one less widget and four
-/// separate losses: it does not grow with the system font size, a screen reader
-/// cannot read it, it is soft on a large display, and it could never be
-/// reworded. So each card is a line drawing on its own paper and the band under
-/// it is drawn here.
+/// **The label is text, not part of the picture**, so it grows with the
+/// system font and a screen reader can read it.
 class HomeActionCards extends StatelessWidget {
   const HomeActionCards({
     super.key,
@@ -199,10 +197,9 @@ class HomeActionCards extends StatelessWidget {
   final VoidCallback onAddPeople;
   final VoidCallback onAddIdea;
 
-  /// While the database is still small, adding friends is the thing that
-  /// actually moves anything forward — so the card is drawn louder: a filled
-  /// ground behind the drawing rather than a pale one, and a deeper shadow. It
-  /// never takes more of the row; the two are always the same size.
+  /// Kept for the callers that still pass it. The pair is deliberately
+  /// identical now — the difference is the drawing and the rule, never the
+  /// weight — so this changes nothing.
   final bool emphasiseAddPeople;
 
   @override
@@ -210,58 +207,45 @@ class HomeActionCards extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool narrow = constraints.maxWidth < 350;
-        // The band is measured rather than guessed at, and the picture takes
-        // whatever is left. Sizing it the other way round — a fixed tile height
-        // with the band inside it — is what makes a card overflow on a phone
-        // with large system text, and this is a card nobody can navigate past.
+        // The label is measured rather than guessed at, so a phone with large
+        // system text grows the card instead of overflowing it.
         final double textScale = MediaQuery.textScalerOf(
           context,
         ).scale(1).clamp(1, 1.8);
-        final double bandHeight = (narrow ? 40.0 : 44.0) * textScale;
-        // Short on purpose. The two are still the loudest thing on the page —
-        // by colour and by lifting off it — but a tile tall enough to give a
-        // line drawing room pushed everything under it off the first screen.
-        final double artHeight = (constraints.maxWidth * 0.23).clamp(62, 92);
+        final double labelHeight = 24 * textScale;
+        final double artHeight = (constraints.maxWidth * 0.14).clamp(44, 64);
+        final double padding = narrow ? 14 : 18;
+        const double gap = 8;
 
         return SizedBox(
-          height: artHeight + bandHeight + AccentBar.thickness,
+          height:
+              padding * 2 + artHeight + gap + labelHeight + AccentBar.thickness,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // Equal halves. Adding friends leads by colour and by shadow,
-              // never by width — see [emphasiseAddPeople].
               Expanded(
                 child: _AddTile(
                   onTap: onAddPeople,
-                  compact: narrow,
-                  // The notepad. Adding a friend is the moment somebody
-                  // writes a person down — the name, the age, the two lines
-                  // that will one day make a match possible — so the page of
-                  // ruled lines with a pencil beside it is the more literal
-                  // of the two drawings for the more literal of the two
-                  // actions. The "+" in the corner is what says it adds.
-                  art: 'assets/add_friends_icon.png',
+                  art: 'assets/add_friends_art.png',
                   accent: AppColors.addPeopleAccent,
                   label: 'הוספת חברים',
-                  bandHeight: bandHeight,
-                  primary: true,
-                  loud: emphasiseAddPeople,
+                  artHeight: artHeight,
+                  labelHeight: labelHeight,
+                  padding: padding,
+                  gap: gap,
                 ),
               ),
-              SizedBox(width: narrow ? 8 : 12),
+              SizedBox(width: narrow ? 10 : 14),
               Expanded(
                 child: _AddTile(
                   onTap: onAddIdea,
-                  compact: narrow,
-                  // The heart beside a pencil. A notepad is a place to
-                  // write anything down; a heart being drawn *is* the idea,
-                  // which is what this card opens.
-                  art: 'assets/add_idea_icon.png',
+                  art: 'assets/add_idea_art.png',
                   accent: AppColors.addIdeaAccent,
                   label: 'הוספת רעיון',
-                  bandHeight: bandHeight,
-                  primary: false,
-                  loud: false,
+                  artHeight: artHeight,
+                  labelHeight: labelHeight,
+                  padding: padding,
+                  gap: gap,
                 ),
               ),
             ],
@@ -272,167 +256,159 @@ class HomeActionCards extends StatelessWidget {
   }
 }
 
-/// One of the two entry tiles: its drawing, its label and one tap target over
-/// the whole of it.
+/// One of the two entry tiles.
 ///
-/// **White paper, not a coloured card.** Each one used to be a solid band of
-/// brand colour carrying its label in cream, with the drawing on a tinted
-/// wash above it — two saturated blocks side by side, directly under a
-/// greeting, competing with everything below them. What is left says the same
-/// thing more quietly: the paper the rest of the page is made of, a soft
-/// shadow lifting it off, the drawing in the card's own accent, and a single
-/// rule of that accent along the foot. The accent is where all the colour went,
-/// and there is one of it.
-///
-/// The little heart and star that sat under the labels are gone with the band.
-/// They decorated a strip that no longer exists, and a card that already has a
-/// drawing on it does not need a second, smaller picture underneath.
-///
-/// The drawing is a black-on-white line illustration recoloured at draw time —
-/// see [HomeLineArt] — so the paper under it is the card's own, and in the dark
-/// theme the strokes come out light on a dark ground rather than as a lightbox.
-class _AddTile extends StatelessWidget {
+/// A press is answered by the card settling — the shadow shrinks and the card
+/// sinks a pixel — and by nothing else: no ripple and no change of colour,
+/// which on a card this quiet would read as a state rather than as a touch.
+class _AddTile extends StatefulWidget {
   const _AddTile({
     required this.onTap,
-    required this.compact,
     required this.art,
     required this.accent,
     required this.label,
-    required this.bandHeight,
-    required this.primary,
-    required this.loud,
+    required this.artHeight,
+    required this.labelHeight,
+    required this.padding,
+    required this.gap,
   });
 
   final VoidCallback onTap;
-  final bool compact;
   final String art;
 
-  /// The one colour on the card: its drawing, its chevron and its rule.
+  /// The rule along the foot — the drawing's own ink.
   final Color accent;
 
   final String label;
-  final double bandHeight;
-  final bool primary;
+  final double artHeight;
+  final double labelHeight;
+  final double padding;
+  final double gap;
 
-  /// Drawn to be picked first — by a deeper shadow, and nothing else.
-  ///
-  /// It used to tint the ground as well. Both cards are plain paper now, so a
-  /// wash on one of them would be the only coloured panel left on the page and
-  /// would read as a state rather than as emphasis. It is a difference in
-  /// weight, never in size: the two are always equal halves of the row.
-  final bool loud;
+  @override
+  State<_AddTile> createState() => _AddTileState();
+}
+
+class _AddTileState extends State<_AddTile> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-
-    final Color ink = dark
-        ? Color.alphaBlend(accent.withValues(alpha: 0.75), Colors.white)
-        : accent;
     final Color paper = theme.colorScheme.surface;
+    final BorderRadius radius = BorderRadius.circular(20);
 
-    return Material(
-      color: paper,
-      borderRadius: BorderRadius.circular(20),
-      elevation: loud ? 5 : 2,
-      // A neutral shadow, not one tinted with the accent. Under an
-      // illustration a tinted shadow reads as a coloured halo drawn around the
-      // card rather than as the card sitting above the page.
-      shadowColor: AppColors.onSurface.withValues(alpha: 0.22),
-      // **No elevation overlay.** Material 3 lightens a raised surface towards
-      // `surfaceTint`, which in the dark theme is a pale blue — so a raised
-      // card would drift off the paper colour the rest of the page uses.
-      surfaceTintColor: Colors.transparent,
-      // The rule sits flush on the bottom edge and is rounded by this clip,
-      // which is the whole of [AccentUnderline]'s shape.
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          Column(
-            children: <Widget>[
-              Expanded(
-                child: Padding(
-                  // The drawings are line art with very little margin of their
-                  // own, so the breathing room is given here rather than baked
-                  // into the files.
-                  padding: EdgeInsets.fromLTRB(
-                    compact ? 14 : 20,
-                    compact ? 8 : 10,
-                    compact ? 14 : 20,
-                    compact ? 2 : 3,
-                  ),
-                  child: SizedBox.expand(
-                    child: HomeLineArt(asset: art, ink: ink, paper: paper),
-                  ),
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 110),
+          curve: Curves.easeOut,
+          transform: Matrix4.translationValues(0, _pressed ? 1.5 : 0, 0),
+          decoration: BoxDecoration(
+            color: paper,
+            borderRadius: radius,
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                // A neutral shadow, very soft: depth, not a 3D button.
+                color: Colors.black.withValues(
+                  alpha: dark ? 0.30 : (_pressed ? 0.05 : 0.08),
                 ),
+                blurRadius: _pressed ? 4 : 14,
+                offset: Offset(0, _pressed ? 1 : 5),
               ),
-              SizedBox(
-                height: bandHeight,
-                child: Padding(
-                  padding: EdgeInsetsDirectional.fromSTEB(
-                    compact ? 8 : 12,
-                    0,
-                    compact ? 4 : 6,
-                    0,
-                  ),
-                  child: Row(
+            ],
+          ),
+          child: ClipRRect(
+            // Rounds the rule at the foot along with the card.
+            borderRadius: radius,
+            child: Column(
+              children: <Widget>[
+                Expanded(
+                  child: Stack(
                     children: <Widget>[
-                      // Balances the chevron at the other end, so "centred"
-                      // means centred on the card rather than on whatever is
-                      // left over beside an icon.
-                      const SizedBox(width: 20),
-                      // **Centred under its own drawing.** The label used to
-                      // start at the reading edge, which on a card whose
-                      // picture is centred left it hanging off one corner. The
-                      // chevron keeps the outer edge and the name sits under
-                      // the middle of the drawing, which is how the pair is
-                      // drawn.
-                      Expanded(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.center,
-                          child: Text(
-                            label,
-                            maxLines: 1,
-                            textAlign: TextAlign.center,
-                            // No size and no colour of its own: the page
-                            // decides both, once, for every block on it — see
-                            // [HomeTypography].
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              height: 1.2,
-                            ),
+                      Positioned.fill(
+                        child: Padding(
+                          padding: EdgeInsets.all(widget.padding),
+                          // Icon and label are one unit, centred together
+                          // with a small, fixed gap — not spread over the
+                          // card's height.
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              SizedBox(
+                                height: widget.artHeight,
+                                child: Image.asset(
+                                  widget.art,
+                                  fit: BoxFit.contain,
+                                  filterQuality: FilterQuality.medium,
+                                ),
+                              ),
+                              SizedBox(height: widget.gap),
+                              SizedBox(
+                                height: widget.labelHeight,
+                                child: Padding(
+                                  // Clear of the chevron on both sides, so the
+                                  // label is centred on the card.
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      widget.label,
+                                      maxLines: 1,
+                                      textAlign: TextAlign.center,
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                            height: 1.2,
+                                            color: AppColors.heading(
+                                              dark: dark,
+                                            ),
+                                          ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      // Points the way the page reads — leftwards, in RTL. It
-                      // is the only thing on the card that says it opens
-                      // somewhere, now that the band that used to say so by
-                      // looking like a button has gone.
-                      Icon(
-                        Icons.chevron_left_rounded,
-                        size: 20,
-                        color: AppColors.muted(dark: dark),
+                      // Level with the label, at the edge the page reads
+                      // towards — left, in RTL. Dark, but lighter than the
+                      // label so it never competes with it. `chevron_right`
+                      // because Material mirrors its chevrons in RTL: this is
+                      // the one that draws pointing left.
+                      PositionedDirectional(
+                        end: 8,
+                        bottom: widget.padding,
+                        height: widget.labelHeight,
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          size: 20,
+                          color: AppColors.muted(dark: dark),
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              AccentUnderline(color: accent),
-            ],
-          ),
-          // Above the picture rather than under it: the ripple of an `InkWell`
-          // is painted by the `Material` behind it, so an image in between
-          // would leave the tap looking dead everywhere except the label row.
-          Positioned.fill(
-            child: Material(
-              type: MaterialType.transparency,
-              child: InkWell(onTap: onTap, child: const SizedBox.expand()),
+                AccentUnderline(color: widget.accent),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

@@ -1,0 +1,676 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shadchan/models/card_access.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_event.dart';
+import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
+import 'package:shadchan/services/card_sync_engine.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/personal_card_service.dart';
+import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
+import 'package:uuid/uuid.dart';
+
+/// How a matchmaker's request for a card ended.
+enum CardRequestOutcome {
+  sent,
+
+  /// The server refused: the matchmaker is not saved in the owner's contacts
+  /// (or is blocked, which is deliberately indistinguishable).
+  notAllowed,
+  failed,
+}
+
+/// Access to personal cards, from both sides, live.
+///
+/// As a **card owner**: who asked, who may see the card, the matchmakers among
+/// the owner's contacts, and status reports waiting for an answer. As a
+/// **matchmaker**: where each request stands — and, for every approved one,
+/// the owner's card kept in step with the matching record in the database.
+///
+/// Every decision is the server's: this class only asks, and reads what the
+/// rules let it read. Every action returns false on failure and changes
+/// nothing locally, so the screen never shows a result that did not happen.
+class CardAccessProvider extends ChangeNotifier {
+  CardAccessProvider({required PersonRepository people, bool enabled = true})
+    : _people = people,
+      _enabled = enabled;
+
+  final PersonRepository _people;
+  final bool _enabled;
+
+  String? _uid;
+  bool _starting = false;
+  final List<StreamSubscription<Object?>> _subscriptions =
+      <StreamSubscription<Object?>>[];
+  final Map<String, StreamSubscription<Object?>> _cardSubscriptions =
+      <String, StreamSubscription<Object?>>{};
+
+  List<CardAccess> _asOwner = <CardAccess>[];
+  Map<String, CardAccess> _asMatchmaker = <String, CardAccess>{};
+  List<StatusReport> _reports = <StatusReport>[];
+  List<CardHelper> _helpers = <CardHelper>[];
+  bool _helpersLoaded = false;
+  final Set<String> _busy = <String>{};
+
+  /// Directory answers for this session, by phone hash.
+  final Map<String, Map<String, dynamic>?> _lookups =
+      <String, Map<String, dynamic>?>{};
+
+  bool get isConnected => _uid != null;
+  String? get uid => _uid;
+
+  // --- As the card owner ----------------------------------------------------
+
+  List<CardAccess> get pendingRequests => _asOwner
+      .where((CardAccess a) => a.status == CardAccessStatus.pending)
+      .toList();
+
+  List<CardAccess> get approved => _asOwner
+      .where((CardAccess a) => a.status == CardAccessStatus.approved)
+      .toList();
+
+  List<CardAccess> get blocked => _asOwner
+      .where((CardAccess a) => a.status == CardAccessStatus.blocked)
+      .toList();
+
+  /// Matchmakers among the owner's contacts who do not yet have access, and
+  /// whom the owner has not blocked.
+  List<CardHelper> get helpers {
+    final Set<String> decided = <String>{
+      for (final CardAccess a in _asOwner)
+        if (a.status == CardAccessStatus.approved ||
+            a.status == CardAccessStatus.blocked ||
+            a.status == CardAccessStatus.pending)
+          a.matchmakerUid,
+    };
+    return _helpers.where((CardHelper h) => !decided.contains(h.uid)).toList();
+  }
+
+  bool get helpersLoaded => _helpersLoaded;
+
+  List<StatusReport> get statusReports => _reports;
+
+  // --- As a matchmaker ------------------------------------------------------
+
+  /// This matchmaker's standing with [ownerUid]'s card, if any.
+  CardAccess? accessTo(String ownerUid) => _asMatchmaker[ownerUid];
+
+  bool isBusy(String key) => _busy.contains(key);
+
+  // --- Lifecycle ------------------------------------------------------------
+
+  /// Connects, once Firebase is up and a durable account is signed in.
+  Future<void> start() async {
+    if (!_enabled || _uid != null || _starting || !FirebaseBootstrap.isReady) {
+      return;
+    }
+    _starting = true;
+    try {
+      final String? uid = await PersonalCardService.durableUid();
+      if (uid == null) {
+        return;
+      }
+      _uid = uid;
+      final FirebaseFirestore db = FirebaseFirestore.instance;
+      final CollectionReference<Map<String, dynamic>> access = db.collection(
+        PersonalCardService.accessCollection,
+      );
+
+      _subscriptions
+        ..add(
+          access.where('ownerUid', isEqualTo: uid).snapshots().listen((
+            QuerySnapshot<Map<String, dynamic>> snap,
+          ) {
+            _asOwner = <CardAccess>[
+              for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                  in snap.docs)
+                ?CardAccess.fromMap(doc.data()),
+            ];
+            notifyListeners();
+          }, onError: _log),
+        )
+        ..add(
+          access
+              .where('matchmakerUid', isEqualTo: uid)
+              .snapshots(includeMetadataChanges: true)
+              .listen((QuerySnapshot<Map<String, dynamic>> snap) {
+                _asMatchmaker = <String, CardAccess>{
+                  for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                      in snap.docs)
+                    if (CardAccess.fromMap(doc.data()) case final CardAccess a)
+                      a.ownerUid: a,
+                };
+                notifyListeners();
+                unawaited(
+                  _reconcile(authoritative: !snap.metadata.isFromCache),
+                );
+              }, onError: _log),
+        )
+        ..add(
+          db
+              .collection('statusReports')
+              .where('ownerUid', isEqualTo: uid)
+              .where('resolution', isNull: true)
+              .snapshots()
+              .listen((QuerySnapshot<Map<String, dynamic>> snap) {
+                _reports = <StatusReport>[
+                  for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                      in snap.docs)
+                    StatusReport(
+                      id: doc.id,
+                      ownerUid: uid,
+                      matchmakerUid:
+                          (doc.data()['matchmakerUid'] as String?) ?? '',
+                      matchmakerName:
+                          (doc.data()['matchmakerName'] as String?) ?? '',
+                      status: (doc.data()['status'] as String?) ?? '',
+                    ),
+                ];
+                notifyListeners();
+              }, onError: _log),
+        )
+        ..add(
+          db
+              .collection('users')
+              .doc(uid)
+              .collection('private')
+              .doc('helpers')
+              .snapshots()
+              .listen((DocumentSnapshot<Map<String, dynamic>> snap) {
+                final Object? list = snap.data()?['helpers'];
+                _helpers = <CardHelper>[
+                  if (list is List)
+                    for (final Object? item in list)
+                      if (item is Map &&
+                          item['uid'] is String &&
+                          item['uid'] != uid)
+                        CardHelper(
+                          uid: item['uid'] as String,
+                          name: (item['name'] as String?) ?? '',
+                        ),
+                ];
+                _helpersLoaded = snap.exists;
+                notifyListeners();
+              }, onError: _log),
+        );
+    } catch (error, stackTrace) {
+      _log(error, stackTrace);
+    } finally {
+      _starting = false;
+    }
+  }
+
+  /// Disconnects and forgets, for a sign-out.
+  Future<void> stop() async {
+    for (final StreamSubscription<Object?> s in _subscriptions) {
+      await s.cancel();
+    }
+    for (final StreamSubscription<Object?> s in _cardSubscriptions.values) {
+      await s.cancel();
+    }
+    _subscriptions.clear();
+    _cardSubscriptions.clear();
+    _uid = null;
+    _asOwner = <CardAccess>[];
+    _asMatchmaker = <String, CardAccess>{};
+    _reports = <StatusReport>[];
+    _helpers = <CardHelper>[];
+    _helpersLoaded = false;
+    _lookups.clear();
+    notifyListeners();
+  }
+
+  static void _log(Object error, [StackTrace? stackTrace]) {
+    debugPrint(
+      'CardAccessProvider: $error${stackTrace == null ? '' : '\n$stackTrace'}',
+    );
+  }
+
+  // --- The matchmaker's side: keeping approved cards in step ----------------
+
+  Future<void> _reconcile({required bool authoritative}) async {
+    // Follow every approved card.
+    for (final CardAccess access in _asMatchmaker.values) {
+      if (access.status == CardAccessStatus.approved &&
+          !_cardSubscriptions.containsKey(access.ownerUid)) {
+        _followCard(access);
+      }
+    }
+    // Stop following — and unlink — what is no longer approved. Only on an
+    // answer from the server: a cached, empty first snapshot must never be
+    // mistaken for "every grant was withdrawn".
+    if (!authoritative) {
+      return;
+    }
+    for (final String ownerUid in _cardSubscriptions.keys.toList()) {
+      if (_asMatchmaker[ownerUid]?.status != CardAccessStatus.approved) {
+        await _cardSubscriptions.remove(ownerUid)?.cancel();
+        await _unlink(ownerUid);
+      }
+    }
+    for (final Person person in _people.getAll()) {
+      final String? owner = person.cardOwnerUid;
+      if (owner != null &&
+          _asMatchmaker[owner]?.status != CardAccessStatus.approved) {
+        await _unlink(owner);
+      }
+    }
+  }
+
+  void _followCard(CardAccess access) {
+    final String ownerUid = access.ownerUid;
+    _cardSubscriptions[ownerUid] = FirebaseFirestore.instance
+        .collection(PersonalCardService.cardsCollection)
+        .doc(ownerUid)
+        .snapshots()
+        .listen(
+          (DocumentSnapshot<Map<String, dynamic>> snap) {
+            final Map<String, dynamic>? data = snap.data();
+            if (data == null) {
+              return;
+            }
+            unawaited(_applyCard(access, data));
+          },
+          onError: (Object error) {
+            // A card that was deleted, or access that ended, reads as
+            // permission-denied. Either way the sync is over.
+            if (error is FirebaseException &&
+                error.code == 'permission-denied') {
+              unawaited(_cardSubscriptions.remove(ownerUid)?.cancel());
+              unawaited(_unlink(ownerUid));
+            } else {
+              _log(error);
+            }
+          },
+        );
+  }
+
+  Future<List<String>> _downloadPhotos(
+    String ownerUid,
+    List<Object?> remotePaths,
+  ) async {
+    final List<String> local = <String>[];
+    for (final Object? remote in remotePaths) {
+      if (remote is! String) {
+        continue;
+      }
+      final String name = CardSyncEngine.photoFileName(
+        ownerUid,
+        remote.split('/').last,
+      );
+      final File file = await PhotoPickerService.fileFor(name);
+      if (!file.existsSync()) {
+        try {
+          await FirebaseStorage.instance.ref(remote).writeToFile(file);
+        } catch (error) {
+          _log(error);
+          continue;
+        }
+      }
+      local.add(file.path);
+    }
+    return local;
+  }
+
+  Future<void> _applyCard(CardAccess access, Map<String, dynamic> data) async {
+    final String ownerUid = access.ownerUid;
+    Person? person = _people.findByCardOwner(ownerUid);
+    if (person == null && access.ownerPhoneHash != null) {
+      person = _people.findByPhoneHash(access.ownerPhoneHash!);
+    }
+    final bool created = person == null;
+    final DateTime now = DateTime.now();
+    person ??= Person(
+      id: const Uuid().v4(),
+      firstName: (data['firstName'] as String?) ?? '',
+      lastName: (data['lastName'] as String?) ?? '',
+      gender: Gender.unknown,
+      phone: access.ownerPhone,
+      source: 'כרטיס אישי',
+      createdAt: now,
+      updatedAt: now,
+    );
+    if ((person.phone ?? '').trim().isEmpty && access.ownerPhone != null) {
+      person.phone = access.ownerPhone;
+    }
+
+    final bool wasLinked = person.cardOwnerUid == ownerUid;
+    final List<String> oldCardPhotos = person.photosPaths
+        .where(CardSyncEngine.isCardPhoto)
+        .toList();
+    final List<String> localPhotos = person.cardSyncDetached
+        ? person.photosPaths
+        : await _downloadPhotos(
+            ownerUid,
+            (data['photoPaths'] as List?) ?? const <Object?>[],
+          );
+
+    final CardSyncResult result = CardSyncEngine.apply(
+      person,
+      data,
+      ownerUid: ownerUid,
+      localPhotoPaths: localPhotos,
+    );
+    if (!person.cardSyncDetached) {
+      PhotoPickerService.deletePhotoFiles(
+        oldCardPhotos.where((String p) => !localPhotos.contains(p)),
+      );
+    }
+    if (result.changed || created) {
+      await _people.saveSynced(person);
+    }
+    if (!wasLinked) {
+      await _people.logEvent(
+        person.id,
+        PersonEventType.cardSynced,
+        'הכרטיס מתעדכן עכשיו {ממנו|ממנה} ישירות'.forGender(person.gender),
+      );
+    }
+    for (final String line in result.updates) {
+      await _people.logEvent(person.id, PersonEventType.cardSynced, line);
+    }
+  }
+
+  Future<void> _unlink(String ownerUid) async {
+    final Person? person = _people.findByCardOwner(ownerUid);
+    if (person == null) {
+      return;
+    }
+    final String name = person.firstName.trim();
+    final List<String> toDelete = CardSyncEngine.unlink(person);
+    await _people.saveSynced(person);
+    PhotoPickerService.deletePhotoFiles(toDelete);
+    await _people.logEvent(
+      person.id,
+      PersonEventType.cardSynced,
+      'הגישה לכרטיס של $name הסתיימה',
+    );
+  }
+
+  /// Follows again any approved card whose listener ended — a card that was
+  /// deleted and then restored, with its grants kept. Called on app resume.
+  Future<void> resume() => _reconcile(authoritative: false);
+
+  /// The owner restored their card and kept its grants: every approved row is
+  /// written again, which wakes each matchmaker's app to read the card anew.
+  Future<bool> reawakenApproved() {
+    return _run('reawaken', () async {
+      for (final CardAccess row in approved) {
+        await _accessDoc(row.ownerUid, row.matchmakerUid).set(
+          _accessData(
+            ownerUid: row.ownerUid,
+            matchmakerUid: row.matchmakerUid,
+            status: CardAccessStatus.approved,
+            requestedBy: row.requestedBy,
+            ownerName: row.ownerName,
+            matchmakerName: row.matchmakerName,
+            ownerPhoneHash: row.ownerPhoneHash,
+            ownerPhone: row.ownerPhone,
+          ),
+        );
+      }
+    });
+  }
+
+  /// The owner restored their card without its grants: everybody who had
+  /// access has it no longer.
+  Future<bool> revokeAllApproved() {
+    return _run('revokeAll', () async {
+      for (final CardAccess row in approved) {
+        await _accessDoc(row.ownerUid, row.matchmakerUid).set(
+          _accessData(
+            ownerUid: row.ownerUid,
+            matchmakerUid: row.matchmakerUid,
+            status: CardAccessStatus.revoked,
+            requestedBy: row.requestedBy,
+            ownerName: row.ownerName,
+            matchmakerName: row.matchmakerName,
+            ownerPhoneHash: row.ownerPhoneHash,
+            ownerPhone: row.ownerPhone,
+          ),
+        );
+      }
+    });
+  }
+
+  /// Reads the owner's card again and applies it — after the matchmaker went
+  /// back to automatic updates on a record they had detached.
+  Future<void> resync(String ownerUid) async {
+    final CardAccess? access = _asMatchmaker[ownerUid];
+    if (access == null || access.status != CardAccessStatus.approved) {
+      return;
+    }
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snap =
+          await FirebaseFirestore.instance
+              .collection(PersonalCardService.cardsCollection)
+              .doc(ownerUid)
+              .get();
+      final Map<String, dynamic>? data = snap.data();
+      if (data != null) {
+        await _applyCard(access, data);
+      }
+    } catch (error) {
+      _log(error);
+    }
+  }
+
+  // --- Actions --------------------------------------------------------------
+
+  Future<bool> _run(String key, Future<void> Function() action) async {
+    if (_busy.contains(key) || _uid == null) {
+      return false;
+    }
+    _busy.add(key);
+    notifyListeners();
+    try {
+      await action();
+      return true;
+    } catch (error, stackTrace) {
+      _log(error, stackTrace);
+      return false;
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
+    }
+  }
+
+  DocumentReference<Map<String, dynamic>> _accessDoc(
+    String ownerUid,
+    String matchmakerUid,
+  ) => FirebaseFirestore.instance
+      .collection(PersonalCardService.accessCollection)
+      .doc(PersonalCardService.accessId(ownerUid, matchmakerUid));
+
+  Map<String, Object?> _accessData({
+    required String ownerUid,
+    required String matchmakerUid,
+    required CardAccessStatus status,
+    required String requestedBy,
+    required String ownerName,
+    required String matchmakerName,
+    String? ownerPhoneHash,
+    String? ownerPhone,
+  }) => <String, Object?>{
+    'ownerUid': ownerUid,
+    'matchmakerUid': matchmakerUid,
+    'status': status.name,
+    'requestedBy': requestedBy,
+    'ownerName': ownerName,
+    'matchmakerName': matchmakerName,
+    'ownerPhoneHash': ownerPhoneHash,
+    'ownerPhone': ownerPhone,
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
+
+  /// The owner answers or changes an existing row: approve, "not now",
+  /// block, or withdraw access.
+  Future<bool> setStatus(
+    CardAccess access,
+    CardAccessStatus status, {
+    String? ownerName,
+    String? ownerPhoneHash,
+    String? ownerPhone,
+  }) {
+    return _run('access:${access.id}', () async {
+      await _accessDoc(access.ownerUid, access.matchmakerUid).set(
+        _accessData(
+          ownerUid: access.ownerUid,
+          matchmakerUid: access.matchmakerUid,
+          status: status,
+          requestedBy: access.requestedBy,
+          ownerName: ownerName ?? access.ownerName,
+          matchmakerName: access.matchmakerName,
+          ownerPhoneHash: ownerPhoneHash ?? access.ownerPhoneHash,
+          ownerPhone: ownerPhone ?? access.ownerPhone,
+        ),
+      );
+    });
+  }
+
+  /// The owner gives a matchmaker access unasked — effective at once.
+  Future<bool> grant(
+    CardHelper helper, {
+    required String ownerName,
+    String? ownerPhoneHash,
+    String? ownerPhone,
+  }) {
+    final String? uid = _uid;
+    return _run('helper:${helper.uid}', () async {
+      await _accessDoc(uid!, helper.uid).set(
+        _accessData(
+          ownerUid: uid,
+          matchmakerUid: helper.uid,
+          status: CardAccessStatus.approved,
+          requestedBy: 'owner',
+          ownerName: ownerName,
+          matchmakerName: helper.name,
+          ownerPhoneHash: ownerPhoneHash,
+          ownerPhone: ownerPhone,
+        ),
+      );
+    });
+  }
+
+  /// The owner lifts a block. The row goes; the matchmaker may ask again.
+  Future<bool> unblock(CardAccess access) {
+    return _run('access:${access.id}', () async {
+      await _accessDoc(access.ownerUid, access.matchmakerUid).delete();
+    });
+  }
+
+  /// Who owns [phoneHash] in the directory, remembered for the session.
+  Future<Map<String, dynamic>?> lookup(String phoneHash) async {
+    if (_lookups.containsKey(phoneHash)) {
+      return _lookups[phoneHash];
+    }
+    final Map<String, dynamic>? entry = await PersonalCardService.lookup(
+      phoneHash,
+    );
+    _lookups[phoneHash] = entry;
+    return entry;
+  }
+
+  /// A matchmaker asks [ownerUid] for access to their card.
+  Future<CardRequestOutcome> request({
+    required String ownerUid,
+    required String ownerName,
+    required String ownerPhoneHash,
+    required String matchmakerName,
+  }) async {
+    final String? uid = _uid;
+    final String key = 'request:$ownerUid';
+    if (uid == null || _busy.contains(key)) {
+      return CardRequestOutcome.failed;
+    }
+    _busy.add(key);
+    notifyListeners();
+    try {
+      await _accessDoc(ownerUid, uid).set(
+        _accessData(
+          ownerUid: ownerUid,
+          matchmakerUid: uid,
+          status: CardAccessStatus.pending,
+          requestedBy: 'matchmaker',
+          ownerName: ownerName,
+          matchmakerName: matchmakerName,
+          ownerPhoneHash: ownerPhoneHash,
+        ),
+      );
+      return CardRequestOutcome.sent;
+    } on FirebaseException catch (error) {
+      _log(error);
+      return error.code == 'permission-denied'
+          ? CardRequestOutcome.notAllowed
+          : CardRequestOutcome.failed;
+    } catch (error) {
+      _log(error);
+      return CardRequestOutcome.failed;
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
+    }
+  }
+
+  /// The matchmaker changed the status of somebody whose card they follow:
+  /// the owner is asked whether it is true. The local status stands either
+  /// way.
+  Future<void> reportStatus(
+    Person person,
+    ProfileStatus status, {
+    required String matchmakerName,
+  }) async {
+    final String? uid = _uid;
+    final String? owner = person.cardOwnerUid;
+    if (uid == null ||
+        owner == null ||
+        _asMatchmaker[owner]?.status != CardAccessStatus.approved) {
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('statusReports')
+          .add(<String, Object?>{
+            'ownerUid': owner,
+            'matchmakerUid': uid,
+            'matchmakerName': matchmakerName,
+            'status': status.name,
+            'resolution': null,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+    } catch (error) {
+      _log(error);
+    }
+  }
+
+  /// The owner answers a status report. Confirming makes it their status,
+  /// for everybody.
+  Future<bool> answerReport(
+    StatusReport report, {
+    required bool confirmed,
+    required PersonalCardProvider cards,
+  }) {
+    return _run('report:${report.id}', () async {
+      await FirebaseFirestore.instance
+          .collection('statusReports')
+          .doc(report.id)
+          .update(<String, Object?>{
+            'resolution': confirmed ? 'confirmed' : 'rejected',
+          });
+      if (confirmed) {
+        for (final ProfileStatus status in ProfileStatus.values) {
+          if (status.name == report.status) {
+            await cards.setStatus(status);
+          }
+        }
+      }
+    });
+  }
+}
