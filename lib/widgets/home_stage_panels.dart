@@ -3,6 +3,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_stage.dart';
+import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 Color _lead(ThemeData theme) => theme.brightness == Brightness.dark
@@ -240,20 +241,8 @@ class HomeImportInvite extends StatelessWidget {
   }
 }
 
-/// "עוצרים רגע לחשוב על החברים" — the invitation into the continuous
-/// think-about-someone view, at the head of המאגר שלי.
-///
-/// **Two lines on the reading edge, and one quiet mark at the other.** The
-/// heading and the button under it both start at the right, so the block reads
-/// as one sentence with its answer beneath it; a centred pill under a
-/// right-aligned heading read as two things that happened to share a card.
-///
-/// **The mark is a line drawing of a cup of coffee**, recoloured the way the
-/// home cards are — see [HomeLineArt]. It replaced a painted figure-with-a-cup
-/// that was too detailed to read at this size.
-///
-/// It drops the mark below 300px of card or above 1.3x text, where keeping it
-/// would leave the title three words wide.
+/// "עוצרים רגע לחשוב על החברים" at the head of המאגר שלי: the cup of coffee
+/// and the line beside it, as one tile in the home page's add-card style.
 class HomeThinkBanner extends StatelessWidget {
   const HomeThinkBanner({super.key, required this.onTap});
 
@@ -261,111 +250,12 @@ class HomeThinkBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = dark
-        ? AppColors.secondaryDarkDm
-        : AppColors.secondaryInk;
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double textScale = MediaQuery.textScalerOf(context).scale(1);
-        final bool showPicture =
-            constraints.maxWidth >= 300 && textScale <= 1.3;
-        // The page's own card: plain paper, a soft shadow, and the copper rule
-        // along the foot. It used to be a tinted, outlined panel — the same
-        // wash the block below it wore, which made the head of המאגר שלי two
-        // coloured boxes in a row.
-        return HomePaperCard(
-          stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
-          radius: 22,
-          onTap: onTap,
-          padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 12, 12),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    // One line, shrunk rather than wrapped — see
-                    // [HomeBannerTitle.singleLine].
-                    HomeBannerTitle(
-                      text: 'עוצרים רגע לחשוב על החברים',
-                      color: dark ? theme.colorScheme.onSurface : accent,
-                      singleLine: true,
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      onPressed: onTap,
-                      // Scaled down rather than wrapped: a question
-                      // broken across two lines inside a pill reads as
-                      // two half-sentences.
-                      style: FilledButton.styleFrom(
-                        backgroundColor: dark
-                            ? AppColors.secondaryDarkDm
-                            : AppColors.secondary,
-                        foregroundColor: dark
-                            ? AppColors.onSecondary
-                            : AppColors.surface,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 7,
-                        ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                        shape: const StadiumBorder(),
-                        textStyle: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      child: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('על מי חושבים עכשיו?', maxLines: 1),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (showPicture) ...<Widget>[
-                const SizedBox(width: 12),
-                _CoffeeMark(accent: accent, dark: dark),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// The cup of coffee beside "עוצרים רגע לחשוב על החברים", in a disc of the
-/// block's own tint so the drawing's white ground never shows.
-class _CoffeeMark extends StatelessWidget {
-  const _CoffeeMark({required this.accent, required this.dark});
-
-  final Color accent;
-  final bool dark;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color disc = Color.alphaBlend(
-      accent.withValues(alpha: dark ? 0.22 : 0.10),
-      dark ? theme.colorScheme.surfaceContainerHighest : AppColors.surface,
-    );
-
-    return Container(
-      width: 54,
-      height: 54,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(shape: BoxShape.circle, color: disc),
-      child: HomeLineArt(
-        asset: 'assets/coffee_icon.png',
-        ink: dark ? AppColors.secondaryDarkDm : accent,
-        paper: disc,
-      ),
+    // The cup of coffee and one line beside it, drawn exactly like the home
+    // page's two add cards — see [HomeArtTile].
+    return HomeArtTile(
+      art: 'assets/think_coffee_art.png',
+      label: 'עוצרים רגע לחשוב על החברים',
+      onTap: onTap,
     );
   }
 }

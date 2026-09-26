@@ -22,6 +22,7 @@ import 'package:shadchan/screens/home_screen.dart';
 import 'package:shadchan/screens/privacy_overview_screen.dart';
 import 'package:shadchan/screens/support_admin_screen.dart';
 import 'package:shadchan/screens/support_report_screen.dart';
+import 'package:shadchan/screens/deleted_ideas_screen.dart';
 import 'package:shadchan/screens/married_friends_screen.dart';
 import 'package:shadchan/screens/monthly_stats_screen.dart';
 import 'package:shadchan/screens/new_ideas_screen.dart';
@@ -609,6 +610,12 @@ abstract final class AppRouter {
         path: '/married',
         builder: (BuildContext context, GoRouterState state) {
           return const MarriedFriendsScreen();
+        },
+      ),
+      GoRoute(
+        path: '/ideas/deleted',
+        builder: (BuildContext context, GoRouterState state) {
+          return const DeletedIdeasScreen();
         },
       ),
       GoRoute(

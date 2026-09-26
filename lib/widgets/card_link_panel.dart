@@ -231,7 +231,7 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
             ),
             TextButton(
               onPressed: () => CardInviteFlow.invite(context, person),
-              child: const Text('להזמין למלא כרטיס'),
+              child: const Text(CardInviteFlow.inviteLabel),
             ),
           ],
         );

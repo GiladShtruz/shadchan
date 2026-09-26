@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/app_version.dart';
+import 'package:shadchan/widgets/home_section.dart';
 
 /// The shape the settings are made of, and the reason there are only two
 /// pieces.
@@ -12,9 +14,20 @@ import 'package:shadchan/utils/app_version.dart';
 /// subject with one row does not get a card of its own; it gets a row in the
 /// card next to it.
 
-/// One titled group of rows.
+/// One titled group of rows, on the home page's paper card.
+///
+/// The heading in the page's heading ink, one [HomePaperCard] under it with
+/// the group's [accent] as the rule along its foot and as the tint of every
+/// row's icon square — so a settings page is the same paper, shadow and rule
+/// as בית, and its groups can be told apart by colour without a box of their
+/// own each.
 class SettingsGroup extends StatelessWidget {
-  const SettingsGroup({super.key, required this.title, required this.children});
+  const SettingsGroup({
+    super.key,
+    required this.title,
+    required this.children,
+    this.accent,
+  });
 
   final String title;
 
@@ -22,12 +35,18 @@ class SettingsGroup extends StatelessWidget {
   /// so no group can end up with a stray one at the bottom.
   final List<Widget> children;
 
+  /// The group's palette colour. Defaults to the palette's blue.
+  final Color? accent;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     if (children.isEmpty) {
       return const SizedBox.shrink();
     }
+    final Color tone =
+        accent ?? (dark ? AppColors.primaryDarkDm : AppColors.primaryDark);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
@@ -38,21 +57,25 @@ class SettingsGroup extends StatelessWidget {
             padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 8),
             child: Text(
               title,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: theme.colorScheme.onSurfaceVariant,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppColors.heading(dark: dark),
               ),
             ),
           ),
-          Card(
-            margin: EdgeInsets.zero,
-            child: Column(
-              children: <Widget>[
-                for (int i = 0; i < children.length; i++) ...<Widget>[
-                  if (i > 0) const Divider(height: 1, indent: 56),
-                  children[i],
+          _SettingsAccent(
+            color: tone,
+            child: HomePaperCard(
+              stripe: tone,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: <Widget>[
+                  for (int i = 0; i < children.length; i++) ...<Widget>[
+                    if (i > 0) const Divider(height: 1, indent: 64),
+                    children[i],
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -61,8 +84,22 @@ class SettingsGroup extends StatelessWidget {
   }
 }
 
-/// One row: a small icon on the reading edge, a title, and a chevron when it
-/// opens something.
+/// The accent a [SettingsGroup] hands down to its rows.
+class _SettingsAccent extends InheritedWidget {
+  const _SettingsAccent({required this.color, required super.child});
+
+  final Color color;
+
+  static Color? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_SettingsAccent>()?.color;
+
+  @override
+  bool updateShouldNotify(_SettingsAccent oldWidget) =>
+      oldWidget.color != color;
+}
+
+/// One row: a small icon in a tinted square on the reading edge, a title, and
+/// a chevron when it opens something.
 ///
 /// **A subtitle is the exception, not the default.** Most of the greys that
 /// used to sit under these rows repeated the title in more words; the ones left
@@ -101,14 +138,32 @@ class SettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color? tint = destructive ? theme.colorScheme.error : null;
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color accent = destructive
+        ? theme.colorScheme.error
+        : _SettingsAccent.of(context) ??
+              (dark ? AppColors.primaryDarkDm : AppColors.primaryDark);
 
     return ListTile(
       enabled: enabled,
-      leading: leadingOverride ?? Icon(icon, size: 22, color: tint),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+      leading:
+          leadingOverride ??
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: dark ? 0.20 : 0.11),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 20, color: accent),
+          ),
       title: Text(
         title,
-        style: theme.textTheme.bodyLarge?.copyWith(color: tint),
+        style: theme.textTheme.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: destructive ? theme.colorScheme.error : null,
+        ),
       ),
       subtitle: subtitle == null
           ? null

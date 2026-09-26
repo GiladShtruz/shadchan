@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/confirm_dialog.dart';
+import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/dialogs/match_journal_sheet.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_contact.dart';
@@ -17,6 +20,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/widgets/person_list_card.dart';
 
 /// One proposal, as a single shared card rather than two separate squares. The
 /// two sides are told apart only by the ring around each photo — stone blue for
@@ -575,10 +579,10 @@ class _StatusPicker extends StatelessWidget {
   }
 }
 
-/// "פנויה" / "תפוס" / "בהפסקה" — the word alone, in the status's own colour
-/// (green, red, amber), in the person's own grammatical gender. No frame and no
-/// tinted ground: under a name on a card that already has two faces, a pill
-/// was one more box.
+/// "פנויה" / "תפוס" / "בהפסקה", drawn exactly the way המאגר שלי draws it: a dot
+/// in the state's colour and the word in the person's own — blue for him,
+/// rose for her. See [ProfileStatusTag]; this is that tag, so a friend's
+/// status looks the same on a proposal as on their row in the database.
 class _AvailabilityWord extends StatelessWidget {
   const _AvailabilityWord({required this.status, required this.gender});
 
@@ -587,23 +591,14 @@ class _AvailabilityWord extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Text(
-      status.displayNameFor(gender),
-      maxLines: 1,
-      style: theme.textTheme.bodySmall?.copyWith(
-        fontSize: 13,
-        fontWeight: FontWeight.w800,
-        color: AppColors.profileStatusColor(status),
-      ),
-    );
+    return ProfileStatusTag(status: status, gender: gender, compact: true);
   }
 }
 
 /// Where the proposal stands, at the foot of the card — and the way to change
 /// it.
 ///
-/// **The status lives on the card, bottom left, with an arrow.** It used to be
+/// **The status lives on the card, bottom right, with an arrow.** It used to be
 /// a quiet word at the bottom right, a reminder date at the bottom left, and
 /// the ways to move the idea on inside the folded actions — so changing where
 /// an idea stood meant opening a panel to find a row of tiles. Now the status
@@ -634,25 +629,31 @@ class _StatusLine extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 0, 8, 2),
       child: Row(
         children: <Widget>[
-          // Bottom right: why a waiting idea is waiting, when it says.
-          if (reason.isNotEmpty)
-            Flexible(
+          // Bottom right (the start edge, in RTL): the status, and the menu
+          // behind it — where a reader's eye finishes a card that opens with
+          // her face on the same side.
+          Flexible(
+            child: _CardStatusMenu(
+              match: match,
+              onSetStage: onSetStage,
+              onAction: onAction,
+            ),
+          ),
+          if (reason.isNotEmpty) ...<Widget>[
+            const SizedBox(width: 12),
+            // Bottom left: why a waiting idea is waiting, when it says.
+            Expanded(
               child: Text(
                 reason,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
-          const Spacer(),
-          // Bottom left: the status, and the menu behind it.
-          _CardStatusMenu(
-            match: match,
-            onSetStage: onSetStage,
-            onAction: onAction,
-          ),
+          ],
         ],
       ),
     );
@@ -1002,6 +1003,7 @@ class _AskPanel extends StatelessWidget {
               Expanded(
                 child: _CheckInButton(
                   person: female,
+                  gender: Gender.female,
                   fallback: 'הבחורה',
                   onTap: (_) => ask(MatchNextStep.askFemale),
                 ),
@@ -1010,6 +1012,7 @@ class _AskPanel extends StatelessWidget {
               Expanded(
                 child: _CheckInButton(
                   person: male,
+                  gender: Gender.male,
                   fallback: 'הבחור',
                   onTap: (_) => ask(MatchNextStep.askMale),
                 ),
@@ -1054,7 +1057,7 @@ class _ActionsBox extends StatelessWidget {
   }
 }
 
-/// "התזכורת הבאה בעוד חודש · 24.10" and a way to change it.
+/// "תזכורת ב־24.10" and a small "שינוי" beside it.
 class _ReminderSchedule extends StatelessWidget {
   const _ReminderSchedule({required this.match, required this.onChange});
 
@@ -1075,23 +1078,10 @@ class _ReminderSchedule extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Expanded(
-          child: Text.rich(
-            TextSpan(
-              children: <InlineSpan>[
-                TextSpan(
-                  text: date == null
-                      ? 'אין תזכורת לרעיון הזה'
-                      : 'התזכורת הבאה ${AppDateUtils.futureReminderLabel(date)}',
-                ),
-                if (date != null)
-                  TextSpan(
-                    text: ' · ${AppDateUtils.formatDateShort(date)}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
+          child: Text(
+            date == null
+                ? 'אין תזכורת'
+                : 'תזכורת ב־${AppDateUtils.formatDateShort(date)}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(
@@ -1195,6 +1185,7 @@ class _DatingPanel extends StatelessWidget {
             Expanded(
               child: _CheckInButton(
                 person: female,
+                gender: Gender.female,
                 fallback: 'הבחורה',
                 onTap: onCheckInWith,
               ),
@@ -1203,6 +1194,7 @@ class _DatingPanel extends StatelessWidget {
             Expanded(
               child: _CheckInButton(
                 person: male,
+                gender: Gender.male,
                 fallback: 'הבחור',
                 onTap: onCheckInWith,
               ),
@@ -1222,9 +1214,8 @@ class _DatingPanel extends StatelessWidget {
               child: Text(
                 match.reminderDate == null
                     ? 'נזכיר לך לבדוק ${DatingCheckIn.frequencyLabel(every)}'
-                    : 'התזכורת הבאה: '
-                          '${AppDateUtils.formatDateShort(match.reminderDate!)}'
-                          ' · ${DatingCheckIn.frequencyLabel(every)}',
+                    : 'תזכורת ב־'
+                          '${AppDateUtils.formatDateShort(match.reminderDate!)}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -1286,11 +1277,16 @@ class _DatingPanel extends StatelessWidget {
 class _CheckInButton extends StatelessWidget {
   const _CheckInButton({
     required this.person,
+    required this.gender,
     required this.fallback,
     required this.onTap,
   });
 
   final Person? person;
+
+  /// Which side this is — the name is written in its own colour, blue for
+  /// him and the palette's rose for her, like everywhere else in the app.
+  final Gender gender;
   final String fallback;
   final void Function(Person person)? onTap;
 
@@ -1332,9 +1328,10 @@ class _CheckInButton extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: reachable
-                        ? theme.colorScheme.onSurface
-                        : theme.colorScheme.onSurfaceVariant,
+                    color: AppColors.genderAccent(
+                      gender,
+                      dark: theme.brightness == Brightness.dark,
+                    ).withValues(alpha: reachable ? 1 : 0.55),
                   ),
                 ),
               ),
@@ -1376,7 +1373,7 @@ class _ContactsLine extends StatelessWidget {
         Expanded(
           child: contacts.isEmpty
               ? Text(
-                  'איש קשר להעברת ההצעה',
+                  'הוספת איש קשר שקשור להצעה',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -1389,8 +1386,12 @@ class _ContactsLine extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 6,
                     children: <Widget>[
-                      for (final MatchContact contact in contacts)
-                        _ContactPill(contact: contact),
+                      for (int i = 0; i < contacts.length; i++)
+                        _ContactPill(
+                          contact: contacts[i],
+                          onRemove: () =>
+                              _confirmRemove(context, contacts[i], i),
+                        ),
                     ],
                   ),
                 ),
@@ -1402,14 +1403,37 @@ class _ContactsLine extends StatelessWidget {
       ],
     );
   }
+
+  /// A long press on a contact takes them off this proposal, after asking.
+  Future<void> _confirmRemove(
+    BuildContext context,
+    MatchContact contact,
+    int index,
+  ) async {
+    final MatchRepository repository = context.read<MatchRepository>();
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'הסרת איש קשר',
+      message: 'להסיר את ${contact.name} מאנשי הקשר של הרעיון?',
+      confirmText: 'הסרה',
+      isDestructive: true,
+    );
+    if (!confirmed) {
+      return;
+    }
+    await repository.removeRelatedContact(match.id, index);
+  }
 }
 
 /// A related contact: the name (and who they are to the proposal), and a
 /// WhatsApp button that opens a chat with them.
 class _ContactPill extends StatelessWidget {
-  const _ContactPill({required this.contact});
+  const _ContactPill({required this.contact, required this.onRemove});
 
   final MatchContact contact;
+
+  /// A long press: take this contact off the proposal.
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1425,6 +1449,7 @@ class _ContactPill extends StatelessWidget {
         onTap: reachable
             ? () => WhatsAppUtils.openChatWithPhone(contact.phone)
             : null,
+        onLongPress: onRemove,
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),

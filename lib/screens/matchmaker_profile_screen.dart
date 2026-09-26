@@ -107,7 +107,6 @@ class _MatchmakerProfileScreenState extends State<MatchmakerProfileScreen> {
         foregroundColor: ProfilePalette.text(theme),
         titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
         title: const Text('פרופיל שדכן'),
-        centerTitle: true,
       ),
       body: SafeArea(
         child: ListView(

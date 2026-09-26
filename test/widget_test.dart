@@ -387,7 +387,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('הוספת כרטיס'), findsOneWidget);
-    expect(find.text('כרטיס חדש למאגר'), findsOneWidget);
+    expect(find.text('חבר חדש למאגר'), findsOneWidget);
     expect(find.text('הכרטיס והתמונות'), findsOneWidget);
     expect(find.text('פרטים אישיים'), findsOneWidget);
     expect(find.text('פנוי'), findsOneWidget);
@@ -569,9 +569,11 @@ void main() {
         'שורה ראשונה\nשורה שנייה\nסוף הכרטיס המלא',
       );
 
-      // Sharing sits in the profile app bar and goes straight to the share
-      // sheet with the card text and every photo — no preview step in between.
-      expect(find.byTooltip('שיתוף כרטיס'), findsOneWidget);
+      // Sharing sits beside the two pencils — on the photo square and on the
+      // card-text square — and not in the bar; it goes straight to the share
+      // sheet with the card text and every photo, no preview step between.
+      expect(find.byTooltip('שיתוף כרטיס'), findsNothing);
+      expect(find.byTooltip('שיתוף הכרטיס'), findsWidgets);
       expect(find.byType(PersonCardViewer), findsNothing);
 
       final Finder showFullCard = find.text('הצגת הכרטיס המלא');
@@ -1118,7 +1120,7 @@ void main() {
     // Then, in the same box, the next reminder and the go-between. The
     // status moves are not repeated here: they live on the card's status.
     expect(find.text('העברה להמתנה'), findsNothing);
-    expect(find.text('איש קשר להעברת ההצעה'), findsOneWidget);
+    expect(find.text('הוספת איש קשר שקשור להצעה'), findsOneWidget);
     // The journal is not a seventh button — opening the panel is what opens
     // the journal.
     expect(find.text('יומן הרעיון'), findsOneWidget);
@@ -2065,33 +2067,36 @@ void main() {
       expect(find.byType(ShadchanTabActions), findsOneWidget, reason: tab);
       expect(find.byType(RemindersBellButton), findsOneWidget, reason: tab);
       expect(find.byType(AppMenuButton), findsOneWidget, reason: tab);
-      expect(find.byIcon(Icons.add), findsWidgets, reason: tab);
+      // בית has no "+": its two add cards ride pinned under the search bar.
+      if (tab == '/home') {
+        expect(find.byType(AddMenuButton), findsNothing, reason: tab);
+      } else {
+        expect(find.byIcon(Icons.add), findsWidgets, reason: tab);
+      }
     }
   });
 
-  testWidgets('The home "+" offers the two things there are to add', (
+  testWidgets('The home add cards stay pinned under the search bar', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(_buildTestApp());
     await tester.pumpAndSettle();
 
-    // בית is above both other tabs, so its "+" asks which of them is meant
-    // rather than guessing. The other two go straight to their own flow.
-    await tester.tap(find.byType(AddMenuButton));
-    await tester.pumpAndSettle();
+    final Finder addPeople = find.text('הוספת חברים');
+    expect(addPeople, findsOneWidget);
+    expect(find.text('הוספת רעיון'), findsOneWidget);
 
-    // Scoped to the popup: "הוספת חברים" is also the label on one of the two
-    // entry cards further down the page, which is the point — the menu offers
-    // the same two things from the bar.
-    final Finder menu = find.byType(PopupMenuItem<AddMenuAction>);
-    expect(
-      find.descendant(of: menu, matching: find.text('הוספת חברים')),
-      findsOneWidget,
+    // Well past them: the pair is still on screen, parked under the bar.
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -900),
     );
-    expect(
-      find.descendant(of: menu, matching: find.text('הוספת רעיון')),
-      findsOneWidget,
-    );
+    await tester.pumpAndSettle();
+    expect(addPeople.hitTestable(), findsOneWidget);
+    expect(find.text('הוספת רעיון').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Searching המאגר שלי opens results that go to the person', (

@@ -12,14 +12,6 @@ import 'package:shadchan/widgets/home_section.dart';
 /// `home_blocks.dart`; the board and the shared primitives in
 /// `home_section.dart`.
 
-/// The deep tone of the brand blue that can carry white text. The light
-/// theme's `primary` is a pale blue-grey, too washed out to fill a button.
-Color _leadTone(ThemeData theme) {
-  return theme.brightness == Brightness.dark
-      ? theme.colorScheme.primary
-      : AppColors.primaryDark;
-}
-
 /// The couples banner's own palette — the one block on the page that wears
 /// colour. Blue paper, a warm glint, and nothing that introduces a new visual
 /// language to the rest of the screen.
@@ -60,110 +52,68 @@ class HomeHeroBand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color lead = _leadTone(theme);
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double textScale = MediaQuery.textScalerOf(context).scale(1);
-        // The mark is the first thing to go: it is decoration, and the line of
-        // type is the row.
-        final bool showMark = constraints.maxWidth >= 300 && textScale <= 1.4;
-
-        // The same white card the home page's blocks wear, with the copper
-        // rule under it: an idea is what this row opens, and copper is what an
-        // idea is drawn in everywhere else in the app.
-        return HomePaperCard(
-          stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
-          padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-          onTap: onShowIdeas,
-          child: Row(
-            children: <Widget>[
-              // **The sealed envelope**, which used to be the drawing on
-              // "הוספת חברים". It is the one mark in the set that means
-              // *something arrived for you* rather than *do something* —
-              // which is exactly what this row is, and is why the pair of
-              // portraits that stood at the other end of it has gone: two
-              // marks for one destination, and the couple was the vaguer
-              // of them. Recoloured at draw time so the strokes wear the
-              // row's own lead in either theme — see [HomeLineArt].
-              if (showMark) ...<Widget>[
-                _HeroMark(lead: lead, dark: dark),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    // Named for what it is: pairs the database worked out
-                    // on its own, not ideas the matchmaker opened.
-                    //
-                    // **Exactly the size of "עוצרים רגע לחשוב על חברים"
-                    // above it.** These two blocks sit one on top of the
-                    // other and are the two invitations at the top of the
-                    // page; each was scaled to whatever width its own card
-                    // had left over, so the pair read as a banner with a
-                    // footnote under it. One size, fixed — see
-                    // [HomeBannerTitle].
-                    //
-                    // The line that used to sit under it, "שווה הצצה,
-                    // אולי מחכה שם חיבור", is gone: the heading already
-                    // says what the row is.
-                    const HomeBannerTitle(text: 'רעיונות שהמאגר מציע לך'),
-                  ],
-                ),
-              ),
-              // `chevron_right` and not `chevron_left`: Material's
-              // directional icons mirror themselves, so in this RTL app
-              // this is the one that points the way the page is going.
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 26,
-                color: AppColors.muted(dark: dark),
-              ),
-            ],
-          ),
-        );
-      },
+    // The envelope and one line beside it, drawn exactly like the home
+    // page's two add cards — see [HomeArtTile].
+    return HomeArtTile(
+      art: 'assets/idea_envelope_art.png',
+      label: 'רעיונות שהמאגר מציע לך',
+      onTap: onShowIdeas,
     );
   }
 }
 
-/// The envelope that heads "רעיונות שהמאגר מציע לך".
+/// One invitation drawn the way "הוספת חברים" / "הוספת רעיון" are: a small
+/// copper drawing and its label beside it as one centred unit, on the page's
+/// paper, with the copper rule along the foot.
 ///
-/// A drawing rather than a Material glyph, because every other block at the
-/// top of these pages is headed by one of the app's own line illustrations and
-/// an outlined mail icon among them reads as a control that wandered in. It
-/// sits in a disc of the row's own tint so the white ground the file ships
-/// with never shows — see [HomeLineArt] for how the two colours are put on.
-class _HeroMark extends StatelessWidget {
-  const _HeroMark({required this.lead, required this.dark});
+/// Used for "עוצרים רגע לחשוב על החברים" (the cup of coffee) and "רעיונות
+/// שהמאגר מציע לך" (the envelope), so the head of המאגר שלי and of הרעיונות
+/// שלי speak the same language as the head of בית.
+class HomeArtTile extends StatelessWidget {
+  const HomeArtTile({
+    super.key,
+    required this.art,
+    required this.label,
+    required this.onTap,
+  });
 
-  final Color lead;
-  final bool dark;
+  /// A single-colour drawing on transparency; tinted to the palette's copper.
+  final String art;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color disc = Color.alphaBlend(
-      lead.withValues(alpha: dark ? 0.20 : 0.10),
-      dark
-          ? theme.colorScheme.surfaceContainerHighest
-          : theme.colorScheme.surface,
-    );
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color ink = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
 
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: disc),
-      padding: const EdgeInsets.all(9),
-      child: HomeLineArt(
-        asset: 'assets/home_add_people2.png',
-        ink: lead,
-        paper: disc,
-      ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth;
+        final bool narrow = width < 350;
+        final double textScale = MediaQuery.textScalerOf(
+          context,
+        ).scale(1).clamp(1, 1.8);
+        final double labelHeight = 22 * textScale;
+        // The same size the add cards give their drawing at half this width,
+        // so the three tiles across the app carry one size of icon.
+        final double artHeight = (width * 0.5 * 0.085).clamp(30, 40);
+        final double padding = narrow ? 10 : 12;
+
+        return SizedBox(
+          height: HomeActionCards.heightFor(context, width * 0.5),
+          child: _AddTile(
+            onTap: onTap,
+            art: art,
+            tint: ColorFilter.mode(ink, BlendMode.srcIn),
+            accent: ink,
+            label: label,
+            artHeight: artHeight,
+            labelHeight: labelHeight,
+            padding: padding,
+          ),
+        );
+      },
     );
   }
 }
@@ -201,6 +151,21 @@ class HomeActionCards extends StatelessWidget {
 
   /// Gives "הוספת חברים" the slightly larger share and the faint wash.
   final bool emphasiseAddPeople;
+
+  /// How tall the pair is at [width] — the same sum [build] makes, so the
+  /// home screen can pin the row under its search bar at exactly this height.
+  static double heightFor(BuildContext context, double width) {
+    final bool narrow = width < 350;
+    final double textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1).clamp(1, 1.8);
+    final double labelHeight = 22 * textScale;
+    final double artHeight = (width * 0.085).clamp(30, 40);
+    final double padding = narrow ? 10 : 12;
+    return padding * 2 +
+        (artHeight > labelHeight ? artHeight : labelHeight) +
+        AccentBar.thickness;
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -141,13 +141,14 @@ class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
 class ShadchanTabActions extends StatelessWidget {
   const ShadchanTabActions({
     super.key,
-    required this.add,
+    this.add,
     this.menu = AppMenuVariant.list,
   });
 
-  /// The middle control. [ShadchanAddButton] for a page with one thing to add,
-  /// [AddMenuButton] for the home screen, which has two.
-  final Widget add;
+  /// The middle control. [ShadchanAddButton] for a page with one thing to add.
+  /// Null on בית, whose two add cards ride pinned under the search bar and
+  /// make a "+" in the corner a second door to the same two rooms.
+  final Widget? add;
 
   /// Which overflow menu the bar carries. בית has its own — see
   /// [AppMenuVariant]; the two lists share the other.
@@ -167,7 +168,7 @@ class ShadchanTabActions extends StatelessWidget {
       children: <Widget>[
         const RemindersBellButton(boxed: true),
         const SizedBox(width: 5),
-        add,
+        ?add,
         AppMenuButton(boxed: true, variant: menu),
       ],
     );

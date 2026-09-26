@@ -55,7 +55,7 @@ class TipsListScreen extends StatelessWidget {
         ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('טיפים לשדכנים'), centerTitle: true),
+      appBar: AppBar(title: const Text('טיפים לשדכנים')),
       body: SafeArea(
         child: ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),

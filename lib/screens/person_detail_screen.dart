@@ -220,7 +220,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final Person? person = personRepository.getById(widget.personId);
     if (person == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('פרטי איש קשר'), centerTitle: true),
+        appBar: AppBar(title: const Text('פרטי איש קשר')),
 
         body: Center(
           child: Padding(
@@ -268,7 +268,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         backgroundColor: _profileCanvasColor(theme),
         foregroundColor: _profileTextColor(theme),
         titleTextStyle: _profileAppBarTitleStyle(theme),
-        centerTitle: true,
         // Compact bar: once the big header scrolls away, only the profile
         // name stays pinned at the top.
         title: AnimatedOpacity(
@@ -281,18 +280,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           ),
         ),
         actions: <Widget>[
-          IconButton(
-            // Straight to the share sheet with the card text and every saved
-            // photo in one go. The old path handed WhatsApp a `wa.me?text=`
-            // link, which can carry no images at all and drops the matchmaker
-            // into WhatsApp's own compose box to send the text by hand.
-            onPressed: () => ShareUtils.sharePerson(
-              person,
-              origin: ShareUtils.originOf(context),
-            ),
-            icon: const Icon(Icons.ios_share_rounded),
-            tooltip: 'שיתוף כרטיס',
-          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (String value) async {
@@ -448,7 +435,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                   child: FirstVisitTip(
-                    icon: Icons.ios_share_rounded,
+                    icon: Icons.share_outlined,
                     headline:
                         '{שתף|שתפי} מתוך הווטסאפ תמונה וכמה מילים על '
                                 '${person.gender == Gender.female ? 'החברה' : 'החבר'} '
@@ -687,6 +674,14 @@ Color _profileTextColor(ThemeData theme) {
   return theme.brightness == Brightness.dark
       ? theme.colorScheme.onSurface
       : _profileTextLight;
+}
+
+/// Long running text — a card read in full — in near-black rather than the
+/// heading slate.
+Color _profileBodyColor(ThemeData theme) {
+  return theme.brightness == Brightness.dark
+      ? theme.colorScheme.onSurface
+      : AppColors.onSurface;
 }
 
 /// The title style for the profile's own app bars.
@@ -984,14 +979,24 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
                           ),
                         ],
                       )
-                    : IconButton(
-                        onPressed: widget.onEdit,
-                        icon: const Icon(Icons.edit_outlined, size: 20),
-                        tooltip: 'עריכת פרטי המועמד',
-                        visualDensity: VisualDensity.compact,
-                        style: IconButton.styleFrom(
-                          foregroundColor: _profileMutedColor(theme),
-                        ),
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          // The whole card — text and every photo — straight
+                          // to the share sheet, beside the pencil rather than
+                          // in the bar, and only when there is a card to send.
+                          if (WhatsAppUtils.hasSendableCard(widget.person))
+                            _ShareCardButton(person: widget.person),
+                          IconButton(
+                            onPressed: widget.onEdit,
+                            icon: const Icon(Icons.edit_outlined, size: 20),
+                            tooltip: 'עריכת פרטי המועמד',
+                            visualDensity: VisualDensity.compact,
+                            style: IconButton.styleFrom(
+                              foregroundColor: _profileMutedColor(theme),
+                            ),
+                          ),
+                        ],
                       ),
               ),
               Row(
@@ -1064,8 +1069,16 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
+                  // In their own gender's colour — the palette's rose for a
+                  // woman, its blue for a man — as the name is written on
+                  // every row and card in the app.
                   style: theme.textTheme.headlineMedium?.copyWith(
-                    color: _profileTextColor(theme),
+                    color: widget.person.gender == Gender.unknown
+                        ? _profileTextColor(theme)
+                        : AppColors.genderAccent(
+                            widget.person.gender,
+                            dark: theme.brightness == Brightness.dark,
+                          ),
                     fontWeight: FontWeight.w800,
                     height: 1.05,
                   ),
@@ -1565,8 +1578,11 @@ class _ProfileActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // The emphasised button is this person's own: the deep member of their
+    // colour — the palette's rose on a woman's page, blue on a man's — on the
+    // light wash of the same colour, with no frame round it.
     final Color color = emphasized
-        ? theme.colorScheme.onPrimaryContainer
+        ? _profileAccentColor(context)
         : foregroundColor ?? _profileTextColor(theme);
 
     return Material(
@@ -1584,13 +1600,13 @@ class _ProfileActionButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: emphasized
-                  ? _profileAccentColor(context).withValues(alpha: 0.30)
-                  : _profileMutedColor(
+            border: emphasized
+                ? null
+                : Border.all(
+                    color: _profileMutedColor(
                       theme,
                     ).withValues(alpha: subtle ? 0.18 : 0.12),
-            ),
+                  ),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -2373,8 +2389,9 @@ class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
   }
 }
 
-/// "פנויה" / "תפוס" / "בהפסקה" — the word alone, in the state's own colour
-/// and the person's own grammatical gender, exactly as the idea cards write it.
+/// "פנויה" / "תפוס" / "בהפסקה", drawn exactly as המאגר שלי draws it — the
+/// [ProfileStatusTag]: a dot for the state and the word in the person's own
+/// colour.
 class _StatusWord extends StatelessWidget {
   const _StatusWord({required this.status, required this.gender});
 
@@ -2383,13 +2400,29 @@ class _StatusWord extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ProfileStatusTag(status: status, gender: gender, compact: true);
+  }
+}
+
+/// The share icon beside a pencil on the profile: the whole card, text and
+/// every photo, to the system share sheet — the same share the bar used to
+/// carry.
+class _ShareCardButton extends StatelessWidget {
+  const _ShareCardButton({required this.person});
+
+  final Person person;
+
+  @override
+  Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Text(
-      status.displayNameFor(gender),
-      maxLines: 1,
-      style: theme.textTheme.bodyMedium?.copyWith(
-        fontWeight: FontWeight.w800,
-        color: AppColors.profileStatusColor(status),
+    return Builder(
+      builder: (BuildContext anchor) => IconButton(
+        onPressed: () =>
+            ShareUtils.sharePerson(person, origin: ShareUtils.originOf(anchor)),
+        icon: const Icon(Icons.share_outlined, size: 20),
+        tooltip: 'שיתוף הכרטיס',
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(foregroundColor: _profileMutedColor(theme)),
       ),
     );
   }
@@ -2490,7 +2523,11 @@ class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
               ),
               padding: widget.editing
                   ? const EdgeInsetsDirectional.only(top: 26)
-                  : const EdgeInsetsDirectional.only(end: 38),
+                  : EdgeInsetsDirectional.only(
+                      end: WhatsAppUtils.hasSendableCard(widget.person)
+                          ? 76
+                          : 38,
+                    ),
               child: widget.editing
                   ? TextField(
                       key: ValueKey<String>('quick-card-${widget.person.id}'),
@@ -2561,7 +2598,13 @@ class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          'אין עדיין כרטיס מלא או תמונה — רק פרטים בסיסיים.',
+                          widget.person.gender == Gender.female
+                              ? 'עוד אין כאן כרטיס. הזמנה אישית קצרה בוואטסאפ, '
+                                    'והיא ממלאת כרטיס בעצמה — מדויק, עם תמונות, '
+                                    'ומתעדכן אצלך.'
+                              : 'עוד אין כאן כרטיס. הזמנה אישית קצרה בוואטסאפ, '
+                                    'והוא ממלא כרטיס בעצמו — מדויק, עם תמונות, '
+                                    'ומתעדכן אצלך.',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: _profileMutedColor(theme),
                             height: 1.5,
@@ -2607,14 +2650,21 @@ class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
                         ),
                       ],
                     )
-                  : IconButton(
-                      onPressed: widget.onEditCard,
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      tooltip: 'עריכת טקסט הכרטיס המלא',
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        foregroundColor: _profileMutedColor(theme),
-                      ),
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        if (WhatsAppUtils.hasSendableCard(widget.person))
+                          _ShareCardButton(person: widget.person),
+                        IconButton(
+                          onPressed: widget.onEditCard,
+                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          tooltip: 'עריכת טקסט הכרטיס המלא',
+                          visualDensity: VisualDensity.compact,
+                          style: IconButton.styleFrom(
+                            foregroundColor: _profileMutedColor(theme),
+                          ),
+                        ),
+                      ],
                     ),
             ),
           ],
@@ -3003,7 +3053,7 @@ class _IdeaRow extends StatelessWidget {
                     ),
                     padding: EdgeInsets.zero,
                     color: _profileMutedColor(theme),
-                    icon: const Icon(Icons.ios_share_rounded),
+                    icon: const Icon(Icons.share_outlined),
                     onPressed: () => ShareUtils.shareCouple(
                       person,
                       other,
@@ -3288,9 +3338,13 @@ class _MatchPreviewHalf extends StatelessWidget {
             Text(
               description.isEmpty ? 'אין עדיין כרטיס לשליחה' : description,
               style: theme.textTheme.bodyMedium?.copyWith(
+                // The card itself is read at length here, side by side with
+                // the other one — in the page's near-black body ink, not the
+                // slate the headings wear, which reads as grey over a long
+                // paragraph.
                 color: description.isEmpty
                     ? _profileMutedColor(theme)
-                    : _profileTextColor(theme),
+                    : _profileBodyColor(theme),
                 height: 1.5,
               ),
             ),
@@ -3357,7 +3411,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     if (person == null) {
       return Scaffold(
         backgroundColor: widget.asSheet ? Colors.transparent : null,
-        appBar: AppBar(title: const Text('התאמות'), centerTitle: true),
+        appBar: AppBar(title: const Text('התאמות')),
         body: const Center(child: Text('האדם לא נמצא')),
       );
     }
@@ -3461,7 +3515,6 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
             : _profileCanvasColor(theme),
         foregroundColor: _profileTextColor(theme),
         titleTextStyle: _profileAppBarTitleStyle(theme),
-        centerTitle: true,
         elevation: 0,
         automaticallyImplyLeading: !widget.asSheet,
         leading: widget.asSheet
@@ -4167,7 +4220,8 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                               );
                               return SketchActionBar(
                                 compact: true,
-                                fullCardLabel: label ?? 'להזמין למלא כרטיס',
+                                fullCardLabel:
+                                    label ?? CardInviteFlow.inviteLabel,
                                 onFullCard:
                                     state == CardInviteState.pending ||
                                         label == null
@@ -4452,7 +4506,7 @@ class _PersonNotesPage extends StatelessWidget {
 
     if (person == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('יומן הערות'), centerTitle: true),
+        appBar: AppBar(title: const Text('יומן הערות')),
         body: const Center(child: Text('איש הקשר לא נמצא')),
       );
     }
@@ -4462,7 +4516,7 @@ class _PersonNotesPage extends StatelessWidget {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('יומן הערות'), centerTitle: true),
+      appBar: AppBar(title: const Text('יומן הערות')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
@@ -5184,7 +5238,6 @@ class _PersonHistoryPageState extends State<_PersonHistoryPage> {
         backgroundColor: _profileCanvasColor(theme),
         foregroundColor: _profileTextColor(theme),
         titleTextStyle: _profileAppBarTitleStyle(theme),
-        centerTitle: true,
         title: const Text('היסטוריה'),
       ),
       body: SafeArea(

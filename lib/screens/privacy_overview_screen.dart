@@ -125,7 +125,7 @@ class PrivacyOverviewScreen extends StatelessWidget {
     final Gender? gender = context.userGender;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('פרטיות והמאגר שלי'), centerTitle: true),
+      appBar: AppBar(title: const Text('פרטיות והמאגר שלי')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),

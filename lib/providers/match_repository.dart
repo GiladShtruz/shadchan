@@ -9,6 +9,8 @@ import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/backup_service.dart';
+import 'package:shadchan/services/deleted_matches_store.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/dating_history.dart';
@@ -1311,7 +1313,37 @@ class MatchRepository extends ChangeNotifier {
     _refreshNotifications();
   }
 
-  Future<void> deleteMatch(String matchId) async {
+  Future<void> deleteMatch(String matchId, {bool keepInTrash = true}) async {
+    // A snapshot first, so "ביטול" and "רעיונות שנמחקו" can put the idea back
+    // exactly as it was — journal and ledger included.
+    final MatchIdea? doomed = getById(matchId);
+    if (keepInTrash && doomed != null) {
+      DeletedMatchesStore.instance.add(
+        DeletedMatch(
+          matchId: matchId,
+          deletedAt: DateTime.now(),
+          match: <String, dynamic>{
+            ...BackupService.matchToJson(doomed),
+            'askedMaleAt': doomed.askedMaleAt?.toIso8601String(),
+            'askedFemaleAt': doomed.askedFemaleAt?.toIso8601String(),
+            'checkInEveryDays': doomed.checkInEveryDays,
+          },
+          notes: <Map<String, dynamic>>[
+            for (final MatchNote note in getNotesForMatch(matchId))
+              BackupService.matchNoteToJson(note),
+          ],
+          events: <Map<String, dynamic>>[
+            for (final MatchStatusEvent event
+                in _statusEventBox?.values.where(
+                      (MatchStatusEvent e) => e.matchId == matchId,
+                    ) ??
+                    const <MatchStatusEvent>[])
+              BackupService.matchStatusEventToJson(event),
+          ],
+        ),
+      );
+    }
+
     final List<dynamic> noteKeys = _noteBox.keys.where((dynamic key) {
       final MatchNote? note = _noteBox.get(key);
       return note?.matchId == matchId;
@@ -1343,6 +1375,60 @@ class MatchRepository extends ChangeNotifier {
     await DatingCountExclusions.forget(matchId);
     notifyListeners();
     _refreshNotifications();
+  }
+
+  /// Puts a deleted idea back from "רעיונות שנמחקו". False when it is no
+  /// longer in the trash, or when one of its two people has since been
+  /// deleted — an idea about somebody who is gone cannot be restored.
+  Future<bool> restoreDeleted(
+    String matchId, {
+    bool Function(String personId)? personExists,
+  }) async {
+    final DeletedMatchesStore trash = DeletedMatchesStore.instance;
+    final DeletedMatch? peek = trash.all
+        .where((DeletedMatch e) => e.matchId == matchId)
+        .firstOrNull;
+    if (peek == null) {
+      return false;
+    }
+    if (personExists != null &&
+        (!personExists(peek.personAId) || !personExists(peek.personBId))) {
+      return false;
+    }
+    final MatchIdea? match = BackupService.matchFromJson(peek.match);
+    if (match == null) {
+      return false;
+    }
+    match
+      ..askedMaleAt = DateTime.tryParse(
+        peek.match['askedMaleAt'] as String? ?? '',
+      )
+      ..askedFemaleAt = DateTime.tryParse(
+        peek.match['askedFemaleAt'] as String? ?? '',
+      )
+      ..checkInEveryDays = peek.match['checkInEveryDays'] as int?;
+    trash.take(matchId);
+    await _matchBox.put(match.id, match);
+    for (final Map<String, dynamic> raw in peek.notes) {
+      final MatchNote? note = BackupService.matchNoteFromJson(raw);
+      if (note != null) {
+        await _noteBox.put(note.id, note);
+      }
+    }
+    final Box<MatchStatusEvent>? events = _statusEventBox;
+    if (events != null) {
+      for (final Map<String, dynamic> raw in peek.events) {
+        final MatchStatusEvent? event = BackupService.matchStatusEventFromJson(
+          raw,
+        );
+        if (event != null) {
+          await events.put(event.id, event);
+        }
+      }
+    }
+    notifyListeners();
+    _refreshNotifications();
+    return true;
   }
 
   List<MatchNote> getNotesForMatch(String matchId) {

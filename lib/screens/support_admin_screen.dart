@@ -47,7 +47,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
 
     if (!account.isSupportAdmin) {
       return Scaffold(
-        appBar: AppBar(title: const Text('מרכז הפידבק'), centerTitle: true),
+        appBar: AppBar(title: const Text('מרכז הפידבק')),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 32),
@@ -70,7 +70,6 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('מרכז הפידבק'),
-          centerTitle: true,
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,

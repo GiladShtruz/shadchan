@@ -43,7 +43,7 @@ abstract final class DeletePersonFlow {
     }
 
     for (final MatchIdea match in related) {
-      await matches.deleteMatch(match.id);
+      await matches.deleteMatch(match.id, keepInTrash: false);
     }
     await people.delete(person.id);
     return true;

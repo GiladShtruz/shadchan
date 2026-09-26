@@ -364,7 +364,7 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       return _buildBody(context);
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('סריקת כרטיסים'), centerTitle: true),
+      appBar: AppBar(title: const Text('סריקת כרטיסים')),
       body: SafeArea(child: _buildBody(context)),
     );
   }

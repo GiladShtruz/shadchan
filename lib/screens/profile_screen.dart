@@ -22,6 +22,7 @@ import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -92,23 +93,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
     final bool hasCard = cards.hasCard;
     final bool matchmaker = WorkspaceStore.matchmakerEnabled;
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    // The page's groups take the palette in turn, so the profile is not one
+    // long column of blue: copper for the matchmaker's own number, blue for
+    // the account, rose for what other matchmakers see, the light blue for
+    // the settings.
+    final Color copper = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color rose = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
+    final Color sky = dark ? AppColors.metricCouplesDm : AppColors.primary;
 
     final List<Widget> sections = <Widget>[
       // 1. Who this is: the photograph, the full name, and the one line they
       // wrote about themselves.
-      _ProfileHeader(
-        profile: profile,
-        onEditPhoto: () => _editPhoto(profile),
-        onEditAbout: () => _editAbout(profile),
+      //
+      // On the home page's paper card, with the rule along its foot in the
+      // matchmaker's own colour — the same card every block on בית wears.
+      HomePaperCard(
+        stripe: AppColors.genderAccent(
+          profile.gender ?? Gender.unknown,
+          dark: dark,
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+        child: Column(
+          children: <Widget>[
+            _ProfileHeader(
+              profile: profile,
+              onEditPhoto: () => _editPhoto(profile),
+              onEditAbout: () => _editAbout(profile),
+            ),
+            const SizedBox(height: 2),
+            // The answer was already given during sign-up. All that is left
+            // here is a quiet way back to it if it ever changes — not a
+            // section of its own.
+            _PersonalStatusLine(
+              profile: profile,
+              onChangeRequested: () => _changePersonalStatus(profile),
+            ),
+          ],
+        ),
       ),
-      const SizedBox(height: 6),
-      // The answer was already given during sign-up. All that is left here is a
-      // quiet way back to it if it ever changes — not a section of its own.
-      _PersonalStatusLine(
-        profile: profile,
-        onChangeRequested: () => _changePersonalStatus(profile),
-      ),
-      const SizedBox(height: 16),
+      const SizedBox(height: 18),
 
       // 1.5. The user's own card, where it cannot be missed. A married user
       // has no card to manage, so has no entry at all.
@@ -144,6 +169,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // the personal card in both directions.
       SettingsGroup(
         title: 'המספר שלי',
+        accent: copper,
         children: <Widget>[
           SettingsRow(
             icon: Icons.phone_outlined,
@@ -182,6 +208,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (matchmaker)
         SettingsGroup(
           title: 'מה שדכנים אחרים רואים',
+          accent: rose,
           children: <Widget>[
             SettingsRow(
               icon: Icons.badge_outlined,
@@ -220,6 +247,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         key: _settingsKey,
         child: SettingsGroup(
           title: 'הגדרות',
+          accent: sky,
           children: <Widget>[
             SettingsRow(
               icon: Icons.settings_outlined,
@@ -243,13 +271,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       const SettingsVersionFooter(),
     ];
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('הפרופיל שלי'), centerTitle: true),
-      body: SafeArea(
-        child: ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: sections.length,
-          itemBuilder: (BuildContext context, int index) => sections[index],
+    // The home page's type scale, as the personal area and the activity
+    // page use it — see [HomeTypography].
+    return Theme(
+      data: theme.copyWith(
+        textTheme: HomeTypography.scale(theme.textTheme, dark: dark),
+      ),
+      child: Scaffold(
+        appBar: AppBar(title: const Text('הפרופיל שלי')),
+        body: SafeArea(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            itemCount: sections.length,
+            itemBuilder: (BuildContext context, int index) => sections[index],
+          ),
         ),
       ),
     );
@@ -850,8 +885,14 @@ class _ProfileHeader extends StatelessWidget {
         Text(
           profile.name ?? '{שדכן|שדכנית}'.forGender(gender),
           textAlign: TextAlign.center,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w900,
+            color: gender == null || gender == Gender.unknown
+                ? null
+                : AppColors.genderAccent(
+                    gender,
+                    dark: theme.brightness == Brightness.dark,
+                  ),
           ),
         ),
         const SizedBox(height: 6),
@@ -1006,14 +1047,14 @@ class UserProfileAvatar extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primary,
+                color: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
                 shape: BoxShape.circle,
                 border: Border.all(color: theme.colorScheme.surface, width: 2),
               ),
               child: Icon(
                 hasPhoto ? Icons.edit : Icons.add_a_photo_outlined,
                 size: 14,
-                color: theme.colorScheme.onPrimary,
+                color: AppColors.surface,
               ),
             ),
           ),

@@ -152,7 +152,7 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(metric.title), centerTitle: true),
+      appBar: AppBar(title: Text(metric.title)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),

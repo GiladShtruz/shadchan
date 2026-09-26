@@ -34,7 +34,7 @@ class SketchActionBar extends StatelessWidget {
   final bool fullCardExpanded;
 
   /// What the first drawing is called, when it is not the full card —
-  /// "השוואת כרטיסים" for a pair, "להזמין למלא כרטיס" for a friend with no
+  /// "השוואת כרטיסים" for a pair, "שליחת הזמנה אישית לכרטיס" for a friend with no
   /// card yet.
   final String? fullCardLabel;
 

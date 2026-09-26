@@ -8,6 +8,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/deleted_matches_store.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/account_remote_data_service.dart';
 import 'package:shadchan/services/account_service.dart';
@@ -146,6 +147,7 @@ abstract final class AccountSwitch {
     await CommunityProfileStore.reset();
     HomeBoardStore.instance.reset();
     RecentActivityStore.instance.reset();
+    DeletedMatchesStore.instance.clear();
     community.reset();
     SignInPromptStore.markSignedOut();
   }

@@ -80,7 +80,7 @@ class HelpCenterScreen extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('עזרה והדרכה'), centerTitle: true),
+      appBar: AppBar(title: const Text('עזרה והדרכה')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),

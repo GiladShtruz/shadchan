@@ -40,6 +40,34 @@ abstract final class MatchJournalSheet {
   }
 }
 
+/// **Reminders are not part of an idea's story.** The repository still files
+/// a line when a reminder is booked or cleared — the record is cheap and the
+/// tests rely on it — but the journal is read for what happened *between two
+/// people*, and "a reminder was set for the 3rd" is the app talking to itself.
+/// Both views drop those lines, and the "לבדוק שוב ב־…" tail a waiting line
+/// carries, here.
+abstract final class MatchJournalLines {
+  static const String _checkAgain = ' · לבדוק שוב ב־';
+
+  /// False for an automatic line that only records a reminder.
+  static bool isShown(MatchNote note) {
+    if (!note.isAutomatic) {
+      return true;
+    }
+    final String text = note.text.trim();
+    return !(text.startsWith('נקבעה תזכורת') || text == 'התזכורת בוטלה');
+  }
+
+  /// The line as the journal prints it, without a reminder date tacked on.
+  static String displayText(MatchNote note) {
+    if (!note.isAutomatic) {
+      return note.text;
+    }
+    final int cut = note.text.indexOf(_checkAgain);
+    return cut < 0 ? note.text : note.text.substring(0, cut);
+  }
+}
+
 /// The same journal, drawn in place inside a proposal's "פעולות" panel.
 ///
 /// **Open the actions and the journal is simply there.** It used to be one of
@@ -93,7 +121,9 @@ class _MatchJournalViewState extends State<MatchJournalView> {
     // Newest first. A journal read inside a card is read from the top, and the
     // line worth reading is the last thing that happened — which was at the
     // bottom of a list that could be forty lines long.
-    final List<MatchNote> newestFirst = notes.reversed.toList();
+    final List<MatchNote> newestFirst = notes.reversed
+        .where(MatchJournalLines.isShown)
+        .toList();
 
     return Container(
       width: double.infinity,
@@ -270,6 +300,7 @@ class _MatchJournalState extends State<_MatchJournal> {
     final List<MatchNote> notes = repository
         .getNotesForMatch(widget.matchId)
         .reversed
+        .where(MatchJournalLines.isShown)
         .toList();
 
     return Padding(
@@ -552,7 +583,7 @@ class _JournalLine extends StatelessWidget {
                           ),
                         ),
                       TextSpan(
-                        text: note.text,
+                        text: MatchJournalLines.displayText(note),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           height: 1.35,
                           fontWeight: mine ? FontWeight.w700 : FontWeight.w400,

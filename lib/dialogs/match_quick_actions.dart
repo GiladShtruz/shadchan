@@ -61,7 +61,7 @@ enum MatchQuickAction {
     MatchActionGroup.tools,
   ),
   contact(
-    'הוספת איש קשר להעברת ההצעה',
+    'הוספת איש קשר שקשור להצעה',
     Icons.person_add_alt_1_outlined,
     MatchActionGroup.tools,
   );
@@ -680,7 +680,7 @@ class _ContactRoleDialogState extends State<_ContactRoleDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'איש קשר להעברת ההצעה — מישהו שמכיר אותו/ה אישית ויכול לחבר '
+            'איש קשר שקשור להצעה — מישהו שמכיר אותו/ה אישית ויכול לחבר '
             'ביניכם.',
             style: Theme.of(context).textTheme.bodySmall,
           ),

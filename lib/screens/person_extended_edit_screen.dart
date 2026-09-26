@@ -707,7 +707,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
 
     if (person == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('עריכת כרטיס'), centerTitle: true),
+        appBar: AppBar(title: const Text('עריכת כרטיס')),
         body: const Center(child: Text('איש הקשר לא נמצא')),
       );
     }
@@ -727,7 +727,6 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           foregroundColor: ProfilePalette.text(theme),
           titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
           title: Text(_owner ? 'הכרטיס שלי' : 'עריכת כרטיס'),
-          centerTitle: true,
           actions: <Widget>[
             IconButton(
               icon: const Icon(Icons.check),

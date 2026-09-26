@@ -36,7 +36,7 @@ class _IncomingSharedProfileScreenState
     final List<Person> people = _filteredPeople(repository.getAll());
 
     return Scaffold(
-      appBar: AppBar(title: const Text('פרטים משותפים'), centerTitle: true),
+      appBar: AppBar(title: const Text('פרטים משותפים')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: <Widget>[
@@ -166,7 +166,7 @@ class _SharedPreview extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(Icons.ios_share, color: theme.colorScheme.primary),
+                Icon(Icons.share_outlined, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text('התקבלו פרטים לשמירה', style: theme.textTheme.titleMedium),
               ],

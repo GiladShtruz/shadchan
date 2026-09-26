@@ -122,7 +122,7 @@ class _AddTipScreenState extends State<AddTipScreen> {
     final bool canContribute = account.isSignedIn;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('הוספת טיפ'), centerTitle: true),
+      appBar: AppBar(title: const Text('הוספת טיפ')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),

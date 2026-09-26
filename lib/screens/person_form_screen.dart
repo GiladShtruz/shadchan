@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
@@ -178,7 +179,6 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
               onPressed: _handleBackPressed,
             ),
             title: Text(_isEditMode ? 'עריכת פרטים' : 'הוספת כרטיס'),
-            centerTitle: true,
             actions: <Widget>[
               IconButton(
                 icon: const Icon(Icons.check),
@@ -202,6 +202,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 : const Icon(Icons.check),
             label: const Text('שמירה'),
             shape: const StadiumBorder(),
+            backgroundColor: theme.colorScheme.secondary,
+            foregroundColor: AppColors.surface,
           ),
           floatingActionButtonLocation:
               FloatingActionButtonLocation.centerFloat,
@@ -252,15 +254,18 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 20),
+              // The home page's paper: the surface, a soft neutral shadow,
+              // no border — see [HomePaperCard].
               decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(26),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
+                color: theme.brightness == Brightness.dark
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.045),
-                    blurRadius: 18,
-                    offset: const Offset(0, 7),
+                    color: AppColors.onSurface.withValues(alpha: 0.10),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
@@ -269,6 +274,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                 children: <Widget>[
                   const _FormSectionHeading(
                     icon: Icons.badge_outlined,
+                    accent: AppColors.secondary,
                     title: 'הכרטיס והתמונות',
                     subtitle: 'אפשר להתחיל מהכרטיס ולתת לפרטים להתמלא',
                   ),
@@ -355,6 +361,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   const _FormSectionDivider(),
                   const _FormSectionHeading(
                     icon: Icons.person_outline_rounded,
+                    accent: AppColors.primaryDark,
                     title: 'פרטים אישיים',
                     subtitle: 'המידע שיעזור להכיר ולחשוב על התאמה',
                   ),
@@ -542,6 +549,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   const _FormSectionDivider(),
                   const _FormSectionHeading(
                     icon: Icons.contact_phone_outlined,
+                    accent: AppColors.femaleAccent,
                     title: 'יצירת קשר',
                     subtitle: 'הטלפון של המועמד ואיש הקשר להעברת הצעות',
                   ),
@@ -615,6 +623,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   const _FormSectionDivider(),
                   const _FormSectionHeading(
                     icon: Icons.notes_rounded,
+                    accent: AppColors.primary,
                     title: 'הערה אישית',
                     subtitle: 'מידע פנימי שיופיע ביומן הכרטיס',
                   ),
@@ -1249,6 +1258,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   }
 }
 
+/// The page's opening line, the way בית opens with its greeting: a heading in
+/// the heading ink and one quiet line under it, on the bare paper. It used to
+/// be a blue-to-cream gradient band with an icon disc — the old design.
 class _PersonFormIntro extends StatelessWidget {
   const _PersonFormIntro({required this.isEditMode});
 
@@ -1257,59 +1269,26 @@ class _PersonFormIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: <Color>[
-            theme.colorScheme.primaryContainer,
-            Color.alphaBlend(
-              theme.colorScheme.secondaryContainer.withValues(alpha: 0.62),
-              theme.colorScheme.surface,
-            ),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface.withValues(alpha: 0.78),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isEditMode ? Icons.edit_note_rounded : Icons.person_add_alt_1,
-              color: theme.colorScheme.primary,
+          Text(
+            isEditMode ? 'עדכון הכרטיס' : 'חבר חדש למאגר',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              height: 1.2,
             ),
           ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  isEditMode ? 'עדכון הכרטיס' : 'כרטיס חדש למאגר',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  isEditMode
-                      ? 'כל הפרטים נשמרים מקומית וניתנים לעדכון בכל זמן'
-                      : 'אפשר להוסיף רק את מה שידוע עכשיו ולהשלים בהמשך',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.35,
-                  ),
-                ),
-              ],
+          const SizedBox(height: 3),
+          Text(
+            isEditMode
+                ? 'כל הפרטים נשמרים וניתנים לעדכון בכל זמן'
+                : 'אפשר להוסיף רק את מה שידוע עכשיו ולהשלים בהמשך',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.35,
             ),
           ),
         ],
@@ -1318,25 +1297,39 @@ class _PersonFormIntro extends StatelessWidget {
   }
 }
 
+/// A section's title with its icon in a tinted square — the same square the
+/// settings rows and the menus use — in the section's own palette colour, so
+/// the four parts of the form are told apart without four boxes.
 class _FormSectionHeading extends StatelessWidget {
   const _FormSectionHeading({
     required this.icon,
+    required this.accent,
     required this.title,
     required this.subtitle,
   });
 
   final IconData icon;
+  final Color accent;
   final String title;
   final String subtitle;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color tone = dark ? Color.lerp(accent, Colors.white, 0.35)! : accent;
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Icon(icon, size: 22, color: theme.colorScheme.primary),
-        const SizedBox(width: 9),
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: tone.withValues(alpha: dark ? 0.20 : 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 20, color: tone),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1347,7 +1340,7 @@ class _FormSectionHeading extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 subtitle,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -1388,19 +1381,6 @@ class _ProfileStatusSelector extends StatelessWidget {
   final List<ProfileStatus> options;
   final ValueChanged<ProfileStatus> onSelected;
 
-  IconData _iconFor(ProfileStatus status) {
-    switch (status) {
-      case ProfileStatus.available:
-        return Icons.person_outline_rounded;
-      case ProfileStatus.busy:
-        return Icons.hourglass_top_rounded;
-      case ProfileStatus.onBreak:
-        return Icons.coffee_outlined;
-      case ProfileStatus.mazelTov:
-        return Icons.celebration_outlined;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -1418,14 +1398,16 @@ class _ProfileStatusSelector extends StatelessWidget {
                 width: width,
                 child: Material(
                   color: selected == status
-                      ? theme.colorScheme.primaryContainer
-                      : theme.colorScheme.surfaceContainerLowest,
+                      ? AppColors.profileStatusDotColor(
+                          status,
+                        ).withValues(alpha: 0.12)
+                      : theme.colorScheme.surface,
                   borderRadius: BorderRadius.circular(16),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(16),
                     onTap: () => onSelected(status),
                     child: Container(
-                      constraints: const BoxConstraints(minHeight: 68),
+                      constraints: const BoxConstraints(minHeight: 48),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 9,
@@ -1434,30 +1416,36 @@ class _ProfileStatusSelector extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: selected == status
-                              ? theme.colorScheme.primary.withValues(
-                                  alpha: 0.45,
-                                )
+                              ? AppColors.profileStatusDotColor(
+                                  status,
+                                ).withValues(alpha: 0.55)
                               : theme.colorScheme.outlineVariant,
                         ),
                       ),
-                      child: Column(
+                      // The dot and the word, as the status is drawn on every
+                      // row of המאגר שלי — see `ProfileStatusTag`.
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: <Widget>[
-                          Icon(
-                            _iconFor(status),
-                            size: 21,
-                            color: selected == status
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: AppColors.profileStatusDotColor(status),
+                              shape: BoxShape.circle,
+                            ),
                           ),
-                          const SizedBox(height: 5),
-                          Text(
-                            status.displayName,
-                            maxLines: 1,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              fontWeight: selected == status
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              status.displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                fontWeight: selected == status
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],

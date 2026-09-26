@@ -497,7 +497,7 @@ void main() {
     }
   });
 
-  testWidgets('the think block is an invitation with a picture and a button', (
+  testWidgets('the think block is a tile: the coffee cup and its line', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 800));
@@ -511,33 +511,25 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('עוצרים רגע לחשוב על החברים'), findsOneWidget);
-    expect(find.text('על מי חושבים עכשיו?'), findsOneWidget);
-    // A line drawing of a cup of coffee, recoloured the way the home cards'
-    // drawings are — not the notepad from "הוספת רעיון", which would put the
-    // same picture twice on one screen.
+    // Drawn like the home page's add cards: the drawing beside the words,
+    // no button of its own.
+    expect(find.byType(FilledButton), findsNothing);
     final Finder art = find.descendant(
       of: find.byType(HomeThinkBanner),
-      matching: find.byType(HomeLineArt),
+      matching: find.byType(Image),
     );
     expect(art, findsOneWidget);
-    expect(tester.widget<HomeLineArt>(art).asset, 'assets/coffee_icon.png');
+    expect(
+      (tester.widget<Image>(art).image as AssetImage).assetName,
+      'assets/think_coffee_art.png',
+    );
 
-    // The question sits on the reading edge under the heading, not centred.
-    final double titleRight = tester
-        .getTopRight(find.text('עוצרים רגע לחשוב על החברים'))
-        .dx;
-    final double buttonRight = tester
-        .getTopRight(find.widgetWithText(FilledButton, 'על מי חושבים עכשיו?'))
-        .dx;
-    expect(buttonRight, closeTo(titleRight, 2));
-
-    // The button and the card behind it open the same page.
-    await tester.tap(find.text('על מי חושבים עכשיו?'));
+    await tester.tap(find.text('עוצרים רגע לחשוב על החברים'));
     await tester.pump();
     expect(opened, 1);
   });
 
-  testWidgets('the think block drops its picture before its words', (
+  testWidgets('the think tile keeps its line on one row at large text', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(320, 900));
@@ -549,16 +541,10 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    // At 1.5x the drawing is gone and every line still fits.
-    for (final String label in <String>[
-      'עוצרים רגע לחשוב על החברים',
-      'על מי חושבים עכשיו?',
-    ]) {
-      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
-        find.text(label),
-      );
-      expect(paragraph.didExceedMaxLines, isFalse, reason: label);
-    }
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      find.text('עוצרים רגע לחשוב על החברים'),
+    );
+    expect(paragraph.didExceedMaxLines, isFalse);
   });
 
   testWidgets('an open idea reads as a bubble on the wave, not a white box', (

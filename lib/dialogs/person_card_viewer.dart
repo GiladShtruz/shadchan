@@ -252,7 +252,7 @@ class _TopBar extends StatelessWidget {
                       IconButton(
                         onPressed: onShare,
                         icon: const Icon(
-                          Icons.ios_share_rounded,
+                          Icons.share_outlined,
                           color: Colors.white,
                           size: 20,
                         ),

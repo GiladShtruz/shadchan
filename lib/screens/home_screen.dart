@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -42,6 +43,7 @@ import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/board_row.dart';
 import 'package:shadchan/widgets/home_activity_block.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
@@ -249,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // group, the guide, the privacy policy. המאגר שלי and הרעיונות שלי
         // carry the shorter list of destinations instead. See
         // [AppMenuVariant].
-        ShadchanTabActions(add: AddMenuButton(), menu: AppMenuVariant.home),
+        ShadchanTabActions(menu: AppMenuVariant.home),
       ],
       bottom: ShadchanSearchBottom(
         child: ShadchanSearchField(
@@ -424,12 +426,35 @@ class _HomeScreenState extends State<HomeScreen> {
         // 3. The two entry actions. Adding friends leads — a little deeper in
         // colour and a little wider — because every other thing on the page is
         // only possible once the database has people in it.
-        block(
-          HomeActionCards(
-            onAddPeople: () => AddPeopleDialog.show(context),
-            onAddIdea: () => context.push('/matches/add'),
-            emphasiseAddPeople: true,
-          ),
+        //
+        // **Pinned.** Scrolled past, the pair parks under the search bar and
+        // rides there for the rest of the page — the two things the app is
+        // opened to do stay one tap away however far down the board, the
+        // figures or the tips somebody has gone.
+        // Measured against the list's own width rather than the screen's,
+        // so the header's promised height is exactly what the cards take.
+        SliverLayoutBuilder(
+          builder: (BuildContext context, SliverConstraints constraints) {
+            return SliverPersistentHeader(
+              pinned: true,
+              delegate: _PinnedAddCards(
+                height:
+                    HomeActionCards.heightFor(
+                      context,
+                      constraints.crossAxisExtent - 2 * inset(),
+                    ) +
+                    _blockGap +
+                    10,
+                inset: inset(),
+                background: Theme.of(context).scaffoldBackgroundColor,
+                child: HomeActionCards(
+                  onAddPeople: () => AddPeopleDialog.show(context),
+                  onAddIdea: () => context.push('/matches/add'),
+                  emphasiseAddPeople: true,
+                ),
+              ),
+            );
+          },
         ),
 
         // The personal target: how far the database is from ten friends, then
@@ -990,15 +1015,19 @@ class _BoardSectionState extends State<_BoardSection> {
             // screen above whatever comes next.
             child: DecoratedBox(
               decoration: BoxDecoration(
+                // The palette's brown, not its blue: the figures above and
+                // the rows inside are already blue enough, and the board is
+                // the page's one warm surface.
                 color: Color.alphaBlend(
-                  (dark ? AppColors.primaryLightDarkDm : AppColors.primaryLight)
-                      .withValues(alpha: dark ? 0.35 : 0.45),
+                  (dark ? AppColors.secondaryDarkDm : AppColors.secondary)
+                      .withValues(alpha: dark ? 0.14 : 0.13),
                   theme.scaffoldBackgroundColor,
                 ),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                  color: (dark ? AppColors.primaryDarkDm : AppColors.primary)
-                      .withValues(alpha: 0.55),
+                  color:
+                      (dark ? AppColors.secondaryDarkDm : AppColors.secondary)
+                          .withValues(alpha: 0.55),
                   width: 1.4,
                 ),
               ),
@@ -1051,6 +1080,9 @@ class _BoardSectionState extends State<_BoardSection> {
               child: TextButton.icon(
                 onPressed: () => BoardAddSheet.show(context),
                 style: TextButton.styleFrom(
+                  foregroundColor: dark
+                      ? AppColors.secondaryDarkDm
+                      : AppColors.secondaryInk,
                   visualDensity: VisualDensity.compact,
                   textStyle: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w800,
@@ -1065,6 +1097,55 @@ class _BoardSectionState extends State<_BoardSection> {
       ),
     );
   }
+}
+
+/// The two add cards as a pinned header: a strip of the page's own paper,
+/// so the rows scrolling under it disappear behind it rather than through it.
+class _PinnedAddCards extends SliverPersistentHeaderDelegate {
+  _PinnedAddCards({
+    required this.height,
+    required this.inset,
+    required this.background,
+    required this.child,
+  });
+
+  final double height;
+  final double inset;
+  final Color background;
+  final Widget child;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    // Filled to the promised extent whatever the child measures, so the
+    // sliver's paint and layout extents can never disagree.
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: background,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            inset,
+            _HomeScreenState._blockGap,
+            inset,
+            10,
+          ),
+          child: Align(alignment: Alignment.topCenter, child: child),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedAddCards oldDelegate) => true;
 }
 
 /// One row of the board: a person or a proposal (an [entry]), or a pair the
@@ -1161,18 +1242,6 @@ class _BoardRow extends StatelessWidget {
             await SuggestionDismissals.dismiss(pair.male.id, pair.female.id);
             onPairDismissed();
           },
-          onRemove: () {
-            final String key = HomeBoardStore.pairKey(
-              pair.male.id,
-              pair.female.id,
-            );
-            HomeBoardStore.instance.hide(key);
-            onPairDismissed();
-            _announceRemoved(context, () {
-              HomeBoardStore.instance.unhide(key);
-              onPairDismissed();
-            });
-          },
         ),
       );
     }
@@ -1182,11 +1251,15 @@ class _BoardRow extends StatelessWidget {
         .noteFor(entry.kind, entry.targetId)
         ?.trim();
     final bool hasNote = note != null && note.isNotEmpty;
-    final Widget menu = _BoardRowMenu(
+    final Widget menu = BoardItemMenuButton(
       kind: entry.kind,
       targetId: entry.targetId,
     );
-    void togglePin() => _togglePin(context, entry.kind, entry.targetId);
+    // A long press opens the same menu the "⋯" does — it used to pin or
+    // unpin on the spot, which was one surprise too many for a gesture that
+    // lands by accident.
+    void openMenu(BuildContext anchor) =>
+        HomeBoardActions.showItemMenu(anchor, entry.kind, entry.targetId);
 
     if (entry.kind == HomeItemKind.person) {
       final Person person = personRepository.getById(entry.targetId)!;
@@ -1202,7 +1275,7 @@ class _BoardRow extends StatelessWidget {
         onTap: item.suggested
             ? () => openSuggestionsFor(context, person.id)
             : () => context.push('/people/${person.id}'),
-        onLongPress: togglePin,
+        onLongPress: openMenu,
         menu: menu,
       );
     }
@@ -1241,20 +1314,9 @@ class _BoardRow extends StatelessWidget {
       startAccent: AppColors.genderAccent(Gender.female, dark: dark),
       endAccent: AppColors.genderAccent(Gender.male, dark: dark),
       onTap: () => context.push('/matches/${match.id}'),
-      onLongPress: togglePin,
+      onLongPress: openMenu,
       menu: menu,
     );
-  }
-
-  /// A long press pins a row, or unpins one that is pinned — the quick way to
-  /// the one thing the menu is opened for most.
-  static void _togglePin(
-    BuildContext context,
-    HomeItemKind kind,
-    String targetId,
-  ) {
-    final bool pinned = HomeBoardStore.instance.toggle(kind, targetId);
-    AppNotice.show(context, pinned ? 'הוצמד ללוח' : 'ההצמדה הוסרה');
   }
 
   /// The two cards facing each other, and a proposal if the matchmaker agrees
@@ -1293,176 +1355,22 @@ class _BoardRow extends StatelessWidget {
     required Color startAccent,
     required VoidCallback onTap,
     required Widget menu,
-    VoidCallback? onLongPress,
+    ValueChanged<BuildContext>? onLongPress,
     Color? endAccent,
     String? subtitle,
     IconData? mark,
   }) {
-    final ThemeData theme = Theme.of(context);
-    final String? sub = subtitle?.trim();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
-            ),
-            child: Row(
-              children: <Widget>[
-                AccentStripe(color: startAccent, height: AccentBar.rowHeight),
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 10),
-                  child: leading,
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Row(
-                          children: <Widget>[
-                            Flexible(
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            if (mark != null) ...<Widget>[
-                              const SizedBox(width: 5),
-                              Icon(
-                                mark,
-                                size: 14,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ],
-                          ],
-                        ),
-                        if (sub != null && sub.isNotEmpty) ...<Widget>[
-                          const SizedBox(height: 2),
-                          Text(
-                            sub,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                menu,
-                if (endAccent != null) ...<Widget>[
-                  const SizedBox(width: 4),
-                  AccentStripe(
-                    color: endAccent,
-                    atStart: false,
-                    height: AccentBar.rowHeight,
-                  ),
-                ] else
-                  const SizedBox(width: 8),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return BoardRow(
+      leading: leading,
+      title: title,
+      startAccent: startAccent,
+      onTap: onTap,
+      menu: menu,
+      onLongPress: onLongPress,
+      endAccent: endAccent,
+      subtitle: subtitle,
+      mark: mark,
     );
-  }
-}
-
-/// Every row's own answers: a reminder, a note, the pin, and "הסרה".
-///
-/// The same whatever put the row on the board. Pinning moves it to the top
-/// with a small pin on it, and the item then offers "הסרת הצמדה" instead.
-/// "הסרה" takes the row off the board until whatever put it there changes.
-class _BoardRowMenu extends StatelessWidget {
-  const _BoardRowMenu({required this.kind, required this.targetId});
-
-  final HomeItemKind kind;
-  final String targetId;
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      tooltip: 'פעולות',
-      position: PopupMenuPosition.under,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 190),
-      icon: const Icon(Icons.more_horiz, size: 20),
-      iconSize: 20,
-      onSelected: (String value) async {
-        switch (value) {
-          case 'reminder':
-            await HomeBoardActions.editReminder(context, kind, targetId);
-          case 'note':
-            await HomeBoardActions.editNote(context, kind, targetId);
-          case 'pin':
-            HomeBoardStore.instance.add(kind, targetId);
-          case 'unpin':
-            HomeBoardActions.remove(context, kind, targetId);
-          case 'remove':
-            final HomeBoardStore store = HomeBoardStore.instance;
-            final bool wasPinned = store.contains(kind, targetId);
-            final String key = HomeBoardStore.itemKey(kind, targetId);
-            store.remove(kind, targetId);
-            store.hide(key);
-            _announceRemoved(context, () {
-              store.unhide(key);
-              if (wasPinned) {
-                store.add(kind, targetId);
-              }
-            });
-        }
-      },
-      itemBuilder: (BuildContext context) {
-        final HomeBoardStore store = HomeBoardStore.instance;
-        final bool pinned = store.contains(kind, targetId);
-        final bool hasNote = (store.noteFor(kind, targetId) ?? '').isNotEmpty;
-        return <PopupMenuEntry<String>>[
-          PopupMenuItem<String>(
-            value: 'reminder',
-            child: Text(
-              _hasReminder(context) ? 'עריכת תזכורת' : 'הוספת תזכורת',
-            ),
-          ),
-          PopupMenuItem<String>(
-            value: 'note',
-            child: Text(hasNote ? 'עריכת הערה' : 'הוספת הערה'),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem<String>(
-            value: pinned ? 'unpin' : 'pin',
-            child: Text(pinned ? 'הסרת הצמדה' : 'הצמדה'),
-          ),
-          const PopupMenuItem<String>(value: 'remove', child: Text('הסרה')),
-        ];
-      },
-    );
-  }
-
-  bool _hasReminder(BuildContext context) {
-    if (kind == HomeItemKind.person) {
-      return context.read<PersonRepository>().personReminderFor(targetId) !=
-          null;
-    }
-    return context.read<MatchRepository>().getById(targetId)?.reminderDate !=
-        null;
   }
 }
 
@@ -1470,17 +1378,10 @@ class _BoardRowMenu extends StatelessWidget {
 /// remind about, write on or pin until it is one. Its menu offers the two
 /// answers the suggestion itself asks for.
 class _SuggestedPairMenu extends StatelessWidget {
-  const _SuggestedPairMenu({
-    required this.onOpen,
-    required this.onDismiss,
-    required this.onRemove,
-  });
+  const _SuggestedPairMenu({required this.onOpen, required this.onDismiss});
 
   final VoidCallback onOpen;
   final VoidCallback onDismiss;
-
-  /// Off the board for now, without saying the pair is wrong.
-  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1497,23 +1398,14 @@ class _SuggestedPairMenu extends StatelessWidget {
             onOpen();
           case 'dismiss':
             onDismiss();
-          case 'remove':
-            onRemove();
         }
       },
       itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
         PopupMenuItem<String>(value: 'open', child: Text('פתיחת רעיון')),
         PopupMenuItem<String>(value: 'dismiss', child: Text('לא מתאים')),
-        PopupMenuDivider(),
-        PopupMenuItem<String>(value: 'remove', child: Text('הסרה')),
       ],
     );
   }
-}
-
-/// "הוסר מהלוח", with the way back.
-void _announceRemoved(BuildContext context, VoidCallback undo) {
-  AppNotice.show(context, 'הוסר מהלוח', actionLabel: 'ביטול', onAction: undo);
 }
 
 String _firstName(Person? person) {

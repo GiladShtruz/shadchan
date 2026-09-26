@@ -10,6 +10,8 @@ import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/dialogs/match_journal_sheet.dart';
+import 'package:shadchan/services/deleted_matches_store.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// The proposal journal, which is now the proposal's whole record.
@@ -72,6 +74,9 @@ void main() {
     await personEvents.clear();
     await statusEvents.clear();
     await Hive.box<dynamic>('settings').clear();
+    DeletedMatchesStore.instance
+      ..resetForTest()
+      ..clear();
 
     personRepository = PersonRepository(people, null, personEvents);
     matchRepository = MatchRepository(matches, notes, statusEvents)
@@ -297,5 +302,49 @@ void main() {
         .getNotesForMatch(match.id)
         .firstWhere((MatchNote n) => n.id == note.id);
     expect(restored.mazelTovFrom, 'שדכנית מהצפון');
+  });
+
+  test('a deleted idea waits in the trash and comes back whole', () async {
+    final MatchIdea match = await openProposal();
+    await matchRepository.markSideAsked(match.id, Gender.male);
+    await matchRepository.addNote(match.id, 'דיברתי עם אמא שלו');
+
+    await matchRepository.deleteMatch(match.id);
+    expect(matchRepository.getById(match.id), isNull);
+    expect(DeletedMatchesStore.instance.all.single.matchId, match.id);
+
+    final bool restored = await matchRepository.restoreDeleted(
+      match.id,
+      personExists: (String id) => personRepository.getById(id) != null,
+    );
+    expect(restored, isTrue);
+    final MatchIdea? back = matchRepository.getById(match.id);
+    expect(back, isNotNull);
+    // The stage survives: who was already asked is not in the backup codec.
+    expect(back!.askedMaleAt, isNotNull);
+    expect(journalOf(match.id), contains('דיברתי עם אמא שלו'));
+    expect(DeletedMatchesStore.instance.all, isEmpty);
+  });
+
+  test('an idea deleted with its friend is not kept for restoring', () async {
+    final MatchIdea match = await openProposal();
+    await matchRepository.deleteMatch(match.id, keepInTrash: false);
+    expect(DeletedMatchesStore.instance.all, isEmpty);
+  });
+
+  test('the journal views leave reminder lines out', () async {
+    final MatchIdea match = await openProposal();
+    await matchRepository.setReminder(match.id, DateTime(2026, 9, 3));
+    await matchRepository.setWaiting(
+      match.id,
+      reason: 'היא בחו״ל',
+      checkAgainOn: DateTime(2026, 10, 1),
+    );
+    final List<String> shown = matchRepository
+        .getNotesForMatch(match.id)
+        .where(MatchJournalLines.isShown)
+        .map(MatchJournalLines.displayText)
+        .toList();
+    expect(shown, <String>['הרעיון נפתח', 'הרעיון בהמתנה — היא בחו״ל']);
   });
 }

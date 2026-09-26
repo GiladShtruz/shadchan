@@ -95,7 +95,7 @@ class _MonthlyStatsScreenState extends State<MonthlyStatsScreen> {
     ).points;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('הפעילות שלך'), centerTitle: true),
+      appBar: AppBar(title: const Text('הפעילות שלך')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),

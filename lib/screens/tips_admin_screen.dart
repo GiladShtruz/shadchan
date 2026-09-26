@@ -110,7 +110,6 @@ class TipsAdminScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('אישור טיפים'),
-        centerTitle: true,
         actions: <Widget>[
           IconButton(
             tooltip: 'רענון',

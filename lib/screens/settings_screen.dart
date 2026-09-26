@@ -5,6 +5,7 @@ import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
@@ -27,12 +28,13 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AccountProvider account = context.watch<AccountProvider>();
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('הגדרות'), centerTitle: true),
+      appBar: AppBar(title: const Text('הגדרות')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: <Widget>[
             // The feedback console, for the handful of accounts that have one.
             // First on the page rather than last: a queue somebody has to
@@ -40,6 +42,9 @@ class SettingsScreen extends StatelessWidget {
             if (account.isSupportAdmin)
               SettingsGroup(
                 title: 'ניהול',
+                accent: dark
+                    ? AppColors.femaleAccentDm
+                    : AppColors.femaleAccent,
                 children: <Widget>[
                   SettingsRow(
                     icon: Icons.inbox_outlined,
@@ -89,6 +94,7 @@ class SettingsScreen extends StatelessWidget {
             // pass the app on, and what other matchmakers wrote.
             SettingsGroup(
               title: 'פעולות נוספות',
+              accent: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
               children: <Widget>[
                 if (CommunityLinks.hasUpdatesGroup)
                   SettingsRow(
@@ -103,7 +109,7 @@ class SettingsScreen extends StatelessWidget {
                     onTap: () => UpdatesGroupDialog.show(context),
                   ),
                 SettingsRow(
-                  icon: Icons.ios_share_outlined,
+                  icon: Icons.share_outlined,
                   title: 'שיתוף האפליקציה עם חבר',
                   trailing: const SizedBox.shrink(),
                   onTap: () =>

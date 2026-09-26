@@ -49,10 +49,7 @@ class _SettingsDataScreenState extends State<SettingsDataScreen> {
     final SyncProvider sync = context.watch<SyncProvider>();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('המאגר והנתונים שלי'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('המאגר והנתונים שלי')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),

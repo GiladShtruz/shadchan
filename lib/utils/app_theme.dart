@@ -32,8 +32,12 @@ abstract final class AppTheme {
         outlineVariant: AppColors.divider,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      appBarBackgroundColor: AppColors.primary,
-      appBarForegroundColor: AppColors.onPrimary,
+      // Every bar is the page itself — cream paper, the heading ink — the way
+      // the three tabs' own banner is drawn. The wide blue-grey band this used
+      // to paint across the top of every pushed screen was the last of the
+      // old design.
+      appBarBackgroundColor: AppColors.background,
+      appBarForegroundColor: AppColors.headingInk,
       cardColor: AppColors.surface,
       chipBackgroundColor: AppColors.primaryLight,
       chipLabelColor: AppColors.primary,
@@ -72,8 +76,8 @@ abstract final class AppTheme {
         outlineVariant: AppColors.dividerDm,
       ),
       scaffoldBackgroundColor: AppColors.backgroundDm,
-      appBarBackgroundColor: AppColors.surfaceDm,
-      appBarForegroundColor: AppColors.onSurfaceDm,
+      appBarBackgroundColor: AppColors.backgroundDm,
+      appBarForegroundColor: AppColors.headingInkDm,
       cardColor: AppColors.surfaceDm,
       chipBackgroundColor: AppColors.primaryLightDarkDm,
       chipLabelColor: AppColors.primaryDarkDm,
@@ -178,10 +182,14 @@ abstract final class AppTheme {
         backgroundColor: appBarBackgroundColor,
         foregroundColor: appBarForegroundColor,
         elevation: 0,
-        centerTitle: true,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: false,
+        titleSpacing: 4,
         titleTextStyle: textTheme.titleLarge?.copyWith(
           color: appBarForegroundColor,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w900,
+          height: 1.15,
         ),
       ),
       cardTheme: CardThemeData(
@@ -323,8 +331,8 @@ abstract final class AppTheme {
       ),
       tabBarTheme: TabBarThemeData(
         labelColor: appBarForegroundColor,
-        unselectedLabelColor: appBarForegroundColor.withValues(alpha: 0.7),
-        indicatorColor: appBarForegroundColor,
+        unselectedLabelColor: secondaryTextColor,
+        indicatorColor: colorScheme.secondary,
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: Colors.transparent,
         labelStyle: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),

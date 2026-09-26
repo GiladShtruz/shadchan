@@ -56,7 +56,7 @@ class _IncomingVoiceNoteScreenState extends State<IncomingVoiceNoteScreen> {
     final int count = _recordings.length;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('הקלטה קולית'), centerTitle: true),
+      appBar: AppBar(title: const Text('הקלטה קולית')),
       body: Column(
         children: <Widget>[
           Padding(

@@ -95,6 +95,95 @@ abstract final class HomeBoardActions {
     HomeBoardStore.instance.setNote(kind, targetId, note);
   }
 
+  /// **The one menu a board row carries** — a reminder, a note, the pin —
+  /// opened from the row's "⋯", from a long press on the row, and from a
+  /// reminder in the reminders panel, so the same item answers the same way
+  /// wherever it is met.
+  ///
+  /// [anchor] is the widget the menu hangs from. [onHandled], when given,
+  /// adds "טופל" at the top — the one extra answer a reminder that has come
+  /// due needs.
+  static Future<void> showItemMenu(
+    BuildContext anchor,
+    HomeItemKind kind,
+    String targetId, {
+    VoidCallback? onHandled,
+  }) async {
+    final ThemeData theme = Theme.of(anchor);
+    final RenderBox? box = anchor.findRenderObject() as RenderBox?;
+    final OverlayState overlayState = Overlay.of(anchor);
+    final RenderBox? overlay =
+        overlayState.context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null || !box.hasSize) {
+      return;
+    }
+    final Offset topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final Rect rect = Rect.fromLTWH(
+      topLeft.dx,
+      topLeft.dy + box.size.height,
+      box.size.width,
+      0,
+    );
+    final RelativeRect position = RelativeRect.fromRect(
+      rect,
+      Offset.zero & overlay.size,
+    );
+
+    final HomeBoardStore store = HomeBoardStore.instance;
+    final bool pinned = store.contains(kind, targetId);
+    final bool hasNote = (store.noteFor(kind, targetId) ?? '').isNotEmpty;
+    final bool hasReminder = kind == HomeItemKind.person
+        ? anchor.read<PersonRepository>().personReminderFor(targetId) != null
+        : anchor.read<MatchRepository>().getById(targetId)?.reminderDate !=
+              null;
+
+    final String? choice = await showMenu<String>(
+      context: anchor,
+      position: position,
+      constraints: const BoxConstraints(minWidth: 190),
+      color: theme.colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      items: <PopupMenuEntry<String>>[
+        if (onHandled != null) ...<PopupMenuEntry<String>>[
+          const PopupMenuItem<String>(value: 'handled', child: Text('טופל')),
+          const PopupMenuDivider(),
+        ],
+        PopupMenuItem<String>(
+          value: 'reminder',
+          child: Text(hasReminder ? 'עריכת תזכורת' : 'הוספת תזכורת'),
+        ),
+        PopupMenuItem<String>(
+          value: 'note',
+          child: Text(hasNote ? 'עריכת הערה' : 'הוספת הערה'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: pinned ? 'unpin' : 'pin',
+          child: Text(pinned ? 'הסרת הצמדה' : 'הצמדה'),
+        ),
+      ],
+    );
+    if (choice == null || !anchor.mounted) {
+      return;
+    }
+    switch (choice) {
+      case 'handled':
+        onHandled?.call();
+      case 'reminder':
+        await editReminder(anchor, kind, targetId);
+      case 'note':
+        await editNote(anchor, kind, targetId);
+      case 'pin':
+        store.add(kind, targetId);
+      case 'unpin':
+        remove(anchor, kind, targetId);
+    }
+  }
+
   /// Sets or clears the reminder that the board card shows.
   static Future<void> editReminder(
     BuildContext context,
@@ -123,6 +212,36 @@ abstract final class HomeBoardActions {
       case HomeItemKind.idea:
         await matchRepository.setReminder(targetId, choice.date);
     }
+  }
+}
+
+/// The "⋯" at the end of a board row, opening [HomeBoardActions.showItemMenu].
+class BoardItemMenuButton extends StatelessWidget {
+  const BoardItemMenuButton({
+    super.key,
+    required this.kind,
+    required this.targetId,
+    this.onHandled,
+  });
+
+  final HomeItemKind kind;
+  final String targetId;
+  final VoidCallback? onHandled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (BuildContext anchor) => IconButton(
+        tooltip: 'פעולות',
+        icon: const Icon(Icons.more_horiz, size: 20),
+        onPressed: () => HomeBoardActions.showItemMenu(
+          anchor,
+          kind,
+          targetId,
+          onHandled: onHandled,
+        ),
+      ),
+    );
   }
 }
 

@@ -43,7 +43,7 @@ enum CardInviteState {
 /// **One rule for the personal card, everywhere the app offers it** — a
 /// friend's profile, the comparison of two cards, the list of matches:
 ///
-/// - no card in the system → "להזמין למלא כרטיס", the invitation to write one;
+/// - no card in the system → "שליחת הזמנה אישית לכרטיס", the invitation to write one;
 /// - a card, but no access → "בקשת גישה לכרטיס", and straight after the request
 ///   an offer to tell the friend in WhatsApp, with the link that opens their
 ///   personal area where the request waits.
@@ -120,11 +120,15 @@ abstract final class CardInviteFlow {
     }
   }
 
+  /// The invitation, worded as a warm personal note rather than a chore —
+  /// what makes a matchmaker actually send it.
+  static const String inviteLabel = 'שליחת הזמנה אישית לכרטיס';
+
   /// The label for [state], or null when there is nothing to offer.
   static String? labelFor(CardInviteState state) {
     switch (state) {
       case CardInviteState.noCard:
-        return 'להזמין למלא כרטיס';
+        return inviteLabel;
       case CardInviteState.requestable:
         return 'בקשת גישה לכרטיס';
       case CardInviteState.pending:
@@ -297,7 +301,7 @@ abstract final class CardInviteFlow {
   }
 }
 
-/// The one button the unified rule draws: "להזמין למלא כרטיס" or "בקשת גישה
+/// The one button the unified rule draws: "שליחת הזמנה אישית לכרטיס" or "בקשת גישה
 /// לכרטיס", worked out for [person] — and nothing at all where there is
 /// nothing to offer.
 class CardInviteButton extends StatefulWidget {

@@ -157,10 +157,7 @@ class _SupportReportScreenState extends State<SupportReportScreen> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('תקלה או רעיון לשיפור'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('תקלה או רעיון לשיפור')),
       body: SafeArea(
         child: _sent
             ? _SentView(onClose: () => Navigator.of(context).maybePop())

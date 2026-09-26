@@ -110,7 +110,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        appBar: AppBar(title: const Text('ייבוא מאנשי קשר'), centerTitle: true),
+        appBar: AppBar(title: const Text('ייבוא מאנשי קשר')),
         body: SafeArea(child: body),
       ),
     );

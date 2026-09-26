@@ -157,7 +157,6 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
                 color: AppColors.heading(dark: dark),
               ),
             ),
-            centerTitle: true,
             backgroundColor: theme.scaffoldBackgroundColor,
             surfaceTintColor: Colors.transparent,
             scrolledUnderElevation: 0,
@@ -263,10 +262,15 @@ Color _tone(Color base, ThemeData theme) => theme.brightness == Brightness.dark
     ? Color.lerp(base, Colors.white, 0.45)!
     : base;
 
+/// The matchmaker's own figures on this page: the palette's copper.
+Color _mineTone(ThemeData theme) => theme.brightness == Brightness.dark
+    ? AppColors.secondaryDarkDm
+    : AppColors.secondary;
+
 const Color _friendsTone = AppColors.primaryDark;
-const Color _ideasTone = AppColors.statusChecking;
-const Color _couplesTone = AppColors.statusDating;
-const Color _weddingsTone = AppColors.secondary;
+const Color _ideasTone = AppColors.secondary;
+const Color _couplesTone = AppColors.primary;
+const Color _weddingsTone = AppColors.femaleAccent;
 
 // --- 0. The one sentence worth opening on ------------------------------------
 
@@ -512,9 +516,9 @@ class _MyActivityCard extends StatelessWidget {
 
     return CommunityCard(
       title: 'הקצב שלך',
-      // Plain paper. The chart, the period tabs and the grade chip bring their
-      // own colour; a wash behind them only made the bars harder to read.
-      surface: CommunitySurface.plain,
+      // The matchmaker's own card: the brown rule, and the chart, the tabs
+      // and the grade chip in the same copper.
+      surface: CommunitySurface.warm,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -574,7 +578,9 @@ class _GradeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color lead = communityLead(theme);
+    // The matchmaker's own figures wear the palette's copper; blue is kept
+    // for the community's card further down.
+    final Color lead = _mineTone(theme);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -613,7 +619,10 @@ class _WeeklyBestLine extends StatelessWidget {
 
     final bool isThisWeek =
         CommunityProfileStore.bestWeekKey == CommunityPeriods.weekKey();
-    final Color lead = communityLead(theme);
+    // The light blue of the palette — a record is good news, not a warning.
+    final Color lead = theme.brightness == Brightness.dark
+        ? AppColors.metricCouplesDm
+        : AppColors.primary;
 
     return Padding(
       padding: const EdgeInsets.only(top: 10),
@@ -751,7 +760,7 @@ class _ActivityChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color lead = communityLead(theme);
+    final Color lead = _mineTone(theme);
     final int peak = bars.fold<int>(
       0,
       (int max, ActivityBucket bucket) =>
@@ -1100,9 +1109,10 @@ class _LeaderboardCardState extends State<_LeaderboardCard> {
         ),
         child: const Text('הפרופיל שלי ›'),
       ),
-      // Plain as well, so the one gold row at the top is the only colour on it
-      // — which is the whole point of a board.
-      surface: CommunitySurface.plain,
+      // The palette's rose along the foot: the page's third colour, so the
+      // three cards read as three things — yours (copper), everybody's
+      // (blue), and the people in it (rose).
+      surface: CommunitySurface.rose,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

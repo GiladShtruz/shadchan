@@ -14,6 +14,7 @@ import 'package:shadchan/widgets/home_app_bar.dart';
 /// What the overflow menu can do.
 enum AppMenuAction {
   marriedFriends,
+  deletedIdeas,
   profile,
   settings,
   updatesGroup,
@@ -152,6 +153,11 @@ class AppMenuButton extends StatelessWidget {
         Icons.celebration_outlined,
         'חברים שהתחתנו',
       ),
+      _item(
+        AppMenuAction.deletedIdeas,
+        Icons.restore_from_trash_outlined,
+        'רעיונות שנמחקו',
+      ),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי'),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
@@ -169,7 +175,7 @@ class AppMenuButton extends StatelessWidget {
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
-      _item(AppMenuAction.share, Icons.ios_share_outlined, 'שיתוף האפליקציה'),
+      _item(AppMenuAction.share, Icons.share_outlined, 'שיתוף האפליקציה'),
       if (CommunityLinks.hasUpdatesGroup)
         _item(
           AppMenuAction.updatesGroup,
@@ -203,6 +209,8 @@ class AppMenuButton extends StatelessWidget {
     switch (action) {
       case AppMenuAction.marriedFriends:
         context.push('/married');
+      case AppMenuAction.deletedIdeas:
+        context.push('/ideas/deleted');
       case AppMenuAction.profile:
         context.go('/profile');
       case AppMenuAction.settings:

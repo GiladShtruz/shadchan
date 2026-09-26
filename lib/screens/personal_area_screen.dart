@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +14,9 @@ import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/person_photo_carousel.dart';
 import 'package:shadchan/widgets/card_access_sections.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
@@ -602,6 +607,12 @@ class _CreateCardPrompt extends StatelessWidget {
   }
 }
 
+/// The owner's card **as it is**: every photo, the whole text and the facts
+/// a matchmaker reads first — the card in full, the moment the area opens —
+/// with editing and sharing right under it.
+///
+/// It used to be a three-line summary behind a tap, which meant somebody who
+/// came to see their own card had to open the editor to see it.
 class _MyCardSummary extends StatelessWidget {
   const _MyCardSummary({required this.card, required this.onEdit});
 
@@ -611,39 +622,33 @@ class _MyCardSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color accent = AppColors.genderAccent(card.gender, dark: dark);
     final List<String> facts = <String>[
-      if (card.age != null) '${card.age}',
-      if ((card.city ?? '').trim().isNotEmpty) card.city!.trim(),
+      if (card.age != null)
+        '${card.gender == Gender.female ? 'בת' : 'בן'} ${card.age}',
+      if (card.heightCm != null) '${card.heightCm} ס״מ',
+      if (card.maritalStatus != null)
+        card.maritalStatus!.displayNameFor(card.gender),
       if (card.religiousLevelLabel.isNotEmpty) card.religiousLevelLabel,
+      if ((card.city ?? '').trim().isNotEmpty) card.city!.trim(),
     ];
     final String description = (card.description ?? '').trim();
+    final List<String> photos = card.photosPaths
+        .where((String path) => File(path).existsSync())
+        .toList();
+    final bool shareable = WhatsAppUtils.hasSendableCard(card);
 
     return HomePaperCard(
-      stripe: AppColors.genderAccent(card.gender),
-      onTap: onEdit,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      stripe: accent,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              PersonAvatar(person: card, radius: 30),
-              const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('הכרטיס שלי', style: theme.textTheme.labelMedium),
-                    Text(
-                      card.fullName,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (facts.isNotEmpty)
-                      Text(facts.join(' · '), style: theme.textTheme.bodySmall),
-                  ],
-                ),
+                child: Text('הכרטיס שלי', style: theme.textTheme.labelMedium),
               ),
               ProfileStatusTag(
                 status: card.profileStatus,
@@ -652,23 +657,68 @@ class _MyCardSummary extends StatelessWidget {
               ),
             ],
           ),
-          if (description.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            Text(
-              description,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+          const SizedBox(height: 4),
+          Text(
+            card.fullName,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: accent,
+              height: 1.15,
             ),
+          ),
+          if (facts.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 2),
+            Text(facts.join(' · '), style: theme.textTheme.bodyMedium),
           ],
-          const SizedBox(height: 10),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('עריכת הכרטיס'),
+          const SizedBox(height: 12),
+          if (photos.isNotEmpty)
+            PersonPhotoCarousel(
+              photosPaths: photos,
+              height: 300,
+              fit: BoxFit.contain,
+              borderRadius: BorderRadius.circular(16),
+              backgroundColor: dark
+                  ? theme.colorScheme.surfaceContainerHighest
+                  : AppColors.secondaryLight,
+            )
+          else
+            Center(child: PersonAvatar(person: card, radius: 44)),
+          const SizedBox(height: 12),
+          Text(
+            description.isEmpty
+                ? 'עוד אין טקסט בכרטיס. כמה שורות עליך עוזרות לשדכנים להכיר.'
+                : description,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              height: 1.55,
+              color: description.isEmpty
+                  ? theme.colorScheme.onSurfaceVariant
+                  : (dark ? theme.colorScheme.onSurface : AppColors.onSurface),
             ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('עריכת הכרטיס'),
+                ),
+              ),
+              if (shareable) ...<Widget>[
+                const SizedBox(width: 10),
+                Builder(
+                  builder: (BuildContext anchor) => OutlinedButton.icon(
+                    onPressed: () => ShareUtils.sharePerson(
+                      card,
+                      origin: ShareUtils.originOf(anchor),
+                    ),
+                    icon: const Icon(Icons.share_outlined, size: 18),
+                    label: const Text('שיתוף'),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

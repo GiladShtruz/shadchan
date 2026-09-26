@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/person_navigation.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
+import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
-import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/board_row.dart';
+import 'package:shadchan/widgets/home_section.dart';
 
 /// The reminders that have come due, oldest first — a reminder set for next
 /// month is not something to look at today, so it is simply not here.
@@ -69,7 +72,7 @@ class RemindersList extends StatelessWidget {
       // scrollable inside a scrollable fights the finger for every drag.
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       itemCount: entries.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      separatorBuilder: (_, _) => const SizedBox.shrink(),
       itemBuilder: (BuildContext context, int index) {
         final _ReminderEntry entry = entries[index];
         final MatchIdea? match = entry.match;
@@ -104,25 +107,13 @@ class _ReminderEntry {
   final DateTime date;
 }
 
-// Hebrew month names, built without `intl`'s locale data (which is not
-// initialized in this app) so this can never throw at build time.
-const List<String> _hebrewMonths = <String>[
-  'ינואר',
-  'פברואר',
-  'מרץ',
-  'אפריל',
-  'מאי',
-  'יוני',
-  'יולי',
-  'אוגוסט',
-  'ספטמבר',
-  'אוקטובר',
-  'נובמבר',
-  'דצמבר',
-];
-
-String _formatReminderDate(DateTime date) {
-  return '${date.day} ב${_hebrewMonths[date.month - 1]} ${date.year}';
+String _first(Person? person, String fallback) {
+  final String first = (person?.firstName ?? '').trim();
+  if (first.isNotEmpty) {
+    return first;
+  }
+  final String full = (person?.fullName ?? '').trim();
+  return full.isNotEmpty ? full : fallback;
 }
 
 /// How a reminder date reads relative to today: an accent-driving flag and a
@@ -144,44 +135,6 @@ String _formatReminderDate(DateTime date) {
   return (daysDiff: daysDiff, overdue: overdue, dueToday: dueToday, when: when);
 }
 
-Color _reminderAccent(
-  ThemeData theme,
-  ({int daysDiff, bool overdue, bool dueToday, String when}) timing,
-) {
-  if (timing.overdue) {
-    return theme.colorScheme.error;
-  }
-  if (timing.dueToday) {
-    return theme.colorScheme.primary;
-  }
-  return theme.colorScheme.onSurfaceVariant;
-}
-
-class _WhenBadge extends StatelessWidget {
-  const _WhenBadge({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
 class ReminderCard extends StatelessWidget {
   const ReminderCard({
     super.key,
@@ -199,83 +152,52 @@ class ReminderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     final DateTime date = match.reminderDate!;
     final ({int daysDiff, bool overdue, bool dueToday, String when}) timing =
         _reminderTiming(date);
-    final Color accent = _reminderAccent(theme, timing);
 
-    final String nameA = personA?.fullName.trim().isNotEmpty == true
-        ? personA!.fullName.trim()
-        : 'צד א';
-    final String nameB = personB?.fullName.trim().isNotEmpty == true
-        ? personB!.fullName.trim()
-        : 'צד ב';
+    final bool swap =
+        personA?.gender == Gender.female || personB?.gender == Gender.male;
+    final Person? male = swap ? personB : personA;
+    final Person? female = swap ? personA : personB;
+    final String note = (match.reminderNote ?? '').trim();
+    final MatchNextStep? step = MatchStages.nextStep(match);
+    // The one line: what the matchmaker asked to be reminded of, else the
+    // step the idea is waiting for, and always when.
+    final String what = note.isNotEmpty
+        ? note
+        : step == null
+        ? 'לבדוק מה קורה'
+        : MatchStages.shortLabel(step, male: male, female: female);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: accent.withValues(alpha: 0.4)),
+    void handled() => _markHandled(context);
+
+    return BoardRow(
+      leading: HomeCardCoupleAvatars(
+        personA: female,
+        personB: male,
+        radius: 16,
       ),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Icon(Icons.notifications_active_outlined, color: accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$nameB · $nameA',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  _WhenBadge(label: timing.when, color: accent),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _formatReminderDate(date),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if ((match.reminderNote ?? '').trim().isNotEmpty) ...<Widget>[
-                const SizedBox(height: 6),
-                Text(
-                  match.reminderNote!.trim(),
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ],
-              const SizedBox(height: 6),
-              _ReminderActions(
-                onDelete: () => _markHandled(context),
-                onSnooze: () => _snooze(context),
-              ),
-            ],
-          ),
-        ),
+      title: '${_first(female, 'צד א')} & ${_first(male, 'צד ב')}',
+      subtitle: '${timing.when} · $what',
+      subtitleColor: timing.overdue ? theme.colorScheme.error : null,
+      mark: Icons.notifications_active_outlined,
+      startAccent: AppColors.genderAccent(Gender.female, dark: dark),
+      endAccent: AppColors.genderAccent(Gender.male, dark: dark),
+      onTap: onTap,
+      onLongPress: (BuildContext anchor) => HomeBoardActions.showItemMenu(
+        anchor,
+        HomeItemKind.idea,
+        match.id,
+        onHandled: handled,
+      ),
+      menu: BoardItemMenuButton(
+        kind: HomeItemKind.idea,
+        targetId: match.id,
+        onHandled: handled,
       ),
     );
-  }
-
-  /// Pushes the reminder forward instead of dropping it — the proposal leaves
-  /// the list until the new date comes around.
-  Future<void> _snooze(BuildContext context) async {
-    final MatchRepository repository = context.read<MatchRepository>();
-    final DateTime? date = await ReminderSnoozeDialog.show(context);
-    if (date != null) {
-      await repository.setReminder(match.id, date, note: match.reminderNote);
-    }
   }
 
   /// Deletes the reminder, which is what takes the proposal off the list.
@@ -313,121 +235,6 @@ class ReminderCard extends StatelessWidget {
   }
 }
 
-/// The two answers to a due reminder, shared by both kinds of card: drop it, or
-/// push it forward to a date that suits better.
-class _ReminderActions extends StatelessWidget {
-  const _ReminderActions({
-    required this.onDelete,
-    required this.onSnooze,
-    this.extra,
-  });
-
-  final VoidCallback onDelete;
-  final VoidCallback onSnooze;
-
-  /// An optional third action (WhatsApp, on a person's reminder).
-  final Widget? extra;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    // A Wrap rather than a Row: the labels do not fit side by side on a narrow
-    // phone, and wrapping beats squashing them.
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        FilledButton.tonalIcon(
-          onPressed: onSnooze,
-          icon: const Icon(Icons.schedule, size: 18),
-          label: const Text('הזכר בהמשך'),
-          style: FilledButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-          ),
-        ),
-        TextButton.icon(
-          onPressed: onDelete,
-          icon: const Icon(Icons.delete_outline, size: 18),
-          label: const Text('מחיקה'),
-          style: TextButton.styleFrom(
-            foregroundColor: theme.colorScheme.error,
-            visualDensity: VisualDensity.compact,
-          ),
-        ),
-        ?extra,
-      ],
-    );
-  }
-}
-
-/// "מתי להזכיר שוב?" — the short list behind "הזכר בהמשך".
-abstract final class ReminderSnoozeDialog {
-  static Future<DateTime?> show(BuildContext context) {
-    final DateTime now = DateTime.now();
-    final DateTime base = DateTime(now.year, now.month, now.day);
-    final List<({String label, DateTime date})> options =
-        <({String label, DateTime date})>[
-          (label: 'מחר', date: base.add(const Duration(days: 1))),
-          (label: 'בעוד שבוע', date: base.add(const Duration(days: 7))),
-          (label: 'בעוד שבועיים', date: base.add(const Duration(days: 14))),
-          (
-            label: 'בעוד חודש',
-            date: DateTime(base.year, base.month + 1, base.day),
-          ),
-          (
-            label: 'בעוד 3 חודשים',
-            date: DateTime(base.year, base.month + 3, base.day),
-          ),
-        ];
-
-    return showDialog<DateTime>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('מתי להזכיר שוב?'),
-          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final ({String label, DateTime date}) option in options)
-                ListTile(
-                  leading: const Icon(Icons.schedule),
-                  title: Text(option.label),
-                  onTap: () => Navigator.of(dialogContext).pop(option.date),
-                ),
-              ListTile(
-                leading: const Icon(Icons.calendar_month_outlined),
-                title: const Text('בחירת תאריך'),
-                onTap: () async {
-                  final DateTime? picked = await showDatePicker(
-                    context: dialogContext,
-                    initialDate: base.add(const Duration(days: 1)),
-                    firstDate: base,
-                    lastDate: DateTime(base.year + 5),
-                    locale: const Locale('he'),
-                  );
-                  if (picked != null && dialogContext.mounted) {
-                    Navigator.of(dialogContext).pop(picked);
-                  }
-                },
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 void _showHandledNotice(OverlayState? notices, {required VoidCallback onUndo}) {
   AppNotice.showOn(
     notices,
@@ -453,89 +260,38 @@ class PersonReminderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     final ({int daysDiff, bool overdue, bool dueToday, String when}) timing =
         _reminderTiming(date);
-    final Color accent = _reminderAccent(theme, timing);
+    final String note = (PersonReminders.noteFor(person.id) ?? '').trim();
+    final String what = note.isNotEmpty
+        ? note
+        : '${person.profileStatus.displayNameFor(person.gender)} — לבדוק שוב';
 
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: accent.withValues(alpha: 0.4)),
+    void handled() => _markHandled(context);
+
+    return BoardRow(
+      leading: HomeCardAvatar(person: person, radius: 20),
+      title: person.fullName.trim(),
+      titleColor: AppColors.genderAccent(person.gender, dark: dark),
+      subtitle: '${timing.when} · $what',
+      subtitleColor: timing.overdue ? theme.colorScheme.error : null,
+      mark: Icons.notifications_active_outlined,
+      startAccent: AppColors.genderAccent(person.gender, dark: dark),
+      onTap: () {
+        onOpenPerson?.call();
+        openPersonProfile(context, person.id);
+      },
+      onLongPress: (BuildContext anchor) => HomeBoardActions.showItemMenu(
+        anchor,
+        HomeItemKind.person,
+        person.id,
+        onHandled: handled,
       ),
-      child: InkWell(
-        onTap: () {
-          onOpenPerson?.call();
-          openPersonProfile(context, person.id);
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Icon(Icons.pause_circle_outline, color: accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      person.fullName.trim(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  _WhenBadge(label: timing.when, color: accent),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${person.profileStatus.displayName} — לבדוק שוב · ${_formatReminderDate(date)}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if ((PersonReminders.noteFor(person.id) ?? '')
-                  .isNotEmpty) ...<Widget>[
-                const SizedBox(height: 6),
-                Text(
-                  PersonReminders.noteFor(person.id)!,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ],
-              const SizedBox(height: 6),
-              _ReminderActions(
-                onDelete: () => _markHandled(context),
-                onSnooze: () => _snooze(context),
-                // Nothing at all when there is no number: this row is a
-                // reminder to act, and offering a chat that cannot open is
-                // worse than offering nothing.
-                extra: switch (ContactChannels.forPerson(person)) {
-                  ContactChannel.whatsapp => TextButton.icon(
-                    onPressed: () => _openWhatsApp(context),
-                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
-                    label: const Text('WhatsApp'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  ContactChannel.sms => TextButton.icon(
-                    onPressed: () => ContactChannels.openSms(person.phone),
-                    icon: const Icon(Icons.sms_outlined, size: 16),
-                    label: const Text('הודעה'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  ContactChannel.none => null,
-                },
-              ),
-            ],
-          ),
-        ),
+      menu: BoardItemMenuButton(
+        kind: HomeItemKind.person,
+        targetId: person.id,
+        onHandled: handled,
       ),
     );
   }
@@ -561,27 +317,6 @@ class PersonReminderCard extends StatelessWidget {
       ),
     );
   }
-
-  Future<void> _openWhatsApp(BuildContext context) async {
-    final bool launched = await WhatsAppUtils.openChat(person);
-    if (!launched && context.mounted) {
-      AppNotice.show(context, 'אין מספר טלפון תקין לאיש הקשר');
-    }
-  }
-
-  /// Pushes the "check on them again" reminder forward.
-  Future<void> _snooze(BuildContext context) async {
-    final PersonRepository repository = context.read<PersonRepository>();
-    final DateTime? date = await ReminderSnoozeDialog.show(context);
-    if (date == null) {
-      return;
-    }
-    await repository.setPersonReminder(
-      person.id,
-      date,
-      note: PersonReminders.noteFor(person.id),
-    );
-  }
 }
 
 class EmptyReminders extends StatelessWidget {
@@ -600,9 +335,9 @@ class EmptyReminders extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Icon(
-              Icons.notifications_none,
-              size: 72,
-              color: theme.colorScheme.primary,
+              Icons.notifications_none_rounded,
+              size: 48,
+              color: theme.colorScheme.secondary,
             ),
             const SizedBox(height: 16),
             Text(

@@ -28,7 +28,6 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen> {
               ? PrivacyPolicyText.englishTitle
               : PrivacyPolicyText.hebrewTitle,
         ),
-        centerTitle: true,
       ),
       body: SafeArea(
         child: SelectionArea(

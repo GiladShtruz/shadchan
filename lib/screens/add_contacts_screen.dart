@@ -149,7 +149,6 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
         },
         child: Scaffold(
           appBar: AppBar(
-            centerTitle: true,
             title: const Text('הוספת אנשי קשר'),
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(56),

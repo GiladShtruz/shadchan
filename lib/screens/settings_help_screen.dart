@@ -19,10 +19,7 @@ class SettingsHelpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('דיווח תקלות ויצירת קשר'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('דיווח תקלות ויצירת קשר')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),

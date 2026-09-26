@@ -47,6 +47,9 @@ enum CommunitySurface {
   /// Plain paper with a hairline edge, for cards whose content already carries
   /// colour of its own.
   plain,
+
+  /// The palette's rose along the foot — the people, on a page of figures.
+  rose,
 }
 
 class CommunityCard extends StatelessWidget {
@@ -83,6 +86,8 @@ class CommunityCard extends StatelessWidget {
       CommunitySurface.tinted => lead,
       CommunitySurface.warm => warm,
       CommunitySurface.plain => null,
+      CommunitySurface.rose =>
+        dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
     };
 
     return HomePaperCard(
@@ -141,10 +146,11 @@ class CommunityPeriodTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    // Straight out of the palette, both states: the brand blue carries the
-    // chosen window in cream, and the other two are written in the page's own
-    // quiet grey. No near-miss tones and nothing tinted "about right".
-    final Color lead = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    // Straight out of the palette, both states: the copper carries the chosen
+    // window in cream, and the other two are written in the page's own quiet
+    // grey. Copper rather than blue — the pages these tabs sit on had turned
+    // almost entirely blue.
+    final Color lead = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
     final Color onLead = dark ? AppColors.onSecondary : AppColors.onPrimary;
 
     return Container(
@@ -591,7 +597,10 @@ class CommunityRankRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color lead = communityLead(theme);
+    // The board is the people on the page, so it wears the palette's rose.
+    final Color lead = theme.brightness == Brightness.dark
+        ? AppColors.femaleAccentDm
+        : AppColors.femaleAccent;
 
     Widget mark() {
       if (place == 1) {

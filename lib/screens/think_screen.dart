@@ -10,6 +10,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
@@ -211,7 +212,6 @@ class _ThinkScreenState extends State<ThinkScreen> {
           color: ProfilePalette.muted(theme),
         ),
         title: const Text('עוצרים רגע לחשוב על החברים'),
-        centerTitle: true,
       ),
       body: SafeArea(
         child: rows.isEmpty
@@ -605,10 +605,11 @@ class _PersonThought extends StatelessWidget {
                           person.fullName.trim(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          // In their gender's colour, as everywhere else.
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900,
                             height: 1.15,
-                            color: ProfilePalette.text(theme),
+                            color: _nameInk(theme, person),
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -856,7 +857,7 @@ class _CandidateChip extends StatelessWidget {
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   height: 1.25,
-                  color: ProfilePalette.text(theme),
+                  color: _nameInk(theme, person),
                 ),
               ),
               if (state != null)
@@ -976,4 +977,16 @@ class _MoreFriendsFooter extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A name in its person's own colour — the palette's blue for a man, its rose
+/// for a woman — or the page's ink when the gender is not known.
+Color _nameInk(ThemeData theme, Person person) {
+  if (person.gender == Gender.unknown) {
+    return ProfilePalette.text(theme);
+  }
+  return AppColors.genderAccent(
+    person.gender,
+    dark: theme.brightness == Brightness.dark,
+  );
 }

@@ -15,7 +15,7 @@ class RemindersScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('התראות ותזכורות'), centerTitle: true),
+      appBar: AppBar(title: const Text('התראות ותזכורות')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: const <Widget>[

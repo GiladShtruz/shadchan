@@ -138,7 +138,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
         : null;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('רעיון חדש'), centerTitle: true),
+      appBar: AppBar(title: const Text('רעיון חדש')),
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => FocusScope.of(context).unfocus(),

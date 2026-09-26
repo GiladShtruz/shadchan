@@ -170,9 +170,9 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    // One word per side, in that side's own grammatical gender and with no
-    // pill drawn round it.
-    expect(find.byType(ProfileStatusTag), findsNothing);
+    // Drawn exactly as המאגר שלי draws it: the dot and the word, in the
+    // person's own colour.
+    expect(find.byType(ProfileStatusTag), findsNWidgets(2));
     expect(find.text('פנוי'), findsOneWidget);
     expect(find.text('בהפסקה'), findsOneWidget);
 
@@ -482,8 +482,8 @@ void main() {
     // One box: the push, the reminder, the go-between — and no status in it,
     // because the status is on the card.
     expect(find.text('יאללה לקדם'), findsOneWidget);
-    expect(find.text('אין תזכורת לרעיון הזה'), findsOneWidget);
-    expect(find.text('איש קשר להעברת ההצעה'), findsOneWidget);
+    expect(find.text('אין תזכורת'), findsOneWidget);
+    expect(find.text('הוספת איש קשר שקשור להצעה'), findsOneWidget);
     expect(find.text('העברה להמתנה'), findsNothing);
     expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(tester.takeException(), isNull);

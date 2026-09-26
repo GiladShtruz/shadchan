@@ -24,10 +24,15 @@ abstract final class RemindersPanel {
             child: Padding(
               // Sits right under the top banner rather than floating mid-screen.
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              // The page's own cream paper with a soft neutral shadow — the
+              // same sheet the home screen is printed on, so the panel reads
+              // as the top of the app folding down rather than a white box.
               child: Material(
-                color: theme.colorScheme.surface,
-                elevation: 8,
-                borderRadius: BorderRadius.circular(20),
+                color: theme.scaffoldBackgroundColor,
+                elevation: 6,
+                shadowColor: Colors.black.withValues(alpha: 0.25),
+                surfaceTintColor: Colors.transparent,
+                borderRadius: BorderRadius.circular(24),
                 clipBehavior: Clip.antiAlias,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxHeight: screen.height * 0.7),
@@ -35,18 +40,25 @@ abstract final class RemindersPanel {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
+                        padding: const EdgeInsets.fromLTRB(20, 14, 8, 2),
                         child: Row(
                           children: <Widget>[
-                            Icon(
-                              Icons.notifications_active_outlined,
-                              color: theme.colorScheme.primary,
-                            ),
-                            const SizedBox(width: 10),
                             Expanded(
-                              child: Text(
-                                'תזכורות',
-                                style: theme.textTheme.titleLarge,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text(
+                                    'תזכורות',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  Text(
+                                    'מה שהגיע זמנו — לחיצה לפתיחה, ⋯ לפעולות',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
                               ),
                             ),
                             IconButton(
@@ -61,7 +73,7 @@ abstract final class RemindersPanel {
                       Flexible(
                         child: ListView(
                           shrinkWrap: true,
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
                           children: <Widget>[
                             // Reports and answers sit above the reminders:
                             // both are "something happened that you have not

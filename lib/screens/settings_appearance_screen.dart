@@ -18,7 +18,7 @@ class SettingsAppearanceScreen extends StatelessWidget {
     final ThemeModeProvider themeMode = context.watch<ThemeModeProvider>();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('התאמה אישית'), centerTitle: true),
+      appBar: AppBar(title: const Text('התאמה אישית')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),

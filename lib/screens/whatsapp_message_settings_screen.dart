@@ -34,7 +34,6 @@ class _WhatsAppMessageSettingsScreenState
     return Scaffold(
       appBar: AppBar(
         title: const Text('הודעת וואטסאפ'),
-        centerTitle: true,
         actions: <Widget>[
           IconButton(
             tooltip: 'שמירה',

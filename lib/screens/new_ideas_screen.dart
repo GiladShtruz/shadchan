@@ -112,7 +112,6 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
         foregroundColor: ProfilePalette.text(theme),
         titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
         title: const Text('רעיונות שהמאגר מציע לך'),
-        centerTitle: true,
       ),
       body: SafeArea(
         child: ideas.isEmpty

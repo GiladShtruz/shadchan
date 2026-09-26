@@ -973,7 +973,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ),
         ],
       ),
-      centerTitle: true,
     );
   }
 

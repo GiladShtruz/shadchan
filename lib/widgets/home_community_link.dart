@@ -54,7 +54,7 @@ class HomeCommunityLink extends StatelessWidget {
             ),
           _FooterLink(
             icon: Icon(
-              Icons.ios_share_outlined,
+              Icons.share_outlined,
               size: 17,
               color: theme.colorScheme.onSurfaceVariant,
             ),

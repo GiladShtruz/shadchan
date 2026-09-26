@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
@@ -212,32 +211,34 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// sitting in the same row as "העברה להמתנה" is a mis-tap waiting to happen.
   /// Closing an idea is what the panel is for — this is for the proposal that
   /// should never have been opened.
+  /// A long press deletes the idea at once and says so at the bottom, with
+  /// "ביטול". Nothing is lost either way: the idea is filed in "רעיונות
+  /// שנמחקו" first and can be brought back from there for a month.
   Future<void> _confirmDelete(
     MatchIdea match,
     Person? female,
     Person? male,
   ) async {
-    final String names = <String>[
-      if ((female?.firstName ?? '').trim().isNotEmpty) female!.firstName.trim(),
-      if ((male?.firstName ?? '').trim().isNotEmpty) male!.firstName.trim(),
-    ].join(' ו');
     final MatchRepository repository = context.read<MatchRepository>();
-    final bool confirmed = await ConfirmDialog.show(
-      context,
-      title: 'מחיקת הרעיון',
-      message: names.isEmpty
-          ? 'למחוק את הרעיון? היומן וההיסטוריה שלו יימחקו איתו.'
-          : 'למחוק את הרעיון של $names? היומן וההיסטוריה שלו יימחקו איתו.',
-      confirmText: 'מחיקה',
-      isDestructive: true,
-    );
-    if (!confirmed) {
+    final PersonRepository people = context.read<PersonRepository>();
+    final OverlayState? overlay = AppNotice.capture(context);
+    final String id = match.id;
+    await repository.deleteMatch(id);
+    if (overlay == null || !overlay.mounted) {
       return;
     }
-    await repository.deleteMatch(match.id);
-    if (mounted) {
-      AppNotice.show(context, 'הרעיון נמחק');
-    }
+    AppNotice.showOn(
+      overlay,
+      'הרעיון נמחק',
+      atBottom: true,
+      actionLabel: 'ביטול',
+      onAction: () {
+        repository.restoreDeleted(
+          id,
+          personExists: (String personId) => people.getById(personId) != null,
+        );
+      },
+    );
   }
 
   static MatchCategory _categoryFor(List<MatchStatus> statuses) {
