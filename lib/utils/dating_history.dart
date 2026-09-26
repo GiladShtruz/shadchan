@@ -26,10 +26,14 @@ class DatingCoupleRecord {
 
 /// Which couples have ever started dating — the whole history, not this month.
 ///
-/// A couple counts once they have been marked "מתחילים לצאת" **and stayed that
-/// way for more than [qualifyingPeriod]**. The delay is the whole point: the
-/// one thing this figure has to survive is a mis-tap, and a status set by
-/// mistake is corrected within minutes, not a day later.
+/// A couple counts **the moment they are marked "מתחילים לצאת"** — there used
+/// to be a day's wait before they were believed, and the list stayed empty
+/// through exactly the day a matchmaker most wants to see them in it.
+///
+/// A mis-tap is still kept out, without the wait: a stretch of "יוצאים" that
+/// was taken back inside [mistakeWindow] to anything other than "יצאו" or
+/// "חתונה" was never a date. Anything else marked by mistake is taken out by
+/// hand, with a long press on its row in "זוגות שיצאו".
 ///
 /// Once in, a couple stays in. They are part of what this matchmaker did even
 /// if they later stopped seeing each other — that is what makes it a history
@@ -45,8 +49,8 @@ class DatingCoupleRecord {
 /// outright, including when it says the status did not hold — so correcting a
 /// mis-tap keeps working exactly as it should.
 abstract final class DatingHistory {
-  /// How long "מתחילים לצאת" has to hold before it is believed.
-  static const Duration qualifyingPeriod = Duration(hours: 24);
+  /// How soon a "יוצאים" taken back counts as a mis-tap rather than a date.
+  static const Duration mistakeWindow = Duration(hours: 24);
 
   /// Every couple in the count, newest first.
   static List<DatingCoupleRecord> all({
@@ -89,8 +93,7 @@ abstract final class DatingHistory {
         continue;
       }
 
-      // A ledger that has an opinion is the end of the matter: it recorded the
-      // move to "יוצאים" and recorded it being undone inside the day.
+      // A ledger that has an opinion is the end of the matter.
       if (_hasDatingEvent(events)) {
         continue;
       }
@@ -135,19 +138,24 @@ abstract final class DatingHistory {
     );
   }
 
-  /// The first move into "יוצאים" that then held for a full day, or null.
+  /// The first move into "יוצאים" that was not taken back as a mis-tap, or
+  /// null.
   static DateTime? _ledgerStart(List<MatchStatusEvent> events, DateTime at) {
     for (int i = 0; i < events.length; i++) {
       if (events[i].toStatus != MatchStatus.dating) {
         continue;
       }
       final DateTime from = events[i].createdAt;
-      // The next recorded move is what ended the stretch; with nothing after
-      // it, the stretch is still running.
-      final DateTime until = i + 1 < events.length
-          ? events[i + 1].createdAt
-          : at;
-      if (until.difference(from) > qualifyingPeriod) {
+      // Nothing after it: the stretch is still running, and counts now.
+      if (i + 1 >= events.length) {
+        return from;
+      }
+      // The next recorded move is what ended the stretch.
+      final MatchStatusEvent next = events[i + 1];
+      final bool endedAsDate =
+          next.toStatus == MatchStatus.dated ||
+          next.toStatus == MatchStatus.married;
+      if (endedAsDate || next.createdAt.difference(from) > mistakeWindow) {
         return from;
       }
     }
@@ -162,9 +170,7 @@ abstract final class DatingHistory {
       case MatchStatus.married:
         return match.updatedAt;
       case MatchStatus.dating:
-        return at.difference(match.updatedAt) > qualifyingPeriod
-            ? match.updatedAt
-            : null;
+        return match.updatedAt;
       case MatchStatus.idea:
       case MatchStatus.checking:
       case MatchStatus.unavailable:

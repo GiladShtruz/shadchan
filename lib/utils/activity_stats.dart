@@ -67,8 +67,8 @@ class ActivityBreakdown {
   /// Proposals opened.
   final int ideas;
 
-  /// Couples who started dating and stayed that way past
-  /// [DatingHistory.qualifyingPeriod].
+  /// Couples who started dating — counted at once, unless taken back as a
+  /// mis-tap inside [DatingHistory.mistakeWindow].
   final int couples;
 
   /// Engagements and weddings, which are one event here — the app has no

@@ -497,6 +497,14 @@ class MatchRepository extends ChangeNotifier {
   Future<void> Function(String matchId, DateTime since)?
   deletePersonEventsSince;
 
+  /// Takes every history line a proposal wrote on its candidates, returning
+  /// them for a later restore. Wired to [PersonRepository.takeMatchEvents].
+  Future<List<Map<String, dynamic>>> Function(String matchId)? takePersonEvents;
+
+  /// Puts back lines taken by [takePersonEvents]. Wired to
+  /// [PersonRepository.restoreEvents].
+  Future<void> Function(List<Map<String, dynamic>> events)? restorePersonEvents;
+
   /// Takes back a closing made a moment ago — "ביטול" on "הרעיון עבר לארכיון".
   ///
   /// **As though it never happened, not as a second move.** Reopening would
@@ -1317,6 +1325,15 @@ class MatchRepository extends ChangeNotifier {
     // A snapshot first, so "ביטול" and "רעיונות שנמחקו" can put the idea back
     // exactly as it was — journal and ledger included.
     final MatchIdea? doomed = getById(matchId);
+    // An idea deleted without ever being closed was, as far as its two
+    // candidates are concerned, never opened: its lines leave their histories
+    // with it (and come back if it is restored). One that was closed first
+    // keeps its history — that closing really happened.
+    final List<Map<String, dynamic>> personEvents =
+        doomed != null && !doomed.status.isArchived
+        ? await takePersonEvents?.call(matchId) ??
+              const <Map<String, dynamic>>[]
+        : const <Map<String, dynamic>>[];
     if (keepInTrash && doomed != null) {
       DeletedMatchesStore.instance.add(
         DeletedMatch(
@@ -1340,6 +1357,7 @@ class MatchRepository extends ChangeNotifier {
                     const <MatchStatusEvent>[])
               BackupService.matchStatusEventToJson(event),
           ],
+          personEvents: personEvents,
         ),
       );
     }
@@ -1426,6 +1444,7 @@ class MatchRepository extends ChangeNotifier {
         }
       }
     }
+    await restorePersonEvents?.call(peek.personEvents);
     notifyListeners();
     _refreshNotifications();
     return true;

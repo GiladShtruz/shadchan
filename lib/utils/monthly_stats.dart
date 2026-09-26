@@ -65,7 +65,7 @@ enum MonthlyStatMetric {
       case MonthlyStatMetric.people:
         return 'חברים שנוספו';
       case MonthlyStatMetric.dating:
-        return 'זוגות שהתחילו לצאת';
+        return 'זוגות שיצאו';
       case MonthlyStatMetric.weddings:
         return 'חתונות בכל הזמנים';
     }
@@ -94,8 +94,8 @@ enum MonthlyStatMetric {
       case MonthlyStatMetric.people:
         return 'כל חבר שנוסף למאגר בחודש הזה.';
       case MonthlyStatMetric.dating:
-        return 'כל הזוגות שסומנו "מתחילים לצאת" ונשארו כך יותר מ-24 שעות, '
-            'מאז ומתמיד — גם אם מאוחר יותר הפסיקו לצאת.';
+        return 'כל הזוגות שסומנו "מתחילים לצאת", מאז ומתמיד — '
+            'גם אם מאוחר יותר הפסיקו לצאת.';
       case MonthlyStatMetric.weddings:
         return 'כל הזוגות שמסומנים "חתונה" במאגר, ללא תלות בחודש.';
     }

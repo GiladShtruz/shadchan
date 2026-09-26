@@ -7,6 +7,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// The server's notices about personal cards — a request, an answer, a
 /// friend's new card, a wedding, a birthday — on the notifications page.
@@ -44,7 +45,7 @@ class CardInboxList extends StatelessWidget {
         (hash == null || hash.isEmpty ? null : people.findByPhoneHash(hash));
     onOpen?.call();
     if (person != null) {
-      context.push('/people/${person.id}');
+      AppNavigation.open(context, '/people/${person.id}');
     } else if (item.route.startsWith('/') && item.route != '/reminders') {
       context.go(item.route);
     }

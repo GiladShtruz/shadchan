@@ -211,7 +211,9 @@ Widget _buildApp() {
                       causedByMatchId: matchId,
                     ))
             ..logPersonEvent = personRepository.logEvent
-            ..deletePersonEventsSince = personRepository.deleteMatchEventsSince;
+            ..deletePersonEventsSince = personRepository.deleteMatchEventsSince
+            ..takePersonEvents = personRepository.takeMatchEvents
+            ..restorePersonEvents = personRepository.restoreEvents;
           return matchRepository;
         },
       ),

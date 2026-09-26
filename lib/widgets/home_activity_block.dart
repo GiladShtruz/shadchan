@@ -218,6 +218,9 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
                   accent: theme.brightness == Brightness.dark
                       ? AppColors.secondaryDarkDm
                       : AppColors.secondary,
+                  // The matchmaker's own figure is drawn in that same brown,
+                  // so the number and the rule under it are one colour.
+                  figureInAccent: true,
                   onTap: widget.onOpen,
                 ),
               ),
@@ -263,10 +266,14 @@ class _FigureTile extends StatelessWidget {
     required this.period,
     required this.accent,
     required this.onTap,
+    this.figureInAccent = false,
   });
 
   final String label;
   final int value;
+
+  /// Draws the figure in [accent] rather than the page's ink.
+  final bool figureInAccent;
 
   /// Only ever the key of the animation: it is what makes the figure fade from
   /// one window's number to the next rather than snap.
@@ -313,6 +320,7 @@ class _FigureTile extends StatelessWidget {
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w900,
                   height: 1.0,
+                  color: figureInAccent ? accent : null,
                 ),
               ),
             ),

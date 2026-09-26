@@ -11,7 +11,9 @@ import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/workspace_store.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/share_utils.dart';
@@ -308,6 +310,8 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 14),
+                _ShareAppCard(gender: profile.gender),
                 const SizedBox(height: 6),
                 // Status reports, requests, who can see the card, friends who
                 // could, and anybody blocked — all decided on the server.
@@ -351,6 +355,69 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
       return 'ערב טוב';
     }
     return 'לילה טוב';
+  }
+}
+
+/// "שיתוף האפליקציה" — opens the phone's share sheet with a ready message and
+/// the join link, the single's version of the matchmakers' own invitation.
+class _ShareAppCard extends StatelessWidget {
+  const _ShareAppCard({required this.gender});
+
+  final Gender? gender;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color ink = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
+
+    return Builder(
+      builder: (BuildContext anchor) => HomePaperCard(
+        stripe: ink,
+        onTap: () async {
+          try {
+            await Share.share(
+              CommunityLinks.singleShareMessage(gender),
+              sharePositionOrigin: ShareUtils.originOf(anchor),
+            );
+          } on Object {
+            // Nothing to share to is not worth a message.
+          }
+        },
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: ink.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(Icons.favorite_border_rounded, color: ink),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'שיתוף האפליקציה',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    'לשלוח לחברים קישור להצטרפות לשדכן',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.share_outlined, color: ink),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -7,7 +7,7 @@ import 'package:shadchan/utils/enums.dart';
 /// "זוגות שהתחילו לצאת" is the one figure in the app that is a *history* rather
 /// than a state, and the only one that can be edited by hand. Both of those
 /// make it easy to get wrong in ways nobody notices for months, so the rules are
-/// asserted here: the day-long qualifying period, the one-way door, and the
+/// asserted here: counting at once, a mis-tap kept out, the one-way door, and the
 /// fallback that keeps couples from before the status ledger existed in the
 /// count.
 void main() {
@@ -88,14 +88,33 @@ void main() {
     expect(found, isEmpty);
   });
 
-  test('a couple marked dating an hour ago is not counted yet', () {
-    final DateTime tapped = now.subtract(const Duration(hours: 1));
+  test('a couple marked dating a minute ago is counted at once', () {
+    final DateTime tapped = now.subtract(const Duration(minutes: 1));
     expect(
       historyOf(
         <MatchIdea>[match('m', updated: tapped)],
         <MatchStatusEvent>[event('m', MatchStatus.dating, tapped)],
       ),
-      isEmpty,
+      hasLength(1),
+    );
+  });
+
+  test('a couple who went out once and parted the same day is counted', () {
+    final DateTime tapped = now.subtract(const Duration(days: 3));
+    expect(
+      historyOf(
+        <MatchIdea>[match('m', status: MatchStatus.dated)],
+        <MatchStatusEvent>[
+          event('m', MatchStatus.dating, tapped),
+          event(
+            'm',
+            MatchStatus.dated,
+            tapped.add(const Duration(hours: 5)),
+            from: MatchStatus.dating,
+          ),
+        ],
+      ),
+      hasLength(1),
     );
   });
 

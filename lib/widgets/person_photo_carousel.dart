@@ -91,8 +91,8 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
                 top: 0,
                 bottom: 0,
                 child: Center(
-                  child: _ArrowButton(
-                    icon: Icons.chevron_left,
+                  child: PhotoPagerArrow(
+                    pointsLeft: true,
                     onPressed: () => _goTo(_index + 1, photos.length),
                   ),
                 ),
@@ -103,8 +103,8 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
                 top: 0,
                 bottom: 0,
                 child: Center(
-                  child: _ArrowButton(
-                    icon: Icons.chevron_right,
+                  child: PhotoPagerArrow(
+                    pointsLeft: false,
                     onPressed: () => _goTo(_index - 1, photos.length),
                   ),
                 ),
@@ -160,10 +160,19 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
   }
 }
 
-class _ArrowButton extends StatelessWidget {
-  const _ArrowButton({required this.icon, required this.onPressed});
+/// A round arrow over a photo pager, pointing where it goes on screen.
+///
+/// Material's chevrons mirror themselves in RTL, which would turn the arrow on
+/// the left edge to face inwards; drawn under a left-to-right
+/// [Directionality], [pointsLeft] means physically left.
+class PhotoPagerArrow extends StatelessWidget {
+  const PhotoPagerArrow({
+    super.key,
+    required this.pointsLeft,
+    required this.onPressed,
+  });
 
-  final IconData icon;
+  final bool pointsLeft;
   final VoidCallback onPressed;
 
   @override
@@ -177,7 +186,14 @@ class _ArrowButton extends StatelessWidget {
         child: SizedBox(
           width: 38,
           height: 38,
-          child: Icon(icon, color: Colors.white, size: 26),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Icon(
+              pointsLeft ? Icons.chevron_left : Icons.chevron_right,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
         ),
       ),
     );

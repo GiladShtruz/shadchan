@@ -60,7 +60,9 @@ void main() {
     matchRepository = MatchRepository(matches, notes)
       ..resolvePerson = personRepository.getById
       ..logPersonEvent = personRepository.logEvent
-      ..deletePersonEventsSince = personRepository.deleteMatchEventsSince;
+      ..deletePersonEventsSince = personRepository.deleteMatchEventsSince
+      ..takePersonEvents = personRepository.takeMatchEvents
+      ..restorePersonEvents = personRepository.restoreEvents;
   });
 
   tearDownAll(() async {
@@ -89,6 +91,34 @@ void main() {
     final MatchIdea? match = await matchRepository.create('him', 'her');
     return match!;
   }
+
+  test('deleting an idea that was never closed takes its lines out of both '
+      'histories, and restoring it puts them back', () async {
+    final MatchIdea match = await openProposal();
+
+    await matchRepository.deleteMatch(match.id);
+    expect(historyFor('him'), isEmpty);
+    expect(historyFor('her'), isEmpty);
+
+    final bool restored = await matchRepository.restoreDeleted(match.id);
+    expect(restored, isTrue);
+    expect(historyFor('him'), <String>['נפתח רעיון עם שושנה ישראלי']);
+    expect(historyFor('her'), <String>['נפתח רעיון עם אליהו ישראלי']);
+  });
+
+  test('deleting an idea that was closed first keeps its history', () async {
+    final MatchIdea match = await openProposal();
+    await matchRepository.recordOutcome(
+      match.id,
+      newStatus: MatchStatus.rejected,
+      party: MatchOutcomeParty.him,
+    );
+
+    await matchRepository.deleteMatch(match.id);
+
+    expect(historyFor('him'), contains('נפתח רעיון עם שושנה ישראלי'));
+    expect(historyFor('him'), contains('נסגר רעיון עם שושנה ישראלי'));
+  });
 
   test('opening a proposal is recorded on both candidates', () async {
     await openProposal();

@@ -136,7 +136,7 @@ void main() {
     }
   });
 
-  test('a couple settles for a day before it is worth anything', () {
+  test('a couple counts from the moment they start dating', () {
     MatchStatusEvent dating(String id, DateTime at) => MatchStatusEvent(
       id: id,
       matchId: id,
@@ -156,11 +156,11 @@ void main() {
       ],
     );
 
-    // A status set and undone within the hour is a correction, not a couple —
-    // so the fresh one is not in any window yet.
-    expect(counts.week.couples, 1);
-    expect(counts.week.points, 5);
-    expect(counts.allTime.couples, 1);
+    // No day's wait any more: the couple marked three hours ago is already
+    // in every window that covers it.
+    expect(counts.week.couples, 2);
+    expect(counts.week.points, 10);
+    expect(counts.allTime.couples, 2);
   });
 
   test('an empty database publishes zeroes rather than nothing', () {

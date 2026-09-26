@@ -44,21 +44,11 @@ abstract final class RemindersPanel {
                         child: Row(
                           children: <Widget>[
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  Text(
-                                    'תזכורות',
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  Text(
-                                    'מה שהגיע זמנו — לחיצה לפתיחה, ⋯ לפעולות',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                ],
+                              child: Text(
+                                'תזכורות',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
                             IconButton(

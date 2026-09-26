@@ -176,6 +176,66 @@ abstract final class MatchQuickActions {
     }
   }
 
+  /// The share button of an idea's row on a profile: one side's card sent to
+  /// the other, filed exactly as the card's own button files it.
+  static Future<void> shareSideCard(
+    BuildContext context,
+    MatchIdea match, {
+    required Person? first,
+    required Person? second,
+  }) async {
+    final OverlayState? notices = AppNotice.capture(context);
+    final MatchShareResult result = await MatchWhatsAppSheet.chooseCard(
+      context,
+      first: first,
+      second: second,
+    );
+    if (!result.opened) {
+      AppNotice.showOn(notices, 'אין כרטיס לשליחה או מספר טלפון תקין');
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    await _file(context.read<MatchRepository>(), match, result);
+  }
+
+  /// The WhatsApp button of an idea's row on a profile: a chat with either
+  /// side.
+  static Future<void> chatWithSide(
+    BuildContext context,
+    MatchIdea match, {
+    required Person? first,
+    required Person? second,
+  }) async {
+    final OverlayState? notices = AppNotice.capture(context);
+    final MatchShareResult result = await MatchWhatsAppSheet.chooseChat(
+      context,
+      first: first,
+      second: second,
+    );
+    if (!result.opened) {
+      AppNotice.showOn(notices, 'אין מספר טלפון תקין לפתיחת וואטסאפ');
+    }
+  }
+
+  static Future<void> _file(
+    MatchRepository repository,
+    MatchIdea match,
+    MatchShareResult result,
+  ) async {
+    final String? label = result.label;
+    // A card forwarded from a closed idea is worth a line, not a stage.
+    if (result.toGender case final Gender side when !match.status.isArchived) {
+      if (label != null) {
+        await repository.recordCardShared(match.id, label, journal: false);
+      }
+      await repository.markSideAsked(match.id, side, note: label);
+    } else if (label != null) {
+      await repository.recordCardShared(match.id, label);
+    }
+  }
+
   /// "יאללה לקדם" — the one step this proposal is actually waiting for.
   ///
   /// **Opening the chat *is* the action, so the stage moves with it.** The old

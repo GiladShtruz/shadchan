@@ -35,12 +35,44 @@ abstract final class ReminderAlerts {
     await _box.put('$_keyPrefix$targetId', reminder.millisecondsSinceEpoch);
   }
 
+  static const String _liftPrefix = 'reminderLiftOff.';
+
+  /// Whether the matchmaker swiped this idea out of the "ביקשת שנזכיר לך"
+  /// block at the top of the ideas list while [reminder] was the one due.
+  ///
+  /// Keyed on the reminder's date, like [isAlerting]: the idea goes back to
+  /// its ordinary place in the list, the reminder itself stays, and the next
+  /// reminder lifts it to the top again.
+  static bool isTakenOffTop(String targetId, DateTime? reminder) {
+    if (reminder == null || !_isReady) {
+      return false;
+    }
+    final Object? taken = _box.get('$_liftPrefix$targetId');
+    return taken is int && taken == reminder.millisecondsSinceEpoch;
+  }
+
+  static Future<void> takeOffTop(String targetId, DateTime? reminder) async {
+    if (!_isReady || reminder == null) {
+      return;
+    }
+    await _box.put('$_liftPrefix$targetId', reminder.millisecondsSinceEpoch);
+  }
+
+  /// Undoes [takeOffTop].
+  static Future<void> putBackOnTop(String targetId) async {
+    if (!_isReady) {
+      return;
+    }
+    await _box.delete('$_liftPrefix$targetId');
+  }
+
   /// Drops the record for a deleted card, so its key does not linger.
   static Future<void> forget(String targetId) async {
     if (!_isReady) {
       return;
     }
     await _box.delete('$_keyPrefix$targetId');
+    await _box.delete('$_liftPrefix$targetId');
   }
 
   /// A reminder is due from the start of its day, not from the exact moment.

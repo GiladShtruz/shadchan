@@ -37,15 +37,19 @@ class TipsListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Gender? gender = context.watch<UserProfileProvider>().gender;
-    final List<CommunityTip> community = context.watch<TipsProvider>().approved;
+    final TipsProvider tipsProvider = context.watch<TipsProvider>();
+    final List<CommunityTip> community = tipsProvider.visibleCommunity;
 
     // `id` is null for the tips that ship with the app and set for the ones
     // matchmakers published. Only the latter can be reported — there is nobody
     // to report the app's own copy to.
     final List<({String text, String? author, String? id})> tips =
         <({String text, String? author, String? id})>[
-          for (final String template in MatchmakerTips.tips)
-            (text: template.forGender(gender), author: null, id: null),
+          for (final BuiltInTip tip in tipsProvider.builtInTips(
+            MatchmakerTips.tips,
+          ))
+            if (!tip.hidden)
+              (text: tip.text.forGender(gender), author: null, id: null),
           for (final CommunityTip tip in community)
             (
               text: tip.text,

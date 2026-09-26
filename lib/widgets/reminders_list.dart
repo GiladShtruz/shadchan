@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -10,7 +9,6 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -19,6 +17,7 @@ import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/board_row.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// The reminders that have come due, oldest first — a reminder set for next
 /// month is not something to look at today, so it is simply not here.
@@ -83,7 +82,7 @@ class RemindersList extends StatelessWidget {
             personB: personRepository.getById(match.personBId),
             onTap: () {
               onOpenMatch?.call();
-              context.push('/matches/${match.id}');
+              AppNavigation.open(context, '/matches/${match.id}');
             },
           );
         }
@@ -116,25 +115,6 @@ String _first(Person? person, String fallback) {
   return full.isNotEmpty ? full : fallback;
 }
 
-/// How a reminder date reads relative to today: an accent-driving flag and a
-/// short "when" label.
-({int daysDiff, bool overdue, bool dueToday, String when}) _reminderTiming(
-  DateTime date,
-) {
-  final DateTime today = DateTime.now();
-  final DateTime dateDay = DateTime(date.year, date.month, date.day);
-  final DateTime todayDay = DateTime(today.year, today.month, today.day);
-  final int daysDiff = dateDay.difference(todayDay).inDays;
-  final bool overdue = daysDiff < 0;
-  final bool dueToday = daysDiff == 0;
-  final String when = overdue
-      ? 'עבר זמנו'
-      : dueToday
-      ? 'היום'
-      : AppDateUtils.futureReminderLabel(date, now: todayDay);
-  return (daysDiff: daysDiff, overdue: overdue, dueToday: dueToday, when: when);
-}
-
 class ReminderCard extends StatelessWidget {
   const ReminderCard({
     super.key,
@@ -153,9 +133,6 @@ class ReminderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final DateTime date = match.reminderDate!;
-    final ({int daysDiff, bool overdue, bool dueToday, String when}) timing =
-        _reminderTiming(date);
 
     final bool swap =
         personA?.gender == Gender.female || personB?.gender == Gender.male;
@@ -180,8 +157,10 @@ class ReminderCard extends StatelessWidget {
         radius: 16,
       ),
       title: '${_first(female, 'צד א')} & ${_first(male, 'צד ב')}',
-      subtitle: '${timing.when} · $what',
-      subtitleColor: timing.overdue ? theme.colorScheme.error : null,
+      // The reminder itself, whole, in the ordinary ink — no "עבר זמנו" and
+      // no red: a reminder that came due is simply today's to-do.
+      subtitle: what,
+      subtitleMaxLines: null,
       mark: Icons.notifications_active_outlined,
       startAccent: AppColors.genderAccent(Gender.female, dark: dark),
       endAccent: AppColors.genderAccent(Gender.male, dark: dark),
@@ -261,8 +240,6 @@ class PersonReminderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final ({int daysDiff, bool overdue, bool dueToday, String when}) timing =
-        _reminderTiming(date);
     final String note = (PersonReminders.noteFor(person.id) ?? '').trim();
     final String what = note.isNotEmpty
         ? note
@@ -274,8 +251,8 @@ class PersonReminderCard extends StatelessWidget {
       leading: HomeCardAvatar(person: person, radius: 20),
       title: person.fullName.trim(),
       titleColor: AppColors.genderAccent(person.gender, dark: dark),
-      subtitle: '${timing.when} · $what',
-      subtitleColor: timing.overdue ? theme.colorScheme.error : null,
+      subtitle: what,
+      subtitleMaxLines: null,
       mark: Icons.notifications_active_outlined,
       startAccent: AppColors.genderAccent(person.gender, dark: dark),
       onTap: () {

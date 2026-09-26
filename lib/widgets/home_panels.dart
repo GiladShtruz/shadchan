@@ -105,12 +105,18 @@ class HomeArtTile extends StatelessWidget {
           child: _AddTile(
             onTap: onTap,
             art: art,
-            tint: ColorFilter.mode(ink, BlendMode.srcIn),
+            // The drawing wears the label's own blue, so icon and words read
+            // as one line; the copper stays in the rule along the foot.
+            tint: ColorFilter.mode(
+              AppColors.heading(dark: dark),
+              BlendMode.srcIn,
+            ),
             accent: ink,
             label: label,
             artHeight: artHeight,
             labelHeight: labelHeight,
             padding: padding,
+            divided: true,
           ),
         );
       },
@@ -251,10 +257,14 @@ class _AddTile extends StatefulWidget {
     required this.labelHeight,
     required this.padding,
     this.emphasised = false,
+    this.divided = false,
   });
 
   final VoidCallback onTap;
   final String art;
+
+  /// A short, faint rule between the drawing and the label.
+  final bool divided;
 
   /// Recolours the drawing into [accent].
   final ColorFilter tint;
@@ -348,7 +358,18 @@ class _AddTileState extends State<_AddTile> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        if (widget.divided) ...<Widget>[
+                          const SizedBox(width: 10),
+                          Container(
+                            width: 1,
+                            height: widget.artHeight * 0.7,
+                            color: AppColors.heading(
+                              dark: dark,
+                            ).withValues(alpha: 0.22),
+                          ),
+                          const SizedBox(width: 10),
+                        ] else
+                          const SizedBox(width: 8),
                         Flexible(
                           child: SizedBox(
                             height: widget.labelHeight,
@@ -734,32 +755,56 @@ class DatingCouplesStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? _datingInkDm : _datingInk;
+    // The same rose-to-honey wash, rose border and rose glow a dating couple's
+    // own card wears on "הרעיונות שלי" — the strip is about those cards, so it
+    // is dressed like them rather than in the page's quiet blue.
+    final Color rose = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
+    final Color surface = theme.colorScheme.surface;
     final String couples = count == 1
         ? 'זוג אחד שלך יוצא'
         : '$count זוגות שלך יוצאים';
 
     return Material(
-      color: dark
-          ? Color.alphaBlend(
-              ink.withValues(alpha: 0.14),
-              theme.colorScheme.surface,
-            )
-          : _datingPaper,
-      borderRadius: BorderRadius.circular(14),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      elevation: 3,
+      shadowColor: rose.withValues(alpha: 0.35),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(12, 9, 8, 9),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
+              colors: <Color>[
+                Color.alphaBlend(
+                  AppColors.softRose.withValues(alpha: dark ? 0.26 : 0.95),
+                  surface,
+                ),
+                Color.alphaBlend(
+                  AppColors.softYellow.withValues(alpha: dark ? 0.14 : 0.70),
+                  surface,
+                ),
+              ],
+            ),
+            border: Border.all(color: rose.withValues(alpha: 0.55), width: 1.2),
+          ),
+          padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 8, 10),
           child: Row(
             children: <Widget>[
-              Icon(
-                Icons.celebration_rounded,
-                size: 17,
-                color: _celebrationGold,
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: rose.withValues(alpha: dark ? 0.28 : 0.18),
+                ),
+                child: Icon(Icons.favorite_rounded, size: 18, color: rose),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'כל הכבוד! $couples — שומרים איתם על קשר עד החתונה!',
@@ -772,7 +817,9 @@ class DatingCouplesStrip extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, size: 22, color: ink),
+              const SizedBox(width: 4),
+              const Icon(Icons.auto_awesome, size: 14, color: _celebrationGold),
+              Icon(Icons.chevron_right_rounded, size: 22, color: rose),
             ],
           ),
         ),

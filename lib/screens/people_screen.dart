@@ -166,10 +166,18 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ? null
           : FloatingActionButton(
               // `endFloat` in RTL is the bottom-left corner — the same place
-              // the messaging apps everyone already uses put theirs.
+              // the messaging apps everyone already uses put theirs, and the
+              // same shape: a rounded square in the palette's light blue, with
+              // a white heart and a light-blue plus at its centre.
               tooltip: 'הוספת חברים',
               onPressed: () => AddPeopleDialog.show(context),
-              child: const Icon(Icons.add),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const _HeartPlusIcon(),
             ),
       // The name and the search row are the bar; everything under it — the
       // gender tabs, the filter chips and the list — scrolls as one page.
@@ -1392,6 +1400,30 @@ class _DetailsRequestBar extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A white heart with a light-blue plus in its middle — "add a friend", in
+/// the app's own sign.
+class _HeartPlusIcon extends StatelessWidget {
+  const _HeartPlusIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox.square(
+      dimension: 32,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          Icon(Icons.favorite_rounded, color: Colors.white, size: 32),
+          // The heart's body sits a touch above the glyph's centre.
+          Padding(
+            padding: EdgeInsets.only(bottom: 2),
+            child: Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
+          ),
+        ],
       ),
     );
   }

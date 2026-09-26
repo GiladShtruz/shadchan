@@ -18,12 +18,12 @@ import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/card_link_panel.dart';
 import 'package:shadchan/widgets/candidate_card_view.dart';
-import 'package:shadchan/widgets/extended_filter_toggle.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_contact.dart';
@@ -43,15 +43,14 @@ import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/utils/contact_channel.dart';
-import 'package:shadchan/widgets/contact_channel_button.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/person_photo_carousel.dart';
-import 'package:shadchan/widgets/section_header.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/person_navigation.dart';
 import 'package:shadchan/widgets/first_visit_tip.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// Opens the "התאמות" view for a person from anywhere in the app — the heart on
 /// a row in המאגר שלי lands on exactly the same screen the profile's own
@@ -258,8 +257,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final List<PersonNote> personNotes = personRepository.getNotesForPerson(
       person.id,
     );
-    final List<PersonEvent> personEvents = personRepository.getHistoryForPerson(
-      person.id,
+    final List<PersonEvent> personEvents = _liveHistory(
+      personRepository.getHistoryForPerson(person.id),
+      context.read<MatchRepository>(),
     );
 
     return Scaffold(
@@ -982,11 +982,6 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          // The whole card — text and every photo — straight
-                          // to the share sheet, beside the pencil rather than
-                          // in the bar, and only when there is a card to send.
-                          if (WhatsAppUtils.hasSendableCard(widget.person))
-                            _ShareCardButton(person: widget.person),
                           IconButton(
                             onPressed: widget.onEdit,
                             icon: const Icon(Icons.edit_outlined, size: 20),
@@ -1245,17 +1240,14 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
 /// card worked, it could be put in a proposal, and it simply never appeared in
 /// any list. Filling in a detail now admits it on its own; this says so, and
 /// offers the one tap for somebody who wants it in with nothing filled at all.
-/// Every other photo on the card, under the face at the top of the profile.
+/// "תמונות נוספות" — exactly three squares under the face at the top of the
+/// profile.
 ///
-/// The header shows one photo and it is round, so until now the second, third
-/// and fourth pictures of somebody existed only inside the full-screen viewer
-/// — which had to be guessed at, because nothing on the profile said there was
-/// more than one. The strip says so, and a tap opens that photo full screen
-/// with the card still under it.
-///
-/// Draws nothing when there is only the face, and nothing at all when the
-/// files behind the paths are gone — a row of broken-image boxes says less
-/// than no row.
+/// The header shows one photo and it is round, so the second, third and fourth
+/// pictures used to exist only inside the full-screen viewer. Now there are
+/// always three slots: a photo fills one, and an empty one says "הוסף תמונה"
+/// and opens the gallery. With the main photo that is four in all — never a
+/// growing grid.
 class _ProfilePhotoStrip extends StatelessWidget {
   const _ProfilePhotoStrip({required this.person, required this.onOpen});
 
@@ -1265,80 +1257,150 @@ class _ProfilePhotoStrip extends StatelessWidget {
   /// open on the one that was tapped.
   final ValueChanged<int> onOpen;
 
-  static const double _height = 96;
+  /// The squares beside the main photo.
+  static const int slots = 3;
+
+  static const double _slotHeight = 84;
+
+  Future<void> _add(BuildContext context) async {
+    final PersonRepository repository = context.read<PersonRepository>();
+    if (!await confirmEditSyncedCard(context, person)) {
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    final String? path = await PhotoPickerService.pickSinglePhoto(
+      context,
+      namePrefix: '${person.id}_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    if (path == null) {
+      return;
+    }
+    final Person? current = repository.getById(person.id);
+    if (current == null) {
+      return;
+    }
+    current.photosPaths = <String>[...current.photosPaths, path];
+    await repository.update(current);
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
 
-    // Indexed against the person's own list, not against the filtered one:
-    // the viewer pages over the same "files that exist" list, so a missing
-    // file in the middle must shift the rest here too.
-    final List<({int index, String path})> photos =
-        <({int index, String path})>[];
-    for (final String path in person.photosPaths) {
-      if (!File(path).existsSync()) {
-        continue;
-      }
-      photos.add((index: photos.length, path: path));
-    }
-
-    // The first photo is the face at the top of the page; this row is the rest.
-    if (photos.length < 2) {
-      return const SizedBox.shrink();
-    }
-    final List<({int index, String path})> rest = photos.sublist(1);
+    // Indexed against the "files that exist" list, which is what the viewer
+    // pages over, so a missing file in the middle shifts the rest here too.
+    final List<String> photos = <String>[
+      for (final String path in person.photosPaths)
+        if (File(path).existsSync()) path,
+    ];
+    // The first photo is the face at the top of the page; the slots are the
+    // rest. Without a main photo, the first slot's photo becomes it.
+    final List<String> rest = photos.length < 2
+        ? const <String>[]
+        : photos.sublist(1, (1 + slots).clamp(1, photos.length));
 
     return Container(
       color: _profileCanvasColor(theme),
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Padding(
-            padding: const EdgeInsetsDirectional.only(start: 4, bottom: 8),
+            padding: const EdgeInsetsDirectional.only(start: 2, bottom: 8),
             child: Text(
               'תמונות נוספות',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
-                color: _profileMutedColor(theme),
+                color: muted,
               ),
             ),
           ),
-          SizedBox(
-            height: _height,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              itemCount: rest.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (BuildContext context, int position) {
-                final ({int index, String path}) photo = rest[position];
-                return GestureDetector(
-                  onTap: () => onOpen(photo.index),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.file(
-                      File(photo.path),
-                      width: _height,
-                      height: _height,
-                      cacheWidth: (_height * 3).round(),
-                      fit: BoxFit.cover,
-                      errorBuilder:
-                          (BuildContext context, Object _, StackTrace? _) {
-                            return Container(
-                              width: _height,
-                              height: _height,
-                              color: _profileWarmSurfaceColor(theme),
-                            );
-                          },
-                    ),
+          Row(
+            children: <Widget>[
+              for (int i = 0; i < slots; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: 10),
+                Expanded(
+                  // Squares, but never taller than a thumbnail: the strip
+                  // should not push the profile's actions off the screen.
+                  child: SizedBox(
+                    height: _slotHeight,
+                    child: i < rest.length
+                        ? GestureDetector(
+                            onTap: () => onOpen(i + 1),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.file(
+                                File(rest[i]),
+                                fit: BoxFit.cover,
+                                cacheWidth: 360,
+                                errorBuilder:
+                                    (
+                                      BuildContext context,
+                                      Object _,
+                                      StackTrace? _,
+                                    ) => ColoredBox(
+                                      color: _profileWarmSurfaceColor(theme),
+                                    ),
+                              ),
+                            ),
+                          )
+                        : _AddPhotoSlot(onTap: () => _add(context)),
                   ),
-                );
-              },
-            ),
+                ),
+              ],
+            ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// An empty square: "הוסף תמונה", opening the gallery.
+class _AddPhotoSlot extends StatelessWidget {
+  const _AddPhotoSlot({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color accent = _profileAccentColor(context);
+    return Material(
+      color: _profileAccentWash(context).withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: accent.withValues(alpha: 0.35)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(Icons.add_photo_alternate_outlined, color: accent, size: 24),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    'הוסף תמונה',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1420,7 +1482,8 @@ MatchContact? _inquiryContactFor(Person person, List<MatchIdea> matches) {
   return null;
 }
 
-/// "איש קשר להעברת ההצעה: רבקה כהן" with a WhatsApp button beside the name.
+/// "איש קשר להצעת רעיון: רבקה כהן | WhatsApp" — a divider, then a direct link
+/// into the chat.
 class _InquiryLine extends StatelessWidget {
   const _InquiryLine({required this.contact});
 
@@ -1433,13 +1496,23 @@ class _InquiryLine extends StatelessWidget {
         ? contact.phone.trim()
         : contact.name.trim();
 
+    const Color whatsappGreen = Color(0xFF1EA952);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 16, 10),
       child: Row(
         children: <Widget>[
           Flexible(
-            child: Text(
-              'להעברת ההצעה: $name',
+            child: Text.rich(
+              TextSpan(
+                children: <InlineSpan>[
+                  TextSpan(
+                    text: 'איש קשר להצעת רעיון: ',
+                    style: TextStyle(color: _profileMutedColor(theme)),
+                  ),
+                  TextSpan(text: name),
+                ],
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -1448,14 +1521,35 @@ class _InquiryLine extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            tooltip: 'WhatsApp עם $name',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => WhatsAppUtils.openChatWithPhone(contact.phone),
-            icon: const FaIcon(
-              FontAwesomeIcons.whatsapp,
-              size: 18,
-              color: Color(0xFF25D366),
+          Container(
+            width: 1,
+            height: 16,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            color: _profileMutedColor(theme).withValues(alpha: 0.35),
+          ),
+          InkWell(
+            onTap: () => WhatsAppUtils.openChatWithPhone(contact.phone),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const FaIcon(
+                    FontAwesomeIcons.whatsapp,
+                    size: 15,
+                    color: whatsappGreen,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'WhatsApp',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: whatsappGreen,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -1552,6 +1646,34 @@ class _ProfileInlineActions extends StatelessWidget {
               subtle: true,
             ),
           ),
+          const SizedBox(width: 8),
+          // The whole card — text and every photo — to the share sheet. A
+          // paper plane taking off rather than the classic three dots: simple,
+          // and a little warmer.
+          Expanded(
+            child: Builder(
+              builder: (BuildContext anchor) => _ProfileActionButton(
+                icon: Transform.rotate(
+                  // The app is RTL, where the plane is mirrored to face left;
+                  // turning it clockwise lifts its nose.
+                  angle: 0.45,
+                  child: const Icon(Icons.send_outlined, size: 20),
+                ),
+                label: 'שיתוף כרטיס',
+                subtle: true,
+                onPressed: () {
+                  if (!WhatsAppUtils.hasSendableCard(person)) {
+                    AppNotice.show(anchor, 'אין עדיין כרטיס או תמונות לשיתוף');
+                    return;
+                  }
+                  ShareUtils.sharePerson(
+                    person,
+                    origin: ShareUtils.originOf(anchor),
+                  );
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1617,16 +1739,20 @@ class _ProfileActionButton extends StatelessWidget {
                 child: icon,
               ),
               const SizedBox(height: 5),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: emphasized || foregroundColor == null
-                      ? color
-                      : _profileTextColor(theme),
-                  fontWeight: emphasized ? FontWeight.w800 : FontWeight.w700,
+              // Four tiles share the row, so a label shrinks to fit rather
+              // than losing its end.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: emphasized || foregroundColor == null
+                        ? color
+                        : _profileTextColor(theme),
+                    fontWeight: emphasized ? FontWeight.w800 : FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -1726,6 +1852,15 @@ class _ProposalContactsCard extends StatelessWidget {
   }
 }
 
+/// "הערות אישיות" on the profile: a short conversation with oneself about this
+/// friend.
+///
+/// **It reads like a chat because that is how notes about a person are
+/// written** — a line after a phone call, a recording on the way home, another
+/// line a month later. The latest few messages sit oldest-to-newest with the
+/// newest at the bottom, right above a writing field that is always there,
+/// with the microphone beside it. There is no "+" and no dialog between a
+/// thought and the page.
 class _PersonalNotesCard extends StatelessWidget {
   const _PersonalNotesCard({
     super.key,
@@ -1742,27 +1877,30 @@ class _PersonalNotesCard extends StatelessWidget {
   /// Opens the notes page on one recording, scrolled to it.
   final ValueChanged<String> onOpenVoice;
 
-  static const int _previewCount = 5;
+  /// How many of the latest messages the profile shows.
+  static const int _previewCount = 4;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color muted = _profileMutedColor(theme);
-    final List<_PersonNoteEntry> entries = _entries();
-    final List<_PersonNoteEntry> preview = entries.take(_previewCount).toList();
+    final List<_PersonNoteEntry> entries = _noteEntriesFor(person, notes);
+    final List<_PersonNoteEntry> preview = entries.length <= _previewCount
+        ? entries
+        : entries.sublist(entries.length - _previewCount);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
           color: _profileSurfaceColor(theme),
           borderRadius: BorderRadius.circular(22),
           border: Border.all(color: muted.withValues(alpha: 0.14)),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Row(
               children: <Widget>[
@@ -1776,194 +1914,491 @@ class _PersonalNotesCard extends StatelessWidget {
                   ),
                 ),
                 if (entries.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _profileAccentWash(context),
-                      borderRadius: BorderRadius.circular(999),
+                  TextButton(
+                    onPressed: onShowAll,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     child: Text(
-                      entries.length.toString(),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: _profileAccentColor(context),
-                        fontWeight: FontWeight.w700,
-                      ),
+                      entries.length > preview.length
+                          ? 'הצגת הכל (${entries.length})'
+                          : 'מסך מלא',
                     ),
                   ),
-                IconButton(
-                  icon: const Icon(Icons.mic_none_rounded),
-                  tooltip: 'הקלטת הערה',
-                  visualDensity: VisualDensity.compact,
-                  color: muted,
-                  onPressed: () => recordVoiceNote(context, person.id),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  tooltip: 'הוספת הערה',
-                  visualDensity: VisualDensity.compact,
-                  color: muted,
-                  onPressed: () => _addNote(context),
-                ),
               ],
             ),
             // A recording that already exists is nearly always sitting in a
             // WhatsApp chat with this friend. One tap there, and the share
             // sheet brings it back here.
             if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton.icon(
-                  onPressed: () => _shareVoiceFromWhatsApp(context, person),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    foregroundColor: muted,
-                    textStyle: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  icon: const FaIcon(
-                    FontAwesomeIcons.whatsapp,
-                    size: 14,
-                    color: _whatsappGreen,
-                  ),
-                  label: const Text('שתף ושמור הקלטה קיימת מ־WhatsApp'),
-                ),
-              ),
+              _VoiceFromWhatsAppLink(person: person),
             if (entries.isEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
+                padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
                 child: Text(
                   // "רק לעיניך" is a promise about notes that exist. With none
                   // written it is reassurance nobody asked for, in front of an
                   // empty box.
-                  'עדיין אין הערות. {הוסף|הוסיפי} משהו {שתרצה|שתרצי} לזכור.'
+                  'עדיין אין הערות. {כתוב|כתבי} כאן משהו {שתרצה|שתרצי} '
+                          'לזכור, או {הקלט|הקליטי} הערה קולית.'
                       .forGender(context.userGender),
                   style: theme.textTheme.bodyMedium?.copyWith(color: muted),
                 ),
               )
-            else
-              for (final _PersonNoteEntry entry in preview)
-                _NotePreviewRow(
-                  entry: entry,
-                  onTap: () => entry.isVoice && entry.noteId != null
-                      ? onOpenVoice(entry.noteId!)
-                      : _showNoteReader(context, person, entry),
-                  // Deleting a recording is a long press and nothing else — a
-                  // tap on a row is for listening, never for losing it.
-                  onLongPress: entry.isVoice
-                      ? () => _confirmDeleteVoice(context, entry)
-                      : null,
-                ),
-            if (entries.length > _previewCount)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  onPressed: onShowAll,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text('הצגת הכל (${entries.length})'),
-                ),
+            else ...<Widget>[
+              const SizedBox(height: 4),
+              ..._noteChatChildren(
+                context,
+                person,
+                preview,
+                maxLines: 6,
+                onOpenVoice: onOpenVoice,
               ),
+              const SizedBox(height: 8),
+            ],
+            _NoteComposer(personId: person.id),
           ],
         ),
       ),
     );
   }
+}
 
-  List<_PersonNoteEntry> _entries() {
-    final List<_PersonNoteEntry> entries = notes.map((PersonNote note) {
-      return _PersonNoteEntry(
+/// Every note on a friend, oldest first — the order a conversation is read in.
+List<_PersonNoteEntry> _noteEntriesFor(Person person, List<PersonNote> notes) {
+  final List<_PersonNoteEntry> entries = <_PersonNoteEntry>[
+    for (final PersonNote note in notes)
+      _PersonNoteEntry(
         noteId: note.id,
         text: note.text,
         createdAt: note.createdAt,
         isAutomatic: note.isAutomatic,
         audioFile: note.audioFile,
         audioDurationMs: note.audioDurationMs,
-      );
-    }).toList();
-
-    final String legacyNotes = (person.notes ?? '').trim();
-    if (legacyNotes.isNotEmpty) {
-      entries.add(
-        _PersonNoteEntry(
-          noteId: null,
-          text: legacyNotes,
-          createdAt: person.createdAt,
-          isAutomatic: false,
-        ),
-      );
-    }
-
-    // Newest first for the preview.
-    entries.sort(
-      (_PersonNoteEntry a, _PersonNoteEntry b) =>
-          b.createdAt.compareTo(a.createdAt),
+      ),
+  ];
+  final String legacyNotes = (person.notes ?? '').trim();
+  if (legacyNotes.isNotEmpty) {
+    entries.add(
+      _PersonNoteEntry(
+        noteId: null,
+        text: legacyNotes,
+        createdAt: person.createdAt,
+        isAutomatic: false,
+      ),
     );
-    return entries;
   }
+  entries.sort(
+    (_PersonNoteEntry a, _PersonNoteEntry b) =>
+        a.createdAt.compareTo(b.createdAt),
+  );
+  return entries;
+}
 
-  Future<void> _addNote(BuildContext context) async {
-    final PersonRepository repository = context.read<PersonRepository>();
-    final String? text = await _promptNoteText(context, title: 'הוספת הערה');
-    final String trimmed = (text ?? '').trim();
-    if (trimmed.isEmpty) {
-      return;
+/// The messages, with a small day chip wherever the day changes.
+List<Widget> _noteChatChildren(
+  BuildContext context,
+  Person person,
+  List<_PersonNoteEntry> entries, {
+  int? maxLines,
+  ValueChanged<String>? onOpenVoice,
+  String? focusNoteId,
+  Key? focusKey,
+}) {
+  final List<Widget> children = <Widget>[];
+  DateTime? lastDay;
+  for (final _PersonNoteEntry entry in entries) {
+    final DateTime day = DateTime(
+      entry.createdAt.year,
+      entry.createdAt.month,
+      entry.createdAt.day,
+    );
+    if (lastDay == null || day != lastDay) {
+      children.add(_NoteDayChip(day: day));
+      lastDay = day;
     }
-    await repository.addNote(person.id, trimmed);
+    final bool focused = focusNoteId != null && entry.noteId == focusNoteId;
+    children.add(
+      _NoteBubble(
+        key: focused ? focusKey : null,
+        entry: entry,
+        maxLines: maxLines,
+        highlighted: focused,
+        onTap: entry.isVoice
+            ? (onOpenVoice == null || entry.noteId == null
+                  ? null
+                  : () => onOpenVoice(entry.noteId!))
+            : () => _showNoteReader(context, person, entry),
+        onLongPress: () => _onNoteLongPress(context, person, entry),
+      ),
+    );
   }
+  return children;
+}
 
-  Future<String?> _promptNoteText(
-    BuildContext context, {
-    required String title,
-  }) {
-    return showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final TextEditingController controller = TextEditingController();
-        return AlertDialog(
-          title: Text(title),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 2,
-            maxLines: 6,
-            decoration: const InputDecoration(hintText: 'משהו שחשוב לזכור...'),
+/// A long press is the way to change a message: a written note opens its
+/// editor (with delete), and a recording or an automatic line asks before it
+/// is deleted.
+Future<void> _onNoteLongPress(
+  BuildContext context,
+  Person person,
+  _PersonNoteEntry entry,
+) async {
+  if (entry.isVoice) {
+    return _confirmDeleteVoice(context, entry);
+  }
+  if (!entry.isAutomatic) {
+    return _editPersonNote(context, person, entry);
+  }
+  final String? id = entry.noteId;
+  if (id == null) {
+    return;
+  }
+  final PersonRepository repository = context.read<PersonRepository>();
+  final bool confirmed = await ConfirmDialog.show(
+    context,
+    title: 'מחיקת הערה',
+    message: 'למחוק את ההערה?',
+    confirmText: 'מחיקה',
+    isDestructive: true,
+  );
+  if (confirmed) {
+    await repository.deleteNote(id);
+  }
+}
+
+String _noteDayLabel(DateTime day) {
+  final DateTime now = DateTime.now();
+  final DateTime today = DateTime(now.year, now.month, now.day);
+  final int days = today.difference(day).inDays;
+  if (days == 0) {
+    return 'היום';
+  }
+  if (days == 1) {
+    return 'אתמול';
+  }
+  return DateFormat('dd.MM.yyyy').format(day);
+}
+
+class _NoteDayChip extends StatelessWidget {
+  const _NoteDayChip({required this.day});
+
+  final DateTime day;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: muted.withValues(alpha: 0.09),
+            borderRadius: BorderRadius.circular(999),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ביטול'),
+          child: Text(
+            _noteDayLabel(day),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: muted,
+              fontWeight: FontWeight.w700,
             ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text('הוספה'),
-            ),
-          ],
-        );
-      },
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// The first [count] words of [text], with an ellipsis when there is more.
-String _firstWords(String text, int count) {
-  final List<String> words = text
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((String w) => w.isNotEmpty)
-      .toList();
-  if (words.length <= count) {
-    return text.trim();
+/// One message. What the matchmaker wrote or recorded is a bubble in the
+/// friend's own accent wash; a line the app wrote is a quiet centred strip.
+class _NoteBubble extends StatelessWidget {
+  const _NoteBubble({
+    super.key,
+    required this.entry,
+    required this.onTap,
+    required this.onLongPress,
+    this.maxLines,
+    this.highlighted = false,
+  });
+
+  final _PersonNoteEntry entry;
+  final VoidCallback? onTap;
+  final VoidCallback onLongPress;
+
+  /// Where the text is cut in the profile's short preview; null shows it all.
+  final int? maxLines;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
+    final String time = DateFormat('HH:mm').format(entry.createdAt);
+
+    if (entry.isAutomatic) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Center(
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              child: Text(
+                '${entry.text} · $time',
+                textAlign: TextAlign.center,
+                maxLines: maxLines,
+                overflow: maxLines == null ? null : TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: muted,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final Color accent = _profileAccentColor(context);
+    final String caption = entry.text.trim();
+    const Radius round = Radius.circular(16);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.74,
+          ),
+          child: Material(
+            color: _profileAccentWash(context),
+            shape: RoundedRectangleBorder(
+              borderRadius: const BorderRadiusDirectional.only(
+                topStart: round,
+                topEnd: round,
+                bottomStart: round,
+                bottomEnd: Radius.circular(4),
+              ),
+              side: highlighted
+                  ? BorderSide(color: accent, width: 1.6)
+                  : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              onLongPress: onLongPress,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 5),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    if (entry.isVoice) ...<Widget>[
+                      VoiceNotePlayer(
+                        fileName: entry.audioFile!,
+                        durationMs: entry.audioDurationMs,
+                        compact: true,
+                      ),
+                      if (caption.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            caption,
+                            maxLines: maxLines,
+                            overflow: maxLines == null
+                                ? null
+                                : TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: _profileTextColor(theme),
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                    ] else
+                      Text(
+                        entry.text,
+                        maxLines: maxLines,
+                        overflow: maxLines == null
+                            ? null
+                            : TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: _profileTextColor(theme),
+                          height: 1.4,
+                        ),
+                      ),
+                    const SizedBox(height: 2),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        time,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: muted,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
-  return '${words.take(count).join(' ')}…';
+}
+
+/// The writing field at the foot of the notes, always there, with the
+/// microphone beside it. The round button records while the field is empty
+/// and sends once something is typed — the shape every chat app has taught.
+class _NoteComposer extends StatefulWidget {
+  const _NoteComposer({required this.personId});
+
+  final String personId;
+
+  @override
+  State<_NoteComposer> createState() => _NoteComposerState();
+}
+
+class _NoteComposerState extends State<_NoteComposer> {
+  final TextEditingController _controller = TextEditingController();
+  bool _sending = false;
+
+  bool get _canSend => _controller.text.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_changed)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _send() async {
+    final String text = _controller.text.trim();
+    if (text.isEmpty || _sending) {
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      await context.read<PersonRepository>().addNote(widget.personId, text);
+      _controller.clear();
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
+    final Color accent = _profileAccentColor(context);
+    final bool canSend = _canSend;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: <Widget>[
+        Expanded(
+          child: TextField(
+            controller: _controller,
+            minLines: 1,
+            maxLines: 5,
+            textCapitalization: TextCapitalization.sentences,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: _profileTextColor(theme),
+            ),
+            decoration: InputDecoration(
+              hintText: 'כתיבת הערה…',
+              isDense: true,
+              filled: true,
+              fillColor: muted.withValues(alpha: 0.07),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 11,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        SizedBox.square(
+          dimension: 44,
+          child: IconButton.filled(
+            tooltip: canSend ? 'שליחה' : 'הקלטת הערה קולית',
+            style: IconButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: _sending
+                ? null
+                : canSend
+                ? _send
+                : () => recordVoiceNote(context, widget.personId),
+            icon: Icon(
+              canSend ? Icons.send_rounded : Icons.mic_rounded,
+              size: 21,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// "שתף ושמור הקלטה קיימת מ־WhatsApp" — kept right at the top of the notes.
+class _VoiceFromWhatsAppLink extends StatelessWidget {
+  const _VoiceFromWhatsAppLink({required this.person});
+
+  final Person person;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton.icon(
+        onPressed: () => _shareVoiceFromWhatsApp(context, person),
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          foregroundColor: _profileMutedColor(theme),
+          textStyle: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        icon: const FaIcon(
+          FontAwesomeIcons.whatsapp,
+          size: 14,
+          color: _whatsappGreen,
+        ),
+        label: const Text('שתף ושמור הקלטה קיימת מ־WhatsApp'),
+      ),
+    );
+  }
 }
 
 /// Opens WhatsApp on this friend's chat, where the recording already is,
@@ -2196,95 +2631,6 @@ class _NoteEditResult {
   final bool delete;
 }
 
-/// A single compact note item in the inline preview: the first twenty words
-/// of a written note, or a recording with its caption.
-class _NotePreviewRow extends StatelessWidget {
-  const _NotePreviewRow({
-    required this.entry,
-    required this.onTap,
-    this.onLongPress,
-  });
-
-  final _PersonNoteEntry entry;
-  final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-
-  /// How much of a written note the profile shows before the tap.
-  static const int previewWords = 20;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color muted = _profileMutedColor(theme);
-    final String caption = entry.text.trim();
-
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Icon(
-                entry.isVoice
-                    ? Icons.mic_none_rounded
-                    : entry.isAutomatic
-                    ? Icons.auto_awesome_outlined
-                    : Icons.circle,
-                size: entry.isVoice || entry.isAutomatic ? 14 : 7,
-                color: muted,
-              ),
-            ),
-            const SizedBox(width: 10),
-            if (entry.isVoice)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    VoiceNotePlayer(
-                      fileName: entry.audioFile!,
-                      durationMs: entry.audioDurationMs,
-                      compact: true,
-                    ),
-                    if (caption.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          caption,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: muted,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              )
-            else
-              Expanded(
-                child: Text(
-                  _firstWords(entry.text, previewWords),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: entry.isAutomatic ? muted : _profileTextColor(theme),
-                    fontStyle: entry.isAutomatic
-                        ? FontStyle.italic
-                        : FontStyle.normal,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _ProfileStatusSwitcher extends StatefulWidget {
   const _ProfileStatusSwitcher({
     required this.status,
@@ -2404,30 +2750,6 @@ class _StatusWord extends StatelessWidget {
   }
 }
 
-/// The share icon beside a pencil on the profile: the whole card, text and
-/// every photo, to the system share sheet — the same share the bar used to
-/// carry.
-class _ShareCardButton extends StatelessWidget {
-  const _ShareCardButton({required this.person});
-
-  final Person person;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Builder(
-      builder: (BuildContext anchor) => IconButton(
-        onPressed: () =>
-            ShareUtils.sharePerson(person, origin: ShareUtils.originOf(anchor)),
-        icon: const Icon(Icons.share_outlined, size: 20),
-        tooltip: 'שיתוף הכרטיס',
-        visualDensity: VisualDensity.compact,
-        style: IconButton.styleFrom(foregroundColor: _profileMutedColor(theme)),
-      ),
-    );
-  }
-}
-
 /// Inline preview of the person's send-card. Its quick edit mode keeps this
 /// exact surface in place and swaps only the text for an editor.
 class _WhatsAppCardSection extends StatefulWidget {
@@ -2521,13 +2843,9 @@ class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
               key: ValueKey<String>(
                 'candidate-full-card-body-${widget.person.id}',
               ),
-              padding: widget.editing
-                  ? const EdgeInsetsDirectional.only(top: 26)
-                  : EdgeInsetsDirectional.only(
-                      end: WhatsAppUtils.hasSendableCard(widget.person)
-                          ? 76
-                          : 38,
-                    ),
+              // The pencil sits in a lane *above* the text, never beside it,
+              // so the card's words use the card's whole width.
+              padding: const EdgeInsetsDirectional.only(top: 26),
               child: widget.editing
                   ? TextField(
                       key: ValueKey<String>('quick-card-${widget.person.id}'),
@@ -2650,23 +2968,28 @@ class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
                         ),
                       ],
                     )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        if (WhatsAppUtils.hasSendableCard(widget.person))
-                          _ShareCardButton(person: widget.person),
-                        IconButton(
-                          onPressed: widget.onEditCard,
-                          icon: const Icon(Icons.edit_outlined, size: 20),
-                          tooltip: 'עריכת טקסט הכרטיס המלא',
-                          visualDensity: VisualDensity.compact,
-                          style: IconButton.styleFrom(
-                            foregroundColor: _profileMutedColor(theme),
-                          ),
-                        ),
-                      ],
+                  : IconButton(
+                      onPressed: widget.onEditCard,
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      tooltip: 'עריכת טקסט הכרטיס המלא',
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        foregroundColor: _profileMutedColor(theme),
+                      ),
                     ),
             ),
+            if (!widget.editing)
+              PositionedDirectional(
+                top: 2,
+                start: 0,
+                child: Text(
+                  'כרטיס לשליחה',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: _profileMutedColor(theme),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -2990,8 +3313,13 @@ class _IdeaExpander extends StatelessWidget {
   }
 }
 
-/// One compact idea row: the other side, where the idea stands, and a single
-/// WhatsApp shortcut for that other side.
+//// One idea row: the other side, where the idea stands, and the same two
+/// buttons on every row — share (one side's card to the other) and WhatsApp
+/// (a chat with either side). A button with nothing to do is drawn faded
+/// rather than left out, so the columns line up down the list.
+///
+/// Tapping the row opens the two cards side by side, as it does everywhere
+/// else two people are weighed against each other.
 class _IdeaRow extends StatelessWidget {
   const _IdeaRow({
     required this.match,
@@ -3005,27 +3333,44 @@ class _IdeaRow extends StatelessWidget {
   /// Whose profile this is — the other half of the idea.
   final Person person;
 
+  static const BoxConstraints _buttonSize = BoxConstraints.tightFor(
+    width: 38,
+    height: 38,
+  );
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String otherName = otherPerson?.fullName.trim().isNotEmpty == true
-        ? otherPerson!.fullName.trim()
-        : 'אדם נמחק';
     final Person? other = otherPerson;
-    // Both cards together, for an idea that is still open and has at least one
-    // card worth sending.
-    final bool canShareBoth =
-        !match.status.isArchived &&
+    final String otherName = other?.fullName.trim().isNotEmpty == true
+        ? other!.fullName.trim()
+        : 'אדם נמחק';
+
+    bool hasPhone(Person? p) => (p?.phone ?? '').trim().isNotEmpty;
+    final bool canShare =
         other != null &&
-        (ShareUtils.hasShareableCard(person) ||
-            ShareUtils.hasShareableCard(other));
+        ((hasPhone(other) && WhatsAppUtils.hasSendableCard(person)) ||
+            (hasPhone(person) && WhatsAppUtils.hasSendableCard(other)));
+    final bool canChat = hasPhone(person) || hasPhone(other);
+    final Color muted = _profileMutedColor(theme);
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => context.push('/matches/${match.id}'),
+        onTap: () {
+          if (other == null) {
+            AppNavigation.open(context, '/matches/${match.id}');
+            return;
+          }
+          openMatchComparison(
+            context,
+            source: person,
+            candidate: other,
+            showOpenIdeaAction: false,
+          );
+        },
         child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(14, 8, 8, 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(14, 8, 6, 8),
           child: Row(
             children: <Widget>[
               Expanded(
@@ -3041,53 +3386,54 @@ class _IdeaRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _StatusChip(status: match.status),
-              const SizedBox(width: 4),
-              if (canShareBoth)
-                Builder(
-                  builder: (BuildContext buttonContext) => IconButton(
-                    tooltip: 'שיתוף שני הכרטיסים',
-                    iconSize: 18,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 38,
-                      height: 38,
-                    ),
-                    padding: EdgeInsets.zero,
-                    color: _profileMutedColor(theme),
-                    icon: const Icon(Icons.share_outlined),
-                    onPressed: () => ShareUtils.shareCouple(
-                      person,
-                      other,
-                      origin: ShareUtils.originOf(buttonContext),
-                    ),
-                  ),
+              Container(
+                width: 1,
+                height: 18,
+                margin: const EdgeInsetsDirectional.only(start: 8, end: 2),
+                color: muted.withValues(alpha: 0.22),
+              ),
+              IconButton(
+                tooltip: 'שיתוף כרטיס',
+                iconSize: 19,
+                constraints: _buttonSize,
+                padding: EdgeInsets.zero,
+                color: _profileAccentColor(context),
+                disabledColor: muted.withValues(alpha: 0.35),
+                icon: Transform.rotate(
+                  angle: -0.5,
+                  child: const Icon(Icons.send_outlined),
                 ),
-              if (otherPerson != null)
-                ContactChannelButton(
-                  person: otherPerson!,
-                  size: 18,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 38,
-                    height: 38,
-                  ),
-                  onWhatsApp: () => _openWhatsApp(context, otherPerson!),
-                  onEdit: () => openPersonProfile(
-                    context,
-                    otherPerson!.id,
-                    editing: true,
-                  ),
-                ),
+                onPressed: canShare
+                    ? () => MatchQuickActions.shareSideCard(
+                        context,
+                        match,
+                        first: person,
+                        second: other,
+                      )
+                    : null,
+              ),
+              IconButton(
+                tooltip: 'WhatsApp',
+                iconSize: 19,
+                constraints: _buttonSize,
+                padding: EdgeInsets.zero,
+                color: const Color(0xFF1EA952),
+                disabledColor: muted.withValues(alpha: 0.35),
+                icon: const FaIcon(FontAwesomeIcons.whatsapp),
+                onPressed: canChat
+                    ? () => MatchQuickActions.chatWithSide(
+                        context,
+                        match,
+                        first: person,
+                        second: other,
+                      )
+                    : null,
+              ),
             ],
           ),
         ),
       ),
     );
-  }
-
-  Future<void> _openWhatsApp(BuildContext context, Person target) async {
-    final bool launched = await WhatsAppUtils.openChat(target);
-    if (!launched && context.mounted) {
-      AppNotice.show(context, 'אין מספר טלפון תקין לפתיחת וואטסאפ');
-    }
   }
 }
 
@@ -3393,7 +3739,6 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
   /// screen explaining why. The default is the basic filter — gender, age,
   /// religious style — and this is one tap away above the list, on the cards
   /// that actually have something extended to apply.
-  bool _extendedFilter = false;
 
   @override
   void dispose() {
@@ -3418,12 +3763,6 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
 
     final MatchProposalFilters? savedSuggestionFilters =
         MatchProposalFilterSheet.savedFiltersFor(person.id);
-    // Only offered where it would actually change the list. A card with
-    // nothing extended recorded narrows to exactly the same people, and a
-    // toggle that does nothing is worse than no toggle.
-    final bool canNarrow =
-        savedSuggestionFilters == null &&
-        MatchSuggestionUtils.hasExtendedPreferences(person);
     final List<Person> matchingCandidates = personRepository
         .getAll()
         .where(
@@ -3431,7 +3770,6 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
             source: person,
             candidate: candidate,
             filters: savedSuggestionFilters,
-            extended: canNarrow && _extendedFilter,
           ),
         )
         .toList();
@@ -3524,6 +3862,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
                 onPressed: () => Navigator.of(context).pop(),
               )
             : null,
+        centerTitle: true,
         title: Text('התאמות · ${person.fullName.trim()}'),
       ),
       body: SafeArea(
@@ -3532,6 +3871,8 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
             _SuggestionSearchField(
               controller: _searchController,
               onChanged: (String value) => setState(() => _query = value),
+              filtersActive: savedSuggestionFilters != null,
+              onFilterPressed: () => _openSuggestionFilters(context, person),
             ),
             Expanded(
               child: searching
@@ -3545,12 +3886,6 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
                       suggestedPeople: suggestedPeople,
                       matchRepository: matchRepository,
                       hasCustomFilters: savedSuggestionFilters != null,
-                      canNarrow: canNarrow,
-                      narrowed: _extendedFilter,
-                      onNarrowChanged: (bool value) =>
-                          setState(() => _extendedFilter = value),
-                      onFilterPressed: () =>
-                          _openSuggestionFilters(context, person),
                       onOpenPreview: (Person candidate) =>
                           _openMatchPreview(context, person, candidate),
                       onAccept: (Person candidate) =>
@@ -3579,7 +3914,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
       candidate.id,
     );
     if (existing != null) {
-      context.push('/matches/${existing.id}');
+      AppNavigation.open(context, '/matches/${existing.id}');
       return;
     }
 
@@ -3597,20 +3932,14 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     required Person source,
     required Person candidate,
     required MatchProposalFilters? filters,
-    required bool extended,
   }) {
     if (filters == null) {
-      // Everybody who fits the basics by default; everything on the card only
-      // when "סינון מורחב" is on. See [_extendedFilter].
-      return extended
-          ? MatchSuggestionUtils.matchesOwnPreferences(
-              source: source,
-              candidate: candidate,
-            )
-          : MatchSuggestionUtils.matchesBasicPreferences(
-              source: source,
-              candidate: candidate,
-            );
+      // Everybody who fits the basics by default; anything narrower is set
+      // in the filter sheet behind the icon beside the search field.
+      return MatchSuggestionUtils.matchesBasicPreferences(
+        source: source,
+        candidate: candidate,
+      );
     }
 
     if (!MatchSuggestionUtils.isEligibleCandidate(
@@ -3750,7 +4079,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     );
 
     if (existingMatch != null) {
-      context.push('/matches/${existingMatch.id}');
+      AppNavigation.open(context, '/matches/${existingMatch.id}');
       return;
     }
 
@@ -3820,17 +4149,66 @@ class _SuggestionSearchField extends StatelessWidget {
   const _SuggestionSearchField({
     required this.controller,
     required this.onChanged,
+    required this.filtersActive,
+    required this.onFilterPressed,
   });
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
 
+  /// A filter of the matchmaker's own is set — the icon carries a dot.
+  final bool filtersActive;
+  final VoidCallback onFilterPressed;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color accent = _profileAccentColor(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
-      child: TextField(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 6),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: _field(theme)),
+          const SizedBox(width: 6),
+          // The filter is one icon beside the search, not a banner of its
+          // own: the list gets the room.
+          Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              IconButton(
+                tooltip: 'סינון',
+                onPressed: onFilterPressed,
+                style: IconButton.styleFrom(
+                  backgroundColor: _profileSurfaceColor(theme),
+                  foregroundColor: filtersActive
+                      ? accent
+                      : _profileMutedColor(theme),
+                ),
+                icon: const Icon(Icons.tune_rounded),
+              ),
+              if (filtersActive)
+                PositionedDirectional(
+                  top: 6,
+                  end: 6,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(ThemeData theme) {
+    return Builder(
+      builder: (BuildContext context) => TextField(
         controller: controller,
         onChanged: onChanged,
         textInputAction: TextInputAction.search,
@@ -3980,10 +4358,6 @@ class _SuggestedMatchesTab extends StatelessWidget {
     required this.suggestedPeople,
     required this.matchRepository,
     required this.hasCustomFilters,
-    required this.canNarrow,
-    required this.narrowed,
-    required this.onNarrowChanged,
-    required this.onFilterPressed,
     required this.onOpenPreview,
     required this.onAccept,
     required this.onReject,
@@ -3993,10 +4367,6 @@ class _SuggestedMatchesTab extends StatelessWidget {
   final List<Person> suggestedPeople;
   final MatchRepository matchRepository;
   final bool hasCustomFilters;
-  final bool canNarrow;
-  final bool narrowed;
-  final ValueChanged<bool> onNarrowChanged;
-  final VoidCallback onFilterPressed;
   final ValueChanged<Person> onOpenPreview;
   final ValueChanged<Person> onAccept;
   final ValueChanged<Person> onReject;
@@ -4005,14 +4375,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (sourcePerson.gender == Gender.unknown) {
       return _SuggestionTabScaffold(
-        header: _SuggestionFilterHeader(
-          count: 0,
-          hasCustomFilters: hasCustomFilters,
-          canNarrow: canNarrow,
-          narrowed: narrowed,
-          onNarrowChanged: onNarrowChanged,
-          onFilterPressed: onFilterPressed,
-        ),
+        header: const SizedBox(height: 4),
         child: const _TabEmptyState(
           icon: Icons.wc_outlined,
           title: 'צריך לבחור מגדר',
@@ -4023,21 +4386,12 @@ class _SuggestedMatchesTab extends StatelessWidget {
 
     if (suggestedPeople.isEmpty) {
       return _SuggestionTabScaffold(
-        header: _SuggestionFilterHeader(
-          count: 0,
-          hasCustomFilters: hasCustomFilters,
-          canNarrow: canNarrow,
-          narrowed: narrowed,
-          onNarrowChanged: onNarrowChanged,
-          onFilterPressed: onFilterPressed,
-        ),
+        header: const SizedBox(height: 4),
         child: _TabEmptyState(
           icon: Icons.favorite_border,
           title: 'לא נמצאו התאמות',
           subtitle: hasCustomFilters
               ? 'אפשר לשנות את הסינון ולנסות שוב'
-              : narrowed
-              ? 'אף אחד לא עומד בסינון המורחב — אפשר לכבות אותו למעלה'
               : 'אין כרגע אנשים שעומדים בסינון האוטומטי',
         ),
       );
@@ -4045,14 +4399,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
 
     return Column(
       children: <Widget>[
-        _SuggestionFilterHeader(
-          count: suggestedPeople.length,
-          hasCustomFilters: hasCustomFilters,
-          canNarrow: canNarrow,
-          narrowed: narrowed,
-          onNarrowChanged: onNarrowChanged,
-          onFilterPressed: onFilterPressed,
-        ),
+        const SizedBox(height: 4),
         Expanded(
           child: _SuggestedMatchesList(
             sourcePerson: sourcePerson,
@@ -4131,7 +4478,10 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
             children: <Widget>[
               InkWell(
                 onTap: () => existingMatch != null
-                    ? context.push('/matches/${existingMatch.id}')
+                    ? AppNavigation.open(
+                        context,
+                        '/matches/${existingMatch.id}',
+                      )
                     : widget.onOpenPreview(candidate),
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
@@ -4215,13 +4565,14 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                             ) {
                               final CardInviteState state =
                                   snapshot.data ?? CardInviteState.noCard;
-                              final String? label = CardInviteFlow.labelFor(
-                                state,
-                              );
+                              final String? label =
+                                  state == CardInviteState.noCard
+                                  ? CardInviteFlow.detailsRequestLabel
+                                  : CardInviteFlow.labelFor(state);
                               return SketchActionBar(
                                 compact: true,
                                 fullCardLabel:
-                                    label ?? CardInviteFlow.inviteLabel,
+                                    label ?? CardInviteFlow.detailsRequestLabel,
                                 onFullCard:
                                     state == CardInviteState.pending ||
                                         label == null
@@ -4275,102 +4626,6 @@ class _SuggestionTabScaffold extends StatelessWidget {
         header,
         Expanded(child: child),
       ],
-    );
-  }
-}
-
-class _SuggestionFilterHeader extends StatelessWidget {
-  const _SuggestionFilterHeader({
-    required this.count,
-    required this.hasCustomFilters,
-    required this.canNarrow,
-    required this.narrowed,
-    required this.onNarrowChanged,
-    required this.onFilterPressed,
-  });
-
-  final int count;
-  final bool hasCustomFilters;
-
-  /// Whether this candidate has an extended filter worth offering at all.
-  final bool canNarrow;
-  final bool narrowed;
-  final ValueChanged<bool> onNarrowChanged;
-  final VoidCallback onFilterPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: _profileSurfaceColor(theme),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _profileMutedColor(theme).withValues(alpha: 0.12),
-          ),
-        ),
-        child: Column(
-          children: <Widget>[
-            if (canNarrow) ...<Widget>[
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: ExtendedFilterToggle(
-                  selected: narrowed,
-                  onChanged: onNarrowChanged,
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    hasCustomFilters
-                        ? 'סינון אישי פעיל'
-                        : narrowed
-                        ? 'סינון מורחב'
-                        : 'סינון בסיסי',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: _profileTextColor(theme),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                if (count > 0)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 8),
-                    child: Text(
-                      '$count תוצאות',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: _profileMutedColor(theme),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                OutlinedButton.icon(
-                  onPressed: onFilterPressed,
-                  icon: Icon(
-                    hasCustomFilters ? Icons.tune : Icons.tune_outlined,
-                  ),
-                  label: const Text('סינון'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _profileMutedColor(theme),
-                    side: BorderSide(
-                      color: _profileMutedColor(theme).withValues(alpha: 0.18),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -4491,7 +4746,7 @@ String _personSummary(Person person) {
   return parts.isEmpty ? 'פרטים חסרים' : parts.join(' · ');
 }
 
-class _PersonNotesPage extends StatelessWidget {
+class _PersonNotesPage extends StatefulWidget {
   const _PersonNotesPage({required this.personId, this.focusNoteId});
 
   final String personId;
@@ -4500,36 +4755,110 @@ class _PersonNotesPage extends StatelessWidget {
   final String? focusNoteId;
 
   @override
+  State<_PersonNotesPage> createState() => _PersonNotesPageState();
+}
+
+/// The whole conversation, newest at the bottom above a writing field pinned
+/// to the foot of the screen.
+class _PersonNotesPageState extends State<_PersonNotesPage> {
+  final GlobalKey _focusKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusNoteId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final BuildContext? target = _focusKey.currentContext;
+        if (target != null && target.mounted) {
+          Scrollable.ensureVisible(
+            target,
+            alignment: 0.4,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
     final PersonRepository personRepository = context.watch<PersonRepository>();
-    final Person? person = personRepository.getById(personId);
+    final Person? person = personRepository.getById(widget.personId);
 
     if (person == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('יומן הערות')),
+        appBar: AppBar(title: const Text('הערות אישיות')),
         body: const Center(child: Text('איש הקשר לא נמצא')),
       );
     }
 
-    final List<PersonNote> notes = personRepository.getNotesForPerson(
-      person.id,
+    final List<_PersonNoteEntry> entries = _noteEntriesFor(
+      person,
+      personRepository.getNotesForPerson(person.id),
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('יומן הערות')),
+      backgroundColor: _profileSurfaceColor(theme),
+      appBar: AppBar(title: Text('הערות אישיות · ${person.firstName.trim()}')),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: _PersonalNotesNotice(),
             ),
-            const SizedBox(height: 16),
-            _PersonNotesSection(
-              person: person,
-              notes: notes,
-              focusNoteId: focusNoteId,
+            if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _VoiceFromWhatsAppLink(person: person),
+              ),
+            Expanded(
+              child: entries.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'עדיין אין הערות. {כתוב|כתבי} למטה או {הקלט|הקליטי} '
+                                  'הערה קולית.'
+                              .forGender(context.userGender),
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: _profileMutedColor(theme),
+                          ),
+                        ),
+                      ),
+                    )
+                  // Reversed so the page opens at the newest message, the way
+                  // a conversation does.
+                  : SingleChildScrollView(
+                      reverse: true,
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _noteChatChildren(
+                          context,
+                          person,
+                          entries,
+                          focusNoteId: widget.focusNoteId,
+                          focusKey: _focusKey,
+                        ),
+                      ),
+                    ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+              decoration: BoxDecoration(
+                color: _profileSurfaceColor(theme),
+                border: Border(
+                  top: BorderSide(
+                    color: _profileMutedColor(theme).withValues(alpha: 0.14),
+                  ),
+                ),
+              ),
+              child: _NoteComposer(personId: person.id),
             ),
           ],
         ),
@@ -4544,221 +4873,20 @@ class _PersonalNotesNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Color muted = _profileMutedColor(theme);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(
-            Icons.lock_outline,
-            color: theme.colorScheme.onSecondaryContainer,
+    return Row(
+      children: <Widget>[
+        Icon(Icons.lock_outline, size: 16, color: muted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'ההערות כאן הן לצפייה אישית שלך בלבד.',
+            style: theme.textTheme.bodySmall?.copyWith(color: muted),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'ההערות כאן הן לצפייה אישית שלך בלבד.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSecondaryContainer,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PersonNotesSection extends StatefulWidget {
-  const _PersonNotesSection({
-    required this.person,
-    required this.notes,
-    this.focusNoteId,
-  });
-
-  final Person person;
-  final List<PersonNote> notes;
-  final String? focusNoteId;
-
-  @override
-  State<_PersonNotesSection> createState() => _PersonNotesSectionState();
-}
-
-class _PersonNotesSectionState extends State<_PersonNotesSection> {
-  final TextEditingController _controller = TextEditingController();
-  final DateFormat _dateFormat = DateFormat('dd.MM.yyyy HH:mm');
-  final GlobalKey _focusKey = GlobalKey();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.addListener(_handleChanged);
-    if (widget.focusNoteId != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final BuildContext? target = _focusKey.currentContext;
-        if (target != null && target.mounted) {
-          Scrollable.ensureVisible(
-            target,
-            alignment: 0.3,
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-          );
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller
-      ..removeListener(_handleChanged)
-      ..dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final List<_PersonNoteEntry> entries = _buildEntries();
-
-    return _Section(
-      title: 'יומן הערות',
-      trailing: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: _profileAccentWash(context),
-          borderRadius: BorderRadius.circular(999),
         ),
-        child: Text(entries.length.toString()),
-      ),
-      child: Column(
-        children: <Widget>[
-          _PersonNotesTimeline(
-            entries: entries,
-            dateFormat: _dateFormat,
-            focusNoteId: widget.focusNoteId,
-            focusKey: _focusKey,
-            onRead: (_PersonNoteEntry entry) =>
-                _showNoteReader(context, widget.person, entry),
-            onEdit: _editNote,
-            onDelete: _deleteNote,
-            onDeleteVoice: (_PersonNoteEntry entry) =>
-                _confirmDeleteVoice(context, entry),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  minLines: 1,
-                  maxLines: 4,
-                  decoration: const InputDecoration(hintText: 'הוספת הערה...'),
-                  onSubmitted: (_) => _addNote(),
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                tooltip: 'הקלטת הערה',
-                onPressed: () => recordVoiceNote(context, widget.person.id),
-                icon: Icon(
-                  Icons.mic_none_rounded,
-                  color: _profileAccentColor(context),
-                ),
-              ),
-              IconButton(
-                onPressed: _canSend ? _addNote : null,
-                icon: Icon(
-                  Icons.send,
-                  color: _canSend
-                      ? _profileAccentColor(context)
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+      ],
     );
-  }
-
-  List<_PersonNoteEntry> _buildEntries() {
-    final List<_PersonNoteEntry> entries = widget.notes.map((PersonNote note) {
-      return _PersonNoteEntry(
-        noteId: note.id,
-        text: note.text,
-        createdAt: note.createdAt,
-        isAutomatic: note.isAutomatic,
-        audioFile: note.audioFile,
-        audioDurationMs: note.audioDurationMs,
-      );
-    }).toList();
-
-    final String legacyNotes = (widget.person.notes ?? '').trim();
-    if (legacyNotes.isNotEmpty) {
-      entries.add(
-        _PersonNoteEntry(
-          noteId: null,
-          text: legacyNotes,
-          createdAt: widget.person.createdAt,
-          isAutomatic: false,
-        ),
-      );
-    }
-
-    entries.sort(
-      (_PersonNoteEntry a, _PersonNoteEntry b) =>
-          a.createdAt.compareTo(b.createdAt),
-    );
-    return entries;
-  }
-
-  Future<void> _addNote() async {
-    final String text = _controller.text.trim();
-    if (text.isEmpty) {
-      return;
-    }
-
-    await context.read<PersonRepository>().addNote(widget.person.id, text);
-    _controller.clear();
-  }
-
-  Future<void> _editNote(_PersonNoteEntry entry) {
-    return _editPersonNote(context, widget.person, entry);
-  }
-
-  Future<void> _deleteNote(_PersonNoteEntry entry) async {
-    final bool confirmed = await ConfirmDialog.show(
-      context,
-      title: 'מחיקת הערה',
-      message: 'למחוק את ההערה?',
-      confirmText: 'מחיקה',
-      isDestructive: true,
-    );
-    if (!confirmed || !mounted) {
-      return;
-    }
-
-    final PersonRepository repository = context.read<PersonRepository>();
-    if (entry.noteId != null) {
-      await repository.deleteNote(entry.noteId!);
-    } else {
-      widget.person.notes = null;
-      await repository.update(widget.person);
-    }
-  }
-
-  bool get _canSend => _controller.text.trim().isNotEmpty;
-
-  void _handleChanged() {
-    if (mounted) {
-      setState(() {});
-    }
   }
 }
 
@@ -4782,216 +4910,6 @@ class _PersonNoteEntry {
   final String text;
   final DateTime createdAt;
   final bool isAutomatic;
-}
-
-class _PersonNotesTimeline extends StatelessWidget {
-  const _PersonNotesTimeline({
-    required this.entries,
-    required this.dateFormat,
-    required this.onRead,
-    required this.onEdit,
-    required this.onDelete,
-    required this.onDeleteVoice,
-    this.focusNoteId,
-    this.focusKey,
-  });
-
-  final List<_PersonNoteEntry> entries;
-  final DateFormat dateFormat;
-  final ValueChanged<_PersonNoteEntry> onRead;
-  final ValueChanged<_PersonNoteEntry> onEdit;
-  final ValueChanged<_PersonNoteEntry> onDelete;
-
-  /// A recording is deleted by a long press and in no other way.
-  final ValueChanged<_PersonNoteEntry> onDeleteVoice;
-
-  /// The recording the page was opened on, marked and scrolled to.
-  final String? focusNoteId;
-  final Key? focusKey;
-
-  @override
-  Widget build(BuildContext context) {
-    if (entries.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            'אין הערות עדיין',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-      );
-    }
-
-    return Stack(
-      children: <Widget>[
-        PositionedDirectional(
-          top: 0,
-          bottom: 0,
-          start: 5,
-          child: Container(width: 2, color: _profileAccentWash(context)),
-        ),
-        Column(
-          children: entries.map((_PersonNoteEntry entry) {
-            final bool focused =
-                focusNoteId != null && entry.noteId == focusNoteId;
-            return Padding(
-              key: focused ? focusKey : null,
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(
-                    width: 24,
-                    child: Center(
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: _profileAccentColor(context),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Card(
-                      shape: focused
-                          ? RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                color: _profileAccentColor(context),
-                                width: 1.6,
-                              ),
-                            )
-                          : null,
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: entry.isVoice ? null : () => onRead(entry),
-                        onLongPress: entry.isVoice
-                            ? () => onDeleteVoice(entry)
-                            : null,
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              if (entry.isVoice) ...<Widget>[
-                                VoiceNotePlayer(
-                                  fileName: entry.audioFile!,
-                                  durationMs: entry.audioDurationMs,
-                                ),
-                                if (entry.text.trim().isNotEmpty) ...<Widget>[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    entry.text.trim(),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
-                                  ),
-                                ],
-                              ] else if (entry.isAutomatic)
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Icon(
-                                      Icons.info_outline,
-                                      size: 16,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        entry.text,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                              fontStyle: FontStyle.italic,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              else
-                                Text(
-                                  entry.text,
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: <Widget>[
-                                  Expanded(
-                                    child: Text(
-                                      dateFormat.format(entry.createdAt),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ),
-                                  if (!entry.isVoice)
-                                    SizedBox(
-                                      height: 24,
-                                      width: 32,
-                                      child: PopupMenuButton<String>(
-                                        padding: EdgeInsets.zero,
-                                        tooltip: 'פעולות הערה',
-                                        icon: Icon(
-                                          Icons.more_horiz,
-                                          size: 18,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                        onSelected: (String value) {
-                                          if (value == 'edit') {
-                                            onEdit(entry);
-                                          } else if (value == 'delete') {
-                                            onDelete(entry);
-                                          }
-                                        },
-                                        itemBuilder: (BuildContext context) {
-                                          return <PopupMenuEntry<String>>[
-                                            if (!entry.isAutomatic)
-                                              const PopupMenuItem<String>(
-                                                value: 'edit',
-                                                child: Text('עריכת הערה'),
-                                              ),
-                                            const PopupMenuItem<String>(
-                                              value: 'delete',
-                                              child: Text('מחיקת הערה'),
-                                            ),
-                                          ];
-                                        },
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
 }
 
 String _eventDateShort(DateTime date) => '${date.day}.${date.month}';
@@ -5047,13 +4965,89 @@ Color _eventColor(PersonEventType type) {
   }
 }
 
-/// The inline "היסטוריה אחרונה" feed: the last handful of meaningful events in
-/// dense rows, with a link to the full history screen.
+/// A profile's history without "נפתח רעיון עם…" lines about ideas that no
+/// longer exist — deleted ones from before deleting started taking those
+/// lines with it.
+List<PersonEvent> _liveHistory(
+  List<PersonEvent> events,
+  MatchRepository matches,
+) {
+  return <PersonEvent>[
+    for (final PersonEvent event in events)
+      if (event.type != PersonEventType.proposalOpened ||
+          event.relatedMatchId == null ||
+          matches.getById(event.relatedMatchId!) != null)
+        event,
+  ];
+}
+
+/// One entry in a profile's history: a line, and the lines that belong to the
+/// same act.
+///
+/// **Closing an idea writes two lines** — "נסגר רעיון עם תאיר" and, a
+/// millisecond later, why ("מהבירור עלה כי הוא יותר דוס"). Stored apart they
+/// read as two unrelated events; drawn here they are one: the first line is
+/// the entry's title and the rest is its body. Grouping happens at draw time,
+/// so the pairs already on every phone read the same way as new ones.
+class _HistoryEntry {
+  _HistoryEntry(this.events);
+
+  /// Oldest first: the line written first is the title.
+  final List<PersonEvent> events;
+
+  PersonEvent get head => events.first;
+
+  /// When the entry happened — the first of its lines.
+  DateTime get at => head.createdAt;
+
+  Iterable<PersonEvent> get details => events.skip(1);
+}
+
+/// How far apart two lines of one act can be written. The repository stamps
+/// them a millisecond apart; a minute leaves room for a slow phone without
+/// reaching the next thing the matchmaker did with that idea.
+const Duration _historySameActWindow = Duration(minutes: 1);
+
+/// Folds [events] (newest first, as the repository returns them) into
+/// entries: consecutive lines of the same idea, the same kind and the same
+/// moment become one entry. Everything else stays a line of its own.
+List<_HistoryEntry> _groupHistory(List<PersonEvent> events) {
+  final List<List<PersonEvent>> groups = <List<PersonEvent>>[];
+  for (final PersonEvent event in events) {
+    final List<PersonEvent>? last = groups.isEmpty ? null : groups.last;
+    final PersonEvent? previous = last?.last;
+    final bool sameAct =
+        previous != null &&
+        event.relatedMatchId != null &&
+        event.relatedMatchId == previous.relatedMatchId &&
+        event.type == previous.type &&
+        previous.createdAt.difference(event.createdAt).abs() <=
+            _historySameActWindow;
+    if (sameAct) {
+      last!.add(event);
+    } else {
+      groups.add(<PersonEvent>[event]);
+    }
+  }
+  return <_HistoryEntry>[
+    for (final List<PersonEvent> group in groups)
+      _HistoryEntry(
+        group..sort(
+          (PersonEvent a, PersonEvent b) => a.createdAt.compareTo(b.createdAt),
+        ),
+      ),
+  ];
+}
+
+/// The inline "היסטוריה" feed: the last handful of meaningful events, and —
+/// only when there is more than that — a link to the rest.
 class _HistorySection extends StatelessWidget {
   const _HistorySection({required this.events, required this.onShowAll});
 
   final List<PersonEvent> events;
   final VoidCallback onShowAll;
+
+  static const int _previewCount = 6;
 
   @override
   Widget build(BuildContext context) {
@@ -5062,7 +5056,8 @@ class _HistorySection extends StatelessWidget {
     }
 
     final ThemeData theme = Theme.of(context);
-    final List<PersonEvent> preview = events.take(6).toList();
+    final List<_HistoryEntry> entries = _groupHistory(events);
+    final List<_HistoryEntry> preview = entries.take(_previewCount).toList();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
@@ -5080,28 +5075,32 @@ class _HistorySection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                'היסטוריה אחרונה',
+                'היסטוריה',
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: _profileTextColor(theme),
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-            for (final PersonEvent event in preview) _HistoryRow(event: event),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
-                onPressed: onShowAll,
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            for (final _HistoryEntry entry in preview)
+              _HistoryRow(entry: entry),
+            if (entries.length > preview.length)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: onShowAll,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('לכל ההיסטוריה'),
                 ),
-                child: const Text('לכל ההיסטוריה'),
-              ),
-            ),
+              )
+            else
+              const SizedBox(height: 6),
           ],
         ),
       ),
@@ -5109,12 +5108,13 @@ class _HistorySection extends StatelessWidget {
   }
 }
 
-/// One dense line in the history timeline: small date, a type-coloured dot, and
-/// the event text. A long press offers to delete the line.
+/// One entry in the history timeline: a type-coloured dot, the event in bold,
+/// whatever belongs to it underneath at reading size, and the date small at
+/// the far edge. A long press offers to delete the entry — all of its lines.
 class _HistoryRow extends StatelessWidget {
-  const _HistoryRow({required this.event});
+  const _HistoryRow({required this.entry});
 
-  final PersonEvent event;
+  final _HistoryEntry entry;
 
   Future<void> _confirmDelete(BuildContext context) async {
     final PersonRepository repository = context.read<PersonRepository>();
@@ -5126,53 +5126,77 @@ class _HistoryRow extends StatelessWidget {
       isDestructive: true,
     );
     if (confirmed) {
-      await repository.deleteEvent(event.id);
+      for (final PersonEvent event in entry.events) {
+        await repository.deleteEvent(event.id);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color color = _eventColor(event.type);
-    final String? relatedId = event.relatedPersonId;
-    final Person? related = relatedId == null
-        ? null
-        : context.read<PersonRepository>().getById(relatedId);
+    final PersonEvent head = entry.head;
+    final Color color = _eventColor(head.type);
+    final PersonRepository people = context.read<PersonRepository>();
+    Person? relatedOf(PersonEvent event) {
+      final String? id = event.relatedPersonId;
+      return id == null ? null : people.getById(id);
+    }
 
     return InkWell(
       onLongPress: () => _confirmDelete(context),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(10),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(vertical: 7),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            SizedBox(
-              width: 34,
-              child: Text(
-                _eventDateShort(event.createdAt),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: _profileMutedColor(theme),
-                ),
-              ),
-            ),
             Padding(
-              padding: const EdgeInsets.only(top: 5),
+              padding: const EdgeInsets.only(top: 7),
               child: Container(
-                width: 8,
-                height: 8,
+                width: 9,
+                height: 9,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    _historyText(head, relatedOf(head)),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: _profileTextColor(theme),
+                      fontWeight: FontWeight.w800,
+                      height: 1.3,
+                    ),
+                  ),
+                  for (final PersonEvent detail in entry.details)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        _historyText(detail, relatedOf(detail)),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: _profileTextColor(theme),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: Text(
-                _historyText(event, related),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: _profileTextColor(theme),
-                  height: 1.35,
+                _eventDateShort(entry.at),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: _profileMutedColor(theme),
                 ),
               ),
             ),
@@ -5229,8 +5253,13 @@ class _PersonHistoryPageState extends State<_PersonHistoryPage> {
     final Person? person = personRepository.getById(widget.personId);
     final List<PersonEvent> events = person == null
         ? const <PersonEvent>[]
-        : personRepository.getHistoryForPerson(person.id);
-    final List<PersonEvent> filtered = events.where(_filter.matches).toList();
+        : _liveHistory(
+            personRepository.getHistoryForPerson(person.id),
+            context.read<MatchRepository>(),
+          );
+    final List<_HistoryEntry> filtered = _groupHistory(
+      events,
+    ).where((_HistoryEntry entry) => _filter.matches(entry.head)).toList();
 
     return Scaffold(
       backgroundColor: _profileCanvasColor(theme),
@@ -5272,7 +5301,7 @@ class _PersonHistoryPageState extends State<_PersonHistoryPage> {
                       itemCount: filtered.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 2),
                       itemBuilder: (BuildContext context, int index) =>
-                          _HistoryRow(event: filtered[index]),
+                          _HistoryRow(entry: filtered[index]),
                     ),
             ),
           ],
@@ -5290,41 +5319,6 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MatchStateTag(status: status);
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({this.title, required this.child, this.trailing});
-
-  final String? title;
-  final Widget child;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 20),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-        decoration: BoxDecoration(
-          color: _profileSurfaceColor(theme),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: _profileMutedColor(theme).withValues(alpha: 0.14),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            SectionHeader(title: title ?? '', trailing: trailing),
-            child,
-          ],
-        ),
-      ),
-    );
   }
 }
 

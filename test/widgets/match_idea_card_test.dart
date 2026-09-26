@@ -488,9 +488,10 @@ void main() {
     expect(find.text('יומן הרעיון'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('הוספה').first);
+    await tester.tap(find.text('הוספה'));
     await tester.pump();
-    await tester.tap(find.text('הוספה').last);
+    // The contact line is its own quiet row under the box, tapped as a whole.
+    await tester.tap(find.text('הוספת איש קשר שקשור להצעה'));
     await tester.pump();
     expect(ran, <MatchQuickAction>[
       MatchQuickAction.reminder,

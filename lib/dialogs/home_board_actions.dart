@@ -5,6 +5,7 @@ import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 
 /// The actions behind "הלוח שלי", shared by the three-dots menus on a person
 /// and a proposal and by the small menu on a board card itself.
@@ -102,12 +103,14 @@ abstract final class HomeBoardActions {
   ///
   /// [anchor] is the widget the menu hangs from. [onHandled], when given,
   /// adds "טופל" at the top — the one extra answer a reminder that has come
-  /// due needs.
+  /// due needs. [removable] adds "הסרה" at the foot: it takes the row off
+  /// הלוח שלי and nothing else — see [removeFromBoard].
   static Future<void> showItemMenu(
     BuildContext anchor,
     HomeItemKind kind,
     String targetId, {
     VoidCallback? onHandled,
+    bool removable = false,
   }) async {
     final ThemeData theme = Theme.of(anchor);
     final RenderBox? box = anchor.findRenderObject() as RenderBox?;
@@ -165,6 +168,8 @@ abstract final class HomeBoardActions {
           value: pinned ? 'unpin' : 'pin',
           child: Text(pinned ? 'הסרת הצמדה' : 'הצמדה'),
         ),
+        if (removable)
+          const PopupMenuItem<String>(value: 'remove', child: Text('הסרה')),
       ],
     );
     if (choice == null || !anchor.mounted) {
@@ -181,7 +186,40 @@ abstract final class HomeBoardActions {
         store.add(kind, targetId);
       case 'unpin':
         remove(anchor, kind, targetId);
+      case 'remove':
+        removeFromBoard(anchor, HomeBoardStore.itemKey(kind, targetId));
     }
+  }
+
+  /// "הסרה": takes one row off הלוח שלי — unpinning it if it was pinned — and
+  /// leaves the person or the proposal itself exactly as it was. The row stays
+  /// off until whatever put it there changes (see [HomeBoardStore.hide]); the
+  /// notice offers the way back.
+  static void removeFromBoard(BuildContext context, String key) {
+    final HomeBoardStore store = HomeBoardStore.instance;
+    final int split = key.indexOf(':');
+    final HomeItemKind? kind = split < 0
+        ? null
+        : HomeItemKind.values
+              .where((HomeItemKind k) => k.name == key.substring(0, split))
+              .firstOrNull;
+    final String targetId = split < 0 ? '' : key.substring(split + 1);
+    final bool wasPinned = kind != null && store.contains(kind, targetId);
+    if (wasPinned) {
+      store.remove(kind, targetId);
+    }
+    store.hide(key);
+    AppNotice.show(
+      context,
+      'הוסר מהלוח',
+      actionLabel: 'ביטול',
+      onAction: () {
+        store.unhide(key);
+        if (wasPinned) {
+          store.add(kind, targetId);
+        }
+      },
+    );
   }
 
   /// Sets or clears the reminder that the board card shows.
@@ -222,11 +260,13 @@ class BoardItemMenuButton extends StatelessWidget {
     required this.kind,
     required this.targetId,
     this.onHandled,
+    this.removable = false,
   });
 
   final HomeItemKind kind;
   final String targetId;
   final VoidCallback? onHandled;
+  final bool removable;
 
   @override
   Widget build(BuildContext context) {
@@ -239,6 +279,7 @@ class BoardItemMenuButton extends StatelessWidget {
           kind,
           targetId,
           onHandled: onHandled,
+          removable: removable,
         ),
       ),
     );

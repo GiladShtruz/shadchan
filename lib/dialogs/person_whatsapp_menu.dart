@@ -166,6 +166,109 @@ abstract final class MatchWhatsAppSheet {
     );
   }
 
+  /// The WhatsApp button of an idea's row on a profile: a chat with either
+  /// side, nothing else — "פתיחת שיחה עם דוד" / "פתיחת שיחה עם שרה".
+  /// Sending a card has its own button beside it ([chooseCard]).
+  static Future<MatchShareResult> chooseChat(
+    BuildContext context, {
+    required Person? first,
+    required Person? second,
+  }) async {
+    final List<Person> reachable = <Person>[
+      if (first != null && _hasPhone(first)) first,
+      if (second != null && _hasPhone(second)) second,
+    ];
+    if (reachable.isEmpty) {
+      return const MatchShareResult(opened: false);
+    }
+    final Person? target = await showModalBottomSheet<Person>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) => _ChoiceSheet(
+        title: 'WhatsApp',
+        rows: <_ChoiceRow<Person>>[
+          for (final Person person in reachable)
+            _ChoiceRow<Person>(
+              value: person,
+              leading: const FaIcon(
+                FontAwesomeIcons.whatsapp,
+                color: Color(0xFF25D366),
+              ),
+              title: 'פתיחת שיחה עם ${_firstName(person)}',
+            ),
+        ],
+      ),
+    );
+    if (target == null) {
+      return MatchShareResult.nothing;
+    }
+    final bool opened = await WhatsAppUtils.openChat(target);
+    return MatchShareResult(
+      opened: opened,
+      label: opened ? 'נפתחה שיחה עם ${_firstName(target)}' : null,
+      toGender: opened ? target.gender : null,
+    );
+  }
+
+  /// The share button of an idea's row on a profile: one side's card sent to
+  /// the other — "שליחת הכרטיס של שרה אל דוד". A direction is offered only
+  /// where there is a card to send and a number to send it to.
+  static Future<MatchShareResult> chooseCard(
+    BuildContext context, {
+    required Person? first,
+    required Person? second,
+  }) async {
+    final List<_WhatsAppChoice> choices = <_WhatsAppChoice>[
+      if (first != null && second != null) ...<_WhatsAppChoice>[
+        if (_hasPhone(second) && _hasCard(first))
+          _WhatsAppChoice(person: second, other: first),
+        if (_hasPhone(first) && _hasCard(second))
+          _WhatsAppChoice(person: first, other: second),
+      ],
+    ];
+    if (choices.isEmpty) {
+      return const MatchShareResult(opened: false);
+    }
+    final Rect origin = ShareUtils.originOf(context);
+    final _WhatsAppChoice? choice = await showModalBottomSheet<_WhatsAppChoice>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) => _ChoiceSheet(
+        title: 'שיתוף כרטיס',
+        subtitle: 'הטקסט וכל התמונות של הכרטיס',
+        rows: <_ChoiceRow<_WhatsAppChoice>>[
+          for (final _WhatsAppChoice choice in choices)
+            _ChoiceRow<_WhatsAppChoice>(
+              value: choice,
+              leading: Icon(
+                Icons.send_outlined,
+                color: Theme.of(sheetContext).colorScheme.primary,
+              ),
+              title:
+                  'שליחת הכרטיס של ${_firstName(choice.other!)} '
+                  'אל ${_firstName(choice.person)}',
+            ),
+        ],
+      ),
+    );
+    if (choice == null) {
+      return MatchShareResult.nothing;
+    }
+    final Person other = choice.other!;
+    final bool sent = await WhatsAppUtils.sendCardTo(
+      choice.person,
+      other,
+      origin: origin,
+    );
+    return MatchShareResult(
+      opened: sent,
+      label: sent
+          ? 'הכרטיס של ${_firstName(other)} נשלח ל${_firstName(choice.person)}'
+          : null,
+      toGender: sent ? choice.person.gender : null,
+    );
+  }
+
   /// Returns what happened, so the proposal can write it down. Dismissing the
   /// sheet is [MatchShareResult.nothing] — not a failure, and not a share.
   static Future<MatchShareResult> open(
@@ -296,6 +399,56 @@ class MatchShareResult {
   final Gender? toGender;
 
   bool get shared => label != null;
+}
+
+/// One line of a [_ChoiceSheet].
+class _ChoiceRow<T> {
+  const _ChoiceRow({
+    required this.value,
+    required this.leading,
+    required this.title,
+  });
+
+  final T value;
+  final Widget leading;
+  final String title;
+}
+
+/// A titled list of choices, each popping its own value.
+class _ChoiceSheet<T> extends StatelessWidget {
+  const _ChoiceSheet({required this.title, required this.rows, this.subtitle});
+
+  final String title;
+  final String? subtitle;
+  final List<_ChoiceRow<T>> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          ListTile(
+            title: Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            subtitle: subtitle == null ? null : Text(subtitle!),
+          ),
+          for (final _ChoiceRow<T> row in rows)
+            ListTile(
+              leading: row.leading,
+              title: Text(row.title),
+              onTap: () => Navigator.of(context).pop(row.value),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
 }
 
 /// What was picked: whom to message, and whose card to send them (or none).

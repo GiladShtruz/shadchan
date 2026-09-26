@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/match_status_event.dart';
@@ -53,13 +54,20 @@ class StatDetailScreen extends StatefulWidget {
 }
 
 class _StatDetailScreenState extends State<StatDetailScreen> {
-  /// Takes one couple out of the historic count.
-  ///
-  /// Undoable from the snackbar rather than guarded by a confirmation dialog:
-  /// nothing is destroyed — the proposal keeps its status and every note on it
-  /// — so an "are you sure?" would be asking about a decision that costs one
-  /// tap to reverse.
+  /// Takes one couple out of the historic count — reached only by a long
+  /// press on its row, and only after "להסיר את הזוג מהרשימה?" is answered.
+  /// The proposal keeps its status and every note on it.
   Future<void> _removeFromCount(MatchIdea match, String names) async {
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'להסיר את הזוג מהרשימה?',
+      message: '$names לא ייספרו יותר בזוגות שיצאו. הרעיון עצמו לא ישתנה.',
+      confirmText: 'הסרה',
+      isDestructive: true,
+    );
+    if (!confirmed) {
+      return;
+    }
     await DatingCountExclusions.exclude(match.id);
     if (!mounted) {
       return;
@@ -151,8 +159,10 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
           '${_MatchRow._name(personRepository.getById(match.personBId))}';
     }
 
+    final bool dating = metric == MonthlyStatMetric.dating;
+
     return Scaffold(
-      appBar: AppBar(title: Text(metric.title)),
+      appBar: AppBar(title: Text(metric.title), centerTitle: dating),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -177,9 +187,9 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
                       ),
                     ),
                   ),
-                  if (metric == MonthlyStatMetric.dating)
+                  if (dating)
                     Text(
-                      'אפשר להסיר זוג שסומן בטעות',
+                      'להסרת זוג: לחיצה ארוכה',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -202,7 +212,7 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
                     personA: personRepository.getById(record.match.personAId),
                     personB: personRepository.getById(record.match.personBId),
                     onTap: () => context.push('/matches/${record.match.id}'),
-                    onRemove: () =>
+                    onLongPress: () =>
                         _removeFromCount(record.match, namesFor(record.match)),
                   )
               else
@@ -289,24 +299,37 @@ class _Headline extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  // A history carries no month: naming one would say the
-                  // figure belongs to it.
-                  metric.isAllTime || allTime
-                      ? metric.title
-                      : '${metric.title} · $monthLabel',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+                if (metric == MonthlyStatMetric.dating)
+                  // No title and no explanation here: the bar already says
+                  // what the page is, and the number deserves a sentence about
+                  // the matchmaker rather than about the arithmetic.
+                  Text(
+                    datingEncouragement(count),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.4,
+                    ),
+                  )
+                else ...<Widget>[
+                  Text(
+                    // A history carries no month: naming one would say the
+                    // figure belongs to it.
+                    metric.isAllTime || allTime
+                        ? metric.title
+                        : '${metric.title} · $monthLabel',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  allTime ? metric.allTimeExplanation : metric.explanation,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.35,
+                  const SizedBox(height: 4),
+                  Text(
+                    allTime ? metric.allTimeExplanation : metric.explanation,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -314,6 +337,19 @@ class _Headline extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The line under the number on "זוגות שיצאו", in the singular for one.
+@visibleForTesting
+String datingEncouragement(int count) {
+  const String tail = 'כל הכבוד שהיית עבורם חלק משמעותי במסע אל החתונה.';
+  if (count <= 0) {
+    return 'כשזוג יתחיל לצאת, הוא יופיע כאן.';
+  }
+  if (count == 1) {
+    return 'זוג אחד יצא לדייט בזכותך! $tail';
+  }
+  return '$count זוגות יצאו לדייט בזכותך! $tail';
 }
 
 class _EmptyLine extends StatelessWidget {
@@ -438,25 +474,25 @@ class _MatchRow extends StatelessWidget {
 
 /// One couple in the historic "started dating" count.
 ///
-/// Unlike every other row on this screen it carries an action, because this is
-/// the only figure in the app that can be edited by hand. The couple's current
-/// status is printed next to the date on purpose: a pair who are in the count
-/// and are now marked "יצאו" is not a mistake, and seeing that spelled out is
-/// what stops the remove button being used to "tidy up" real history.
+/// This is the only figure in the app that can be edited by hand, and the way
+/// to do it is a long press — no button on the row, because taking a couple
+/// out of the list is the exception, not something to offer beside every one
+/// of them. The couple's current status is printed next to the date: a pair
+/// who are in the count and are now marked "יצאו" is not a mistake.
 class _DatingCoupleRow extends StatelessWidget {
   const _DatingCoupleRow({
     required this.record,
     required this.personA,
     required this.personB,
     required this.onTap,
-    required this.onRemove,
+    required this.onLongPress,
   });
 
   final DatingCoupleRecord record;
   final Person? personA;
   final Person? personB;
   final VoidCallback onTap;
-  final VoidCallback onRemove;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -471,12 +507,13 @@ class _DatingCoupleRow extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: theme.colorScheme.outlineVariant),
             ),
-            padding: const EdgeInsetsDirectional.fromSTEB(12, 12, 4, 12),
+            padding: const EdgeInsets.all(12),
             child: Row(
               children: <Widget>[
                 HomeCardCoupleAvatars(
@@ -513,15 +550,9 @@ class _DatingCoupleRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  onPressed: onRemove,
-                  tooltip: 'הסרה מהספירה',
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    Icons.remove_circle_outline,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                Icon(
+                  Icons.chevron_right,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ],
             ),

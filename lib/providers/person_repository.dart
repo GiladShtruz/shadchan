@@ -693,6 +693,78 @@ class PersonRepository extends ChangeNotifier {
     ).where((PersonEvent e) => e.type != PersonEventType.note).toList();
   }
 
+  /// Removes every history line a proposal wrote on its candidates, and hands
+  /// them back as JSON so a restored idea can put them back ([restoreEvents]).
+  ///
+  /// For an idea deleted before it was ever closed: a profile's history must
+  /// not go on saying "נפתח רעיון עם…" about an idea that no longer exists.
+  Future<List<Map<String, dynamic>>> takeMatchEvents(String matchId) async {
+    final Box<PersonEvent>? eventBox = _eventBox;
+    if (eventBox == null) {
+      return const <Map<String, dynamic>>[];
+    }
+    final List<PersonEvent> doomed = eventBox.values
+        .where((PersonEvent e) => e.relatedMatchId == matchId)
+        .toList();
+    if (doomed.isEmpty) {
+      return const <Map<String, dynamic>>[];
+    }
+    final List<Map<String, dynamic>> taken = <Map<String, dynamic>>[
+      for (final PersonEvent e in doomed)
+        <String, dynamic>{
+          'id': e.id,
+          'personId': e.personId,
+          'type': e.type.name,
+          'text': e.text,
+          'createdAt': e.createdAt.toIso8601String(),
+          'relatedPersonId': e.relatedPersonId,
+          'relatedMatchId': e.relatedMatchId,
+        },
+    ];
+    await eventBox.deleteAll(<String>[
+      for (final PersonEvent e in doomed) e.id,
+    ]);
+    notifyListeners();
+    return taken;
+  }
+
+  /// Puts back history lines taken by [takeMatchEvents]. A line whose person
+  /// is gone is skipped.
+  Future<void> restoreEvents(List<Map<String, dynamic>> events) async {
+    final Box<PersonEvent>? eventBox = _eventBox;
+    if (eventBox == null || events.isEmpty) {
+      return;
+    }
+    for (final Map<String, dynamic> raw in events) {
+      final String? id = raw['id'] as String?;
+      final String? personId = raw['personId'] as String?;
+      final DateTime? at = DateTime.tryParse(raw['createdAt'] as String? ?? '');
+      final PersonEventType? type = PersonEventType.values
+          .where((PersonEventType t) => t.name == raw['type'])
+          .firstOrNull;
+      if (id == null ||
+          personId == null ||
+          at == null ||
+          type == null ||
+          getById(personId) == null) {
+        continue;
+      }
+      await eventBox.put(
+        id,
+        PersonEvent(
+          id: id,
+          personId: personId,
+          type: type,
+          text: (raw['text'] as String?) ?? '',
+          createdAt: at,
+          relatedPersonId: raw['relatedPersonId'] as String?,
+          relatedMatchId: raw['relatedMatchId'] as String?,
+        ),
+      );
+    }
+    notifyListeners();
+  }
+
   /// Removes the history a proposal wrote on its candidates from [since] on.
   ///
   /// Only for a move that is taken back straight away — "ביטול" on the notice

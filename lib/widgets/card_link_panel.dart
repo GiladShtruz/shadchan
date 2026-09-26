@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
@@ -221,17 +222,32 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
             (person.description ?? '').trim().isEmpty) {
           return const SizedBox.shrink();
         }
-        body = Row(
+        // The card here was written by the matchmaker; the friend has not
+        // taken it over. Say plainly what the link is for.
+        final bool she = person.gender == Gender.female;
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Expanded(
-              child: Text(
-                'ל$name עוד אין כרטיס אישי בשדכן',
-                style: theme.textTheme.bodyMedium,
-              ),
+            Text(
+              '{שלח|שלחי} הזמנה ל${she ? 'חברה' : 'חבר'} לערוך את הכרטיס '
+                      '${she ? 'שלה' : 'שלו'} ולנהל את הפרטים '
+                      '${she ? 'שלה בעצמה' : 'שלו בעצמו'}'
+                  .forGender(context.userGender),
+              style: theme.textTheme.bodyMedium,
             ),
-            TextButton(
+            const SizedBox(height: 4),
+            TextButton.icon(
               onPressed: () => CardInviteFlow.invite(context, person),
-              child: const Text(CardInviteFlow.inviteLabel),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+              icon: const FaIcon(
+                FontAwesomeIcons.whatsapp,
+                size: 17,
+                color: Color(0xFF25D366),
+              ),
+              label: const Text(CardInviteFlow.inviteLabel),
             ),
           ],
         );

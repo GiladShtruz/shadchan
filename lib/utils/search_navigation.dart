@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// Leaving a search for a page, and coming back to the page instead of to the
 /// search.
@@ -20,7 +20,6 @@ import 'package:go_router/go_router.dart';
 /// Both are the same fix: put the keyboard away, let the viewport settle, and
 /// only then push — then take the focus away again on the way back.
 Future<void> pushLeavingSearch(BuildContext context, String location) async {
-  final GoRouter router = GoRouter.of(context);
   // The keyboard itself, not "is anything focused": with nothing focused the
   // primary focus is still the route's own scope node, which reports having
   // focus, and every tap in the app would pay the delay below for nothing.
@@ -37,7 +36,7 @@ Future<void> pushLeavingSearch(BuildContext context, String location) async {
     }
   }
 
-  await router.push<void>(location);
+  await AppNavigation.open(context, location);
 
   if (!context.mounted) {
     return;

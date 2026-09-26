@@ -10,6 +10,7 @@ import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/person_photo_carousel.dart';
 
 /// The person's full card, full screen: every photo, swipeable, with the text
 /// written about them readable over it.
@@ -115,6 +116,33 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
                 );
               },
             ),
+          // Arrows say there is more than one photo, and only toward a side
+          // that has one. In RTL the pager moves leftwards: the left arrow is
+          // the next photo, the right arrow the previous one.
+          if (photoPaths.length > 1 && _currentIndex + 1 < photoPaths.length)
+            Positioned(
+              left: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: PhotoPagerArrow(
+                  pointsLeft: true,
+                  onPressed: () => _goTo(_currentIndex + 1),
+                ),
+              ),
+            ),
+          if (photoPaths.length > 1 && _currentIndex > 0)
+            Positioned(
+              right: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: PhotoPagerArrow(
+                  pointsLeft: false,
+                  onPressed: () => _goTo(_currentIndex - 1),
+                ),
+              ),
+            ),
           _TopBar(
             title: person.fullName.trim(),
             counter: photoPaths.length > 1
@@ -165,6 +193,14 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
             ),
         ],
       ),
+    );
+  }
+
+  void _goTo(int index) {
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
     );
   }
 

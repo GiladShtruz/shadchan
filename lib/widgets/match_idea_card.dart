@@ -980,7 +980,7 @@ class _AskPanel extends StatelessWidget {
 
     return _ActionsBox(
       tint: ink,
-      children: <Widget>[
+      rows: <Widget>[
         if (ask != null) ...<Widget>[
           Text(
             'יאללה לקדם',
@@ -1025,8 +1025,8 @@ class _AskPanel extends StatelessWidget {
           _ReminderSchedule(match: match, onChange: changeReminder),
           const SizedBox(height: 2),
         ],
-        _ContactsLine(match: match, onAddContact: onAddContact),
       ],
+      footer: _ContactsLine(match: match, onAddContact: onAddContact),
     );
   }
 }
@@ -1034,25 +1034,42 @@ class _AskPanel extends StatelessWidget {
 /// The box every idea's actions are drawn in: a soft wash of the status's own
 /// colour, rounded, with a little air inside.
 class _ActionsBox extends StatelessWidget {
-  const _ActionsBox({required this.tint, required this.children});
+  const _ActionsBox({required this.tint, required this.rows, this.footer});
 
   final Color tint;
-  final List<Widget> children;
+  final List<Widget> rows;
+
+  /// A secondary line drawn *under* the tinted box rather than inside it —
+  /// the proposal contact, which is an extra and should read as one.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-      decoration: BoxDecoration(
-        color: tint.withValues(alpha: dark ? 0.16 : 0.08),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
-      ),
+    final Widget? below = footer;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (rows.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: dark ? 0.16 : 0.08),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: rows,
+            ),
+          ),
+        if (below != null)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 4, top: 4),
+            child: below,
+          ),
+      ],
     );
   }
 }
@@ -1158,7 +1175,7 @@ class _DatingPanel extends StatelessWidget {
 
     return _ActionsBox(
       tint: ink,
-      children: <Widget>[
+      rows: <Widget>[
         Row(
           children: <Widget>[
             Icon(Icons.favorite_rounded, size: 20, color: ink),
@@ -1265,9 +1282,8 @@ class _DatingPanel extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 2),
-        _ContactsLine(match: match, onAddContact: onAddContact),
       ],
+      footer: _ContactsLine(match: match, onAddContact: onAddContact),
     );
   }
 }
@@ -1360,6 +1376,42 @@ class _ContactsLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final List<MatchContact> contacts = match.relatedContacts;
+
+    // With nobody on it yet, the line is a quiet secondary action in small
+    // grey type, outside the box: "+ הוספת איש קשר שקשור להצעה".
+    if (contacts.isEmpty) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: InkWell(
+          onTap: onAddContact,
+          borderRadius: BorderRadius.circular(999),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  Icons.add_rounded,
+                  size: 15,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    'הוספת איש קשר שקשור להצעה',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1576,11 +1628,15 @@ class _Middle extends StatelessWidget {
         alignment: Alignment.center,
         children: <Widget>[
           // **The heart wears the proposal's status and nothing else** —
-          // blue while open, brown while waiting, copper once they are out —
+          // blue while open, brown while waiting, rose once they are out —
           // through [AppColors.matchState]. The stage inside an open idea
-          // (who has been asked) never changes it.
+          // (who has been asked) never changes it. A couple who went out and
+          // parted get a broken heart rather than the plain grey one a closed
+          // idea wears: they got further than an idea that never started.
           Icon(
-            Icons.favorite,
+            status == MatchStatus.dated
+                ? Icons.heart_broken_rounded
+                : Icons.favorite,
             size: dating ? 25 : 20,
             color: AppColors.matchState(
               status,

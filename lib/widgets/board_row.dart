@@ -20,6 +20,7 @@ class BoardRow extends StatelessWidget {
     this.endAccent,
     this.subtitle,
     this.subtitleColor,
+    this.subtitleMaxLines = 1,
     this.mark,
     this.titleColor,
   });
@@ -35,8 +36,11 @@ class BoardRow extends StatelessWidget {
   final Color? endAccent;
   final String? subtitle;
 
-  /// For a line that means something by its colour — "עבר זמנו".
+  /// For a line that means something by its colour.
   final Color? subtitleColor;
+
+  /// Null shows the whole line — a reminder's note is read in full.
+  final int? subtitleMaxLines;
   final IconData? mark;
   final Color? titleColor;
 
@@ -107,8 +111,10 @@ class BoardRow extends StatelessWidget {
                             const SizedBox(height: 2),
                             Text(
                               sub,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              maxLines: subtitleMaxLines,
+                              overflow: subtitleMaxLines == null
+                                  ? null
+                                  : TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: subtitleColor,
                               ),

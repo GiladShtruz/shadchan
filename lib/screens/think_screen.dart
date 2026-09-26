@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -19,6 +18,7 @@ import 'package:shadchan/utils/think_rotation.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// "עוצרים רגע לחשוב על החברים" — friends, one after another, each with the
 /// reason they came up.
@@ -259,8 +259,10 @@ class _ThinkScreenState extends State<ThinkScreen> {
                     // they could go with.
                     onOpenProfile: () => _openProfile(row.person.id),
                     onTap: () => openSuggestionsFor(context, row.person.id),
-                    onOpenIdea: (_OpenIdea idea) =>
-                        context.push('/matches/${idea.match.id}'),
+                    onOpenIdea: (_OpenIdea idea) => AppNavigation.open(
+                      context,
+                      '/matches/${idea.match.id}',
+                    ),
                     onCandidate: (Person candidate) =>
                         _considerPair(row.person, candidate),
                     onLater: () => _thinkLater(row.person),

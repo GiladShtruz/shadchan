@@ -10,6 +10,7 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// What the overflow menu can do.
 enum AppMenuAction {
@@ -208,9 +209,9 @@ class AppMenuButton extends StatelessWidget {
   static void _run(BuildContext context, AppMenuAction action) {
     switch (action) {
       case AppMenuAction.marriedFriends:
-        context.push('/married');
+        AppNavigation.open(context, '/married');
       case AppMenuAction.deletedIdeas:
-        context.push('/ideas/deleted');
+        AppNavigation.open(context, '/ideas/deleted');
       case AppMenuAction.profile:
         context.go('/profile');
       case AppMenuAction.settings:

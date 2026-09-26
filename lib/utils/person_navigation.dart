@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// Opens a friend's profile — or straight into its quick edit — from anywhere.
 ///
@@ -18,7 +19,8 @@ Future<void> openPersonProfile(
 }) async {
   final GoRouter router = GoRouter.of(context);
   if (!isAboveTabs(router.routerDelegate.currentConfiguration)) {
-    await router.push<void>(
+    await AppNavigation.open(
+      context,
       editing ? '/people/$personId/edit' : '/people/$personId',
     );
     return;

@@ -14,6 +14,7 @@ class DeletedMatch {
     required this.match,
     required this.notes,
     required this.events,
+    this.personEvents = const <Map<String, dynamic>>[],
   });
 
   final String matchId;
@@ -26,6 +27,10 @@ class DeletedMatch {
   final List<Map<String, dynamic>> notes;
   final List<Map<String, dynamic>> events;
 
+  /// The lines the idea wrote in its two candidates' histories, taken out
+  /// when it was deleted before being closed — put back on restore.
+  final List<Map<String, dynamic>> personEvents;
+
   String get personAId => (match['personAId'] as String?) ?? '';
   String get personBId => (match['personBId'] as String?) ?? '';
 
@@ -35,6 +40,7 @@ class DeletedMatch {
     'match': match,
     'notes': notes,
     'events': events,
+    'personEvents': personEvents,
   };
 
   static DeletedMatch? fromJson(Object? raw) {
@@ -64,6 +70,7 @@ class DeletedMatch {
       match: Map<String, dynamic>.from(match),
       notes: listOf(json['notes']),
       events: listOf(json['events']),
+      personEvents: listOf(json['personEvents']),
     );
   }
 }

@@ -245,8 +245,10 @@ abstract final class AppColors {
   /// **The one colour a proposal's status is drawn in, everywhere.**
   ///
   /// Colour says where a proposal stands and nothing else: open is the
-  /// palette's blue, waiting its brown, a couple who are out keep the copper
-  /// they have always worn, and anything that is over is the quiet grey. The
+  /// palette's blue, waiting its brown, a couple who are out the rose of the
+  /// pink "יוצאים" card (they wore the copper once, which made them
+  /// indistinguishable from a waiting idea), and anything that is over is the
+  /// quiet grey. The
   /// finer stored distinctions ("רעיון" / "בבדיקה", the stage inside an open
   /// idea) never change the colour — a heart that turned a different shade
   /// every time somebody was asked read as five kinds of thing.
@@ -258,7 +260,7 @@ abstract final class AppColors {
       case MatchStatus.unavailable:
         return dark ? secondaryDarkDm : secondary;
       case MatchStatus.dating:
-        return dark ? secondaryDarkDm : secondary;
+        return dark ? femaleAccentDm : femaleAccent;
       case MatchStatus.married:
         return dark ? statusDatingDm : statusMarried;
       case MatchStatus.rejected:

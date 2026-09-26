@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -189,6 +190,8 @@ class _MatchJournalViewState extends State<MatchJournalView> {
                     isFirst: i == 0,
                     isLast: i == newestFirst.length - 1,
                     onEdit: () => _openFull(repository),
+                    onDelete: () =>
+                        _confirmDeleteLine(context, repository, newestFirst[i]),
                   ),
                 ),
               ),
@@ -347,6 +350,8 @@ class _MatchJournalState extends State<_MatchJournal> {
                           isFirst: index == 0,
                           isLast: index == notes.length - 1,
                           onEdit: () => _edit(repository, note),
+                          onDelete: () =>
+                              _confirmDeleteLine(context, repository, note),
                         );
                       },
                     ),
@@ -432,6 +437,27 @@ class _MatchJournalState extends State<_MatchJournal> {
   }
 }
 
+/// A long press on a journal line: "למחוק את השורה?", and only a yes deletes.
+///
+/// The line's own long press also keeps the gesture from reaching the idea
+/// card around it, whose long press deletes the whole idea.
+Future<void> _confirmDeleteLine(
+  BuildContext context,
+  MatchRepository repository,
+  MatchNote note,
+) async {
+  final bool confirmed = await ConfirmDialog.show(
+    context,
+    title: 'מחיקת שורה מהיומן',
+    message: 'למחוק את השורה הזאת מיומן הרעיון?',
+    confirmText: 'מחיקה',
+    isDestructive: true,
+  );
+  if (confirmed) {
+    await repository.deleteNote(note.id);
+  }
+}
+
 class _EmptyJournal extends StatelessWidget {
   const _EmptyJournal({required this.theme});
 
@@ -492,6 +518,7 @@ class _JournalLine extends StatelessWidget {
     required this.note,
     required this.timestamp,
     required this.onEdit,
+    required this.onDelete,
     this.isFirst = false,
     this.isLast = false,
   });
@@ -499,6 +526,9 @@ class _JournalLine extends StatelessWidget {
   final MatchNote note;
   final String timestamp;
   final VoidCallback onEdit;
+
+  /// A long press: asks first, then removes the line.
+  final VoidCallback onDelete;
 
   /// The rail is drawn as two half-segments per row, so the ends of the list
   /// stop rather than trailing off into the padding.
@@ -521,6 +551,7 @@ class _JournalLine extends StatelessWidget {
 
     return InkWell(
       onTap: onEdit,
+      onLongPress: onDelete,
       borderRadius: BorderRadius.circular(8),
       child: IntrinsicHeight(
         child: Row(

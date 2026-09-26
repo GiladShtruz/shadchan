@@ -1202,13 +1202,14 @@ class _MyPlaceLine extends StatelessWidget {
           'המיקום שלך: ${board.myRank} מתוך $total שדכנים פעילים',
           style: theme.textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.w800,
+            color: CommunityRankRow.figureColor(theme),
           ),
         ),
         const SizedBox(height: 4),
         Text(
           '${CommunityFigure.format(board.myPoints)} נקודות פעילות',
           style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+            color: CommunityRankRow.figureColor(theme),
           ),
         ),
       ],

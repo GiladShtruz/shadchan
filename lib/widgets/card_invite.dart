@@ -43,7 +43,7 @@ enum CardInviteState {
 /// **One rule for the personal card, everywhere the app offers it** — a
 /// friend's profile, the comparison of two cards, the list of matches:
 ///
-/// - no card in the system → "שליחת הזמנה אישית לכרטיס", the invitation to write one;
+/// - no card in the system → "שליחת קישור להצטרפות", the invitation to write one;
 /// - a card, but no access → "בקשת גישה לכרטיס", and straight after the request
 ///   an offer to tell the friend in WhatsApp, with the link that opens their
 ///   personal area where the request waits.
@@ -120,9 +120,13 @@ abstract final class CardInviteFlow {
     }
   }
 
-  /// The invitation, worded as a warm personal note rather than a chore —
-  /// what makes a matchmaker actually send it.
-  static const String inviteLabel = 'שליחת הזמנה אישית לכרטיס';
+  /// The invitation: a join link, sent in WhatsApp — which is what the button
+  /// says, next to the WhatsApp mark.
+  static const String inviteLabel = 'שליחת קישור להצטרפות';
+
+  /// The same invitation where the matchmaker is asking about a *candidate*
+  /// (the matches list) — there it is a request for details.
+  static const String detailsRequestLabel = 'לבקשת פרטים בוואטסאפ';
 
   /// The label for [state], or null when there is nothing to offer.
   static String? labelFor(CardInviteState state) {
@@ -301,7 +305,7 @@ abstract final class CardInviteFlow {
   }
 }
 
-/// The one button the unified rule draws: "שליחת הזמנה אישית לכרטיס" or "בקשת גישה
+/// The one button the unified rule draws: "שליחת קישור להצטרפות" or "בקשת גישה
 /// לכרטיס", worked out for [person] — and nothing at all where there is
 /// nothing to offer.
 class CardInviteButton extends StatefulWidget {
@@ -392,7 +396,11 @@ class _CardInviteButtonState extends State<CardInviteButton> {
     }
     final bool actionable = state != CardInviteState.pending;
     final Widget icon = state == CardInviteState.noCard
-        ? const Icon(Icons.mail_outline_rounded, size: 18)
+        ? const FaIcon(
+            FontAwesomeIcons.whatsapp,
+            size: 17,
+            color: Color(0xFF25D366),
+          )
         : const Icon(Icons.lock_open_rounded, size: 18);
 
     if (widget.dense) {

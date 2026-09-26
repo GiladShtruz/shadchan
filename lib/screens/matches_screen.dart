@@ -14,6 +14,7 @@ import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
+import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
@@ -21,6 +22,7 @@ import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/search_results_panel.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// The five states a proposal can be in, as the screen groups them.
 ///
@@ -61,14 +63,15 @@ class MatchesScreen extends StatefulWidget {
   final bool initialShowArchived;
   final List<MatchStatus> initialStatuses;
 
-  /// One proposal to lift to the top of the list and light up.
+  /// One proposal to open the list on: its category is chosen, the list is
+  /// scrolled to where it stands, and it is lit up.
   ///
   /// **This is what is left of `/matches/:id`.** A proposal used to have a page
   /// of its own, and every link in the app — a reminder, a notification, a home
   /// card — pushed it. There is no such page now: the card carries everything
   /// the page did. So those links land here instead, and rather than dropping
-  /// the reader at the top of a list of forty and letting them hunt, the
-  /// proposal they asked for is put first and wears the accent.
+  /// the reader at the top of a list of forty and letting them hunt, the list
+  /// opens scrolled to the proposal they asked for, which wears the accent.
   final String? focusMatchId;
 
   /// A proposal that was just created, whose "יאללה לקדם!" sheet opens by
@@ -88,6 +91,30 @@ class _MatchesScreenState extends State<MatchesScreen> {
   _ClosedTab _closedTab = _ClosedTab.rejected;
   bool _promptedShare = false;
 
+  /// Ideas swiped off the top this session. Held here as well as on disk so
+  /// the swiped card leaves the block on the very next frame — a `Dismissible`
+  /// still in the tree after its dismissal is an error.
+  final Map<String, DateTime?> _takenOffTop = <String, DateTime?>{};
+
+  Future<void> _takeOffTop(MatchIdea match) async {
+    final OverlayState? notices = AppNotice.capture(context);
+    final DateTime? reminder = match.reminderDate;
+    setState(() => _takenOffTop[match.id] = reminder);
+    await ReminderAlerts.takeOffTop(match.id, reminder);
+    AppNotice.showOn(
+      notices,
+      'הרעיון חזר למקומו ברשימה',
+      atBottom: true,
+      actionLabel: 'ביטול',
+      onAction: () async {
+        await ReminderAlerts.putBackOnTop(match.id);
+        if (mounted) {
+          setState(() => _takenOffTop.remove(match.id));
+        }
+      },
+    );
+  }
+
   /// Which proposals have their action panel open right now.
   ///
   /// Owned here rather than in the cards because it is a fact about the
@@ -95,6 +122,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// scanned, and the row of category tiles over it folds away to give the
   /// panel the room. See the header block in [build].
   final Set<String> _openCards = <String>{};
+
+  /// On the focused proposal's card, so the list can be scrolled to it.
+  final GlobalKey _focusKey = GlobalKey();
 
   /// Where the list was standing when a proposal's actions were opened.
   ///
@@ -135,7 +165,72 @@ class _MatchesScreenState extends State<MatchesScreen> {
         widget.initialStatuses.contains(MatchStatus.married)) {
       _closedTab = _ClosedTab.dated;
     }
+    _openOnFocus();
     _scheduleSharePrompt();
+  }
+
+  /// Opens the list where the focused proposal is: on the category that holds
+  /// it (a closed one is not in "הכל"), then scrolled until its card is in
+  /// front of the reader.
+  void _openOnFocus() {
+    final String? focus = widget.focusMatchId;
+    if (focus == null) {
+      return;
+    }
+    final MatchRepository matches = context.read<MatchRepository>();
+    final MatchIdea? match = matches.getById(focus);
+    if (match == null) {
+      return;
+    }
+    final Map<MatchCategory, List<MatchIdea>> groups = _groupMatches(
+      matches.getAll(),
+      context.read<PersonRepository>(),
+    );
+    if (groups[MatchCategory.closed]!.any((MatchIdea m) => m.id == focus)) {
+      _category = MatchCategory.closed;
+      _closedTab = match.status == MatchStatus.rejected
+          ? _ClosedTab.rejected
+          : _ClosedTab.dated;
+    } else if (!groups[MatchCategory.all]!.any(
+      (MatchIdea m) => m.id == focus,
+    )) {
+      return;
+    } else {
+      _category = MatchCategory.all;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToFocus(0));
+  }
+
+  /// The cards are built lazily, so a card further down has no context until
+  /// the list comes near it: step down a screen at a time until it is built,
+  /// then bring it into view.
+  void _scrollToFocus(int attempt) {
+    if (!mounted || !_listScroll.hasClients) {
+      return;
+    }
+    final BuildContext? target = _focusKey.currentContext;
+    if (target != null) {
+      Scrollable.ensureVisible(
+        target,
+        alignment: 0.15,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+    final ScrollPosition position = _listScroll.position;
+    if (attempt > 40 || position.pixels >= position.maxScrollExtent) {
+      return;
+    }
+    _listScroll.jumpTo(
+      (position.pixels + position.viewportDimension * 0.8).clamp(
+        0,
+        position.maxScrollExtent,
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollToFocus(attempt + 1),
+    );
   }
 
   @override
@@ -402,7 +497,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
           personRepository.databaseCount > HomeConfig.databaseIdeasMinFriends)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: HomeHeroBand(onShowIdeas: () => context.push('/ideas/new')),
+          child: HomeHeroBand(
+            onShowIdeas: () => AppNavigation.open(context, '/ideas/new'),
+          ),
         ),
     ];
 
@@ -543,18 +640,10 @@ class _MatchesScreenState extends State<MatchesScreen> {
     return groups;
   }
 
-  /// Newest first — except the proposal somebody followed a link to, which is
-  /// first whatever its date. See [MatchesScreen.focusMatchId].
+  /// Newest first. The proposal somebody followed a link to keeps its own
+  /// place — the list is scrolled to it instead. See
+  /// [MatchesScreen.focusMatchId].
   int _byFocusThenNewest(MatchIdea a, MatchIdea b) {
-    final String? focus = widget.focusMatchId;
-    if (focus != null) {
-      if (a.id == focus) {
-        return -1;
-      }
-      if (b.id == focus) {
-        return 1;
-      }
-    }
     return b.createdAt.compareTo(a.createdAt);
   }
 
@@ -575,7 +664,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
       final DateTime? date = match.reminderDate;
       return date != null &&
           !date.isAfter(endOfToday) &&
-          !match.status.isArchived;
+          !match.status.isArchived &&
+          _takenOffTop[match.id] != date &&
+          !ReminderAlerts.isTakenOffTop(match.id, date);
     }).toList();
     due.sort(
       (MatchIdea a, MatchIdea b) => a.reminderDate!.compareTo(b.reminderDate!),
@@ -647,8 +738,16 @@ class _MatchesScreenState extends State<MatchesScreen> {
           children: <Widget>[
             if (showReminders) ...<Widget>[
               _RemindersHeader(count: dueReminders.length),
+              // A sideways swipe takes one off the top and back to its own
+              // place in the list below. The idea and its reminder are left
+              // exactly as they were.
               for (final MatchIdea match in dueReminders)
-                _card(match, personRepository, isDueReminder: true),
+                Dismissible(
+                  key: ValueKey<String>('lifted-${match.id}'),
+                  background: const _OffTopBackground(),
+                  onDismissed: (_) => _takeOffTop(match),
+                  child: _card(match, personRepository, isDueReminder: true),
+                ),
               const SizedBox(height: 8),
               Text(
                 _category == MatchCategory.all
@@ -752,6 +851,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     }
 
     return MatchIdeaCard(
+      key: match.id == widget.focusMatchId ? _focusKey : null,
       match: match,
       male: male,
       female: female,
@@ -1183,6 +1283,44 @@ class _CategoryChip extends StatelessWidget {
 }
 
 /// "ביקשת שנזכיר לך" — the heading over the due-reminder cards.
+/// What shows under a reminder card while it is swiped aside: where it is
+/// going, not a bin — nothing is deleted.
+class _OffTopBackground extends StatelessWidget {
+  const _OffTopBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.south_rounded,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'חזרה למקום ברשימה',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RemindersHeader extends StatelessWidget {
   const _RemindersHeader({required this.count});
 

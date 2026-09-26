@@ -55,6 +55,7 @@ import 'package:shadchan/widgets/home_search_results.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 
 /// The landing screen: a calm workspace rather than a dashboard.
 ///
@@ -483,14 +484,22 @@ class _HomeScreenState extends State<HomeScreen> {
         // community's, two squares and one window at a time. The breakdown, the
         // chart and the leaderboard are all one tap away on a screen somebody
         // opened *to look at numbers*.
-        block(HomeActivityBlock(onOpen: () => context.push('/activity'))),
+        block(
+          HomeActivityBlock(
+            onOpen: () => AppNavigation.open(context, '/activity'),
+          ),
+        ),
 
         // 5 and 6. The community, live: what it did today, and the one target
         // it is working towards together this week. The only block on the page
         // that moves on its own, and the only one that is about other people —
         // which is why it sits directly under the numbers, where the page turns
         // from "your work" to "everybody's".
-        block(HomeCommunityPulse(onOpen: () => context.push('/activity'))),
+        block(
+          HomeCommunityPulse(
+            onOpen: () => AppNavigation.open(context, '/activity'),
+          ),
+        ),
 
         // Somebody else's good news, for one launch. It draws nothing at all
         // when there is none, which is nearly always.
@@ -530,10 +539,11 @@ class _HomeScreenState extends State<HomeScreen> {
   /// the previous tip.
   List<HomeTip> _tips(BuildContext context) {
     final Gender? gender = context.watch<UserProfileProvider>().gender;
-    final List<CommunityTip> community = context.watch<TipsProvider>().approved;
+    final TipsProvider tips = context.watch<TipsProvider>();
+    final List<CommunityTip> community = tips.visibleCommunity;
     return <HomeTip>[
-      for (final String template in _tipOrder)
-        HomeTip(text: template.forGender(gender)),
+      for (final BuiltInTip tip in tips.builtInTips(_tipOrder))
+        if (!tip.hidden) HomeTip(text: tip.text.forGender(gender)),
       for (final CommunityTip tip in community)
         HomeTip(
           text: tip.text,
@@ -1220,6 +1230,17 @@ class _BoardRow extends StatelessWidget {
 
     final NewIdeaSuggestion? pair = item.pair;
     if (pair != null) {
+      final _PairMenuActions pairMenu = _PairMenuActions(
+        onOpen: () => _considerPair(context, pair),
+        onDismiss: () async {
+          await SuggestionDismissals.dismiss(pair.male.id, pair.female.id);
+          onPairDismissed();
+        },
+        onRemove: () => HomeBoardActions.removeFromBoard(
+          context,
+          HomeBoardStore.pairKey(pair.male.id, pair.female.id),
+        ),
+      );
       final String why = pair.reasons.isEmpty
           ? 'רעיון שהמאגר מציע לך'
           : 'רעיון מהמאגר · ${pair.reasons.join(' · ')}';
@@ -1236,13 +1257,9 @@ class _BoardRow extends StatelessWidget {
         startAccent: AppColors.genderAccent(Gender.female, dark: dark),
         endAccent: AppColors.genderAccent(Gender.male, dark: dark),
         onTap: () => _considerPair(context, pair),
-        menu: _SuggestedPairMenu(
-          onOpen: () => _considerPair(context, pair),
-          onDismiss: () async {
-            await SuggestionDismissals.dismiss(pair.male.id, pair.female.id);
-            onPairDismissed();
-          },
-        ),
+        onLongPress: (BuildContext anchor) =>
+            _SuggestedPairMenu.open(anchor, pairMenu),
+        menu: _SuggestedPairMenu(actions: pairMenu),
       );
     }
 
@@ -1254,12 +1271,17 @@ class _BoardRow extends StatelessWidget {
     final Widget menu = BoardItemMenuButton(
       kind: entry.kind,
       targetId: entry.targetId,
+      removable: true,
     );
     // A long press opens the same menu the "⋯" does — it used to pin or
     // unpin on the spot, which was one surprise too many for a gesture that
     // lands by accident.
-    void openMenu(BuildContext anchor) =>
-        HomeBoardActions.showItemMenu(anchor, entry.kind, entry.targetId);
+    void openMenu(BuildContext anchor) => HomeBoardActions.showItemMenu(
+      anchor,
+      entry.kind,
+      entry.targetId,
+      removable: true,
+    );
 
     if (entry.kind == HomeItemKind.person) {
       final Person person = personRepository.getById(entry.targetId)!;
@@ -1274,7 +1296,7 @@ class _BoardRow extends StatelessWidget {
         // page asks — who they could go with. Everyone else opens their card.
         onTap: item.suggested
             ? () => openSuggestionsFor(context, person.id)
-            : () => context.push('/people/${person.id}'),
+            : () => AppNavigation.open(context, '/people/${person.id}'),
         onLongPress: openMenu,
         menu: menu,
       );
@@ -1313,7 +1335,7 @@ class _BoardRow extends StatelessWidget {
       // Women lead in RTL, which is the side רעיונות שלי puts them on too.
       startAccent: AppColors.genderAccent(Gender.female, dark: dark),
       endAccent: AppColors.genderAccent(Gender.male, dark: dark),
-      onTap: () => context.push('/matches/${match.id}'),
+      onTap: () => AppNavigation.open(context, '/matches/${match.id}'),
       onLongPress: openMenu,
       menu: menu,
     );
@@ -1374,14 +1396,74 @@ class _BoardRow extends StatelessWidget {
   }
 }
 
-/// A pair the database suggests is not a record yet, so there is nothing to
-/// remind about, write on or pin until it is one. Its menu offers the two
-/// answers the suggestion itself asks for.
-class _SuggestedPairMenu extends StatelessWidget {
-  const _SuggestedPairMenu({required this.onOpen, required this.onDismiss});
+/// What a suggested pair's menu can do.
+class _PairMenuActions {
+  const _PairMenuActions({
+    required this.onOpen,
+    required this.onDismiss,
+    required this.onRemove,
+  });
 
   final VoidCallback onOpen;
   final VoidCallback onDismiss;
+  final VoidCallback onRemove;
+}
+
+/// A pair the database suggests is not a record yet, so there is nothing to
+/// remind about, write on or pin until it is one. Its menu offers the two
+/// answers the suggestion itself asks for, and "הסרה" like every board row.
+class _SuggestedPairMenu extends StatelessWidget {
+  const _SuggestedPairMenu({required this.actions});
+
+  final _PairMenuActions actions;
+
+  /// The same menu, opened by a long press on the row.
+  static Future<void> open(
+    BuildContext anchor,
+    _PairMenuActions actions,
+  ) async {
+    final RenderBox? box = anchor.findRenderObject() as RenderBox?;
+    final RenderBox? overlay =
+        Overlay.of(anchor).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null || !box.hasSize) {
+      return;
+    }
+    final Offset topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final String? choice = await showMenu<String>(
+      context: anchor,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(
+          topLeft.dx,
+          topLeft.dy + box.size.height,
+          box.size.width,
+          0,
+        ),
+        Offset.zero & overlay.size,
+      ),
+      constraints: const BoxConstraints(minWidth: 190),
+      items: _items(),
+    );
+    _run(choice, actions);
+  }
+
+  static List<PopupMenuEntry<String>> _items() =>
+      const <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(value: 'open', child: Text('פתיחת רעיון')),
+        PopupMenuItem<String>(value: 'dismiss', child: Text('לא מתאים')),
+        PopupMenuDivider(),
+        PopupMenuItem<String>(value: 'remove', child: Text('הסרה')),
+      ];
+
+  static void _run(String? value, _PairMenuActions actions) {
+    switch (value) {
+      case 'open':
+        actions.onOpen();
+      case 'dismiss':
+        actions.onDismiss();
+      case 'remove':
+        actions.onRemove();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1392,18 +1474,8 @@ class _SuggestedPairMenu extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 190),
       icon: const Icon(Icons.more_horiz, size: 20),
       iconSize: 20,
-      onSelected: (String value) {
-        switch (value) {
-          case 'open':
-            onOpen();
-          case 'dismiss':
-            onDismiss();
-        }
-      },
-      itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(value: 'open', child: Text('פתיחת רעיון')),
-        PopupMenuItem<String>(value: 'dismiss', child: Text('לא מתאים')),
-      ],
+      onSelected: (String value) => _run(value, actions),
+      itemBuilder: (BuildContext context) => _items(),
     );
   }
 }

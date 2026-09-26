@@ -405,6 +405,10 @@ void main() {
   testWidgets(
     'Person profile keeps app navigation and expands its card inline',
     (WidgetTester tester) async {
+      // A phone-sized screen: the profile's photo strip sits above the
+      // actions, and the default 800x600 test surface cuts them off.
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       final DateTime now = DateTime(2026, 7, 27);
       final Person profile = Person(
         id: 'profile-person',
@@ -548,8 +552,10 @@ void main() {
             ),
           )
           .dy;
-      expect(cardTextTop, closeTo(cardBodyTop, 0.5));
-      expect(tester.getTopLeft(editFullCard).dy, lessThan(cardBodyTop + 4));
+      // The pencil has a lane above the text, so the text starts under it and
+      // runs the card's whole width instead of giving up a column to it.
+      expect(cardTextTop, closeTo(cardBodyTop + 26, 0.5));
+      expect(tester.getBottomLeft(editFullCard).dy, lessThan(cardTextTop + 4));
       await tester.tap(editFullCard);
       await tester.pumpAndSettle();
       expect(find.text('עריכת הכרטיס המלא'), findsNothing);
@@ -569,11 +575,11 @@ void main() {
         'שורה ראשונה\nשורה שנייה\nסוף הכרטיס המלא',
       );
 
-      // Sharing sits beside the two pencils — on the photo square and on the
-      // card-text square — and not in the bar; it goes straight to the share
-      // sheet with the card text and every photo, no preview step between.
-      expect(find.byTooltip('שיתוף כרטיס'), findsNothing);
-      expect(find.byTooltip('שיתוף הכרטיס'), findsWidgets);
+      // Sharing is the fourth action tile beside "התאמות" and "הוספת רעיון",
+      // not an icon beside either pencil; it goes straight to the share sheet
+      // with the card text and every photo, no preview step between.
+      expect(find.byTooltip('שיתוף הכרטיס'), findsNothing);
+      expect(find.text('שיתוף כרטיס'), findsOneWidget);
       expect(find.byType(PersonCardViewer), findsNothing);
 
       final Finder showFullCard = find.text('הצגת הכרטיס המלא');
@@ -598,7 +604,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.text('כרמל לוי'), findsOneWidget);
-      expect(find.byTooltip('WhatsApp עם כרמל לוי'), findsOneWidget);
+      // Every idea row carries the same pair of buttons: a card from one side
+      // to the other, and a chat with either side.
+      expect(find.byTooltip('שיתוף כרטיס'), findsOneWidget);
+      expect(find.byTooltip('WhatsApp'), findsOneWidget);
     },
   );
 
@@ -1496,6 +1505,8 @@ void main() {
   testWidgets('Profile-canvas app bars keep a dark title, not cream on cream', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final DateTime now = DateTime(2026, 7, 27);
     final Person person = _testPerson(
       id: 'title-person',

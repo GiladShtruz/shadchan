@@ -594,6 +594,10 @@ class CommunityRankRow extends StatelessWidget {
   /// third. Three medals in a row turns a community into a podium.
   static const Color _gold = Color(0xFFD4A34B);
 
+  /// The ink of every number on the leaderboard: black, or white at night.
+  static Color figureColor(ThemeData theme) =>
+      theme.brightness == Brightness.dark ? Colors.white : Colors.black;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -601,6 +605,9 @@ class CommunityRankRow extends StatelessWidget {
     final Color lead = theme.brightness == Brightness.dark
         ? AppColors.femaleAccentDm
         : AppColors.femaleAccent;
+    // Every number on the board — the place and the points — is plain black,
+    // so the figures read as figures and the rose stays with the people.
+    final Color figure = CommunityRankRow.figureColor(theme);
 
     Widget mark() {
       if (place == 1) {
@@ -624,7 +631,7 @@ class CommunityRankRow extends StatelessWidget {
           '$place',
           style: theme.textTheme.labelSmall?.copyWith(
             fontWeight: FontWeight.w800,
-            color: podium ? lead : theme.colorScheme.onSurfaceVariant,
+            color: figure,
           ),
         ),
       );
@@ -672,7 +679,7 @@ class CommunityRankRow extends StatelessWidget {
                 CommunityFigure.format(entry.points),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: lead,
+                  color: figure,
                 ),
               ),
               Icon(

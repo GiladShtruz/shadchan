@@ -10,8 +10,8 @@ import 'package:shadchan/widgets/app_notice.dart';
 
 /// Viewing and lightly fixing one photo.
 ///
-/// Deliberately four tools and no more: reposition, rotate, straighten, and
-/// brightness. That is what a photo forwarded from WhatsApp actually needs —
+/// Deliberately few tools: crop (a frame shape, then pan and pinch inside it),
+/// rotate, straighten, and brightness. That is what a photo forwarded from WhatsApp actually needs —
 /// it arrived sideways, or dark, or with the person off to one side — and every
 /// tool past that turns a card editor into an image app.
 ///
@@ -55,14 +55,30 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   /// -1 … 1, zero being the photo as it is.
   double _brightness = 0;
 
+  /// The crop frame's shape. Panning and pinching inside it chooses what is
+  /// kept.
+  _CropShape _shape = _CropShape.original;
+
   @override
   void initState() {
     super.initState();
+    // **The crop is the viewer's transform**, and the save button's enabled
+    // state depends on it — so a pan or a pinch has to rebuild the bar. Without
+    // this listener a crop alone left "שמירה" disabled, which is the bug that
+    // made cropping look unsaveable.
+    _viewer.addListener(_onViewerChanged);
     _load();
+  }
+
+  void _onViewerChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
+    _viewer.removeListener(_onViewerChanged);
     _viewer.dispose();
     _image?.dispose();
     super.dispose();
@@ -84,6 +100,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   }
 
   bool get _isChanged =>
+      _shape != _CropShape.original ||
       _quarterTurns != 0 ||
       _straighten.abs() > 0.01 ||
       _brightness.abs() > 0.01 ||
@@ -130,35 +147,51 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: AspectRatio(
-                        aspectRatio: 3 / 4,
+                        aspectRatio: _frameRatio(image),
                         child: ClipRRect(
                           key: _frameKey,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(4),
                           child: ColoredBox(
                             color: Colors.black,
-                            child: InteractiveViewer(
-                              transformationController: _viewer,
-                              minScale: 0.5,
-                              maxScale: 5,
-                              clipBehavior: Clip.none,
-                              // Panning and zooming inside the frame is the
-                              // crop: what stays inside is what is kept.
-                              child: Transform.rotate(
-                                angle: _totalAngle,
-                                child: ColorFiltered(
-                                  colorFilter: _brightnessFilter,
-                                  child: RawImage(
-                                    image: image,
-                                    fit: BoxFit.cover,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: <Widget>[
+                                InteractiveViewer(
+                                  transformationController: _viewer,
+                                  minScale: 0.5,
+                                  maxScale: 5,
+                                  clipBehavior: Clip.none,
+                                  // Panning and zooming inside the frame is
+                                  // the crop: what stays inside is kept.
+                                  child: Transform.rotate(
+                                    angle: _totalAngle,
+                                    child: ColorFiltered(
+                                      colorFilter: _brightnessFilter,
+                                      child: RawImage(
+                                        image: image,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
+                                // The crop frame itself: a border and thirds,
+                                // drawn over the photo and never in the way
+                                // of a finger.
+                                const IgnorePointer(
+                                  child: CustomPaint(painter: _CropGuides()),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
+                ),
+                _CropShapes(
+                  selected: _shape,
+                  onSelected: (_CropShape shape) =>
+                      setState(() => _shape = shape),
                 ),
                 _Tools(
                   straighten: _straighten,
@@ -170,6 +203,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                   onBrightness: (double value) =>
                       setState(() => _brightness = value),
                   onReset: () => setState(() {
+                    _shape = _CropShape.original;
                     _quarterTurns = 0;
                     _straighten = 0;
                     _brightness = 0;
@@ -180,6 +214,22 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               ],
             ),
     );
+  }
+
+  /// The frame's width over its height for the chosen [_shape]. "מקורי" is
+  /// the photo's own proportion, turned with it.
+  double _frameRatio(ui.Image image) {
+    switch (_shape) {
+      case _CropShape.original:
+        final double ratio = image.width / image.height;
+        return _quarterTurns.isOdd ? 1 / ratio : ratio;
+      case _CropShape.square:
+        return 1;
+      case _CropShape.portrait:
+        return 3 / 4;
+      case _CropShape.landscape:
+        return 4 / 3;
+    }
   }
 
   double get _totalAngle =>
@@ -337,7 +387,8 @@ class _Tools extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             const Text(
-              'גררו והצביטו כדי למקם ולחתוך את התמונה',
+              'בחרו צורת חיתוך, ואז גררו והצביטו כדי למקם את התמונה בתוך המסגרת',
+              textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
             const SizedBox(height: 6),
@@ -379,6 +430,101 @@ class _Tools extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The shapes a photo can be cropped to.
+enum _CropShape {
+  original('מקורי'),
+  square('ריבוע'),
+  portrait('לאורך 3:4'),
+  landscape('לרוחב 4:3');
+
+  const _CropShape(this.label);
+
+  final String label;
+}
+
+/// "חיתוך" — one row of shapes above the other tools.
+class _CropShapes extends StatelessWidget {
+  const _CropShapes({required this.selected, required this.onSelected});
+
+  final _CropShape selected;
+  final ValueChanged<_CropShape> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.crop, size: 18, color: Colors.white70),
+          const SizedBox(width: 8),
+          const Text(
+            'חיתוך',
+            style: TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (final _CropShape shape in _CropShape.values)
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 6),
+                      child: ChoiceChip(
+                        label: Text(shape.label),
+                        selected: shape == selected,
+                        showCheckmark: false,
+                        visualDensity: VisualDensity.compact,
+                        labelStyle: TextStyle(
+                          fontSize: 12,
+                          color: shape == selected
+                              ? Colors.black
+                              : Colors.white,
+                        ),
+                        selectedColor: AppColors.primaryLight,
+                        backgroundColor: Colors.white12,
+                        side: BorderSide.none,
+                        onSelected: (_) => onSelected(shape),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A white frame and rule-of-thirds lines — what says "this is a crop".
+class _CropGuides extends CustomPainter {
+  const _CropGuides();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint line = Paint()
+      ..color = Colors.white.withValues(alpha: 0.35)
+      ..strokeWidth = 1;
+    for (int i = 1; i < 3; i++) {
+      final double x = size.width * i / 3;
+      final double y = size.height * i / 3;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
+    }
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CropGuides oldDelegate) => false;
 }
 
 class _Slider extends StatelessWidget {

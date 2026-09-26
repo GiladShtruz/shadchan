@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// The handful of addresses that connect the app to the people behind it.
@@ -150,6 +152,17 @@ abstract final class CommunityLinks {
     }
     return '$trimmed\n\n$sharedCardCredit';
   }
+
+  /// The invitation a single sends from their personal area — shorter than
+  /// [shareMessage], because it is not an app for matchmakers they are
+  /// recommending but one a friend of theirs might want to try. [landingUrl]
+  /// sends an Android phone to Play and an iPhone to the App Store, so the one
+  /// link is right on either.
+  static String singleShareMessage(Gender? gender) =>
+      'היי! אני {משתמש|משתמשת} באפליקציית ׳שדכן׳ וחשבתי שאולי זה יכול '
+              'לעניין אותך…\n'
+          .forGender(gender) +
+      downloadUrl;
 
   /// The invitation, exactly as the matchmaker sends it.
   ///

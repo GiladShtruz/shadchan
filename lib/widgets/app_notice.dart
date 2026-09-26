@@ -31,6 +31,10 @@ abstract final class AppNotice {
   /// read a sentence in, short enough that nobody waits for it.
   static const Duration _defaultDuration = Duration(seconds: 4);
 
+  /// How long a notice with an undo stays up. Every such notice is drawn at
+  /// the bottom of the screen — see [showOn].
+  static const Duration undoDuration = Duration(milliseconds: 2500);
+
   /// Says [message] over whatever is on screen.
   ///
   /// [actionLabel] and [onAction] add a single trailing button — an undo, all
@@ -83,6 +87,10 @@ abstract final class AppNotice {
     if (overlay == null || text.isEmpty || !overlay.mounted) {
       return;
     }
+    // A notice that offers an undo answers something the reader just did with
+    // their thumb, so it sits by the thumb — at the bottom — and leaves after
+    // [undoDuration], app-wide, whatever the caller asked for.
+    final bool undoable = actionLabel != null && onAction != null;
 
     hide();
 
@@ -91,8 +99,8 @@ abstract final class AppNotice {
         message: text,
         actionLabel: actionLabel,
         isError: isError,
-        atBottom: atBottom,
-        duration: duration ?? _defaultDuration,
+        atBottom: atBottom || undoable,
+        duration: undoable ? undoDuration : duration ?? _defaultDuration,
         onAction: onAction == null
             ? null
             : () {
