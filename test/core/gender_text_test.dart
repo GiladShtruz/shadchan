@@ -59,4 +59,20 @@ void main() {
       }
     }
   });
+
+  test('resolveOrBoth writes both forms when the gender is not known', () {
+    const String template = '{אם ירצה|אם תרצה} להוסיף למאגר {שלו|שלה}';
+    expect(
+      GenderText.resolveOrBoth(template, null),
+      'אם ירצה/אם תרצה להוסיף למאגר שלו/שלה',
+    );
+    expect(
+      GenderText.resolveOrBoth(template, Gender.female),
+      'אם תרצה להוסיף למאגר שלה',
+    );
+    expect(
+      GenderText.resolveOrBoth(template, Gender.male),
+      'אם ירצה להוסיף למאגר שלו',
+    );
+  });
 }

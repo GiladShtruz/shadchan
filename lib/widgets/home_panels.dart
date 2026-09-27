@@ -741,8 +741,8 @@ class _CoupleFaces extends StatelessWidget {
 /// card on the home screen, three faces wide and a third of a phone tall,
 /// carrying nothing anybody acts on — it was pure encouragement, and pure
 /// encouragement does not earn that much of a landing page. It is one line at
-/// the head of "הרעיונות שלי" now, where the couples themselves are a tap away
-/// on the "יוצאים" shelf, and tapping the line is what opens that shelf.
+/// the top of הלוח שלי now, beside the rest of the work in hand, and tapping it
+/// opens the "יוצאים" shelf on הרעיונות שלי.
 ///
 /// It exists only while there is somebody to celebrate, which is what keeps it
 /// from becoming furniture.

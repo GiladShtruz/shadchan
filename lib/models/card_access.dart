@@ -25,6 +25,7 @@ class CardAccess {
     required this.requestedBy,
     this.ownerName = '',
     this.matchmakerName = '',
+    this.matchmakerGender,
     this.ownerPhoneHash,
     this.ownerPhone,
   });
@@ -38,6 +39,11 @@ class CardAccess {
   final String requestedBy;
   final String ownerName;
   final String matchmakerName;
+
+  /// `male` / `female`, written by the matchmaker when asking, so the owner's
+  /// screens can say "השדכן" or "השדכנית". Null on older rows and on a grant
+  /// the owner made unasked — those fall back to wording that fits both.
+  final String? matchmakerGender;
 
   /// Lets the matchmaker's device find the friend already in its database.
   final String? ownerPhoneHash;
@@ -62,6 +68,7 @@ class CardAccess {
       requestedBy: (data['requestedBy'] as String?) ?? 'matchmaker',
       ownerName: (data['ownerName'] as String?) ?? '',
       matchmakerName: (data['matchmakerName'] as String?) ?? '',
+      matchmakerGender: data['matchmakerGender'] as String?,
       ownerPhoneHash: data['ownerPhoneHash'] as String?,
       ownerPhone: data['ownerPhone'] as String?,
     );

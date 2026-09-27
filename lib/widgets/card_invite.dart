@@ -271,6 +271,11 @@ abstract final class CardInviteFlow {
       ownerName: person.fullName,
       ownerPhoneHash: ownerPhoneHash,
       matchmakerName: profile.fullName ?? '',
+      matchmakerGender: switch (profile.gender) {
+        Gender.male => 'male',
+        Gender.female => 'female',
+        _ => null,
+      },
     );
     if (!context.mounted) {
       return outcome;

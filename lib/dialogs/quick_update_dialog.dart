@@ -63,6 +63,7 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
   late Gender _gender;
   late ReligiousLevel? _religiousLevel;
   String? _religiousLevelOther;
+  late List<String> _tags;
   late final TextEditingController _nameController;
   late final TextEditingController _ageController;
 
@@ -77,6 +78,7 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
     _gender = widget.person.gender;
     _religiousLevel = widget.person.religiousLevel;
     _religiousLevelOther = widget.person.religiousLevelOther;
+    _tags = List<String>.from(widget.person.tags);
     _nameController = TextEditingController(text: widget.person.fullName);
     _ageController = TextEditingController(
       text: widget.person.age?.toString() ?? '',
@@ -179,6 +181,15 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
                 labelText: 'גיל (הערכה)',
                 errorText: _ageError,
               ),
+            ),
+            // Tags are one more detail of the friend, chosen now with the
+            // rest rather than only later from the full card. Never required.
+            const SizedBox(height: 16),
+            Text('תגיות (לא חובה)', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            PersonTagsEditor(
+              selected: _tags,
+              onChanged: (List<String> tags) => setState(() => _tags = tags),
             ),
           ],
         ),
@@ -333,6 +344,7 @@ class _QuickUpdateDialogState extends State<QuickUpdateDialog> {
       ..gender = _gender
       ..religiousLevel = _religiousLevel
       ..religiousLevelOther = _religiousLevelOther
+      ..tags = List<String>.from(_tags)
       ..setManualAge(age);
   }
 }

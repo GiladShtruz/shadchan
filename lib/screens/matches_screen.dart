@@ -25,6 +25,7 @@ import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/search_results_panel.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/utils/app_navigation.dart';
+import 'package:shadchan/utils/back_interceptor.dart';
 
 /// The five states a proposal can be in, as the screen groups them.
 ///
@@ -125,6 +126,20 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// panel the room. See the header block in [build].
   final Set<String> _openCards = <String>{};
 
+  /// Ticked to close every open panel at once.
+  final ValueNotifier<int> _closeActions = ValueNotifier<int>(0);
+
+  /// **Back closes "פעולות" first.** With a proposal's actions open, the
+  /// first back press folds them away and leaves the reader on this page; only
+  /// the next one leaves it.
+  bool _handleBack() {
+    if (_openCards.isEmpty || !mounted || !BackInterceptor.isInFront(context)) {
+      return false;
+    }
+    _closeActions.value++;
+    return true;
+  }
+
   /// On the focused proposal's card, so the list can be scrolled to it.
   final GlobalKey _focusKey = GlobalKey();
 
@@ -160,6 +175,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
     _listScroll.addListener(_handleScroll);
+    BackInterceptor.add(_handleBack);
     _category = widget.initialShowArchived
         ? MatchCategory.closed
         : _categoryFor(widget.initialStatuses);
@@ -244,6 +260,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   @override
   void dispose() {
+    BackInterceptor.remove(_handleBack);
+    _closeActions.dispose();
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
@@ -412,13 +430,6 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final List<MatchIdea> dueReminders = searching
         ? const <MatchIdea>[]
         : _dueReminders(matchRepository.getAll());
-    // Over the whole database rather than over the search: the strip at the
-    // head of the page celebrates every couple who is out, and narrowing it to
-    // whatever was typed would make it say something that is not true.
-    final int datingCount = matchRepository
-        .getAll()
-        .where((MatchIdea match) => match.status == MatchStatus.dating)
-        .length;
 
     // Reached by following a link to one proposal, this screen is a pushed page
     // rather than the tab — so the start edge has to carry the way back, and
@@ -472,7 +483,6 @@ class _MatchesScreenState extends State<MatchesScreen> {
             dueReminders,
             personRepository,
             searching: searching,
-            datingCount: datingCount,
           ),
           if (searching && _suggestionsOpen)
             _buildSearchPanel(
@@ -508,26 +518,15 @@ class _MatchesScreenState extends State<MatchesScreen> {
     List<MatchIdea> dueReminders,
     PersonRepository personRepository, {
     required bool searching,
-    required int datingCount,
   }) {
-    // **The two blocks that used to open the home screen.** "כל הכבוד! X זוגות
-    // שלך יוצאים" and "רעיונות שהמאגר מציע לך" were both invitations into this
-    // page, sitting on the page before it; they are at the head of the page
-    // they were about now, which is one tap shorter and two blocks of home
-    // screen cheaper. They fold away with the category row while a proposal's
-    // actions are open — see [_headerHidden].
+    // "רעיונות שהמאגר מציע לך" is an invitation into this page, so it sits at
+    // its head. (The couples-who-are-out strip moved to הלוח שלי on the home
+    // screen.) It folds away with the category row while a proposal's actions
+    // are open — see [_headerHidden].
     //
     // Not drawn during a search: what somebody typing a name wants is the
-    // proposals that match it, not two banners above them.
+    // proposals that match it, not a banner above them.
     final List<Widget> banners = <Widget>[
-      if (!searching && !_headerHidden && datingCount > 0)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: DatingCouplesStrip(
-            count: datingCount,
-            onTap: () => setState(() => _category = MatchCategory.dating),
-          ),
-        ),
       // Held back until the database is big enough to keep producing pairs —
       // below fifty friends the well runs dry and the row becomes a promise
       // the app cannot keep.
@@ -952,6 +951,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
       compact: false,
       highlighted: isDueReminder || match.id == widget.focusMatchId,
       onActionsOpenChanged: (bool open) => _handleCardActions(match.id, open),
+      closeActions: _closeActions,
       onLongPress: () => _confirmDelete(match, female, male),
       // Only computed for a couple who are actually out — every other card
       // would be reading the whole status ledger for a line it never draws.

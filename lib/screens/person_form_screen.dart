@@ -78,6 +78,10 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   /// one added from the contacts.
   Region? _selectedRegion;
 
+  /// The matchmaker's own tags for this friend, chosen with the other details
+  /// rather than only later from the full card.
+  List<String> _tags = <String>[];
+
   /// Fields last written by the card parser rather than by the user. They may
   /// be overwritten by a later parse; anything the user typed themselves is
   /// never touched.
@@ -543,6 +547,19 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                         ),
                     ],
                   ),
+                  const SizedBox(height: 20),
+                  Text('תגיות', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    'לסידור וסינון המאגר שלך. לא מופיעות בכרטיס שנשלח.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  PersonTagsEditor(
+                    selected: _tags,
+                    onChanged: (List<String> tags) =>
+                        setState(() => _tags = tags),
+                  ),
                   const _FormSectionDivider(),
                   _FormSectionHeading(
                     icon: Icons.contact_phone_outlined,
@@ -947,6 +964,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           ..heightCm = heightCm
           ..maritalStatus = _selectedMaritalStatus
           ..region = _selectedRegion
+          ..tags = List<String>.from(_tags)
           ..profileStatus = _selectedProfileStatus
           ..photosPaths = List<String>.from(_photoPaths);
 
@@ -1021,6 +1039,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       heightCm: int.tryParse(_heightController.text.trim()),
       maritalStatus: _selectedMaritalStatus,
       region: _selectedRegion,
+      tags: _tags,
       profileStatus: _selectedProfileStatus,
       photosPaths: List<String>.from(_photoPaths),
       createdAt: now,
@@ -1082,6 +1101,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _selectedProfileStatus = person.profileStatus;
     _selectedMaritalStatus = person.maritalStatus;
     _selectedRegion = person.region;
+    _tags = List<String>.from(person.tags);
     _photoPaths = List<String>.from(person.photosPaths);
   }
 
@@ -1132,6 +1152,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       description: _normalizedText(_descriptionController.text),
       profileStatus: _selectedProfileStatus,
       photoPaths: _photoPaths,
+      tags: _tags,
     );
   }
 
@@ -1507,7 +1528,9 @@ class _PersonFormSnapshot {
     required this.description,
     required this.profileStatus,
     required List<String> photoPaths,
-  }) : photoPaths = List<String>.unmodifiable(photoPaths);
+    required List<String> tags,
+  }) : photoPaths = List<String>.unmodifiable(photoPaths),
+       tags = List<String>.unmodifiable(tags);
 
   final String firstName;
   final String lastName;
@@ -1526,6 +1549,7 @@ class _PersonFormSnapshot {
   final String? description;
   final ProfileStatus profileStatus;
   final List<String> photoPaths;
+  final List<String> tags;
 
   @override
   bool operator ==(Object other) {
@@ -1550,7 +1574,8 @@ class _PersonFormSnapshot {
         other.personalNote == personalNote &&
         other.description == description &&
         other.profileStatus == profileStatus &&
-        listEquals(other.photoPaths, photoPaths);
+        listEquals(other.photoPaths, photoPaths) &&
+        listEquals(other.tags, tags);
   }
 
   @override
@@ -1573,6 +1598,7 @@ class _PersonFormSnapshot {
       description,
       profileStatus,
       Object.hashAll(photoPaths),
+      Object.hashAll(tags),
     );
   }
 }

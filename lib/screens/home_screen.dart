@@ -993,6 +993,38 @@ class _BoardSectionState extends State<_BoardSection> {
     ];
   }
 
+  Widget _list(BuildContext context, ThemeData theme, List<_BoardItem> live) {
+    return live.isEmpty
+        ? Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+            child: Text(
+              'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          )
+        : SizedBox(
+            height: _boardHeight(context, live.length),
+            child: Scrollbar(
+              controller: _listScroll,
+              thumbVisibility: live.length > _windowRows,
+              child: ListView.builder(
+                controller: _listScroll,
+                padding: EdgeInsets.zero,
+                itemCount: live.length,
+                itemBuilder: (BuildContext context, int index) {
+                  return _BoardRow(
+                    item: live[index],
+                    personRepository: widget.personRepository,
+                    matchRepository: widget.matchRepository,
+                    onPairDismissed: () => setState(() {}),
+                  );
+                },
+              ),
+            ),
+          );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -1002,6 +1034,10 @@ class _BoardSectionState extends State<_BoardSection> {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     final List<_BoardItem> live = _feed();
+    final int datingCount = widget.matchRepository
+        .getAll()
+        .where((MatchIdea match) => match.status == MatchStatus.dating)
+        .length;
 
     return SliverToBoxAdapter(
       child: Column(
@@ -1043,38 +1079,24 @@ class _BoardSectionState extends State<_BoardSection> {
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-                child: live.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 18,
-                        ),
-                        child: Text(
-                          'הלוח ריק — אפשר להצמיד אליו חבר או רעיון',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      )
-                    : SizedBox(
-                        height: _boardHeight(context, live.length),
-                        child: Scrollbar(
-                          controller: _listScroll,
-                          thumbVisibility: live.length > _windowRows,
-                          child: ListView.builder(
-                            controller: _listScroll,
-                            padding: EdgeInsets.zero,
-                            itemCount: live.length,
-                            itemBuilder: (BuildContext context, int index) {
-                              return _BoardRow(
-                                item: live[index],
-                                personRepository: widget.personRepository,
-                                matchRepository: widget.matchRepository,
-                                onPairDismissed: () => setState(() {}),
-                              );
-                            },
-                          ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // "כל הכבוד! זוג אחד שלך יוצא" belongs with the work in
+                    // hand, so it opens the board rather than heading
+                    // הרעיונות שלי. A tap opens the "יוצאים" shelf there.
+                    if (datingCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: DatingCouplesStrip(
+                          count: datingCount,
+                          onTap: () => context.go('/matches?statuses=dating'),
                         ),
                       ),
+                    _list(context, theme, live),
+                  ],
+                ),
               ),
             ),
           ),

@@ -1,5 +1,6 @@
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/person_tags.dart';
 
 /// Cards already in the database that are probably the person being added.
 ///
@@ -185,6 +186,12 @@ abstract final class PersonMerge {
       ...existing.photosPaths,
       for (final String path in incoming.photosPaths)
         if (!existing.photosPaths.contains(path)) path,
+    ];
+
+    existing.tags = <String>[
+      ...existing.tags,
+      for (final String tag in incoming.tags)
+        if (!existing.tags.any((String t) => PersonTags.sameTag(t, tag))) tag,
     ];
   }
 }

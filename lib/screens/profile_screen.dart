@@ -299,7 +299,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           titleSpacing: 20,
           title: Text(
             profile.isSingle && matchmaker
-                ? 'הפרופיל שלי – שדכן'
+                ? 'הפרופיל שלי – {שדכן|שדכנית}'.forGender(profile.gender)
                 : 'הפרופיל שלי',
           ),
         ),

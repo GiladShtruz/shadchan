@@ -14,6 +14,7 @@ import 'package:shadchan/models/match_status_event.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/utils/app_theme.dart';
+import 'package:shadchan/utils/back_interceptor.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
@@ -30,8 +31,7 @@ import 'package:shadchan/widgets/person_list_card.dart';
 /// you have to open forty times.
 void main() {
   // The status is one rich line: "סטטוס: " and the label.
-  Finder status(String label) =>
-      find.text('סטטוס: $label', findRichText: true);
+  Finder status(String label) => find.text('סטטוס: $label', findRichText: true);
 
   final DateTime now = DateTime(2026, 8, 14);
 
@@ -135,6 +135,7 @@ void main() {
     DateTime? askedMaleAt,
     DateTime? askedFemaleAt,
     DateTime? datingSince,
+    Listenable? closeActions,
   }) {
     final MatchIdea idea = match(status: status)
       ..lastShareLabel = shareLabel
@@ -153,6 +154,7 @@ void main() {
       onAdvance: onAdvance,
       onSetStage: onSetStage,
       datingSince: datingSince,
+      closeActions: closeActions,
     );
   }
 
@@ -501,6 +503,74 @@ void main() {
       MatchQuickAction.reminder,
       MatchQuickAction.contact,
     ]);
+  });
+
+  testWidgets('the screen can fold an open panel away, as back does', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final ValueNotifier<int> close = ValueNotifier<int>(0);
+    addTearDown(close.dispose);
+    final List<bool> told = <bool>[];
+    await tester.pumpWidget(
+      wrap(
+        MatchIdeaCard(
+          match: match(),
+          male: person('male', 'דוד', Gender.male, ProfileStatus.available),
+          female: person(
+            'female',
+            'שרה',
+            Gender.female,
+            ProfileStatus.available,
+          ),
+          onTap: () {},
+          onOpenPersonWhatsApp: (_) {},
+          onCompletePersonCard: (_) {},
+          onQuickAction: (_) {},
+          onAdvance: (_) {},
+          onActionsOpenChanged: told.add,
+          closeActions: close,
+        ),
+      ),
+    );
+    await tester.tap(find.text('פעולות'));
+    await tester.pumpAndSettle();
+    expect(find.text('יאללה לקדם'), findsOneWidget);
+
+    close.value++;
+    await tester.pumpAndSettle();
+    expect(find.text('יאללה לקדם'), findsNothing);
+    expect(find.text('פעולות'), findsOneWidget);
+    expect(told, <bool>[true, false]);
+  });
+
+  testWidgets('a back interceptor only answers for the page in front', (
+    WidgetTester tester,
+  ) async {
+    late BuildContext page;
+    bool handler() => BackInterceptor.isInFront(page);
+    BackInterceptor.add(handler);
+    addTearDown(() => BackInterceptor.remove(handler));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            page = context;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    expect(BackInterceptor.handle(), isTrue);
+
+    Navigator.of(
+      page,
+    ).push(MaterialPageRoute<void>(builder: (_) => const SizedBox()));
+    await tester.pumpAndSettle();
+    expect(BackInterceptor.handle(), isFalse);
   });
 
   testWidgets('a couple already out are offered the wedding or the parting', (

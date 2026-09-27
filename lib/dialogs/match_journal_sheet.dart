@@ -85,9 +85,21 @@ abstract final class MatchJournalLines {
 /// the same journal with a screen to itself, which is also where a line is
 /// edited.
 class MatchJournalView extends StatefulWidget {
-  const MatchJournalView({super.key, required this.matchId});
+  const MatchJournalView({
+    super.key,
+    required this.matchId,
+    this.background,
+    this.accent,
+  });
 
   final String matchId;
+
+  /// The block's own wash. Null keeps the neutral grey; an open idea passes a
+  /// soft rose, so its card is not blue from edge to edge.
+  final Color? background;
+
+  /// The heading's icon colour, when the block wears a colour of its own.
+  final Color? accent;
 
   @override
   State<MatchJournalView> createState() => _MatchJournalViewState();
@@ -130,9 +142,11 @@ class _MatchJournalViewState extends State<MatchJournalView> {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: theme.brightness == Brightness.dark ? 0.28 : 0.42,
-        ),
+        color:
+            widget.background ??
+            theme.colorScheme.surfaceContainerHighest.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.28 : 0.42,
+            ),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -143,7 +157,7 @@ class _MatchJournalViewState extends State<MatchJournalView> {
               Icon(
                 Icons.forum_outlined,
                 size: 17,
-                color: theme.colorScheme.onSurfaceVariant,
+                color: widget.accent ?? theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Expanded(

@@ -93,9 +93,6 @@ class MarriedFriendsScreen extends StatelessWidget {
                 if (others.isNotEmpty) ...<Widget>[
                   _QuietHeader(
                     title: 'חברים שלך שהתחתנו',
-                    subtitle: others.length == 1
-                        ? 'חבר אחד שכבר מסודר'
-                        : '${others.length} חברים שכבר מסודרים',
                     lonely: couples.isEmpty,
                   ),
                   const SizedBox(height: 10),
@@ -216,12 +213,14 @@ class _MarriedHeader extends StatelessWidget {
 class _QuietHeader extends StatelessWidget {
   const _QuietHeader({
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.lonely,
   });
 
   final String title;
-  final String subtitle;
+
+  /// A quieter line under the title; none at all when null.
+  final String? subtitle;
 
   /// True when this is the only section on the page, in which case it carries
   /// the celebration by itself and is allowed to be a size larger.
@@ -248,12 +247,13 @@ class _QuietHeader extends StatelessWidget {
                             : theme.textTheme.titleMedium)
                         ?.copyWith(fontWeight: FontWeight.w900),
               ),
-              Text(
-                subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (subtitle case final String line)
+                Text(
+                  line,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
             ],
           ),
         ),

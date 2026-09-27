@@ -594,6 +594,7 @@ class CardAccessProvider extends ChangeNotifier {
             requestedBy: row.requestedBy,
             ownerName: row.ownerName,
             matchmakerName: row.matchmakerName,
+            matchmakerGender: row.matchmakerGender,
             ownerPhoneHash: row.ownerPhoneHash,
             ownerPhone: row.ownerPhone,
           ),
@@ -615,6 +616,7 @@ class CardAccessProvider extends ChangeNotifier {
             requestedBy: row.requestedBy,
             ownerName: row.ownerName,
             matchmakerName: row.matchmakerName,
+            matchmakerGender: row.matchmakerGender,
             ownerPhoneHash: row.ownerPhoneHash,
             ownerPhone: row.ownerPhone,
           ),
@@ -679,6 +681,7 @@ class CardAccessProvider extends ChangeNotifier {
     required String requestedBy,
     required String ownerName,
     required String matchmakerName,
+    String? matchmakerGender,
     String? ownerPhoneHash,
     String? ownerPhone,
   }) => <String, Object?>{
@@ -688,6 +691,9 @@ class CardAccessProvider extends ChangeNotifier {
     'requestedBy': requestedBy,
     'ownerName': ownerName,
     'matchmakerName': matchmakerName,
+    // Only when known: a row written without it stays exactly the shape it
+    // always was.
+    'matchmakerGender': ?matchmakerGender,
     'ownerPhoneHash': ownerPhoneHash,
     'ownerPhone': ownerPhone,
     'updatedAt': FieldValue.serverTimestamp(),
@@ -711,6 +717,7 @@ class CardAccessProvider extends ChangeNotifier {
           requestedBy: access.requestedBy,
           ownerName: ownerName ?? access.ownerName,
           matchmakerName: access.matchmakerName,
+          matchmakerGender: access.matchmakerGender,
           ownerPhoneHash: ownerPhoneHash ?? access.ownerPhoneHash,
           ownerPhone: ownerPhone ?? access.ownerPhone,
         ),
@@ -775,6 +782,7 @@ class CardAccessProvider extends ChangeNotifier {
     required String ownerName,
     required String ownerPhoneHash,
     required String matchmakerName,
+    String? matchmakerGender,
   }) async {
     final String? uid = _uid;
     final String key = 'request:$ownerUid';
@@ -792,6 +800,7 @@ class CardAccessProvider extends ChangeNotifier {
           requestedBy: 'matchmaker',
           ownerName: ownerName,
           matchmakerName: matchmakerName,
+          matchmakerGender: matchmakerGender,
           ownerPhoneHash: ownerPhoneHash,
         ),
       );

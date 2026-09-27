@@ -40,6 +40,7 @@ abstract final class AppCelebration {
     required String headline,
     required String message,
     String emoji = '🎉',
+    Duration? duration,
   }) {
     final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) {
@@ -58,7 +59,7 @@ abstract final class AppCelebration {
     );
     _entry = entry;
     overlay.insert(entry);
-    _timer = Timer(visibleFor, dismiss);
+    _timer = Timer(duration ?? visibleFor, dismiss);
   }
 
   static void dismiss() {

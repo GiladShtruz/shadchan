@@ -747,6 +747,42 @@ List<BoxShadow> _profileSoftShadow(ThemeData theme) {
   ];
 }
 
+/// One of the matchmaker's tags on a friend's profile: a small read-only
+/// pill, washed in the friend's own accent.
+class _ProfileTagPill extends StatelessWidget {
+  const _ProfileTagPill({required this.label, required this.accent});
+
+  final String label;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.sell_outlined, size: 13, color: accent),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: accent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The top of a friend's profile: **the card itself**, as the personal area
 /// shows a single's own — the name in their colour and the facts under it,
 /// every photo in a pager (a tap opens the full-screen card on that photo),
@@ -831,6 +867,20 @@ class _FriendCardTileState extends State<_FriendCardTile> {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: _profileMutedColor(theme),
                 ),
+              ),
+            ],
+            // The matchmaker's own tags, with the other details of the
+            // friend. Private words, so they stay on this page and are never
+            // part of the card that is sent.
+            if (person.tags.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final String tag in person.tags)
+                    _ProfileTagPill(label: tag, accent: accent),
+                ],
               ),
             ],
             const SizedBox(height: 12),

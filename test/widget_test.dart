@@ -1214,95 +1214,78 @@ void main() {
     expect(find.text('השוואת כרטיסים'), findsOneWidget);
   });
 
-  testWidgets('the ideas banner scrolls away and the category counts do not', (
-    WidgetTester tester,
-  ) async {
-    // Deliberately short, so a handful of cards is more than one screenful.
-    await tester.binding.setSurfaceSize(const Size(390, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets(
+    'the couples strip is on the board and the category counts stay pinned',
+    (WidgetTester tester) async {
+      // Deliberately short, so a handful of cards is more than one screenful.
+      await tester.binding.setSurfaceSize(const Size(390, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final DateTime now = DateTime(2026, 8, 2);
-    final List<Person> people = <Person>[
-      for (int i = 0; i < 8; i++)
-        _testPerson(
-          id: 'scroll-$i',
-          firstName: 'מועמד$i',
-          lastName: 'לבדיקה',
-          gender: i.isEven ? Gender.male : Gender.female,
-          age: 25 + i,
-          now: now,
-        ),
-    ];
-    final List<MatchIdea> matches = <MatchIdea>[
-      for (int i = 0; i < 4; i++)
-        _testMatch(
-          id: 'scroll-match-$i',
-          personAId: 'scroll-${i * 2}',
-          personBId: 'scroll-${i * 2 + 1}',
-          now: now,
-        ),
-    ];
-    // One couple who are out, which is what puts the banner on the page.
-    matches.first.status = MatchStatus.dating;
+      final DateTime now = DateTime(2026, 8, 2);
+      final List<Person> people = <Person>[
+        for (int i = 0; i < 8; i++)
+          _testPerson(
+            id: 'scroll-$i',
+            firstName: 'מועמד$i',
+            lastName: 'לבדיקה',
+            gender: i.isEven ? Gender.male : Gender.female,
+            age: 25 + i,
+            now: now,
+          ),
+      ];
+      final List<MatchIdea> matches = <MatchIdea>[
+        for (int i = 0; i < 4; i++)
+          _testMatch(
+            id: 'scroll-match-$i',
+            personAId: 'scroll-${i * 2}',
+            personBId: 'scroll-${i * 2 + 1}',
+            now: now,
+          ),
+      ];
+      // One couple who are out, which is what puts the banner on the page.
+      matches.first.status = MatchStatus.dating;
 
-    await tester.runAsync(() async {
-      await Hive.box<Person>('people').putAll(<String, Person>{
-        for (final Person person in people) person.id: person,
+      await tester.runAsync(() async {
+        await Hive.box<Person>('people').putAll(<String, Person>{
+          for (final Person person in people) person.id: person,
+        });
+        await Hive.box<MatchIdea>('matches').putAll(<String, MatchIdea>{
+          for (final MatchIdea match in matches) match.id: match,
+        });
       });
-      await Hive.box<MatchIdea>('matches').putAll(<String, MatchIdea>{
-        for (final MatchIdea match in matches) match.id: match,
-      });
-    });
 
-    await tester.pumpWidget(_buildTestApp());
-    await tester.pump();
-    AppRouter.router.go('/matches');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pump();
+      AppRouter.router.go('/matches');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-    // Both are on the page to begin with, the banner above the counts.
-    expect(find.byType(DatingCouplesStrip), findsOneWidget);
-    expect(find.text('פתוחים'), findsOneWidget);
-    final double bannerTop = tester
-        .getTopLeft(find.byType(DatingCouplesStrip))
-        .dy;
-    final double countsTop = tester.getTopLeft(find.text('פתוחים')).dy;
-    expect(bannerTop, lessThan(countsTop));
+      // **The couples who are out are celebrated on הלוח שלי, not here.** The
+      // ideas page opens straight onto its counts.
+      expect(find.byType(DatingCouplesStrip), findsNothing);
+      expect(find.text('פתוחים'), findsOneWidget);
+      final double countsTop = tester.getTopLeft(find.text('פתוחים')).dy;
 
-    // **Scrolling takes the banner and leaves the counts.** The banner is an
-    // invitation that has said everything it has to say after one look; the
-    // five counts are the map of the list being scrolled, and they park
-    // against the search field instead of going with it.
-    final ScrollableState list = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byType(CustomScrollView),
-        matching: find.byType(Scrollable),
-      ),
-    );
-    list.position.jumpTo(300);
-    await tester.pumpAndSettle();
+      // The counts are pinned: scrolling moves the list and not them.
+      final ScrollableState list = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      list.position.jumpTo(600);
+      await tester.pumpAndSettle();
+      expect(find.text('פתוחים'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('פתוחים')).dy, closeTo(countsTop, 1));
 
-    // The counts rode up over the banner and stopped at the top of the list,
-    // against the search field.
-    expect(find.text('פתוחים'), findsOneWidget);
-    final double pinnedTop = tester.getTopLeft(find.text('פתוחים')).dy;
-    expect(pinnedTop, lessThan(countsTop));
-
-    // The banner went past them and out of the way — it is above the row now
-    // rather than under it, if it is still built at all.
-    final Finder banner = find.byType(DatingCouplesStrip);
-    if (banner.evaluate().isNotEmpty) {
-      expect(tester.getBottomLeft(banner).dy, lessThanOrEqualTo(pinnedTop));
-    }
-
-    // And from there they are pinned: scrolling further moves the list and
-    // not them.
-    list.position.jumpTo(900);
-    await tester.pumpAndSettle();
-    expect(find.text('פתוחים'), findsOneWidget);
-    expect(tester.getTopLeft(find.text('פתוחים')).dy, closeTo(pinnedTop, 1));
-    expect(tester.takeException(), isNull);
-  });
+      // And the strip opens the board on the home screen.
+      AppRouter.router.go('/home');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(DatingCouplesStrip), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('the ideas banner is the app wordmark, and folds away for an '
       'open proposal', (WidgetTester tester) async {
@@ -1758,17 +1741,22 @@ void main() {
     );
     QuickUpdateOutcome? result;
 
+    // The dialog carries the tag picker, which reads the matchmaker's own
+    // tags off the database — as it does in the app, under the root providers.
     await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (BuildContext context) {
-            return TextButton(
-              onPressed: () async {
-                result = await QuickUpdateDialog.show(context, draft);
-              },
-              child: const Text('פתיחה'),
-            );
-          },
+      ChangeNotifierProvider<PersonRepository>(
+        create: (_) => PersonRepository(Hive.box<Person>('people')),
+        child: MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) {
+              return TextButton(
+                onPressed: () async {
+                  result = await QuickUpdateDialog.show(context, draft);
+                },
+                child: const Text('פתיחה'),
+              );
+            },
+          ),
         ),
       ),
     );

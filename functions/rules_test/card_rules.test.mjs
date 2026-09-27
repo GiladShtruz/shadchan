@@ -171,6 +171,16 @@ test('a matchmaker in the owner’s contacts can ask — and only ask', async ()
   await assertSucceeds(setDoc(doc(as(OWNER), 'cardAccess', accessId), access('approved')));
 });
 
+test('a request may say the matchmaker’s gender, and only as male or female', async () => {
+  await seedCardAndContacts({ inContacts: true });
+  await assertFails(
+    setDoc(doc(as(MM), 'cardAccess', accessId), access('pending', { matchmakerGender: 'x' })),
+  );
+  await assertSucceeds(
+    setDoc(doc(as(MM), 'cardAccess', accessId), access('pending', { matchmakerGender: 'female' })),
+  );
+});
+
 test('a matchmaker cannot create an approved row for themselves', async () => {
   await seedCardAndContacts({ inContacts: true });
   await assertFails(setDoc(doc(as(MM), 'cardAccess', accessId), access('approved')));

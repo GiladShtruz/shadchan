@@ -79,7 +79,7 @@ class PersonExtendedEditScreen extends StatefulWidget {
 }
 
 /// The areas of the page, in the order they are drawn.
-enum _Area { sendCard, photos, basics, looking, tags, notes, contacts }
+enum _Area { sendCard, photos, basics, looking, notes, contacts }
 
 class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   final TextEditingController _firstName = TextEditingController();
@@ -756,7 +756,6 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               // proposals are the matchmaker's alone; they never belong to
               // the card, so they are not on the owner's page at all.
               if (!_owner) ...<Widget>[
-                _buildTags(),
                 _buildNotes(theme, repository.getNotesForPerson(person.id)),
                 _buildContacts(theme),
               ],
@@ -1075,6 +1074,25 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
               }
             }),
           ),
+          // Tags are one more detail of the friend, next to the height, the
+          // place and the style — not a folded area of their own. They are
+          // the matchmaker's private words, so a card owner never sees them.
+          if (!_owner) ...<Widget>[
+            const SizedBox(height: 16),
+            _label(theme, 'תגיות'),
+            const SizedBox(height: 2),
+            Text(
+              'לסידור וסינון המאגר שלך. לא מופיעות בכרטיס שנשלח.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.mutedInk,
+              ),
+            ),
+            const SizedBox(height: 8),
+            PersonTagsEditor(
+              selected: _tags,
+              onChanged: (List<String> tags) => _commit(() => _tags = tags),
+            ),
+          ],
         ],
       ),
     );
@@ -1226,21 +1244,6 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  /// The matchmaker's own labels for this friend. Private: never part of the
-  /// card, never on the owner's page.
-  Widget _buildTags() {
-    return _area(
-      area: _Area.tags,
-      title: _tags.isEmpty ? 'תגיות' : 'תגיות (${_tags.length})',
-      icon: Icons.sell_outlined,
-      subtitle: 'לסידור וסינון המאגר שלך. לא מופיעות בכרטיס.',
-      child: PersonTagsEditor(
-        selected: _tags,
-        onChanged: (List<String> tags) => _commit(() => _tags = tags),
       ),
     );
   }

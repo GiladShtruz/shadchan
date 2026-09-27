@@ -10,6 +10,7 @@ import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
 import 'package:shadchan/widgets/incoming_shared_profile_listener.dart';
 import 'package:shadchan/utils/app_router.dart';
+import 'package:shadchan/utils/back_interceptor.dart';
 
 class App extends StatelessWidget {
   const App({super.key, this.checkForUpdates = true});
@@ -92,6 +93,11 @@ class App extends StatelessWidget {
 class _ExitThroughPeopleBackButtonDispatcher extends RootBackButtonDispatcher {
   @override
   Future<bool> didPopRoute() {
+    // A screen that wants the press for itself — "הרעיונות שלי" closing an
+    // open "פעולות" before it lets anybody leave — answers first.
+    if (BackInterceptor.handle()) {
+      return Future<bool>.value(true);
+    }
     final GoRouter router = AppRouter.router;
     if (router.canPop()) {
       return super.didPopRoute();

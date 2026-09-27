@@ -42,6 +42,7 @@ class MatchIdeaCard extends StatefulWidget {
     this.onChangeCheckInFrequency,
     this.datingSince,
     this.onActionsOpenChanged,
+    this.closeActions,
     this.onLongPress,
     this.compact = false,
     this.highlighted = false,
@@ -98,6 +99,10 @@ class MatchIdeaCard extends StatefulWidget {
   /// `MatchesScreen`.
   final ValueChanged<bool>? onActionsOpenChanged;
 
+  /// Fires when the screen wants every open panel closed — a back press on
+  /// "הרעיונות שלי" closes "פעולות" before it leaves the page.
+  final Listenable? closeActions;
+
   /// A long press on the card. The one way to delete a proposal — see
   /// `MatchesScreen._confirmDelete` for why it is a gesture and not a button.
   final VoidCallback? onLongPress;
@@ -125,8 +130,26 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
   MatchIdea get match => widget.match;
 
   @override
+  void initState() {
+    super.initState();
+    widget.closeActions?.addListener(_closeActions);
+  }
+
+  void _closeActions() {
+    if (!_actionsOpen || !mounted) {
+      return;
+    }
+    setState(() => _actionsOpen = false);
+    _announceActions();
+  }
+
+  @override
   void didUpdateWidget(covariant MatchIdeaCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.closeActions != widget.closeActions) {
+      oldWidget.closeActions?.removeListener(_closeActions);
+      widget.closeActions?.addListener(_closeActions);
+    }
     // A status change closes the row: the action was taken, and leaving it open
     // invites a second one on a card that has already moved.
     if (oldWidget.match.status != widget.match.status && _actionsOpen) {
@@ -137,6 +160,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
 
   @override
   void dispose() {
+    widget.closeActions?.removeListener(_closeActions);
     // A card scrolled out of the list, or a status move that rebuilt it as a
     // different widget, must not leave the screen believing it is still open.
     if (_actionsOpen) {
@@ -183,11 +207,11 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
             : tone.surface,
         borderRadius: BorderRadius.circular(16),
         elevation: tone.gradient != null
-            ? (highlighted ? 6 : 4)
+            ? (tone.soft ? (highlighted ? 4 : 2) : (highlighted ? 6 : 4))
             : highlighted
             ? 2
             : 0,
-        shadowColor: edge.withValues(alpha: 0.38),
+        shadowColor: edge.withValues(alpha: tone.soft ? 0.22 : 0.38),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: widget.onTap,
@@ -198,12 +222,18 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
               gradient: tone.gradient,
               border: Border.all(
                 color: tone.gradient != null
-                    ? edge.withValues(alpha: highlighted ? 0.95 : 0.72)
+                    ? edge.withValues(
+                        alpha: tone.soft
+                            ? (highlighted ? 0.80 : 0.42)
+                            : (highlighted ? 0.95 : 0.72),
+                      )
                     : highlighted
                     ? edge.withValues(alpha: 0.65)
                     : theme.colorScheme.outlineVariant,
                 width: tone.gradient != null
-                    ? (highlighted ? 2.4 : 1.8)
+                    ? (tone.soft
+                          ? (highlighted ? 2.0 : 1.4)
+                          : (highlighted ? 2.4 : 1.8))
                     : highlighted
                     ? 1.6
                     : 1,
@@ -266,6 +296,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                 ),
                 _CardActionBar(
                   open: _actionsOpen,
+                  tone: tone,
                   match: match,
                   male: widget.male,
                   female: widget.female,
@@ -302,18 +333,42 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
 /// "Waiting" is the waiting *list's* rule, not only the stored status: a
 /// proposal is waiting when it was set to wait or when either side is on a
 /// break or taken — the same test `MatchesScreen` groups by.
+/// The one dark grey the card's own captions are written in — "סטטוס" and
+/// "פעולות" — never a status colour.
+Color _cardLabelInk(ThemeData theme) => theme.brightness == Brightness.dark
+    ? const Color(0xFFD9D6D0)
+    : const Color(0xFF3B3A37);
+
 class _CardTone {
   const _CardTone({
     required this.accent,
     required this.surface,
     required this.gradient,
+    this.askFill,
+    this.journalWash,
+    this.journalAccent,
+    this.soft = false,
   });
 
   final Color accent;
+
+  /// A lighter hand on the frame: a thinner, fainter border and a shallower
+  /// shadow in the accent. The open idea's blue wears it, so the colour leads
+  /// without weighing the card down.
+  final bool soft;
   final Color surface;
 
   /// Null for a closed idea — plain paper.
   final Gradient? gradient;
+
+  /// The "יאללה לקדם" box's own fill, when it should not be a wash of the
+  /// status colour. Null keeps that wash.
+  final Color? askFill;
+
+  /// The journal's wash and its heading icon, when it wears a colour of its
+  /// own. Null keeps the neutral grey.
+  final Color? journalWash;
+  final Color? journalAccent;
 
   static _CardTone of(
     MatchIdea match, {
@@ -362,14 +417,51 @@ class _CardTone {
             AppColors.softYellow.withValues(alpha: dark ? 0.08 : 0.40),
           );
         }
-        // A very light sky wash, as gentle as the dating card's rose: the
-        // card still reads as blue and open, and the stronger blue is left to
-        // the border, the bars and the words.
-        final Color blue = dark ? AppColors.primaryDarkDm : AppColors.softBlue;
-        return washed(
-          dark ? AppColors.primaryDarkDm : AppColors.primaryDark,
-          blue.withValues(alpha: dark ? 0.12 : 0.62),
-          AppColors.softBlue.withValues(alpha: dark ? 0.04 : 0.18),
+        // **Blue leads, but it is only a hint.** Blue is the open idea's
+        // colour, so it stays in the frame, the bars and the words; the
+        // ground is a very light sky at the card's head that passes through
+        // the palette's cream into a soft sand-peach at the foot — the same
+        // two-tone shape the dating (rose → honey) and waiting (copper →
+        // honey) cards wear, so no card is one colour edge to edge. Inside,
+        // "יאללה לקדם" rests on cream-white paper and the journal takes a soft
+        // rose: the dating card turned inside out.
+        final Color paperTone = Color.alphaBlend(
+          AppColors.secondaryLight.withValues(alpha: dark ? 0.02 : 0.30),
+          paper,
+        );
+        return _CardTone(
+          accent: dark ? AppColors.primaryDarkDm : AppColors.primaryDark,
+          surface: paper,
+          soft: true,
+          gradient: LinearGradient(
+            begin: AlignmentDirectional.topStart,
+            end: AlignmentDirectional.bottomEnd,
+            stops: const <double>[0, 0.5, 1],
+            colors: <Color>[
+              Color.alphaBlend(
+                (dark ? AppColors.primaryDarkDm : AppColors.softBlue)
+                    .withValues(alpha: dark ? 0.08 : 0.34),
+                paper,
+              ),
+              paperTone,
+              Color.alphaBlend(
+                AppColors.softSand.withValues(alpha: dark ? 0.04 : 0.30),
+                paper,
+              ),
+            ],
+          ),
+          askFill: dark
+              ? Color.alphaBlend(
+                  AppColors.onSurfaceDm.withValues(alpha: 0.05),
+                  paper,
+                )
+              : AppColors.surface,
+          journalWash: dark
+              ? AppColors.femaleAccentDm.withValues(alpha: 0.10)
+              : AppColors.softRose.withValues(alpha: 0.62),
+          journalAccent: dark
+              ? AppColors.femaleAccentDm
+              : AppColors.femaleAccent,
         );
       case MatchStatus.rejected:
       case MatchStatus.dated:
@@ -978,10 +1070,14 @@ class _CardStatusMenu extends StatelessWidget {
             child: Text.rich(
               TextSpan(
                 children: <InlineSpan>[
+                  // The word "סטטוס" is a caption, the size of the "פנוי/ה"
+                  // under a name and in the same dark grey as "פעולות"; the
+                  // status itself keeps its size and its colour.
                   TextSpan(
                     text: 'סטטוס: ',
                     style: style.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                      color: _cardLabelInk(theme),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1034,6 +1130,7 @@ class _CardStatusMenu extends StatelessWidget {
 class _CardActionBar extends StatelessWidget {
   const _CardActionBar({
     required this.open,
+    required this.tone,
     required this.match,
     required this.male,
     required this.female,
@@ -1046,6 +1143,7 @@ class _CardActionBar extends StatelessWidget {
   });
 
   final bool open;
+  final _CardTone tone;
   final MatchIdea match;
   final Person? male;
   final Person? female;
@@ -1055,11 +1153,6 @@ class _CardActionBar extends StatelessWidget {
   final ValueChanged<MatchQuickAction>? onAction;
   final void Function(MatchNextStep step)? onAdvance;
 
-  /// Dark grey, never a status colour.
-  static Color _actionsInk(ThemeData theme) =>
-      theme.brightness == Brightness.dark
-      ? const Color(0xFFD9D6D0)
-      : const Color(0xFF3B3A37);
   final void Function(Person person)? onCheckInWith;
   final void Function(int days)? onChangeCheckInFrequency;
 
@@ -1107,7 +1200,7 @@ class _CardActionBar extends StatelessWidget {
                     open ? 'סגירת פעולות' : 'פעולות',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: _actionsInk(theme),
+                      color: _cardLabelInk(theme),
                     ),
                   ),
                   Icon(
@@ -1115,7 +1208,7 @@ class _CardActionBar extends StatelessWidget {
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
                     size: 18,
-                    color: _actionsInk(theme),
+                    color: _cardLabelInk(theme),
                   ),
                 ],
               ),
@@ -1143,6 +1236,7 @@ class _CardActionBar extends StatelessWidget {
                           )
                         else
                           _AskPanel(
+                            fill: tone.askFill,
                             match: match,
                             male: male,
                             female: female,
@@ -1154,7 +1248,11 @@ class _CardActionBar extends StatelessWidget {
                                 action(MatchQuickAction.contact),
                           ),
                         const SizedBox(height: 10),
-                        MatchJournalView(matchId: match.id),
+                        MatchJournalView(
+                          matchId: match.id,
+                          background: tone.journalWash,
+                          accent: tone.journalAccent,
+                        ),
                       ],
                     ),
                   )
@@ -1178,6 +1276,7 @@ class _CardActionBar extends StatelessWidget {
 /// nothing to be reminded of.
 class _AskPanel extends StatelessWidget {
   const _AskPanel({
+    this.fill,
     required this.match,
     required this.male,
     required this.female,
@@ -1186,6 +1285,8 @@ class _AskPanel extends StatelessWidget {
     required this.onAddContact,
   });
 
+  /// The box's own fill; null keeps the wash of the status colour.
+  final Color? fill;
   final MatchIdea match;
   final Person? male;
   final Person? female;
@@ -1203,6 +1304,7 @@ class _AskPanel extends StatelessWidget {
 
     return _ActionsBox(
       tint: ink,
+      fill: fill,
       rows: <Widget>[
         if (ask != null) ...<Widget>[
           Text(
@@ -1257,9 +1359,18 @@ class _AskPanel extends StatelessWidget {
 /// The box every idea's actions are drawn in: a soft wash of the status's own
 /// colour, rounded, with a little air inside.
 class _ActionsBox extends StatelessWidget {
-  const _ActionsBox({required this.tint, required this.rows, this.footer});
+  const _ActionsBox({
+    required this.tint,
+    required this.rows,
+    this.footer,
+    this.fill,
+  });
 
   final Color tint;
+
+  /// Paper instead of the tint's wash — the box then carries a hairline of
+  /// the tint, so it still reads as a box on a coloured card.
+  final Color? fill;
   final List<Widget> rows;
 
   /// A secondary line drawn *under* the tinted box rather than inside it —
@@ -1279,8 +1390,11 @@ class _ActionsBox extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
             decoration: BoxDecoration(
-              color: tint.withValues(alpha: dark ? 0.16 : 0.08),
+              color: fill ?? tint.withValues(alpha: dark ? 0.16 : 0.08),
               borderRadius: BorderRadius.circular(14),
+              border: fill == null
+                  ? null
+                  : Border.all(color: tint.withValues(alpha: 0.18)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

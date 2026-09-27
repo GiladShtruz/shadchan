@@ -17,9 +17,11 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
+import 'package:shadchan/widgets/app_celebration.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 
@@ -419,6 +421,19 @@ abstract final class MatchQuickActions {
     // A status set here is the matchmaker's own note about the friend. It is
     // never put to the friend, even one who manages their own card.
     await repository.updateProfileStatus(person.id, status);
+    // An engagement is a moment, not a fact: the middle of the screen, for a
+    // few seconds, and gone by itself.
+    if (status == ProfileStatus.mazelTov && context.mounted) {
+      AppCelebration.show(
+        context,
+        headline: 'מזל טוב!',
+        message:
+            'זכית להיות חלק מהדרך {שלו|שלה} לחופה. '
+                    'איזה כיף להיות חלק משמחה כזאת!'
+                .forPerson(person),
+        duration: const Duration(seconds: 5),
+      );
+    }
     if (!status.pausesMatches || !context.mounted) {
       return;
     }

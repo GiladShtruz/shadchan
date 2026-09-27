@@ -58,6 +58,22 @@ abstract final class GenderText {
     return out.toString();
   }
 
+  /// Like [resolve], but a gender that is not known writes both forms —
+  /// "ירצה/תרצה" — instead of defaulting to the masculine. For sentences
+  /// about somebody whose gender the app may simply not have been told.
+  static String resolveOrBoth(String template, Gender? gender) {
+    if (gender == Gender.male || gender == Gender.female) {
+      return resolve(template, gender);
+    }
+    return template.replaceAllMapped(RegExp(r'\{([^{}|]*)\|([^{}|]*)\}'), (
+      Match m,
+    ) {
+      final String masculine = m.group(1)!;
+      final String feminine = m.group(2)!;
+      return masculine == feminine ? masculine : '$masculine/$feminine';
+    });
+  }
+
   /// The short form used where only one word changes.
   static String pick(Gender? gender, String masculine, String feminine) {
     return gender == Gender.female ? feminine : masculine;

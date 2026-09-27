@@ -481,7 +481,7 @@ class _SwitchAreaCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'מעבר לאזור השדכן',
+                  'מעבר לאזור {השדכן|השדכנית}'.forGender(context.userGender),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),

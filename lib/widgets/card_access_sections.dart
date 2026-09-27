@@ -139,6 +139,13 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     }
   }
 
+  /// The matchmaker's gender as the row carries it; null when it does not.
+  static Gender? _genderOf(CardAccess row) => switch (row.matchmakerGender) {
+    'male' => Gender.male,
+    'female' => Gender.female,
+    _ => null,
+  };
+
   /// "הסתר": never at once — a dialog says what it means first.
   ///
   /// Stored as the same `blocked` row it always was; what changed is the word
@@ -148,11 +155,20 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     final bool? sure = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('להסתיר את הכרטיס מהשדכן הזה?'),
+        title: Text(
+          GenderText.resolveOrBoth(
+            'להסתיר את הכרטיס {מהשדכן הזה|מהשדכנית הזו}?',
+            _genderOf(row),
+          ),
+        ),
         content: Text(
-          'מבחינת ${access.nameInContacts(row.matchmakerUid, row.matchmakerName)} '
-          'ייראה כאילו אין לך כרטיס זמין ב׳שדכן׳. אם ירצה להוסיף אותך למאגר '
-          'שלו או לקבל פרטים, הוא יצטרך לפנות אליך אישית ב־WhatsApp.',
+          GenderText.resolveOrBoth(
+            'מבחינת ${access.nameInContacts(row.matchmakerUid, row.matchmakerName)} '
+            'ייראה כאילו אין לך כרטיס זמין ב׳שדכן׳. {אם ירצה|אם תרצה} '
+            'להוסיף אותך למאגר {שלו|שלה} או לקבל פרטים, {הוא יצטרך|היא '
+            'תצטרך} לפנות אליך אישית ב־WhatsApp.',
+            _genderOf(row),
+          ),
         ),
         actions: <Widget>[
           TextButton(
@@ -248,8 +264,13 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        '${report.matchmakerName} עדכן אצלו שהסטטוס שלך הוא '
-                        '‘${_statusLabel(report.status)}’. זה נכון?',
+                        // Reports carry no gender, so both forms.
+                        GenderText.resolveOrBoth(
+                          '${report.matchmakerName} {עדכן אצלו|עדכנה אצלה} '
+                          'שהסטטוס שלך הוא '
+                          '‘${_statusLabel(report.status)}’. זה נכון?',
+                          null,
+                        ),
                         style: theme.textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 8),
@@ -288,7 +309,8 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
               title: 'שדכנים יכולים לבקש גישה לכרטיס',
               subtitle: acceptsRequests
                   ? null
-                  : 'כבוי: אף שדכן לא יכול לשלוח בקשה, ולא יראה שיש לך כרטיס. '
+                  : 'כבוי: אף שדכן או שדכנית לא יכולים לשלוח בקשה, ולא יראו '
+                            'שיש לך כרטיס. '
                             '{אתה יכול|את יכולה} לתת גישה לחברים בעצמך.'
                         .forGender(gender),
               trailing: Switch(
