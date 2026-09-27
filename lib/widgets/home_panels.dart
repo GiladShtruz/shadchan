@@ -105,13 +105,11 @@ class HomeArtTile extends StatelessWidget {
           child: _AddTile(
             onTap: onTap,
             art: art,
-            // The drawing wears the label's own blue, so icon and words read
-            // as one line; the copper stays in the rule along the foot.
-            tint: ColorFilter.mode(
-              AppColors.heading(dark: dark),
-              BlendMode.srcIn,
-            ),
+            // Drawing, words and the rule along the foot are all the one
+            // copper, so the tile reads as a single invitation in one ink.
+            tint: ColorFilter.mode(ink, BlendMode.srcIn),
             accent: ink,
+            labelColor: ink,
             label: label,
             artHeight: artHeight,
             labelHeight: labelHeight,
@@ -258,10 +256,14 @@ class _AddTile extends StatefulWidget {
     required this.padding,
     this.emphasised = false,
     this.divided = false,
+    this.labelColor,
   });
 
   final VoidCallback onTap;
   final String art;
+
+  /// The label's ink — the heading blue unless the tile names its own.
+  final Color? labelColor;
 
   /// A short, faint rule between the drawing and the label.
   final bool divided;
@@ -363,9 +365,10 @@ class _AddTileState extends State<_AddTile> {
                           Container(
                             width: 1,
                             height: widget.artHeight * 0.7,
-                            color: AppColors.heading(
-                              dark: dark,
-                            ).withValues(alpha: 0.22),
+                            color:
+                                (widget.labelColor ??
+                                        AppColors.heading(dark: dark))
+                                    .withValues(alpha: 0.22),
                           ),
                           const SizedBox(width: 10),
                         ] else
@@ -382,7 +385,9 @@ class _AddTileState extends State<_AddTile> {
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   height: 1.2,
-                                  color: AppColors.heading(dark: dark),
+                                  color:
+                                      widget.labelColor ??
+                                      AppColors.heading(dark: dark),
                                 ),
                               ),
                             ),
@@ -755,9 +760,9 @@ class DatingCouplesStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    // The same rose-to-honey wash, rose border and rose glow a dating couple's
-    // own card wears on "הרעיונות שלי" — the strip is about those cards, so it
-    // is dressed like them rather than in the page's quiet blue.
+    // The rose-to-honey wash a dating couple's own card wears on "הרעיונות
+    // שלי", and nothing around it: no frame, no glow, no sparkle — the wash and
+    // the rose ink of the words are the whole decoration.
     final Color rose = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
     final Color surface = theme.colorScheme.surface;
     final String couples = count == 1
@@ -767,8 +772,6 @@ class DatingCouplesStrip extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(16),
-      elevation: 3,
-      shadowColor: rose.withValues(alpha: 0.35),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -789,7 +792,6 @@ class DatingCouplesStrip extends StatelessWidget {
                 ),
               ],
             ),
-            border: Border.all(color: rose.withValues(alpha: 0.55), width: 1.2),
           ),
           padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 8, 10),
           child: Row(
@@ -813,12 +815,11 @@ class DatingCouplesStrip extends StatelessWidget {
                   style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                     height: 1.3,
-                    color: dark ? theme.colorScheme.onSurface : _datingInk,
+                    color: dark ? rose : AppColors.femaleInk,
                   ),
                 ),
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.auto_awesome, size: 14, color: _celebrationGold),
               Icon(Icons.chevron_right_rounded, size: 22, color: rose),
             ],
           ),

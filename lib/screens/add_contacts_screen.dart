@@ -103,14 +103,17 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
         ContactsAddedCelebration.show(context, count: added);
       }
     }
-    _leave();
+    // The count goes back to whoever pushed this screen: a visit that added
+    // somebody is finished, while an empty one ([AddPeopleDialog]) is a step
+    // back to the choice of how to add.
+    _leave(added > 0 ? added : null);
   }
 
   /// The screen is reached both by a push (from the home shortcuts) and by a
   /// direct navigation, so fall back to home when there is nothing to pop.
-  void _leave() {
+  void _leave([int? added]) {
     if (context.canPop()) {
-      context.pop();
+      context.pop(added);
       return;
     }
     context.go('/home');

@@ -7,6 +7,7 @@ import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/sync_state_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/phone_identity.dart';
 
 /// What applying one version of an owner's card changed on the matchmaker's
 /// copy.
@@ -41,6 +42,68 @@ abstract final class CardSyncEngine {
 
   static bool isCardPhoto(String path) =>
       PhotoPickerService.basenameOf(path).startsWith('card_');
+
+  /// The friend in [people] that [ownerUid]'s card belongs to, if the
+  /// matchmaker already has them — so granting access links the card to the
+  /// existing record instead of adding the friend a second time.
+  ///
+  /// In order: the record already linked to this card; a record whose saved
+  /// number is the owner's ([ownerPhoneHash]) — the real identity, and the
+  /// same one a later import from the contacts is checked against; and, only
+  /// for a record with no number at all, exactly one record with the card's
+  /// full name. A record with some *other* number is a different person with
+  /// the same name, and is never taken. Visible records win over hidden ones.
+  static Person? findExisting(
+    Iterable<Person> people, {
+    required String ownerUid,
+    required String? ownerPhoneHash,
+    required String firstName,
+    required String lastName,
+  }) {
+    for (final Person person in people) {
+      if (person.cardOwnerUid == ownerUid) {
+        return person;
+      }
+    }
+    final List<Person> free = people
+        .where((Person p) => p.cardOwnerUid == null)
+        .toList();
+    int rank(Person p) => p.hidden ? 1 : 0;
+    int byPreference(Person a, Person b) {
+      final int hidden = rank(a).compareTo(rank(b));
+      return hidden != 0 ? hidden : b.updatedAt.compareTo(a.updatedAt);
+    }
+
+    if (ownerPhoneHash != null) {
+      final List<Person> byPhone =
+          free
+              .where(
+                (Person p) => PhoneIdentity.hash(p.phone) == ownerPhoneHash,
+              )
+              .toList()
+            ..sort(byPreference);
+      if (byPhone.isNotEmpty) {
+        return byPhone.first;
+      }
+    }
+
+    if (firstName.trim().isEmpty || lastName.trim().isEmpty) {
+      return null;
+    }
+    final String wanted = _nameKey(firstName, lastName);
+    final List<Person> byName = free
+        .where(
+          (Person p) =>
+              !p.hidden &&
+              (p.phone ?? '').trim().isEmpty &&
+              _nameKey(p.firstName, p.lastName) == wanted,
+        )
+        .toList();
+    return byName.length == 1 ? byName.first : null;
+  }
+
+  static String _nameKey(String first, String last) =>
+      '${first.trim()} ${last.trim()}'.replaceAll(RegExp(r'\s+'), ' ').trim();
 
   /// Whether the matchmaker had written anything about this person beyond a
   /// name — the condition for keeping a snapshot to restore later.

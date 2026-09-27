@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/community_tags_service.dart';
+import 'package:shadchan/services/database_hash_upload.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -145,11 +147,11 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     if (!mounted) {
       return;
     }
-    unawaited(
-      CommunityTagsService.publishFrom(
-        context.read<PersonRepository>().getAll(),
-      ),
-    );
+    final List<Person> people = context.read<PersonRepository>().getAll();
+    unawaited(CommunityTagsService.publishFrom(people));
+    // Rides the same moments: which friends are in the database, so a friend
+    // who writes a card is announced to this matchmaker.
+    unawaited(DatabaseHashUpload.publishFrom(people));
   }
 
   void _noteCardChange() {

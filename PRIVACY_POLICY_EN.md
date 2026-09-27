@@ -54,6 +54,7 @@ Someone who signs in as a single person may write a personal card about themselv
 - **Who sees the card:** only its owner and matchmakers the owner approved. Access is checked on the server, in Firebase Security Rules, not only in the Application. Access covers the whole card and can be withdrawn, or a matchmaker blocked, at any time.
 - **Your number:** so that friends can recognise you, a hash of the phone number you entered is stored with your name and whether you have a card or match. Numbers can be looked up one at a time; the list cannot be read out. A hash of a phone number is not a strong secret — it hides the number from reading, not from a determined attempt.
 - **The owner's contacts:** only if the owner grants contacts access, hashes of the numbers in their contacts are sent to the server — no names and no numbers. The server uses them to find which friends match, and to verify that a matchmaker requesting access is saved in the owner's contacts. The list is replaced on every update and is visible only to the server's rules.
+- **A matchmaker's database:** while you are signed in as a matchmaker, hashes of the phone numbers of the friends in your database are sent to the server — no names and no numbers. The server uses them only to tell you when a friend in your database writes a personal card of their own, so that you can ask them for access. No other user can read them; they are replaced on every update and erased with the account.
 - **On the matchmaker's device:** an approved matchmaker's device keeps the card's details and photographs so the matchmaker can work with and share them like any card. Notes, ideas and information the matchmaker wrote themselves stay with that matchmaker only and never reach the owner or another matchmaker. When access is withdrawn or the card is deleted, the details and photographs received from it are removed from the matchmaker's device and the matchmaker's earlier version is restored.
 - **Deleting the card:** removes the card only, not the account. The card is kept flagged as deleted so it can be restored, and matchmakers stop seeing it at once. It is erased completely with account deletion.
 - **Notifications:** server functions (Cloud Functions) write notices to the account about access requests, approvals or declines, a friend's card, a wedding and a Hebrew birthday, and send them as push notifications through Firebase Cloud Messaging. A device notification token is stored for this. Ordinary changes to a card send no notification.
@@ -110,7 +111,7 @@ Information may be processed outside your country. Firebase Authentication opera
 - Community data can be erased immediately from the privacy screen.
 - Engagement records and congratulations follow section 6.
 - Your tips are erased with the account.
-- A deleted personal card is kept flagged as deleted until restored or until account deletion. Contact hashes are replaced on every update and erased with the account. Notices in the account remain until you remove them or the account.
+- A deleted personal card is kept flagged as deleted until restored or until account deletion. Contact and database hashes are replaced on every update and erased with the account. Notices in the account remain until you remove them or the account.
 - Support correspondence follows section 8.
 - Firebase Authentication may keep logged IP addresses for a few weeks. Firebase states that after user deletion, Authentication data is removed from live and backup systems within 180 days.
 
@@ -118,7 +119,7 @@ Information may be processed outside your country. Firebase Authentication opera
 
 Account deletion can be completed inside the Application: **My profile → bottom of the page → Delete account and data**. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.
 
-Deletion removes the Firebase user, cloud backup and photographs, the personal card and its photographs, access grants, the phone and contact hashes, notices, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
+Deletion removes the Firebase user, cloud backup and photographs, the personal card and its photographs, access grants, the phone, contact and database hashes, notices, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
 
 If you no longer have access to the Application, request deletion at **giladsh22@gmail.com**. We will verify ownership first.
 

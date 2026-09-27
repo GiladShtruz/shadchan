@@ -353,7 +353,7 @@ class _Side extends StatelessWidget {
 
   /// A little more presence than the 24 the faces had: large enough to know
   /// who it is at a glance, small enough that a list still reads as a list.
-  static const double avatarRadius = 29;
+  static const double avatarRadius = 33;
 
   @override
   Widget build(BuildContext context) {
@@ -1622,7 +1622,7 @@ class _Middle extends StatelessWidget {
     final bool dating = status == MatchStatus.dating;
     return Padding(
       // The top padding lands the heart level with the middle of the photos.
-      padding: const EdgeInsets.fromLTRB(6, 30, 6, 0),
+      padding: const EdgeInsets.fromLTRB(6, 34, 6, 0),
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,
@@ -1638,10 +1638,16 @@ class _Middle extends StatelessWidget {
                 ? Icons.heart_broken_rounded
                 : Icons.favorite,
             size: dating ? 25 : 20,
-            color: AppColors.matchState(
-              status,
-              dark: Theme.of(context).brightness == Brightness.dark,
-            ),
+            // The broken heart is the palette's rose, not the grey of a
+            // closed idea.
+            color: status == MatchStatus.dated
+                ? (Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.femaleAccentDm
+                      : AppColors.femaleAccent)
+                : AppColors.matchState(
+                    status,
+                    dark: Theme.of(context).brightness == Brightness.dark,
+                  ),
           ),
           if (dating) ...<Widget>[
             const Positioned(

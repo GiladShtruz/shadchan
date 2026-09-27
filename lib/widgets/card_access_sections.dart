@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
@@ -7,6 +8,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/services/invite_link_service.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
@@ -88,11 +90,34 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     AppNotice.show(context, 'לא הצלחנו לעדכן כרגע. אפשר לנסות שוב.');
   }
 
+  /// The owner's own number, asked for once if it is missing. Every grant
+  /// carries it: it is how the matchmaker's app finds the friend already in
+  /// their database — and the number WhatsApp opens — so a grant without it
+  /// would add the friend a second time.
+  Future<bool> _ensureMyPhone() async {
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    if (profile.myPhone != null) {
+      return true;
+    }
+    final String? phone = await MyPhoneDialog.show(context);
+    if (phone == null || !mounted) {
+      return false;
+    }
+    await profile.setMyPhone(phone);
+    return true;
+  }
+
   Future<void> _setStatus(
     CardAccessProvider access,
     CardAccess row,
     CardAccessStatus status,
   ) async {
+    if (status == CardAccessStatus.approved && !await _ensureMyPhone()) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
     final UserProfileProvider profile = context.read<UserProfileProvider>();
     final bool ok = await access.setStatus(
       row,
@@ -134,6 +159,9 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
   }
 
   Future<void> _grant(CardAccessProvider access, CardHelper helper) async {
+    if (!await _ensureMyPhone() || !mounted) {
+      return;
+    }
     final UserProfileProvider profile = context.read<UserProfileProvider>();
     final bool ok = await access.grant(
       helper,
@@ -234,48 +262,33 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
               const SettingsRow(
                 icon: Icons.mark_email_unread_outlined,
                 title: 'אין בקשות חדשות',
-                subtitle: 'כששדכן יבקש גישה לכרטיס שלך, הבקשה תופיע כאן',
               )
             else
               for (final CardAccess row in pending)
-                SettingsRow(
-                  icon: Icons.person_add_alt_outlined,
-                  title: row.matchmakerName,
-                  subtitle: 'רוצה לקבל גישה לכרטיס שלך',
-                  trailing: _busyOr(
-                    access.isBusy('access:${row.id}'),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        TextButton(
-                          onPressed: () => _setStatus(
-                            access,
-                            row,
-                            CardAccessStatus.declined,
-                          ),
-                          child: const Text('לא עכשיו'),
-                        ),
-                        FilledButton(
-                          onPressed: () => _setStatus(
-                            access,
-                            row,
-                            CardAccessStatus.approved,
-                          ),
-                          child: const Text('לאשר'),
-                        ),
-                        PopupMenuButton<String>(
-                          tooltip: 'עוד',
-                          onSelected: (_) => _confirmBlock(access, row),
-                          itemBuilder: (_) => const <PopupMenuEntry<String>>[
-                            PopupMenuItem<String>(
-                              value: 'block',
-                              child: Text('חסימה'),
-                            ),
-                          ],
-                        ),
-                      ],
+                _AccessRow(
+                  name: row.matchmakerName,
+                  busy: access.isBusy('access:${row.id}'),
+                  menu: <String, VoidCallback>{
+                    'חסימה': () => _confirmBlock(access, row),
+                  },
+                  actions: <Widget>[
+                    FilledButton(
+                      onPressed: () =>
+                          _setStatus(access, row, CardAccessStatus.approved),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('לאשר'),
                     ),
-                  ),
+                    TextButton(
+                      onPressed: () =>
+                          _setStatus(access, row, CardAccessStatus.declined),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('לא עכשיו'),
+                    ),
+                  ],
                 ),
           ],
         ),
@@ -286,33 +299,17 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
               SettingsRow(
                 icon: Icons.lock_outline_rounded,
                 title: 'רק {אתה|את}'.forGender(gender),
-                subtitle: 'עדיין לא נתת גישה לאף שדכן',
               )
             else
               for (final CardAccess row in approved)
-                SettingsRow(
-                  icon: Icons.verified_user_outlined,
-                  title: row.matchmakerName,
-                  subtitle: 'רואה את הכרטיס המעודכן שלך',
-                  trailing: _busyOr(
-                    access.isBusy('access:${row.id}'),
-                    PopupMenuButton<String>(
-                      tooltip: 'פעולות',
-                      onSelected: (String value) => value == 'block'
-                          ? _confirmBlock(access, row)
-                          : _setStatus(access, row, CardAccessStatus.revoked),
-                      itemBuilder: (_) => const <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          value: 'revoke',
-                          child: Text('הסרת גישה'),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'block',
-                          child: Text('חסימה'),
-                        ),
-                      ],
-                    ),
-                  ),
+                _AccessRow(
+                  name: row.matchmakerName,
+                  busy: access.isBusy('access:${row.id}'),
+                  menu: <String, VoidCallback>{
+                    'הסרת גישה': () =>
+                        _setStatus(access, row, CardAccessStatus.revoked),
+                    'חסימה': () => _confirmBlock(access, row),
+                  },
                 ),
           ],
         ),
@@ -353,23 +350,13 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                 const SettingsRow(
                   icon: Icons.diversity_3_outlined,
                   title: 'עוד לא מצאנו חברים שלך בשדכן',
-                  subtitle:
-                      'כשחברים מאנשי הקשר שלך יירשמו לשדכן, הם יופיעו כאן — '
-                      'ואפשר יהיה לתת להם גישה לכרטיס',
                 )
               else
                 for (final CardHelper helper in helpers)
-                  SettingsRow(
-                    icon: Icons.diversity_3_outlined,
-                    title: helper.name,
-                    subtitle: 'מאנשי הקשר שלך, נרשמו לשדכן',
-                    trailing: _busyOr(
-                      access.isBusy('helper:${helper.uid}'),
-                      FilledButton.tonal(
-                        onPressed: () => _grant(access, helper),
-                        child: const Text('לתת גישה לכרטיס שלי'),
-                      ),
-                    ),
+                  _HelperRow(
+                    name: helper.name,
+                    busy: access.isBusy('helper:${helper.uid}'),
+                    onGrant: () => _grant(access, helper),
                   ),
             ],
           ),
@@ -479,6 +466,142 @@ class _InviteSuggestion extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// A friend who matchmakes in the app: their full name, and the one thing to
+/// do about it. Nothing else — the heading above already says who they are.
+class _HelperRow extends StatelessWidget {
+  const _HelperRow({
+    required this.name,
+    required this.busy,
+    required this.onGrant,
+  });
+
+  final String name;
+  final bool busy;
+  final VoidCallback onGrant;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              name.trim().isEmpty ? 'ללא שם' : name.trim(),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: dark ? AppColors.headingInkDm : AppColors.headingInk,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          if (busy)
+            const SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            FilledButton.tonal(
+              onPressed: onGrant,
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('לתת גישה'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One matchmaker on the owner's lists: an initial, their name, and what can
+/// be done about them — the main answers as buttons under the name, anything
+/// rarer (blocking) behind the menu. No sentence explaining the row: the
+/// heading above it already says what the list is.
+class _AccessRow extends StatelessWidget {
+  const _AccessRow({
+    required this.name,
+    required this.busy,
+    this.actions = const <Widget>[],
+    this.menu = const <String, VoidCallback>{},
+  });
+
+  final String name;
+  final bool busy;
+  final List<Widget> actions;
+  final Map<String, VoidCallback> menu;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final String shown = name.trim().isEmpty ? 'ללא שם' : name.trim();
+    final Color ink = dark ? AppColors.headingInkDm : AppColors.headingInk;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              CircleAvatar(
+                radius: 17,
+                backgroundColor: ink.withValues(alpha: 0.10),
+                child: Text(
+                  shown.characters.first,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: ink,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  shown,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: ink,
+                  ),
+                ),
+              ),
+              if (busy)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (menu.isNotEmpty)
+                PopupMenuButton<String>(
+                  tooltip: 'פעולות',
+                  icon: const Icon(Icons.more_vert_rounded),
+                  onSelected: (String label) => menu[label]?.call(),
+                  itemBuilder: (_) => <PopupMenuEntry<String>>[
+                    for (final String label in menu.keys)
+                      PopupMenuItem<String>(value: label, child: Text(label)),
+                  ],
+                ),
+            ],
+          ),
+          if (actions.isNotEmpty && !busy)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 44, top: 2),
+              child: Wrap(spacing: 8, runSpacing: 4, children: actions),
+            ),
+        ],
+      ),
     );
   }
 }

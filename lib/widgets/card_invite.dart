@@ -98,7 +98,7 @@ abstract final class CardInviteFlow {
       return CardInviteState.synced;
     }
     final String? hash = PhoneIdentity.hash(person.phone);
-    if (!access.isConnected || hash == null) {
+    if (hash == null || !await access.ensureConnected()) {
       return CardInviteState.noCard;
     }
     final Map<String, dynamic>? entry = await access.lookup(hash);
@@ -128,13 +128,31 @@ abstract final class CardInviteFlow {
   /// (the matches list) — there it is a request for details.
   static const String detailsRequestLabel = 'לבקשת פרטים בוואטסאפ';
 
-  /// The label for [state], or null when there is nothing to offer.
-  static String? labelFor(CardInviteState state) {
+  /// The invitation named for the friend it goes to: "לשליחת קישור לדוד".
+  /// Falls back to [inviteLabel] when there is no name to put in it.
+  static String inviteLabelFor(Person? person) {
+    final String first = (person?.firstName ?? '').trim();
+    final String name = first.isNotEmpty
+        ? first
+        : (person?.fullName ?? '').trim();
+    return name.isEmpty ? inviteLabel : 'לשליחת קישור ל$name';
+  }
+
+  /// The access request named for the friend: "בקשת גישה לכרטיס של דוד".
+  static String requestLabelFor(Person person) {
+    final String first = person.firstName.trim();
+    final String name = first.isNotEmpty ? first : person.fullName.trim();
+    return name.isEmpty ? 'בקשת גישה לכרטיס' : 'בקשת גישה לכרטיס של $name';
+  }
+
+  /// The label for [state], or null when there is nothing to offer. With
+  /// [person], the invitation carries their name — see [inviteLabelFor].
+  static String? labelFor(CardInviteState state, {Person? person}) {
     switch (state) {
       case CardInviteState.noCard:
-        return inviteLabel;
+        return person == null ? inviteLabel : inviteLabelFor(person);
       case CardInviteState.requestable:
-        return 'בקשת גישה לכרטיס';
+        return person == null ? 'בקשת גישה לכרטיס' : requestLabelFor(person);
       case CardInviteState.pending:
         return 'ממתין לאישור גישה';
       case CardInviteState.synced:
@@ -202,7 +220,10 @@ abstract final class CardInviteFlow {
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
     if (profile.myPhone == null) {
-      final String? phone = await MyPhoneDialog.show(context);
+      final String? phone = await MyPhoneDialog.show(
+        context,
+        purpose: MyPhonePurpose.matchmakerRequest,
+      );
       if (phone == null || !context.mounted) {
         return null;
       }
@@ -390,7 +411,7 @@ class _CardInviteButtonState extends State<CardInviteButton> {
     if (widget.onlyInvite && state != CardInviteState.noCard) {
       return const SizedBox.shrink();
     }
-    final String? label = CardInviteFlow.labelFor(state);
+    final String? label = CardInviteFlow.labelFor(state, person: widget.person);
     if (label == null) {
       return const SizedBox.shrink();
     }
@@ -422,5 +443,202 @@ class _CardInviteButtonState extends State<CardInviteButton> {
         label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
     );
+  }
+}
+
+/// The foot of a friend's card while the matchmaker has no card text for
+/// them — worked out from where the friend stands, so it never contradicts
+/// the server:
+///
+/// - no card of their own → the invitation to write one, in WhatsApp;
+/// - a card of their own → "בקשת גישה לכרטיס של X", never the invitation:
+///   inviting somebody to write a card they already keep is the one message
+///   this must not send;
+/// - a request waiting, or access just given → says so.
+///
+/// Beside each, "הזנה ידנית של כרטיס", so there are always two plain choices.
+/// Only that one is drawn until the answer is known, so a friend with a card
+/// is never shown the invitation for a moment first.
+class FriendCardInvite extends StatefulWidget {
+  const FriendCardInvite({
+    super.key,
+    required this.person,
+    this.textStyle,
+    this.onManualEntry,
+  });
+
+  final Person person;
+
+  /// "הזנה ידנית של כרטיס" — the other way to fill an empty card, offered
+  /// beside the invitation or the access request so there are always two
+  /// plain choices.
+  final VoidCallback? onManualEntry;
+
+  /// The quiet explanatory line's style, from the card it sits in.
+  final TextStyle? textStyle;
+
+  @override
+  State<FriendCardInvite> createState() => _FriendCardInviteState();
+}
+
+class _FriendCardInviteState extends State<FriendCardInvite> {
+  CardInviteState? _state;
+  String? _resolvedFor;
+  String? _ownerUid;
+  bool _busy = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant FriendCardInvite oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _resolve();
+  }
+
+  Future<void> _resolve({bool force = false}) async {
+    final CardAccessProvider access = context.read<CardAccessProvider>();
+    final Person person = widget.person;
+    final String key =
+        '${person.id}|${person.phone}|${person.cardOwnerUid}|'
+        '${access.isConnected}|'
+        '${access.accessTo(_ownerUid ?? '')?.status}';
+    if (!force && key == _resolvedFor) {
+      return;
+    }
+    _resolvedFor = key;
+    final CardInviteState state = await CardInviteFlow.stateFor(access, person);
+    final String? hash = PhoneIdentity.hash(person.phone);
+    if (hash != null && state != CardInviteState.noCard) {
+      final Object? uid = (await access.lookup(hash))?['uid'];
+      _ownerUid = uid is String ? uid : null;
+    }
+    if (mounted) {
+      setState(() => _state = state);
+    }
+  }
+
+  Future<void> _tap() async {
+    if (_busy) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await CardInviteFlow.run(context, widget.person);
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+        await _resolve(force: true);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Access rows moving turn "בקשת גישה" into "ממתין" and on.
+    context.watch<CardAccessProvider>();
+    final CardInviteState? state = _state;
+    final Person person = widget.person;
+    final bool she = person.gender == Gender.female;
+    final String name = person.firstName.trim().isNotEmpty
+        ? person.firstName.trim()
+        : person.fullName.trim();
+    final TextStyle? style =
+        widget.textStyle ?? Theme.of(context).textTheme.bodyMedium;
+
+    Widget line(String text) => Text(text, style: style);
+    Widget busyOr(Widget button) => _busy
+        ? const Center(
+            child: SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        : button;
+    final Widget? manual = widget.onManualEntry == null
+        ? null
+        : OutlinedButton.icon(
+            onPressed: widget.onManualEntry,
+            icon: const Icon(Icons.edit_note_rounded, size: 20),
+            label: const Text('הזנה ידנית של כרטיס'),
+          );
+    Widget options(List<Widget> children) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < children.length; i++) ...<Widget>[
+          if (i > 0) const SizedBox(height: 8),
+          children[i],
+        ],
+      ],
+    );
+
+    switch (state) {
+      case CardInviteState.synced:
+        return const SizedBox.shrink();
+      case null:
+        // Still asking the server: typing a card in by hand never has to wait.
+        return manual ?? const SizedBox.shrink();
+      case CardInviteState.noCard:
+        return options(<Widget>[
+          line(
+            she
+                ? 'עוד אין כאן כרטיס. הזמנה אישית קצרה בוואטסאפ, והיא '
+                      'ממלאת כרטיס בעצמה — מדויק, עם תמונות, ומתעדכן אצלך.'
+                : 'עוד אין כאן כרטיס. הזמנה אישית קצרה בוואטסאפ, והוא '
+                      'ממלא כרטיס בעצמו — מדויק, עם תמונות, ומתעדכן אצלך.',
+          ),
+          busyOr(
+            OutlinedButton.icon(
+              onPressed: _tap,
+              icon: const FaIcon(
+                FontAwesomeIcons.whatsapp,
+                size: 17,
+                color: Color(0xFF25D366),
+              ),
+              label: Text(
+                CardInviteFlow.inviteLabelFor(person),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          ?manual,
+        ]);
+      case CardInviteState.requestable:
+        // Two plain choices, nothing to read: ask for the card the friend
+        // wrote, or type one in by hand.
+        final bool declined =
+            _ownerUid != null &&
+            context.read<CardAccessProvider>().accessTo(_ownerUid!)?.status ==
+                CardAccessStatus.declined;
+        return options(<Widget>[
+          busyOr(
+            FilledButton.tonalIcon(
+              onPressed: _tap,
+              icon: const Icon(Icons.lock_open_rounded, size: 18),
+              label: Text(
+                declined
+                    ? 'לבקש שוב גישה לכרטיס של $name'
+                    : CardInviteFlow.requestLabelFor(person),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          ?manual,
+        ]);
+      case CardInviteState.pending:
+        return options(<Widget>[
+          line('ביקשת גישה לכרטיס של $name · ממתין לאישור'),
+          ?manual,
+        ]);
+      case CardInviteState.approved:
+        return line('מתחבר לכרטיס של $name…');
+      case CardInviteState.blocked:
+        return manual ?? const SizedBox.shrink();
+    }
   }
 }

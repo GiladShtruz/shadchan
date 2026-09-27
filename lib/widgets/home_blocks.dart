@@ -139,9 +139,7 @@ class HomeTip {
 /// **The card is sized to its sentence.** It used to stand a third taller than
 /// anything it ever held, which on a page of otherwise tight blocks read as an
 /// empty box with a line of text floating in it. The frame is now as small as a
-/// two-line tip needs, and what fills the space that is left is warmth rather
-/// than air: a soft coloured wash in the corner, the paper tone, the bulb in
-/// its disc.
+/// two-line tip needs: a heading, the sentence, and a pink rule along the foot.
 ///
 /// **"לשליחת טיפ" is outside the frame**, under it, in footnote type. Inside,
 /// it was the last thing the eye landed on and turned a card for reading into a
@@ -219,10 +217,6 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color ink = dark ? _tipInkDm : _tipInk;
-    // The bulb and its disc wear the copper the rule under the card is drawn
-    // in — one colour per block, and it is the palette's, not a shade beside
-    // it.
-    final Color mark = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
     final List<HomeTip> tips = widget.tips;
     if (tips.isEmpty) {
       return const SizedBox.shrink();
@@ -233,61 +227,21 @@ class _HomeTipCarouselState extends State<HomeTipCarousel> {
     // outlined, gradient-filled box with a tinted corner — the one shape on
     // the page that was drawn its own way.
     final Widget card = HomePaperCard(
-      stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+      stripe: dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
       radius: 22,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          // The mark leads the block rather than trailing the
-          // sentence. It used to be an emoji appended to the tip text,
-          // which is the one place a mark cannot be relied on: a device
-          // without a colour emoji font drew a blank box at the end of
-          // every tip, and even where it rendered it read as a typo in
-          // somebody's sentence. In its own tinted disc it is part of
-          // the card's furniture — the thing that says "this box is
-          // advice" before a word of it is read.
-          //
-          // **The bulb, back where it started.** The heart-and-pencil
-          // drawing that stood here belongs to "הוספת רעיון" now — a
-          // pencil is what you pick up to *write* something down, and
-          // that card is the one asking for it. What a tip is is an
-          // idea somebody had and passed on, and the bulb says that in
-          // one glyph at 18px, which no line drawing does.
-          Row(
-            children: <Widget>[
-              Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _tipDisc(theme, mark),
-                ),
-                child: Icon(
-                  Icons.lightbulb_outline_rounded,
-                  size: 17,
-                  color: mark,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: ink,
-                  ),
-                ),
-              ),
-              // One small warm mark at the far edge, balancing the bulb.
-              Icon(
-                Icons.favorite_rounded,
-                size: 13,
-                color: AppColors.secondary.withValues(alpha: 0.45),
-              ),
-            ],
+          // Just the heading — no bulb and no heart. The pink rule along the
+          // foot already says what kind of block this is.
+          Text(
+            'טיפ {לשדכן|לשדכנית}'.forGender(widget.userGender),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: ink,
+            ),
           ),
           const SizedBox(height: 6),
           // A fixed height so the block does not jump between a short tip
@@ -437,25 +391,8 @@ class _TipPage extends StatelessWidget {
   }
 }
 
-/// The one mark on a tip. A bulb rather than a leaf or a heart: it is the only
-/// emoji in the app that has to read as "here is an idea" at 14px, in one
-/// glyph, on both platforms' fonts.
-const String tipMark = '💡';
-
-/// The tinted disc the tip's drawing sits in — and the paper the drawing's own
-/// white ground is recoloured to, so the two are the same tone by construction
-/// rather than by two constants that have to be kept in step.
-Color _tipDisc(ThemeData theme, Color ink) {
-  final bool dark = theme.brightness == Brightness.dark;
-  return Color.alphaBlend(
-    ink.withValues(alpha: dark ? 0.24 : 0.14),
-    dark ? theme.colorScheme.surfaceContainerHighest : _tipPaper,
-  );
-}
-
 // The palette itself, not a shade beside it: the tip block sits directly
 // under blocks that use the brand blue and the cream ground, and a near-miss
 // there reads as a mistake rather than as a different block.
 const Color _tipInk = AppColors.primaryDark;
 const Color _tipInkDm = AppColors.primaryDarkDm;
-const Color _tipPaper = AppColors.background;

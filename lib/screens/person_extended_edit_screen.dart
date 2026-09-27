@@ -10,6 +10,8 @@ import 'package:shadchan/models/person_note.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/person_detail_screen.dart'
+    show recordVoiceNote;
 import 'package:shadchan/screens/photo_edit_screen.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
@@ -24,6 +26,7 @@ import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/device_contact_picker_sheet.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
+import 'package:shadchan/widgets/voice_note_player.dart';
 
 /// The full card: everything about one candidate, in one page.
 ///
@@ -1263,13 +1266,23 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FilledButton.tonalIcon(
-              onPressed: _addNote,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('הוספת הערה'),
-            ),
+          // A note can be spoken as well as typed — the same recorder and
+          // caption the profile's own notes use.
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: <Widget>[
+              FilledButton.tonalIcon(
+                onPressed: _addNote,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('הוספת הערה'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => recordVoiceNote(context, widget.personId),
+                icon: const Icon(Icons.mic_none_rounded, size: 18),
+                label: const Text('הקלטה'),
+              ),
+            ],
           ),
           if (visible.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
@@ -1296,12 +1309,19 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        note.text,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.45,
+                      if (note.isVoice)
+                        VoiceNotePlayer(
+                          fileName: note.audioFile!,
+                          durationMs: note.audioDurationMs,
+                          compact: true,
                         ),
-                      ),
+                      if (note.text.trim().isNotEmpty)
+                        Text(
+                          note.text,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            height: 1.45,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1639,104 +1659,60 @@ class _PhotoGallery extends StatelessWidget {
   final ValueChanged<int> onLongPress;
   final ReorderCallback onReorder;
 
+  /// The main photo on top, and under it one strip of every *other* photo
+  /// followed by the "+" that adds more. The main photo is shown once — it
+  /// used to lead the strip as well — and a star on each thumbnail makes that
+  /// one the main photo instead.
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Expanded(
-              child: AspectRatio(
-                aspectRatio: 3 / 4,
-                child: _PrimaryPhoto(
-                  path: paths.isEmpty ? null : paths.first,
-                  onTap: paths.isEmpty ? onTapPrimary : () => onOpen(0),
-                  onLongPress: paths.isEmpty ? null : () => onLongPress(0),
-                  onReplace: onTapPrimary,
-                ),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: AspectRatio(
+              aspectRatio: 3 / 4,
+              child: _PrimaryPhoto(
+                path: paths.isEmpty ? null : paths.first,
+                onTap: paths.isEmpty ? onTapPrimary : () => onOpen(0),
+                onLongPress: paths.isEmpty ? null : () => onLongPress(0),
+                onReplace: onTapPrimary,
               ),
             ),
-            const SizedBox(width: 10),
-            // The small plus lives beside the photos rather than under a full
-            // width button, so adding a fourth photo is not a bigger gesture
-            // than adding the first.
-            Column(
-              children: <Widget>[
-                Material(
-                  color: ProfilePalette.accent(theme).withValues(alpha: 0.12),
-                  shape: const CircleBorder(),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: onAdd,
-                    child: SizedBox.square(
-                      dimension: 40,
-                      child: Icon(
-                        Icons.add,
-                        color: ProfilePalette.accent(theme),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'הוספה',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: ProfilePalette.muted(theme),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
-        // The strip carries **every** photo, the main one included, and it is
-        // the only place the order is set. Two things were wrong before.
-        //
-        // The main photo was not in it, so no photo in the strip could ever be
-        // promoted to the face of the card — the one reorder anybody actually
-        // wants. And each thumbnail wrapped a `GestureDetector` with its own
-        // `onLongPress` for deleting *inside* the drag listener, so the inner
-        // detector won the long press in the gesture arena and the drag never
-        // started. Deleting has its own button on the thumbnail now, and the
-        // long press does the one thing it is advertised to do.
-        if (paths.length > 1) ...<Widget>[
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 92,
-            child: ReorderableListView.builder(
-              scrollDirection: Axis.horizontal,
-              buildDefaultDragHandles: false,
-              itemCount: paths.length,
-              onReorder: onReorder,
-              itemBuilder: (BuildContext context, int index) {
-                return Padding(
-                  key: ValueKey<String>(paths[index]),
-                  padding: const EdgeInsetsDirectional.only(end: 8),
-                  child: ReorderableDelayedDragStartListener(
-                    index: index,
-                    child: _PhotoThumb(
-                      path: paths[index],
-                      isPrimary: index == 0,
-                      onTap: () => onOpen(index),
-                      onRemove: () => onLongPress(index),
-                    ),
+        const SizedBox(height: 12),
+        // Long press and drag still orders the others; the strip's own
+        // indices are one behind the full list's, since the main photo is not
+        // in it.
+        SizedBox(
+          height: 84,
+          child: ReorderableListView.builder(
+            scrollDirection: Axis.horizontal,
+            buildDefaultDragHandles: false,
+            itemCount: paths.length > 1 ? paths.length - 1 : 0,
+            onReorder: (int oldIndex, int newIndex) =>
+                onReorder(oldIndex + 1, newIndex + 1),
+            footer: _AddPhotoTile(onTap: onAdd),
+            itemBuilder: (BuildContext context, int index) {
+              final int photo = index + 1;
+              return Padding(
+                key: ValueKey<String>(paths[photo]),
+                padding: const EdgeInsetsDirectional.only(end: 8, top: 6),
+                child: ReorderableDelayedDragStartListener(
+                  index: index,
+                  child: _PhotoThumb(
+                    path: paths[photo],
+                    onTap: () => onOpen(photo),
+                    onMakePrimary: () => onReorder(photo, 0),
+                    onRemove: () => onLongPress(photo),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
-          const SizedBox(height: 4),
-          Text(
-            'לחיצה פותחת לעריכה · לחיצה ארוכה וגרירה משנה את הסדר · '
-            'הראשונה היא תמונת הכרטיסייה',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: ProfilePalette.muted(theme),
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }
@@ -1767,19 +1743,50 @@ class _PhotoGallery extends StatelessWidget {
   }
 }
 
-/// One photo in the reorder strip: tap to edit, long-press to drag, and a
-/// small × of its own to remove it.
+/// The "+" at the end of the photo strip — a thumbnail-sized square, so adding
+/// a photo sits exactly where the new one will appear.
+class _AddPhotoTile extends StatelessWidget {
+  const _AddPhotoTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color accent = ProfilePalette.accent(theme);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Material(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: 64,
+            height: 72,
+            child: Icon(Icons.add_rounded, color: accent, size: 28),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One of the other photos: tap to edit, long-press to drag, the star to make
+/// it the main photo, and a small × to remove it.
 class _PhotoThumb extends StatelessWidget {
   const _PhotoThumb({
     required this.path,
-    required this.isPrimary,
     required this.onTap,
+    required this.onMakePrimary,
     required this.onRemove,
   });
 
   final String path;
-  final bool isPrimary;
   final VoidCallback onTap;
+  final VoidCallback onMakePrimary;
   final VoidCallback onRemove;
 
   @override
@@ -1787,58 +1794,80 @@ class _PhotoThumb extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return SizedBox(
-      width: 68,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      width: 64,
+      height: 72,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: <Widget>[
-          Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              GestureDetector(
-                onTap: onTap,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _PhotoGallery._photoOrPlaceholder(
-                    context,
-                    path,
-                    width: 68,
-                    height: 76,
-                  ),
-                ),
-              ),
-              PositionedDirectional(
-                top: -6,
-                end: -6,
-                child: Material(
-                  color: theme.colorScheme.surface,
-                  shape: CircleBorder(
-                    side: BorderSide(color: theme.colorScheme.outlineVariant),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: onRemove,
-                    child: Padding(
-                      padding: const EdgeInsets.all(3),
-                      child: Icon(
-                        Icons.close,
-                        size: 13,
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (isPrimary)
-            Text(
-              'ראשית',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: ProfilePalette.accent(theme),
-                fontWeight: FontWeight.w800,
+          GestureDetector(
+            onTap: onTap,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: _PhotoGallery._photoOrPlaceholder(
+                context,
+                path,
+                width: 64,
+                height: 72,
               ),
             ),
+          ),
+          PositionedDirectional(
+            top: -6,
+            end: -6,
+            child: _ThumbBadge(
+              icon: Icons.close,
+              color: theme.colorScheme.error,
+              tooltip: 'הסרת התמונה',
+              onTap: onRemove,
+            ),
+          ),
+          PositionedDirectional(
+            bottom: 3,
+            start: 3,
+            child: _ThumbBadge(
+              icon: Icons.star_border_rounded,
+              color: AppColors.secondary,
+              tooltip: 'קביעה כתמונה ראשית',
+              onTap: onMakePrimary,
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThumbBadge extends StatelessWidget {
+  const _ThumbBadge({
+    required this.icon,
+    required this.color,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: theme.colorScheme.surface,
+        shape: CircleBorder(
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: Icon(icon, size: 14, color: color),
+          ),
+        ),
       ),
     );
   }
@@ -1920,15 +1949,19 @@ class _PrimaryPhoto extends StatelessWidget {
             PositionedDirectional(
               bottom: 6,
               end: 6,
+              // The filled star says "this is the main photo"; the outlined
+              // star on every other thumbnail is how another one takes its
+              // place.
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
+                padding: const EdgeInsets.all(5),
+                decoration: const BoxDecoration(
                   color: Colors.black54,
-                  borderRadius: BorderRadius.circular(999),
+                  shape: BoxShape.circle,
                 ),
-                child: const Text(
-                  'ראשית',
-                  style: TextStyle(color: Colors.white, fontSize: 10),
+                child: const Icon(
+                  Icons.star_rounded,
+                  size: 16,
+                  color: AppColors.secondaryDarkDm,
                 ),
               ),
             ),

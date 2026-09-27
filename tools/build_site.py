@@ -22,6 +22,8 @@ from pathlib import Path
 
 import markdown
 
+from join_page import join_page
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "site"
 
@@ -403,45 +405,6 @@ INDEX_HE = f"""
 PLAY_URL = "https://play.google.com/store/apps/details?id=com.gilad.shadchan"
 APP_STORE_URL = ""  # fill in once the App Store listing exists
 
-JOIN_HE = f"""
-<h1>הוזמנת לשדכן</h1>
-<p id="lead">חבר שמשדך רוצה לעזור לך. בשדכן אפשר למלא כרטיס אישי שרק את/ה
-מנהל/ת ומעדכן/ת, ולתת גישה רק לחברים שבוחרים.</p>
-<p><a class="button" id="open" href="#">פתיחה באפליקציה</a></p>
-<p id="stores">
-  <a class="button secondary" id="play" href="{PLAY_URL}">הורדה מ־Google Play</a>
-  <span id="ios"></span>
-</p>
-<p class="note">אחרי ההתקנה באייפון, חזרו לקישור ולחצו שוב על "פתיחה באפליקציה".
-ההזמנה לא נותנת גישה לאף אחד — את/ה מחליט/ה למי לתת.</p>
-<script>
-(function () {{
-  var q = new URLSearchParams(location.search);
-  var from = q.get('from') || '';
-  var name = q.get('name') || '';
-  if (!/^[A-Za-z0-9_-]{{6,128}}$/.test(from)) {{ from = ''; }}
-  var pair = 'from=' + encodeURIComponent(from) + '&name=' + encodeURIComponent(name);
-  if (name) {{
-    document.getElementById('lead').textContent =
-      name + ' משדך/ת בשדכן ורוצה לעזור לך. בשדכן אפשר למלא כרטיס אישי שרק את/ה ' +
-      'מנהל/ת ומעדכן/ת, ולתת גישה רק לחברים שבוחרים.';
-  }}
-  document.getElementById('open').href = 'shadchan-invite://join?' + pair;
-  document.getElementById('play').href =
-    '{PLAY_URL}&referrer=' + encodeURIComponent(pair);
-  var appStore = '{APP_STORE_URL}';
-  if (appStore) {{
-    var a = document.createElement('a');
-    a.className = 'button secondary';
-    a.href = appStore;
-    a.textContent = 'הורדה מ־App Store';
-    document.getElementById('ios').appendChild(a);
-  }}
-}})();
-</script>
-"""
-
-
 def write(name: str, contents: str) -> None:
     path = OUT / name
     path.write_text(contents, encoding="utf-8")
@@ -494,15 +457,7 @@ def main() -> None:
         ),
     )
 
-    write(
-        "join.html",
-        page(
-            title="הוזמנת לשדכן",
-            body=JOIN_HE,
-            lang="he",
-            description="הזמנה למלא כרטיס אישי באפליקציית שדכן.",
-        ),
-    )
+    write("join.html", join_page(play_url=PLAY_URL, app_store_url=APP_STORE_URL))
 
     print("done. deploy with:")
     print("  firebase deploy --only hosting --project shadchan-gilad")

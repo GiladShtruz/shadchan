@@ -226,6 +226,17 @@ test('an owner’s address book is theirs alone', async () => {
   await assertSucceeds(getDoc(doc(as(OWNER), 'contactHashes', OWNER)));
 });
 
+test('a matchmaker’s database hashes are written by them and read by nobody else', async () => {
+  const mine = doc(as(MM), 'databaseHashes', MM);
+  await assertSucceeds(setDoc(mine, { hashes: ['a', 'b'], updatedAt: new Date() }));
+  await assertSucceeds(getDoc(mine));
+  await assertFails(getDoc(doc(as(OWNER), 'databaseHashes', MM)));
+  await assertFails(
+    setDoc(doc(as(OWNER), 'databaseHashes', MM), { hashes: [], updatedAt: new Date() }),
+  );
+  await assertFails(setDoc(mine, { hashes: [], names: ['x'], updatedAt: new Date() }));
+});
+
 test('only an approved matchmaker may report a status, only the owner answers', async () => {
   await seedCardAndContacts({ inContacts: true });
   const report = {

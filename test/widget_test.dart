@@ -19,7 +19,6 @@ import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
-import 'package:shadchan/widgets/person_photo_editor.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -457,8 +456,15 @@ void main() {
       expect(find.text('התאמות'), findsOneWidget);
       expect(find.text('הוספת רעיון'), findsOneWidget);
       expect(find.text('הכרטיס שלו'), findsNothing);
-      expect(find.byTooltip('עריכת פרטי המועמד'), findsOneWidget);
-      expect(find.byTooltip('עריכת טקסט הכרטיס המלא'), findsOneWidget);
+      // The card sits on top — name, text, and "עריכה" / "שיתוף" along its
+      // foot — then the status banner, then exactly three action tiles.
+      expect(find.text('הלל אבולעפיה'), findsWidgets);
+      expect(find.textContaining('סוף הכרטיס המלא'), findsOneWidget);
+      expect(find.text('עריכה'), findsOneWidget);
+      expect(find.text('שיתוף'), findsOneWidget);
+      expect(find.text('סטטוס'), findsOneWidget);
+      expect(find.text('שיתוף כרטיס'), findsNothing);
+      expect(find.byTooltip('עריכת פרטי המועמד'), findsNothing);
 
       await tester.tap(find.byIcon(Icons.more_vert));
       await tester.pumpAndSettle();
@@ -512,87 +518,14 @@ void main() {
           .position
           .jumpTo(0);
       await tester.pump();
-      await tester.tap(find.byTooltip('עריכת פרטי המועמד'));
+      // "עריכה" on the card opens the card's one editor.
+      await tester.ensureVisible(find.text('עריכה'));
+      await tester.tap(find.text('עריכה'));
       await tester.pumpAndSettle();
-      expect(find.text('עריכת כרטיס'), findsNothing);
-      expect(
-        find.byKey(const ValueKey<String>('quick-name-profile-person')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('quick-age-profile-person')),
-        findsOneWidget,
-      );
-      expect(find.byTooltip('בחירת סגנון דתי'), findsOneWidget);
-      expect(find.byTooltip('הוספת תמונות'), findsOneWidget);
-      expect(find.byType(PersonPhotoEditor), findsNothing);
-      await tester.tap(find.byTooltip('בחירת סגנון דתי'));
+      expect(find.text('עריכת כרטיס'), findsOneWidget);
+      Navigator.of(tester.element(find.text('עריכת כרטיס'))).pop();
       await tester.pumpAndSettle();
-      expect(find.text('חרדי'), findsOneWidget);
-      expect(find.text('דתי לאומי'), findsOneWidget);
-      await tester.tap(find.byType(ModalBarrier).last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('ביטול עריכה מהירה'));
-      await tester.pumpAndSettle();
-
-      final Finder editFullCard = find.byTooltip('עריכת טקסט הכרטיס המלא');
-      await tester.ensureVisible(editFullCard);
-      await tester.pump(const Duration(milliseconds: 200));
-      final double cardBodyTop = tester
-          .getTopLeft(
-            find.byKey(
-              const ValueKey<String>('candidate-full-card-body-profile-person'),
-            ),
-          )
-          .dy;
-      final double cardTextTop = tester
-          .getTopLeft(
-            find.byKey(
-              const ValueKey<String>('candidate-full-card-text-profile-person'),
-            ),
-          )
-          .dy;
-      // The pencil has a lane above the text, so the text starts under it and
-      // runs the card's whole width instead of giving up a column to it.
-      expect(cardTextTop, closeTo(cardBodyTop + 26, 0.5));
-      expect(tester.getBottomLeft(editFullCard).dy, lessThan(cardTextTop + 4));
-      await tester.tap(editFullCard);
-      await tester.pumpAndSettle();
-      expect(find.text('עריכת הכרטיס המלא'), findsNothing);
-      expect(
-        find.byKey(const ValueKey<String>('quick-card-profile-person')),
-        findsOneWidget,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey<String>('quick-card-profile-person')),
-        'שורה ראשונה\nשורה שנייה\nסוף הכרטיס המלא\n'
-        'טקסט כרטיס מעודכן מתוך המשבצת',
-      );
-      await tester.tap(find.byTooltip('ביטול עריכת הכרטיס'));
-      await tester.pumpAndSettle();
-      expect(
-        Hive.box<Person>('people').get(profile.id)?.description,
-        'שורה ראשונה\nשורה שנייה\nסוף הכרטיס המלא',
-      );
-
-      // Sharing is the fourth action tile beside "התאמות" and "הוספת רעיון",
-      // not an icon beside either pencil; it goes straight to the share sheet
-      // with the card text and every photo, no preview step between.
-      expect(find.byTooltip('שיתוף הכרטיס'), findsNothing);
-      expect(find.text('שיתוף כרטיס'), findsOneWidget);
       expect(find.byType(PersonCardViewer), findsNothing);
-
-      final Finder showFullCard = find.text('הצגת הכרטיס המלא');
-      await tester.ensureVisible(showFullCard);
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.tap(showFullCard);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
-
-      expect(find.textContaining('סוף הכרטיס המלא'), findsWidgets);
-      expect(find.text('סגירת הכרטיס המלא'), findsOneWidget);
-      // The expanded card no longer carries a share button of its own.
-      expect(find.byTooltip('שיתוף הכרטיס המלא'), findsNothing);
 
       // Every idea ever opened for this person, not only the live ones — the
       // heading counts the lot. See `_IdeasSection`.
@@ -924,9 +857,9 @@ void main() {
     expect(find.text('השלב הבא: לשאול את דוד'), findsOneWidget);
 
     // **It is a row, not a pinned paper note.** A proposal has two sides, so
-    // it carries the app's one accent bar on each edge — the woman's at the
-    // reading start, the man's at the other end, exactly as רעיונות שלי draws
-    // a couple. See [AccentStripe].
+    // it carries the app's one accent bar on each edge — the man's blue at
+    // the reading start, the woman's pink at the other end, in the same order
+    // as the names. See [AccentStripe].
     final Finder stripes = find.descendant(
       of: find.ancestor(of: find.text('דוד & שרה'), matching: find.byType(Row)),
       matching: find.byType(AccentStripe),
@@ -937,8 +870,8 @@ void main() {
           .widgetList<AccentStripe>(stripes)
           .map((AccentStripe s) => (s.color, s.atStart)),
       <(Color, bool)>[
-        (AppColors.genderAccent(Gender.female), true),
-        (AppColors.genderAccent(Gender.male), false),
+        (AppColors.genderAccent(Gender.male), true),
+        (AppColors.genderAccent(Gender.female), false),
       ],
     );
 
@@ -1034,7 +967,7 @@ void main() {
     expect(find.byType(PersonDetailScreen), findsOneWidget);
   });
 
-  testWidgets('The edit route opens quick editing inside the profile card', (
+  testWidgets('The edit route opens the card editor over the profile', (
     WidgetTester tester,
   ) async {
     final DateTime now = DateTime(2026, 8, 2);
@@ -1056,16 +989,13 @@ void main() {
     await tester.pump();
     AppRouter.router.go('/people/${profile.id}/edit');
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
 
-    expect(find.text('עריכת כרטיס'), findsNothing);
-    expect(
-      find.byKey(const ValueKey<String>('quick-name-quick-edit-route-person')),
-      findsOneWidget,
-    );
-    expect(find.byTooltip('הוספת תמונות'), findsOneWidget);
-    expect(find.byTooltip('בחירת סגנון דתי'), findsOneWidget);
-    expect(find.byTooltip('שמירת עריכה מהירה'), findsOneWidget);
+    expect(find.text('עריכת כרטיס'), findsOneWidget);
+    expect(find.text('שם פרטי'), findsOneWidget);
+    Navigator.of(tester.element(find.text('עריכת כרטיס'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(PersonDetailScreen), findsOneWidget);
   });
 
   testWidgets('A link to one proposal lands on the list, with it on top', (

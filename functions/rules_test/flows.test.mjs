@@ -80,9 +80,26 @@ test('an address book finds the matchmakers in it', async () => {
 test('a new card is announced to matchmakers in the owner’s contacts, once', async () => {
   await db.collection('personalCards').doc(OWNER).set(card());
   const notice = await waitFor(() => inbox(MM, 'cardCreated'), 'cardCreated');
-  assert.equal(notice.title, 'נועה הוסיפה את הפרטים שלה');
+  assert.equal(notice.title, 'נועה כהן הוסיפה כרטיס אישי');
+  assert.equal(notice.body, 'אפשר לבקש גישה לפרטים');
   assert.equal(notice.ownerUid, OWNER);
   assert.equal(notice.ownerPhoneHash, OWNER_HASH);
+});
+
+test('a matchmaker who keeps the friend in their database is told of the card', async () => {
+  const HOLDER = 'mmC';
+  await db.collection('phoneDirectory').doc(OWNER_HASH).set({
+    uid: OWNER,
+    name: 'נועה כהן',
+    matchmaker: false,
+    hasCard: true,
+  });
+  await db.collection('databaseHashes').doc(HOLDER).set({
+    hashes: [OWNER_HASH, 'dddddddddddddddddddddddd'],
+  });
+  const notice = await waitFor(() => inbox(HOLDER, 'cardCreated'), 'held');
+  assert.equal(notice.title, 'נועה כהן הוסיפה כרטיס אישי');
+  assert.equal(notice.ownerUid, OWNER);
 });
 
 test('a request reaches the owner; an approval reaches the matchmaker', async () => {
@@ -101,7 +118,7 @@ test('a request reaches the owner; an approval reaches the matchmaker', async ()
 
   await ref.update({ status: 'approved', updatedAt: new Date() });
   const approved = await waitFor(() => inbox(MM, 'accessApproved'), 'approved');
-  assert.match(approved.body, /נועה כהן/);
+  assert.equal(approved.title, 'נועה אישרה גישה לכרטיס שלה');
 });
 
 test('a status report reaches the owner', async () => {

@@ -41,7 +41,7 @@ class HomeCommunityLink extends StatelessWidget {
         spacing: 4,
         children: <Widget>[
           if (CommunityLinks.hasUpdatesGroup)
-            _FooterLink(
+            FooterLink(
               icon: const FaIcon(
                 FontAwesomeIcons.whatsapp,
                 size: 17,
@@ -52,7 +52,7 @@ class HomeCommunityLink extends StatelessWidget {
                   CommunityLinks.openLink(CommunityLinks.updatesGroupUrl),
               theme: theme,
             ),
-          _FooterLink(
+          FooterLink(
             icon: Icon(
               Icons.share_outlined,
               size: 17,
@@ -68,8 +68,11 @@ class HomeCommunityLink extends StatelessWidget {
   }
 }
 
-class _FooterLink extends StatelessWidget {
-  const _FooterLink({
+/// One quiet footnote link: a small icon and muted words, no card around it.
+/// Also the personal area's "share the app" line.
+class FooterLink extends StatelessWidget {
+  const FooterLink({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,

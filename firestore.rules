@@ -731,6 +731,19 @@ service cloud.firestore {
       allow read, write: if durable() && request.auth.uid == uid;
     }
 
+    // A matchmaker's database, as the hashes of its friends' numbers — so the
+    // server can tell exactly the matchmakers who have a friend in their
+    // database when that friend writes a card. Read by the server only; the
+    // owner may write it and read it back, nobody else may do either.
+    match /databaseHashes/{uid} {
+      allow read: if durable() && request.auth.uid == uid;
+      allow write: if durable()
+                   && request.auth.uid == uid
+                   && request.resource.data.keys().hasOnly(['hashes', 'updatedAt'])
+                   && request.resource.data.hashes is list
+                   && request.resource.data.hashes.size() <= 20000;
+    }
+
     match /fcmTokens/{uid} {
       allow read, write: if durable() && request.auth.uid == uid;
     }

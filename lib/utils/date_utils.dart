@@ -89,9 +89,12 @@ abstract final class AppDateUtils {
 
   /// How long something has been going on, without the "לפני" — used for the
   /// couples banner ("יוצאים כבר שלושה חודשים").
-  static String elapsedLabel(DateTime since) {
-    final Duration difference = DateTime.now().difference(since);
+  static String elapsedLabel(DateTime since) =>
+      spanLabel(DateTime.now().difference(since));
 
+  /// A length of time in the same words as [elapsedLabel] — "יומיים",
+  /// "3 שבועות" — and "מהיום" for anything under a day.
+  static String spanLabel(Duration difference) {
     if (difference.isNegative || difference.inHours < 24) {
       return 'מהיום';
     }

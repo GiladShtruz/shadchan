@@ -1247,15 +1247,15 @@ class _BoardRow extends StatelessWidget {
       return _row(
         context,
         leading: HomeCardCoupleAvatars(
-          personA: pair.female,
-          personB: pair.male,
+          personA: pair.male,
+          personB: pair.female,
           radius: 16,
         ),
-        title: '${_firstName(pair.female)} & ${_firstName(pair.male)}',
+        title: '${_firstName(pair.male)} & ${_firstName(pair.female)}',
         subtitle: why,
         mark: mark,
-        startAccent: AppColors.genderAccent(Gender.female, dark: dark),
-        endAccent: AppColors.genderAccent(Gender.male, dark: dark),
+        startAccent: AppColors.genderAccent(Gender.male, dark: dark),
+        endAccent: AppColors.genderAccent(Gender.female, dark: dark),
         onTap: () => _considerPair(context, pair),
         onLongPress: (BuildContext anchor) =>
             _SuggestedPairMenu.open(anchor, pairMenu),
@@ -1317,11 +1317,11 @@ class _BoardRow extends StatelessWidget {
     return _row(
       context,
       leading: HomeCardCoupleAvatars(
-        personA: personA,
-        personB: personB,
+        personA: male,
+        personB: female,
         radius: 16,
       ),
-      title: '${_firstName(personA)} & ${_firstName(personB)}',
+      title: '${_firstName(male)} & ${_firstName(female)}',
       // What the matchmaker wrote wins the line, then why the row is here,
       // then the step the app worked out.
       subtitle: hasNote
@@ -1332,9 +1332,10 @@ class _BoardRow extends StatelessWidget {
                     // Already reads "השלב הבא: …" — see [MatchStages.shortLabel].
                     : MatchStages.shortLabel(step, male: male, female: female)),
       mark: mark,
-      // Women lead in RTL, which is the side רעיונות שלי puts them on too.
-      startAccent: AppColors.genderAccent(Gender.female, dark: dark),
-      endAccent: AppColors.genderAccent(Gender.male, dark: dark),
+      // The boy leads (the right edge in RTL, in blue) and the girl closes
+      // the row in pink — the same order the names are written in.
+      startAccent: AppColors.genderAccent(Gender.male, dark: dark),
+      endAccent: AppColors.genderAccent(Gender.female, dark: dark),
       onTap: () => AppNavigation.open(context, '/matches/${match.id}'),
       onLongPress: openMenu,
       menu: menu,

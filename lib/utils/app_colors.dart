@@ -168,6 +168,10 @@ abstract final class AppColors {
   static const Color femaleSurface = Color(0xFFEFDDE4);
   static const Color femaleAccentDm = Color(0xFFCFA3B5);
 
+  /// The rose as ink: [femaleAccent] deepened far enough to be read as text
+  /// on its own light wash, the way [primaryInk] is to the blue.
+  static const Color femaleInk = Color(0xFF7E4D62);
+
   static Color genderAccent(Gender gender, {bool dark = false}) {
     if (gender != Gender.female) {
       return dark ? primaryDarkDm : maleAccent;

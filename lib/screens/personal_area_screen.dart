@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -26,6 +27,7 @@ import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/profile_status_choices.dart';
 
 /// The card owner's own area: their card, their status, and who may see it.
 ///
@@ -262,9 +264,11 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                     onEdit: () => context.push('/me/card'),
                   ),
                   const SizedBox(height: 14),
-                  _MyStatusCard(
-                    card: card,
-                    saving: _savingStatus,
+                  ProfileStatusChoices(
+                    title: 'הסטטוס שלי',
+                    status: card.profileStatus,
+                    gender: card.gender,
+                    enabled: !_savingStatus,
                     onSelected: (ProfileStatus status) =>
                         _setStatus(card, status),
                   ),
@@ -311,8 +315,6 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                   ),
                 ],
                 const SizedBox(height: 14),
-                _ShareAppCard(gender: profile.gender),
-                const SizedBox(height: 6),
                 // Status reports, requests, who can see the card, friends who
                 // could, and anybody blocked — all decided on the server.
                 if (!cards.isDeleted)
@@ -335,6 +337,8 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                           ),
                   ),
                 ],
+                const SizedBox(height: 12),
+                _ShareAppLink(gender: profile.gender),
               ],
             ),
           ),
@@ -358,63 +362,38 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
   }
 }
 
-/// "שיתוף האפליקציה" — opens the phone's share sheet with a ready message and
-/// the join link, the single's version of the matchmakers' own invitation.
-class _ShareAppCard extends StatelessWidget {
-  const _ShareAppCard({required this.gender});
+/// "שיתוף האפליקציה" — a small link at the foot of the page, drawn like the
+/// share line at the bottom of the matchmakers' home page: it opens the
+/// phone's share sheet with a ready message and the join link.
+class _ShareAppLink extends StatelessWidget {
+  const _ShareAppLink({required this.gender});
 
   final Gender? gender;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.femaleAccentDm : AppColors.femaleAccent;
 
-    return Builder(
-      builder: (BuildContext anchor) => HomePaperCard(
-        stripe: ink,
-        onTap: () async {
-          try {
-            await Share.share(
-              CommunityLinks.singleShareMessage(gender),
-              sharePositionOrigin: ShareUtils.originOf(anchor),
-            );
-          } on Object {
-            // Nothing to share to is not worth a message.
-          }
-        },
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: ink.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(Icons.favorite_border_rounded, color: ink),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'שיתוף האפליקציה',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  Text(
-                    'לשלוח לחברים קישור להצטרפות לשדכן',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.share_outlined, color: ink),
-          ],
+    return Center(
+      child: Builder(
+        builder: (BuildContext anchor) => FooterLink(
+          icon: Icon(
+            Icons.share_outlined,
+            size: 17,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          label: 'שיתוף האפליקציה עם חברים',
+          theme: theme,
+          onTap: () async {
+            try {
+              await Share.share(
+                CommunityLinks.singleShareMessage(gender),
+                sharePositionOrigin: ShareUtils.originOf(anchor),
+              );
+            } on Object {
+              // Nothing to share to is not worth a message.
+            }
+          },
         ),
       ),
     );
@@ -468,124 +447,6 @@ class _SwitchAreaCard extends StatelessWidget {
           ),
           Icon(Icons.chevron_right_rounded, color: ink),
         ],
-      ),
-    );
-  }
-}
-
-/// "הסטטוס שלי" — three answers, and only three: פנוי, תפוס, בהפסקה.
-///
-/// "מזל טוב" is not one of them. It is news a matchmaker marks on their own
-/// side, and asking somebody to set it on their own card was a fourth button
-/// for a question nobody reaches for.
-class _MyStatusCard extends StatelessWidget {
-  const _MyStatusCard({
-    required this.card,
-    required this.saving,
-    required this.onSelected,
-  });
-
-  final Person card;
-  final bool saving;
-  final ValueChanged<ProfileStatus> onSelected;
-
-  static const List<ProfileStatus> choices = <ProfileStatus>[
-    ProfileStatus.available,
-    ProfileStatus.busy,
-    ProfileStatus.onBreak,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return HomePaperCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            'הסטטוס שלי',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              for (final ProfileStatus status in choices) ...<Widget>[
-                Expanded(
-                  child: _StatusOption(
-                    status: status,
-                    gender: card.gender,
-                    selected: card.profileStatus == status,
-                    onTap: saving ? null : () => onSelected(status),
-                  ),
-                ),
-                if (status != choices.last) const SizedBox(width: 8),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusOption extends StatelessWidget {
-  const _StatusOption({
-    required this.status,
-    required this.gender,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final ProfileStatus status;
-  final Gender gender;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color color = AppColors.profileStatusDotColor(status);
-    return Material(
-      color: selected ? color.withValues(alpha: 0.12) : Colors.transparent,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected
-                  ? color.withValues(alpha: 0.7)
-                  : theme.colorScheme.outlineVariant,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  status.displayNameFor(gender),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

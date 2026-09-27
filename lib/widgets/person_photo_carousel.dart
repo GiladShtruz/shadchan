@@ -18,6 +18,7 @@ class PersonPhotoCarousel extends StatefulWidget {
     this.placeholder,
     this.backgroundColor,
     this.onTap,
+    this.onTapIndex,
   });
 
   final List<String> photosPaths;
@@ -36,6 +37,10 @@ class PersonPhotoCarousel extends StatefulWidget {
   /// which is what lets the comparison view make its photos a way into the
   /// person's card without taking the gallery away.
   final VoidCallback? onTap;
+
+  /// Like [onTap], but told which photo was showing — so a full-screen viewer
+  /// can open on that same photo.
+  final ValueChanged<int>? onTapIndex;
 
   @override
   State<PersonPhotoCarousel> createState() => _PersonPhotoCarouselState();
@@ -72,7 +77,9 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
         fit: StackFit.expand,
         children: <Widget>[
           GestureDetector(
-            onTap: widget.onTap,
+            onTap: widget.onTapIndex != null
+                ? () => widget.onTapIndex!(_index)
+                : widget.onTap,
             child: PageView.builder(
               controller: _pageController,
               itemCount: photos.length,

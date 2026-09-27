@@ -152,18 +152,18 @@ class ReminderCard extends StatelessWidget {
 
     return BoardRow(
       leading: HomeCardCoupleAvatars(
-        personA: female,
-        personB: male,
+        personA: male,
+        personB: female,
         radius: 16,
       ),
-      title: '${_first(female, 'צד א')} & ${_first(male, 'צד ב')}',
+      title: '${_first(male, 'צד א')} & ${_first(female, 'צד ב')}',
       // The reminder itself, whole, in the ordinary ink — no "עבר זמנו" and
       // no red: a reminder that came due is simply today's to-do.
       subtitle: what,
       subtitleMaxLines: null,
       mark: Icons.notifications_active_outlined,
-      startAccent: AppColors.genderAccent(Gender.female, dark: dark),
-      endAccent: AppColors.genderAccent(Gender.male, dark: dark),
+      startAccent: AppColors.genderAccent(Gender.male, dark: dark),
+      endAccent: AppColors.genderAccent(Gender.female, dark: dark),
       onTap: onTap,
       onLongPress: (BuildContext anchor) => HomeBoardActions.showItemMenu(
         anchor,

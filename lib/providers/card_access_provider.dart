@@ -15,6 +15,7 @@ import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/phone_identity.dart';
 import 'package:uuid/uuid.dart';
 
 /// How a matchmaker's request for a card ended.
@@ -59,9 +60,22 @@ class CardAccessProvider extends ChangeNotifier {
   bool _helpersLoaded = false;
   final Set<String> _busy = <String>{};
 
-  /// Directory answers for this session, by phone hash.
-  final Map<String, Map<String, dynamic>?> _lookups =
-      <String, Map<String, dynamic>?>{};
+  /// Directory answers, by phone hash. A card that exists is remembered for
+  /// the session; "no card" only for [_negativeLookupFor], because a friend
+  /// may write one at any moment — and a stale "no card" is exactly what
+  /// offers them an invitation to write a card they already have.
+  final Map<String, ({Map<String, dynamic>? entry, DateTime at})> _lookups =
+      <String, ({Map<String, dynamic>? entry, DateTime at})>{};
+  static const Duration _negativeLookupFor = Duration(minutes: 2);
+
+  /// The owner's card applied one version at a time. Two snapshots of the
+  /// same card arriving together must never both decide the friend is not in
+  /// the database yet — that is how a duplicate record would be born.
+  final Map<String, Future<void>> _applying = <String, Future<void>>{};
+
+  /// Cards whose photos did not all download — tried again on resume, so a
+  /// photo refused or cut off once is not missing until the owner next edits.
+  final Set<String> _photosIncomplete = <String>{};
 
   bool get isConnected => _uid != null;
   String? get uid => _uid;
@@ -105,6 +119,21 @@ class CardAccessProvider extends ChangeNotifier {
   bool isBusy(String key) => _busy.contains(key);
 
   // --- Lifecycle ------------------------------------------------------------
+
+  /// Connects if it can — waiting for Firebase first — and says whether it
+  /// is connected. For a screen about to ask the server a question: without
+  /// a connection every friend would read as "no card".
+  Future<bool> ensureConnected() async {
+    if (!_enabled) {
+      return false;
+    }
+    if (_uid != null) {
+      return true;
+    }
+    await FirebaseBootstrap.ensureReady();
+    await start();
+    return _uid != null;
+  }
 
   /// Connects, once Firebase is up and a durable account is signed in.
   Future<void> start() async {
@@ -224,6 +253,8 @@ class CardAccessProvider extends ChangeNotifier {
     _helpers = <CardHelper>[];
     _helpersLoaded = false;
     _lookups.clear();
+    _applying.clear();
+    _photosIncomplete.clear();
     notifyListeners();
   }
 
@@ -276,7 +307,7 @@ class CardAccessProvider extends ChangeNotifier {
             if (data == null) {
               return;
             }
-            unawaited(_applyCard(access, data));
+            unawaited(_applySerially(access, data));
           },
           onError: (Object error) {
             // A card that was deleted, or access that ended, reads as
@@ -319,12 +350,28 @@ class CardAccessProvider extends ChangeNotifier {
     return local;
   }
 
+  Future<void> _applySerially(CardAccess access, Map<String, dynamic> data) {
+    final String ownerUid = access.ownerUid;
+    final Future<void> previous = _applying[ownerUid] ?? Future<void>.value();
+    final Future<void> next = previous
+        .then((_) => _applyCard(access, data))
+        .catchError((Object error, StackTrace stackTrace) {
+          _log(error, stackTrace);
+        });
+    _applying[ownerUid] = next;
+    return next;
+  }
+
   Future<void> _applyCard(CardAccess access, Map<String, dynamic> data) async {
     final String ownerUid = access.ownerUid;
-    Person? person = _people.findByCardOwner(ownerUid);
-    if (person == null && access.ownerPhoneHash != null) {
-      person = _people.findByPhoneHash(access.ownerPhoneHash!);
-    }
+    Person? person = CardSyncEngine.findExisting(
+      _people.getAll(),
+      ownerUid: ownerUid,
+      ownerPhoneHash:
+          access.ownerPhoneHash ?? PhoneIdentity.hash(access.ownerPhone),
+      firstName: (data['firstName'] as String?) ?? '',
+      lastName: (data['lastName'] as String?) ?? '',
+    );
     final bool created = person == null;
     final DateTime now = DateTime.now();
     person ??= Person(
@@ -337,20 +384,35 @@ class CardAccessProvider extends ChangeNotifier {
       createdAt: now,
       updatedAt: now,
     );
+    // The owner's own number goes on the record — it is what opens WhatsApp
+    // with them, and what a later import from the contacts recognises them
+    // by. A number the matchmaker saved is theirs and stays.
     if ((person.phone ?? '').trim().isEmpty && access.ownerPhone != null) {
       person.phone = access.ownerPhone;
     }
 
     final bool wasLinked = person.cardOwnerUid == ownerUid;
+    if (!wasLinked) {
+      // Access is the matchmaker's friend arriving in the database: a record
+      // that was kept out of it — a name on an idea, or a draft — joins it.
+      person
+        ..hidden = false
+        ..needsReview = false;
+    }
     final List<String> oldCardPhotos = person.photosPaths
         .where(CardSyncEngine.isCardPhoto)
         .toList();
+    final List<Object?> remotePhotos =
+        (data['photoPaths'] as List?) ?? const <Object?>[];
     final List<String> localPhotos = person.cardSyncDetached
         ? person.photosPaths
-        : await _downloadPhotos(
-            ownerUid,
-            (data['photoPaths'] as List?) ?? const <Object?>[],
-          );
+        : await _downloadPhotos(ownerUid, remotePhotos);
+    if (!person.cardSyncDetached &&
+        localPhotos.length < remotePhotos.whereType<String>().length) {
+      _photosIncomplete.add(ownerUid);
+    } else {
+      _photosIncomplete.remove(ownerUid);
+    }
 
     final CardSyncResult result = CardSyncEngine.apply(
       person,
@@ -396,7 +458,12 @@ class CardAccessProvider extends ChangeNotifier {
 
   /// Follows again any approved card whose listener ended — a card that was
   /// deleted and then restored, with its grants kept. Called on app resume.
-  Future<void> resume() => _reconcile(authoritative: false);
+  Future<void> resume() async {
+    await _reconcile(authoritative: false);
+    for (final String ownerUid in _photosIncomplete.toList()) {
+      await resync(ownerUid);
+    }
+  }
 
   /// The owner restored their card and kept its grants: every approved row is
   /// written again, which wakes each matchmaker's app to read the card anew.
@@ -455,7 +522,7 @@ class CardAccessProvider extends ChangeNotifier {
               .get();
       final Map<String, dynamic>? data = snap.data();
       if (data != null) {
-        await _applyCard(access, data);
+        await _applySerially(access, data);
       }
     } catch (error) {
       _log(error);
@@ -568,15 +635,23 @@ class CardAccessProvider extends ChangeNotifier {
 
   /// Who owns [phoneHash] in the directory, remembered for the session.
   Future<Map<String, dynamic>?> lookup(String phoneHash) async {
-    if (_lookups.containsKey(phoneHash)) {
-      return _lookups[phoneHash];
+    final ({Map<String, dynamic>? entry, DateTime at})? known =
+        _lookups[phoneHash];
+    if (known != null &&
+        (known.entry?['hasCard'] == true ||
+            DateTime.now().difference(known.at) < _negativeLookupFor)) {
+      return known.entry;
     }
     final Map<String, dynamic>? entry = await PersonalCardService.lookup(
       phoneHash,
     );
-    _lookups[phoneHash] = entry;
+    _lookups[phoneHash] = (entry: entry, at: DateTime.now());
     return entry;
   }
+
+  /// Forgets what the directory said about [phoneHash] — a notice just said
+  /// that friend wrote a card.
+  void forgetLookup(String phoneHash) => _lookups.remove(phoneHash);
 
   /// A matchmaker asks [ownerUid] for access to their card.
   Future<CardRequestOutcome> request({

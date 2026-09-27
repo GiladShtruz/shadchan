@@ -140,16 +140,12 @@ class PersonListCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        // The status leads the row at a fixed width, so every
-                        // row's name starts at the same place however long the
-                        // name before it happens to be.
+                        // The name sits against the photo, and the status —
+                        // with its small arrow — at the far end of the same
+                        // line, so every row's status lines up along the top
+                        // edge on the left.
                         Row(
                           children: <Widget>[
-                            _StatusPill(
-                              person: person,
-                              onStatusPicked: onStatusPicked,
-                            ),
-                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 person.fullName.trim(),
@@ -171,22 +167,21 @@ class PersonListCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            _StatusPill(
+                              person: person,
+                              onStatusPicked: onStatusPicked,
+                            ),
                           ],
                         ),
                         if (details.isNotEmpty) ...<Widget>[
                           const SizedBox(height: 2),
-                          Padding(
-                            // Lines up with the name rather than with the pill.
-                            padding: const EdgeInsetsDirectional.only(
-                              start: ProfileStatusTag.compactWidth + 8,
-                            ),
-                            child: Text(
-                              details.join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
+                          Text(
+                            details.join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -252,10 +247,8 @@ class PersonListCard extends StatelessWidget {
   }
 }
 
-/// The status pill on a row, and the menu behind it when there is one.
-///
-/// The pill keeps its fixed width whether or not it can be tapped, so a list
-/// where some rows are editable and some are not still lines up.
+/// The status on a row, with a small arrow and the menu behind it when it can
+/// be changed.
 class _StatusPill extends StatelessWidget {
   const _StatusPill({required this.person, required this.onStatusPicked});
 
@@ -305,7 +298,17 @@ class _StatusPill extends StatelessWidget {
             ),
           ),
       ],
-      child: tag,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          tag,
+          Icon(
+            Icons.arrow_drop_down_rounded,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -335,14 +338,9 @@ class ProfileStatusTag extends StatelessWidget {
   /// the word in the page's own ink.
   final Gender? gender;
 
-  /// The quiet variant used in the people list: a fixed-width pill in the
-  /// palette's muted tones, borderless and a size smaller. The fixed width is
-  /// what keeps a column of them lined up whatever the names next to them are.
+  /// The quiet variant used on the rows of המאגר שלי and הרעיונות שלי: no
+  /// pill at all — the dot and the word, a size smaller.
   final bool compact;
-
-  /// Width of the [compact] pill. Wide enough for the dot plus "בהפסקה" or
-  /// "מזל טוב".
-  static const double compactWidth = 64;
 
   /// The dot, at whatever size the tag is drawn.
   Widget _dot(double size) {
@@ -366,37 +364,24 @@ class ProfileStatusTag extends StatelessWidget {
         : AppColors.genderAccent(whose, dark: dark);
 
     if (compact) {
-      return Container(
-        width: compactWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          // The person's own tint, so the pill belongs to the row rather than
-          // to the state — which the dot inside it already carries.
-          color: ink.withValues(alpha: 0.11),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            _dot(5),
-            const SizedBox(width: 4),
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  status.displayName,
-                  maxLines: 1,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 10,
-                    color: ink,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+      // No pill round it: the word in the person's own colour and the dot in
+      // the state's are the whole tag. A tinted pink or blue ground under it
+      // said "whose" a second time.
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _dot(6),
+          const SizedBox(width: 4),
+          Text(
+            status.displayName,
+            maxLines: 1,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 11,
+              color: ink,
+              fontWeight: FontWeight.w700,
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 

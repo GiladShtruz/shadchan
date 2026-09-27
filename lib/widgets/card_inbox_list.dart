@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -43,6 +44,10 @@ class CardInboxList extends StatelessWidget {
     final Person? person =
         (owner == null ? null : people.findByCardOwner(owner)) ??
         (hash == null || hash.isEmpty ? null : people.findByPhoneHash(hash));
+    if (item.kind == 'cardCreated' && hash != null && hash.isNotEmpty) {
+      // The directory said "no card" a minute ago; this notice says otherwise.
+      context.read<CardAccessProvider>().forgetLookup(hash);
+    }
     onOpen?.call();
     if (person != null) {
       AppNavigation.open(context, '/people/${person.id}');

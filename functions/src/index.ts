@@ -65,7 +65,11 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 /** Writes the inbox row and pushes to every device of [uid]. */
-async function notify(uid: string, notice: Notice): Promise<void> {
+async function notify(
+  uid: string,
+  notice: Notice,
+  push = true,
+): Promise<void> {
   await db
     .collection('users')
     .doc(uid)
@@ -76,6 +80,9 @@ async function notify(uid: string, notice: Notice): Promise<void> {
       createdAt: FieldValue.serverTimestamp(),
     });
 
+  if (!push) {
+    return;
+  }
   const tokensDoc = await db.collection('fcmTokens').doc(uid).get();
   const tokens: string[] = (tokensDoc.get('tokens') as string[] | undefined) ?? [];
   if (tokens.length === 0) {
@@ -189,59 +196,163 @@ export const onCardAccessWritten = onDocumentWritten(
 // A card appearing, and a wedding.
 // ---------------------------------------------------------------------------
 
+function fullName(card: DocumentSnapshot | undefined): string {
+  const last = ((card?.get('lastName') as string | undefined) ?? '').trim();
+  return `${firstName(card)} ${last}`.trim();
+}
+
 /**
- * Tells the matchmakers in the owner's address book that the owner now has a
- * card they may ask for — each one once, ever.
+ * "X הוסיף/ה כרטיס אישי" to one matchmaker — once per card, ever, however
+ * many ways the server learns they know each other. Only the first few of a
+ * burst are pushed; every one lands in the inbox.
+ */
+async function announceOnce(
+  card: DocumentSnapshot,
+  ownerUid: string,
+  matchmakerUid: string,
+  ownerPhoneHash: string | undefined,
+  push: boolean,
+): Promise<boolean> {
+  if (matchmakerUid === ownerUid) {
+    return false;
+  }
+  const marker = card.ref.collection('announced').doc(matchmakerUid);
+  const created = await db.runTransaction(async (tx) => {
+    if ((await tx.get(marker)).exists) {
+      return false;
+    }
+    tx.set(marker, { at: FieldValue.serverTimestamp() });
+    return true;
+  });
+  if (!created) {
+    return false;
+  }
+  const gender = card.get('gender') as Gender | undefined;
+  await notify(
+    matchmakerUid,
+    {
+      kind: 'cardCreated',
+      title: g(`${fullName(card)} {הוסיף|הוסיפה} כרטיס אישי`, gender),
+      body: 'אפשר לבקש גישה לפרטים',
+      route: '/reminders',
+      ownerUid,
+      ownerPhoneHash,
+    },
+    push,
+  );
+  return true;
+}
+
+async function ownerPhoneHashOf(ownerUid: string): Promise<string | undefined> {
+  const doc = await db.collection('userPhones').doc(ownerUid).get();
+  return (doc.get('phoneHash') as string | undefined) || undefined;
+}
+
+/**
+ * Tells the matchmakers who know the owner that the owner now has a card they
+ * may ask for: every matchmaker who keeps the owner in their database (by
+ * the hash of the owner's number, from `databaseHashes`), and every
+ * matchmaker saved in the owner's own address book.
  */
 async function announceCard(ownerUid: string): Promise<void> {
   const card = await db.collection('personalCards').doc(ownerUid).get();
   if (!card.exists || card.get('deleted') === true) {
     return;
   }
+  const ownerPhoneHash = await ownerPhoneHashOf(ownerUid);
+  const recipients = new Set<string>();
+
+  if (ownerPhoneHash) {
+    const holders = await db
+      .collection('databaseHashes')
+      .where('hashes', 'array-contains', ownerPhoneHash)
+      .get();
+    for (const doc of holders.docs) {
+      recipients.add(doc.id);
+    }
+  }
+
   const contacts = await db.collection('contactHashes').doc(ownerUid).get();
   const hashes: string[] = (contacts.get('hashes') as string[] | undefined) ?? [];
-  if (hashes.length === 0) {
-    return;
-  }
-  const name = firstName(card);
-  const gender = card.get('gender') as Gender | undefined;
-  const ownerPhoneHash =
-    ((await db.collection('userPhones').doc(ownerUid).get()).get(
-      'phoneHash',
-    ) as string | undefined) ?? undefined;
   const refs = hashes.map((h) => db.collection('phoneDirectory').doc(h));
   for (let i = 0; i < refs.length; i += 100) {
     const entries = await db.getAll(...refs.slice(i, i + 100));
     for (const entry of entries) {
-      if (!entry.exists || entry.get('matchmaker') !== true) {
-        continue;
+      const uid = entry.get('uid') as string | undefined;
+      if (entry.exists && entry.get('matchmaker') === true && uid) {
+        recipients.add(uid);
       }
-      const matchmakerUid = entry.get('uid') as string;
-      if (matchmakerUid === ownerUid) {
-        continue;
-      }
-      const marker = card.ref.collection('announced').doc(matchmakerUid);
-      const created = await db.runTransaction(async (tx) => {
-        if ((await tx.get(marker)).exists) {
-          return false;
-        }
-        tx.set(marker, { at: FieldValue.serverTimestamp() });
-        return true;
-      });
-      if (!created) {
-        continue;
-      }
-      await notify(matchmakerUid, {
-        kind: 'cardCreated',
-        title: g(`${name} {הוסיף|הוסיפה} את הפרטים {שלו|שלה}`, gender),
-        body: 'אפשר לבקש גישה לכרטיס האישי',
-        route: '/reminders',
-        ownerUid,
-        ownerPhoneHash,
-      });
     }
   }
+
+  recipients.delete(ownerUid);
+  for (const matchmakerUid of recipients) {
+    await announceOnce(card, ownerUid, matchmakerUid, ownerPhoneHash, true);
+  }
 }
+
+/**
+ * A matchmaker's database changed: any friend just added who already keeps a
+ * card is announced to them, as if the card had been written now.
+ */
+export const onDatabaseHashesWritten = onDocumentWritten(
+  'databaseHashes/{matchmakerUid}',
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) {
+      return;
+    }
+    const matchmakerUid = event.params.matchmakerUid;
+    const before = new Set<string>(
+      (event.data?.before?.get('hashes') as string[] | undefined) ?? [],
+    );
+    const added = ((after.get('hashes') as string[] | undefined) ?? [])
+      .filter((h) => !before.has(h))
+      .slice(0, 3000);
+    let pushed = 0;
+    for (let i = 0; i < added.length; i += 100) {
+      const refs = added
+        .slice(i, i + 100)
+        .map((h) => db.collection('phoneDirectory').doc(h));
+      const entries = await db.getAll(...refs);
+      for (const entry of entries) {
+        const ownerUid = entry.get('uid') as string | undefined;
+        if (!entry.exists || entry.get('hasCard') !== true || !ownerUid) {
+          continue;
+        }
+        const card = await db.collection('personalCards').doc(ownerUid).get();
+        if (!card.exists || card.get('deleted') === true) {
+          continue;
+        }
+        const told = await announceOnce(
+          card,
+          ownerUid,
+          matchmakerUid,
+          entry.id,
+          pushed < 3,
+        );
+        if (told) {
+          pushed++;
+        }
+      }
+    }
+  },
+);
+
+/**
+ * The owner's number arrived (or changed) after the card: the matchmakers who
+ * keep that number are found now.
+ */
+export const onUserPhoneWritten = onDocumentWritten(
+  'userPhones/{ownerUid}',
+  async (event) => {
+    const before = event.data?.before?.get('phoneHash');
+    const after = event.data?.after?.get('phoneHash');
+    if (after && after !== before) {
+      await announceCard(event.params.ownerUid);
+    }
+  },
+);
 
 export const onPersonalCardWritten = onDocumentWritten(
   'personalCards/{ownerUid}',
@@ -522,6 +633,7 @@ export const onAccountDeleted = functionsV1
     await deleteQuery('phoneDirectory', 'uid', uid);
     await db.collection('userPhones').doc(uid).delete();
     await db.collection('contactHashes').doc(uid).delete();
+    await db.collection('databaseHashes').doc(uid).delete();
     await db.collection('fcmTokens').doc(uid).delete();
     // Deleting it counts this matchmaker out of every tag word they used.
     await db.collection('tagUsage').doc(uid).delete();

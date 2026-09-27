@@ -1407,24 +1407,61 @@ class _DetailsRequestBar extends StatelessWidget {
 
 /// A white heart with a light-blue plus in its middle — "add a friend", in
 /// the app's own sign.
+///
+/// The plus is drawn rather than taken from the icon font: short and heavy
+/// with round ends, the way WhatsApp draws its own, where `Icons.add` is long
+/// and thin.
 class _HeartPlusIcon extends StatelessWidget {
   const _HeartPlusIcon();
 
   @override
   Widget build(BuildContext context) {
     return const SizedBox.square(
-      dimension: 32,
+      dimension: 28,
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
-          Icon(Icons.favorite_rounded, color: Colors.white, size: 32),
+          Icon(Icons.favorite_rounded, color: Colors.white, size: 28),
           // The heart's body sits a touch above the glyph's centre.
           Padding(
             padding: EdgeInsets.only(bottom: 2),
-            child: Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
+            child: CustomPaint(
+              size: Size.square(10),
+              painter: _BoldPlusPainter(AppColors.primary),
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+class _BoldPlusPainter extends CustomPainter {
+  const _BoldPlusPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint stroke = Paint()
+      ..color = color
+      ..strokeWidth = 2.8
+      ..strokeCap = StrokeCap.round;
+    final double inset = stroke.strokeWidth / 2;
+    canvas
+      ..drawLine(
+        Offset(size.width / 2, inset),
+        Offset(size.width / 2, size.height - inset),
+        stroke,
+      )
+      ..drawLine(
+        Offset(inset, size.height / 2),
+        Offset(size.width - inset, size.height / 2),
+        stroke,
+      );
+  }
+
+  @override
+  bool shouldRepaint(covariant _BoldPlusPainter oldDelegate) =>
+      oldDelegate.color != color;
 }

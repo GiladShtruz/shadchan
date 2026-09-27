@@ -7,7 +7,6 @@ import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/widgets/voice_note_player.dart';
 import 'package:shadchan/widgets/match_state_tag.dart';
 import 'package:shadchan/widgets/sketch_actions.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -17,14 +16,12 @@ import 'package:shadchan/utils/match_preferences.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
-import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/card_link_panel.dart';
 import 'package:shadchan/widgets/candidate_card_view.dart';
-import 'package:shadchan/widgets/religious_level_picker.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -44,7 +41,8 @@ import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
-import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/profile_status_choices.dart';
 import 'package:shadchan/widgets/person_photo_carousel.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -148,9 +146,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   /// Whether the profile header was scrolled away, so the AppBar shows a
   /// compact bar with the person's name only.
   bool _showCollapsedTitle = false;
-  bool _showFullCard = false;
-  bool _editingDetails = false;
-  bool _editingFullCard = false;
 
   /// The one-time hint about sharing a photo and a few words from WhatsApp.
   /// Taken when the first profile is opened, so it never comes back.
@@ -165,13 +160,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
+    // The old `/people/:id/edit` route: the card's own editor, straight away.
     if (widget.initiallyEditing) {
-      _editingDetails = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _editCard(context);
+        }
+      });
     }
     final String? focus = widget.focus;
-    if (focus == 'card') {
-      _showFullCard = true;
-    }
     if (focus == 'card' || focus == 'notes') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final BuildContext? target =
@@ -207,6 +204,20 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   Future<void> _openCardEditPage(BuildContext context) {
     return openExtendedPersonEditor(context, widget.personId);
+  }
+
+  /// "עריכה" — the whole card, in the one editor, behind the warning a card
+  /// that follows its owner needs.
+  Future<void> _editCard(BuildContext context) async {
+    final Person? person = context.read<PersonRepository>().getById(
+      widget.personId,
+    );
+    if (person == null || !await confirmEditSyncedCard(context, person)) {
+      return;
+    }
+    if (context.mounted) {
+      await _openCardEditPage(context);
+    }
   }
 
   @override
@@ -285,11 +296,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             onSelected: (String value) async {
               switch (value) {
                 case 'extendedEdit':
-                  setState(() {
-                    _editingDetails = false;
-                    _editingFullCard = false;
-                  });
-                  await _openCardEditPage(context);
+                  await _editCard(context);
+                case 'mazelTov':
+                  await _changeProfileStatus(
+                    context,
+                    person,
+                    ProfileStatus.mazelTov,
+                  );
                 case 'board':
                   HomeBoardActions.toggle(
                     context,
@@ -334,6 +347,19 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     ],
                   ),
                 ),
+                // "מזל טוב" is not one of the status banner's three answers;
+                // this is where it is marked by hand.
+                if (person.profileStatus != ProfileStatus.mazelTov)
+                  const PopupMenuItem<String>(
+                    value: 'mazelTov',
+                    child: Row(
+                      children: <Widget>[
+                        Icon(Icons.celebration_outlined),
+                        SizedBox(width: 10),
+                        Text('סימון מזל טוב'),
+                      ],
+                    ),
+                  ),
                 const PopupMenuDivider(),
                 PopupMenuItem<String>(
                   value: 'board',
@@ -375,54 +401,39 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             controller: _scrollController,
             padding: const EdgeInsets.only(bottom: 20),
             children: <Widget>[
-              _ProfileSummaryHeader(
+              _FriendCardTile(
+                key: _cardSectionKey,
                 person: person,
-                editing: _editingDetails,
-                onAvatarTap: () => PersonCardViewer.open(context, person.id),
-                onStatusChanged: (ProfileStatus status) =>
-                    _changeProfileStatus(context, person, status),
-                onEdit: () async {
-                  if (!await confirmEditSyncedCard(context, person)) {
-                    return;
-                  }
-                  setState(() {
-                    _editingDetails = true;
-                    _editingFullCard = false;
-                  });
-                },
-                onEditingDone: () => setState(() => _editingDetails = false),
-                onExtendedEdit: () async {
-                  setState(() {
-                    _editingDetails = false;
-                    _editingFullCard = false;
-                  });
-                  await _openCardEditPage(context);
-                },
-              ),
-              _ProfilePhotoStrip(
-                person: person,
-                onOpen: (int index) => PersonCardViewer.open(
+                initiallyExpanded: widget.focus == 'card',
+                onOpenCard: (int index) => PersonCardViewer.open(
                   context,
                   person.id,
-                  initialIndex: index,
+                  initialIndex: index < 0 ? 0 : index,
                 ),
+                onEdit: () => _editCard(context),
               ),
               if (person.hidden)
                 _OutsideDatabaseBanner(
                   person: person,
                   onAdd: () => _admitToDatabase(context, person),
                 ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: ProfileStatusChoices(
+                  title: 'סטטוס',
+                  status: person.profileStatus,
+                  gender: person.gender,
+                  onSelected: (ProfileStatus status) =>
+                      _changeProfileStatus(context, person, status),
+                ),
+              ),
               _ProfileInlineActions(
                 person: person,
                 inquiry: inquiry,
                 whatsappLabel: _firstNameOr(person, 'WhatsApp'),
                 onWhatsApp: () => _openWhatsAppMessage(context, person),
                 onSms: () => ContactChannels.openSms(person.phone),
-                onCompleteCard: () async {
-                  if (await confirmEditSyncedCard(context, person)) {
-                    setState(() => _editingDetails = true);
-                  }
-                },
+                onCompleteCard: () => _editCard(context),
                 onMatches: () => _openSuggestions(context, person),
                 onAddProposal: () => _openAddProposal(context, person),
               ),
@@ -437,9 +448,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   child: FirstVisitTip(
                     icon: Icons.share_outlined,
                     headline:
-                        '{שתף|שתפי} מתוך הווטסאפ תמונה וכמה מילים על '
-                                '${person.gender == Gender.female ? 'החברה' : 'החבר'} '
-                                'שלך!'
+                        '{שתף|שתפי} בקלות מ־WhatsApp ל׳שדכן׳ כרטיס של '
+                                '${person.gender == Gender.female ? 'חברה' : 'חבר'} '
+                                'שלך'
                             .forGender(context.userGender),
                     lines: const <String>[
                       'בווטסאפ: לחיצה ארוכה על התמונה ← שיתוף ← שדכן, ובוחרים '
@@ -448,25 +459,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     onDismiss: () => setState(() => _showShareTip = false),
                   ),
                 ),
-              _WhatsAppCardSection(
-                key: _cardSectionKey,
-                person: person,
-                editing: _editingFullCard,
-                expanded: _showFullCard,
-                onToggleFull: () {
-                  setState(() => _showFullCard = !_showFullCard);
-                },
-                onEditCard: () async {
-                  if (!await confirmEditSyncedCard(context, person)) {
-                    return;
-                  }
-                  setState(() {
-                    _editingFullCard = true;
-                    _editingDetails = false;
-                  });
-                },
-                onEditingDone: () => setState(() => _editingFullCard = false),
-              ),
               // A card with no number of its own, but somebody to ask about
               // it: that person, one tap from WhatsApp, directly under the
               // card — rather than a button asking for details nobody has.
@@ -771,461 +763,211 @@ List<BoxShadow> _profileSoftShadow(ThemeData theme) {
   ];
 }
 
-class _ProfileSummaryHeader extends StatefulWidget {
-  const _ProfileSummaryHeader({
+/// The top of a friend's profile: **the card itself**, as the personal area
+/// shows a single's own — the name in their colour and the facts under it,
+/// every photo in a pager (a tap opens the full-screen card on that photo),
+/// the card's text, and "עריכה" / "שיתוף" along its foot.
+///
+/// It replaced a round avatar with three small squares under it and, further
+/// down, a separate box holding the text — three places for one card.
+class _FriendCardTile extends StatefulWidget {
+  const _FriendCardTile({
+    super.key,
     required this.person,
-    required this.editing,
-    required this.onAvatarTap,
-    required this.onStatusChanged,
+    required this.initiallyExpanded,
+    required this.onOpenCard,
     required this.onEdit,
-    required this.onEditingDone,
-    required this.onExtendedEdit,
   });
 
   final Person person;
-  final bool editing;
-  final VoidCallback onAvatarTap;
-  final ValueChanged<ProfileStatus> onStatusChanged;
+  final bool initiallyExpanded;
+
+  /// Opens the full-screen card on the photo at the given index.
+  final ValueChanged<int> onOpenCard;
   final VoidCallback onEdit;
-  final VoidCallback onEditingDone;
-  final VoidCallback onExtendedEdit;
 
   @override
-  State<_ProfileSummaryHeader> createState() => _ProfileSummaryHeaderState();
+  State<_FriendCardTile> createState() => _FriendCardTileState();
 }
 
-class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
-  late final TextEditingController _nameController = TextEditingController();
-  late final TextEditingController _ageController = TextEditingController();
-  ReligiousLevel? _religiousLevel;
-  String? _religiousLevelOther;
-  List<String> _photoPaths = <String>[];
-  final Set<String> _newPhotoPaths = <String>{};
-  bool _saving = false;
+class _FriendCardTileState extends State<_FriendCardTile> {
+  /// Past this many lines the text folds, with a link to the rest — the tile
+  /// opens a page, it should not be the whole of it.
+  static const int _foldedLines = 8;
 
-  @override
-  void initState() {
-    super.initState();
-    _resetDraft();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ProfileSummaryHeader oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.person.id != widget.person.id ||
-        (!oldWidget.editing && widget.editing)) {
-      _resetDraft();
-    } else if (oldWidget.editing && !widget.editing) {
-      _discardNewPhotos();
-    }
-  }
-
-  @override
-  void dispose() {
-    _discardNewPhotos();
-    _nameController.dispose();
-    _ageController.dispose();
-    super.dispose();
-  }
-
-  void _resetDraft() {
-    _discardNewPhotos();
-    _nameController.text = widget.person.fullName;
-    _ageController.text = widget.person.age?.toString() ?? '';
-    _religiousLevel = widget.person.religiousLevel;
-    _religiousLevelOther = widget.person.religiousLevelOther;
-    _photoPaths = List<String>.from(widget.person.photosPaths);
-  }
-
-  void _discardNewPhotos() {
-    if (_newPhotoPaths.isEmpty) {
-      return;
-    }
-    PhotoPickerService.deletePhotoFiles(_newPhotoPaths);
-    _newPhotoPaths.clear();
-  }
-
-  /// Adds photos from the avatar circle. They go to the **front**, so the one
-  /// just chosen becomes the face on the card — but nothing already there is
-  /// dropped.
-  ///
-  /// This used to pick one photo and overwrite the first slot, which quietly
-  /// deleted the existing profile picture: the only way to add a photo without
-  /// losing one was the extended editor, and nothing on this control said so.
-  Future<void> _pickPrimaryPhoto() async {
-    final List<String> paths = await PhotoPickerService.pickPhotos(
-      context,
-      personId: widget.person.id,
-    );
-    if (paths.isEmpty || !mounted) {
-      return;
-    }
-    setState(() {
-      _newPhotoPaths.addAll(paths);
-      _photoPaths = <String>[...paths, ..._photoPaths];
-    });
-  }
-
-  Future<void> _save() async {
-    if (_saving) {
-      return;
-    }
-    final String fullName = _nameController.text.trim();
-    if (fullName.isEmpty) {
-      _showValidationMessage('יש להזין שם');
-      return;
-    }
-    final String ageText = _ageController.text.trim();
-    final int? age = ageText.isEmpty ? null : int.tryParse(ageText);
-    if (ageText.isNotEmpty && (age == null || age < 10 || age > 120)) {
-      _showValidationMessage('יש להזין גיל בין 10 ל-120');
-      return;
-    }
-
-    setState(() => _saving = true);
-    final List<String> parts = fullName
-        .split(RegExp(r'\s+'))
-        .where((String part) => part.isNotEmpty)
-        .toList();
-    widget.person
-      ..firstName = parts.first
-      ..lastName = parts.skip(1).join(' ')
-      ..setManualAge(age)
-      ..religiousLevel = _religiousLevel
-      ..religiousLevelOther = _religiousLevelOther
-      ..photosPaths = List<String>.from(_photoPaths);
-    await context.read<PersonRepository>().update(widget.person);
-    _newPhotoPaths.clear();
-    if (mounted) {
-      setState(() => _saving = false);
-      widget.onEditingDone();
-    }
-  }
-
-  void _showValidationMessage(String message) {
-    AppNotice.show(context, message);
-  }
-
-  void _cancel() {
-    _resetDraft();
-    widget.onEditingDone();
-  }
+  late bool _expanded = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String summary = _personSummary(widget.person);
-    final List<ReligiousLevelChoice> religiousChoices = <ReligiousLevelChoice>[
-      for (final ReligiousLevel level in ReligiousLevels.global)
-        ReligiousLevelChoice(level),
+    final bool dark = theme.brightness == Brightness.dark;
+    final Person person = widget.person;
+    final Color accent = person.gender == Gender.unknown
+        ? _profileTextColor(theme)
+        : AppColors.genderAccent(person.gender, dark: dark);
+    final List<String> facts = <String>[
+      if (person.age != null)
+        '${person.gender == Gender.female ? 'בת' : 'בן'} ${person.age}',
+      if (person.heightCm != null) '${person.heightCm} ס״מ',
+      if (person.maritalStatus != null)
+        person.maritalStatus!.displayNameFor(person.gender),
+      if (person.religiousLevelLabel.isNotEmpty) person.religiousLevelLabel,
+      if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
     ];
-    if (_religiousLevel != null &&
-        !religiousChoices.any(
-          (ReligiousLevelChoice choice) =>
-              choice.level == _religiousLevel &&
-              choice.customLabel == _religiousLevelOther,
-        )) {
-      religiousChoices.insert(
-        0,
-        ReligiousLevelChoice(_religiousLevel, _religiousLevelOther),
-      );
-    }
-    final Person shownPerson = widget.editing
-        ? widget.person.copyWith(photosPaths: _photoPaths)
-        : widget.person;
-    final String religiousLabel = _religiousLevel == ReligiousLevel.other
-        ? (_religiousLevelOther ?? ReligiousLevel.other.displayName)
-        : _religiousLevel?.displayName ?? 'סגנון דתי';
+    final String description = (person.description ?? '').trim();
+    final List<String> photos = person.photosPaths
+        .where((String path) => File(path).existsSync())
+        .toList();
+    final bool shareable = WhatsAppUtils.hasSendableCard(person);
+    final TextStyle? bodyStyle = theme.textTheme.bodyLarge?.copyWith(
+      height: 1.55,
+      color: _profileBodyColor(theme),
+    );
 
-    return Material(
-      color: _profileCanvasColor(theme),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-          decoration: BoxDecoration(
-            color: _profileSurfaceColor(theme),
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: _profileSoftShadow(theme),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: widget.editing
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          IconButton(
-                            onPressed: _saving ? null : _cancel,
-                            icon: const Icon(Icons.close, size: 20),
-                            tooltip: 'ביטול עריכה מהירה',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          IconButton(
-                            onPressed: _saving ? null : _save,
-                            icon: _saving
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.check, size: 20),
-                            tooltip: 'שמירת עריכה מהירה',
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ],
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          IconButton(
-                            onPressed: widget.onEdit,
-                            icon: const Icon(Icons.edit_outlined, size: 20),
-                            tooltip: 'עריכת פרטי המועמד',
-                            visualDensity: VisualDensity.compact,
-                            style: IconButton.styleFrom(
-                              foregroundColor: _profileMutedColor(theme),
-                            ),
-                          ),
-                        ],
-                      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+      child: HomePaperCard(
+        stripe: accent,
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              person.fullName.trim(),
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: accent,
+                height: 1.15,
               ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Stack(
-                    alignment: Alignment.bottomCenter,
-                    children: <Widget>[
-                      GestureDetector(
-                        onTap: widget.editing ? null : widget.onAvatarTap,
-                        child: Hero(
-                          tag: 'person-${widget.person.id}',
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: _profileWarmSurfaceColor(theme),
-                              shape: BoxShape.circle,
-                            ),
-                            child: PersonAvatar(
-                              person: shownPerson,
-                              radius: 54,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (widget.editing)
-                        Positioned(
-                          bottom: 5,
-                          child: Material(
-                            color: Colors.black.withValues(alpha: 0.38),
-                            shape: const CircleBorder(),
-                            child: IconButton(
-                              onPressed: _saving ? null : _pickPrimaryPhoto,
-                              icon: const Icon(Icons.add, color: Colors.white),
-                              tooltip: 'הוספת תמונות',
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (widget.editing)
-                TextField(
-                  key: ValueKey<String>('quick-name-${widget.person.id}'),
-                  controller: _nameController,
-                  autofocus: true,
-                  textAlign: TextAlign.center,
-                  textCapitalization: TextCapitalization.words,
-                  minLines: 1,
-                  maxLines: 2,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    color: _profileTextColor(theme),
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
-                  ),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    enabledBorder: UnderlineInputBorder(),
-                    focusedBorder: UnderlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(vertical: 4),
-                  ),
-                )
-              else
-                Text(
-                  widget.person.fullName.trim(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  // In their own gender's colour — the palette's rose for a
-                  // woman, its blue for a man — as the name is written on
-                  // every row and card in the app.
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    color: widget.person.gender == Gender.unknown
-                        ? _profileTextColor(theme)
-                        : AppColors.genderAccent(
-                            widget.person.gender,
-                            dark: theme.brightness == Brightness.dark,
-                          ),
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
-                  ),
-                ),
-              const SizedBox(height: 6),
-              if (widget.editing)
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: <Widget>[
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          'גיל',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: _profileMutedColor(theme),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        SizedBox(
-                          width: 42,
-                          child: TextField(
-                            key: ValueKey<String>(
-                              'quick-age-${widget.person.id}',
-                            ),
-                            controller: _ageController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: <TextInputFormatter>[
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: _profileMutedColor(theme),
-                            ),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              enabledBorder: UnderlineInputBorder(),
-                              focusedBorder: UnderlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(vertical: 2),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      '·',
-                      style: TextStyle(color: _profileMutedColor(theme)),
-                    ),
-                    PopupMenuButton<ReligiousLevelChoice>(
-                      tooltip: 'בחירת סגנון דתי',
-                      onSelected: (ReligiousLevelChoice choice) {
-                        setState(() {
-                          _religiousLevel = choice.level;
-                          _religiousLevelOther = choice.customLabel;
-                        });
-                      },
-                      itemBuilder: (BuildContext context) =>
-                          religiousChoices.map((ReligiousLevelChoice choice) {
-                            final String label =
-                                choice.level == ReligiousLevel.other
-                                ? (choice.customLabel ??
-                                      ReligiousLevel.other.displayName)
-                                : choice.level?.displayName ?? '';
-                            return PopupMenuItem<ReligiousLevelChoice>(
-                              value: choice,
-                              child: Text(label),
-                            );
-                          }).toList(),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Text(
-                              religiousLabel,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: _profileMutedColor(theme),
-                              ),
-                            ),
-                            const SizedBox(width: 2),
-                            Icon(
-                              Icons.expand_more,
-                              size: 18,
-                              color: _profileMutedColor(theme),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if ((widget.person.city ?? '')
-                        .trim()
-                        .isNotEmpty) ...<Widget>[
-                      Text(
-                        '·',
-                        style: TextStyle(color: _profileMutedColor(theme)),
-                      ),
-                      Text(
-                        widget.person.city!.trim(),
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: _profileMutedColor(theme),
-                        ),
-                      ),
-                    ],
-                  ],
-                )
-              else
-                Text(
-                  summary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: _profileMutedColor(theme),
-                  ),
-                ),
-              // Everything the quick edit does not cover — phone included —
-              // lives one tap away in the full card editor. Offering it right
-              // here as well as in the top-left menu means the matchmaker who
-              // opened this editor to change a detail it does not hold never
-              // has to go looking for where that detail lives.
-              if (widget.editing) ...<Widget>[
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: _saving ? null : widget.onExtendedEdit,
-                  icon: const Icon(Icons.edit_note_outlined, size: 18),
-                  label: const Text('עריכה מורחבת'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: _profileMutedColor(theme),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              _ProfileStatusSwitcher(
-                status: widget.person.profileStatus,
-                gender: widget.person.gender,
-                onStatusChanged: widget.onStatusChanged,
-              ),
-              const SizedBox(height: 10),
+            ),
+            if (facts.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 2),
               Text(
-                _relativeUpdatedLabel(widget.person.updatedAt),
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelSmall?.copyWith(
+                facts.join(' · '),
+                style: theme.textTheme.bodyMedium?.copyWith(
                   color: _profileMutedColor(theme),
                 ),
               ),
             ],
-          ),
+            const SizedBox(height: 12),
+            if (photos.isNotEmpty)
+              PersonPhotoCarousel(
+                photosPaths: photos,
+                height: 300,
+                fit: BoxFit.contain,
+                borderRadius: BorderRadius.circular(16),
+                backgroundColor: dark
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : AppColors.secondaryLight,
+                onTapIndex: (int index) => widget.onOpenCard(
+                  person.photosPaths.indexOf(photos[index]),
+                ),
+              )
+            else
+              Center(
+                child: GestureDetector(
+                  onTap: () => widget.onOpenCard(0),
+                  child: Hero(
+                    tag: 'person-${person.id}',
+                    child: PersonAvatar(person: person, radius: 48),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            if (description.isNotEmpty)
+              LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final TextPainter painter = TextPainter(
+                    text: TextSpan(text: description, style: bodyStyle),
+                    maxLines: _foldedLines,
+                    textDirection: Directionality.of(context),
+                    textScaler: MediaQuery.textScalerOf(context),
+                  )..layout(maxWidth: constraints.maxWidth);
+                  final bool folds = painter.didExceedMaxLines;
+                  painter.dispose();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        description,
+                        maxLines: _expanded || !folds ? null : _foldedLines,
+                        overflow: _expanded || !folds
+                            ? null
+                            : TextOverflow.ellipsis,
+                        style: bodyStyle,
+                      ),
+                      if (folds)
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _expanded = !_expanded),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            _expanded ? 'הצגת פחות' : 'הצגת הכרטיס המלא',
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              )
+            else
+              // No card text here yet: the invitation to write one — or, for
+              // a friend who already keeps a card of their own, the request
+              // for access to it. See [FriendCardInvite].
+              FriendCardInvite(
+                person: person,
+                onManualEntry: widget.onEdit,
+                textStyle: theme.textTheme.bodyMedium?.copyWith(
+                  color: _profileMutedColor(theme),
+                  height: 1.5,
+                ),
+              ),
+            // An empty card already offers "הזנה ידנית של כרטיס" above; a
+            // second "עריכה" under it would be the same button twice.
+            if (description.isNotEmpty ||
+                person.cardOwnerUid != null ||
+                shareable) ...<Widget>[
+              const SizedBox(height: 14),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: widget.onEdit,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('עריכה'),
+                    ),
+                  ),
+                  if (shareable) ...<Widget>[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Builder(
+                        builder: (BuildContext anchor) => OutlinedButton.icon(
+                          onPressed: () => ShareUtils.sharePerson(
+                            person,
+                            origin: ShareUtils.originOf(anchor),
+                          ),
+                          icon: const Icon(Icons.share_outlined, size: 18),
+                          label: const Text('שיתוף'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            Center(
+              child: Text(
+                _relativeUpdatedLabel(person.updatedAt),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: _profileMutedColor(theme),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1240,172 +982,6 @@ class _ProfileSummaryHeaderState extends State<_ProfileSummaryHeader> {
 /// card worked, it could be put in a proposal, and it simply never appeared in
 /// any list. Filling in a detail now admits it on its own; this says so, and
 /// offers the one tap for somebody who wants it in with nothing filled at all.
-/// "תמונות נוספות" — exactly three squares under the face at the top of the
-/// profile.
-///
-/// The header shows one photo and it is round, so the second, third and fourth
-/// pictures used to exist only inside the full-screen viewer. Now there are
-/// always three slots: a photo fills one, and an empty one says "הוסף תמונה"
-/// and opens the gallery. With the main photo that is four in all — never a
-/// growing grid.
-class _ProfilePhotoStrip extends StatelessWidget {
-  const _ProfilePhotoStrip({required this.person, required this.onOpen});
-
-  final Person person;
-
-  /// Called with the photo's index in `person.photosPaths`, so the viewer can
-  /// open on the one that was tapped.
-  final ValueChanged<int> onOpen;
-
-  /// The squares beside the main photo.
-  static const int slots = 3;
-
-  static const double _slotHeight = 84;
-
-  Future<void> _add(BuildContext context) async {
-    final PersonRepository repository = context.read<PersonRepository>();
-    if (!await confirmEditSyncedCard(context, person)) {
-      return;
-    }
-    if (!context.mounted) {
-      return;
-    }
-    final String? path = await PhotoPickerService.pickSinglePhoto(
-      context,
-      namePrefix: '${person.id}_${DateTime.now().millisecondsSinceEpoch}',
-    );
-    if (path == null) {
-      return;
-    }
-    final Person? current = repository.getById(person.id);
-    if (current == null) {
-      return;
-    }
-    current.photosPaths = <String>[...current.photosPaths, path];
-    await repository.update(current);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color muted = _profileMutedColor(theme);
-
-    // Indexed against the "files that exist" list, which is what the viewer
-    // pages over, so a missing file in the middle shifts the rest here too.
-    final List<String> photos = <String>[
-      for (final String path in person.photosPaths)
-        if (File(path).existsSync()) path,
-    ];
-    // The first photo is the face at the top of the page; the slots are the
-    // rest. Without a main photo, the first slot's photo becomes it.
-    final List<String> rest = photos.length < 2
-        ? const <String>[]
-        : photos.sublist(1, (1 + slots).clamp(1, photos.length));
-
-    return Container(
-      color: _profileCanvasColor(theme),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsetsDirectional.only(start: 2, bottom: 8),
-            child: Text(
-              'תמונות נוספות',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: muted,
-              ),
-            ),
-          ),
-          Row(
-            children: <Widget>[
-              for (int i = 0; i < slots; i++) ...<Widget>[
-                if (i > 0) const SizedBox(width: 10),
-                Expanded(
-                  // Squares, but never taller than a thumbnail: the strip
-                  // should not push the profile's actions off the screen.
-                  child: SizedBox(
-                    height: _slotHeight,
-                    child: i < rest.length
-                        ? GestureDetector(
-                            onTap: () => onOpen(i + 1),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Image.file(
-                                File(rest[i]),
-                                fit: BoxFit.cover,
-                                cacheWidth: 360,
-                                errorBuilder:
-                                    (
-                                      BuildContext context,
-                                      Object _,
-                                      StackTrace? _,
-                                    ) => ColoredBox(
-                                      color: _profileWarmSurfaceColor(theme),
-                                    ),
-                              ),
-                            ),
-                          )
-                        : _AddPhotoSlot(onTap: () => _add(context)),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// An empty square: "הוסף תמונה", opening the gallery.
-class _AddPhotoSlot extends StatelessWidget {
-  const _AddPhotoSlot({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color accent = _profileAccentColor(context);
-    return Material(
-      color: _profileAccentWash(context).withValues(alpha: 0.55),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accent.withValues(alpha: 0.35)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(Icons.add_photo_alternate_outlined, color: accent, size: 24),
-              const SizedBox(height: 4),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text(
-                    'הוסף תמונה',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: accent,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _OutsideDatabaseBanner extends StatelessWidget {
   const _OutsideDatabaseBanner({required this.person, required this.onAdd});
 
@@ -1558,8 +1134,8 @@ class _InquiryLine extends StatelessWidget {
   }
 }
 
-/// The profile's three primary actions, placed in the scrolling content so the
-/// app-level bottom navigation remains the only persistent bottom bar.
+/// The profile's three actions — the friend's own WhatsApp (named for them),
+/// התאמות and הוספת רעיון. Sharing the card lives on the card tile above.
 class _ProfileInlineActions extends StatelessWidget {
   const _ProfileInlineActions({
     required this.person,
@@ -1646,34 +1222,6 @@ class _ProfileInlineActions extends StatelessWidget {
               subtle: true,
             ),
           ),
-          const SizedBox(width: 8),
-          // The whole card — text and every photo — to the share sheet. A
-          // paper plane taking off rather than the classic three dots: simple,
-          // and a little warmer.
-          Expanded(
-            child: Builder(
-              builder: (BuildContext anchor) => _ProfileActionButton(
-                icon: Transform.rotate(
-                  // The app is RTL, where the plane is mirrored to face left;
-                  // turning it clockwise lifts its nose.
-                  angle: 0.45,
-                  child: const Icon(Icons.send_outlined, size: 20),
-                ),
-                label: 'שיתוף כרטיס',
-                subtle: true,
-                onPressed: () {
-                  if (!WhatsAppUtils.hasSendableCard(person)) {
-                    AppNotice.show(anchor, 'אין עדיין כרטיס או תמונות לשיתוף');
-                    return;
-                  }
-                  ShareUtils.sharePerson(
-                    person,
-                    origin: ShareUtils.originOf(anchor),
-                  );
-                },
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1739,7 +1287,7 @@ class _ProfileActionButton extends StatelessWidget {
                 child: icon,
               ),
               const SizedBox(height: 5),
-              // Four tiles share the row, so a label shrinks to fit rather
+              // Three tiles share the row, so a label shrinks to fit rather
               // than losing its end.
               FittedBox(
                 fit: BoxFit.scaleDown,
@@ -1889,78 +1437,73 @@ class _PersonalNotesCard extends StatelessWidget {
         ? entries
         : entries.sublist(entries.length - _previewCount);
 
+    // The whole box is the way into the full notes page — there is no
+    // separate "מסך מלא" link. The messages and the writing line inside it
+    // keep their own taps.
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: _profileSurfaceColor(theme),
+      child: Material(
+        color: _profileSurfaceColor(theme),
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          onTap: onShowAll,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: muted.withValues(alpha: 0.14)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
+          child: Ink(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: muted.withValues(alpha: 0.14)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Expanded(
-                  child: Text(
-                    'הערות אישיות',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: _profileTextColor(theme),
-                      fontWeight: FontWeight.w800,
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        'הערות אישיות',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: _profileTextColor(theme),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-                if (entries.isNotEmpty)
-                  TextButton(
-                    onPressed: onShowAll,
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
+                if (entries.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
                     child: Text(
-                      entries.length > preview.length
-                          ? 'הצגת הכל (${entries.length})'
-                          : 'מסך מלא',
+                      // "רק לעיניך" is a promise about notes that exist. With none
+                      // written it is reassurance nobody asked for, in front of an
+                      // empty box.
+                      'עדיין אין הערות. {כתוב|כתבי} כאן משהו {שתרצה|שתרצי} '
+                              'לזכור, או {הקלט|הקליטי} הערה קולית.'
+                          .forGender(context.userGender),
+                      style: theme.textTheme.bodyMedium?.copyWith(color: muted),
                     ),
+                  )
+                else ...<Widget>[
+                  const SizedBox(height: 4),
+                  ..._noteChatChildren(
+                    context,
+                    person,
+                    preview,
+                    maxLines: 6,
+                    onOpenVoice: onOpenVoice,
                   ),
+                  const SizedBox(height: 8),
+                ],
+                _NoteComposer(personId: person.id),
+                // A recording that already exists is nearly always sitting in a
+                // WhatsApp chat with this friend. One tap there, and the share
+                // sheet brings it back here. Quiet, under the writing line.
+                if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
+                  _VoiceFromWhatsAppLink(person: person),
               ],
             ),
-            // A recording that already exists is nearly always sitting in a
-            // WhatsApp chat with this friend. One tap there, and the share
-            // sheet brings it back here.
-            if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
-              _VoiceFromWhatsAppLink(person: person),
-            if (entries.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
-                child: Text(
-                  // "רק לעיניך" is a promise about notes that exist. With none
-                  // written it is reassurance nobody asked for, in front of an
-                  // empty box.
-                  'עדיין אין הערות. {כתוב|כתבי} כאן משהו {שתרצה|שתרצי} '
-                          'לזכור, או {הקלט|הקליטי} הערה קולית.'
-                      .forGender(context.userGender),
-                  style: theme.textTheme.bodyMedium?.copyWith(color: muted),
-                ),
-              )
-            else ...<Widget>[
-              const SizedBox(height: 4),
-              ..._noteChatChildren(
-                context,
-                person,
-                preview,
-                maxLines: 6,
-                onOpenVoice: onOpenVoice,
-              ),
-              const SizedBox(height: 8),
-            ],
-            _NoteComposer(personId: person.id),
-          ],
+          ),
         ),
       ),
     );
@@ -2387,13 +1930,13 @@ class _VoiceFromWhatsAppLink extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 4),
           foregroundColor: _profileMutedColor(theme),
           textStyle: theme.textTheme.bodySmall?.copyWith(
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w400,
           ),
         ),
-        icon: const FaIcon(
+        icon: FaIcon(
           FontAwesomeIcons.whatsapp,
-          size: 14,
-          color: _whatsappGreen,
+          size: 13,
+          color: _profileMutedColor(theme),
         ),
         label: const Text('שתף ושמור הקלטה קיימת מ־WhatsApp'),
       ),
@@ -2629,372 +2172,6 @@ class _NoteEditResult {
 
   final String text;
   final bool delete;
-}
-
-class _ProfileStatusSwitcher extends StatefulWidget {
-  const _ProfileStatusSwitcher({
-    required this.status,
-    required this.gender,
-    required this.onStatusChanged,
-  });
-
-  final ProfileStatus status;
-
-  /// Whose card this is: the tag is written in their own colour — see
-  /// [ProfileStatusTag].
-  final Gender gender;
-
-  final ValueChanged<ProfileStatus> onStatusChanged;
-
-  @override
-  State<_ProfileStatusSwitcher> createState() => _ProfileStatusSwitcherState();
-}
-
-class _ProfileStatusSwitcherState extends State<_ProfileStatusSwitcher> {
-  bool _expanded = false;
-
-  @override
-  void didUpdateWidget(covariant _ProfileStatusSwitcher oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.status != widget.status) {
-      _expanded = false;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Color statusColor = AppColors.genderAccent(
-      widget.gender,
-      dark: Theme.of(context).brightness == Brightness.dark,
-    );
-
-    // **The word and a small arrow, nothing drawn round them.** It was a
-    // tinted, framed pill — one more box on a page of boxes — for what is a
-    // single word the matchmaker can tap to change.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: <Widget>[
-        InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                _StatusWord(status: widget.status, gender: widget.gender),
-                const SizedBox(width: 2),
-                // After the word, which in RTL is its left.
-                Icon(
-                  _expanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                  color: statusColor,
-                ),
-              ],
-            ),
-          ),
-        ),
-        AnimatedCrossFade(
-          firstChild: const SizedBox.shrink(),
-          secondChild: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: ProfileStatus.values
-                  .where((ProfileStatus status) => status != widget.status)
-                  .map((ProfileStatus status) {
-                    return InkWell(
-                      onTap: () => widget.onStatusChanged(status),
-                      borderRadius: BorderRadius.circular(999),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 2,
-                          vertical: 2,
-                        ),
-                        child: _StatusWord(
-                          status: status,
-                          gender: widget.gender,
-                        ),
-                      ),
-                    );
-                  })
-                  .toList(),
-            ),
-          ),
-          crossFadeState: _expanded
-              ? CrossFadeState.showSecond
-              : CrossFadeState.showFirst,
-          duration: const Duration(milliseconds: 160),
-        ),
-      ],
-    );
-  }
-}
-
-/// "פנויה" / "תפוס" / "בהפסקה", drawn exactly as המאגר שלי draws it — the
-/// [ProfileStatusTag]: a dot for the state and the word in the person's own
-/// colour.
-class _StatusWord extends StatelessWidget {
-  const _StatusWord({required this.status, required this.gender});
-
-  final ProfileStatus status;
-  final Gender gender;
-
-  @override
-  Widget build(BuildContext context) {
-    return ProfileStatusTag(status: status, gender: gender, compact: true);
-  }
-}
-
-/// Inline preview of the person's send-card. Its quick edit mode keeps this
-/// exact surface in place and swaps only the text for an editor.
-class _WhatsAppCardSection extends StatefulWidget {
-  const _WhatsAppCardSection({
-    super.key,
-    required this.person,
-    required this.editing,
-    required this.expanded,
-    required this.onToggleFull,
-    required this.onEditCard,
-    required this.onEditingDone,
-  });
-
-  final Person person;
-  final bool editing;
-  final bool expanded;
-  final VoidCallback onToggleFull;
-  final VoidCallback onEditCard;
-  final VoidCallback onEditingDone;
-
-  @override
-  State<_WhatsAppCardSection> createState() => _WhatsAppCardSectionState();
-}
-
-class _WhatsAppCardSectionState extends State<_WhatsAppCardSection> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.person.description ?? '',
-  );
-  bool _saving = false;
-
-  @override
-  void didUpdateWidget(covariant _WhatsAppCardSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.person.id != widget.person.id ||
-        (!oldWidget.editing && widget.editing)) {
-      _controller.text = widget.person.description ?? '';
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_saving) {
-      return;
-    }
-    setState(() => _saving = true);
-    final String value = _controller.text.trim();
-    widget.person.description = value.isEmpty ? null : value;
-    await context.read<PersonRepository>().update(widget.person);
-    if (mounted) {
-      setState(() => _saving = false);
-      widget.onEditingDone();
-    }
-  }
-
-  void _cancel() {
-    _controller.text = widget.person.description ?? '';
-    widget.onEditingDone();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final String description = (widget.person.description ?? '').trim();
-    final bool hasCard = description.isNotEmpty;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        decoration: BoxDecoration(
-          color: _profileSurfaceColor(theme),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: _profileMutedColor(theme).withValues(alpha: 0.14),
-          ),
-        ),
-        child: Stack(
-          children: <Widget>[
-            // Reading, the body only gives up its end-side corner to the
-            // pencil. Editing, it gives up a *lane above itself* instead: two
-            // controls side by side in the end-side inset would have taken 80
-            // of the card's ~300 points away from the field, which is the one
-            // thing on this card that wants every point it can get.
-            Padding(
-              key: ValueKey<String>(
-                'candidate-full-card-body-${widget.person.id}',
-              ),
-              // The pencil sits in a lane *above* the text, never beside it,
-              // so the card's words use the card's whole width.
-              padding: const EdgeInsetsDirectional.only(top: 26),
-              child: widget.editing
-                  ? TextField(
-                      key: ValueKey<String>('quick-card-${widget.person.id}'),
-                      controller: _controller,
-                      autofocus: true,
-                      minLines: 5,
-                      maxLines: 14,
-                      textInputAction: TextInputAction.newline,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: _profileTextColor(theme),
-                        height: 1.55,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'טקסט הכרטיס המלא לשיתוף',
-                        alignLabelWithHint: true,
-                      ),
-                    )
-                  : hasCard
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        AnimatedCrossFade(
-                          key: ValueKey<String>(
-                            'candidate-full-card-text-${widget.person.id}',
-                          ),
-                          firstChild: Text(
-                            description,
-                            maxLines: 5,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: _profileTextColor(theme),
-                              height: 1.5,
-                            ),
-                          ),
-                          secondChild: Text(
-                            description,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: _profileTextColor(theme),
-                              height: 1.55,
-                            ),
-                          ),
-                          crossFadeState: widget.expanded
-                              ? CrossFadeState.showSecond
-                              : CrossFadeState.showFirst,
-                          duration: const Duration(milliseconds: 180),
-                          sizeCurve: Curves.easeOut,
-                        ),
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: TextButton(
-                            onPressed: widget.onToggleFull,
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: Text(
-                              widget.expanded
-                                  ? 'סגירת הכרטיס המלא'
-                                  : 'הצגת הכרטיס המלא',
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          widget.person.gender == Gender.female
-                              ? 'עוד אין כאן כרטיס. הזמנה אישית קצרה בוואטסאפ, '
-                                    'והיא ממלאת כרטיס בעצמה — מדויק, עם תמונות, '
-                                    'ומתעדכן אצלך.'
-                              : 'עוד אין כאן כרטיס. הזמנה אישית קצרה בוואטסאפ, '
-                                    'והוא ממלא כרטיס בעצמו — מדויק, עם תמונות, '
-                                    'ומתעדכן אצלך.',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: _profileMutedColor(theme),
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        // One action where there used to be two: the
-                        // invitation to write a card of their own. A friend who
-                        // already keeps one is offered access instead, by the
-                        // card panel above — see [CardInviteFlow].
-                        CardInviteButton(
-                          person: widget.person,
-                          onlyInvite: true,
-                        ),
-                      ],
-                    ),
-            ),
-            PositionedDirectional(
-              top: -8,
-              end: -8,
-              child: widget.editing
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        IconButton(
-                          onPressed: _saving ? null : _cancel,
-                          icon: const Icon(Icons.close, size: 20),
-                          tooltip: 'ביטול עריכת הכרטיס',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        IconButton(
-                          onPressed: _saving ? null : _save,
-                          icon: _saving
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.check, size: 20),
-                          tooltip: 'שמירת הכרטיס',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    )
-                  : IconButton(
-                      onPressed: widget.onEditCard,
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      tooltip: 'עריכת טקסט הכרטיס המלא',
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        foregroundColor: _profileMutedColor(theme),
-                      ),
-                    ),
-            ),
-            if (!widget.editing)
-              PositionedDirectional(
-                top: 2,
-                start: 0,
-                child: Text(
-                  'כרטיס לשליחה',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: _profileMutedColor(theme),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Which of the three shelves an idea sits on, and in what order they are read.
@@ -3399,10 +2576,8 @@ class _IdeaRow extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 color: _profileAccentColor(context),
                 disabledColor: muted.withValues(alpha: 0.35),
-                icon: Transform.rotate(
-                  angle: -0.5,
-                  child: const Icon(Icons.send_outlined),
-                ),
+                // Level, not tilted — the plane as the icon draws it.
+                icon: const Icon(Icons.send_outlined),
                 onPressed: canShare
                     ? () => MatchQuickActions.shareSideCard(
                         context,
@@ -5108,7 +4283,7 @@ class _HistorySection extends StatelessWidget {
   }
 }
 
-/// One entry in the history timeline: a type-coloured dot, the event in bold,
+/// One entry in the history timeline: a type-coloured dot, the event,
 /// whatever belongs to it underneath at reading size, and the date small at
 /// the far edge. A long press offers to delete the entry — all of its lines.
 class _HistoryRow extends StatelessWidget {
@@ -5168,9 +4343,11 @@ class _HistoryRow extends StatelessWidget {
                     _historyText(head, relatedOf(head)),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
+                    // Regular weight: the only bold in the section is its
+                    // "היסטוריה" heading.
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: _profileTextColor(theme),
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w400,
                       height: 1.3,
                     ),
                   ),

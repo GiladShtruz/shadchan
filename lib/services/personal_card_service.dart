@@ -235,7 +235,13 @@ abstract final class PersonalCardService {
       final List<String> remotePaths = <String>[];
       for (final String localPath in card.photosPaths) {
         final String name = PhotoPickerService.basenameOf(localPath);
-        final File file = File(localPath);
+        // The stored path is absolute, and iOS moves the app's sandbox on an
+        // update: a photo that is still there under a new prefix must not be
+        // left off the card the matchmakers receive.
+        File file = File(localPath);
+        if (!file.existsSync()) {
+          file = await PhotoPickerService.fileFor(name);
+        }
         if (!uploaded.contains(name)) {
           if (!file.existsSync()) {
             continue;

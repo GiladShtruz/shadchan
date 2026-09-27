@@ -10,8 +10,9 @@ import 'package:shadchan/widgets/app_notice.dart';
 
 /// Viewing and lightly fixing one photo.
 ///
-/// Deliberately few tools: crop (a frame shape, then pan and pinch inside it),
-/// rotate, straighten, and brightness. That is what a photo forwarded from WhatsApp actually needs —
+/// Deliberately few tools: crop (a free frame dragged by its corners and edges,
+/// with the photo panned and pinched under it), rotate, straighten, and
+/// brightness. That is what a photo forwarded from WhatsApp actually needs —
 /// it arrived sideways, or dark, or with the person off to one side — and every
 /// tool past that turns a card editor into an image app.
 ///
@@ -55,9 +56,12 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   /// -1 … 1, zero being the photo as it is.
   double _brightness = 0;
 
-  /// The crop frame's shape. Panning and pinching inside it chooses what is
-  /// kept.
-  _CropShape _shape = _CropShape.original;
+  /// The kept part of the frame, as fractions of it (0…1 on both axes).
+  /// Dragged freely by its handles — no fixed proportion — while panning and
+  /// pinching the photo under it chooses what falls inside.
+  Rect _crop = _fullCrop;
+
+  static const Rect _fullCrop = Rect.fromLTRB(0, 0, 1, 1);
 
   @override
   void initState() {
@@ -100,7 +104,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   }
 
   bool get _isChanged =>
-      _shape != _CropShape.original ||
+      _crop != _fullCrop ||
       _quarterTurns != 0 ||
       _straighten.abs() > 0.01 ||
       _brightness.abs() > 0.01 ||
@@ -174,11 +178,14 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                                     ),
                                   ),
                                 ),
-                                // The crop frame itself: a border and thirds,
-                                // drawn over the photo and never in the way
-                                // of a finger.
-                                const IgnorePointer(
-                                  child: CustomPaint(painter: _CropGuides()),
+                                // The crop frame itself: the outside dimmed,
+                                // a border and thirds, and a handle on every
+                                // corner and edge. Only the handles take a
+                                // finger; everywhere else pans the photo.
+                                _CropOverlay(
+                                  crop: _crop,
+                                  onChanged: (Rect crop) =>
+                                      setState(() => _crop = crop),
                                 ),
                               ],
                             ),
@@ -188,22 +195,21 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                     ),
                   ),
                 ),
-                _CropShapes(
-                  selected: _shape,
-                  onSelected: (_CropShape shape) =>
-                      setState(() => _shape = shape),
-                ),
                 _Tools(
                   straighten: _straighten,
                   brightness: _brightness,
-                  onRotate: () =>
-                      setState(() => _quarterTurns = (_quarterTurns + 1) % 4),
+                  // A turn changes the frame's proportion, so a crop drawn for
+                  // the old one would land somewhere else — start it afresh.
+                  onRotate: () => setState(() {
+                    _quarterTurns = (_quarterTurns + 1) % 4;
+                    _crop = _fullCrop;
+                  }),
                   onStraighten: (double value) =>
                       setState(() => _straighten = value),
                   onBrightness: (double value) =>
                       setState(() => _brightness = value),
                   onReset: () => setState(() {
-                    _shape = _CropShape.original;
+                    _crop = _fullCrop;
                     _quarterTurns = 0;
                     _straighten = 0;
                     _brightness = 0;
@@ -216,20 +222,11 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     );
   }
 
-  /// The frame's width over its height for the chosen [_shape]. "מקורי" is
-  /// the photo's own proportion, turned with it.
+  /// The frame's width over its height: the photo's own proportion, turned
+  /// with it. The crop inside it is free.
   double _frameRatio(ui.Image image) {
-    switch (_shape) {
-      case _CropShape.original:
-        final double ratio = image.width / image.height;
-        return _quarterTurns.isOdd ? 1 / ratio : ratio;
-      case _CropShape.square:
-        return 1;
-      case _CropShape.portrait:
-        return 3 / 4;
-      case _CropShape.landscape:
-        return 4 / 3;
-    }
+    final double ratio = image.width / image.height;
+    return _quarterTurns.isOdd ? 1 / ratio : ratio;
   }
 
   double get _totalAngle =>
@@ -268,8 +265,15 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       final double outputScale = (image.width / frameSize.width)
           .clamp(1.0, 4.0)
           .toDouble();
-      final double outWidth = frameSize.width * outputScale;
-      final double outHeight = frameSize.height * outputScale;
+      // Only the part inside the crop frame is written.
+      final Rect kept = Rect.fromLTRB(
+        _crop.left * frameSize.width,
+        _crop.top * frameSize.height,
+        _crop.right * frameSize.width,
+        _crop.bottom * frameSize.height,
+      );
+      final double outWidth = kept.width * outputScale;
+      final double outHeight = kept.height * outputScale;
 
       final ui.PictureRecorder recorder = ui.PictureRecorder();
       final Canvas canvas = Canvas(
@@ -282,6 +286,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       );
       canvas.save();
       canvas.scale(outputScale);
+      canvas.translate(-kept.left, -kept.top);
       // The pan/zoom the user set inside the frame.
       canvas.transform(_viewer.value.storage);
       // Then the rotation, about the frame's centre, matching Transform.rotate.
@@ -387,7 +392,7 @@ class _Tools extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             const Text(
-              'בחרו צורת חיתוך, ואז גררו והצביטו כדי למקם את התמונה בתוך המסגרת',
+              'גררו את הפינות והצדדים של המסגרת כדי לחתוך, והזיזו או הגדילו את התמונה מתחתיה',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
@@ -432,90 +437,160 @@ class _Tools extends StatelessWidget {
   }
 }
 
-/// The shapes a photo can be cropped to.
-enum _CropShape {
-  original('מקורי'),
-  square('ריבוע'),
-  portrait('לאורך 3:4'),
-  landscape('לרוחב 4:3');
+/// The free crop frame drawn over the photo: everything outside it dimmed, a
+/// border with thirds inside it, and eight handles — four corners and four
+/// edges — that move its sides. Nothing else on it takes a touch, so a finger
+/// anywhere but a handle still pans and pinches the photo underneath.
+class _CropOverlay extends StatelessWidget {
+  const _CropOverlay({required this.crop, required this.onChanged});
 
-  const _CropShape(this.label);
+  /// Fractions of the frame, 0…1.
+  final Rect crop;
+  final ValueChanged<Rect> onChanged;
 
-  final String label;
-}
+  /// The smallest the crop may get, as a fraction of the frame on each axis.
+  static const double _minSize = 0.12;
 
-/// "חיתוך" — one row of shapes above the other tools.
-class _CropShapes extends StatelessWidget {
-  const _CropShapes({required this.selected, required this.onSelected});
-
-  final _CropShape selected;
-  final ValueChanged<_CropShape> onSelected;
+  /// The finger's target around each handle.
+  static const double _hit = 36;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-      child: Row(
-        children: <Widget>[
-          const Icon(Icons.crop, size: 18, color: Colors.white70),
-          const SizedBox(width: 8),
-          const Text(
-            'חיתוך',
-            style: TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: <Widget>[
-                  for (final _CropShape shape in _CropShape.values)
-                    Padding(
-                      padding: const EdgeInsetsDirectional.only(end: 6),
-                      child: ChoiceChip(
-                        label: Text(shape.label),
-                        selected: shape == selected,
-                        showCheckmark: false,
-                        visualDensity: VisualDensity.compact,
-                        labelStyle: TextStyle(
-                          fontSize: 12,
-                          color: shape == selected
-                              ? Colors.black
-                              : Colors.white,
-                        ),
-                        selectedColor: AppColors.primaryLight,
-                        backgroundColor: Colors.white12,
-                        side: BorderSide.none,
-                        onSelected: (_) => onSelected(shape),
-                      ),
-                    ),
-                ],
-              ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Size size = constraints.biggest;
+        final Rect box = Rect.fromLTRB(
+          crop.left * size.width,
+          crop.top * size.height,
+          crop.right * size.width,
+          crop.bottom * size.height,
+        );
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            IgnorePointer(
+              child: CustomPaint(size: size, painter: _CropGuides(box)),
+            ),
+            for (final _Edge edge in _Edge.values)
+              _handle(edge: edge, box: box, size: size),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _handle({required _Edge edge, required Rect box, required Size size}) {
+    final Offset at = edge.anchorOn(box);
+    return Positioned(
+      left: at.dx - _hit / 2,
+      top: at.dy - _hit / 2,
+      width: _hit,
+      height: _hit,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanUpdate: (DragUpdateDetails details) {
+          final double dx = details.delta.dx / size.width;
+          final double dy = details.delta.dy / size.height;
+          double left = crop.left;
+          double top = crop.top;
+          double right = crop.right;
+          double bottom = crop.bottom;
+          if (edge.movesLeft) {
+            left = (left + dx).clamp(0.0, right - _minSize);
+          }
+          if (edge.movesRight) {
+            right = (right + dx).clamp(left + _minSize, 1.0);
+          }
+          if (edge.movesTop) {
+            top = (top + dy).clamp(0.0, bottom - _minSize);
+          }
+          if (edge.movesBottom) {
+            bottom = (bottom + dy).clamp(top + _minSize, 1.0);
+          }
+          onChanged(Rect.fromLTRB(left, top, right, bottom));
+        },
+        child: Center(
+          child: Container(
+            width: edge.isCorner
+                ? 18
+                : (edge.movesTop || edge.movesBottom ? 26 : 6),
+            height: edge.isCorner
+                ? 18
+                : (edge.movesLeft || edge.movesRight ? 26 : 6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(edge.isCorner ? 4 : 3),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(color: Colors.black45, blurRadius: 4),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// A white frame and rule-of-thirds lines — what says "this is a crop".
+/// The eight handles of the crop frame, and which sides each one moves.
+enum _Edge {
+  topLeft(movesLeft: true, movesTop: true),
+  topRight(movesRight: true, movesTop: true),
+  bottomLeft(movesLeft: true, movesBottom: true),
+  bottomRight(movesRight: true, movesBottom: true),
+  top(movesTop: true),
+  bottom(movesBottom: true),
+  left(movesLeft: true),
+  right(movesRight: true);
+
+  const _Edge({
+    this.movesLeft = false,
+    this.movesRight = false,
+    this.movesTop = false,
+    this.movesBottom = false,
+  });
+
+  final bool movesLeft;
+  final bool movesRight;
+  final bool movesTop;
+  final bool movesBottom;
+
+  bool get isCorner => (movesLeft || movesRight) && (movesTop || movesBottom);
+
+  Offset anchorOn(Rect box) => Offset(
+    movesLeft ? box.left : (movesRight ? box.right : box.center.dx),
+    movesTop ? box.top : (movesBottom ? box.bottom : box.center.dy),
+  );
+}
+
+/// The dimmed outside, a white frame and rule-of-thirds lines inside it —
+/// what says "this is a crop".
 class _CropGuides extends CustomPainter {
-  const _CropGuides();
+  const _CropGuides(this.box);
+
+  final Rect box;
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.drawPath(
+      Path.combine(
+        PathOperation.difference,
+        Path()..addRect(Offset.zero & size),
+        Path()..addRect(box),
+      ),
+      Paint()..color = Colors.black.withValues(alpha: 0.55),
+    );
     final Paint line = Paint()
       ..color = Colors.white.withValues(alpha: 0.35)
       ..strokeWidth = 1;
     for (int i = 1; i < 3; i++) {
-      final double x = size.width * i / 3;
-      final double y = size.height * i / 3;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
+      final double x = box.left + box.width * i / 3;
+      final double y = box.top + box.height * i / 3;
+      canvas.drawLine(Offset(x, box.top), Offset(x, box.bottom), line);
+      canvas.drawLine(Offset(box.left, y), Offset(box.right, y), line);
     }
     canvas.drawRect(
-      Offset.zero & size,
+      box,
       Paint()
         ..color = Colors.white.withValues(alpha: 0.9)
         ..style = PaintingStyle.stroke
@@ -524,7 +599,8 @@ class _CropGuides extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CropGuides oldDelegate) => false;
+  bool shouldRepaint(covariant _CropGuides oldDelegate) =>
+      oldDelegate.box != box;
 }
 
 class _Slider extends StatelessWidget {

@@ -355,22 +355,18 @@ void main() {
     // The tip is the sentence and nothing else: the mark is in the block's
     // heading, not an emoji glued to somebody's words.
     expect(find.text('אנשים משתנים.'), findsOneWidget);
-    // A bulb again. The heart-and-pencil drawing that stood here belongs to
-    // "הוספת רעיון" now — see the entry-cards test above.
-    expect(
-      find.descendant(
-        of: find.byType(HomeTipCarousel),
-        matching: find.byType(HomeLineArt),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(HomeTipCarousel),
-        matching: find.byIcon(Icons.lightbulb_outline_rounded),
-      ),
-      findsOneWidget,
-    );
+    // No drawing, no bulb and no heart: the heading and the pink rule are
+    // the block's only furniture.
+    for (final Finder mark in <Finder>[
+      find.byType(HomeLineArt),
+      find.byIcon(Icons.lightbulb_outline_rounded),
+      find.byIcon(Icons.favorite_rounded),
+    ]) {
+      expect(
+        find.descendant(of: find.byType(HomeTipCarousel), matching: mark),
+        findsNothing,
+      );
+    }
     // The author's name rides under the tip, small and quiet.
     expect(find.text('רבקה לוי'), findsOneWidget);
     // Tips are read here and written from the settings; no compose entry.

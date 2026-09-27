@@ -247,10 +247,14 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
                 size: 17,
                 color: Color(0xFF25D366),
               ),
-              label: const Text(CardInviteFlow.inviteLabel),
+              label: Text(CardInviteFlow.inviteLabelFor(person)),
             ),
           ],
         );
+      } else if ((person.description ?? '').trim().isEmpty) {
+        // With no card text here, the card itself asks for access in its own
+        // place (`FriendCardInvite`) — once, not twice.
+        return const SizedBox.shrink();
       } else {
         final CardAccess? row = access.accessTo(ownerUid);
         final bool busy = access.isBusy('request:$ownerUid');
@@ -297,7 +301,7 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
                         label: Text(
                           row?.status == CardAccessStatus.declined
                               ? 'לבקש שוב'
-                              : 'בקשת גישה לכרטיס',
+                              : CardInviteFlow.requestLabelFor(person),
                         ),
                       ),
               ],
