@@ -229,6 +229,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       controller: _searchController,
       hintText: 'חיפוש במאגר שלי',
       onCleared: _closeSearch,
+      onSubmitted: (_) => _submitSearch(),
+      onTap: _reopenSuggestions,
       trailing: <Widget>[
         IconButton(
           tooltip: 'סינון',
@@ -259,7 +261,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   /// friend". The list underneath still obeys every filter on the screen.
   Widget _buildSearchPanel(PersonRepository repository) {
     final String query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) {
+    if (query.isEmpty || !_suggestionsOpen) {
       return const SizedBox.shrink();
     }
 
@@ -279,7 +281,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
           );
 
     return SearchResultsPanel(
-      onDismiss: _closeSearch,
+      // A tap beside the suggestions shows the results, like the search key.
+      onDismiss: _submitSearch,
       rows: <Widget>[
         for (final Person person in people)
           SearchResultRow(
@@ -1095,8 +1098,34 @@ class _PeopleScreenState extends State<PeopleScreen> {
         _selectedTags.isNotEmpty;
   }
 
+  /// The query as the suggestions last saw it — the controller also notifies
+  /// on a caret move, which must not reopen a panel the reader just closed.
+  String _lastQuery = '';
+
+  /// Whether the suggestions are laid over the list. They open while typing;
+  /// the search key (or a tap beside them) closes them and keeps the query, so
+  /// the list underneath is every friend that matches.
+  bool _suggestionsOpen = false;
+
   void _handleSearchChanged() {
+    final String text = _searchController.text;
+    if (text != _lastQuery) {
+      _lastQuery = text;
+      _suggestionsOpen = text.trim().isNotEmpty;
+    }
     setState(() {});
+  }
+
+  /// Enter / search: every matching friend, no panel over them.
+  void _submitSearch() {
+    FocusScope.of(context).unfocus();
+    setState(() => _suggestionsOpen = false);
+  }
+
+  void _reopenSuggestions() {
+    if (_searchController.text.trim().isNotEmpty && !_suggestionsOpen) {
+      setState(() => _suggestionsOpen = true);
+    }
   }
 
   void _resetFilters() {

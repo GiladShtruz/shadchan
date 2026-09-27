@@ -44,6 +44,11 @@ class UserProfileProvider extends ChangeNotifier {
   static const String _benefitKey = 'userCommunityBenefit';
   static const String _contactPhoneKey = 'userCommunityPhone';
   static const String _myPhoneKey = 'userMyPhone';
+  static const String _communityNameKey = 'userCommunityName';
+
+  /// The longest community name the profile accepts — well inside the 80
+  /// characters the rules allow a published name.
+  static const int maxCommunityNameLength = 40;
 
   final Box<dynamic> _box;
 
@@ -114,6 +119,38 @@ class UserProfileProvider extends ChangeNotifier {
     }
     return name;
   }
+
+  /// How the matchmaker chose to be called in the community — "הרבנית רחל",
+  /// "שרה מבית שמש". Null when they never set one.
+  ///
+  /// **Only a display name.** The account's own name ([name], [fullName]) is
+  /// what the app greets them by, signs support reports with and hands to the
+  /// friends whose cards they follow; none of that changes. This is read only
+  /// where the community reads a name — see [communityDisplayName].
+  String? get communityName {
+    final String? value = (_box.get(_communityNameKey) as String?)?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<void> setCommunityName(String? value) async {
+    String trimmed = (value ?? '').trim();
+    if (trimmed.length > maxCommunityNameLength) {
+      trimmed = trimmed.substring(0, maxCommunityNameLength).trim();
+    }
+    // Typing one's own full name back in is the same as having none: the
+    // profile then keeps following a later change to the name.
+    if (trimmed.isEmpty || trimmed == fullName) {
+      await _box.delete(_communityNameKey);
+    } else {
+      await _box.put(_communityNameKey, trimmed);
+    }
+    notifyListeners();
+  }
+
+  /// The name the community shows: the leaderboard, the activity lines, a
+  /// "מזל טוב" sent to another matchmaker. The chosen [communityName], else the
+  /// full name, as before.
+  String? get communityDisplayName => communityName ?? fullName;
 
   Gender? get gender {
     final String? value = _box.get(_genderKey) as String?;
@@ -390,6 +427,7 @@ class UserProfileProvider extends ChangeNotifier {
       _benefitKey,
       _contactPhoneKey,
       _myPhoneKey,
+      _communityNameKey,
     ]);
     notifyListeners();
   }

@@ -161,30 +161,33 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = theme.colorScheme.secondary;
-    final bool dating = match.status == MatchStatus.dating;
-    final Color datingAccent = dark
-        ? AppColors.femaleAccentDm
-        : AppColors.femaleAccent;
     final bool highlighted = widget.highlighted;
-    final Color regularSurface = highlighted
-        ? Color.alphaBlend(
-            accent.withValues(alpha: dark ? 0.16 : 0.07),
-            theme.colorScheme.surface,
-          )
-        : theme.colorScheme.surface;
+    final _CardTone tone = _CardTone.of(
+      match,
+      male: widget.male,
+      female: widget.female,
+      theme: theme,
+    );
+    final Color edge = tone.accent;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: dating ? Colors.transparent : regularSurface,
+        color: tone.gradient != null
+            ? Colors.transparent
+            : highlighted
+            ? Color.alphaBlend(
+                edge.withValues(alpha: dark ? 0.16 : 0.07),
+                tone.surface,
+              )
+            : tone.surface,
         borderRadius: BorderRadius.circular(16),
-        elevation: dating
-            ? 4
+        elevation: tone.gradient != null
+            ? (highlighted ? 6 : 4)
             : highlighted
             ? 2
             : 0,
-        shadowColor: (dating ? datingAccent : accent).withValues(alpha: 0.38),
+        shadowColor: edge.withValues(alpha: 0.38),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: widget.onTap,
@@ -192,34 +195,15 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              gradient: dating
-                  ? LinearGradient(
-                      begin: AlignmentDirectional.topStart,
-                      end: AlignmentDirectional.bottomEnd,
-                      colors: <Color>[
-                        Color.alphaBlend(
-                          AppColors.softRose.withValues(
-                            alpha: dark ? 0.18 : 0.72,
-                          ),
-                          theme.colorScheme.surface,
-                        ),
-                        Color.alphaBlend(
-                          AppColors.softYellow.withValues(
-                            alpha: dark ? 0.10 : 0.42,
-                          ),
-                          theme.colorScheme.surface,
-                        ),
-                      ],
-                    )
-                  : null,
+              gradient: tone.gradient,
               border: Border.all(
-                color: dating
-                    ? datingAccent.withValues(alpha: 0.72)
+                color: tone.gradient != null
+                    ? edge.withValues(alpha: highlighted ? 0.95 : 0.72)
                     : highlighted
-                    ? accent.withValues(alpha: 0.65)
+                    ? edge.withValues(alpha: 0.65)
                     : theme.colorScheme.outlineVariant,
-                width: dating
-                    ? 1.8
+                width: tone.gradient != null
+                    ? (highlighted ? 2.4 : 1.8)
                     : highlighted
                     ? 1.6
                     : 1,
@@ -302,6 +286,97 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
         ),
       ),
     );
+  }
+}
+
+/// What a card looks like for where its proposal stands.
+///
+/// **The "יוצאים" card is the pattern, and every live state wears it.** The
+/// couple who are out were the one card with a character of its own — a wash
+/// of their colour across the paper, a border in it, a soft shadow in it — and
+/// the rest were plain white boxes told apart by a dot. Now an open idea wears
+/// the palette's blue, a waiting one its copper and a dating one the rose, in
+/// the same two-stop wash at the same strength; only a closed idea stays plain
+/// white, which is what makes it read as put away.
+///
+/// "Waiting" is the waiting *list's* rule, not only the stored status: a
+/// proposal is waiting when it was set to wait or when either side is on a
+/// break or taken — the same test `MatchesScreen` groups by.
+class _CardTone {
+  const _CardTone({
+    required this.accent,
+    required this.surface,
+    required this.gradient,
+  });
+
+  final Color accent;
+  final Color surface;
+
+  /// Null for a closed idea — plain paper.
+  final Gradient? gradient;
+
+  static _CardTone of(
+    MatchIdea match, {
+    required Person? male,
+    required Person? female,
+    required ThemeData theme,
+  }) {
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color paper = theme.colorScheme.surface;
+
+    _CardTone washed(Color accent, Color from, Color to) {
+      return _CardTone(
+        accent: accent,
+        surface: paper,
+        gradient: LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: <Color>[
+            Color.alphaBlend(from, paper),
+            Color.alphaBlend(to, paper),
+          ],
+        ),
+      );
+    }
+
+    final bool paused =
+        (male?.profileStatus.pausesMatches ?? false) ||
+        (female?.profileStatus.pausesMatches ?? false);
+    switch (match.status) {
+      case MatchStatus.dating:
+        return washed(
+          dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
+          AppColors.softRose.withValues(alpha: dark ? 0.18 : 0.72),
+          AppColors.softYellow.withValues(alpha: dark ? 0.10 : 0.42),
+        );
+      case MatchStatus.idea:
+      case MatchStatus.checking:
+      case MatchStatus.unavailable:
+        if (match.status == MatchStatus.unavailable || paused) {
+          final Color copper = dark
+              ? AppColors.secondaryDarkDm
+              : AppColors.secondary;
+          return washed(
+            copper,
+            copper.withValues(alpha: dark ? 0.16 : 0.24),
+            AppColors.softYellow.withValues(alpha: dark ? 0.08 : 0.40),
+          );
+        }
+        final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
+        return washed(
+          dark ? AppColors.primaryDarkDm : AppColors.primaryDark,
+          blue.withValues(alpha: dark ? 0.16 : 0.34),
+          AppColors.softBlue.withValues(alpha: dark ? 0.06 : 0.30),
+        );
+      case MatchStatus.rejected:
+      case MatchStatus.dated:
+      case MatchStatus.married:
+        return _CardTone(
+          accent: theme.colorScheme.secondary,
+          surface: paper,
+          gradient: null,
+        );
+    }
   }
 }
 
@@ -625,35 +700,34 @@ class _StatusLine extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final String reason = (match.waitingReason ?? '').trim();
 
+    // **Centred, and the loudest control on the card's foot.** Changing where
+    // an idea stands is the thing done most often on this page; tucked in a
+    // corner as a coloured word it read as a caption. It is a framed pill in
+    // the status's own colour now, with "פעולות" under it as a quiet link —
+    // two controls that no longer look like two of the same button.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 8, 2),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
+      child: Column(
         children: <Widget>[
-          // Bottom right (the start edge, in RTL): the status, and the menu
-          // behind it — where a reader's eye finishes a card that opens with
-          // her face on the same side.
-          Flexible(
-            child: _CardStatusMenu(
-              match: match,
-              onSetStage: onSetStage,
-              onAction: onAction,
-            ),
+          _CardStatusMenu(
+            match: match,
+            onSetStage: onSetStage,
+            onAction: onAction,
           ),
-          if (reason.isNotEmpty) ...<Widget>[
-            const SizedBox(width: 12),
-            // Bottom left: why a waiting idea is waiting, when it says.
-            Expanded(
+          if (reason.isNotEmpty)
+            // Why a waiting idea is waiting, when it says.
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: Text(
                 reason,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
+                textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
-          ],
         ],
       ),
     );
@@ -721,45 +795,86 @@ class _CardStatusMenu extends StatelessWidget {
     ];
   }
 
+  /// The colour a choice is written in: the colour of the status it leads to.
+  static Color colorOf(_StatusChoice choice, {required bool dark}) {
+    final MatchStage? stage = choice.stage;
+    if (stage != null) {
+      return AppColors.matchState(
+        stage == MatchStage.dating ? MatchStatus.dating : MatchStatus.idea,
+        dark: dark,
+      );
+    }
+    final MatchStatus leadsTo = switch (choice.action!) {
+      MatchQuickAction.waiting => MatchStatus.unavailable,
+      MatchQuickAction.dating => MatchStatus.dating,
+      MatchQuickAction.married => MatchStatus.married,
+      MatchQuickAction.close ||
+      MatchQuickAction.separated => MatchStatus.rejected,
+      MatchQuickAction.reopen ||
+      MatchQuickAction.reminder ||
+      MatchQuickAction.contact => MatchStatus.idea,
+    };
+    return AppColors.matchState(leadsTo, dark: dark);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color color = AppColors.matchState(
-      match.status,
-      dark: theme.brightness == Brightness.dark,
-    );
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color color = AppColors.matchState(match.status, dark: dark);
     final List<_StatusChoice> choices = _choices();
     final MatchStage current = MatchStage.of(match);
 
-    final Widget word = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    final Widget pill = Container(
+      constraints: const BoxConstraints(minHeight: 38),
+      padding: EdgeInsetsDirectional.fromSTEB(
+        14,
+        6,
+        choices.isEmpty ? 14 : 6,
+        6,
+      ),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          color.withValues(alpha: dark ? 0.22 : 0.14),
+          theme.colorScheme.surface,
         ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            labelOf(match),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w800,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.8), width: 1.4),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: color.withValues(alpha: 0.18),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              labelOf(match),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
-        ),
-        if (choices.isNotEmpty)
-          Icon(Icons.arrow_drop_down_rounded, size: 22, color: color),
-      ],
+          if (choices.isNotEmpty)
+            Icon(Icons.arrow_drop_down_rounded, size: 26, color: color),
+        ],
+      ),
     );
     if (choices.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        child: word,
-      );
+      return pill;
     }
 
     final bool hasStages = choices.any((_StatusChoice c) => c.stage != null);
@@ -767,6 +882,12 @@ class _CardStatusMenu extends StatelessWidget {
       tooltip: 'שינוי סטטוס הרעיון',
       position: PopupMenuPosition.under,
       padding: EdgeInsets.zero,
+      // A gentle frame around the whole menu, in the colour of where the idea
+      // stands now.
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: color.withValues(alpha: 0.45), width: 1.2),
+      ),
       onSelected: (_StatusChoice choice) {
         final MatchStage? stage = choice.stage;
         if (stage != null) {
@@ -786,38 +907,64 @@ class _CardStatusMenu extends StatelessWidget {
           }
           final MatchStage? stage = choice.stage;
           final bool selected = stage != null && stage == current;
+          final Color ink = colorOf(choice, dark: dark);
           items.add(
             PopupMenuItem<_StatusChoice>(
               value: choice,
-              height: 44,
-              child: Row(
-                children: <Widget>[
-                  if (choice.action != null) ...<Widget>[
-                    Icon(
-                      choice.action!.icon,
-                      size: 18,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              // Every option a small framed row in its own status colour, so
+              // the list reads as statuses and not as a plain menu of words.
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: ink.withValues(
+                    alpha: selected ? (dark ? 0.22 : 0.14) : 0.05,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: ink.withValues(alpha: selected ? 0.8 : 0.35),
+                    width: selected ? 1.4 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    if (choice.action != null)
+                      Icon(choice.action!.icon, size: 18, color: ink)
+                    else
+                      Container(
+                        width: 9,
+                        height: 9,
+                        margin: const EdgeInsets.symmetric(horizontal: 4.5),
+                        decoration: BoxDecoration(
+                          color: ink,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     const SizedBox(width: 10),
-                  ],
-                  Expanded(child: Text(stage?.label ?? choice.action!.label)),
-                  if (selected)
-                    Icon(
-                      Icons.check,
-                      size: 18,
-                      color: theme.colorScheme.primary,
+                    Expanded(
+                      child: Text(
+                        stage?.label ?? choice.action!.label,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: ink,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
-                ],
+                    if (selected)
+                      Icon(Icons.check_rounded, size: 20, color: ink),
+                  ],
+                ),
               ),
             ),
           );
         }
         return items;
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        child: word,
-      ),
+      child: pill,
     );
   }
 }
@@ -872,18 +1019,30 @@ class _CardActionBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       child: Column(
         children: <Widget>[
+          // Secondary to the status pill above it: a hairline, then a small
+          // grey link — never a second button of the same weight.
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Divider(
+              height: 1,
+              thickness: 0.6,
+              indent: 40,
+              endIndent: 40,
+              color: theme.colorScheme.outlineVariant,
+            ),
+          ),
           InkWell(
             onTap: onToggle,
             borderRadius: BorderRadius.circular(999),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
                   Text(
                     open ? 'סגירת פעולות' : 'פעולות',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -891,7 +1050,7 @@ class _CardActionBar extends StatelessWidget {
                     open
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
-                    size: 20,
+                    size: 16,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ],

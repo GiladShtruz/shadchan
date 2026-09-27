@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -175,12 +176,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.phone_outlined,
             title: profile.myPhone ?? 'הוספת המספר שלי',
             subtitle: profile.myPhone == null
-                ? 'כדי שחברים יוכלו למצוא את הכרטיס שלך, ולהפך'
+                ? (profile.isSingle
+                      ? 'כדי שחברים יוכלו למצוא את הכרטיס שלך, ולהפך'
+                      : 'כדי שחברים עם כרטיס אישי יוכלו למצוא אותך')
                 : 'לא מופיע בכרטיס ולא נשלח בשיתוף',
             onTap: () async {
               final String? phone = await MyPhoneDialog.show(
                 context,
                 initial: profile.myPhone,
+                purpose: profile.isSingle || !matchmaker
+                    ? MyPhonePurpose.cardOwner
+                    : MyPhonePurpose.matchmaker,
               );
               if (phone != null) {
                 await profile.setMyPhone(phone);
@@ -210,6 +216,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: 'מה שדכנים אחרים רואים',
           accent: rose,
           children: <Widget>[
+            SettingsRow(
+              icon: Icons.person_pin_outlined,
+              title: 'השם שלי בקהילה',
+              subtitle: profile.communityName == null
+                  ? '${profile.fullName ?? ''} · אפשר לבחור שם אחר לתצוגה'
+                  : profile.communityName!,
+              onTap: () => _editCommunityName(profile),
+            ),
             SettingsRow(
               icon: Icons.badge_outlined,
               title: 'מה תרצה ששדכנים אחרים ידעו עליך?',
@@ -411,6 +425,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     await profile.setCommunityShares(shares);
+  }
+
+  /// The name the leaderboard and the community lines show. Published at once
+  /// rather than on the next app pause: somebody who just renamed themselves
+  /// goes to the board to see it.
+  Future<void> _editCommunityName(UserProfileProvider profile) async {
+    final String? name = await CommunityNameSheet.show(
+      context,
+      initial: profile.communityName ?? '',
+      accountName: profile.fullName ?? '',
+    );
+    if (name == null || !mounted) {
+      return;
+    }
+    await profile.setCommunityName(name);
+    if (!mounted) {
+      return;
+    }
+    unawaited(
+      context.read<CommunityProvider>().refresh(
+        people: context.read<PersonRepository>(),
+        matches: context.read<MatchRepository>(),
+        profile: profile,
+      ),
+    );
   }
 
   Future<void> _editBenefit(UserProfileProvider profile) async {

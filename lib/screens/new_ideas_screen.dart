@@ -8,6 +8,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
@@ -110,11 +111,11 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
       appBar: AppBar(
         backgroundColor: ProfilePalette.canvas(theme),
         foregroundColor: ProfilePalette.text(theme),
-        // The title and the line under it are the palette's blue, centred —
-        // the page is an invitation, and says so in one colour.
+        // The title and the line under it are the palette's dark blue,
+        // centred — the page is an invitation, and says so in one colour.
         titleTextStyle: ProfilePalette.appBarTitleStyle(
           theme,
-        )?.copyWith(color: ProfilePalette.accent(theme)),
+        )?.copyWith(color: _titleInk(theme)),
         centerTitle: true,
         title: const Text('רעיונות שהמאגר מציע לך'),
       ),
@@ -367,13 +368,19 @@ class _Intro extends StatelessWidget {
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w900,
             height: 1.2,
-            color: ProfilePalette.accent(theme),
+            color: _titleInk(theme),
           ),
         ),
       ),
     );
   }
 }
+
+/// The palette's dark blue — the heading ink — for the page's title and its
+/// welcome line.
+Color _titleInk(ThemeData theme) => theme.brightness == Brightness.dark
+    ? AppColors.headingInkDm
+    : AppColors.headingInk;
 
 /// "רעיונות נוספים" — the next ten, added under these.
 ///

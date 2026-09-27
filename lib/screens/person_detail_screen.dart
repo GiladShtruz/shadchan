@@ -38,7 +38,6 @@ import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
-import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -520,40 +519,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 
-  /// Changes the global profile status. Busy and break statuses immediately
-  /// offer a compact "check again" reminder; returning to an active status
-  /// clears the person's reminder in the repository.
+  /// Changes the global profile status — the same flow the chips on the ideas
+  /// page run: busy and break statuses offer a compact "check again" reminder,
+  /// and an idea the change sent to "בהמתנה" is then opened in the waiting
+  /// list, on top of this profile.
   Future<void> _changeProfileStatus(
     BuildContext context,
     Person person,
     ProfileStatus status,
-  ) async {
-    final PersonRepository personRepository = context.read<PersonRepository>();
-    await personRepository.updateProfileStatus(person.id, status);
-    if (status == ProfileStatus.mazelTov && context.mounted) {
-      await offerMazelTovWhatsApp(context, person);
-    }
-
-    if (!status.pausesMatches) {
-      return;
-    }
-
-    if (!context.mounted) {
-      return;
-    }
-
-    final ReminderChoice? choice = await ReminderPickerSheet.show(
-      context,
-      title: 'מתי להזכיר לך לבדוק שוב?',
-      allowSkip: true,
-      recommendedLabel: 'עוד חודש',
-      intervalsBuilder: ReminderPickerSheet.statusCheckIntervals,
-    );
-
-    final DateTime? date = choice?.date;
-    if (date != null) {
-      await personRepository.setPersonReminder(person.id, date);
-    }
+  ) {
+    return MatchQuickActions.setPersonStatus(context, person, status);
   }
 
   Future<void> _admitToDatabase(BuildContext context, Person person) async {

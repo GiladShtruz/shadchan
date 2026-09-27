@@ -2172,6 +2172,85 @@ void main() {
     expect(find.byType(SearchResultsPanel), findsNothing);
     expect(find.text('שמואל רוט'), findsWidgets);
   });
+
+  testWidgets('The search key closes the suggestions and keeps the results', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2024, 5, 1);
+    await tester.runAsync(() async {
+      final Box<Person> people = Hive.box<Person>('people');
+      for (final Person person in <Person>[
+        _testPerson(
+          id: 'm1',
+          firstName: 'שמואל',
+          lastName: 'רוט',
+          gender: Gender.male,
+          age: 27,
+          now: now,
+        ),
+        _testPerson(
+          id: 'f1',
+          firstName: 'תמר',
+          lastName: 'אלמוג',
+          gender: Gender.female,
+          age: 25,
+          now: now,
+        ),
+        _testPerson(
+          id: 'm2',
+          firstName: 'יונתן',
+          lastName: 'לוי',
+          gender: Gender.male,
+          age: 28,
+          now: now,
+        ),
+        _testPerson(
+          id: 'f2',
+          firstName: 'נועה',
+          lastName: 'ברק',
+          gender: Gender.female,
+          age: 26,
+          now: now,
+        ),
+      ]) {
+        await people.put(person.id, person);
+      }
+      final Box<MatchIdea> matches = Hive.box<MatchIdea>('matches');
+      await matches.put(
+        'match1',
+        _testMatch(id: 'match1', personAId: 'm1', personBId: 'f1', now: now),
+      );
+      await matches.put(
+        'match2',
+        _testMatch(id: 'match2', personAId: 'm2', personBId: 'f2', now: now),
+      );
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.textContaining('נועה'), findsWidgets);
+    await tester.enterText(find.byType(TextField).first, 'תמר');
+    await tester.pump();
+    expect(find.byType(SearchResultsPanel), findsOneWidget);
+
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // No suggestion was picked: the panel is gone, the query stays, and the
+    // list is every idea that matches it — and only those.
+    expect(find.byType(SearchResultsPanel), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      'תמר',
+    );
+    expect(find.textContaining('נועה'), findsNothing);
+    expect(find.textContaining('תמר'), findsWidgets);
+  });
 }
 
 Person _testPerson({

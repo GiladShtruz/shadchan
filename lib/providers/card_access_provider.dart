@@ -439,6 +439,17 @@ class CardAccessProvider extends ChangeNotifier {
     if (!wasLinked) {
       // Access is the matchmaker's friend arriving in the database: a record
       // that was kept out of it — a name on an idea, or a draft — joins it.
+      //
+      // **And it is a friend added, for the activity points.** A brand-new
+      // record already is (it is born now); a hidden one was born when its
+      // name was first typed, outside the database, and never counted. Dating
+      // it from today is what makes `ActivityStats.countedFriends` give the
+      // same one point a hand-added friend earns. A friend who was already
+      // visible in the database was counted when they were added and earns
+      // nothing twice.
+      if (person.hidden && !created) {
+        person.createdAt = now;
+      }
       person
         ..hidden = false
         ..needsReview = false;

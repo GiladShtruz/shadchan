@@ -195,6 +195,13 @@ class _MatchesScreenState extends State<MatchesScreen> {
       (MatchIdea m) => m.id == focus,
     )) {
       return;
+    } else if (groups[MatchCategory.waiting]!.any(
+      (MatchIdea m) => m.id == focus,
+    )) {
+      // A proposal that is waiting is shown in the waiting list itself — which
+      // is where a status change that paused it sends the matchmaker to see
+      // where it went. See [MatchQuickActions.setPersonStatus].
+      _category = MatchCategory.waiting;
     } else {
       _category = MatchCategory.all;
     }
@@ -423,6 +430,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
             controller: _searchController,
             hintText: 'חיפוש לפי שם',
             onCleared: _closeSearch,
+            onSubmitted: (_) => _submitSearch(),
+            onTap: _reopenSuggestions,
           ),
         ),
       ),
@@ -440,7 +449,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
             searching: searching,
             datingCount: datingCount,
           ),
-          if (searching) _buildSearchPanel(population, personRepository),
+          if (searching && _suggestionsOpen)
+            _buildSearchPanel(population, personRepository),
         ],
       ),
     );
@@ -558,7 +568,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
     PersonRepository personRepository,
   ) {
     return SearchResultsPanel(
-      onDismiss: _closeSearch,
+      // A tap beside the suggestions is "show me the results", like the
+      // search key — not "forget what I typed".
+      onDismiss: _submitSearch,
       rows: <Widget>[
         for (final MatchIdea match in population)
           _searchRow(match, personRepository),
@@ -912,7 +924,12 @@ class _MatchesScreenState extends State<MatchesScreen> {
       // Opening a proposal to change one word was the reason statuses went
       // stale.
       onPersonStatusPicked: (Person person, ProfileStatus status) =>
-          MatchQuickActions.setPersonStatus(context, person, status),
+          MatchQuickActions.setPersonStatus(
+            context,
+            person,
+            status,
+            preferMatchId: match.id,
+          ),
       onQuickAction: (MatchQuickAction action) => MatchQuickActions.run(
         context,
         action,
@@ -1038,8 +1055,38 @@ class _MatchesScreenState extends State<MatchesScreen> {
     AppNotice.show(context, message);
   }
 
+  /// The query as the suggestions last saw it — the controller also notifies
+  /// on a caret move, which must not reopen a panel the reader just closed.
+  String _lastQuery = '';
+
+  /// Whether the suggestions are laid over the page.
+  ///
+  /// **Suggestions are a shortcut, not the search.** They open while typing,
+  /// and the search key (or a tap outside them) closes them and leaves the
+  /// query in place: the page underneath is then every idea that matches, the
+  /// way a search works in any other app.
+  bool _suggestionsOpen = false;
+
   void _handleSearchChanged() {
+    final String text = _searchController.text;
+    if (text != _lastQuery) {
+      _lastQuery = text;
+      _suggestionsOpen = text.trim().isNotEmpty;
+    }
     setState(() {});
+  }
+
+  /// Enter / search: every matching idea, no panel over them.
+  void _submitSearch() {
+    FocusScope.of(context).unfocus();
+    setState(() => _suggestionsOpen = false);
+  }
+
+  /// A tap back into a field that still holds a query shows its suggestions.
+  void _reopenSuggestions() {
+    if (_searchController.text.trim().isNotEmpty && !_suggestionsOpen) {
+      setState(() => _suggestionsOpen = true);
+    }
   }
 }
 

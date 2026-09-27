@@ -306,12 +306,20 @@ class ShadchanSearchField extends StatelessWidget {
     required this.hintText,
     this.autofocus = false,
     this.onCleared,
+    this.onSubmitted,
+    this.onTap,
     this.trailing = const <Widget>[],
   });
 
   final TextEditingController controller;
   final String hintText;
   final bool autofocus;
+
+  /// The keyboard's search / Enter key: the query is final, show every match.
+  final ValueChanged<String>? onSubmitted;
+
+  /// A tap back into the field, for a caller that reopens its suggestions.
+  final VoidCallback? onTap;
 
   /// Called after the X inside the field empties it, for a caller that has
   /// something of its own to put away with the query.
@@ -344,6 +352,8 @@ class ShadchanSearchField extends StatelessWidget {
               autofocus: autofocus,
               textAlignVertical: TextAlignVertical.center,
               textInputAction: TextInputAction.search,
+              onSubmitted: onSubmitted,
+              onTap: onTap,
               style: theme.textTheme.bodyMedium,
               decoration: InputDecoration(
                 isDense: true,

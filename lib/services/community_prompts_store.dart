@@ -29,6 +29,8 @@ abstract final class CommunityPromptsStore {
   static const String _congratulatedKey = 'community.congratulatedIds';
   static const String _mazelTovNotifiedKey = 'community.mazelTovNotified';
   static const String _mazelTovDeliveredKey = 'community.mazelTovDelivered';
+  static const String _matchmakerPhoneAskedKey =
+      'community.matchmakerPhoneAsked';
 
   /// How many actions pass between two invitations to the group.
   static const int groupPromptEveryActions = 100;
@@ -144,6 +146,21 @@ abstract final class CommunityPromptsStore {
   /// app cannot tell whether a review was left, and asking somebody who already
   /// went is the exact behaviour this whole file exists to avoid.
   static void markRatingDone() => _write(_ratingDoneKey, true);
+
+  // --- "המספר שלי", for a matchmaker ---------------------------------------
+
+  /// Whether a matchmaker has already been asked for their own number.
+  ///
+  /// Asked **once**: at the end of sign-up, or — for somebody who signed up
+  /// before sign-up asked — on one launch. Friends who keep a personal card
+  /// find their matchmaker friends by this number, so a matchmaker without one
+  /// is missing from every such list; but "אחר כך" is an answer, and the
+  /// profile keeps the row for whoever changes their mind.
+  static bool get wasMatchmakerPhoneAsked =>
+      _readBool(_matchmakerPhoneAskedKey);
+
+  static void markMatchmakerPhoneAsked() =>
+      _write(_matchmakerPhoneAskedKey, true);
 
   // --- "מה חדש?" -----------------------------------------------------------
 

@@ -1,13 +1,17 @@
 import 'package:flutter/widgets.dart';
+import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
+import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/support_service.dart';
+import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/community_milestones.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -124,6 +128,9 @@ abstract final class CommunityPromptGate {
   /// community has crossed is still true on the next launch. Nothing is
   /// queued — if both are waiting, the milestone simply comes tomorrow.
   static Future<void> _maybeCommunityNews(BuildContext context) async {
+    if (await _maybeAskMatchmakerPhone(context) || !context.mounted) {
+      return;
+    }
     final bool announced = await _maybeAnnouncement(context);
     if (announced || !context.mounted) {
       return;
@@ -153,6 +160,36 @@ abstract final class CommunityPromptGate {
     }
 
     FirebaseBootstrap.readyListenable.addListener(listener);
+  }
+
+  /// Asks a matchmaker who signed up before sign-up asked for it for their own
+  /// number — once — and answers whether it asked.
+  ///
+  /// Without it they are in no phone directory, so a friend who keeps a
+  /// personal card never finds them under "החברים שלי שמשדכים בשדכן", however
+  /// long they have both had the app. Only once Firebase is up: the number is
+  /// published the moment it is saved, and there is nothing to publish to
+  /// before then.
+  static Future<bool> _maybeAskMatchmakerPhone(BuildContext context) async {
+    if (!WorkspaceStore.matchmakerEnabled ||
+        CommunityPromptsStore.wasMatchmakerPhoneAsked) {
+      return false;
+    }
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    if (profile.myPhone != null) {
+      CommunityPromptsStore.markMatchmakerPhoneAsked();
+      return false;
+    }
+    CommunityPromptsStore.markMatchmakerPhoneAsked();
+    final String? phone = await MyPhoneDialog.show(
+      context,
+      required: true,
+      purpose: MyPhonePurpose.matchmaker,
+    );
+    if (phone != null) {
+      await profile.setMyPhone(phone);
+    }
+    return true;
   }
 
   /// Shows the newest published note if this device has not seen it, and

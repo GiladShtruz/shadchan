@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -16,6 +18,13 @@ class NotificationService {
   static int _latestMatchRequestId = 0;
   static int _latestPersonRequestId = 0;
 
+  /// The tint Android puts on `ic_notification` (a white-on-transparent mark:
+  /// Android draws a notification icon from its alpha alone, which is why the
+  /// full-bleed launcher icon used to show as a plain square). The same stone
+  /// blue as `notification_color` in `res/values/colors.xml`, which covers the
+  /// pushes the system draws itself.
+  static const Color _notificationColor = Color(0xFF698C9E);
+
   static const AndroidNotificationDetails _androidMatchDetails =
       AndroidNotificationDetails(
         'match_reminders',
@@ -23,6 +32,7 @@ class NotificationService {
         channelDescription: 'התראות על רעיונות שידוך',
         importance: Importance.high,
         priority: Priority.high,
+        color: _notificationColor,
       );
 
   static const DarwinNotificationDetails _iosMatchDetails =
@@ -42,6 +52,7 @@ class NotificationService {
         channelDescription: 'התראות לבדוק שוב עם חברים במאגר',
         importance: Importance.high,
         priority: Priority.high,
+        color: _notificationColor,
       );
 
   static const NotificationDetails _personNotificationDetails =
@@ -57,6 +68,7 @@ class NotificationService {
         channelDescription: 'ברכות משדכנים אחרים על חתונה',
         importance: Importance.high,
         priority: Priority.high,
+        color: _notificationColor,
       );
 
   static const NotificationDetails _mazelTovNotificationDetails =
@@ -72,6 +84,7 @@ class NotificationService {
         channelDescription: 'תקלות ורעיונות שנשלחו, ותשובות עליהם',
         importance: Importance.high,
         priority: Priority.high,
+        color: _notificationColor,
       );
 
   static const NotificationDetails _supportNotificationDetails =
@@ -94,6 +107,7 @@ class NotificationService {
         channelDescription: 'בקשות גישה, אישורים ועדכונים מחברים',
         importance: Importance.high,
         priority: Priority.high,
+        color: _notificationColor,
       );
 
   static const NotificationDetails _personalCardNotificationDetails =
@@ -167,7 +181,7 @@ class NotificationService {
     }
 
     const AndroidInitializationSettings androidSettings =
-        AndroidInitializationSettings('@mipmap/launcher_icon');
+        AndroidInitializationSettings('@drawable/ic_notification');
     const DarwinInitializationSettings iosSettings =
         DarwinInitializationSettings(
           requestAlertPermission: false,

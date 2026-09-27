@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/community_profile.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 
 /// "מה תרצה ששדכנים אחרים ידעו עליך?" — one field on the profile, and a menu
 /// of prompts behind it.
@@ -236,6 +237,117 @@ class _CommunityBenefitSheetState extends State<CommunityBenefitSheet> {
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(''),
                   child: const Text('הסרת ההטבה'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "השם שלי בקהילה" — how the leaderboard, the activity lines and a "מזל טוב"
+/// sent to another matchmaker name this one.
+///
+/// The account's own name is not touched: it is shown under the field as the
+/// fallback, and clearing the field goes back to it.
+class CommunityNameSheet extends StatefulWidget {
+  const CommunityNameSheet({
+    super.key,
+    required this.initial,
+    required this.accountName,
+  });
+
+  final String initial;
+  final String accountName;
+
+  /// Returns the new name (possibly empty, meaning "use my own name"), or null
+  /// when the sheet was dismissed.
+  static Future<String?> show(
+    BuildContext context, {
+    required String initial,
+    required String accountName,
+  }) {
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) =>
+          CommunityNameSheet(initial: initial, accountName: accountName),
+    );
+  }
+
+  @override
+  State<CommunityNameSheet> createState() => _CommunityNameSheetState();
+}
+
+class _CommunityNameSheetState extends State<CommunityNameSheet> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial.isEmpty ? widget.accountName : widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                'השם שלי בקהילה',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'כך יופיע השם שלך לשדכנים אחרים — בדירוג, בפעילות הקהילה '
+                'ובברכות מזל טוב. השם בחשבון שלך לא משתנה.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                maxLength: UserProfileProvider.maxCommunityNameLength,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  labelText: 'שם לתצוגה בקהילה',
+                  hintText: 'למשל: שרה כהן · הרבנית רחל',
+                  counterText: '',
+                ),
+                onSubmitted: (_) =>
+                    Navigator.of(context).pop(_controller.text.trim()),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(_controller.text.trim()),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                child: const Text('שמירה'),
+              ),
+              if (widget.initial.trim().isNotEmpty &&
+                  widget.accountName.trim().isNotEmpty)
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(''),
+                  child: Text('חזרה לשם שלי (${widget.accountName.trim()})'),
                 ),
             ],
           ),

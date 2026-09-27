@@ -445,6 +445,44 @@ async function findHelpers(ownerUid: string): Promise<void> {
 }
 
 /**
+ * A matchmaker's number reached the directory (or left it, or they renamed
+ * themselves): every card owner who has that number saved gets their list of
+ * friends who can help worked out again.
+ *
+ * Without this the list only moved when the *owner's* address book did, so a
+ * matchmaker who had the app long before and only now added "המספר שלי" was
+ * missing from it until the owner's contacts happened to be uploaded again.
+ */
+export const onPhoneDirectoryWritten = onDocumentWritten(
+  'phoneDirectory/{phoneHash}',
+  async (event) => {
+    const before = event.data?.before;
+    const after = event.data?.after;
+    const wasUid =
+      before?.exists && before.get('matchmaker') === true
+        ? (before.get('uid') as string | undefined)
+        : undefined;
+    const nowUid =
+      after?.exists && after.get('matchmaker') === true
+        ? (after.get('uid') as string | undefined)
+        : undefined;
+    const sameName = before?.get('name') === after?.get('name');
+    if (wasUid === nowUid && (!nowUid || sameName)) {
+      return;
+    }
+    const owners = await db
+      .collection('contactHashes')
+      .where('hashes', 'array-contains', event.params.phoneHash)
+      .get();
+    for (const doc of owners.docs) {
+      if (doc.id !== nowUid && doc.id !== wasUid) {
+        await findHelpers(doc.id);
+      }
+    }
+  },
+);
+
+/**
  * An address book uploaded (or refreshed) works out who can help, and still
  * announces a card created before it.
  */

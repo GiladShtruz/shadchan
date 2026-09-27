@@ -153,10 +153,10 @@ class CommunityProvider extends ChangeNotifier {
     required MatchRepository matches,
     required UserProfileProvider profile,
   }) async {
-    // First name *and* surname. The board is a list of people, and one word
-    // is not enough to tell two of them apart once the community is bigger
-    // than a handful — see [UserProfileProvider.fullName].
-    _name = profile.fullName ?? '';
+    // The name the matchmaker chose for the community, else first name *and*
+    // surname — the board is a list of people, and one word is not enough to
+    // tell two of them apart. See [UserProfileProvider.communityDisplayName].
+    _name = profile.communityDisplayName ?? '';
     _photoPath = profile.photoPath;
     // The public page — everything the matchmaker chose to let other
     // matchmakers see. See [CommunityProfile].

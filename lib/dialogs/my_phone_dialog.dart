@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 
@@ -13,6 +14,10 @@ enum MyPhonePurpose {
   /// A matchmaker asking a friend for access: the friend's app checks that
   /// they have each other saved, and links the card, by it.
   matchmakerRequest,
+
+  /// A matchmaker's own number, asked once: friends who keep a personal card
+  /// find them by it under "החברים שלי שמשדכים בשדכן".
+  matchmaker,
 }
 
 /// Asks for the user's own phone number — the one their friends have saved.
@@ -86,18 +91,30 @@ class _MyPhoneDialogState extends State<_MyPhoneDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool matchmaker = widget.purpose == MyPhonePurpose.matchmakerRequest;
-    final String lead = matchmaker
-        ? 'כדי לוודא שאתם שמורים אחד אצל השני ולסנכרן נכון את הכרטיס, '
-              '${'{הזן|הזיני}'.forGender(context.userGender)} את מספר הטלפון שלך.'
-        : 'המספר שהחברים שלך שמרו אצלם. לפיו חברים שמשדכים ימצאו את הכרטיס '
-              'שלך.';
-    final String note = matchmaker
-        ? 'המספר ישמש לזיהוי וסנכרון מול החבר.'
-        : 'הוא לא מופיע בכרטיס ולא נשלח בשיתוף.';
+    final Gender? gender = context.userGender;
+    final (String title, String lead, String note) = switch (widget.purpose) {
+      MyPhonePurpose.matchmakerRequest => (
+        'מספר הטלפון שלך',
+        'כדי לוודא שאתם שמורים אחד אצל השני ולסנכרן נכון את הכרטיס, '
+            '${'{הזן|הזיני}'.forGender(gender)} את מספר הטלפון שלך.',
+        'המספר ישמש לזיהוי וסנכרון מול החבר.',
+      ),
+      MyPhonePurpose.matchmaker => (
+        'המספר שלי',
+        'חברים שלך שמנהלים כרטיס אישי ב״שדכן״ יראו אותך ברשימת החברים '
+            'שמשדכים, ויוכלו לתת לך גישה לכרטיס שלהם.',
+        'המספר משמש רק לזיהוי בין חברים ולא מוצג לאף אחד.',
+      ),
+      MyPhonePurpose.cardOwner => (
+        'המספר שלי',
+        'המספר שהחברים שלך שמרו אצלם. לפיו חברים שמשדכים ימצאו את הכרטיס '
+            'שלך.',
+        'הוא לא מופיע בכרטיס ולא נשלח בשיתוף.',
+      ),
+    };
     return AlertDialog(
       scrollable: true,
-      title: Text(matchmaker ? 'מספר הטלפון שלך' : 'המספר שלי'),
+      title: Text(title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

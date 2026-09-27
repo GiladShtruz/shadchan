@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The tint Android puts on ic_notification in the tray and the
+         notification header: the launcher icon's stone blue. -->
+    <color name="notification_color">#698C9E</color>
+</resources>

@@ -28,6 +28,7 @@ abstract final class ProfileBackup {
       'lastName': profile.lastName,
       'gender': profile.gender?.name,
       'about': profile.about,
+      'communityName': profile.communityName,
       'isSingle': profile.isSingle,
       'hasMaritalStatus': profile.hasMaritalStatus,
       'photo': photoPath == null
@@ -108,6 +109,13 @@ abstract final class ProfileBackup {
     // The one line about themselves, filled only when this phone has none.
     if (profile.about == null && _string(json['about']) != null) {
       await profile.setAbout(_string(json['about']));
+      filled++;
+    }
+
+    // The name shown to the community, likewise only into an empty slot.
+    if (profile.communityName == null &&
+        _string(json['communityName']) != null) {
+      await profile.setCommunityName(_string(json['communityName']));
       filled++;
     }
 

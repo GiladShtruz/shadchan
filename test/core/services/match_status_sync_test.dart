@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
@@ -57,6 +58,51 @@ void main() {
       await directory.delete(recursive: true);
     }
   });
+
+  test(
+    'a break moves open ideas into the waiting list, not closed ones',
+    () async {
+      // The set `MatchQuickActions.setPersonStatus` diffs to decide which idea
+      // to open in "בהמתנה" after the change.
+      final DateTime now = DateTime(2026, 9, 27);
+      final Person male = _person('male', 'הלל', Gender.male, now);
+      final Person female = _person('female', 'כרמל', Gender.female, now);
+      await people.put(male.id, male);
+      await people.put(female.id, female);
+      for (final (String id, MatchStatus status) in <(String, MatchStatus)>[
+        ('open', MatchStatus.idea),
+        ('closed', MatchStatus.rejected),
+      ]) {
+        await matches.put(
+          id,
+          MatchIdea(
+            id: id,
+            personAId: male.id,
+            personBId: female.id,
+            status: status,
+            currentHandler: CurrentHandler.me,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+      }
+
+      final Set<String> before = MatchQuickActions.waitingIdeasOf(
+        matchRepository,
+        personRepository,
+        female.id,
+      );
+      await personRepository.updateProfileStatus(female.id, ProfileStatus.busy);
+      final Set<String> after = MatchQuickActions.waitingIdeasOf(
+        matchRepository,
+        personRepository,
+        female.id,
+      );
+
+      expect(before, isEmpty);
+      expect(after.difference(before), <String>{'open'});
+    },
+  );
 
   test('global person status pauses and reopens relevant proposals', () async {
     final DateTime now = DateTime(2026, 7, 27);

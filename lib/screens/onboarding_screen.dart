@@ -13,6 +13,7 @@ import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/intro_screens.dart';
+import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -320,6 +321,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       );
       if (!mounted) {
         return;
+      }
+      // The number is how friends who keep a personal card find this
+      // matchmaker among their contacts. Asked once, and skippable.
+      if (profile.myPhone == null) {
+        final String? phone = await MyPhoneDialog.show(
+          context,
+          required: true,
+          purpose: MyPhonePurpose.matchmaker,
+        );
+        if (phone != null) {
+          await profile.setMyPhone(phone);
+        }
+        CommunityPromptsStore.markMatchmakerPhoneAsked();
+        if (!mounted) {
+          return;
+        }
       }
       // Straight into the real home screen. Landing on the add-contacts flow
       // instead made the first thing the app ever showed a task standing

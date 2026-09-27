@@ -45,6 +45,33 @@ void main() {
     expect(profile.name, 'רבקה כהן־שטרן');
   });
 
+  test('the community name is a display name over the account name', () async {
+    final UserProfileProvider profile = provider();
+    await profile.saveProfile(
+      name: 'רבקה',
+      lastName: 'כהן',
+      gender: Gender.female,
+      isSingle: false,
+    );
+    // Nothing chosen: the community sees the full name, as before.
+    expect(profile.communityName, isNull);
+    expect(profile.communityDisplayName, 'רבקה כהן');
+
+    await profile.setCommunityName('  הרבנית רבקה  ');
+    expect(profile.communityDisplayName, 'הרבנית רבקה');
+    // The account's own name is untouched.
+    expect(profile.fullName, 'רבקה כהן');
+    expect(profile.name, 'רבקה כהן');
+
+    // Typing one's own name back, or clearing it, returns to following it.
+    await profile.setCommunityName('רבקה כהן');
+    expect(profile.communityName, isNull);
+    await profile.setCommunityName('שם אחר');
+    await profile.setCommunityName('');
+    expect(profile.communityName, isNull);
+    expect(profile.communityDisplayName, 'רבקה כהן');
+  });
+
   test('a profile saved before the split still answers both halves', () async {
     // Exactly what an older install has in the box: one key, one string.
     await box.put('userName', 'רבקה כהן־שטרן');

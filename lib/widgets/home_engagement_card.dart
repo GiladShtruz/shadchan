@@ -75,7 +75,8 @@ class _HomeEngagementCardState extends State<HomeEngagementCard> {
 
   Future<void> _congratulate(CommunityEngagement engagement) async {
     final OverlayState? notices = AppNotice.capture(context);
-    final String myName = context.read<UserProfileProvider>().name ?? '';
+    final String myName =
+        context.read<UserProfileProvider>().communityDisplayName ?? '';
     final String? text = await MazelTovSheet.show(context);
     if (text == null || !mounted) {
       return;

@@ -16,6 +16,7 @@ import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/share_utils.dart';
@@ -394,15 +395,28 @@ abstract final class MatchQuickActions {
   /// The availability values a matchmaker sets by hand, per side, from the
   /// chip under each name. `mazelTov` is left out — the app sets that itself
   /// when a proposal ends in a wedding.
+  ///
+  /// When the change sends ideas to "בהמתנה", the matchmaker is taken to the
+  /// idea in the waiting list — [preferMatchId] when it is one of them (the
+  /// card the chip was on), else the one moved most recently — pushed on top
+  /// of wherever they were, so "חזרה" returns there and not to the head of
+  /// the ideas page.
   static Future<void> setPersonStatus(
     BuildContext context,
     Person person,
-    ProfileStatus status,
-  ) async {
+    ProfileStatus status, {
+    String? preferMatchId,
+  }) async {
     if (person.profileStatus == status) {
       return;
     }
     final PersonRepository repository = context.read<PersonRepository>();
+    final MatchRepository matches = context.read<MatchRepository>();
+    final Set<String> waitingBefore = waitingIdeasOf(
+      matches,
+      repository,
+      person.id,
+    );
     await repository.updateProfileStatus(person.id, status);
     if (status == ProfileStatus.mazelTov && context.mounted) {
       await offerMazelTovWhatsApp(context, person);
@@ -410,6 +424,14 @@ abstract final class MatchQuickActions {
     if (!status.pausesMatches || !context.mounted) {
       return;
     }
+    final List<MatchIdea> moved = <MatchIdea>[
+      for (final String id in waitingIdeasOf(
+        matches,
+        repository,
+        person.id,
+      ).difference(waitingBefore))
+        if (matches.getById(id) != null) matches.getById(id)!,
+    ]..sort((MatchIdea a, MatchIdea b) => b.updatedAt.compareTo(a.updatedAt));
     // Marking someone busy or on a break already moved their proposals to
     // "בהמתנה". The only open question left is when to look at them again.
     final ReminderChoice? when = await ReminderPickerSheet.show(
@@ -423,6 +445,47 @@ abstract final class MatchQuickActions {
     if (date != null) {
       await repository.setPersonReminder(person.id, date);
     }
+    if (moved.isEmpty || !context.mounted) {
+      return;
+    }
+    final MatchIdea target = moved.firstWhere(
+      (MatchIdea match) => match.id == preferMatchId,
+      orElse: () => moved.first,
+    );
+    await AppNavigation.open(context, '/matches/${target.id}');
+  }
+
+  /// The ids of [personId]'s ideas that the ideas page files under
+  /// "בהמתנה" — the same rule `MatchesScreen` groups by.
+  static Set<String> waitingIdeasOf(
+    MatchRepository matches,
+    PersonRepository people,
+    String personId,
+  ) {
+    return <String>{
+      for (final MatchIdea match in matches.getByPersonId(personId))
+        if (matchProposalTabFor(
+              status: match.status,
+              anyPersonArchived:
+                  (people.getById(match.personAId)?.profileStatus.isArchived ??
+                      false) ||
+                  (people.getById(match.personBId)?.profileStatus.isArchived ??
+                      false),
+              anyPersonPaused:
+                  (people
+                          .getById(match.personAId)
+                          ?.profileStatus
+                          .pausesMatches ??
+                      false) ||
+                  (people
+                          .getById(match.personBId)
+                          ?.profileStatus
+                          .pausesMatches ??
+                      false),
+            ) ==
+            MatchProposalTab.waiting)
+          match.id,
+    };
   }
 
   /// A date to come back to the proposal, and optionally a word about why.
@@ -503,8 +566,8 @@ abstract final class MatchQuickActions {
   /// is the one change that makes the rest of the app agree with the sentence
   /// the matchmaker just picked.
   ///
-  /// "בלי סיבה מיוחדת" and a reason the app does not recognise say nothing
-  /// about either candidate and leave both cards alone.
+  /// A reason written by hand (or none) says nothing the app can read about
+  /// either candidate and leaves both cards alone.
   static ({Gender side, ProfileStatus status})? _statusFromWaitingReason(
     String reason,
   ) {
@@ -532,27 +595,8 @@ abstract final class MatchQuickActions {
     final String? reason = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (BuildContext sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const ListTile(title: Text('למה הרעיון בהמתנה?')),
-              for (final String option in <String>[
-                ...MatchWaitingReasons.options,
-                MatchWaitingReasons.noReason,
-              ])
-                ListTile(
-                  title: Text(option),
-                  onTap: () => Navigator.of(
-                    sheetContext,
-                  ).pop(option == MatchWaitingReasons.noReason ? '' : option),
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
+      isScrollControlled: true,
+      builder: (BuildContext sheetContext) => const _WaitingReasonSheet(),
     );
     if (reason == null || !context.mounted) {
       return;
@@ -705,7 +749,8 @@ abstract final class MatchQuickActions {
     await EngagementFlow.celebrate(
       context,
       matchId: match.id,
-      matchmakerName: context.read<UserProfileProvider>().name ?? '',
+      matchmakerName:
+          context.read<UserProfileProvider>().communityDisplayName ?? '',
       shareName: !community.isHidden,
       private: community.isPrivate,
     );
@@ -713,6 +758,78 @@ abstract final class MatchQuickActions {
 }
 
 /// "מי זה?" — one line describing what a related contact is to the proposal.
+/// "למה הרעיון בהמתנה?" — the four reasons the app understands, then a field
+/// for anything else, written in the matchmaker's own words.
+///
+/// Pops the reason (the typed text trimmed, possibly empty — pausing never has
+/// to be justified), or null when the sheet is dismissed. The reason is filed
+/// by [MatchRepository.setWaiting] with the status change itself.
+class _WaitingReasonSheet extends StatefulWidget {
+  const _WaitingReasonSheet();
+
+  @override
+  State<_WaitingReasonSheet> createState() => _WaitingReasonSheetState();
+}
+
+class _WaitingReasonSheetState extends State<_WaitingReasonSheet> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const ListTile(title: Text('למה הרעיון בהמתנה?')),
+              for (final String option in MatchWaitingReasons.options)
+                ListTile(
+                  title: Text(option),
+                  onTap: () => Navigator.of(context).pop(option),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        textInputAction: TextInputAction.done,
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLength: 120,
+                        decoration: const InputDecoration(
+                          hintText: 'סיבה אחרת — לכתוב בקצרה',
+                          counterText: '',
+                        ),
+                        onSubmitted: (_) => _submit(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _submit,
+                      child: const Text('שמירה'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ContactRoleDialog extends StatefulWidget {
   const _ContactRoleDialog({required this.contactName});
 

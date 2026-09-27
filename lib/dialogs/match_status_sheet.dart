@@ -26,7 +26,7 @@ abstract final class MatchWaitingReasons {
     'היא תפוסה',
   ];
 
-  /// Offered alongside the rest rather than above them: pausing a proposal
-  /// never has to be justified.
-  static const String noReason = 'בלי סיבה מיוחדת';
+  // Anything else is typed into a free-text field under these (see
+  // `_WaitingReasonSheet` in match_quick_actions.dart); it replaced the old
+  // "בלי סיבה מיוחדת" row, and an empty field still means no reason.
 }
