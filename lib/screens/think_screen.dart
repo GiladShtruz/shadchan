@@ -477,23 +477,17 @@ class _MatchLookup {
         person.id,
       );
 
-      final List<Person> candidates =
-          people
-              .where(
-                (Person other) =>
-                    other.id != person.id &&
-                    !alreadyPaired.contains(other.id) &&
-                    !dismissed.contains(other.id) &&
-                    !other.profileStatus.pausesMatches &&
-                    MatchSuggestionUtils.matchesOwnPreferences(
-                      source: person,
-                      candidate: other,
-                    ),
-              )
-              .toList()
-            // The card edited most recently first, matching the order the full
-            // matches list uses — the same people in the same order, just fewer.
-            ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
+      // Not already paired, not put aside, free — then the full card's
+      // matches ahead of the basic ones. See [MatchSuggestionUtils.ranked].
+      final List<Person> candidates = MatchSuggestionUtils.ranked(
+        source: person,
+        people: people.where(
+          (Person other) =>
+              !alreadyPaired.contains(other.id) &&
+              !dismissed.contains(other.id) &&
+              !other.profileStatus.pausesMatches,
+        ),
+      );
 
       return candidates.take(shown).toList();
     });

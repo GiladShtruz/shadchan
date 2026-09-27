@@ -106,13 +106,29 @@ abstract final class CommunityTagsService {
               .orderBy('users', descending: true)
               .limit(80)
               .get();
+      final List<({String label, int users})> found =
+          <({String label, int users})>[
+            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                in snapshot.docs)
+              if (doc.data()['label'] case final String label)
+                // Checked again here: the server's filter and this one are two
+                // chances to keep a personal circle out of somebody's screen.
+                if (PersonTags.isCommunityShareable(label))
+                  (
+                    label: label,
+                    users: (doc.data()['users'] as num?)?.toInt() ?? 0,
+                  ),
+          ];
+      // Most used first. The query already asks for that order; sorting here
+      // too keeps it true whatever the server hands back.
+      found.sort(
+        (({String label, int users}) a, ({String label, int users}) b) =>
+            b.users.compareTo(a.users),
+      );
+      final Set<String> seen = <String>{};
       final List<String> words = <String>[
-        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-            in snapshot.docs)
-          if (doc.data()['label'] case final String label)
-            // Checked again here: the server's filter and this one are two
-            // chances to keep a personal circle out of somebody's screen.
-            if (PersonTags.isCommunityShareable(label)) label,
+        for (final ({String label, int users}) item in found)
+          if (seen.add(PersonTags.keyOf(item.label))) item.label,
       ];
       _cache = words;
       _cachedAt = now;

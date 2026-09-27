@@ -17,7 +17,7 @@ import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// The card owner's side of access, on the personal area: status reports to
 /// answer, requests waiting, who can see the card, friends who could, and
-/// anybody blocked.
+/// anybody the card is hidden from ("מוסתרים" — stored as `blocked`).
 ///
 /// Nothing here shows the matchmakers' own work — not their ideas, notes,
 /// shares or views. The owner sees their card and who may read it; that is
@@ -139,17 +139,20 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     }
   }
 
+  /// "הסתר": never at once — a dialog says what it means first.
+  ///
+  /// Stored as the same `blocked` row it always was; what changed is the word
+  /// and what the matchmaker sees — the card looks like no card at all to them
+  /// (see `CardInviteFlow.cardVisible`), and no request can be sent.
   Future<void> _confirmBlock(CardAccessProvider access, CardAccess row) async {
     final bool? sure = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(
-          'לחסום את ${access.nameInContacts(row.matchmakerUid, row.matchmakerName)}?',
-        ),
+        title: const Text('להסתיר את הכרטיס מהשדכן הזה?'),
         content: Text(
-          'הגישה לכרטיס תוסר, ולא ניתן יהיה לבקש אותה שוב עד '
-                  '{שתבטל|שתבטלי} את החסימה.'
-              .forGender(context.userGender),
+          'מבחינת ${access.nameInContacts(row.matchmakerUid, row.matchmakerName)} '
+          'ייראה כאילו אין לך כרטיס זמין ב׳שדכן׳. אם ירצה להוסיף אותך למאגר '
+          'שלו או לקבל פרטים, הוא יצטרך לפנות אליך אישית ב־WhatsApp.',
         ),
         actions: <Widget>[
           TextButton(
@@ -158,7 +161,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('חסימה'),
+            child: const Text('הסתר'),
           ),
         ],
       ),
@@ -226,6 +229,8 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     final List<CardAccess> approved = access.approved;
     final List<CardAccess> blocked = access.blocked;
     final List<CardHelper> helpers = access.helpers;
+    final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
+    final bool acceptsRequests = cards.acceptsRequests;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -273,9 +278,27 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
           key: widget.requestsKey,
           title: 'בקשות גישה',
           children: <Widget>[
-            if (pending.isEmpty)
+            // One switch for every matchmaker. Off, nobody can ask and the
+            // card looks like no card to all of them; giving a friend access
+            // from "החברים שלי שמשדכים בשדכן" still works.
+            SettingsRow(
+              icon: acceptsRequests
+                  ? Icons.mark_email_unread_outlined
+                  : Icons.do_not_disturb_on_outlined,
+              title: 'שדכנים יכולים לבקש גישה לכרטיס',
+              subtitle: acceptsRequests
+                  ? null
+                  : 'כבוי: אף שדכן לא יכול לשלוח בקשה, ולא יראה שיש לך כרטיס. '
+                            '{אתה יכול|את יכולה} לתת גישה לחברים בעצמך.'
+                        .forGender(gender),
+              trailing: Switch(
+                value: acceptsRequests,
+                onChanged: (bool value) => cards.setAcceptsRequests(value),
+              ),
+            ),
+            if (pending.isEmpty && acceptsRequests)
               const SettingsRow(
-                icon: Icons.mark_email_unread_outlined,
+                icon: Icons.inbox_outlined,
                 title: 'אין בקשות חדשות',
               )
             else
@@ -287,7 +310,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                   ),
                   busy: access.isBusy('access:${row.id}'),
                   menu: <String, VoidCallback>{
-                    'חסימה': () => _confirmBlock(access, row),
+                    'הסתר': () => _confirmBlock(access, row),
                   },
                   actions: <Widget>[
                     FilledButton(
@@ -329,7 +352,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                   menu: <String, VoidCallback>{
                     'הסרת גישה': () =>
                         _setStatus(access, row, CardAccessStatus.revoked),
-                    'חסימה': () => _confirmBlock(access, row),
+                    'הסתר': () => _confirmBlock(access, row),
                   },
                 ),
           ],
@@ -383,11 +406,11 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
           ),
         if (blocked.isNotEmpty)
           SettingsGroup(
-            title: 'חסומים',
+            title: 'מוסתרים',
             children: <Widget>[
               for (final CardAccess row in blocked)
                 SettingsRow(
-                  icon: Icons.block_outlined,
+                  icon: Icons.visibility_off_outlined,
                   title: access.nameInContacts(
                     row.matchmakerUid,
                     row.matchmakerName,
@@ -400,7 +423,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                           _failed();
                         }
                       },
-                      child: const Text('ביטול חסימה'),
+                      child: const Text('ביטול הסתרה'),
                     ),
                   ),
                 ),

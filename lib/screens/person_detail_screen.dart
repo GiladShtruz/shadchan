@@ -1387,9 +1387,10 @@ class _ProposalContactsCard extends StatelessWidget {
 /// "הערות אישיות" on the profile: a short conversation with oneself about this
 /// friend.
 ///
-/// **Newest first.** A note is looked up far more often than it is scrolled
-/// back to, so the latest one sits at the top, right under the writing field,
-/// and the older ones follow down the card. However many there are, the card
+/// **Newest first, with the writing line fixed at the foot.** A note is looked
+/// up far more often than it is scrolled back to, so the latest one sits at
+/// the top and the older ones follow down the card; the field to write the
+/// next one stays under them, at the bottom of the box. However many there are, the card
 /// never grows past [_maxListHeight]: past that the messages scroll inside it,
 /// so a friend with a year of notes does not push the rest of the profile a
 /// screen further down.
@@ -1464,14 +1465,6 @@ class _PersonalNotesCardState extends State<_PersonalNotesCard> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // The writing line leads, so a new note lands directly under
-                // the place it was written.
-                _NoteComposer(personId: person.id),
-                // A recording that already exists is nearly always sitting in a
-                // WhatsApp chat with this friend. One tap there, and the share
-                // sheet brings it back here. Quiet, under the writing line.
-                if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
-                  _VoiceFromWhatsAppLink(person: person),
                 if (entries.isEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
@@ -1511,6 +1504,16 @@ class _PersonalNotesCardState extends State<_PersonalNotesCard> {
                     ),
                   ),
                 ],
+                // **The writing line stays at the foot of the box**, under the
+                // newest-first messages however far they have been scrolled —
+                // it is always in the same place to reach for.
+                const SizedBox(height: 8),
+                _NoteComposer(personId: person.id),
+                // A recording that already exists is nearly always sitting in a
+                // WhatsApp chat with this friend. One tap there, and the share
+                // sheet brings it back here. Quiet, under the writing line.
+                if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
+                  _VoiceFromWhatsAppLink(person: person),
               ],
             ),
           ),
@@ -2960,14 +2963,21 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
           ),
         )
         .toList();
-    // Order the suggestions in tiers, preserving relative order within each:
-    // candidates that already have an open/בהמתנה proposal with this person
-    // come first, then the remaining active suggestions, then candidates the
-    // user soft-dismissed (לא מתאים — pushed to the end of the list), and
-    // finally candidates whose opened proposal was rejected.
-    final Set<String> dismissedIds = SuggestionDismissals.dismissedFor(
+    // Order the suggestions in tiers: candidates that already have an
+    // open/בהמתנה proposal with this person come first, then the remaining
+    // active suggestions, then candidates whose opened proposal was rejected,
+    // and at the very end everybody marked "לא מתאים".
+    //
+    // **"לא מתאים" wins over every other tier.** It used to be checked after
+    // the open-proposal tier, so turning down a candidate who had an idea open
+    // with this person did nothing at all — the card stayed at the top and the
+    // button looked broken. It is also checked before the rejected tier, so the
+    // one just dismissed is really last, in the order things were dismissed
+    // rather than by when their cards were edited.
+    final List<String> dismissedOrder = SuggestionDismissals.dismissedInOrder(
       person.id,
     );
+    final Set<String> dismissedIds = dismissedOrder.toSet();
     final List<Person> prioritizedSuggestions = <Person>[];
     final List<Person> activeSuggestions = <Person>[];
     final List<Person> dismissedSuggestions = <Person>[];
@@ -2978,18 +2988,22 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
         candidate.id,
       );
       final MatchStatus? existingStatus = existingMatch?.status;
-      if (existingStatus == MatchStatus.rejected) {
+      if (dismissedIds.contains(candidate.id)) {
+        dismissedSuggestions.add(candidate);
+      } else if (existingStatus == MatchStatus.rejected) {
         rejectedSuggestions.add(candidate);
       } else if (existingStatus == MatchStatus.idea ||
           existingStatus == MatchStatus.checking ||
           existingStatus == MatchStatus.unavailable) {
         prioritizedSuggestions.add(candidate);
-      } else if (dismissedIds.contains(candidate.id)) {
-        dismissedSuggestions.add(candidate);
       } else {
         activeSuggestions.add(candidate);
       }
     }
+    dismissedSuggestions.sort(
+      (Person a, Person b) =>
+          dismissedOrder.indexOf(a.id).compareTo(dismissedOrder.indexOf(b.id)),
+    );
     // Within each tier, candidates that pause matches (תפוס/בהפסקה) drop after
     // the available ones — and inside each of those two groups the ones whose
     // card changed most recently come first, so a candidate the matchmaker has
@@ -3004,8 +3018,8 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     final List<Person> suggestedPeople = <Person>[
       ...availableFirst(prioritizedSuggestions),
       ...availableFirst(activeSuggestions),
-      ...availableFirst(dismissedSuggestions),
       ...availableFirst(rejectedSuggestions),
+      ...dismissedSuggestions,
     ];
 
     final String query = _query.trim().toLowerCase();
@@ -3071,6 +3085,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
                   : _SuggestedMatchesTab(
                       sourcePerson: person,
                       suggestedPeople: suggestedPeople,
+                      dismissedIds: dismissedIds,
                       matchRepository: matchRepository,
                       hasCustomFilters: savedSuggestionFilters != null,
                       onOpenPreview: (Person candidate) =>
@@ -3079,6 +3094,8 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
                           _acceptSuggestion(context, person, candidate),
                       onReject: (Person candidate) =>
                           _rejectSuggestion(context, person, candidate),
+                      onRestore: (Person candidate) =>
+                          _restoreSuggestion(person, candidate),
                     ),
             ),
           ],
@@ -3171,6 +3188,9 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
       return false;
     }
     if (!MatchProposalFilters.matchesRegion(candidate, filters)) {
+      return false;
+    }
+    if (!MatchProposalFilters.matchesTags(candidate, filters)) {
       return false;
     }
 
@@ -3304,23 +3324,56 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     Person sourcePerson,
     Person candidate,
   ) async {
-    final bool confirmed = await ConfirmDialog.show(
-      context,
-      title: 'לא מתאים?',
-      message: 'ההתאמה תעבור לסוף הרשימה אצל שני הצדדים, ולא תוצע שוב.',
-      confirmText: 'לא מתאים',
-      isDestructive: true,
-    );
-    if (!confirmed || !context.mounted) {
-      return;
-    }
-
+    // **No confirmation dialog, an undo instead** — the same answer "רעיונות
+    // שהמאגר מציע לך" gives. The dialog is what made this button feel broken:
+    // tap, a question, and then the card quietly reappearing somewhere below.
+    // Now the tap is the act, the next match slides up into its place at
+    // once, and a bottom notice says where it went with a way back.
+    //
     // The candidate drops to the end of the suggestions list on *both* cards
     // and stops being offered by the database. No rejected proposal is created,
     // so the pair never shows up under רעיונות שנשללו — this is a decision
     // about a suggestion, not about an idea that was ever opened.
+    final OverlayState? notices = AppNotice.capture(context);
+    final bool wasDismissedHere = SuggestionDismissals.isDismissed(
+      sourcePerson.id,
+      candidate.id,
+    );
+    final bool wasDismissedThere = SuggestionDismissals.isDismissed(
+      candidate.id,
+      sourcePerson.id,
+    );
     await SuggestionDismissals.dismiss(sourcePerson.id, candidate.id);
     await SuggestionDismissals.dismiss(candidate.id, sourcePerson.id);
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+    AppNotice.showOn(
+      notices,
+      '${candidate.fullName.trim()} ${candidate.gender == Gender.female ? 'הועברה' : 'הועבר'} לסוף הרשימה',
+      atBottom: true,
+      actionLabel: 'ביטול',
+      onAction: () async {
+        // Only what this tap wrote is taken back: a side that had already
+        // been turned down before stays turned down.
+        if (!wasDismissedHere) {
+          await SuggestionDismissals.restore(sourcePerson.id, candidate.id);
+        }
+        if (!wasDismissedThere) {
+          await SuggestionDismissals.restore(candidate.id, sourcePerson.id);
+        }
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
+  }
+
+  /// Takes a candidate back out of "לא מתאים", on both cards.
+  Future<void> _restoreSuggestion(Person sourcePerson, Person candidate) async {
+    await SuggestionDismissals.restore(sourcePerson.id, candidate.id);
+    await SuggestionDismissals.restore(candidate.id, sourcePerson.id);
     if (mounted) {
       setState(() {});
     }
@@ -3543,20 +3596,26 @@ class _SuggestedMatchesTab extends StatelessWidget {
   const _SuggestedMatchesTab({
     required this.sourcePerson,
     required this.suggestedPeople,
+    required this.dismissedIds,
     required this.matchRepository,
     required this.hasCustomFilters,
     required this.onOpenPreview,
     required this.onAccept,
     required this.onReject,
+    required this.onRestore,
   });
 
   final Person sourcePerson;
   final List<Person> suggestedPeople;
+
+  /// The candidates marked "לא מתאים" — the tail of [suggestedPeople].
+  final Set<String> dismissedIds;
   final MatchRepository matchRepository;
   final bool hasCustomFilters;
   final ValueChanged<Person> onOpenPreview;
   final ValueChanged<Person> onAccept;
   final ValueChanged<Person> onReject;
+  final ValueChanged<Person> onRestore;
 
   @override
   Widget build(BuildContext context) {
@@ -3591,10 +3650,12 @@ class _SuggestedMatchesTab extends StatelessWidget {
           child: _SuggestedMatchesList(
             sourcePerson: sourcePerson,
             suggestedPeople: suggestedPeople,
+            dismissedIds: dismissedIds,
             matchRepository: matchRepository,
             onOpenPreview: onOpenPreview,
             onAccept: onAccept,
             onReject: onReject,
+            onRestore: onRestore,
           ),
         ),
       ],
@@ -3606,18 +3667,22 @@ class _SuggestedMatchesList extends StatefulWidget {
   const _SuggestedMatchesList({
     required this.sourcePerson,
     required this.suggestedPeople,
+    required this.dismissedIds,
     required this.matchRepository,
     required this.onOpenPreview,
     required this.onAccept,
     required this.onReject,
+    required this.onRestore,
   });
 
   final Person sourcePerson;
   final List<Person> suggestedPeople;
+  final Set<String> dismissedIds;
   final MatchRepository matchRepository;
   final ValueChanged<Person> onOpenPreview;
   final ValueChanged<Person> onAccept;
   final ValueChanged<Person> onReject;
+  final ValueChanged<Person> onRestore;
 
   @override
   State<_SuggestedMatchesList> createState() => _SuggestedMatchesListState();
@@ -3657,8 +3722,18 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
         );
         final bool hasCard = hasCandidateCard(candidate);
         final bool expanded = _expandedIds.contains(candidate.id);
+        final bool dismissed = widget.dismissedIds.contains(candidate.id);
+        final bool firstDismissed =
+            dismissed &&
+            (index == 0 ||
+                !widget.dismissedIds.contains(
+                  widget.suggestedPeople[index - 1].id,
+                ));
+        final VoidCallback onThirdAction = dismissed
+            ? () => widget.onRestore(candidate)
+            : () => widget.onReject(candidate);
 
-        return Material(
+        final Widget row = Material(
           color: _profileSurfaceColor(theme),
           borderRadius: BorderRadius.circular(20),
           child: Column(
@@ -3735,13 +3810,14 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                     ? SketchActionBar(
                         compact: true,
                         fullCardExpanded: expanded,
+                        restoresInstead: dismissed,
                         onFullCard: () => setState(() {
                           if (!_expandedIds.remove(candidate.id)) {
                             _expandedIds.add(candidate.id);
                           }
                         }),
                         onOpenIdea: () => widget.onAccept(candidate),
-                        onNotSuitable: () => widget.onReject(candidate),
+                        onNotSuitable: onThirdAction,
                       )
                     : FutureBuilder<CardInviteState>(
                         future: _inviteStateFor(candidate),
@@ -3777,8 +3853,9 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                                           );
                                         }
                                       },
+                                restoresInstead: dismissed,
                                 onOpenIdea: () => widget.onAccept(candidate),
-                                onNotSuitable: () => widget.onReject(candidate),
+                                onNotSuitable: onThirdAction,
                               );
                             },
                       ),
@@ -3792,6 +3869,32 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                     textColor: _profileTextColor(theme),
                   ),
                 ),
+            ],
+          ),
+        );
+
+        // Keyed by the person: rows move when somebody is turned down, and
+        // without a key a row's `FutureBuilder` would keep the previous
+        // occupant's answer for a frame and draw the wrong first action.
+        return KeyedSubtree(
+          key: ValueKey<String>(candidate.id),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // The turned-down tail says what it is, so a card that moved
+              // there reads as "done" rather than as "still here".
+              if (firstDismissed)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+                  child: Text(
+                    'סומנו כלא מתאימים',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: _profileMutedColor(theme),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              if (dismissed) Opacity(opacity: 0.6, child: row) else row,
             ],
           ),
         );

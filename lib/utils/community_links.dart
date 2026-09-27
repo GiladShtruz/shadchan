@@ -193,10 +193,7 @@ abstract final class CommunityLinks {
       }
       kept.add(withoutLink == line ? line : withoutLink.trimRight());
     }
-    return kept
-        .join('\n')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .trimRight();
+    return kept.join('\n').replaceAll(RegExp(r'\n{3,}'), '\n\n').trimRight();
   }
 
   /// The invitation a single sends from their personal area — shorter than
@@ -205,8 +202,9 @@ abstract final class CommunityLinks {
   /// sends an Android phone to Play and an iPhone to the App Store, so the one
   /// link is right on either.
   static String singleShareMessage(Gender? gender) =>
-      'היי! אני {משתמש|משתמשת} באפליקציית ׳שדכן׳ וחשבתי שאולי זה יכול '
-              'לעניין אותך…\n'
+      'היי! אני {משתמש|משתמשת} באפליקציית ׳שדכן׳, אפליקציית יומן אישי '
+              'לניהול שידוכים. חשבתי שזה יכול לעניין אותך ואשמח אם תהיה/י '
+              'שם ותחשוב/י עליי מדי פעם😊\n'
           .forGender(gender) +
       downloadUrl;
 

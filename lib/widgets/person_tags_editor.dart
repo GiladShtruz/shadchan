@@ -9,18 +9,19 @@ import 'package:shadchan/utils/person_tags.dart';
 
 /// Tags on one friend: the matchmaker's own words for sorting a big database.
 ///
-/// **Light and secondary, in a fixed order of priority:**
+/// **One fixed order, always the same three shelves:**
 ///
-/// 1. "+ הוספת תגית חדשה" — the first thing, because the point is for each
-///    matchmaker to build their own language;
-/// 2. the tags this matchmaker already made, so reusing one is one tap;
-/// 3. for somebody with none yet, a handful of starters — shown explicitly as
-///    examples, not as "popular" and not as a list to follow;
-/// 4. "השראה מהקהילה" — folded away, a small scrolling box of words other
-///    matchmakers use, loaded only when opened.
+/// 1. the app's default tags ([PersonTags.starters]) — **always** drawn, picked
+///    or not. They used to be offered only until the matchmaker had a tag of
+///    their own, so the first tap on one made the whole row disappear;
+/// 2. the tags this matchmaker made (or took from the community), recently
+///    used first, with the ones on this friend leading;
+/// 3. "השראה מהקהילה" — folded away, words other matchmakers use, **most used
+///    first**, loaded only when opened.
 ///
-/// One field does both jobs: it filters every chip below it, and when what is
-/// typed is not a tag yet it offers to create it.
+/// Above them, "+ הוספת תגית חדשה" opens one field that does both jobs: it
+/// filters every chip below it, and when what is typed is not a tag yet it
+/// offers to create it.
 class PersonTagsEditor extends StatefulWidget {
   const PersonTagsEditor({
     super.key,
@@ -92,25 +93,39 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final List<Person> people = context.watch<PersonRepository>().getAll();
-    // The friend's own tags lead, whatever the library says.
-    final List<String> mine = <String>[
+
+    bool isDefault(String tag) =>
+        PersonTags.starters.any((String s) => PersonTags.sameTag(s, tag));
+
+    // 1. The defaults, in their own fixed order, whatever has been picked.
+    final List<String> defaults = PersonTags.starters;
+
+    // 2. The matchmaker's own — this friend's first, then the library.
+    final List<String> personal = <String>[];
+    for (final String tag in <String>[
       ...widget.selected,
-      ...TagLibrary.personal(people).where((String tag) => !_has(tag)),
-    ];
+      ...TagLibrary.personal(people),
+    ]) {
+      if (isDefault(tag) ||
+          personal.any((String t) => PersonTags.sameTag(t, tag))) {
+        continue;
+      }
+      personal.add(tag);
+    }
+
+    bool known(String tag) =>
+        isDefault(tag) ||
+        personal.any((String t) => PersonTags.sameTag(t, tag));
+
     final String typed = PersonTags.normalize(_query.text);
-    final bool canCreate =
-        typed.isNotEmpty &&
-        !mine.any((String tag) => PersonTags.sameTag(tag, typed));
-    final List<String> shownMine = mine.where(_matches).toList();
-    final bool starters = mine.isEmpty;
-    final List<String> shownStarters = starters
-        ? PersonTags.starters.where(_matches).toList()
-        : const <String>[];
+    final bool canCreate = typed.isNotEmpty && !known(typed);
+    final List<String> shownDefaults = defaults.where(_matches).toList();
+    final List<String> shownPersonal = personal.where(_matches).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        // 1. A new tag — or a search, in the same field.
+        // A new tag — or a search, in the same field.
         if (!_typing)
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -157,26 +172,23 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
           ),
         ],
 
-        // 2. Mine.
-        if (shownMine.isNotEmpty) ...<Widget>[
+        // 1. Defaults — always there.
+        if (shownDefaults.isNotEmpty) ...<Widget>[
           const SizedBox(height: 8),
-          _TagWrap(tags: shownMine, isSelected: _has, onTap: _toggle),
-        ],
-
-        // 3. Examples, only until there is a tag of one's own.
-        if (shownStarters.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 10),
-          Text(
-            'הצעות להתחלה — דוגמאות בלבד, לבחור רק מה שמתאים לך',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          _ShelfLabel('תגיות מוכנות'),
           const SizedBox(height: 6),
-          _TagWrap(tags: shownStarters, isSelected: _has, onTap: _toggle),
+          _TagWrap(tags: shownDefaults, isSelected: _has, onTap: _toggle),
         ],
 
-        // 4. The community, folded away.
+        // 2. Mine.
+        if (shownPersonal.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 10),
+          _ShelfLabel('התגיות שלי'),
+          const SizedBox(height: 6),
+          _TagWrap(tags: shownPersonal, isSelected: _has, onTap: _toggle),
+        ],
+
+        // 3. The community, folded away, most used first.
         const SizedBox(height: 4),
         Align(
           alignment: AlignmentDirectional.centerStart,
@@ -215,10 +227,7 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
                 );
               }
               final List<String> words = (snap.data ?? const <String>[])
-                  .where(
-                    (String word) =>
-                        !mine.any((String t) => PersonTags.sameTag(t, word)),
-                  )
+                  .where((String word) => !known(word))
                   .where(_matches)
                   .toList();
               if (words.isEmpty) {
@@ -250,6 +259,25 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
             },
           ),
       ],
+    );
+  }
+}
+
+/// The small grey heading over one shelf of tags.
+class _ShelfLabel extends StatelessWidget {
+  const _ShelfLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Text(
+      text,
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+      ),
     );
   }
 }

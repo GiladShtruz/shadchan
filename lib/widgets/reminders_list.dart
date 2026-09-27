@@ -167,6 +167,7 @@ class ReminderCard extends StatelessWidget {
       // no red: a reminder that came due is simply today's to-do.
       subtitle: what,
       subtitleMaxLines: null,
+      centerText: true,
       mark: Icons.notifications_active_outlined,
       startAccent: AppColors.genderAccent(Gender.male, dark: dark),
       endAccent: AppColors.genderAccent(Gender.female, dark: dark),
@@ -259,6 +260,7 @@ class PersonReminderCard extends StatelessWidget {
       titleColor: AppColors.genderAccent(person.gender, dark: dark),
       subtitle: what,
       subtitleMaxLines: null,
+      centerText: true,
       mark: Icons.notifications_active_outlined,
       startAccent: AppColors.genderAccent(person.gender, dark: dark),
       onTap: () {

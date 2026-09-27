@@ -27,15 +27,37 @@ class PersonalCardProvider extends ChangeNotifier {
     _card = _decode(_box.get(_cardKey));
     final Object? deleted = _box.get(_deletedKey);
     _deleted = deleted == true || deleted == 'true';
+    final Object? accepts = _box.get(_acceptsRequestsKey);
+    _acceptsRequests = !(accepts == false || accepts == 'false');
   }
 
   static const String cardId = 'personal-card';
   static const String _cardKey = 'personalCard.person';
   static const String _deletedKey = 'personalCard.deleted';
+  static const String _acceptsRequestsKey = 'personalCard.acceptsRequests';
 
   final Box<dynamic> _box;
   Person? _card;
   bool _deleted = false;
+  bool _acceptsRequests = true;
+
+  /// Whether matchmakers may ask for access to the card at all.
+  ///
+  /// **One answer for everybody.** Off, no matchmaker can send a request, and
+  /// to every one of them the card looks like no card: they write to the
+  /// friend in WhatsApp as they would to anybody. The owner can still give a
+  /// friend access on their own initiative, from "החברים שלי שמשדכים בשדכן".
+  /// Published beside the phone identity — see `PersonalCardSync`.
+  bool get acceptsRequests => _acceptsRequests;
+
+  Future<void> setAcceptsRequests(bool value) async {
+    if (_acceptsRequests == value) {
+      return;
+    }
+    _acceptsRequests = value;
+    persistHomeSetting(_acceptsRequestsKey, value ? 'true' : 'false');
+    notifyListeners();
+  }
 
   /// The card as last saved — kept even while deleted, because deleting a
   /// card never erases it: it can always be restored.
@@ -132,7 +154,8 @@ class PersonalCardProvider extends ChangeNotifier {
   Future<void> clear() async {
     _card = null;
     _deleted = false;
-    await _box.deleteAll(<String>[_cardKey, _deletedKey]);
+    _acceptsRequests = true;
+    await _box.deleteAll(<String>[_cardKey, _deletedKey, _acceptsRequestsKey]);
     notifyListeners();
   }
 }

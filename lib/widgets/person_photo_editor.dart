@@ -13,6 +13,7 @@ class PersonPhotoEditor extends StatelessWidget {
     required this.onSetPrimary,
     this.onRemove,
     this.onReorder,
+    this.onCrop,
   });
 
   final List<String> photoPaths;
@@ -20,6 +21,10 @@ class PersonPhotoEditor extends StatelessWidget {
   final ValueChanged<int> onSetPrimary;
   final ValueChanged<int>? onRemove;
   final ReorderCallback? onReorder;
+
+  /// Tapping a thumbnail opens the photo editor. Cropping is an offer, never a
+  /// step: a photo is kept exactly as picked unless somebody chooses this.
+  final ValueChanged<int>? onCrop;
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +67,7 @@ class PersonPhotoEditor extends StatelessWidget {
                         onRemove: onRemove == null
                             ? null
                             : () => onRemove!(index),
+                        onTap: onCrop == null ? null : () => onCrop!(index),
                       );
                     },
                   )
@@ -84,12 +90,22 @@ class PersonPhotoEditor extends StatelessWidget {
                           onRemove: onRemove == null
                               ? null
                               : () => onRemove!(index),
+                          onTap: onCrop == null ? null : () => onCrop!(index),
                           reorderIndex: index,
                         ),
                       );
                     },
                   ),
           ),
+        if (photoPaths.isNotEmpty && onCrop != null) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(
+            'התמונות נשמרות בגודל המקורי. לחיצה על תמונה פותחת חיתוך — לא חובה',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         if (photoPaths.length > 1 && onReorder != null) ...<Widget>[
           const SizedBox(height: 6),
           Text(
@@ -110,6 +126,7 @@ class _PhotoThumb extends StatelessWidget {
     required this.isPrimary,
     required this.onSetPrimary,
     required this.onRemove,
+    this.onTap,
     this.reorderIndex,
   });
 
@@ -117,6 +134,7 @@ class _PhotoThumb extends StatelessWidget {
   final bool isPrimary;
   final VoidCallback onSetPrimary;
   final VoidCallback? onRemove;
+  final VoidCallback? onTap;
   final int? reorderIndex;
 
   @override
@@ -126,26 +144,36 @@ class _PhotoThumb extends StatelessWidget {
 
     return Stack(
       children: <Widget>[
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: file.existsSync()
-              ? Image.file(
-                  file,
-                  width: 80,
-                  height: 96,
-                  cacheWidth: 160,
-                  fit: BoxFit.cover,
-                )
-              : Container(
-                  width: 80,
-                  height: 96,
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    color: theme.colorScheme.onSurfaceVariant,
+        GestureDetector(
+          onTap: onTap,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            // The whole photo in its own proportion: cutting the thumbnail to
+            // fill the square made a kept-as-is photo look cropped.
+            child: file.existsSync()
+                ? Container(
+                    width: 80,
+                    height: 96,
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    child: Image.file(
+                      file,
+                      width: 80,
+                      height: 96,
+                      cacheWidth: 160,
+                      fit: BoxFit.contain,
+                    ),
+                  )
+                : Container(
+                    width: 80,
+                    height: 96,
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
+          ),
         ),
         PositionedDirectional(
           top: 4,

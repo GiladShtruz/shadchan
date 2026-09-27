@@ -35,12 +35,6 @@ class PersonRepository extends ChangeNotifier {
   /// two repositories.
   Future<void> Function(String personId)? onPersonStatusChanged;
 
-  /// Called when the matchmaker — not the card's owner — changes the status of
-  /// somebody whose own card this record follows. The owner is asked to
-  /// confirm it; see `CardAccessProvider.reportStatus`.
-  Future<void> Function(Person person, ProfileStatus status)?
-  onStatusChangedForCardOwner;
-
   int get count => _box.length;
 
   int get pendingCount {
@@ -416,16 +410,9 @@ class PersonRepository extends ChangeNotifier {
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
 
   Future<void> update(Person person) async {
-    // A matchmaker who edits and saves a card that follows its owner makes it
-    // their own from here on (the owner's status keeps arriving). Only a save
-    // that actually changed the card counts — a reminder or a favourite is
-    // not an edit of the card.
-    if (person.isCardSynced) {
-      final Object? synced = _settings?.get('$_syncPrintPrefix${person.id}');
-      if (synced is String && synced != CardSyncEngine.printOf(person)) {
-        person.cardSyncDetached = true;
-      }
-    }
+    // A matchmaker's edit of a card that follows its owner stays theirs and
+    // never detaches it: the owner's own changes keep arriving, field by
+    // field, over whatever they did not touch — see `CardSyncEngine.apply`.
     person.updatedAt = DateTime.now();
     person.needsReview = false;
     // A card created by "הוספת שם מחוץ למאגר" is kept out of המאגר שלי on
@@ -618,9 +605,6 @@ class PersonRepository extends ChangeNotifier {
     notifyListeners();
     await onPersonStatusChanged?.call(id);
     _refreshPersonRemindersInBackground();
-    if (person.cardOwnerUid != null) {
-      await onStatusChangedForCardOwner?.call(person, newStatus);
-    }
   }
 
   /// The history events for a person, newest first. Backs the profile's

@@ -23,7 +23,12 @@ class SketchActionBar extends StatelessWidget {
     this.fullCardExpanded = false,
     this.fullCardLabel,
     this.compact = false,
+    this.restoresInstead = false,
   });
+
+  /// For a candidate already marked "לא מתאים": the third answer takes them
+  /// back ("החזרה לרשימה", the arrow) instead of turning them down again.
+  final bool restoresInstead;
 
   /// Null draws the card action dimmed: there is no card to show.
   final VoidCallback? onFullCard;
@@ -73,16 +78,27 @@ class SketchActionBar extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: SketchAction(
-            asset: 'assets/action_x.png',
-            label: 'לא מתאים',
-            onTap: onNotSuitable,
-            compact: compact,
-            tint: artTint(
-              dark ? AppColors.secondaryDarkDm : AppColors.secondary,
-              ArtTint.actionX,
-            ),
-          ),
+          child: restoresInstead
+              ? SketchAction(
+                  asset: 'assets/action_arrow.png',
+                  label: 'החזרה לרשימה',
+                  onTap: onNotSuitable,
+                  compact: compact,
+                  tint: artTint(
+                    dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+                    ArtTint.actionArrow,
+                  ),
+                )
+              : SketchAction(
+                  asset: 'assets/action_x.png',
+                  label: 'לא מתאים',
+                  onTap: onNotSuitable,
+                  compact: compact,
+                  tint: artTint(
+                    dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+                    ArtTint.actionX,
+                  ),
+                ),
         ),
       ],
     );

@@ -362,11 +362,14 @@ class _CardTone {
             AppColors.softYellow.withValues(alpha: dark ? 0.08 : 0.40),
           );
         }
-        final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
+        // A very light sky wash, as gentle as the dating card's rose: the
+        // card still reads as blue and open, and the stronger blue is left to
+        // the border, the bars and the words.
+        final Color blue = dark ? AppColors.primaryDarkDm : AppColors.softBlue;
         return washed(
           dark ? AppColors.primaryDarkDm : AppColors.primaryDark,
-          blue.withValues(alpha: dark ? 0.16 : 0.34),
-          AppColors.softBlue.withValues(alpha: dark ? 0.06 : 0.30),
+          blue.withValues(alpha: dark ? 0.12 : 0.62),
+          AppColors.softBlue.withValues(alpha: dark ? 0.04 : 0.18),
         );
       case MatchStatus.rejected:
       case MatchStatus.dated:
@@ -700,11 +703,9 @@ class _StatusLine extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final String reason = (match.waitingReason ?? '').trim();
 
-    // **Centred, and the loudest control on the card's foot.** Changing where
-    // an idea stands is the thing done most often on this page; tucked in a
-    // corner as a coloured word it read as a caption. It is a framed pill in
-    // the status's own colour now, with "פעולות" under it as a quiet link —
-    // two controls that no longer look like two of the same button.
+    // **Centred at the card's foot, as one line of text.** "סטטוס: …" in the
+    // card's own type size, the status word in its colour and a small arrow —
+    // no pill, no dot, no frame — with "פעולות" under it as a quiet link.
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
       child: Column(
@@ -744,7 +745,14 @@ class _StatusChoice {
   final MatchQuickAction? action;
 }
 
-/// The status word with its dot and arrow, and the list of statuses behind it.
+//// "סטטוס: …" and a small arrow, and the list of statuses behind it.
+///
+/// **Words, not a control that shouts.** The status used to be a framed pill
+/// with a dot, and its menu a stack of framed, tinted rows that opened wherever
+/// the popup found room — often the middle of the screen, far from the card it
+/// belonged to. Now it is one line in the card's own type size, and the menu
+/// drops down from under it: plain rows, one size, each written in the colour
+/// of the status it leads to and nothing else.
 class _CardStatusMenu extends StatelessWidget {
   const _CardStatusMenu({
     required this.match,
@@ -755,6 +763,12 @@ class _CardStatusMenu extends StatelessWidget {
   final MatchIdea match;
   final void Function(MatchStage stage)? onSetStage;
   final ValueChanged<MatchQuickAction>? onAction;
+
+  /// One row of the menu.
+  static const double _rowHeight = 40;
+
+  /// The menu's width, so it can be centred under the status it came from.
+  static const double _menuWidth = 232;
 
   /// What the card says the idea is at: the stage while it is open, the
   /// coarse state otherwise.
@@ -817,159 +831,198 @@ class _CardStatusMenu extends StatelessWidget {
     return AppColors.matchState(leadsTo, dark: dark);
   }
 
+  /// The card's own type size — the names' — for the status and every row of
+  /// its menu alike.
+  static TextStyle textStyle(ThemeData theme) {
+    return theme.textTheme.bodyMedium?.copyWith(fontSize: 15, height: 1.25) ??
+        const TextStyle(fontSize: 15, height: 1.25);
+  }
+
+  /// Drops the menu down from under [anchor].
+  ///
+  /// A card low on the screen is first scrolled up until the whole list fits
+  /// under it — otherwise the popup slides up to find room and opens over the
+  /// middle of the page, detached from the card it is about.
+  Future<void> _open(BuildContext anchor, List<_StatusChoice> choices) async {
+    // Nothing is left holding the focus to hand back when the menu closes —
+    // see `ShadchanSearchField`.
+    FocusManager.instance.primaryFocus?.unfocus();
+    final ThemeData theme = Theme.of(anchor);
+    final bool dark = theme.brightness == Brightness.dark;
+    final bool hasStages = choices.any((_StatusChoice c) => c.stage != null);
+    final bool hasActions = choices.any((_StatusChoice c) => c.action != null);
+    final double menuHeight =
+        choices.length * _rowHeight + 16 + (hasStages && hasActions ? 17 : 0);
+
+    ({RenderBox box, RenderBox overlay})? measure() {
+      final RenderObject? box = anchor.findRenderObject();
+      final RenderObject? overlay = Overlay.of(
+        anchor,
+      ).context.findRenderObject();
+      if (box is! RenderBox || overlay is! RenderBox || !box.attached) {
+        return null;
+      }
+      return (box: box, overlay: overlay);
+    }
+
+    ({RenderBox box, RenderBox overlay})? measured = measure();
+    if (measured == null) {
+      return;
+    }
+    final double bottomInset = MediaQuery.paddingOf(anchor).bottom;
+    double roomBelow(({RenderBox box, RenderBox overlay}) m) {
+      final Offset foot = m.box.localToGlobal(
+        m.box.size.bottomCenter(Offset.zero),
+        ancestor: m.overlay,
+      );
+      return m.overlay.size.height - bottomInset - foot.dy;
+    }
+
+    if (roomBelow(measured) < menuHeight + 12) {
+      await Scrollable.ensureVisible(
+        anchor,
+        alignment: 0.15,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+      if (!anchor.mounted) {
+        return;
+      }
+      measured = measure();
+      if (measured == null) {
+        return;
+      }
+    }
+
+    final RenderBox box = measured.box;
+    final RenderBox overlay = measured.overlay;
+    final Rect rect =
+        box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
+    final double width = _menuWidth.clamp(0, overlay.size.width - 24);
+    final double left = (rect.center.dx - width / 2).clamp(
+      12,
+      overlay.size.width - 12 - width,
+    );
+    final MatchStage current = MatchStage.of(match);
+    final TextStyle style = textStyle(theme);
+
+    final List<PopupMenuEntry<_StatusChoice>> items =
+        <PopupMenuEntry<_StatusChoice>>[];
+    bool dividerPlaced = false;
+    for (final _StatusChoice choice in choices) {
+      if (choice.action != null && hasStages && !dividerPlaced) {
+        items.add(const PopupMenuDivider(height: 17));
+        dividerPlaced = true;
+      }
+      final MatchStage? stage = choice.stage;
+      final bool selected = stage != null && stage == current;
+      items.add(
+        PopupMenuItem<_StatusChoice>(
+          value: choice,
+          height: _rowHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Text(
+            stage?.label ?? choice.action!.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style.copyWith(
+              color: colorOf(choice, dark: dark),
+              fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final _StatusChoice? picked = await showMenu<_StatusChoice>(
+      context: anchor,
+      position: RelativeRect.fromLTRB(
+        left,
+        rect.bottom + 2,
+        overlay.size.width - left - width,
+        overlay.size.height - rect.bottom - 2,
+      ),
+      constraints: BoxConstraints.tightFor(width: width),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      color: theme.colorScheme.surface,
+      elevation: 6,
+      items: items,
+    );
+    // The menu handed the focus back to nothing; keep it that way.
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (picked == null) {
+      return;
+    }
+    final MatchStage? stage = picked.stage;
+    if (stage != null) {
+      onSetStage?.call(stage);
+    } else {
+      onAction?.call(picked.action!);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color color = AppColors.matchState(match.status, dark: dark);
     final List<_StatusChoice> choices = _choices();
-    final MatchStage current = MatchStage.of(match);
+    final TextStyle style = textStyle(theme);
 
-    final Widget pill = Container(
-      constraints: const BoxConstraints(minHeight: 38),
-      padding: EdgeInsetsDirectional.fromSTEB(
-        14,
-        6,
-        choices.isEmpty ? 14 : 6,
-        6,
-      ),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          color.withValues(alpha: dark ? 0.22 : 0.14),
-          theme.colorScheme.surface,
-        ),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.8), width: 1.4),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: color.withValues(alpha: 0.18),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    final Widget line = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Container(
-            width: 9,
-            height: 9,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 8),
           Flexible(
-            child: Text(
-              labelOf(match),
+            child: Text.rich(
+              TextSpan(
+                children: <InlineSpan>[
+                  TextSpan(
+                    text: 'סטטוס: ',
+                    style: style.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: labelOf(match),
+                    style: style.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w900,
-              ),
             ),
           ),
           if (choices.isNotEmpty)
-            Icon(Icons.arrow_drop_down_rounded, size: 26, color: color),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: color),
         ],
       ),
     );
     if (choices.isEmpty) {
-      return pill;
+      return line;
     }
 
-    final bool hasStages = choices.any((_StatusChoice c) => c.stage != null);
-    return PopupMenuButton<_StatusChoice>(
-      tooltip: 'שינוי סטטוס הרעיון',
-      position: PopupMenuPosition.under,
-      padding: EdgeInsets.zero,
-      // A gentle frame around the whole menu, in the colour of where the idea
-      // stands now.
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: color.withValues(alpha: 0.45), width: 1.2),
+    return Builder(
+      builder: (BuildContext anchor) => Tooltip(
+        message: 'שינוי סטטוס הרעיון',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _open(anchor, choices),
+          // A long press here must never fall through to the card's.
+          onLongPress: () {},
+          child: line,
+        ),
       ),
-      onSelected: (_StatusChoice choice) {
-        final MatchStage? stage = choice.stage;
-        if (stage != null) {
-          onSetStage?.call(stage);
-        } else {
-          onAction?.call(choice.action!);
-        }
-      },
-      itemBuilder: (BuildContext context) {
-        final List<PopupMenuEntry<_StatusChoice>> items =
-            <PopupMenuEntry<_StatusChoice>>[];
-        bool dividerPlaced = false;
-        for (final _StatusChoice choice in choices) {
-          if (choice.action != null && hasStages && !dividerPlaced) {
-            items.add(const PopupMenuDivider());
-            dividerPlaced = true;
-          }
-          final MatchStage? stage = choice.stage;
-          final bool selected = stage != null && stage == current;
-          final Color ink = colorOf(choice, dark: dark);
-          items.add(
-            PopupMenuItem<_StatusChoice>(
-              value: choice,
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-              // Every option a small framed row in its own status colour, so
-              // the list reads as statuses and not as a plain menu of words.
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: ink.withValues(
-                    alpha: selected ? (dark ? 0.22 : 0.14) : 0.05,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: ink.withValues(alpha: selected ? 0.8 : 0.35),
-                    width: selected ? 1.4 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    if (choice.action != null)
-                      Icon(choice.action!.icon, size: 18, color: ink)
-                    else
-                      Container(
-                        width: 9,
-                        height: 9,
-                        margin: const EdgeInsets.symmetric(horizontal: 4.5),
-                        decoration: BoxDecoration(
-                          color: ink,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        stage?.label ?? choice.action!.label,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: ink,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    if (selected)
-                      Icon(Icons.check_rounded, size: 20, color: ink),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-        return items;
-      },
-      child: pill,
     );
   }
 }
 
-/// The panel under the pair: everything a proposal can have done to it, folded
+// The panel under the pair: everything a proposal can have done to it, folded
 /// behind one line.
 ///
 /// **One box, the same shape on every idea.** It is laid out the way a couple
@@ -1001,6 +1054,12 @@ class _CardActionBar extends StatelessWidget {
   final VoidCallback onToggle;
   final ValueChanged<MatchQuickAction>? onAction;
   final void Function(MatchNextStep step)? onAdvance;
+
+  /// Dark grey, never a status colour.
+  static Color _actionsInk(ThemeData theme) =>
+      theme.brightness == Brightness.dark
+      ? const Color(0xFFD9D6D0)
+      : const Color(0xFF3B3A37);
   final void Function(Person person)? onCheckInWith;
   final void Function(int days)? onChangeCheckInFrequency;
 
@@ -1033,25 +1092,30 @@ class _CardActionBar extends StatelessWidget {
           ),
           InkWell(
             onTap: onToggle,
+            // A long press on "פעולות" used to fall through to the card's own
+            // long press and delete the idea. It does nothing now.
+            onLongPress: () {},
             borderRadius: BorderRadius.circular(999),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
+                  // The card's body size, in near-black: a way into the
+                  // actions, not a status of its own.
                   Text(
                     open ? 'סגירת פעולות' : 'פעולות',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: _actionsInk(theme),
                     ),
                   ),
                   Icon(
                     open
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
-                    size: 16,
-                    color: theme.colorScheme.onSurfaceVariant,
+                    size: 18,
+                    color: _actionsInk(theme),
                   ),
                 ],
               ),

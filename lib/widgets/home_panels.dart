@@ -105,11 +105,11 @@ class HomeArtTile extends StatelessWidget {
           child: _AddTile(
             onTap: onTap,
             art: art,
-            // Drawing, words and the rule along the foot are all the one
-            // copper, so the tile reads as a single invitation in one ink.
+            // The drawing and the rule along the foot stay copper; the words
+            // are the palette's dark blue, like every heading on the page.
             tint: ColorFilter.mode(ink, BlendMode.srcIn),
             accent: ink,
-            labelColor: ink,
+            labelColor: AppColors.heading(dark: dark),
             label: label,
             artHeight: artHeight,
             labelHeight: labelHeight,

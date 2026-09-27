@@ -226,6 +226,22 @@ async function announceOnce(
   if (matchmakerUid === ownerUid) {
     return false;
   }
+  // A card the owner hid from this matchmaker, or an owner who takes no
+  // requests, is never announced: to that matchmaker it is no card at all.
+  const row = await db
+    .collection('cardAccess')
+    .doc(`${ownerUid}_${matchmakerUid}`)
+    .get();
+  if (row.exists && row.get('status') === 'blocked') {
+    return false;
+  }
+  const phoneHash = ownerPhoneHash ?? (await ownerPhoneHashOf(ownerUid));
+  if (phoneHash) {
+    const entry = await db.collection('phoneDirectory').doc(phoneHash).get();
+    if (entry.exists && entry.get('acceptsRequests') === false) {
+      return false;
+    }
+  }
   const marker = card.ref.collection('announced').doc(matchmakerUid);
   const created = await db.runTransaction(async (tx) => {
     if ((await tx.get(marker)).exists) {

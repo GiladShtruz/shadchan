@@ -120,6 +120,37 @@ abstract final class MatchSuggestionUtils {
     return areAgesCompatible(source: source, candidate: candidate);
   }
 
+  /// Every candidate in [people] for [source], best first: those who pass
+  /// everything [source]'s card asks for ([matchesOwnPreferences]), then those
+  /// who pass only the basic match ([matchesBasicPreferences]) — each group
+  /// with the most recently edited card first.
+  ///
+  /// **This is what lets a short list stay full.** "עוצרים רגע לחשוב" shows
+  /// three matches a friend; with the full card alone, anybody whose height
+  /// or region was never written down was dropped, and a friend with plenty
+  /// of sensible matches showed one face, or two. The full card still leads,
+  /// and nobody who fails the basic match is ever offered.
+  static List<Person> ranked({
+    required Person source,
+    required Iterable<Person> people,
+  }) {
+    final List<Person> sorted = people.toList()
+      ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
+    final List<Person> preferred = <Person>[];
+    final List<Person> basic = <Person>[];
+    for (final Person candidate in sorted) {
+      if (matchesOwnPreferences(source: source, candidate: candidate)) {
+        preferred.add(candidate);
+      } else if (matchesBasicPreferences(
+        source: source,
+        candidate: candidate,
+      )) {
+        basic.add(candidate);
+      }
+    }
+    return <Person>[...preferred, ...basic];
+  }
+
   /// Whether [source] has anything recorded beyond the basics — the fields
   /// "עריכה מורחבת" collects. Only then is a "סינון מורחב" toggle worth
   /// drawing: without one of these, narrowing would drop nobody.

@@ -235,20 +235,11 @@ Widget _buildApp() {
       ChangeNotifierProvider<CardAccessProvider>(
         lazy: false,
         create: (BuildContext context) {
-          final PersonRepository people = context.read<PersonRepository>();
-          final CardAccessProvider provider = CardAccessProvider(
-            people: people,
-          );
-          // A status the matchmaker sets for somebody whose own card they
-          // follow is put to the owner as a question.
-          people.onStatusChangedForCardOwner =
-              (Person person, ProfileStatus status) => provider.reportStatus(
-                person,
-                status,
-                matchmakerName:
-                    context.read<UserProfileProvider>().fullName ?? '',
-              );
-          return provider;
+          // **One way only.** A status, a detail or a card a matchmaker changes
+          // on their own copy of a friend stays in their database: nothing is
+          // put to the friend and nothing reaches their personal area. The
+          // friend's own changes are what travel — see `CardSyncEngine.apply`.
+          return CardAccessProvider(people: context.read<PersonRepository>());
         },
       ),
       // Lazy on purpose: constructing this is what starts Firebase, and

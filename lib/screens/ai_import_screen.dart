@@ -833,7 +833,7 @@ class _SourceCard extends StatelessWidget {
 
   String get _title => switch (source) {
     AiImportSource.excel => 'קובץ אקסל',
-    AiImportSource.whatsapp => 'ייצוא מוואטסאפ',
+    AiImportSource.whatsapp => 'ייבוא מרוכז של כרטיסי שידוכים מקבוצת WhatsApp',
     AiImportSource.pastedText => 'הדבקת טקסט',
     AiImportSource.camera => 'צילום כרטיסייה',
     AiImportSource.gallery => 'תמונה מהגלריה',
@@ -841,7 +841,8 @@ class _SourceCard extends StatelessWidget {
 
   String get _subtitle => switch (source) {
     AiImportSource.excel => 'טבלה עם רשימת אנשים, בכל מבנה',
-    AiImportSource.whatsapp => 'קובץ שיחה מיוצא, ZIP או טקסט',
+    AiImportSource.whatsapp =>
+      'מתאים לקבוצות עם הרבה כרטיסים – המערכת תזהה ותוסיף אותם בצורה מסודרת.',
     AiImportSource.pastedText => 'רשימה או הודעות עם כמה אנשים',
     AiImportSource.camera => 'צילום של כרטיסייה מודפסת',
     AiImportSource.gallery => 'צילום מסך או תמונה שכבר שמורה',

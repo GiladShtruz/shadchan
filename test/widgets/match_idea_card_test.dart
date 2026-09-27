@@ -29,6 +29,10 @@ import 'package:shadchan/widgets/person_list_card.dart';
 /// every card, always, because a list you cannot read the state of is a list
 /// you have to open forty times.
 void main() {
+  // The status is one rich line: "סטטוס: " and the label.
+  Finder status(String label) =>
+      find.text('סטטוס: $label', findRichText: true);
+
   final DateTime now = DateTime(2026, 8, 14);
 
   // The card carries the proposal's journal inside its actions panel, so it
@@ -242,7 +246,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(FaIcon), findsNWidgets(2));
-    expect(find.text('נסגרה'), findsOneWidget);
+    expect(status('נסגרה'), findsOneWidget);
 
     // The panel does not disappear with the proposal: its journal is still
     // worth reading.
@@ -252,7 +256,7 @@ void main() {
 
     // The way back open is on the card's own status, and nothing that no
     // longer means anything from where it stands.
-    await tester.tap(find.text('נסגרה'));
+    await tester.tap(status('נסגרה'));
     await tester.pumpAndSettle();
     expect(find.text('פתיחה מחדש'), findsOneWidget);
     expect(find.text('מתחילים לצאת'), findsNothing);
@@ -276,7 +280,7 @@ void main() {
         ]) {
       await tester.pumpWidget(wrap(card(status: expected.$1)));
       await tester.pump();
-      expect(find.text(expected.$2), findsOneWidget, reason: expected.$1.name);
+      expect(status(expected.$2), findsOneWidget, reason: expected.$1.name);
     }
   });
 
@@ -345,9 +349,9 @@ void main() {
 
     // The reminder date is no longer on the card — only the status.
     expect(find.text('הוספת תזכורת'), findsNothing);
-    expect(find.text('רעיון חדש'), findsOneWidget);
+    expect(status('רעיון חדש'), findsOneWidget);
 
-    await tester.tap(find.text('רעיון חדש'));
+    await tester.tap(status('רעיון חדש'));
     await tester.pumpAndSettle();
     // Every stage, and the two moves that leave them, last.
     expect(find.text('מחכים לתשובת הבחור'), findsOneWidget);
@@ -509,7 +513,7 @@ void main() {
       wrap(card(status: MatchStatus.dating, onAction: (_) {})),
     );
     await tester.pump();
-    await tester.tap(find.text('יוצאים'));
+    await tester.tap(status('יוצאים'));
     await tester.pumpAndSettle();
 
     expect(find.text('מתחילים לצאת'), findsNothing);

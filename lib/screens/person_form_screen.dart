@@ -24,6 +24,7 @@ import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/incoming_shared_profile_service.dart';
+import 'package:shadchan/screens/photo_edit_screen.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/widgets/person_photo_editor.dart';
 import 'package:shadchan/widgets/religious_level_picker.dart';
@@ -284,6 +285,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     photoPaths: _photoPaths,
                     onAddPhoto: _pickPhotos,
                     onSetPrimary: _setPrimaryPhoto,
+                    onCrop: _cropPhoto,
                   ),
                   const SizedBox(height: 20),
                   // Pasting the card here fills the fields below through
@@ -1226,6 +1228,28 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
       final String selectedPhotoPath = reorderedPhotoPaths.removeAt(index);
       reorderedPhotoPaths.insert(0, selectedPhotoPath);
       _photoPaths = reorderedPhotoPaths;
+    });
+  }
+
+  /// The optional crop. Nothing about saving waits on it: a photo that is
+  /// never opened here is kept exactly as it was picked.
+  Future<void> _cropPhoto(int index) async {
+    if (index < 0 || index >= _photoPaths.length) {
+      return;
+    }
+    final String original = _photoPaths[index];
+    final String? edited = await PhotoEditScreen.open(context, original);
+    if (edited == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _photoPaths = List<String>.from(_photoPaths)..[index] = edited;
+      _newPhotoPaths.add(edited);
+      // A photo picked during this visit and now replaced by its crop is
+      // nobody's any more; an older one stays on disk until the card saves.
+      if (_newPhotoPaths.remove(original)) {
+        PhotoPickerService.deletePhotoFiles(<String>[original]);
+      }
     });
   }
 

@@ -354,6 +354,14 @@ class ShadchanSearchField extends StatelessWidget {
               textInputAction: TextInputAction.search,
               onSubmitted: onSubmitted,
               onTap: onTap,
+              // **A touch anywhere else lets go of the field.** Hiding the
+              // keyboard with the phone's Back key leaves the field focused,
+              // and the next menu or sheet that closed handed the focus back
+              // to it — which is the keyboard jumping up on its own after a
+              // status was picked. Letting go on the first touch outside means
+              // there is nothing left to hand back.
+              onTapOutside: (PointerDownEvent event) =>
+                  FocusManager.instance.primaryFocus?.unfocus(),
               style: theme.textTheme.bodyMedium,
               decoration: InputDecoration(
                 isDense: true,

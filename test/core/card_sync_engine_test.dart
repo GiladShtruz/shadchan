@@ -229,6 +229,118 @@ void main() {
     expect(person.profileStatus, ProfileStatus.mazelTov);
   });
 
+  test('one way: a matchmaker edit stays until the owner changes it', () {
+    final Person person = _local();
+    final Map<String, dynamic> first = _remote(
+      photos: const <String>['personalCards/owner/a.jpg'],
+    );
+    CardSyncEngine.apply(
+      person,
+      first,
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>['/x/card_owner_a.jpg'],
+    );
+    Map<String, Object?> baseline = CardSyncEngine.baselineOf(first);
+
+    // The matchmaker rewrites the card text and adds a photo of their own.
+    person
+      ..description = 'הנוסח שלי'
+      ..photosPaths = <String>[...person.photosPaths, '/x/mine2.jpg'];
+
+    // The owner changes only their region: the text the matchmaker wrote
+    // stays, the region arrives, and the photos are left alone.
+    final Map<String, dynamic> second = _remote(
+      photos: const <String>['personalCards/owner/a.jpg'],
+    )..['region'] = Region.north.name;
+    CardSyncEngine.apply(
+      person,
+      second,
+      ownerUid: 'owner',
+      localPhotoPaths: null,
+      previousRemote: baseline,
+    );
+    baseline = CardSyncEngine.baselineOf(second);
+    expect(person.description, 'הנוסח שלי');
+    expect(person.region, Region.north);
+    expect(person.photosPaths, const <String>[
+      '/x/card_owner_a.jpg',
+      '/x/mine2.jpg',
+    ]);
+    expect(person.isCardSynced, isTrue);
+
+    // Now the owner rewrites the text and swaps the photo: theirs wins, and
+    // the matchmaker's own photo is kept beside the new one.
+    final Map<String, dynamic> third = _remote(
+      description: 'טקסט חדש מהבעלים',
+      photos: const <String>['personalCards/owner/b.jpg'],
+    )..['region'] = Region.north.name;
+    CardSyncEngine.apply(
+      person,
+      third,
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>['/x/card_owner_b.jpg'],
+      previousRemote: baseline,
+    );
+    expect(person.description, 'טקסט חדש מהבעלים');
+    expect(person.photosPaths, const <String>[
+      '/x/card_owner_b.jpg',
+      '/x/mine2.jpg',
+    ]);
+  });
+
+  test('a record detached by an older version follows the card again', () {
+    final Person person = _local();
+    CardSyncEngine.apply(
+      person,
+      _remote(),
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>[],
+    );
+    person
+      ..cardSyncDetached = true
+      ..description = 'גרסה שלי';
+    final Map<String, dynamic> second = _remote();
+    CardSyncEngine.apply(
+      person,
+      second,
+      ownerUid: 'owner',
+      localPhotoPaths: null,
+    );
+    expect(person.cardSyncDetached, isFalse);
+    expect(person.description, 'גרסה שלי');
+    CardSyncEngine.apply(
+      person,
+      _remote(description: 'עדכון של הבעלים'),
+      ownerUid: 'owner',
+      localPhotoPaths: null,
+      previousRemote: CardSyncEngine.baselineOf(second),
+    );
+    expect(person.description, 'עדכון של הבעלים');
+  });
+
+  test('withdrawn access keeps what the matchmaker changed themselves', () {
+    final Person person = _local();
+    final Map<String, dynamic> first = _remote();
+    CardSyncEngine.apply(
+      person,
+      first,
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>['/x/card_owner_a.jpg'],
+    );
+    person
+      ..city = 'חיפה'
+      ..photosPaths = <String>[...person.photosPaths, '/x/mine2.jpg'];
+    final List<String> toDelete = CardSyncEngine.unlink(
+      person,
+      lastRemote: CardSyncEngine.baselineOf(first),
+    );
+    expect(toDelete, const <String>['/x/card_owner_a.jpg']);
+    // The snapshot is back, with the matchmaker's own city and photo on it.
+    expect(person.description, 'מה שאני כתבתי');
+    expect(person.city, 'חיפה');
+    expect(person.photosPaths, const <String>['/x/mine.jpg', '/x/mine2.jpg']);
+  });
+
   test('withdrawn access puts the snapshot back and drops card photos', () {
     final Person person = _local();
     CardSyncEngine.apply(

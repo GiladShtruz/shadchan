@@ -87,15 +87,18 @@ class SearchResultsPanel extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         shrinkWrap: true,
                         itemCount: rows.length,
-                        separatorBuilder: (BuildContext context, _) => Divider(
-                          height: 1,
-                          thickness: 1,
-                          indent: 16,
-                          endIndent: 16,
-                          color: theme.colorScheme.outlineVariant.withValues(
-                            alpha: 0.6,
-                          ),
-                        ),
+                        // No hairline straight under a section's own title.
+                        separatorBuilder: (BuildContext context, int index) =>
+                            rows[index] is SearchSectionTitle
+                            ? const SizedBox.shrink()
+                            : Divider(
+                                height: 1,
+                                thickness: 1,
+                                indent: 16,
+                                endIndent: 16,
+                                color: theme.colorScheme.outlineVariant
+                                    .withValues(alpha: 0.6),
+                              ),
                         itemBuilder: (BuildContext context, int index) =>
                             rows[index],
                       ),
@@ -183,6 +186,28 @@ class SearchResultRow extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small heading between two kinds of result on one panel.
+class SearchSectionTitle extends StatelessWidget {
+  const SearchSectionTitle(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 10, 16, 4),
+      child: Text(
+        text,
+        style: theme.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );

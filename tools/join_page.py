@@ -57,7 +57,9 @@ body {
   background: var(--blue-wash); border-radius: 999px; padding: 4px 12px; margin: 0 0 12px; }
 .eyebrow:empty { display: none; }
 h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.25; color: var(--ink); font-weight: 700; }
-.lead { margin: 0 0 20px; font-size: 16px; color: var(--muted); }
+.lead { margin: 0 0 12px; font-size: 16px; color: var(--muted); }
+.lead + .lead { margin-bottom: 20px; }
+.lead strong { color: var(--ink); }
 .button {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; min-height: 50px; padding: 12px 18px; border-radius: 14px;
@@ -105,7 +107,7 @@ _TEMPLATE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#F7F0E4">
 <title>הוזמנת לשדכן</title>
-<meta name="description" content="הזמנה למלא כרטיס אישי באפליקציית שדכן.">
+<meta name="description" content="שדכן — יומן אישי לניהול שידוכים בין חברים, עם אזור אישי לניהול כרטיס השידוכים שלך.">
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="preload" href="fonts/GoogleSans-Bold.woff" as="font" type="font/woff" crossorigin>
@@ -119,17 +121,17 @@ _TEMPLATE = """<!doctype html>
   <main class="card">
     <p class="eyebrow" id="from"></p>
     <h1>הוזמנת לשדכן</h1>
-    <p class="lead">כרטיס אישי אחד, שמנהלים ומעדכנים בעצמך — ונותנים גישה רק לחברים שבוחרים.</p>
+    <p class="lead"><strong>״שדכן״ היא יומן אישי לניהול שידוכים בין חברים.</strong> מי שמשדך יכול לנהל בה חברים, רעיונות והצעות – ולך יש בה אזור אישי משלך לניהול כרטיס השידוכים שלך.</p>
+    <p class="lead">באזור האישי אפשר לעדכן פרטים ותמונות ולבחור למי מהחברים שמשדכים לתת גישה.</p>
     <a class="button primary" id="open" href="#">פתיחה באפליקציה</a>
-    <a class="button secondary" id="play" href="__PLAY__">הורדה מ־Google Play</a>
-    <span id="ios"></span>
+    <a class="button secondary" id="download" href="__LANDING__">הורדת האפליקציה</a>
     <ul class="points">
-      <li><span class="dot">__HEART__</span><div><strong>הכרטיס שלך, בידיים שלך</strong><span>הפרטים והתמונות שלך, ומעדכנים מתי שרוצים.</span></div></li>
-      <li><span class="dot">__LOCK__</span><div><strong>גישה רק למי שבוחרים</strong><span>אף אחד לא רואה את הכרטיס בלי אישור שלך.</span></div></li>
-      <li><span class="dot">__SYNC__</span><div><strong>מתעדכן אצל החברים מעצמו</strong><span>שינוי אחד, וכל מי שקיבל גישה רואה אותו.</span></div></li>
+      <li><span class="dot">__HEART__</span><div><strong>הכרטיס שלך, בידיים שלך</strong><span>הפרטים והתמונות שלך מתעדכנים מתי שתרצה.</span></div></li>
+      <li><span class="dot">__LOCK__</span><div><strong>אתה בוחר מי רואה</strong><span>אף אחד לא מקבל גישה לכרטיס בלי אישור שלך.</span></div></li>
+      <li><span class="dot">__SYNC__</span><div><strong>עדכון אחד – והכרטיס נשאר מעודכן</strong><span>מי שכבר קיבל גישה רואה את העדכונים שלך.</span></div></li>
     </ul>
   </main>
-  <p class="note" id="note">באייפון: אחרי ההתקנה חוזרים לקישור הזה ולוחצים שוב על ״פתיחה באפליקציה״. ההזמנה עצמה לא נותנת גישה לאף אחד.</p>
+  <p class="note" id="note">עצם ההזמנה לא נותנת לאף אחד גישה לכרטיס שלך. אתה מחליט למי לתת גישה.</p>
   <footer><a href="privacy.html">מדיניות פרטיות</a></footer>
 <script>
 (function () {
@@ -142,23 +144,18 @@ _TEMPLATE = """<!doctype html>
     document.getElementById('from').textContent = 'הזמנה מ' + name;
   }
   document.getElementById('open').href = 'shadchan-invite://join?' + pair;
-  var play = document.getElementById('play');
-  play.href = '__PLAY__&referrer=' + encodeURIComponent(pair);
-  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  if (ios) {
-    // Google Play is no use on an iPhone.
-    play.style.display = 'none';
-  } else {
-    document.getElementById('note').textContent =
-      'ההזמנה עצמה לא נותנת גישה לאף אחד — מחליטים לבד למי לתת.';
+  // One download button. The shared landing link sends every phone to its own
+  // store; on Android the button goes to Google Play directly instead, because
+  // only that link carries the invitation into the app after the install.
+  if (/Android/i.test(navigator.userAgent)) {
+    document.getElementById('download').href =
+      '__PLAY__&referrer=' + encodeURIComponent(pair);
   }
-  var appStore = '__APPSTORE__';
-  if (appStore) {
-    var a = document.createElement('a');
-    a.className = 'button secondary';
-    a.href = appStore;
-    a.textContent = 'הורדה מ־App Store';
-    document.getElementById('ios').appendChild(a);
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+    // An iPhone cannot hand the invitation to a freshly installed app.
+    document.getElementById('note').textContent =
+      'באייפון: אחרי ההתקנה חוזרים לקישור הזה ולוחצים שוב על ״פתיחה באפליקציה״. '
+      + 'עצם ההזמנה לא נותנת לאף אחד גישה לכרטיס שלך. אתה מחליט למי לתת גישה.';
   }
 })();
 </script>
@@ -167,11 +164,11 @@ _TEMPLATE = """<!doctype html>
 """
 
 
-def join_page(*, play_url: str, app_store_url: str) -> str:
+def join_page(*, play_url: str, landing_url: str) -> str:
     return (
         _TEMPLATE.replace("__CSS__", JOIN_CSS)
         .replace("__PLAY__", play_url)
-        .replace("__APPSTORE__", app_store_url)
+        .replace("__LANDING__", landing_url)
         .replace("__HEART__", _HEART)
         .replace("__LOCK__", _LOCK)
         .replace("__SYNC__", _SYNC)

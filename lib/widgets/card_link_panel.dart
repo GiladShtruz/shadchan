@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
@@ -8,6 +9,7 @@ import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/card_history_screen.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/card_updates_seen.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -18,10 +20,18 @@ import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// Warns before a matchmaker edits a card that follows its owner. Opening the
-/// editor changes nothing; only a save that changes the card detaches it.
+/// Explains, once per friend, what editing a card that follows its owner
+/// means: the edit stays with the matchmaker, the friend never sees it, and
+/// the friend's own later changes still arrive.
 Future<bool> confirmEditSyncedCard(BuildContext context, Person person) async {
   if (!person.isCardSynced) {
+    return true;
+  }
+  final String seenKey = 'cardEditExplained.${person.id}';
+  final Box<dynamic>? settings = Hive.isBoxOpen('settings')
+      ? Hive.box<dynamic>('settings')
+      : null;
+  if (settings?.get(seenKey) == 'true') {
     return true;
   }
   final String name = person.firstName.trim();
@@ -31,10 +41,10 @@ Future<bool> confirmEditSyncedCard(BuildContext context, Person person) async {
     builder: (BuildContext dialogContext) => AlertDialog(
       title: const Text('כרטיס שמתעדכן אוטומטית'),
       content: Text(
-        'הכרטיס הזה כרגע מתעדכן אוטומטית מ־$name. '
-        '${'אם {תערוך|תערכי}'.forGender(dialogContext.userGender)} '
-        '${female ? 'אותה' : 'אותו'} בעצמך, שינויים עתידיים ש$name '
-        '${female ? 'תעשה' : 'יעשה'} בכרטיס לא יתעדכנו אצלך.',
+        '${'מה {שתשנה|שתשני}'.forGender(dialogContext.userGender)} כאן יישאר '
+        'אצלך בלבד — $name לא ${female ? 'תראה' : 'יראה'} את זה. '
+        'שינויים ש$name ${female ? 'תעשה' : 'יעשה'} בכרטיס '
+        '${female ? 'שלה' : 'שלו'} ימשיכו להגיע אליך.',
       ),
       actions: <Widget>[
         TextButton(
@@ -43,11 +53,14 @@ Future<bool> confirmEditSyncedCard(BuildContext context, Person person) async {
         ),
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('להמשיך לערוך'),
+          child: const Text('הבנתי'),
         ),
       ],
     ),
   );
+  if (go == true) {
+    persistHomeSetting(seenKey, 'true');
+  }
   return go ?? false;
 }
 
@@ -246,7 +259,11 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
       return const SizedBox.shrink();
     } else {
       final Object? ownerUid = _entry?['uid'];
-      final bool hasCard = _entry?['hasCard'] == true && ownerUid is String;
+      // A card hidden from this matchmaker, or taking no requests, is drawn
+      // as no card at all — see [CardInviteFlow.cardVisible].
+      final bool hasCard =
+          ownerUid is String &&
+          CardInviteFlow.cardVisible(_entry, access.accessTo(ownerUid));
       if (!hasCard) {
         // A friend with no card of their own is invited from the card section
         // under this panel, when the matchmaker has no card for them either.

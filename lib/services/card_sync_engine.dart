@@ -150,17 +150,64 @@ abstract final class CardSyncEngine {
     });
   }
 
+  /// What the owner sent, reduced to what the next version is compared with:
+  /// the card's fields and the names of its photos. The provider keeps it per
+  /// friend and hands it back as `previousRemote`.
+  static Map<String, Object?> baselineOf(Map<String, dynamic> data) {
+    return <String, Object?>{
+      for (final String key in PersonalCardCodec.cardFields) key: data[key],
+      'photoPaths': <String>[
+        for (final Object? path in (data['photoPaths'] as List?) ?? const [])
+          if (path is String) path,
+      ],
+    };
+  }
+
+  static bool _same(Object? a, Object? b) => jsonEncode(a) == jsonEncode(b);
+
+  /// The card as the matchmaker has it, with only the fields the owner
+  /// actually changed since [previous] taken from [data].
+  static Map<String, dynamic> _changedOver(
+    Person person,
+    Map<String, dynamic> data,
+    Map<String, Object?> previous,
+  ) {
+    final Map<String, dynamic> merged = Map<String, dynamic>.from(
+      PersonalCardCodec.cardValues(person),
+    );
+    for (final String key in PersonalCardCodec.cardFields) {
+      if (!_same(data[key], previous[key])) {
+        merged[key] = data[key];
+      }
+    }
+    return merged;
+  }
+
   /// Applies the card [data] (a `personalCards` document) to [person].
   ///
-  /// The first time, the record is linked to [ownerUid] and — if the
-  /// matchmaker had written anything of their own — a snapshot of it is kept
-  /// to put back later. A record whose sync was detached takes the owner's
-  /// status and nothing else.
+  /// **One way only: from the owner to the matchmaker.** The first time, the
+  /// record is linked to [ownerUid] and takes the whole card — and if the
+  /// matchmaker had written anything of their own, a snapshot of it is kept
+  /// to put back later. After that, with [previousRemote] (what the owner
+  /// sent last), only the fields the owner has changed since are written: a
+  /// detail the matchmaker edited on their own phone stays as they left it
+  /// until the owner changes that same detail. Nothing the matchmaker does
+  /// ever travels the other way.
+  ///
+  /// [localPhotoPaths] are the owner's photos on this device; null leaves the
+  /// photos as they are (the owner's did not change). Once linked, the
+  /// matchmaker's own photos — anything not downloaded from the card — are
+  /// kept beside the owner's.
+  ///
+  /// A record detached by an earlier version of the app, with nothing to
+  /// compare against, takes the owner's status only this once; from the next
+  /// version on it follows the card like every other.
   static CardSyncResult apply(
     Person person,
     Map<String, dynamic> data, {
     required String ownerUid,
-    required List<String> localPhotoPaths,
+    required List<String>? localPhotoPaths,
+    Map<String, Object?>? previousRemote,
   }) {
     bool changed = false;
     final bool firstLink = person.cardOwnerUid != ownerUid;
@@ -180,10 +227,33 @@ abstract final class CardSyncEngine {
     final String before = _cardPrint(person);
     final Map<String, Object?> jsonBefore = BackupService.personToJson(person);
     final List<String> photosBefore = List<String>.from(person.photosPaths);
+    final Map<String, Object?>? previous = firstLink ? null : previousRemote;
+    final bool legacyDetached = person.cardSyncDetached && previous == null;
 
-    if (!person.cardSyncDetached) {
-      PersonalCardCodec.applyTo(person, data);
-      person.photosPaths = List<String>.from(localPhotoPaths);
+    if (!legacyDetached) {
+      final int? ageBefore = person.manualAge;
+      final DateTime? ageStampBefore = person.manualAgeUpdatedAt;
+      PersonalCardCodec.applyTo(
+        person,
+        previous == null ? data : _changedOver(person, data, previous),
+      );
+      if (previous != null &&
+          _same(data['dateOfBirth'], previous['dateOfBirth'])) {
+        // The owner did not touch the birth date: an age the matchmaker
+        // keeps stays.
+        person
+          ..manualAge = ageBefore
+          ..manualAgeUpdatedAt = ageStampBefore;
+      }
+      final List<String>? ownerPhotos = localPhotoPaths;
+      if (ownerPhotos != null) {
+        person.photosPaths = previous == null
+            ? List<String>.from(ownerPhotos)
+            : <String>[
+                ...ownerPhotos,
+                ...photosBefore.where((String p) => !isCardPhoto(p)),
+              ];
+      }
       final bool photosChanged = !_samePhotos(photosBefore, person.photosPaths);
       final bool detailsChanged = before != _cardPrint(person);
       if (photosChanged || detailsChanged) {
@@ -219,6 +289,12 @@ abstract final class CardSyncEngine {
           }
         }
       }
+    }
+    // Nothing detaches a record any more: whatever the matchmaker edits, the
+    // owner's own changes keep arriving.
+    if (person.cardSyncDetached) {
+      person.cardSyncDetached = false;
+      changed = true;
     }
 
     bool statusChanged = false;
@@ -427,9 +503,25 @@ abstract final class CardSyncEngine {
   ///
   /// Returns the downloaded card photos to delete from the device: nothing
   /// received from the owner may linger once access is gone.
-  static List<String> unlink(Person person) {
+  ///
+  /// With [lastRemote] — what the owner last sent — a field the matchmaker
+  /// changed on their own while the card was followed is recognised as
+  /// theirs and kept, as are photos they added themselves.
+  static List<String> unlink(
+    Person person, {
+    Map<String, Object?>? lastRemote,
+  }) {
     final List<String> toDelete = <String>[];
     if (!person.cardSyncDetached) {
+      final Map<String, Object?> current = PersonalCardCodec.cardValues(person);
+      final Map<String, Object?> own = <String, Object?>{
+        if (lastRemote != null)
+          for (final String key in PersonalCardCodec.cardFields)
+            if (!_same(current[key], lastRemote[key])) key: current[key],
+      };
+      final List<String> ownPhotos = lastRemote == null
+          ? const <String>[]
+          : person.photosPaths.where((String p) => !isCardPhoto(p)).toList();
       toDelete.addAll(person.photosPaths.where(isCardPhoto));
       final String? snapshot = person.preSyncSnapshot;
       Person? previous;
@@ -457,6 +549,24 @@ abstract final class CardSyncEngine {
           ..birthDate = null
           ..setManualAge(null);
         _clearCardFields(person);
+      }
+      if (own.isNotEmpty) {
+        final int? age = person.manualAge;
+        final DateTime? ageStamp = person.manualAgeUpdatedAt;
+        PersonalCardCodec.applyTo(person, <String, dynamic>{
+          ...PersonalCardCodec.cardValues(person),
+          ...own,
+        });
+        if (!own.containsKey('dateOfBirth')) {
+          person
+            ..manualAge = age
+            ..manualAgeUpdatedAt = ageStamp;
+        }
+      }
+      for (final String path in ownPhotos) {
+        if (!person.photosPaths.contains(path)) {
+          person.photosPaths = <String>[...person.photosPaths, path];
+        }
       }
     }
     person

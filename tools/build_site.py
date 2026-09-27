@@ -403,7 +403,9 @@ INDEX_HE = f"""
 # the Play Store carries the invitation through the install as its referrer.
 # iOS has no such channel, so the page says to open the link again afterwards.
 PLAY_URL = "https://play.google.com/store/apps/details?id=com.gilad.shadchan"
-APP_STORE_URL = ""  # fill in once the App Store listing exists
+# The shared download link: it sends every phone to its own store. Keep in
+# step with `CommunityLinks.landingUrl`.
+LANDING_URL = "https://shadchan-app-eosin.vercel.app"
 
 def write(name: str, contents: str) -> None:
     path = OUT / name
@@ -457,7 +459,7 @@ def main() -> None:
         ),
     )
 
-    write("join.html", join_page(play_url=PLAY_URL, app_store_url=APP_STORE_URL))
+    write("join.html", join_page(play_url=PLAY_URL, landing_url=LANDING_URL))
 
     print("done. deploy with:")
     print("  firebase deploy --only hosting --project shadchan-gilad")

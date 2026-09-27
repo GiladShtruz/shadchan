@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
@@ -78,7 +79,7 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => context.push('/support/privacy'),
                 ),
                 SettingsRow(
-                  icon: Icons.help_outline_rounded,
+                  icon: AppIcons.help,
                   title: 'עזרה ושאלות נפוצות',
                   onTap: () => context.push('/support/help'),
                 ),

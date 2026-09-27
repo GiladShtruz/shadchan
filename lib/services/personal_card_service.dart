@@ -48,9 +48,25 @@ abstract final class PersonalCardCodec {
     required String ownerUid,
     required List<String> photoPaths,
   }) {
-    final DateTime? born = card.birthDate;
     return <String, Object?>{
       'ownerUid': ownerUid,
+      ...cardValues(card),
+      'photoPaths': photoPaths,
+      // Kept apart from the card's fields because it behaves differently: a
+      // matchmaker's own status for the friend stands until the owner's
+      // status actually changes.
+      'status': card.profileStatus.name,
+      'deleted': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  /// Just the card's own fields ([cardFields]) of [card], encoded exactly as
+  /// the document carries them — so a matchmaker's copy can be compared with
+  /// what the owner sent, field by field.
+  static Map<String, Object?> cardValues(Person card) {
+    final DateTime? born = card.birthDate;
+    return <String, Object?>{
       'firstName': card.firstName.trim(),
       'lastName': card.lastName.trim(),
       'gender': card.gender.name,
@@ -83,15 +99,9 @@ abstract final class PersonalCardCodec {
         for (final ReligiousLevel level in card.preferredReligiousLevels)
           level.name,
       ],
-      'preferredReligiousLevelOtherLabels':
-          card.preferredReligiousLevelOtherLabels,
-      'photoPaths': photoPaths,
-      // Kept apart from the card's fields because it behaves differently: a
-      // matchmaker who stops syncing the card keeps receiving the owner's own
-      // status changes.
-      'status': card.profileStatus.name,
-      'deleted': false,
-      'updatedAt': FieldValue.serverTimestamp(),
+      'preferredReligiousLevelOtherLabels': List<String>.from(
+        card.preferredReligiousLevelOtherLabels,
+      ),
     };
   }
 
@@ -324,6 +334,7 @@ abstract final class PersonalCardService {
     required String name,
     required bool matchmaker,
     required bool hasCard,
+    bool acceptsRequests = true,
     String? previousHash,
   }) async {
     final String? uid = await durableUid();
@@ -342,6 +353,9 @@ abstract final class PersonalCardService {
           'name': name,
           'matchmaker': matchmaker,
           'hasCard': hasCard,
+          // Off: no matchmaker may ask, and the card shows to none of them —
+          // see `CardInviteFlow.cardVisible`. The rules enforce the asking.
+          'acceptsRequests': acceptsRequests,
           'updatedAt': FieldValue.serverTimestamp(),
         },
       );

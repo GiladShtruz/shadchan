@@ -167,13 +167,23 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                                   clipBehavior: Clip.none,
                                   // Panning and zooming inside the frame is
                                   // the crop: what stays inside is kept.
+                                  // Whole turns are a `RotatedBox`, not part of
+                                  // the rotation angle: it lays the photo out
+                                  // in its own proportion and then turns it,
+                                  // so a turned photo is still the whole
+                                  // photo. Rotating a `cover` image inside the
+                                  // already-turned frame used to cut off most
+                                  // of it without anybody asking for a crop.
                                   child: Transform.rotate(
-                                    angle: _totalAngle,
-                                    child: ColorFiltered(
-                                      colorFilter: _brightnessFilter,
-                                      child: RawImage(
-                                        image: image,
-                                        fit: BoxFit.cover,
+                                    angle: _straightenAngle,
+                                    child: RotatedBox(
+                                      quarterTurns: _quarterTurns,
+                                      child: ColorFiltered(
+                                        colorFilter: _brightnessFilter,
+                                        child: RawImage(
+                                          image: image,
+                                          fit: BoxFit.cover,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -229,8 +239,9 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     return _quarterTurns.isOdd ? 1 / ratio : ratio;
   }
 
-  double get _totalAngle =>
-      _quarterTurns * math.pi / 2 + _straighten * math.pi / 180;
+  double get _straightenAngle => _straighten * math.pi / 180;
+
+  double get _totalAngle => _quarterTurns * math.pi / 2 + _straightenAngle;
 
   /// A plain luminance offset. Multiplying instead would blow out anything
   /// already bright, which is the opposite of what a dark phone photo needs.
@@ -262,9 +273,12 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       final Size frameSize = frame.size;
       // Output at the photo's own resolution rather than the phone's, so an
       // edit is not also a downscale.
-      final double outputScale = (image.width / frameSize.width)
-          .clamp(1.0, 4.0)
-          .toDouble();
+      // (On an odd turn the photo's width runs along the frame's height.)
+      final double outputScale =
+          (image.width /
+                  (_quarterTurns.isOdd ? frameSize.height : frameSize.width))
+              .clamp(1.0, 4.0)
+              .toDouble();
       // Only the part inside the crop frame is written.
       final Rect kept = Rect.fromLTRB(
         _crop.left * frameSize.width,
@@ -289,10 +303,16 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
       canvas.translate(-kept.left, -kept.top);
       // The pan/zoom the user set inside the frame.
       canvas.transform(_viewer.value.storage);
-      // Then the rotation, about the frame's centre, matching Transform.rotate.
+      // Then the rotation about the frame's centre, matching the preview's
+      // Transform.rotate around a RotatedBox: the photo is laid out in a box
+      // of its own proportion (the frame's, swapped on an odd turn), centred,
+      // and turned by the whole turns plus the straightening together.
+      final Size photoBox = _quarterTurns.isOdd
+          ? Size(frameSize.height, frameSize.width)
+          : frameSize;
       canvas.translate(frameSize.width / 2, frameSize.height / 2);
       canvas.rotate(_totalAngle);
-      canvas.translate(-frameSize.width / 2, -frameSize.height / 2);
+      canvas.translate(-photoBox.width / 2, -photoBox.height / 2);
 
       final Paint paint = Paint()
         ..filterQuality = FilterQuality.high
@@ -302,7 +322,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
         Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
         _coverRect(
           Size(image.width.toDouble(), image.height.toDouble()),
-          frameSize,
+          photoBox,
         ),
         paint,
       );
@@ -392,7 +412,8 @@ class _Tools extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             const Text(
-              'גררו את הפינות והצדדים של המסגרת כדי לחתוך, והזיזו או הגדילו את התמונה מתחתיה',
+              'החיתוך לא חובה — התמונה נשמרת בגודל המקורי שלה. '
+              'כדי לחתוך, גררו את הפינות והצדדים של המסגרת',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white70, fontSize: 12),
             ),

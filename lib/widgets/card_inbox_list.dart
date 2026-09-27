@@ -122,10 +122,11 @@ class CardInboxList extends StatelessWidget {
                         ),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: <Widget>[
                             Text(
                               item.title,
+                              textAlign: TextAlign.center,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 fontWeight: item.read
                                     ? FontWeight.w500
@@ -133,10 +134,14 @@ class CardInboxList extends StatelessWidget {
                               ),
                             ),
                             if (item.body.isNotEmpty)
-                              Text(item.body, style: theme.textTheme.bodySmall),
+                              Text(
+                                item.body,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall,
+                              ),
                             if (item.offersWhatsApp)
                               Align(
-                                alignment: AlignmentDirectional.centerStart,
+                                alignment: Alignment.center,
                                 child: TextButton.icon(
                                   onPressed: () => _whatsApp(context, item),
                                   icon: const Icon(

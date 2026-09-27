@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -124,17 +125,31 @@ class _MatchmakerProfileScreenState extends State<MatchmakerProfileScreen> {
                 ),
               ),
             ],
+            // A quiet link like the page's other actions — the WhatsApp mark
+            // and two words — not a glowing green banner across the page.
             if (canWhatsApp) ...<Widget>[
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: () => _openWhatsApp(phone),
-                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 20),
-                label: const Text('פנייה בוואטסאפ'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: kWhatsAppGreen,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(48),
-                  shape: const StadiumBorder(),
+              const SizedBox(height: 10),
+              Center(
+                child: TextButton.icon(
+                  onPressed: () => _openWhatsApp(phone),
+                  icon: const FaIcon(
+                    FontAwesomeIcons.whatsapp,
+                    size: 18,
+                    color: kWhatsAppGreen,
+                  ),
+                  label: Text(
+                    'פנייה ב־WhatsApp',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: ProfilePalette.text(theme),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                  ),
                 ),
               ),
             ],

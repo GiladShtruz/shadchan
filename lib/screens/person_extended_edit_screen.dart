@@ -1737,12 +1737,17 @@ class _PhotoGallery extends StatelessWidget {
         child: const Icon(Icons.broken_image_outlined),
       );
     }
-    return Image.file(
-      file,
-      width: width,
-      height: height,
-      fit: BoxFit.cover,
-      cacheWidth: (width * 3).round(),
+    // Whole, in its own proportion — a thumbnail that cuts the photo reads as
+    // a photo that was cut.
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Image.file(
+        file,
+        width: width,
+        height: height,
+        fit: BoxFit.contain,
+        cacheWidth: (width * 3).round(),
+      ),
     );
   }
 }
@@ -1904,8 +1909,15 @@ class _PrimaryPhoto extends StatelessWidget {
           Positioned.fill(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
+              // The whole photo, in its own proportion — never cut to fit the
+              // frame. Showing it `cover` here made every new photo look
+              // cropped to 3:4 on the way in, which read as a crop the app
+              // insisted on. Cropping is the optional "חיתוך" below.
               child: hasPhoto
-                  ? Image.file(File(path), fit: BoxFit.cover)
+                  ? ColoredBox(
+                      color: ProfilePalette.warmSurface(theme),
+                      child: Image.file(File(path), fit: BoxFit.contain),
+                    )
                   : Container(
                       color: ProfilePalette.warmSurface(theme),
                       alignment: Alignment.center,
@@ -1928,6 +1940,33 @@ class _PrimaryPhoto extends StatelessWidget {
                     ),
             ),
           ),
+          if (hasPhoto)
+            PositionedDirectional(
+              top: 6,
+              start: 6,
+              child: Material(
+                color: Colors.black54,
+                shape: const StadiumBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onTap,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(Icons.crop_rounded, size: 15, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'חיתוך (לא חובה)',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (hasPhoto)
             PositionedDirectional(
               bottom: 6,

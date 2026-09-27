@@ -1045,7 +1045,7 @@ void main() {
     expect(find.text('הלל אבולעפיה'), findsOneWidget);
     expect(find.text('כרמל לוי'), findsOneWidget);
     // The status is on the card itself, as the stage a matchmaker reads.
-    expect(find.text('רעיון חדש'), findsOneWidget);
+    expect(find.text('סטטוס: רעיון חדש', findRichText: true), findsOneWidget);
     // A candidate's city is not part of the proposal card.
     expect(find.textContaining('ירושלים'), findsNothing);
 
@@ -1200,10 +1200,10 @@ void main() {
     // while a long name gives way — see match_idea_card_test.dart.
     expect(find.text('פתוח אחד'), findsOneWidget);
     expect(find.text('ממתין אחד'), findsOneWidget);
-    // Every live card says where its proposal stands — quietly, in a chip
-    // rather than the banner this used to be. Two hits: the category button
-    // and the card, exactly like "בהמתנה" above.
-    expect(find.text('יוצאים'), findsNWidgets(2));
+    // Every live card says where its proposal stands, as one line at its
+    // foot — "סטטוס: יוצאים" — beside the category button's own word.
+    expect(find.text('יוצאים'), findsOneWidget);
+    expect(find.text('סטטוס: יוצאים', findRichText: true), findsOneWidget);
     expect(find.text('ארכיון אחד'), findsNothing);
 
     // Tapping a proposal compares the two candidates rather than opening a
@@ -1585,7 +1585,7 @@ void main() {
     expect(find.text('פתיחת שיחה עם נהרה'), findsNothing);
 
     // The status is one small control, on the card itself.
-    expect(find.text('רעיון חדש'), findsOneWidget);
+    expect(find.text('סטטוס: רעיון חדש', findRichText: true), findsOneWidget);
   });
 
   testWidgets('The journal is a chat that writes itself, and stays editable', (
@@ -2158,13 +2158,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(SearchResultsPanel), findsOneWidget);
-    final Finder row = find.descendant(
+    final Finder rows = find.descendant(
       of: find.byType(SearchResultsPanel),
       matching: find.byType(SearchResultRow),
     );
-    expect(row, findsOneWidget);
+    // The person whose name matched, then the idea itself.
+    expect(rows, findsNWidgets(2));
+    expect(find.text('אנשים'), findsOneWidget);
+    expect(find.text('רעיונות'), findsOneWidget);
 
-    await tester.tap(row);
+    await tester.tap(rows.last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
@@ -2250,6 +2253,93 @@ void main() {
     );
     expect(find.textContaining('נועה'), findsNothing);
     expect(find.textContaining('תמר'), findsWidgets);
+  });
+
+  testWidgets('Picking a name in the ideas search shows all of their ideas', (
+    WidgetTester tester,
+  ) async {
+    final DateTime now = DateTime(2024, 5, 1);
+    await tester.runAsync(() async {
+      final Box<Person> people = Hive.box<Person>('people');
+      for (final Person person in <Person>[
+        _testPerson(
+          id: 'm1',
+          firstName: 'שמואל',
+          lastName: 'רוט',
+          gender: Gender.male,
+          age: 27,
+          now: now,
+        ),
+        _testPerson(
+          id: 'm2',
+          firstName: 'יונתן',
+          lastName: 'לוי',
+          gender: Gender.male,
+          age: 28,
+          now: now,
+        ),
+        _testPerson(
+          id: 'f1',
+          firstName: 'תמר',
+          lastName: 'אלמוג',
+          gender: Gender.female,
+          age: 25,
+          now: now,
+        ),
+        _testPerson(
+          id: 'f2',
+          firstName: 'תמרה',
+          lastName: 'ברק',
+          gender: Gender.female,
+          age: 26,
+          now: now,
+        ),
+      ]) {
+        await people.put(person.id, person);
+      }
+      final Box<MatchIdea> matches = Hive.box<MatchIdea>('matches');
+      await matches.put(
+        'match1',
+        _testMatch(id: 'match1', personAId: 'm1', personBId: 'f1', now: now),
+      );
+      await matches.put(
+        'match2',
+        _testMatch(id: 'match2', personAId: 'm2', personBId: 'f1', now: now),
+      );
+      await matches.put(
+        'match3',
+        _testMatch(id: 'match3', personAId: 'm1', personBId: 'f2', now: now),
+      );
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.enterText(find.byType(TextField).first, 'תמר');
+    await tester.pump();
+    // Two people match the letters, and three ideas carry one of them.
+    Finder inPanel(String text) => find.descendant(
+      of: find.byType(SearchResultsPanel),
+      matching: find.text(text),
+    );
+    expect(inPanel('תמר אלמוג'), findsOneWidget);
+    expect(inPanel('תמרה ברק'), findsOneWidget);
+
+    await tester.tap(inPanel('תמר אלמוג'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Her name in the field, the panel gone, and exactly her two ideas.
+    expect(find.byType(SearchResultsPanel), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      'תמר אלמוג',
+    );
+    expect(find.textContaining('יונתן'), findsWidgets);
+    expect(find.textContaining('תמרה'), findsNothing);
   });
 }
 

@@ -103,10 +103,14 @@ abstract final class CardInviteFlow {
     }
     final Map<String, dynamic>? entry = await access.lookup(hash);
     final Object? ownerUid = entry?['uid'];
-    if (entry?['hasCard'] != true || ownerUid is! String) {
+    if (ownerUid is! String) {
       return CardInviteState.noCard;
     }
-    switch (access.accessTo(ownerUid)?.status) {
+    final CardAccess? row = access.accessTo(ownerUid);
+    if (!cardVisible(entry, row)) {
+      return CardInviteState.noCard;
+    }
+    switch (row?.status) {
       case CardAccessStatus.pending:
         return CardInviteState.pending;
       case CardAccessStatus.approved:
@@ -117,6 +121,30 @@ abstract final class CardInviteFlow {
       case CardAccessStatus.revoked:
       case null:
         return CardInviteState.requestable;
+    }
+  }
+
+  /// Whether the card behind a directory [entry] shows to this matchmaker at
+  /// all, given their own access [row].
+  ///
+  /// **Hidden looks exactly like none.** An owner who hid their card from this
+  /// matchmaker ("הסתרה"), or who takes no requests and has not given them
+  /// access, has — as far as this app ever shows — no card: the matchmaker
+  /// gets the ordinary WhatsApp invitation and nothing that hints otherwise.
+  static bool cardVisible(Map<String, dynamic>? entry, CardAccess? row) {
+    if (entry?['hasCard'] != true || entry?['uid'] is! String) {
+      return false;
+    }
+    switch (row?.status) {
+      case CardAccessStatus.blocked:
+        return false;
+      case CardAccessStatus.approved:
+      case CardAccessStatus.pending:
+        return true;
+      case CardAccessStatus.declined:
+      case CardAccessStatus.revoked:
+      case null:
+        return entry?['acceptsRequests'] != false;
     }
   }
 

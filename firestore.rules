@@ -706,7 +706,9 @@ service cloud.firestore {
       allow create: if durable()
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.keys().hasOnly(
-                         ['uid', 'name', 'matchmaker', 'hasCard', 'updatedAt'])
+                         ['uid', 'name', 'matchmaker', 'hasCard',
+                          'acceptsRequests', 'updatedAt'])
+                    && request.resource.data.get('acceptsRequests', true) is bool
                     && request.resource.data.matchmaker is bool
                     && request.resource.data.hasCard is bool
                     && request.resource.data.name is string
@@ -715,7 +717,9 @@ service cloud.firestore {
                     && resource.data.uid == request.auth.uid
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.keys().hasOnly(
-                         ['uid', 'name', 'matchmaker', 'hasCard', 'updatedAt'])
+                         ['uid', 'name', 'matchmaker', 'hasCard',
+                          'acceptsRequests', 'updatedAt'])
+                    && request.resource.data.get('acceptsRequests', true) is bool
                     && request.resource.data.name is string
                     && request.resource.data.name.size() <= 80;
       allow delete: if durable() && resource.data.uid == request.auth.uid;
@@ -753,6 +757,15 @@ service cloud.firestore {
     // The owner decides everything: approve, decline, block, revoke, or grant
     // access unasked. The matchmaker may only ask — and only when saved in
     // the owner's contacts and not blocked.
+    // Whether the owner takes access requests at all — the switch on their
+    // personal area, published on their directory entry. Missing means yes.
+    function takesRequests(ownerUid) {
+      let phonePath = /databases/$(database)/documents/userPhones/$(ownerUid);
+      return !exists(phonePath)
+          || get(/databases/$(database)/documents/phoneDirectory/$(get(phonePath).data.phoneHash))
+                 .data.get('acceptsRequests', true) != false;
+    }
+
     match /cardAccess/{accessId} {
       function fieldsOk() {
         return request.resource.data.keys().hasOnly([
@@ -786,7 +799,8 @@ service cloud.firestore {
                        && request.resource.data.ownerUid != request.auth.uid
                        && request.resource.data.status == 'pending'
                        && request.resource.data.requestedBy == 'matchmaker'
-                       && inOwnersContacts(request.resource.data.ownerUid))
+                       && inOwnersContacts(request.resource.data.ownerUid)
+                       && takesRequests(request.resource.data.ownerUid))
                     );
 
       allow update: if durable() && fieldsOk()
@@ -801,7 +815,8 @@ service cloud.firestore {
                        && resource.data.status in ['declined', 'revoked']
                        && request.resource.data.status == 'pending'
                        && request.resource.data.requestedBy == 'matchmaker'
-                       && inOwnersContacts(resource.data.ownerUid))
+                       && inOwnersContacts(resource.data.ownerUid)
+                       && takesRequests(resource.data.ownerUid))
                     );
 
       // The owner may remove any row. A matchmaker may withdraw a request or

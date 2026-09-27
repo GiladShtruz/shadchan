@@ -152,8 +152,8 @@ class MatchRepository extends ChangeNotifier {
       final Person? personA = personRepo.getById(match.personAId);
       final Person? personB = personRepo.getById(match.personBId);
 
-      return _matchesPersonQuery(personA, normalizedQuery) ||
-          _matchesPersonQuery(personB, normalizedQuery);
+      return personMatchesQuery(personA, normalizedQuery) ||
+          personMatchesQuery(personB, normalizedQuery);
     }).toList();
 
     matches.sort(_sortByUpdatedAtDesc);
@@ -1543,7 +1543,9 @@ class MatchRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _matchesPersonQuery(Person? person, String query) {
+  /// Whether [person]'s name contains [query] — already trimmed and
+  /// lower-cased. The one rule [search] and the ideas page's suggestions share.
+  static bool personMatchesQuery(Person? person, String query) {
     if (person == null) {
       return false;
     }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/privacy_policy_dialog.dart';
@@ -183,7 +184,7 @@ class AppMenuButton extends StatelessWidget {
           Icons.groups_outlined,
           'הצטרפות לקבוצת הקהילה',
         ),
-      _item(AppMenuAction.help, Icons.help_outline_rounded, 'עזרה והדרכה'),
+      _item(AppMenuAction.help, AppIcons.help, 'עזרה והדרכה'),
       _item(AppMenuAction.contact, Icons.mail_outline_rounded, 'יצירת קשר'),
       _item(
         AppMenuAction.privacyPolicy,

@@ -8,8 +8,9 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 
-/// A synced card becomes the matchmaker's own only when they edit the card and
-/// save — never on a save that leaves the card alone.
+/// A matchmaker's edits of a synced card stay theirs and never detach it —
+/// the owner's own changes keep arriving (see `card_sync_engine_test.dart`).
+/// Nothing the matchmaker does is put to the owner.
 void main() {
   late Directory directory;
   late Box<Person> people;
@@ -69,12 +70,13 @@ void main() {
     expect(person.isCardSynced, isTrue);
   });
 
-  test('editing the card and saving detaches it', () async {
+  test('editing the card and saving keeps it following its owner', () async {
     final Person person = await seedSynced();
     person.description = 'כתבתי בעצמי';
     await repository.update(person);
-    expect(person.cardSyncDetached, isTrue);
-    expect(person.cardOwnerUid, 'owner');
+    expect(person.cardSyncDetached, isFalse);
+    expect(person.isCardSynced, isTrue);
+    expect(person.description, 'כתבתי בעצמי');
   });
 
   test('a friend is found by any form of their number', () async {
@@ -86,13 +88,10 @@ void main() {
     expect(repository.findByCardOwner('owner')?.id, 'p1');
   });
 
-  test('a status the matchmaker sets is put to the owner', () async {
+  test('a status the matchmaker sets stays on their own copy', () async {
     final Person person = await seedSynced();
-    ProfileStatus? reported;
-    repository.onStatusChangedForCardOwner = (Person p, ProfileStatus s) async {
-      reported = s;
-    };
     await repository.updateProfileStatus(person.id, ProfileStatus.busy);
-    expect(reported, ProfileStatus.busy);
+    expect(repository.getById(person.id)?.profileStatus, ProfileStatus.busy);
+    expect(person.isCardSynced, isTrue);
   });
 }

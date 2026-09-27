@@ -192,6 +192,41 @@ test('after "not now" the matchmaker may ask again; after a block, never', async
   await assertSucceeds(deleteDoc(doc(as(OWNER), 'cardAccess', accessId)));
 });
 
+test('an owner who takes no requests cannot be asked — but can still grant', async () => {
+  await seedCardAndContacts({ inContacts: true });
+  // The owner publishes their own entry with requests switched off.
+  await seed((db) => setDoc(doc(db, 'userPhones', OWNER), { phoneHash: OWNER_HASH }));
+  await assertSucceeds(
+    setDoc(doc(as(OWNER), 'phoneDirectory', OWNER_HASH), {
+      uid: OWNER,
+      name: 'דניאל לוי',
+      matchmaker: false,
+      hasCard: true,
+      acceptsRequests: false,
+      updatedAt: serverTimestamp(),
+    }),
+  );
+  await assertFails(setDoc(doc(as(MM), 'cardAccess', accessId), access('pending')));
+  await assertSucceeds(
+    setDoc(
+      doc(as(OWNER), 'cardAccess', accessId),
+      access('approved', { requestedBy: 'owner' }),
+    ),
+  );
+
+  // Switched back on, asking works again.
+  await assertSucceeds(
+    updateDoc(doc(as(OWNER), 'phoneDirectory', OWNER_HASH), {
+      acceptsRequests: true,
+      updatedAt: serverTimestamp(),
+    }),
+  );
+  await seed((db) =>
+    setDoc(doc(db, 'cardAccess', accessId), { ...access('declined'), updatedAt: new Date() }),
+  );
+  await assertSucceeds(setDoc(doc(as(MM), 'cardAccess', accessId), access('pending')));
+});
+
 test('a phone hash cannot be borrowed from somebody else’s entry', async () => {
   await seedCardAndContacts({ inContacts: true });
   // A stranger points their own phone record at the matchmaker's hash.

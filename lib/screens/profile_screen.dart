@@ -292,7 +292,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         textTheme: HomeTypography.scale(theme.textTheme, dark: dark),
       ),
       child: Scaffold(
-        appBar: AppBar(title: const Text('הפרופיל שלי')),
+        // Somebody who is both a single with a personal area and a matchmaker
+        // has two "profiles" in one account; the bar says which one this is.
+        // The title starts on the same line the cards below start on.
+        appBar: AppBar(
+          titleSpacing: 20,
+          title: Text(
+            profile.isSingle && matchmaker
+                ? 'הפרופיל שלי – שדכן'
+                : 'הפרופיל שלי',
+          ),
+        ),
         body: SafeArea(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -1159,7 +1169,7 @@ class _MyCardEntry extends StatelessWidget {
                   deleted
                       ? 'שחזור הכרטיס שלי'
                       : hasCard
-                      ? 'הכרטיס שלי'
+                      ? 'האזור האישי'
                       : 'יצירת הכרטיס שלי',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
@@ -1170,7 +1180,7 @@ class _MyCardEntry extends StatelessWidget {
                   deleted
                       ? 'הכרטיס שמור, ואפשר להחזיר אותו'
                       : hasCard
-                      ? 'ניהול הכרטיס, הסטטוס ומי רואה אותו'
+                      ? 'ניהול כרטיס השידוכים האישי, הסטטוס ומי רואה אותו'
                       : 'כרטיס אחד שרק {אתה מעדכן|את מעדכנת}, לחברים שמשדכים'
                             .forGender(gender),
                   style: theme.textTheme.bodySmall,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/person_tags.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
 
 /// The result of the people-filters bottom sheet. Returned when the user taps
@@ -36,7 +37,7 @@ class PeopleFilterState {
 /// Bottom sheet used to filter the people list. The basic filters — gender,
 /// age, religious level and availability — are always visible; height and
 /// marital status live behind "סינון מורחב" because they only exist on cards
-/// where those fields were actually filled in.
+/// where those fields were actually filled in, and so do the tags.
 class PeopleFiltersSheet extends StatefulWidget {
   const PeopleFiltersSheet({
     super.key,
@@ -125,7 +126,33 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
     _advancedExpanded =
         widget.initialHeightRange != null ||
         widget.initialMaritalStatuses.isNotEmpty ||
-        widget.initialRegions.isNotEmpty;
+        widget.initialRegions.isNotEmpty ||
+        widget.initialTags.isNotEmpty;
+  }
+
+  /// The tags offered, in the same order the tag editor uses: the app's
+  /// defaults first, then the matchmaker's own — only those actually on
+  /// somebody, since a tag nobody carries can only empty the list — plus any
+  /// already chosen.
+  List<String> _tagChoices() {
+    final List<String> result = <String>[];
+    void add(String tag) {
+      if (!result.any((String t) => PersonTags.sameTag(t, tag))) {
+        result.add(tag);
+      }
+    }
+
+    bool inUse(String tag) =>
+        widget.availableTags.any((String t) => PersonTags.sameTag(t, tag));
+    for (final String tag in PersonTags.starters) {
+      if (inUse(tag) ||
+          tempTags.any((String t) => PersonTags.sameTag(t, tag))) {
+        add(tag);
+      }
+    }
+    tempTags.forEach(add);
+    widget.availableTags.forEach(add);
+    return result;
   }
 
   /// The one global list, every time.
@@ -327,37 +354,6 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                         ],
                       ),
                     ),
-                    if (widget.availableTags.isNotEmpty ||
-                        tempTags.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 8),
-                      _FilterSectionCard(
-                        title: 'תגיות',
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 150),
-                          child: SingleChildScrollView(
-                            child: _ChipWrap(
-                              children: <Widget>[
-                                for (final String tag in <String>{
-                                  ...tempTags,
-                                  ...widget.availableTags,
-                                })
-                                  _FilterPill(
-                                    label: tag,
-                                    selected: tempTags.contains(tag),
-                                    onTap: () => setState(() {
-                                      tempTags = tempTags.contains(tag)
-                                          ? tempTags
-                                                .where((String t) => t != tag)
-                                                .toList()
-                                          : <String>[...tempTags, tag];
-                                    }),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 8),
                     _AdvancedFilterCard(
                       expanded: _advancedExpanded,
@@ -457,6 +453,51 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                               );
                             }).toList(),
                           ),
+                          if (widget.availableTags.isNotEmpty ||
+                              tempTags.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 14),
+                            Text(
+                              'תגיות',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 150),
+                              child: SingleChildScrollView(
+                                child: _ChipWrap(
+                                  children: <Widget>[
+                                    for (final String tag in _tagChoices())
+                                      _FilterPill(
+                                        label: tag,
+                                        selected: tempTags.any(
+                                          (String t) =>
+                                              PersonTags.sameTag(t, tag),
+                                        ),
+                                        onTap: () => setState(() {
+                                          tempTags =
+                                              tempTags.any(
+                                                (String t) =>
+                                                    PersonTags.sameTag(t, tag),
+                                              )
+                                              ? tempTags
+                                                    .where(
+                                                      (String t) =>
+                                                          !PersonTags.sameTag(
+                                                            t,
+                                                            tag,
+                                                          ),
+                                                    )
+                                                    .toList()
+                                              : <String>[...tempTags, tag];
+                                        }),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

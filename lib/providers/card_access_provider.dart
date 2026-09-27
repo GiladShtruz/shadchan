@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
@@ -382,6 +384,40 @@ class CardAccessProvider extends ChangeNotifier {
     return local;
   }
 
+  static const String _baselinePrefix = 'cardSyncRemote.';
+
+  static Box<dynamic>? get _settings =>
+      Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
+
+  /// What the owner last sent for the friend [personId] — the baseline the
+  /// next version is compared with, field by field.
+  Map<String, Object?>? _baselineFor(String personId) {
+    final Object? raw = _settings?.get('$_baselinePrefix$personId');
+    if (raw is! String) {
+      return null;
+    }
+    try {
+      final Object? json = jsonDecode(raw);
+      return json is Map<String, dynamic> ? json : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  void _setBaseline(String personId, Map<String, Object?>? baseline) {
+    final Box<dynamic>? settings = _settings;
+    if (settings == null) {
+      return;
+    }
+    if (baseline == null) {
+      unawaited(settings.delete('$_baselinePrefix$personId'));
+    } else {
+      unawaited(
+        settings.put('$_baselinePrefix$personId', jsonEncode(baseline)),
+      );
+    }
+  }
+
   Future<void> _applySerially(CardAccess access, Map<String, dynamic> data) {
     return _serially(access.ownerUid, () => _applyCard(access, data));
   }
@@ -459,14 +495,26 @@ class CardAccessProvider extends ChangeNotifier {
         .toList();
     final List<Object?> remotePhotos =
         (data['photoPaths'] as List?) ?? const <Object?>[];
-    final List<String> localPhotos = person.cardSyncDetached
-        ? person.photosPaths
+    // What the owner sent last time: only what they changed since is written
+    // over the matchmaker's copy. See [CardSyncEngine.apply].
+    final Map<String, Object?>? previous = wasLinked
+        ? _baselineFor(person.id)
+        : null;
+    final bool legacyDetached = person.cardSyncDetached && previous == null;
+    final bool photosMoved =
+        previous == null ||
+        jsonEncode(previous['photoPaths']) !=
+            jsonEncode(remotePhotos.whereType<String>().toList()) ||
+        _photosIncomplete.contains(ownerUid);
+    final List<String>? localPhotos = legacyDetached || !photosMoved
+        ? null
         : await _downloadPhotos(ownerUid, remotePhotos);
-    if (!person.cardSyncDetached &&
-        localPhotos.length < remotePhotos.whereType<String>().length) {
-      _photosIncomplete.add(ownerUid);
-    } else {
-      _photosIncomplete.remove(ownerUid);
+    if (localPhotos != null) {
+      if (localPhotos.length < remotePhotos.whereType<String>().length) {
+        _photosIncomplete.add(ownerUid);
+      } else {
+        _photosIncomplete.remove(ownerUid);
+      }
     }
 
     final CardSyncResult result = CardSyncEngine.apply(
@@ -474,8 +522,9 @@ class CardAccessProvider extends ChangeNotifier {
       data,
       ownerUid: ownerUid,
       localPhotoPaths: localPhotos,
+      previousRemote: previous,
     );
-    if (!person.cardSyncDetached) {
+    if (localPhotos != null) {
       PhotoPickerService.deletePhotoFiles(
         oldCardPhotos.where((String p) => !localPhotos.contains(p)),
       );
@@ -483,6 +532,7 @@ class CardAccessProvider extends ChangeNotifier {
     if (result.changed || created) {
       await _people.saveSynced(person);
     }
+    _setBaseline(person.id, CardSyncEngine.baselineOf(data));
     if (!wasLinked) {
       await _people.logEvent(
         person.id,
@@ -508,7 +558,11 @@ class CardAccessProvider extends ChangeNotifier {
       return;
     }
     final String name = person.firstName.trim();
-    final List<String> toDelete = CardSyncEngine.unlink(person);
+    final List<String> toDelete = CardSyncEngine.unlink(
+      person,
+      lastRemote: _baselineFor(person.id),
+    );
+    _setBaseline(person.id, null);
     await _people.saveSynced(person);
     PhotoPickerService.deletePhotoFiles(toDelete);
     await _people.logEvent(

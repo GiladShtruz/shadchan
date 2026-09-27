@@ -24,10 +24,19 @@ abstract final class SuggestionDismissals {
     return dismissedFor(personId).contains(candidateId);
   }
 
+  /// The stored order is the order things were turned down in, and a second
+  /// "לא מתאים" moves a candidate to the end again — the matches list sorts
+  /// its last tier by this order, so the one just dismissed is always last.
   static Future<void> dismiss(String personId, String candidateId) async {
-    final Set<String> ids = dismissedFor(personId)..add(candidateId);
-    await _box.put('$_keyPrefix$personId', ids.toList());
+    final List<String> ids = dismissedFor(personId).toList()
+      ..remove(candidateId)
+      ..add(candidateId);
+    await _box.put('$_keyPrefix$personId', ids);
   }
+
+  /// The ids turned down for [personId], oldest first.
+  static List<String> dismissedInOrder(String personId) =>
+      dismissedFor(personId).toList();
 
   static Future<void> restore(String personId, String candidateId) async {
     final Set<String> ids = dismissedFor(personId)..remove(candidateId);

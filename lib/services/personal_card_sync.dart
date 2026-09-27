@@ -119,7 +119,8 @@ abstract final class PersonalCardSync {
     final String name = profile.fullName ?? '';
     final bool matchmaker = WorkspaceStore.matchmakerEnabled;
     final bool hasCard = cards.hasCard && profile.isSingle;
-    final String print = '$hash|$name|$matchmaker|$hasCard';
+    final bool acceptsRequests = cards.acceptsRequests;
+    final String print = '$hash|$name|$matchmaker|$hasCard|$acceptsRequests';
     if (_settings?.get(_identityPrintKey) == print) {
       return;
     }
@@ -129,6 +130,7 @@ abstract final class PersonalCardSync {
       name: name,
       matchmaker: matchmaker,
       hasCard: hasCard,
+      acceptsRequests: acceptsRequests,
       previousHash: previous is String ? previous : null,
     );
     if (ok) {

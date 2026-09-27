@@ -141,6 +141,48 @@ void main() {
         isFalse,
       );
     });
+
+    test('ranked keeps three when the full card would leave fewer', () {
+      // A man whose card asks for a height nobody recorded: the full card
+      // alone matches only the one woman with a height on her card.
+      final Person source = _person(
+        id: 'm',
+        gender: Gender.male,
+        age: 27,
+        religiousLevel: ReligiousLevel.datiLeumi,
+      ).copyWith(preferredMinHeightCm: 150);
+      final Person tall = _person(
+        id: 'tall',
+        gender: Gender.female,
+        age: 25,
+        religiousLevel: ReligiousLevel.datiLeumi,
+      ).copyWith(heightCm: 165);
+      final List<Person> others = <Person>[
+        for (final String id in <String>['a', 'b', 'c'])
+          _person(
+            id: id,
+            gender: Gender.female,
+            age: 25,
+            religiousLevel: ReligiousLevel.datiLeumi,
+          ),
+      ];
+      // Fails the basic match (style), so it is never offered.
+      final Person haredi = _person(
+        id: 'h',
+        gender: Gender.female,
+        age: 25,
+        religiousLevel: ReligiousLevel.haredi,
+      );
+
+      final List<Person> ranked = MatchSuggestionUtils.ranked(
+        source: source,
+        people: <Person>[...others, haredi, tall],
+      );
+
+      expect(ranked.first.id, 'tall');
+      expect(ranked.map((Person p) => p.id), isNot(contains('h')));
+      expect(ranked.take(3), hasLength(3));
+    });
   });
 }
 

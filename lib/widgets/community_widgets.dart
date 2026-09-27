@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
@@ -468,7 +469,7 @@ class ActivityScoringLink extends StatelessWidget {
         child: Row(
           children: <Widget>[
             Icon(
-              Icons.help_outline_rounded,
+              AppIcons.help,
               size: 14,
               color: theme.colorScheme.onSurfaceVariant,
             ),

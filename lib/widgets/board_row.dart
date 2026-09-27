@@ -23,6 +23,7 @@ class BoardRow extends StatelessWidget {
     this.subtitleMaxLines = 1,
     this.mark,
     this.titleColor,
+    this.centerText = false,
   });
 
   final Widget leading;
@@ -43,6 +44,11 @@ class BoardRow extends StatelessWidget {
   final int? subtitleMaxLines;
   final IconData? mark;
   final Color? titleColor;
+
+  /// The title and the line under it centred in the row, as the
+  /// notifications page draws them — so rows of different lengths still read
+  /// as one balanced column.
+  final bool centerText;
 
   @override
   Widget build(BuildContext context) {
@@ -81,10 +87,15 @@ class BoardRow extends StatelessWidget {
                         vertical: 10,
                       ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: centerText
+                            ? CrossAxisAlignment.center
+                            : CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
                           Row(
+                            mainAxisAlignment: centerText
+                                ? MainAxisAlignment.center
+                                : MainAxisAlignment.start,
                             children: <Widget>[
                               Flexible(
                                 child: Text(
@@ -112,6 +123,7 @@ class BoardRow extends StatelessWidget {
                             Text(
                               sub,
                               maxLines: subtitleMaxLines,
+                              textAlign: centerText ? TextAlign.center : null,
                               overflow: subtitleMaxLines == null
                                   ? null
                                   : TextOverflow.ellipsis,

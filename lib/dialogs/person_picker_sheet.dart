@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/person_tags.dart';
+import 'package:shadchan/services/tag_library.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -304,6 +306,9 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
       return false;
     }
     if (!MatchProposalFilters.matchesRegion(person, filters)) {
+      return false;
+    }
+    if (!MatchProposalFilters.matchesTags(person, filters)) {
       return false;
     }
     return true;
@@ -858,6 +863,7 @@ class MatchProposalFilters {
     this.maxHeight,
     this.maritalStatuses = const <MaritalStatus>[],
     this.regions = const <Region>[],
+    this.tags = const <String>[],
   });
 
   final int? minAge;
@@ -875,6 +881,19 @@ class MatchProposalFilters {
 
   /// Regions of the country — like height, only a card with one can match.
   final List<Region> regions;
+
+  /// The matchmaker's own tags: a candidate carrying any one of them passes.
+  final List<String> tags;
+
+  static bool matchesTags(Person person, MatchProposalFilters filters) {
+    if (filters.tags.isEmpty) {
+      return true;
+    }
+    return person.tags.any(
+      (String tag) =>
+          filters.tags.any((String chosen) => PersonTags.sameTag(tag, chosen)),
+    );
+  }
 
   static bool matchesRegion(Person person, MatchProposalFilters filters) {
     if (filters.regions.isEmpty) {
@@ -906,7 +925,8 @@ class MatchProposalFilters {
       minHeight == null &&
       maxHeight == null &&
       maritalStatuses.isEmpty &&
-      regions.isEmpty;
+      regions.isEmpty &&
+      tags.isEmpty;
 }
 
 /// The candidate filter, which is the app's *one* filter sheet —
@@ -964,6 +984,10 @@ abstract final class MatchProposalFilterSheet {
           heightBounds: heightBounds,
           initialMaritalStatuses: initial.maritalStatuses,
           initialRegions: initial.regions,
+          availableTags: TagLibrary.inUse(
+            people.where((Person p) => p.gender == targetGender),
+          ),
+          initialTags: initial.tags,
         );
       },
     );
@@ -982,6 +1006,7 @@ abstract final class MatchProposalFilterSheet {
       maxHeight: picked.heightRange?.end.round(),
       maritalStatuses: picked.maritalStatuses,
       regions: picked.regions,
+      tags: picked.tags,
     );
     await saveFiltersFor(sourcePersonId, filters);
     return filters;
@@ -1089,6 +1114,7 @@ abstract final class MatchProposalFilterSheet {
         rawFilters['regions'],
         Region.values,
       ),
+      tags: _stringList(rawFilters['tags']),
     );
   }
 
@@ -1118,6 +1144,7 @@ abstract final class MatchProposalFilterSheet {
           .map((MaritalStatus status) => status.name)
           .toList(),
       'regions': filters.regions.map((Region region) => region.name).toList(),
+      'tags': filters.tags,
     });
   }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
 import 'package:shadchan/dialogs/person_whatsapp_menu.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -10,6 +11,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -313,17 +315,35 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// sitting in the same row as "העברה להמתנה" is a mis-tap waiting to happen.
   /// Closing an idea is what the panel is for — this is for the proposal that
   /// should never have been opened.
-  /// A long press deletes the idea at once and says so at the bottom, with
-  /// "ביטול". Nothing is lost either way: the idea is filed in "רעיונות
-  /// שנמחקו" first and can be brought back from there for a month.
+  /// **Never straight away.** Nothing in the app is deleted by a long press
+  /// alone: it asks first, and only a "מחיקה" deletes. After that it still
+  /// says so at the bottom with "ביטול", and the idea is filed in "רעיונות
+  /// שנמחקו" for a month.
   Future<void> _confirmDelete(
     MatchIdea match,
     Person? female,
     Person? male,
   ) async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final MatchRepository repository = context.read<MatchRepository>();
     final PersonRepository people = context.read<PersonRepository>();
     final OverlayState? overlay = AppNotice.capture(context);
+    final String names = <String>[
+      if (female != null) female.firstName,
+      if (male != null) male.firstName,
+    ].where((String name) => name.trim().isNotEmpty).join(' ו');
+    final bool confirmed = await ConfirmDialog.show(
+      context,
+      title: 'למחוק את הרעיון?',
+      message: names.isEmpty
+          ? 'הרעיון והיומן שלו יימחקו. אפשר לשחזר אותו מ"רעיונות שנמחקו" במשך חודש.'
+          : 'הרעיון של $names והיומן שלו יימחקו. אפשר לשחזר אותו מ"רעיונות שנמחקו" במשך חודש.',
+      confirmText: 'מחיקה',
+      isDestructive: true,
+    );
+    if (!confirmed) {
+      return;
+    }
     final String id = match.id;
     await repository.deleteMatch(id);
     if (overlay == null || !overlay.mounted) {
@@ -377,9 +397,14 @@ class _MatchesScreenState extends State<MatchesScreen> {
     // point of keeping the buttons during a search is to answer "what kinds of
     // proposal does this person have?", and counts taken over the whole
     // database would answer a question nobody asked.
-    final List<MatchIdea> population = searching
-        ? matchRepository.search(query, personRepository)
-        : matchRepository.getAll();
+    // A name picked from the suggestions narrows the page to exactly that
+    // person's ideas — not to whatever else the typed letters happen to match.
+    final String? personFilter = _personFilterId;
+    final List<MatchIdea> population = !searching
+        ? matchRepository.getAll()
+        : personFilter != null
+        ? matchRepository.getByPersonId(personFilter)
+        : matchRepository.search(query, personRepository);
     final Map<MatchCategory, List<MatchIdea>> groups = _groupMatches(
       population,
       personRepository,
@@ -450,7 +475,11 @@ class _MatchesScreenState extends State<MatchesScreen> {
             datingCount: datingCount,
           ),
           if (searching && _suggestionsOpen)
-            _buildSearchPanel(population, personRepository),
+            _buildSearchPanel(
+              query,
+              matchRepository.search(query, personRepository),
+              personRepository,
+            ),
         ],
       ),
     );
@@ -561,21 +590,74 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// whichever of them it belongs to — which still means finding it. Each row
   /// here opens that proposal directly.
   ///
-  /// The population is the one the page already computed, so the panel and the
-  /// counts above it can never disagree about what the query matched.
+  /// **Two kinds of answer, one under the other.** First the people whose
+  /// name matches — choosing one narrows the page to every idea they are in —
+  /// then the ideas themselves, each of which opens directly. Both follow the
+  /// typing letter by letter; the search key still shows every match without
+  /// choosing either.
   Widget _buildSearchPanel(
-    List<MatchIdea> population,
+    String query,
+    List<MatchIdea> matches,
     PersonRepository personRepository,
   ) {
+    final String needle = query.trim().toLowerCase();
+    final Map<String, Person> people = <String, Person>{};
+    final Map<String, int> ideaCounts = <String, int>{};
+    for (final MatchIdea match in matches) {
+      for (final String id in <String>[match.personAId, match.personBId]) {
+        final Person? person = personRepository.getById(id);
+        if (person == null ||
+            !MatchRepository.personMatchesQuery(person, needle)) {
+          continue;
+        }
+        people[id] = person;
+        ideaCounts[id] = (ideaCounts[id] ?? 0) + 1;
+      }
+    }
+    final List<Person> named = people.values.toList()
+      ..sort(
+        (Person a, Person b) =>
+            (ideaCounts[b.id] ?? 0).compareTo(ideaCounts[a.id] ?? 0),
+      );
+
     return SearchResultsPanel(
       // A tap beside the suggestions is "show me the results", like the
       // search key — not "forget what I typed".
       onDismiss: _submitSearch,
       rows: <Widget>[
-        for (final MatchIdea match in population)
+        if (named.isNotEmpty) const SearchSectionTitle('אנשים'),
+        for (final Person person in named.take(6))
+          SearchResultRow(
+            leading: SearchResultRow.avatar(person),
+            title: person.fullName,
+            subtitle: ideaCounts[person.id] == 1
+                ? 'רעיון אחד · הצגת הרעיון'
+                : '${ideaCounts[person.id]} רעיונות · הצגת כל הרעיונות',
+            onTap: () => _filterByPerson(person),
+          ),
+        if (matches.isNotEmpty) const SearchSectionTitle('רעיונות'),
+        for (final MatchIdea match in matches)
           _searchRow(match, personRepository),
       ],
     );
+  }
+
+  /// A name chosen from the suggestions: the field says who, the panel closes,
+  /// and the page underneath is every idea that person is in.
+  void _filterByPerson(Person person) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final String name = person.fullName;
+    // Set before the text, so the listener does not read the change as new
+    // typing and let go of the person again.
+    _lastQuery = name;
+    _searchController.value = TextEditingValue(
+      text: name,
+      selection: TextSelection.collapsed(offset: name.length),
+    );
+    setState(() {
+      _personFilterId = person.id;
+      _suggestionsOpen = false;
+    });
   }
 
   Widget _searchRow(MatchIdea match, PersonRepository personRepository) {
@@ -599,7 +681,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
   void _closeSearch() {
     FocusScope.of(context).unfocus();
     _searchController.clear();
-    setState(() {});
+    setState(() => _personFilterId = null);
   }
 
   // --- Grouping -----------------------------------------------------------
@@ -1067,11 +1149,16 @@ class _MatchesScreenState extends State<MatchesScreen> {
   /// way a search works in any other app.
   bool _suggestionsOpen = false;
 
+  /// The person chosen from the suggestions, while the field still holds
+  /// their name. Any new typing lets go of them.
+  String? _personFilterId;
+
   void _handleSearchChanged() {
     final String text = _searchController.text;
     if (text != _lastQuery) {
       _lastQuery = text;
       _suggestionsOpen = text.trim().isNotEmpty;
+      _personFilterId = null;
     }
     setState(() {});
   }
@@ -1174,6 +1261,23 @@ class _CategoryChips extends StatelessWidget {
   static const double _labelSize = 13;
   static const double _countSize = 13;
 
+  /// Each shelf in the colour its cards wear: הכל and פתוחים blue, בהמתנה
+  /// copper, יוצאים rose — and the closed pile deliberately quieter, in grey.
+  static Color accentOf(MatchCategory category, ThemeData theme) {
+    final bool dark = theme.brightness == Brightness.dark;
+    switch (category) {
+      case MatchCategory.all:
+      case MatchCategory.open:
+        return AppColors.matchState(MatchStatus.idea, dark: dark);
+      case MatchCategory.waiting:
+        return AppColors.matchState(MatchStatus.unavailable, dark: dark);
+      case MatchCategory.dating:
+        return AppColors.matchState(MatchStatus.dating, dark: dark);
+      case MatchCategory.closed:
+        return theme.colorScheme.onSurfaceVariant;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -1221,9 +1325,7 @@ class _CategoryChips extends StatelessWidget {
                       labelSize: _labelSize * scale,
                       count: counts[category] ?? 0,
                       isSelected: selected == category,
-                      // The closed pile is deliberately quieter than the live
-                      // ones.
-                      isMuted: category == MatchCategory.closed,
+                      accent: accentOf(category, theme),
                       theme: theme,
                       onTap: () => onSelected(category),
                     ),
@@ -1249,7 +1351,7 @@ class _CategoryChip extends StatelessWidget {
     required this.labelSize,
     required this.count,
     required this.isSelected,
-    required this.isMuted,
+    required this.accent,
     required this.theme,
     required this.onTap,
   });
@@ -1262,21 +1364,23 @@ class _CategoryChip extends StatelessWidget {
 
   final int count;
   final bool isSelected;
-  final bool isMuted;
+
+  /// This shelf's own colour — see [_CategoryChips.accentOf].
+  final Color accent;
   final ThemeData theme;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final Color accent = isMuted
-        ? theme.colorScheme.onSurfaceVariant
-        : theme.colorScheme.primary;
     final BorderRadius radius = BorderRadius.circular(12);
 
+    // A breath of the shelf's colour at rest and a little more when chosen —
+    // enough to tell the shelves apart at a glance, never a saturated block.
     return Material(
-      color: isSelected
-          ? accent.withValues(alpha: 0.14)
-          : theme.colorScheme.surface,
+      color: Color.alphaBlend(
+        accent.withValues(alpha: isSelected ? 0.16 : 0.05),
+        theme.colorScheme.surface,
+      ),
       borderRadius: radius,
       child: InkWell(
         borderRadius: radius,
@@ -1286,9 +1390,8 @@ class _CategoryChip extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: radius,
             border: Border.all(
-              color: isSelected
-                  ? accent.withValues(alpha: 0.5)
-                  : theme.colorScheme.outlineVariant,
+              color: accent.withValues(alpha: isSelected ? 0.6 : 0.28),
+              width: isSelected ? 1.3 : 1,
             ),
           ),
           child: Column(
