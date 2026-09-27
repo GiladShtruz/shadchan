@@ -435,6 +435,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       .toggleFavorite(person.id),
                   onOpenMatches: () => _openMatchSuggestions(context, person),
                   onOpenWhatsApp: () => _openWhatsApp(context, person),
+                  keepWhatsAppSlot: true,
                   // The same call the proposal cards make, so a status set from
                   // here moves the person's open proposals to "בהמתנה" and asks
                   // when to look again exactly as it does anywhere else.

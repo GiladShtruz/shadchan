@@ -70,10 +70,17 @@ class CardAccess {
 
 /// A matchmaker among the owner's contacts, as the server found them.
 class CardHelper {
-  const CardHelper({required this.uid, required this.name});
+  const CardHelper({required this.uid, required this.name, this.phoneHash});
 
   final String uid;
+
+  /// The name the matchmaker gave themselves — shown only when the owner's
+  /// own contacts have no name for [phoneHash].
   final String name;
+
+  /// The directory key the server matched in the owner's contacts: how the
+  /// owner's phone finds the name *they* saved this friend under.
+  final String? phoneHash;
 }
 
 /// "Yitzchak marked you 'busy' — is that right?", waiting for the owner.

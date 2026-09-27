@@ -469,8 +469,9 @@ void main() {
       await tester.tap(find.byIcon(Icons.more_vert));
       await tester.pumpAndSettle();
       expect(find.text('עריכת כרטיס'), findsNothing);
-      expect(find.text('עריכה מורחבת'), findsOneWidget);
-      await tester.tap(find.text('עריכה מורחבת'));
+      // The menu's own "עריכה", drawn in the overlay above the card's button.
+      expect(find.text('עריכה'), findsNWidgets(2));
+      await tester.tap(find.text('עריכה').last);
       await tester.pumpAndSettle();
       expect(find.text('עריכת כרטיס'), findsOneWidget);
       expect(find.text('שם פרטי'), findsOneWidget);

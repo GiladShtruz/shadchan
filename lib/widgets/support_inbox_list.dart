@@ -24,6 +24,22 @@ class SupportInboxList extends StatefulWidget {
   /// Runs before the sheet opens — the panel uses it to close itself first.
   final VoidCallback? onOpen;
 
+  /// Whether this list draws anything — so the page around it knows whether
+  /// "nothing new" is true. Watches, like the list itself.
+  static bool hasItems(BuildContext context) {
+    try {
+      final SupportInboxProvider inbox = context.watch<SupportInboxProvider>();
+      final bool isAdmin = context.watch<AccountProvider>().isSupportAdmin;
+      return inbox.threads.isNotEmpty ||
+          (isAdmin &&
+              inbox.newReports.any(
+                (SupportReport report) => !report.hasConversation,
+              ));
+    } on ProviderNotFoundException {
+      return false;
+    }
+  }
+
   @override
   State<SupportInboxList> createState() => _SupportInboxListState();
 }

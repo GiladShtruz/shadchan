@@ -11,7 +11,7 @@ abstract final class RemindersPanel {
     return showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: 'תזכורות',
+      barrierLabel: 'התראות',
       barrierColor: Colors.black54,
       transitionDuration: const Duration(milliseconds: 240),
       pageBuilder: (BuildContext dialogContext, _, _) {
@@ -45,7 +45,7 @@ abstract final class RemindersPanel {
                           children: <Widget>[
                             Expanded(
                               child: Text(
-                                'תזכורות',
+                                'התראות',
                                 style: theme.textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -74,11 +74,16 @@ abstract final class RemindersPanel {
                             SupportInboxList(
                               onOpen: () => Navigator.of(dialogContext).pop(),
                             ),
-                            RemindersList(
-                              padding: EdgeInsets.zero,
-                              shrinkWrap: true,
-                              onOpenMatch: () =>
-                                  Navigator.of(dialogContext).pop(),
+                            Builder(
+                              builder: (BuildContext context) => RemindersList(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                showEmpty:
+                                    !CardInboxList.hasItems(context) &&
+                                    !SupportInboxList.hasItems(context),
+                                onOpenMatch: () =>
+                                    Navigator.of(dialogContext).pop(),
+                              ),
                             ),
                           ],
                         ),

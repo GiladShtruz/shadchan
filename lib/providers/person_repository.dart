@@ -685,12 +685,30 @@ class PersonRepository extends ChangeNotifier {
   }
 
   /// The history lines worth showing on a profile: everything but notes,
-  /// which have their own list and are not history. Older installs logged
-  /// every note as an event; those are simply not drawn.
+  /// which have their own list and are not history, and the small edits a
+  /// friend made to their own card, which live only in that card's change
+  /// history. Older installs logged every note as an event; those are simply
+  /// not drawn.
   List<PersonEvent> getHistoryForPerson(String personId) {
-    return getEventsForPerson(
-      personId,
-    ).where((PersonEvent e) => e.type != PersonEventType.note).toList();
+    return getEventsForPerson(personId)
+        .where(
+          (PersonEvent e) =>
+              e.type != PersonEventType.note &&
+              e.type != PersonEventType.cardSyncedMinor,
+        )
+        .toList();
+  }
+
+  /// Every change the owner of a synced card made to it, newest first —
+  /// meaningful and minor alike. The screen behind the profile's updates.
+  List<PersonEvent> getCardHistoryForPerson(String personId) {
+    return getEventsForPerson(personId)
+        .where(
+          (PersonEvent e) =>
+              e.type == PersonEventType.cardSynced ||
+              e.type == PersonEventType.cardSyncedMinor,
+        )
+        .toList();
   }
 
   /// Removes every history line a proposal wrote on its candidates, and hands

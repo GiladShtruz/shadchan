@@ -16,14 +16,20 @@ class CardSyncResult {
     required this.changed,
     required this.updates,
     required this.statusChanged,
+    this.minorUpdates = const <String>[],
   });
 
   /// Whether anything on the record moved, so it needs saving.
   final bool changed;
 
-  /// The short lines for the profile's "recent updates" — "דניאל החליף
-  /// תמונה". Empty on the first link, which logs its own line.
+  /// The meaningful changes, for the profile's "new updates" — "דניאל מחק
+  /// תמונה", "דניאל עדכן את טקסט הכרטיס". Empty on the first link, which logs
+  /// its own line.
   final List<String> updates;
+
+  /// Small changes — a word fixed, a sentence reworded, the photos reordered.
+  /// Kept in the card's full change history only.
+  final List<String> minorUpdates;
 
   final bool statusChanged;
 }
@@ -170,7 +176,9 @@ abstract final class CardSyncEngine {
     }
 
     final List<String> updates = <String>[];
+    final List<String> minorUpdates = <String>[];
     final String before = _cardPrint(person);
+    final Map<String, Object?> jsonBefore = BackupService.personToJson(person);
     final List<String> photosBefore = List<String>.from(person.photosPaths);
 
     if (!person.cardSyncDetached) {
@@ -183,13 +191,32 @@ abstract final class CardSyncEngine {
       }
       if (!firstLink) {
         final String name = person.firstName.trim();
+        final Gender gender = person.gender;
+        String say(String template) => '$name $template'.forGender(gender);
         if (photosChanged) {
-          updates.add('$name {החליף|החליפה} תמונה'.forGender(person.gender));
+          final ({String line, bool major}) photos = describePhotoChange(
+            photosBefore,
+            person.photosPaths,
+          );
+          (photos.major ? updates : minorUpdates).add(say(photos.line));
         }
         if (detailsChanged) {
-          updates.add(
-            '$name {עדכן|עדכנה} את הפרטים {שלו|שלה}'.forGender(person.gender),
+          final Map<String, Object?> jsonAfter = BackupService.personToJson(
+            person,
           );
+          final ({String line, bool major})? text = describeTextChange(
+            jsonBefore['description'] as String?,
+            jsonAfter['description'] as String?,
+          );
+          if (text != null) {
+            (text.major ? updates : minorUpdates).add(say(text.line));
+          }
+          for (final String line in _describeFieldChanges(
+            jsonBefore,
+            jsonAfter,
+          )) {
+            updates.add(say(line));
+          }
         }
       }
     }
@@ -214,8 +241,161 @@ abstract final class CardSyncEngine {
     return CardSyncResult(
       changed: changed,
       updates: updates,
+      minorUpdates: minorUpdates,
       statusChanged: statusChanged,
     );
+  }
+
+  /// How the photos changed — a template for `forGender`, without the name.
+  /// Only a reordering that keeps the main photo is minor.
+  static ({String line, bool major}) describePhotoChange(
+    List<String> before,
+    List<String> after,
+  ) {
+    final List<String> a = <String>[
+      for (final String path in before) PhotoPickerService.basenameOf(path),
+    ];
+    final List<String> b = <String>[
+      for (final String path in after) PhotoPickerService.basenameOf(path),
+    ];
+    final Set<String> removed = a.toSet().difference(b.toSet());
+    final Set<String> added = b.toSet().difference(a.toSet());
+    if (removed.isNotEmpty && added.isEmpty) {
+      return (
+        line: removed.length == 1
+            ? '{מחק|מחקה} תמונה'
+            : '{מחק|מחקה} ${removed.length} תמונות',
+        major: true,
+      );
+    }
+    if (added.isNotEmpty && removed.isEmpty) {
+      return (
+        line: added.length == 1
+            ? '{הוסיף|הוסיפה} תמונה'
+            : '{הוסיף|הוסיפה} ${added.length} תמונות',
+        major: true,
+      );
+    }
+    if (added.isNotEmpty) {
+      return (
+        line: added.length == 1 && removed.length == 1
+            ? '{החליף|החליפה} תמונה'
+            : '{החליף|החליפה} תמונות',
+        major: true,
+      );
+    }
+    if (a.isNotEmpty && b.isNotEmpty && a.first != b.first) {
+      return (line: '{החליף|החליפה} את התמונה הראשית', major: true);
+    }
+    return (line: '{שינה|שינתה} את סדר התמונות', major: false);
+  }
+
+  /// A change to the card's free text of at least this share of its words is
+  /// a rewrite worth telling the matchmaker about. Anything smaller — a word,
+  /// a phrasing, one sentence in a card of several — is a correction.
+  static const double majorTextChange = 0.4;
+
+  /// How the card's free text changed, or null when it did not. A template
+  /// for `forGender`, without the name.
+  static ({String line, bool major})? describeTextChange(
+    String? before,
+    String? after,
+  ) {
+    final String a = (before ?? '').trim();
+    final String b = (after ?? '').trim();
+    if (a == b) {
+      return null;
+    }
+    if (a.isEmpty) {
+      return (line: '{הוסיף|הוסיפה} טקסט לכרטיס', major: true);
+    }
+    if (b.isEmpty) {
+      return (line: '{מחק|מחקה} את טקסט הכרטיס', major: true);
+    }
+    return textChangeRatio(a, b) >= majorTextChange
+        ? (line: '{עדכן|עדכנה} את טקסט הכרטיס', major: true)
+        : (line: '{תיקן|תיקנה} את טקסט הכרטיס', major: false);
+  }
+
+  static final RegExp _space = RegExp(r'\s+');
+  static final RegExp _punctuation = RegExp('[.,;:!?()"׳״\\-–—]');
+
+  /// The share of words that differ between [a] and [b], from 0 (the same
+  /// words in the same order) to 1 (nothing in common): one minus their
+  /// longest common run of words over the longer text.
+  static double textChangeRatio(String a, String b) {
+    List<String> words(String text) => text
+        .split(_space)
+        .map((String w) => w.replaceAll(_punctuation, ''))
+        .where((String w) => w.isNotEmpty)
+        .toList();
+    final List<String> x = words(a);
+    final List<String> y = words(b);
+    final int longest = x.length > y.length ? x.length : y.length;
+    if (longest == 0) {
+      return 0;
+    }
+    // Longest common subsequence of words, one row at a time.
+    List<int> previous = List<int>.filled(y.length + 1, 0);
+    for (int i = 1; i <= x.length; i++) {
+      final List<int> row = List<int>.filled(y.length + 1, 0);
+      for (int j = 1; j <= y.length; j++) {
+        row[j] = x[i - 1] == y[j - 1]
+            ? previous[j - 1] + 1
+            : (row[j - 1] > previous[j] ? row[j - 1] : previous[j]);
+      }
+      previous = row;
+    }
+    return 1 - previous[y.length] / longest;
+  }
+
+  /// The card's structured details, in the words a matchmaker would use.
+  static const Map<String, String> _detailLabels = <String, String>{
+    'firstName': 'השם',
+    'lastName': 'השם',
+    'gender': 'המגדר',
+    'dateOfBirth': 'תאריך הלידה',
+    'religiousLevel': 'הסגנון הדתי',
+    'religiousLevelOther': 'הסגנון הדתי',
+    'city': 'העיר',
+    'heightCm': 'הגובה',
+    'maritalStatus': 'המצב המשפחתי',
+    'region': 'האזור',
+  };
+
+  /// "עדכן את העיר והגובה", and "עדכן את מה שהוא מחפש" for the preferences —
+  /// templates for `forGender`, without the name.
+  static List<String> _describeFieldChanges(
+    Map<String, Object?> before,
+    Map<String, Object?> after,
+  ) {
+    String encode(Object? value) => jsonEncode(value);
+    final List<String> labels = <String>[];
+    bool preferences = false;
+    for (final String key in PersonalCardCodec.cardFields) {
+      if (key == 'description' || encode(before[key]) == encode(after[key])) {
+        continue;
+      }
+      if (key.startsWith('preferred')) {
+        preferences = true;
+        continue;
+      }
+      final String? label = _detailLabels[key];
+      if (label != null && !labels.contains(label)) {
+        labels.add(label);
+      }
+    }
+    final List<String> lines = <String>[];
+    if (labels.isNotEmpty) {
+      final String joined = labels.length == 1
+          ? labels.single
+          : '${labels.sublist(0, labels.length - 1).join(', ')} ו${labels.last}';
+      lines.add('{עדכן|עדכנה} את $joined');
+    }
+    if (preferences) {
+      lines.add('{עדכן|עדכנה} את מה {שהוא מחפש|שהיא מחפשת}');
+    }
+    return lines;
   }
 
   static bool _samePhotos(List<String> a, List<String> b) {
@@ -240,6 +420,10 @@ abstract final class CardSyncEngine {
   /// * With no snapshot, the owner's details come off and the person stays in
   ///   the database with their name — and with everything the matchmaker
   ///   wrote privately, which never lived on this record anyway.
+  /// * Either way the friend is left **in** the database: withdrawing access
+  ///   takes the owner's card away, never the friend. A record that was kept
+  ///   out of המאגר שלי before the link (a name on an idea, a draft) joined it
+  ///   when the card arrived, and does not drop back out when it leaves.
   ///
   /// Returns the downloaded card photos to delete from the device: nothing
   /// received from the owner may linger once access is gone.
@@ -279,7 +463,9 @@ abstract final class CardSyncEngine {
       ..cardOwnerUid = null
       ..cardSyncDetached = false
       ..preSyncSnapshot = null
-      ..cardRemoteStatus = null;
+      ..cardRemoteStatus = null
+      ..hidden = false
+      ..needsReview = false;
     return toDelete;
   }
 

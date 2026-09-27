@@ -15,13 +15,21 @@ class RemindersScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('תזכורות')),
+      appBar: AppBar(title: const Text('התראות')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: const <Widget>[
-          CardInboxList(),
-          SupportInboxList(),
-          RemindersList(padding: EdgeInsets.zero, shrinkWrap: true),
+        children: <Widget>[
+          const CardInboxList(),
+          const SupportInboxList(),
+          Builder(
+            builder: (BuildContext context) => RemindersList(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              showEmpty:
+                  !CardInboxList.hasItems(context) &&
+                  !SupportInboxList.hasItems(context),
+            ),
+          ),
         ],
       ),
     );

@@ -21,6 +21,10 @@ class CardInboxList extends StatelessWidget {
   /// Called before navigating away — the bell's panel closes itself with it.
   final VoidCallback? onOpen;
 
+  /// Whether this list draws anything. Watches, like the list itself.
+  static bool hasItems(BuildContext context) =>
+      _maybe(context)?.items.isNotEmpty ?? false;
+
   static InboxProvider? _maybe(BuildContext context) {
     try {
       return context.watch<InboxProvider>();

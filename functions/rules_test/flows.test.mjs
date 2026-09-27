@@ -74,7 +74,7 @@ test('an address book finds the matchmakers in it', async () => {
       .get();
     return doc.exists ? doc.data().helpers : null;
   }, 'helpers');
-  assert.deepEqual(helpers, [{ uid: MM, name: 'יצחק' }]);
+  assert.deepEqual(helpers, [{ uid: MM, name: 'יצחק', phoneHash: MM_HASH }]);
 });
 
 test('a new card is announced to matchmakers in the owner’s contacts, once', async () => {
@@ -115,10 +115,12 @@ test('a request reaches the owner; an approval reaches the matchmaker', async ()
   });
   const request = await waitFor(() => inbox(OWNER, 'accessRequest'), 'request');
   assert.match(request.body, /יצחק/);
+  assert.equal(request.route, '/me?section=requests');
 
   await ref.update({ status: 'approved', updatedAt: new Date() });
   const approved = await waitFor(() => inbox(MM, 'accessApproved'), 'approved');
   assert.equal(approved.title, 'נועה אישרה גישה לכרטיס שלה');
+  assert.equal(approved.route, `/card-friend/${OWNER}`);
 });
 
 test('a status report reaches the owner', async () => {

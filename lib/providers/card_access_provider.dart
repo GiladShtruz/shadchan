@@ -10,6 +10,7 @@ import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
+import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
@@ -96,6 +97,11 @@ class CardAccessProvider extends ChangeNotifier {
 
   /// Matchmakers among the owner's contacts who do not yet have access, and
   /// whom the owner has not blocked.
+  ///
+  /// A matchmaker whose request was answered "לא עכשיו" (or whose access was
+  /// withdrawn) is back on this list, so access can be given later — even if
+  /// the server's list was computed before they joined: their row itself is
+  /// proof they are a friend who matchmakes here.
   List<CardHelper> get helpers {
     final Set<String> decided = <String>{
       for (final CardAccess a in _asOwner)
@@ -104,7 +110,32 @@ class CardAccessProvider extends ChangeNotifier {
             a.status == CardAccessStatus.pending)
           a.matchmakerUid,
     };
-    return _helpers.where((CardHelper h) => !decided.contains(h.uid)).toList();
+    final List<CardHelper> list = _helpers
+        .where((CardHelper h) => !decided.contains(h.uid))
+        .toList();
+    final Set<String> listed = <String>{for (final CardHelper h in list) h.uid};
+    for (final CardAccess a in _asOwner) {
+      if ((a.status == CardAccessStatus.declined ||
+              a.status == CardAccessStatus.revoked) &&
+          !listed.contains(a.matchmakerUid)) {
+        listed.add(a.matchmakerUid);
+        list.add(CardHelper(uid: a.matchmakerUid, name: a.matchmakerName));
+      }
+    }
+    return list;
+  }
+
+  /// How the owner knows [matchmakerUid]: the name saved in the owner's own
+  /// contacts when the server matched them there, else [fallback] — the
+  /// name the matchmaker signed up with.
+  String nameInContacts(String matchmakerUid, String fallback) {
+    for (final CardHelper h in _helpers) {
+      if (h.uid == matchmakerUid) {
+        return ContactHashUpload.nameFor(h.phoneHash) ??
+            (fallback.trim().isEmpty ? h.name : fallback);
+      }
+    }
+    return fallback;
   }
 
   bool get helpersLoaded => _helpersLoaded;
@@ -223,6 +254,7 @@ class CardAccessProvider extends ChangeNotifier {
                         CardHelper(
                           uid: item['uid'] as String,
                           name: (item['name'] as String?) ?? '',
+                          phoneHash: item['phoneHash'] as String?,
                         ),
                 ];
                 _helpersLoaded = snap.exists;
@@ -351,19 +383,31 @@ class CardAccessProvider extends ChangeNotifier {
   }
 
   Future<void> _applySerially(CardAccess access, Map<String, dynamic> data) {
-    final String ownerUid = access.ownerUid;
+    return _serially(access.ownerUid, () => _applyCard(access, data));
+  }
+
+  /// Runs [work] after whatever is already queued for [ownerUid] — applying a
+  /// version of the card, or ending the link — so an update that was still
+  /// downloading photos when access was withdrawn can never land after the
+  /// unlink and tie the friend to the card again.
+  Future<void> _serially(String ownerUid, Future<void> Function() work) {
     final Future<void> previous = _applying[ownerUid] ?? Future<void>.value();
-    final Future<void> next = previous
-        .then((_) => _applyCard(access, data))
-        .catchError((Object error, StackTrace stackTrace) {
-          _log(error, stackTrace);
-        });
+    final Future<void> next = previous.then((_) => work()).catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      _log(error, stackTrace);
+    });
     _applying[ownerUid] = next;
     return next;
   }
 
   Future<void> _applyCard(CardAccess access, Map<String, dynamic> data) async {
     final String ownerUid = access.ownerUid;
+    // Queued before access ended: the card is no longer ours to apply.
+    if (_asMatchmaker[ownerUid]?.status != CardAccessStatus.approved) {
+      return;
+    }
     Person? person = CardSyncEngine.findExisting(
       _people.getAll(),
       ownerUid: ownerUid,
@@ -438,9 +482,16 @@ class CardAccessProvider extends ChangeNotifier {
     for (final String line in result.updates) {
       await _people.logEvent(person.id, PersonEventType.cardSynced, line);
     }
+    for (final String line in result.minorUpdates) {
+      await _people.logEvent(person.id, PersonEventType.cardSyncedMinor, line);
+    }
   }
 
-  Future<void> _unlink(String ownerUid) async {
+  Future<void> _unlink(String ownerUid) {
+    return _serially(ownerUid, () => _unlinkNow(ownerUid));
+  }
+
+  Future<void> _unlinkNow(String ownerUid) async {
     final Person? person = _people.findByCardOwner(ownerUid);
     if (person == null) {
       return;

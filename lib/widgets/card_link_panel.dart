@@ -7,7 +7,9 @@ import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/card_history_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/card_updates_seen.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
@@ -149,6 +151,14 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
     );
   }
 
+  Future<void> _openHistory(String personId) async {
+    await CardHistoryScreen.open(context, personId);
+    if (mounted) {
+      // What was new is seen now; the tile drops it.
+      setState(() {});
+    }
+  }
+
   Future<void> _resume(PersonRepository people) async {
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final String? owner = widget.person.cardOwnerUid;
@@ -175,11 +185,13 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
 
     Widget body;
     if (person.cardOwnerUid != null) {
-      final List<PersonEvent> updates = people
-          .getEventsForPerson(person.id)
-          .where((PersonEvent e) => e.type == PersonEventType.cardSynced)
-          .take(3)
-          .toList();
+      // Only what is new: meaningful changes from the last month that came
+      // after the matchmaker last opened the card's change history. The whole
+      // record is one tap away.
+      final List<PersonEvent> updates = CardUpdatesSeen.fresh(
+        people.getEventsForPerson(person.id),
+        person.id,
+      ).take(5).toList();
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -195,9 +207,31 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
             for (final PersonEvent e in updates)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Text('• ${e.text}', style: theme.textTheme.bodySmall),
+                child: Text(
+                  '• ${e.text}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
           ],
+          const SizedBox(height: 4),
+          Row(
+            children: <Widget>[
+              Text(
+                'לכל היסטוריית השינויים',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.mutedInk,
+                ),
+              ),
+              // `chevron_right` draws pointing left in RTL — the forward way.
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: AppColors.mutedInk,
+              ),
+            ],
+          ),
           if (person.cardSyncDetached)
             Align(
               alignment: AlignmentDirectional.centerStart,
@@ -310,10 +344,12 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
       }
     }
 
+    final bool synced = person.cardOwnerUid != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: HomePaperCard(
         stripe: AppColors.secondary,
+        onTap: synced ? () => _openHistory(person.id) : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[

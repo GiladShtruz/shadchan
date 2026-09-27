@@ -29,12 +29,13 @@ class PendingInvite {
 /// opened from the page at `shadchan-gilad.web.app/join`, or the same pair
 /// carried through a Play Store install as the install referrer.
 ///
-/// **An invitation grants nothing.** It remembers who invited, so that once
-/// the card exists the owner is offered to approve that matchmaker first — and
-/// even then only if the matchmaker is saved in the owner's contacts, like
-/// every other grant. Several matchmakers may invite the same person; the
-/// latest invitation is the one suggested, and there is still one account and
-/// one card.
+/// **The matchmaker who sent the link gets access by default.** Once the card
+/// exists, the personal area grants that one matchmaker access on its own
+/// (`CardAccessSections`) — the friend filled in the card *because* this
+/// matchmaker asked, so asking them to approve it a second time is a formality.
+/// Every other matchmaker still asks and waits. Several matchmakers may invite
+/// the same person; the latest invitation is the one honoured, and there is
+/// still one account and one card.
 abstract final class InviteLinkService {
   static const MethodChannel _channel = MethodChannel('shadchan/invite_links');
   static const String _fromKey = 'invite.from';

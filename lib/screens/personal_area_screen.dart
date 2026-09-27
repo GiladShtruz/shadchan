@@ -39,7 +39,12 @@ import 'package:shadchan/widgets/profile_status_choices.dart';
 /// Opening this page is what makes it the page the app opens on next time —
 /// see [WorkspaceStore.lastArea].
 class PersonalAreaScreen extends StatefulWidget {
-  const PersonalAreaScreen({super.key});
+  const PersonalAreaScreen({super.key, this.section});
+
+  /// A part of the page to open on — `requests`, from a notice about an
+  /// access request, lands on the requests themselves rather than on the
+  /// greeting.
+  final String? section;
 
   @override
   State<PersonalAreaScreen> createState() => _PersonalAreaScreenState();
@@ -152,10 +157,47 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
     }
   }
 
+  final GlobalKey _requestsKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     WorkspaceStore.setLastArea(WorkArea.personal);
+    _scrollToSection();
+  }
+
+  @override
+  void didUpdateWidget(PersonalAreaScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.section != oldWidget.section) {
+      _scrollToSection();
+    }
+  }
+
+  /// Brings the asked-for section into view — once on the first frame, and
+  /// once more a moment later, when the requests have arrived from the server
+  /// and the sections above them have taken their real height.
+  void _scrollToSection() {
+    if (widget.section != 'requests') {
+      return;
+    }
+    void reveal() {
+      final BuildContext? target = _requestsKey.currentContext;
+      if (!mounted || target == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        alignment: 0.05,
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      reveal();
+      Future<void>.delayed(const Duration(milliseconds: 700), reveal);
+    });
   }
 
   Future<void> _setStatus(Person card, ProfileStatus status) async {
@@ -318,10 +360,18 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                 // Status reports, requests, who can see the card, friends who
                 // could, and anybody blocked — all decided on the server.
                 if (!cards.isDeleted)
-                  CardAccessSections(hasCard: cards.hasCard),
-                // A secondary action, quiet and at the very end.
+                  CardAccessSections(
+                    hasCard: cards.hasCard,
+                    requestsKey: _requestsKey,
+                  ),
+                const SizedBox(height: 20),
+                _ShareAppLink(gender: profile.gender),
+                // Deleting the card is a secondary action: under a rule, quiet,
+                // and the very last thing on the page.
                 if (cards.hasCard) ...<Widget>[
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
                   Center(
                     child: _deleting
                         ? const SizedBox.square(
@@ -337,8 +387,6 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                           ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                _ShareAppLink(gender: profile.gender),
               ],
             ),
           ),

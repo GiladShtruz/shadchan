@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/card_text_field.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
@@ -287,17 +288,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                   const SizedBox(height: 20),
                   // Pasting the card here fills the fields below through
                   // [CardParser], so the common case is paste-then-review.
-                  TextFormField(
+                  CardTextField(
                     controller: _descriptionController,
-                    textInputAction: TextInputAction.newline,
-                    maxLines: 10,
-                    minLines: 5,
                     onChanged: _handleCardTextChanged,
-                    decoration: const InputDecoration(
-                      labelText: 'כרטיסייה לשליחה',
-                      hintText: 'הדבק כרטיסייה כאן',
-                      alignLabelWithHint: true,
-                    ),
+                    labelText: 'כרטיסייה לשליחה',
+                    hintText: 'הדבק כרטיסייה כאן',
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -547,11 +542,11 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
                     ],
                   ),
                   const _FormSectionDivider(),
-                  const _FormSectionHeading(
+                  _FormSectionHeading(
                     icon: Icons.contact_phone_outlined,
                     accent: AppColors.femaleAccent,
                     title: 'יצירת קשר',
-                    subtitle: 'הטלפון של המועמד ואיש הקשר להעברת הצעות',
+                    subtitle: _friendPhoneLabel(_selectedGender),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -1076,7 +1071,7 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
     _inquiryContactPhoneController.text = person.inquiryContactPhone ?? '';
     _sourceController.text = person.source ?? '';
     _notesController.text = person.notes ?? '';
-    _descriptionController.text = person.description ?? '';
+    _descriptionController.text = CardTextField.clean(person.description ?? '');
     // An older record with no gender opens with the question still open
     // rather than being silently declared male on the way in.
     _selectedGender = person.gender;
@@ -1099,8 +1094,8 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
 
     // A share that carries photos never fills the card text: what rides along
     // with an image is the sender's attribution, not profile information.
-    final String? sharedText = draft.filePaths.isEmpty
-        ? draft.text?.trim()
+    final String? sharedText = draft.filePaths.isEmpty && draft.text != null
+        ? CardTextField.clean(draft.text!).trim()
         : null;
     if (sharedText != null && sharedText.isNotEmpty) {
       final String existingDescription = _descriptionController.text.trim();
@@ -1300,6 +1295,14 @@ class _PersonFormIntro extends StatelessWidget {
 /// A section's title with its icon in a tinted square — the same square the
 /// settings rows and the menus use — in the section's own palette colour, so
 /// the four parts of the form are told apart without four boxes.
+/// "הטלפון של החבר" / "הטלפון של החברה" — the friend's own number, said in
+/// the friend's gender, under "יצירת קשר". The go-between has their own field.
+String _friendPhoneLabel(Gender gender) => switch (gender) {
+  Gender.male => 'הטלפון של החבר',
+  Gender.female => 'הטלפון של החברה',
+  _ => 'הטלפון של החבר/ה',
+};
+
 class _FormSectionHeading extends StatelessWidget {
   const _FormSectionHeading({
     required this.icon,

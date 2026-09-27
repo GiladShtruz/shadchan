@@ -31,10 +31,16 @@ class RemindersList extends StatelessWidget {
     this.padding = const EdgeInsets.fromLTRB(16, 16, 16, 24),
     this.shrinkWrap = false,
     this.onOpenMatch,
+    this.showEmpty = true,
   });
 
   final EdgeInsetsGeometry padding;
   final bool shrinkWrap;
+
+  /// Whether to say "nothing new" when no reminder is due. Off when other
+  /// notices are drawn beside this list — the page is not empty then, and
+  /// saying so under a list of notices contradicts it.
+  final bool showEmpty;
 
   /// Runs before navigating away — used by the panel to close itself.
   final VoidCallback? onOpenMatch;
@@ -60,7 +66,7 @@ class RemindersList extends StatelessWidget {
     ]..sort((_ReminderEntry a, _ReminderEntry b) => a.date.compareTo(b.date));
 
     if (entries.isEmpty) {
-      return EmptyReminders(theme: theme);
+      return showEmpty ? EmptyReminders(theme: theme) : const SizedBox.shrink();
     }
 
     return ListView.separated(
@@ -318,7 +324,7 @@ class EmptyReminders extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'אין תזכורות להיום',
+              'אין התראות חדשות',
               style: theme.textTheme.titleLarge,
               textAlign: TextAlign.center,
             ),

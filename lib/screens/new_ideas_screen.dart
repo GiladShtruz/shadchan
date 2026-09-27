@@ -110,7 +110,12 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
       appBar: AppBar(
         backgroundColor: ProfilePalette.canvas(theme),
         foregroundColor: ProfilePalette.text(theme),
-        titleTextStyle: ProfilePalette.appBarTitleStyle(theme),
+        // The title and the line under it are the palette's blue, centred —
+        // the page is an invitation, and says so in one colour.
+        titleTextStyle: ProfilePalette.appBarTitleStyle(
+          theme,
+        )?.copyWith(color: ProfilePalette.accent(theme)),
+        centerTitle: true,
         title: const Text('רעיונות שהמאגר מציע לך'),
       ),
       body: SafeArea(
@@ -353,15 +358,16 @@ class _Intro extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
       child: FittedBox(
         fit: BoxFit.scaleDown,
-        alignment: AlignmentDirectional.centerStart,
+        alignment: Alignment.center,
         child: Text(
           'כמה זוגות מהמאגר שאולי דווקא מתאימים!',
           maxLines: 1,
           softWrap: false,
+          textAlign: TextAlign.center,
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w900,
             height: 1.2,
-            color: ProfilePalette.text(theme),
+            color: ProfilePalette.accent(theme),
           ),
         ),
       ),

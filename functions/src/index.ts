@@ -159,8 +159,13 @@ export const onCardAccessWritten = onDocumentWritten(
         kind: 'accessRequest',
         title: 'בקשת גישה לכרטיס שלך',
         body: `${matchmakerName} רוצה לקבל גישה לכרטיס שלך`,
-        route: '/me',
+        // Straight to the requests on the personal area, not its top.
+        route: '/me?section=requests',
       });
+      // A matchmaker who joined after the owner's contacts were last read is
+      // not on the owner's list of friends yet — and that list is where the
+      // owner's phone finds the name they saved this friend under.
+      await findHelpers(ownerUid);
     } else if (now === 'approved') {
       // "יצחק אישר גישה לכרטיס שלו" — the owner's first name, in the owner's
       // own grammatical gender, read off their card.
@@ -177,8 +182,13 @@ export const onCardAccessWritten = onDocumentWritten(
           ownerGender,
         ),
         body: `הכרטיס של ${ownerFirst} מתעדכן אצלך מעכשיו`,
-        route: '/reminders',
+        // Opens that friend's profile in the matchmaker's database.
+        route: `/card-friend/${ownerUid}`,
         ownerUid,
+        // Firestore refuses an undefined field, so it is only there when set.
+        ...(typeof after.get('ownerPhoneHash') === 'string'
+          ? { ownerPhoneHash: after.get('ownerPhoneHash') as string }
+          : {}),
       });
     } else if (now === 'declined' && was === 'pending') {
       await notify(matchmakerUid, {
@@ -399,7 +409,7 @@ export const onPersonalCardWritten = onDocumentWritten(
 async function findHelpers(ownerUid: string): Promise<void> {
   const contacts = await db.collection('contactHashes').doc(ownerUid).get();
   const hashes: string[] = (contacts.get('hashes') as string[] | undefined) ?? [];
-  const helpers: { uid: string; name: string }[] = [];
+  const helpers: { uid: string; name: string; phoneHash: string }[] = [];
   const seen = new Set<string>();
   const refs = hashes.map((h) => db.collection('phoneDirectory').doc(h));
   for (let i = 0; i < refs.length; i += 100) {
@@ -416,7 +426,13 @@ async function findHelpers(ownerUid: string): Promise<void> {
         continue;
       }
       seen.add(uid);
-      helpers.push({ uid, name: (entry.get('name') as string) ?? '' });
+      // The hash lets the owner's phone show the name *they* saved this
+      // friend under; the directory name is only the fallback.
+      helpers.push({
+        uid,
+        name: (entry.get('name') as string) ?? '',
+        phoneHash: entry.id,
+      });
     }
   }
   helpers.sort((a, b) => a.name.localeCompare(b.name, 'he'));

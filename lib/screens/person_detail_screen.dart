@@ -343,20 +343,28 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     children: <Widget>[
                       Icon(Icons.edit_note_outlined),
                       SizedBox(width: 10),
-                      Text('עריכה מורחבת'),
+                      Text('עריכה'),
                     ],
                   ),
                 ),
                 // "מזל טוב" is not one of the status banner's three answers;
                 // this is where it is marked by hand.
                 if (person.profileStatus != ProfileStatus.mazelTov)
-                  const PopupMenuItem<String>(
+                  PopupMenuItem<String>(
                     value: 'mazelTov',
                     child: Row(
                       children: <Widget>[
-                        Icon(Icons.celebration_outlined),
-                        SizedBox(width: 10),
-                        Text('סימון מזל טוב'),
+                        const Icon(Icons.celebration_outlined),
+                        const SizedBox(width: 10),
+                        // Longer than the other rows: wraps rather than
+                        // overflowing the menu on a narrow phone.
+                        Flexible(
+                          child: Text(
+                            '{התארס/התחתן|התארסה/התחתנה} – מזל טוב!'.forGender(
+                              person.gender,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -421,6 +429,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                 child: ProfileStatusChoices(
                   title: 'סטטוס',
+                  compact: true,
                   status: person.profileStatus,
                   gender: person.gender,
                   onSelected: (ProfileStatus status) =>
@@ -1403,13 +1412,13 @@ class _ProposalContactsCard extends StatelessWidget {
 /// "הערות אישיות" on the profile: a short conversation with oneself about this
 /// friend.
 ///
-/// **It reads like a chat because that is how notes about a person are
-/// written** — a line after a phone call, a recording on the way home, another
-/// line a month later. The latest few messages sit oldest-to-newest with the
-/// newest at the bottom, right above a writing field that is always there,
-/// with the microphone beside it. There is no "+" and no dialog between a
-/// thought and the page.
-class _PersonalNotesCard extends StatelessWidget {
+/// **Newest first.** A note is looked up far more often than it is scrolled
+/// back to, so the latest one sits at the top, right under the writing field,
+/// and the older ones follow down the card. However many there are, the card
+/// never grows past [_maxListHeight]: past that the messages scroll inside it,
+/// so a friend with a year of notes does not push the rest of the profile a
+/// screen further down.
+class _PersonalNotesCard extends StatefulWidget {
   const _PersonalNotesCard({
     super.key,
     required this.person,
@@ -1425,17 +1434,31 @@ class _PersonalNotesCard extends StatelessWidget {
   /// Opens the notes page on one recording, scrolled to it.
   final ValueChanged<String> onOpenVoice;
 
-  /// How many of the latest messages the profile shows.
-  static const int _previewCount = 4;
+  /// The tallest the list of messages gets before it scrolls on its own.
+  static const double _maxListHeight = 320;
+
+  @override
+  State<_PersonalNotesCard> createState() => _PersonalNotesCardState();
+}
+
+class _PersonalNotesCardState extends State<_PersonalNotesCard> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color muted = _profileMutedColor(theme);
-    final List<_PersonNoteEntry> entries = _noteEntriesFor(person, notes);
-    final List<_PersonNoteEntry> preview = entries.length <= _previewCount
-        ? entries
-        : entries.sublist(entries.length - _previewCount);
+    final Person person = widget.person;
+    final List<_PersonNoteEntry> entries = _noteEntriesFor(
+      person,
+      widget.notes,
+    ).reversed.toList();
 
     // The whole box is the way into the full notes page — there is no
     // separate "מסך מלא" link. The messages and the writing line inside it
@@ -1446,7 +1469,7 @@ class _PersonalNotesCard extends StatelessWidget {
         color: _profileSurfaceColor(theme),
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
-          onTap: onShowAll,
+          onTap: widget.onShowAll,
           borderRadius: BorderRadius.circular(22),
           child: Ink(
             width: double.infinity,
@@ -1458,22 +1481,25 @@ class _PersonalNotesCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        'הערות אישיות',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: _profileTextColor(theme),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  'הערות אישיות',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: _profileTextColor(theme),
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
+                const SizedBox(height: 6),
+                // The writing line leads, so a new note lands directly under
+                // the place it was written.
+                _NoteComposer(personId: person.id),
+                // A recording that already exists is nearly always sitting in a
+                // WhatsApp chat with this friend. One tap there, and the share
+                // sheet brings it back here. Quiet, under the writing line.
+                if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
+                  _VoiceFromWhatsAppLink(person: person),
                 if (entries.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
+                    padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
                     child: Text(
                       // "רק לעיניך" is a promise about notes that exist. With none
                       // written it is reassurance nobody asked for, in front of an
@@ -1486,21 +1512,30 @@ class _PersonalNotesCard extends StatelessWidget {
                   )
                 else ...<Widget>[
                   const SizedBox(height: 4),
-                  ..._noteChatChildren(
-                    context,
-                    person,
-                    preview,
-                    maxLines: 6,
-                    onOpenVoice: onOpenVoice,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxHeight: _PersonalNotesCard._maxListHeight,
+                    ),
+                    child: Scrollbar(
+                      controller: _scroll,
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        controller: _scroll,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: _noteChatChildren(
+                            context,
+                            person,
+                            entries,
+                            maxLines: 6,
+                            onOpenVoice: widget.onOpenVoice,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 8),
                 ],
-                _NoteComposer(personId: person.id),
-                // A recording that already exists is nearly always sitting in a
-                // WhatsApp chat with this friend. One tap there, and the share
-                // sheet brings it back here. Quiet, under the writing line.
-                if (PhoneUtils.toWhatsAppNumber(person.phone) != null)
-                  _VoiceFromWhatsAppLink(person: person),
               ],
             ),
           ),
@@ -1955,18 +1990,20 @@ Future<void> _shareVoiceFromWhatsApp(
     builder: (BuildContext dialogContext) => AlertDialog(
       title: const Text('שמירת הקלטה מ־WhatsApp'),
       content: const Text(
-        'בצ׳אט: לחיצה ארוכה על ההקלטה ← שיתוף ← שדכן. ההקלטה תישמר '
-        'בהערות של החבר.',
+        'ב־WhatsApp: לחיצה ארוכה על ההקלטה ← שיתוף ← שדכן.\n'
+        'ההקלטה תישמר בהערות של החבר.',
       ),
+      // The two buttons as one pair in the middle of the foot.
+      actionsAlignment: MainAxisAlignment.center,
       actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('ביטול'),
-        ),
         FilledButton.icon(
           onPressed: () => Navigator.of(dialogContext).pop(true),
           icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 16),
-          label: const Text('לצ׳אט'),
+          label: const Text('WhatsApp'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('ביטול'),
         ),
       ],
     ),
@@ -4134,6 +4171,7 @@ Color _eventColor(PersonEventType type) {
       return AppColors.statusChecking;
     case PersonEventType.cardChanged:
     case PersonEventType.cardSynced:
+    case PersonEventType.cardSyncedMinor:
       return AppColors.onSurfaceVariant;
     case PersonEventType.reminderSet:
       return AppColors.profileOnBreak;
@@ -4327,7 +4365,7 @@ class _HistoryRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.only(top: 7),
+              padding: const EdgeInsets.only(top: 6),
               child: Container(
                 width: 9,
                 height: 9,
@@ -4344,8 +4382,9 @@ class _HistoryRow extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     // Regular weight: the only bold in the section is its
-                    // "היסטוריה" heading.
-                    style: theme.textTheme.bodyLarge?.copyWith(
+                    // "היסטוריה" heading, and a size under the page's reading
+                    // text: the history is looked through, not read.
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       color: _profileTextColor(theme),
                       fontWeight: FontWeight.w400,
                       height: 1.3,
@@ -4358,7 +4397,7 @@ class _HistoryRow extends StatelessWidget {
                         _historyText(detail, relatedOf(detail)),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                        style: theme.textTheme.bodySmall?.copyWith(
                           color: _profileTextColor(theme),
                           height: 1.35,
                         ),

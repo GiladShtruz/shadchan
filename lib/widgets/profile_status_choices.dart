@@ -10,6 +10,10 @@ import 'package:shadchan/widgets/home_section.dart';
 /// The personal area's "הסטטוס שלי" and a friend's profile draw the same
 /// banner, so the one question is always asked in one shape.
 ///
+/// [compact] is the friend profile's version: the title and the three answers
+/// on one line, at the page's reading size, so the banner takes a single short
+/// row rather than a block of its own.
+///
 /// "מזל טוב" is not one of the three. It is set by a wedding, or from the
 /// profile's menu; when a friend already carries it, it is drawn as a fourth,
 /// selected answer so the banner never contradicts the card.
@@ -21,6 +25,7 @@ class ProfileStatusChoices extends StatelessWidget {
     required this.gender,
     required this.onSelected,
     this.enabled = true,
+    this.compact = false,
   });
 
   final String title;
@@ -28,6 +33,9 @@ class ProfileStatusChoices extends StatelessWidget {
   final Gender gender;
   final ValueChanged<ProfileStatus> onSelected;
   final bool enabled;
+
+  /// Title and answers on one line, in smaller boxes.
+  final bool compact;
 
   static const List<ProfileStatus> choices = <ProfileStatus>[
     ProfileStatus.available,
@@ -43,6 +51,43 @@ class ProfileStatusChoices extends StatelessWidget {
       if (!choices.contains(status)) status,
     ];
 
+    final Widget options = Row(
+      children: <Widget>[
+        for (final ProfileStatus option in shown) ...<Widget>[
+          Expanded(
+            child: _StatusOption(
+              status: option,
+              gender: gender,
+              selected: status == option,
+              compact: compact,
+              onTap: enabled && status != option
+                  ? () => onSelected(option)
+                  : null,
+            ),
+          ),
+          if (option != shown.last) SizedBox(width: compact ? 6 : 8),
+        ],
+      ],
+    );
+
+    if (compact) {
+      return HomePaperCard(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+        child: Row(
+          children: <Widget>[
+            Text(
+              title,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: options),
+          ],
+        ),
+      );
+    }
+
     return HomePaperCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,23 +99,7 @@ class ProfileStatusChoices extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              for (final ProfileStatus option in shown) ...<Widget>[
-                Expanded(
-                  child: _StatusOption(
-                    status: option,
-                    gender: gender,
-                    selected: status == option,
-                    onTap: enabled && status != option
-                        ? () => onSelected(option)
-                        : null,
-                  ),
-                ),
-                if (option != shown.last) const SizedBox(width: 8),
-              ],
-            ],
-          ),
+          options,
         ],
       ),
     );
@@ -83,11 +112,13 @@ class _StatusOption extends StatelessWidget {
     required this.gender,
     required this.selected,
     required this.onTap,
+    this.compact = false,
   });
 
   final ProfileStatus status;
   final Gender gender;
   final bool selected;
+  final bool compact;
   final VoidCallback? onTap;
 
   @override
@@ -101,7 +132,10 @@ class _StatusOption extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          padding: EdgeInsets.symmetric(
+            vertical: compact ? 6 : 10,
+            horizontal: 4,
+          ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
@@ -126,9 +160,15 @@ class _StatusOption extends StatelessWidget {
                   child: Text(
                     status.displayNameFor(gender),
                     maxLines: 1,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                    ),
+                    style:
+                        (compact
+                                ? theme.textTheme.bodyMedium
+                                : theme.textTheme.bodyLarge)
+                            ?.copyWith(
+                              fontWeight: selected
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
                   ),
                 ),
               ),

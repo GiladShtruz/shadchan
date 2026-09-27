@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/card_text_field.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -20,7 +21,6 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/card_parser.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
-import 'package:shadchan/utils/invisible_marks.dart';
 import 'package:shadchan/utils/match_preferences.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -231,7 +231,8 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _height.text = person.heightCm?.toString() ?? '';
     _city.text = person.city ?? '';
     _phone.text = person.phone ?? '';
-    _description.text = InvisibleMarks.strip(person.description ?? '');
+    _description.text = CardTextField.clean(person.description ?? '');
+    _lastParsedText = _description.text;
     _contactName.text = person.inquiryContactName ?? '';
     _contactPhone.text = person.inquiryContactPhone ?? '';
     _gender = person.gender;
@@ -273,12 +274,17 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     }
   }
 
+  /// The text last read into the fields — the controller also notifies on
+  /// every caret move, and a tap is no reason to parse the card again.
+  String? _lastParsedText;
+
   void _handleDescriptionChanged() {
     // An owner writes a few sentences about themselves; nothing in them is a
     // label to be read into the fields below.
-    if (_owner) {
+    if (_owner || _description.text == _lastParsedText) {
       return;
     }
+    _lastParsedText = _description.text;
     final ParsedCard parsed = CardParser.parse(_description.text);
     if (parsed.isEmpty) {
       return;
@@ -805,28 +811,13 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
           // no letter spacing (it shifts hit-testing into the middle of a
           // Hebrew letter) and with WhatsApp's invisible direction marks kept
           // out — see [InvisibleMarks].
-          TextField(
+          CardTextField(
             controller: _description,
             focusNode: _focusNodes[_description],
-            minLines: 5,
-            maxLines: null,
-            keyboardType: TextInputType.multiline,
-            textInputAction: TextInputAction.newline,
-            inputFormatters: const <TextInputFormatter>[
-              InvisibleMarksFormatter(),
-            ],
-            style: theme.textTheme.bodyLarge?.copyWith(
-              letterSpacing: 0,
-              height: 1.4,
-            ),
-            scrollPadding: const EdgeInsets.only(bottom: 120),
-            decoration: InputDecoration(
-              hintText: _owner
-                  ? 'מה חשוב לי, במה אני {עוסק|עוסקת}, מה אני {אוהב|אוהבת} לעשות'
-                        .forGender(_gender)
-                  : 'הדביקו כאן את הכרטיסייה',
-              alignLabelWithHint: true,
-            ),
+            hintText: _owner
+                ? 'מה חשוב לי, במה אני {עוסק|עוסקת}, מה אני {אוהב|אוהבת} לעשות'
+                      .forGender(_gender)
+                : 'הדביקו כאן את הכרטיסייה',
           ),
           if (canReadWithAi)
             Align(
@@ -972,6 +963,19 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             // "איש קשר להעברת הצעות" phone further down, so a person created
             // from "הוספת שם מחוץ למאגר" — who arrives with nothing but a name —
             // had no way to be given one at all.
+            _label(theme, 'יצירת קשר'),
+            const SizedBox(height: 2),
+            Text(
+              switch (_gender) {
+                Gender.male => 'הטלפון של החבר',
+                Gender.female => 'הטלפון של החברה',
+                _ => 'הטלפון של החבר/ה',
+              },
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.mutedInk,
+              ),
+            ),
+            const SizedBox(height: 8),
             _field(controller: _phone, label: 'טלפון', phone: true),
             // With no number yet, the phone's own contacts are the quickest
             // place to find one.

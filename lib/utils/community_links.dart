@@ -153,6 +153,52 @@ abstract final class CommunityLinks {
     return '$trimmed\n\n$sharedCardCredit';
   }
 
+  /// A line of the app's own credit, however a forward has reshaped it —
+  /// `שותף מ"שדכן"`, with WhatsApp's curly quotes, or none at all.
+  static final RegExp _creditLine = RegExp(
+    r'(שותף|שותפה|שותפו)\s*(מ|מה)?\s*'
+    "[\"״”“']?"
+    r'\s*שדכן|יומן אישי לניהול הצעות',
+  );
+
+  /// The app's own links: the landing page, the store listings, the site.
+  static final RegExp _ourLink = RegExp(
+    r'(https?://)?(www\.)?(shadchan-app-eosin\.vercel\.app|shadchan-gilad\.web\.app|play\.google\.com/store/apps/details\?id=com\.gilad\.shadchan|apps\.apple\.com/\S*shadchan)\S*',
+    caseSensitive: false,
+  );
+
+  static final RegExp _linkLead = RegExp(
+    r'^[\s:\-–—•*]*(להורדה|להורדת האפליקציה|הורדה|לאפליקציה|קישור)?[\s:\-–—•*]*$',
+  );
+
+  /// [text] without the credit [creditCard] puts under a shared card — the
+  /// "שותף מ"שדכן"" line and the app's link — so a card that went out of the
+  /// app and was pasted back in is saved as the card and nothing else.
+  ///
+  /// Returns [text] untouched when there is nothing to take out, so typing is
+  /// never disturbed.
+  static String stripCredit(String text) {
+    if (!_creditLine.hasMatch(text) && !_ourLink.hasMatch(text)) {
+      return text;
+    }
+    final List<String> kept = <String>[];
+    for (final String line in text.split('\n')) {
+      if (_creditLine.hasMatch(line)) {
+        continue;
+      }
+      final String withoutLink = line.replaceAll(_ourLink, '');
+      if (withoutLink != line && _linkLead.hasMatch(withoutLink)) {
+        // The link on its own line, or after "להורדה:" — the line goes.
+        continue;
+      }
+      kept.add(withoutLink == line ? line : withoutLink.trimRight());
+    }
+    return kept
+        .join('\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trimRight();
+  }
+
   /// The invitation a single sends from their personal area — shorter than
   /// [shareMessage], because it is not an app for matchmakers they are
   /// recommending but one a friend of theirs might want to try. [landingUrl]

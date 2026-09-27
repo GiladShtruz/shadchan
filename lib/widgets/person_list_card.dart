@@ -21,6 +21,7 @@ class PersonListCard extends StatelessWidget {
     this.onToggleFavorite,
     this.onOpenWhatsApp,
     this.onCompleteCard,
+    this.keepWhatsAppSlot = false,
     this.onOpenMatches,
     this.onLongPress,
     this.onStatusPicked,
@@ -41,6 +42,11 @@ class PersonListCard extends StatelessWidget {
   /// Where the messaging button goes when there is no number to message. Left
   /// null on a row that has no editor behind it, which simply drops the button.
   final VoidCallback? onCompleteCard;
+
+  /// Keeps the WhatsApp mark on every row, greyed out and inert for a friend
+  /// it cannot reach, so the buttons of a long list stay in one column. See
+  /// [ContactChannelButton.keepWhatsAppSlot].
+  final bool keepWhatsAppSlot;
 
   /// When set, the heart button opens this person's match suggestions instead
   /// of toggling the favorite flag (favoriting stays available from the
@@ -213,6 +219,7 @@ class PersonListCard extends StatelessWidget {
                       person: person,
                       onWhatsApp: onOpenWhatsApp!,
                       onEdit: onCompleteCard,
+                      keepWhatsAppSlot: keepWhatsAppSlot,
                     ),
                   if (onOpenMatches != null)
                     IconButton(
@@ -362,6 +369,10 @@ class ProfileStatusTag extends StatelessWidget {
     final Color ink = whose == null
         ? AppColors.heading(dark: dark)
         : AppColors.genderAccent(whose, dark: dark);
+    // "פנויה" / "תפוסה" for a woman; "בהפסקה" is the same for both.
+    final String word = whose == null
+        ? status.displayName
+        : status.displayNameFor(whose);
 
     if (compact) {
       // No pill round it: the word in the person's own colour and the dot in
@@ -373,7 +384,7 @@ class ProfileStatusTag extends StatelessWidget {
           _dot(6),
           const SizedBox(width: 4),
           Text(
-            status.displayName,
+            word,
             maxLines: 1,
             style: theme.textTheme.labelSmall?.copyWith(
               fontSize: 11,
@@ -398,7 +409,7 @@ class ProfileStatusTag extends StatelessWidget {
           _dot(6),
           const SizedBox(width: 5),
           Text(
-            status.displayName,
+            word,
             style: theme.textTheme.labelSmall?.copyWith(
               color: ink,
               fontWeight: FontWeight.w700,

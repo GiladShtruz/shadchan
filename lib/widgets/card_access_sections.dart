@@ -23,9 +23,17 @@ import 'package:shadchan/widgets/settings_widgets.dart';
 /// shares or views. The owner sees their card and who may read it; that is
 /// all.
 class CardAccessSections extends StatefulWidget {
-  const CardAccessSections({super.key, required this.hasCard});
+  const CardAccessSections({
+    super.key,
+    required this.hasCard,
+    this.requestsKey,
+  });
 
   final bool hasCard;
+
+  /// Put on the "בקשות גישה" group, so a notice about a request can open the
+  /// page right on it.
+  final Key? requestsKey;
 
   @override
   State<CardAccessSections> createState() => _CardAccessSectionsState();
@@ -135,7 +143,9 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     final bool? sure = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text('לחסום את ${row.matchmakerName}?'),
+        title: Text(
+          'לחסום את ${access.nameInContacts(row.matchmakerUid, row.matchmakerName)}?',
+        ),
         content: Text(
           'הגישה לכרטיס תוסר, ולא ניתן יהיה לבקש אותה שוב עד '
                   '{שתבטל|שתבטלי} את החסימה.'
@@ -173,7 +183,10 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
       return;
     }
     if (ok) {
-      AppNotice.show(context, 'הגישה לכרטיס שלך ניתנה ל${helper.name}');
+      AppNotice.show(
+        context,
+        'הגישה לכרטיס שלך ניתנה ל${access.nameInContacts(helper.uid, helper.name)}',
+      );
     } else {
       _failed();
     }
@@ -217,7 +230,8 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (widget.hasCard) _InviteSuggestion(access: access, onGrant: _grant),
+        if (widget.hasCard)
+          _InviteAutoGrant(access: access, ensureMyPhone: _ensureMyPhone),
         if (access.statusReports.isNotEmpty)
           SettingsGroup(
             title: 'עדכוני סטטוס לאישור',
@@ -256,6 +270,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
             ],
           ),
         SettingsGroup(
+          key: widget.requestsKey,
           title: 'בקשות גישה',
           children: <Widget>[
             if (pending.isEmpty)
@@ -266,7 +281,10 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
             else
               for (final CardAccess row in pending)
                 _AccessRow(
-                  name: row.matchmakerName,
+                  name: access.nameInContacts(
+                    row.matchmakerUid,
+                    row.matchmakerName,
+                  ),
                   busy: access.isBusy('access:${row.id}'),
                   menu: <String, VoidCallback>{
                     'חסימה': () => _confirmBlock(access, row),
@@ -303,7 +321,10 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
             else
               for (final CardAccess row in approved)
                 _AccessRow(
-                  name: row.matchmakerName,
+                  name: access.nameInContacts(
+                    row.matchmakerUid,
+                    row.matchmakerName,
+                  ),
                   busy: access.isBusy('access:${row.id}'),
                   menu: <String, VoidCallback>{
                     'הסרת גישה': () =>
@@ -315,7 +336,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
         ),
         if (widget.hasCard)
           SettingsGroup(
-            title: 'החברים שלי שכבר בשדכן',
+            title: 'החברים שלי שמשדכים בשדכן',
             children: <Widget>[
               if (_permission == null)
                 const SizedBox.shrink()
@@ -354,7 +375,7 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
               else
                 for (final CardHelper helper in helpers)
                   _HelperRow(
-                    name: helper.name,
+                    name: access.nameInContacts(helper.uid, helper.name),
                     busy: access.isBusy('helper:${helper.uid}'),
                     onGrant: () => _grant(access, helper),
                   ),
@@ -367,7 +388,10 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
               for (final CardAccess row in blocked)
                 SettingsRow(
                   icon: Icons.block_outlined,
-                  title: row.matchmakerName,
+                  title: access.nameInContacts(
+                    row.matchmakerUid,
+                    row.matchmakerName,
+                  ),
                   trailing: _busyOr(
                     access.isBusy('access:${row.id}'),
                     TextButton(
@@ -396,78 +420,111 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
   }
 }
 
-/// The matchmaker whose invitation brought this person here, offered first —
-/// and only when saved in the owner's contacts, like any other grant. An
-/// invitation never grants anything by itself.
-class _InviteSuggestion extends StatelessWidget {
-  const _InviteSuggestion({required this.access, required this.onGrant});
+/// The matchmaker whose link brought this person here gets access to the card
+/// by default — the moment the card exists, with nothing to approve. The
+/// friend filled the card in because this matchmaker asked; every other
+/// matchmaker still asks and waits.
+///
+/// Draws nothing. A matchmaker the owner has blocked is never granted, and one
+/// who already has access only clears the invitation.
+class _InviteAutoGrant extends StatefulWidget {
+  const _InviteAutoGrant({required this.access, required this.ensureMyPhone});
 
   final CardAccessProvider access;
-  final Future<void> Function(CardAccessProvider, CardHelper) onGrant;
+
+  /// Asks for the owner's own number if it is missing — it is how the
+  /// matchmaker's app finds the friend already in their database.
+  final Future<bool> Function() ensureMyPhone;
 
   @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: InviteLinkService.revision,
-      builder: (BuildContext context, _, _) {
-        final PendingInvite? invite = InviteLinkService.pending;
-        if (invite == null) {
-          return const SizedBox.shrink();
-        }
-        final bool alreadyApproved = access.approved.any(
-          (CardAccess a) => a.matchmakerUid == invite.fromUid,
-        );
-        if (alreadyApproved) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => InviteLinkService.clear(),
-          );
-          return const SizedBox.shrink();
-        }
-        CardHelper? helper;
-        for (final CardHelper h in access.helpers) {
-          if (h.uid == invite.fromUid) {
-            helper = h;
-          }
-        }
-        if (helper == null) {
-          return const SizedBox.shrink();
-        }
-        final CardHelper found = helper;
-        final bool busy = access.isBusy('helper:${found.uid}');
-        return SettingsGroup(
-          title: 'הזמנה',
-          children: <Widget>[
-            SettingsRow(
-              icon: Icons.mail_outline_rounded,
-              title: 'הגעת בהזמנה של ${found.name}',
-              subtitle: 'לתת ל${found.name} גישה לכרטיס שלך?',
-              trailing: busy
-                  ? const SizedBox.square(
-                      dimension: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        TextButton(
-                          onPressed: InviteLinkService.clear,
-                          child: const Text('לא עכשיו'),
-                        ),
-                        FilledButton(
-                          onPressed: () async {
-                            await onGrant(access, found);
-                            InviteLinkService.clear();
-                          },
-                          child: const Text('לתת גישה'),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
-        );
-      },
-    );
+  State<_InviteAutoGrant> createState() => _InviteAutoGrantState();
+}
+
+class _InviteAutoGrantState extends State<_InviteAutoGrant> {
+  /// Invitations already handled in this visit — one attempt each, so a
+  /// failed write or a dismissed number dialog never loops.
+  final Set<String> _tried = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    InviteLinkService.revision.addListener(_schedule);
+    widget.access.addListener(_schedule);
+    _schedule();
   }
+
+  @override
+  void didUpdateWidget(_InviteAutoGrant oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.access != widget.access) {
+      oldWidget.access.removeListener(_schedule);
+      widget.access.addListener(_schedule);
+    }
+  }
+
+  @override
+  void dispose() {
+    InviteLinkService.revision.removeListener(_schedule);
+    widget.access.removeListener(_schedule);
+    super.dispose();
+  }
+
+  void _schedule() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeGrant());
+  }
+
+  Future<void> _maybeGrant() async {
+    final CardAccessProvider access = widget.access;
+    final PendingInvite? invite = InviteLinkService.pending;
+    final String? me = access.uid;
+    if (!mounted || invite == null || me == null) {
+      return;
+    }
+    if (invite.fromUid == me || _tried.contains(invite.fromUid)) {
+      return;
+    }
+    CardAccess? row;
+    for (final CardAccess a in <CardAccess>[
+      ...access.approved,
+      ...access.blocked,
+    ]) {
+      if (a.matchmakerUid == invite.fromUid) {
+        row = a;
+      }
+    }
+    if (row != null) {
+      // Already approved, or blocked by the owner — a link never undoes a
+      // block. Either way there is nothing to do.
+      InviteLinkService.clear();
+      return;
+    }
+    _tried.add(invite.fromUid);
+    await widget.ensureMyPhone();
+    if (!mounted) {
+      return;
+    }
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    final String name = access.nameInContacts(invite.fromUid, invite.name);
+    final bool ok = await access.grant(
+      CardHelper(uid: invite.fromUid, name: invite.name),
+      ownerName: profile.fullName ?? '',
+      ownerPhoneHash: PhoneIdentity.hash(profile.myPhone),
+      ownerPhone: profile.myPhone,
+    );
+    if (!ok) {
+      return;
+    }
+    InviteLinkService.clear();
+    if (mounted && name.trim().isNotEmpty) {
+      AppNotice.show(
+        context,
+        'ל$name יש עכשיו גישה לכרטיס שלך, דרך הקישור שקיבלת',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 /// A friend who matchmakes in the app: their full name, and the one thing to

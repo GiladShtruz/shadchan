@@ -155,8 +155,30 @@ class DismissKeyboardOnTap extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       excludeFromSemantics: true,
-      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      onTapUp: (TapUpDetails details) => _dismiss(details.globalPosition),
       child: child,
     );
+  }
+
+  /// Never for a tap on the focused field itself, or just beside it where its
+  /// caret handles sit. A multi-line field holds its tap back a moment to tell
+  /// a single tap from a double one, and in that moment this recognizer could
+  /// win — closing the keyboard instead of moving the caret, which is exactly
+  /// the "the caret will not go where I put it" of a long Hebrew card.
+  static void _dismiss(Offset position) {
+    final FocusNode? focus = FocusManager.instance.primaryFocus;
+    if (focus == null) {
+      return;
+    }
+    final RenderObject? box = focus.context?.findRenderObject();
+    if (box is RenderBox && box.attached && box.hasSize) {
+      final Rect field = (box.localToGlobal(Offset.zero) & box.size).inflate(
+        28,
+      );
+      if (field.contains(position)) {
+        return;
+      }
+    }
+    focus.unfocus();
   }
 }

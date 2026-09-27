@@ -351,9 +351,9 @@ class _Side extends StatelessWidget {
   final void Function(Person person) onOpenWhatsApp;
   final void Function(Person person) onCompleteCard;
 
-  /// A little more presence than the 24 the faces had: large enough to know
-  /// who it is at a glance, small enough that a list still reads as a list.
-  static const double avatarRadius = 33;
+  /// Faces with presence — large enough to know who it is at a glance, small
+  /// enough that a list of ideas still reads as a list.
+  static const double avatarRadius = 38;
 
   @override
   Widget build(BuildContext context) {

@@ -94,10 +94,90 @@ void main() {
       ownerUid: 'owner',
       localPhotoPaths: const <String>['/x/card_owner_b.jpg'],
     );
-    expect(result.updates, <String>[
-      'דניאל החליף תמונה',
-      'דניאל עדכן את הפרטים שלו',
-    ]);
+    expect(result.updates, <String>['דניאל החליף תמונה']);
+    // One word added to a short text is a correction, not news.
+    expect(result.minorUpdates, <String>['דניאל תיקן את טקסט הכרטיס']);
+  });
+
+  test('a deleted photo reads as deleted, not replaced', () {
+    final Person person = _local();
+    CardSyncEngine.apply(
+      person,
+      _remote(),
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>[
+        '/x/card_owner_a.jpg',
+        '/x/card_owner_b.jpg',
+      ],
+    );
+    final CardSyncResult result = CardSyncEngine.apply(
+      person,
+      _remote(),
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>['/x/card_owner_a.jpg'],
+    );
+    expect(result.updates, <String>['דניאל מחק תמונה']);
+    expect(result.minorUpdates, isEmpty);
+  });
+
+  test('a rewritten card text is news; a fixed word is not', () {
+    const String long =
+        'בחור רציני ושמח, עובד בהייטק ולומד בערבים. אוהב טיולים בטבע, '
+        'מוזיקה ישראלית וערבי שבת עם חברים. מחפש בחורה חמה ושמחה.';
+    final Person person = _local();
+    CardSyncEngine.apply(
+      person,
+      _remote(description: long),
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>[],
+    );
+    final CardSyncResult small = CardSyncEngine.apply(
+      person,
+      _remote(description: long.replaceFirst('ישראלית', 'קלאסית')),
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>[],
+    );
+    expect(small.updates, isEmpty);
+    expect(small.minorUpdates, <String>['דניאל תיקן את טקסט הכרטיס']);
+
+    final CardSyncResult rewrite = CardSyncEngine.apply(
+      person,
+      _remote(description: 'סטודנט לרפואה בירושלים, מתנדב במד"א ומנגן בגיטרה.'),
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>[],
+    );
+    expect(rewrite.updates, <String>['דניאל עדכן את טקסט הכרטיס']);
+  });
+
+  test('photo change wording', () {
+    expect(
+      CardSyncEngine.describePhotoChange(
+        const <String>['/a/1.jpg', '/a/2.jpg', '/a/3.jpg'],
+        const <String>['/a/1.jpg'],
+      ),
+      (line: '{מחק|מחקה} 2 תמונות', major: true),
+    );
+    expect(
+      CardSyncEngine.describePhotoChange(
+        const <String>['/a/1.jpg'],
+        const <String>['/a/1.jpg', '/a/2.jpg'],
+      ),
+      (line: '{הוסיף|הוסיפה} תמונה', major: true),
+    );
+    expect(
+      CardSyncEngine.describePhotoChange(
+        const <String>['/a/1.jpg', '/a/2.jpg', '/a/3.jpg'],
+        const <String>['/a/1.jpg', '/a/3.jpg', '/a/2.jpg'],
+      ).major,
+      isFalse,
+    );
+    expect(
+      CardSyncEngine.describePhotoChange(
+        const <String>['/a/1.jpg', '/a/2.jpg'],
+        const <String>['/a/2.jpg', '/a/1.jpg'],
+      ),
+      (line: '{החליף|החליפה} את התמונה הראשית', major: true),
+    );
   });
 
   test('a local status stands until the owner changes theirs', () {
@@ -181,6 +261,25 @@ void main() {
     expect(person.region, isNull);
     expect(person.photosPaths, isEmpty);
     expect(person.phone, '050-1234567');
+  });
+
+  test('withdrawn access leaves the friend in the database', () {
+    final Person person = _local(withOwnContent: false)
+      ..hidden = true
+      ..needsReview = true;
+    CardSyncEngine.apply(
+      person,
+      _remote(),
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>[],
+    );
+    // Whatever state the record was in, ending the link must not take the
+    // friend out of המאגר שלי.
+    person.hidden = true;
+    CardSyncEngine.unlink(person);
+    expect(person.hidden, isFalse);
+    expect(person.needsReview, isFalse);
+    expect(person.firstName, 'דניאל');
   });
 
   test('a detached record is kept as the matchmaker left it', () {

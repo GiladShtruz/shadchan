@@ -15,6 +15,8 @@ import 'package:shadchan/utils/home_suggestions.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/utils/think_rotation.dart';
+import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -211,6 +213,7 @@ class _ThinkScreenState extends State<ThinkScreen> {
           fontWeight: FontWeight.w600,
           color: ProfilePalette.muted(theme),
         ),
+        centerTitle: true,
         title: const Text('עוצרים רגע לחשוב על החברים'),
       ),
       body: SafeArea(
@@ -894,8 +897,8 @@ class _CandidateChip extends StatelessWidget {
 /// **And it stopped shouting.** What was left was still set as a heavy black
 /// heading, the largest and darkest thing on the page, which is the wrong
 /// voice for an invitation: this is somebody being told their friends would be
-/// glad of a thought, not a section title. Set in the page's warm accent at a
-/// size down, with a small mark in front of it, it reads the way it is meant.
+/// glad of a thought, not a section title. Set in the page's accent at a size
+/// down and centred under the centred title, it reads the way it is meant.
 class _ThinkWelcome extends StatelessWidget {
   const _ThinkWelcome();
 
@@ -906,37 +909,19 @@ class _ThinkWelcome extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(Icons.favorite_rounded, size: 16, color: ink),
-          ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: Text(
-              'חברים שלך שישמחו שתחשוב בשבילם!',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                height: 1.3,
-                color: ink,
-              ),
-            ),
-          ),
-        ],
+      child: Text(
+        'חברים שלך שישמחו {שתחשוב|שתחשבי} עליהם'.forGender(context.userGender),
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          height: 1.3,
+          color: ink,
+        ),
       ),
     );
   }
 }
 
-/// The foot of the page: another ten friends, or the line that says there are
-/// no more.
-///
-/// **The page ends in a sentence either way.** A list that simply stops leaves
-/// the reader wondering whether it ran out or ran short, and on a screen whose
-/// whole promise is "there is always somebody worth a thought" that is the one
-/// ambiguity worth spending a line on.
 class _MoreFriendsFooter extends StatelessWidget {
   const _MoreFriendsFooter({required this.hasMore, required this.onMore});
 

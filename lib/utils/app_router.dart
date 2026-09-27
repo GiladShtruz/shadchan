@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/add_contacts_screen.dart';
 import 'package:shadchan/screens/add_tip_screen.dart';
@@ -228,7 +230,9 @@ abstract final class AppRouter {
       GoRoute(
         path: '/me',
         builder: (BuildContext context, GoRouterState state) {
-          return const PersonalAreaScreen();
+          return PersonalAreaScreen(
+            section: state.uri.queryParameters['section'],
+          );
         },
         routes: <RouteBase>[
           GoRoute(
@@ -679,6 +683,29 @@ abstract final class AppRouter {
         path: '/reminders',
         builder: (BuildContext context, GoRouterState state) {
           return const RemindersScreen();
+        },
+      ),
+      // "דביר אישר גישה לכרטיס שלו" — a notice about one friend's card opens
+      // that friend's profile in the database: by the card link, else by the
+      // number the owner approved with. Before the card has landed there is
+      // no profile to open yet, and the notifications page is the next best.
+      GoRoute(
+        path: '/card-friend/:ownerUid',
+        redirect: (BuildContext context, GoRouterState state) {
+          final String owner = state.pathParameters['ownerUid'] ?? '';
+          final String hash = state.uri.queryParameters['h'] ?? '';
+          try {
+            final PersonRepository people = context.read<PersonRepository>();
+            final Person? person =
+                people.findByCardOwner(owner) ??
+                (hash.isEmpty ? null : people.findByPhoneHash(hash));
+            if (person != null) {
+              return '/people/${person.id}';
+            }
+          } on ProviderNotFoundException {
+            // Fall through to the notifications page.
+          }
+          return '/reminders';
         },
       ),
       GoRoute(

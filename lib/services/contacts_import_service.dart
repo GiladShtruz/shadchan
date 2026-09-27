@@ -427,6 +427,10 @@ abstract final class ContactsImportService {
     return ContactsPermissionState.denied;
   }
 
+  /// A contact's name as the phone shows it — the display name, or first and
+  /// last joined.
+  static String displayNameOf(Contact contact) => _resolveDisplayName(contact);
+
   static String _resolveDisplayName(Contact contact) {
     final String displayName = (contact.displayName ?? '').trim();
     if (displayName.isNotEmpty) {

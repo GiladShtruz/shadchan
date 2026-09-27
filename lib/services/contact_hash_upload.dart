@@ -23,6 +23,22 @@ abstract final class ContactHashUpload {
   static Box<dynamic>? get _settings =>
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
 
+  /// The names this phone's own address book gives each number, by
+  /// [PhoneIdentity.hash] — read on every scan, kept in memory only, never
+  /// sent anywhere. It is how the personal area names a matchmaker the way
+  /// the owner saved them, rather than the way the matchmaker signed up.
+  static final ValueNotifier<Map<String, String>> contactNames =
+      ValueNotifier<Map<String, String>>(const <String, String>{});
+
+  /// The owner's own name for [phoneHash], if their contacts have one.
+  static String? nameFor(String? phoneHash) {
+    if (phoneHash == null) {
+      return null;
+    }
+    final String? name = contactNames.value[phoneHash];
+    return name == null || name.trim().isEmpty ? null : name.trim();
+  }
+
   static Future<ContactsPermissionState> permission() =>
       ContactsImportService.checkPermission();
 
@@ -33,13 +49,27 @@ abstract final class ContactHashUpload {
         return ContactScanOutcome.noPermission;
       }
       final List<Contact> contacts = await FlutterContacts.getAll(
-        properties: <ContactProperty>{ContactProperty.phone},
+        properties: <ContactProperty>{
+          ContactProperty.name,
+          ContactProperty.phone,
+        },
       );
-      final Set<String> hashes = <String>{
-        for (final Contact contact in contacts)
-          for (final Phone phone in contact.phones)
-            ?PhoneIdentity.hash(phone.number),
-      };
+      final Set<String> hashes = <String>{};
+      final Map<String, String> names = <String, String>{};
+      for (final Contact contact in contacts) {
+        final String name = ContactsImportService.displayNameOf(contact);
+        for (final Phone phone in contact.phones) {
+          final String? hash = PhoneIdentity.hash(phone.number);
+          if (hash == null) {
+            continue;
+          }
+          hashes.add(hash);
+          if (name.isNotEmpty) {
+            names.putIfAbsent(hash, () => name);
+          }
+        }
+      }
+      contactNames.value = names;
       final List<String> sorted = hashes.toList()..sort();
       final String print = SyncStateStore.fingerprint(<String, Object?>{
         'hashes': sorted,
@@ -65,6 +95,7 @@ abstract final class ContactHashUpload {
   }
 
   static Future<void> forget() async {
+    contactNames.value = const <String, String>{};
     await _settings?.deleteAll(<String>[_printKey, _atKey]);
   }
 }

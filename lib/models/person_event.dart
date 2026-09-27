@@ -28,10 +28,17 @@ enum PersonEventType {
   @HiveField(6)
   reminderSet,
 
-  /// The owner of a synced card changed something on it — "דניאל החליף
-  /// תמונה". Shown as the profile's short list of recent updates.
+  /// The owner of a synced card changed something meaningful on it —
+  /// "דניאל מחק תמונה", "דניאל עדכן את טקסט הכרטיס". Shown as the profile's
+  /// short list of new updates, and in the card's full change history.
   @HiveField(7)
   cardSynced,
+
+  /// A small change to a synced card — a word, a phrasing, one sentence, the
+  /// order of the photos. Kept in the card's full change history only, so the
+  /// matchmaker is not flooded with updates about nothing.
+  @HiveField(8)
+  cardSyncedMinor,
 }
 
 /// A single entry in a person's history log. This is the dedicated event store

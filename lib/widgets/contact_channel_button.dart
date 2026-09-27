@@ -27,6 +27,7 @@ class ContactChannelButton extends StatelessWidget {
     this.size = 20,
     this.visualDensity = VisualDensity.compact,
     this.constraints,
+    this.keepWhatsAppSlot = false,
   });
 
   final Person person;
@@ -35,6 +36,11 @@ class ContactChannelButton extends StatelessWidget {
   final double size;
   final VisualDensity visualDensity;
   final BoxConstraints? constraints;
+
+  /// For a list whose rows must line up: a person WhatsApp cannot reach still
+  /// gets the WhatsApp mark in the same place, greyed out and inert, instead
+  /// of an SMS button, a pencil or nothing.
+  final bool keepWhatsAppSlot;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +51,20 @@ class ContactChannelButton extends StatelessWidget {
     final String name = person.fullName.trim().isEmpty
         ? person.firstName.trim()
         : person.fullName.trim();
+
+    if (keepWhatsAppSlot && channel != ContactChannel.whatsapp) {
+      return IconButton(
+        visualDensity: visualDensity,
+        constraints: constraints,
+        tooltip: 'אין WhatsApp ל$name',
+        icon: FaIcon(
+          FontAwesomeIcons.whatsapp,
+          size: size,
+          color: theme.disabledColor,
+        ),
+        onPressed: null,
+      );
+    }
 
     switch (channel) {
       case ContactChannel.whatsapp:

@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:shadchan/utils/community_links.dart';
+import 'package:shadchan/widgets/card_text_field.dart';
 
 /// The line every card carries out of the app.
 ///
@@ -50,4 +52,54 @@ void main() {
       expect(CommunityLinks.creditCard('   '), CommunityLinks.sharedCardCredit);
     },
   );
+
+  group('pasting a shared card back in', () {
+    test('the credit and the link come off', () {
+      final String shared = CommunityLinks.creditCard(
+        'בן 24, ירושלים.\nדתי לאומי.',
+      );
+      expect(
+        CommunityLinks.stripCredit(shared),
+        'בן 24, ירושלים.\nדתי לאומי.',
+      );
+    });
+
+    test('WhatsApp curly quotes and a bare link line are recognised', () {
+      const String forwarded =
+          'בת 23, מודיעין\n\nשותף מ”שדכן” - יומן אישי לניהול הצעות.\n'
+          'https://shadchan-app-eosin.vercel.app';
+      expect(CommunityLinks.stripCredit(forwarded), 'בת 23, מודיעין');
+    });
+
+    test('a card with no credit is left exactly as it is', () {
+      const String card = 'בן 25, עובד בהייטק.  \nאוהב טיולים ';
+      expect(CommunityLinks.stripCredit(card), card);
+    });
+
+    test('the formatter strips a pasted credit and leaves typing alone', () {
+      const CardCreditFormatter formatter = CardCreditFormatter();
+      final String pasted = CommunityLinks.creditCard('בן 24.');
+      final TextEditingValue result = formatter.formatEditUpdate(
+        TextEditingValue.empty,
+        TextEditingValue(
+          text: pasted,
+          selection: TextSelection.collapsed(offset: pasted.length),
+        ),
+      );
+      expect(result.text, 'בן 24.');
+      expect(result.selection.extentOffset, 'בן 24.'.length);
+
+      const TextEditingValue typed = TextEditingValue(
+        text: 'בן 24. ש',
+        selection: TextSelection.collapsed(offset: 8),
+      );
+      expect(
+        formatter.formatEditUpdate(
+          const TextEditingValue(text: 'בן 24. '),
+          typed,
+        ),
+        typed,
+      );
+    });
+  });
 }
