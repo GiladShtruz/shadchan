@@ -375,6 +375,9 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     context.watch<PersonRepository>();
 
     if (session.isLoading) {
+      // A reload (e.g. after granting full contacts access) replaces the
+      // candidates; the next build deals a fresh deck from them.
+      _deck = null;
       return _LoadingContactsView(
         message: session.loadingMessage,
         progress: session.loadingProgress,
@@ -425,12 +428,26 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
     final List<ContactImportCandidate> deck = _deck!;
 
     if (deck.isEmpty && _deferredCandidates.isEmpty) {
-      return EmptyState(
+      final Widget empty = EmptyState(
         icon: Icons.done_all,
         title: 'אין אנשי קשר חדשים לסקור',
         subtitle: 'כל אנשי הקשר שלך כבר במאגר או הוסרו מהרשימה',
         buttonText: 'חזרה',
         onButtonPressed: () => Navigator.of(context).maybePop(),
+      );
+      if (!session.hasLimitedAccess) {
+        return empty;
+      }
+      return Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: LimitedContactsAccessNotice(
+              onOpenSettings: session.openSettingsAndRecheck,
+            ),
+          ),
+          Expanded(child: empty),
+        ],
       );
     }
 

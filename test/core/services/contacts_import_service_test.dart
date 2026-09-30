@@ -100,6 +100,53 @@ void main() {
     expect(mobileCandidate, isNotNull);
   });
 
+  test('iPhone-formatted mobile numbers are recognised', () {
+    // As iOS hands them over in a Hebrew locale: direction marks, non-breaking
+    // hyphens and spaces, and country codes without a plus.
+    const List<String> iphoneNumbers = <String>[
+      '\u202a054-123-4567\u202c',
+      '\u202d+972 54\u20111234567\u202c',
+      '\u200f052\u00a0123\u00a04567',
+      '\u2066+972 (0) 50-123-4567\u2069',
+      '972 52 123 4567',
+      '00972-53-123-4567',
+    ];
+    for (final String number in iphoneNumbers) {
+      expect(
+        ContactsImportService.isSuggestedMobilePhone(number),
+        isTrue,
+        reason: number,
+      );
+    }
+
+    final ContactImportCandidate? candidate =
+        ContactsImportService.buildCandidate(
+          deviceContactId: 'contact_ios',
+          displayName: 'רחל לוי',
+          phones: const <String>['\u202a+972 54-123-4567\u202c'],
+          existingPhones: const <String>{},
+        );
+    expect(candidate, isNotNull);
+    expect(candidate!.normalizedPhone, '0541234567');
+  });
+
+  test('landlines and short numbers stay out however they are written', () {
+    const List<String> notMobile = <String>[
+      '\u202a02-675-1234\u202c',
+      '+972 3 555 5555',
+      '*2700',
+      '054-123',
+      '+1 555 123 4567',
+    ];
+    for (final String number in notMobile) {
+      expect(
+        ContactsImportService.isSuggestedMobilePhone(number),
+        isFalse,
+        reason: number,
+      );
+    }
+  });
+
   test('buildCandidate marks names that match blocked keywords', () {
     final ContactImportCandidate? candidate =
         ContactsImportService.buildCandidate(

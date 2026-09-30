@@ -136,10 +136,24 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     }
 
     if (!session.hasAnyCandidate) {
-      return const EmptyState(
+      const Widget empty = EmptyState(
         icon: Icons.contact_phone_outlined,
         title: 'לא נמצאו אנשי קשר מתאימים',
         subtitle: 'מוצגים רק אנשי קשר חדשים עם שם ומספר טלפון',
+      );
+      if (!session.hasLimitedAccess) {
+        return empty;
+      }
+      return Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: LimitedContactsAccessNotice(
+              onOpenSettings: session.openSettingsAndRecheck,
+            ),
+          ),
+          const Expanded(child: empty),
+        ],
       );
     }
 
@@ -168,6 +182,13 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                   ),
                 ),
         ),
+        if (session.hasLimitedAccess)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: LimitedContactsAccessNotice(
+              onOpenSettings: session.openSettingsAndRecheck,
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: _SearchField(controller: _searchController),

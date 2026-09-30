@@ -97,6 +97,10 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-09-30 (iPhone contacts): **A friend on an iPhone saw no contacts to add.** Two causes, both fixed; **not run on a device.**
+  - `ContactsImportService.isSuggestedMobilePhone` checked the *raw* string for a `05`/`+9725` prefix. iOS returns numbers as typed/synced, and in a Hebrew locale they often carry invisible direction marks (U+202A–U+202E, U+200E/F, U+2066–U+2069), non-breaking hyphens (U+2011) or `972`/`00972` with no plus — every one was rejected, so on some iPhones almost nothing reached the list. It now judges `PhoneUtils.normalizeForComparison` (10 digits starting `05`). Covered by two new tests.
+  - iOS "limited" contacts access (the user shared only picked contacts) was treated as full access, so the list looked finished. `ContactsImportService.hasLimitedAccess` / `AddContactsSession.hasLimitedAccess` now drive `LimitedContactsAccessNotice` (list view and the swipe view's empty state) with a button to the settings. `openSettingsAndRecheck` now waits for the app to come back before re-checking (it used to re-check the moment the settings opened), and the swipe deck is re-dealt after a reload.
+
 - 2026-09-28 (fixes round 22): **Not run on a device. `firestore.rules` deployed 2026-09-28** — required before this build: a matchmaker's access request now writes `matchmakerGender`, which the old whitelist refused.
   - **"כל הכבוד! X זוגות שלך יוצאים" moved from the head of הרעיונות שלי into הלוח שלי** (inside the board's frame, above the rows; `_BoardSectionState` in `home_screen.dart`). A tap `go`es to `/matches?statuses=dating`. The ideas page keeps only `HomeHeroBand` above its counts.
   - **An open idea is lighter again**: a very light sky (softBlue 0.34) → the palette's cream → soft sand-peach (softSand 0.30), and `_CardTone.soft` gives it a thinner, fainter border (1.4 / α0.42) and a shallower shadow. Blue stays in the frame, bars and words; "יאללה לקדם" is still cream-white and the journal soft rose.

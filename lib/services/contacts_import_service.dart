@@ -302,13 +302,19 @@ abstract final class ContactsImportService {
     );
   }
 
+  /// Whether [phone] is an Israeli mobile number, however the phone wrote it.
+  ///
+  /// Judged on the normalized digits, never on the raw string: an iPhone keeps
+  /// a number as it was typed or synced, and in a Hebrew locale that string
+  /// routinely carries invisible direction marks (U+202A–U+202E, U+200E/F,
+  /// U+2066–U+2069), non-breaking hyphens (U+2011) or a `972`/`00972` prefix
+  /// with no plus. A prefix check on the raw text rejected every one of them,
+  /// which on some iPhones meant no contact at all reached the add-friends list.
   static bool isSuggestedMobilePhone(String phone) {
-    final String compactPhone = phone
-        .trim()
-        .replaceAll(RegExp(r'[\s\-().]'), '')
-        .replaceAll('־', '');
-
-    return compactPhone.startsWith('05') || compactPhone.startsWith('+9725');
+    final String? normalized = PhoneUtils.normalizeForComparison(phone);
+    return normalized != null &&
+        normalized.length == 10 &&
+        normalized.startsWith('05');
   }
 
   static bool isFilteredByName(String displayName) {
@@ -415,8 +421,15 @@ abstract final class ContactsImportService {
     );
   }
 
+  /// True when the last permission answer was iOS's "limited" access: the
+  /// matchmaker shared only the contacts they picked, so the list can look
+  /// finished while most of the address book was never visible to the app.
+  static bool get hasLimitedAccess => _limitedAccess;
+  static bool _limitedAccess = false;
+
   static ContactsPermissionState _mapPermissionStatus(PermissionStatus status) {
     final String statusName = status.name;
+    _limitedAccess = statusName == 'limited';
     if (statusName == 'granted' || statusName == 'limited') {
       return ContactsPermissionState.granted;
     }

@@ -1,4 +1,6 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -87,6 +89,9 @@ class AddContactsSession extends ChangeNotifier {
   String get loadingMessage => _loadingMessage;
   ContactsPermissionState? get permissionState => _permissionState;
   bool get hasAnyCandidate => _allCandidates.isNotEmpty;
+
+  /// iOS "limited" access: only the contacts the matchmaker picked are visible.
+  bool get hasLimitedAccess => ContactsImportService.hasLimitedAccess;
 
   /// Every usable device contact, whatever its status.
   List<ContactImportCandidate> get allCandidates =>
@@ -345,7 +350,35 @@ class AddContactsSession extends ChangeNotifier {
   }
 
   Future<void> openSettingsAndRecheck() async {
-    await ContactsImportService.openSettings();
+    // Opening the settings returns as soon as they are on screen, so checking
+    // straight away reads the old answer. Wait until the app comes back —
+    // unless it never left, in which case there is nothing to wait for.
+    final Completer<void> resumed = Completer<void>();
+    bool leftApp = false;
+    final AppLifecycleListener listener = AppLifecycleListener(
+      onHide: () => leftApp = true,
+      onPause: () => leftApp = true,
+      onResume: () {
+        if (!resumed.isCompleted) {
+          resumed.complete();
+        }
+      },
+    );
+    try {
+      await ContactsImportService.openSettings();
+      final bool left = await Future.any(<Future<bool>>[
+        resumed.future.then((_) => true),
+        Future<bool>.delayed(const Duration(seconds: 2), () => leftApp),
+      ]);
+      if (left && !resumed.isCompleted) {
+        await resumed.future;
+      }
+    } finally {
+      listener.dispose();
+    }
+    if (_disposed) {
+      return;
+    }
     final ContactsPermissionState permissionState =
         await ContactsImportService.checkPermission();
     if (_disposed) {

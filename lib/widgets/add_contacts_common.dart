@@ -197,3 +197,47 @@ class AddContactsStatsRow extends StatelessWidget {
     );
   }
 }
+
+/// Shown when iOS gave the app "limited" access to the address book: only
+/// the contacts picked in the system dialog are visible, so an empty list does
+/// not mean the matchmaker has gone through everybody.
+class LimitedContactsAccessNotice extends StatelessWidget {
+  const LimitedContactsAccessNotice({super.key, required this.onOpenSettings});
+
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      decoration: softCardDecoration(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            'האפליקציה רואה רק חלק מאנשי הקשר שלך',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'בהגדרות: אנשי קשר ← גישה מלאה',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          TextButton(
+            onPressed: onOpenSettings,
+            child: const Text('לאפשר גישה לכל אנשי הקשר'),
+          ),
+        ],
+      ),
+    );
+  }
+}
