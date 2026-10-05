@@ -791,10 +791,15 @@ class DatingCouplesStrip extends StatelessWidget {
     super.key,
     required this.count,
     required this.onTap,
+    this.compact = false,
   });
 
   final int count;
   final VoidCallback onTap;
+
+  /// One short line, for a place where it must not take room from the work
+  /// around it — "הלוח שלי".
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -833,34 +838,50 @@ class DatingCouplesStrip extends StatelessWidget {
               ],
             ),
           ),
-          padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 8, 10),
+          padding: compact
+              ? const EdgeInsetsDirectional.fromSTEB(8, 5, 6, 5)
+              : const EdgeInsetsDirectional.fromSTEB(10, 10, 8, 10),
           child: Row(
             children: <Widget>[
               Container(
-                width: 32,
-                height: 32,
+                width: compact ? 24 : 32,
+                height: compact ? 24 : 32,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: rose.withValues(alpha: dark ? 0.28 : 0.18),
                 ),
-                child: Icon(Icons.favorite_rounded, size: 18, color: rose),
+                child: Icon(
+                  Icons.favorite_rounded,
+                  size: compact ? 14 : 18,
+                  color: rose,
+                ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: compact ? 8 : 10),
               Expanded(
                 child: Text(
-                  'כל הכבוד! $couples — שומרים איתם על קשר עד החתונה!',
-                  maxLines: 2,
+                  compact
+                      ? 'כל הכבוד! $couples · שומרים על קשר עד החתונה'
+                      : 'כל הכבוד! $couples — שומרים איתם על קשר עד החתונה!',
+                  maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.3,
-                    color: dark ? rose : AppColors.femaleInk,
-                  ),
+                  style:
+                      (compact
+                              ? theme.textTheme.labelMedium
+                              : theme.textTheme.labelLarge)
+                          ?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                            color: dark ? rose : AppColors.femaleInk,
+                          ),
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(Icons.chevron_right_rounded, size: 22, color: rose),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: compact ? 18 : 22,
+                color: rose,
+              ),
             ],
           ),
         ),

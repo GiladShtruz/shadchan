@@ -33,12 +33,15 @@ class CardInboxList extends StatelessWidget {
     }
   }
 
-  Future<void> _open(
+  /// Opens what [item] is about — the friend's profile when they are in the
+  /// database, else the notice's own route — and marks it read. Shared with
+  /// "הלוח שלי", so a notice opens the same place from either.
+  static Future<void> openItem(
     BuildContext context,
-    InboxProvider inbox,
-    InboxItem item,
-  ) async {
-    await inbox.markRead(item);
+    InboxItem item, {
+    VoidCallback? onOpen,
+  }) async {
+    await context.read<InboxProvider>().markRead(item);
     if (!context.mounted) {
       return;
     }
@@ -60,7 +63,8 @@ class CardInboxList extends StatelessWidget {
     }
   }
 
-  Future<void> _whatsApp(BuildContext context, InboxItem item) async {
+  /// The greeting a mazel-tov or birthday notice offers.
+  static Future<void> sendGreeting(BuildContext context, InboxItem item) async {
     final String? owner = item.ownerUid;
     final Person? person = owner == null
         ? null
@@ -105,7 +109,7 @@ class CardInboxList extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 8),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
-                onTap: () => _open(context, inbox, item),
+                onTap: () => openItem(context, item, onOpen: onOpen),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
                   child: Row(
@@ -143,7 +147,7 @@ class CardInboxList extends StatelessWidget {
                               Align(
                                 alignment: Alignment.center,
                                 child: TextButton.icon(
-                                  onPressed: () => _whatsApp(context, item),
+                                  onPressed: () => sendGreeting(context, item),
                                   icon: const Icon(
                                     Icons.chat_outlined,
                                     size: 16,

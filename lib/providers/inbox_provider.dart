@@ -101,6 +101,13 @@ class InboxProvider extends ChangeNotifier {
     }
   }
 
+  /// A list to draw without a server — widget tests only.
+  @visibleForTesting
+  void debugSetItems(List<InboxItem> items) {
+    _items = items;
+    notifyListeners();
+  }
+
   Future<void> markRead(InboxItem item) async {
     final String? uid = _uid;
     if (uid == null || item.read) {

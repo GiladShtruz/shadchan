@@ -24,6 +24,8 @@ class BoardRow extends StatelessWidget {
     this.mark,
     this.titleColor,
     this.centerText = false,
+    this.boldTitle = true,
+    this.fresh = false,
   });
 
   final Widget leading;
@@ -49,6 +51,14 @@ class BoardRow extends StatelessWidget {
   /// notifications page draws them — so rows of different lengths still read
   /// as one balanced column.
   final bool centerText;
+
+  /// False on "הלוח שלי", where the names keep their size but not the weight —
+  /// a column of bold names reads as a column of headlines.
+  final bool boldTitle;
+
+  /// Something happened in it that the matchmaker has not opened yet: a small
+  /// dot before the name. Nothing else about the row changes.
+  final bool fresh;
 
   @override
   Widget build(BuildContext context) {
@@ -97,13 +107,26 @@ class BoardRow extends StatelessWidget {
                                 ? MainAxisAlignment.center
                                 : MainAxisAlignment.start,
                             children: <Widget>[
+                              if (fresh) ...<Widget>[
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: theme.colorScheme.secondary,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
                               Flexible(
                                 child: Text(
                                   title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodyLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: boldTitle
+                                        ? FontWeight.bold
+                                        : FontWeight.w400,
                                     color: titleColor,
                                   ),
                                 ),
