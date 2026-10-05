@@ -17,6 +17,7 @@ import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/services/dating_status_memory.dart';
+import 'package:shadchan/services/notification_feed.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:uuid/uuid.dart';
@@ -1738,7 +1739,24 @@ class MatchRepository extends ChangeNotifier {
 
   void _refreshNotifications() {
     final List<MatchIdea> allMatches = _matchBox.values.toList();
-    NotificationService.scheduleMatchReminders(allMatches);
+    final Person? Function(String)? resolve = resolvePerson;
+    NotificationService.scheduleMatchReminders(
+      allMatches,
+      describe: (MatchIdea match) {
+        final (Person? male, Person? female) = NotificationFeed.boyFirst(
+          resolve?.call(match.personAId),
+          resolve?.call(match.personBId),
+        );
+        final String note = match.reminderNote == defaultReminderNote
+            ? ''
+            : match.reminderNote ?? '';
+        final (String title, String body) = NotificationFeed.ideaReminderText(
+          note,
+          NotificationFeed.pairName(male, female),
+        );
+        return MatchReminderText(title: title, body: body);
+      },
+    );
   }
 
   /// Feeds the home screen's "הפעולות האחרונות שלך" strip. Recorded here

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/widgets/achievement_watcher.dart';
+import 'package:shadchan/widgets/app_badge_sync.dart';
 import 'package:shadchan/widgets/app_update_prompt.dart';
 import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
@@ -54,9 +55,12 @@ class App extends StatelessWidget {
                 // earned wherever the matchmaker happens to be working, and this
                 // has to be watching from all of them.
                 child: AchievementWatcher(
-                  child: IncomingBackupImportListener(
-                    child: IncomingSharedProfileListener(
-                      child: child ?? const SizedBox.shrink(),
+                  // The app icon's number, kept equal to the bell's.
+                  child: AppBadgeSync(
+                    child: IncomingBackupImportListener(
+                      child: IncomingSharedProfileListener(
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 ),

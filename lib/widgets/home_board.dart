@@ -28,14 +28,16 @@ import 'package:shadchan/utils/home_open_ideas.dart';
 import 'package:shadchan/utils/idea_recency.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
+import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/utils/person_reminders.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/board_row.dart';
-import 'package:shadchan/widgets/card_inbox_list.dart';
 import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/notification_center.dart';
 
 /// "הלוח שלי": everything the matchmaker is working on, as one mixed feed.
 ///
@@ -104,9 +106,6 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
   /// One row: a two-line card plus the gap under it.
   static const double _rowExtent = AccentBar.rowHeight + 6;
 
-  /// A notice already read stays on the board this long.
-  static const Duration _readNoticeFor = Duration(days: 7);
-
   final ScrollController _listScroll = ScrollController();
 
   BoardCategory _chip = BoardCategory.all;
@@ -124,7 +123,21 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Reading a reminder on the notifications page takes it off the board.
+    ReminderLog.instance.addListener(_onLog);
+  }
+
+  void _onLog() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
+    ReminderLog.instance.removeListener(_onLog);
     _listScroll.dispose();
     super.dispose();
   }
@@ -288,7 +301,9 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
         );
         continue;
       }
-      if (item.read && now.difference(at) > _readNoticeFor) {
+      // A notice stays on the board while it still needs attention: once
+      // read (on the notifications page or here) it leaves; the page keeps it.
+      if (item.read) {
         continue;
       }
       if (removed(key, at)) {
@@ -332,6 +347,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     }
 
     // --- Reminders, pins and open ideas ----------------------------------
+    final ReminderLog log = ReminderLog.instance;
     final Map<String, DateTime> pinnedAt = <String, DateTime>{
       for (final HomeBoardEntry e in widget.entries)
         HomeBoardStore.itemKey(e.kind, e.targetId): e.addedAt,
@@ -347,7 +363,12 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
       final MatchIdea match = open.match;
       final String key = HomeBoardStore.itemKey(HomeItemKind.idea, match.id);
       final DateTime? reminder = match.reminderDate;
-      final bool due = reminder != null && !reminder.isAfter(now);
+      // A reminder read on the notifications page is done with here; the idea
+      // stays on the board as an open idea.
+      final bool due =
+          reminder != null &&
+          !reminder.isAfter(now) &&
+          !log.isRead(HomeItemKind.idea, match.id, reminder);
       DateTime at = recency[match.id] ?? match.createdAt;
       for (final DateTime? moved in <DateTime?>[
         match.askedMaleAt,
@@ -388,7 +409,9 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     final List<(HomeItemKind, String, DateTime, String)> due =
         <(HomeItemKind, String, DateTime, String)>[];
     PersonReminders.all().forEach((String personId, DateTime at) {
-      if (!at.isAfter(now) && people.getById(personId) != null) {
+      if (!at.isAfter(now) &&
+          !log.isRead(HomeItemKind.person, personId, at) &&
+          people.getById(personId) != null) {
         due.add((
           HomeItemKind.person,
           personId,
@@ -399,7 +422,9 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     });
     for (final MatchIdea match in allMatches) {
       final DateTime? at = match.reminderDate;
-      if (at != null && !at.isAfter(now)) {
+      if (at != null &&
+          !at.isAfter(now) &&
+          !log.isRead(HomeItemKind.idea, match.id, at)) {
         due.add((HomeItemKind.idea, match.id, at, match.reminderNote ?? ''));
       }
     }
@@ -963,7 +988,31 @@ class _BoardRow extends StatelessWidget {
   /// Something about the board changed without a repository noticing.
   final VoidCallback onChanged;
 
-  void _seen() => BoardSeen.mark(item.key);
+  /// Opening a row from the board is reading it — and a reminder read here
+  /// is read on the notifications page too.
+  void _seen() {
+    BoardSeen.mark(item.key);
+    final HomeItemKind? kind = item.kind;
+    final String? targetId = item.targetId;
+    if (item.reminder == null || kind == null || targetId == null) {
+      return;
+    }
+    final DateTime? date = kind == HomeItemKind.person
+        ? personRepository.personReminderFor(targetId)
+        : matchRepository.getById(targetId)?.reminderDate;
+    if (date != null) {
+      ReminderLog.instance.markReadFor(
+        kind,
+        targetId,
+        date,
+        note:
+            kind == HomeItemKind.idea &&
+                item.reminder == MatchRepository.defaultReminderNote
+            ? null
+            : item.reminder,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1010,6 +1059,58 @@ class _BoardRow extends StatelessWidget {
     );
   }
 
+  /// "טופל" on a reminder that came due. A live idea is looked at once a
+  /// month by default, so handling its reminder books the next one; a closed
+  /// idea's, or a friend's, is cleared. Undoable from the notice.
+  Future<void> _markHandled(
+    BuildContext context,
+    HomeItemKind kind,
+    String targetId,
+  ) async {
+    _seen();
+    final OverlayState? notices = AppNotice.capture(context);
+    VoidCallback? undo;
+    if (kind == HomeItemKind.person) {
+      final DateTime? previous = personRepository.personReminderFor(targetId);
+      if (previous == null) {
+        return;
+      }
+      final String? previousNote = PersonReminders.noteFor(targetId);
+      await personRepository.clearPersonReminder(targetId);
+      undo = () => personRepository.setPersonReminder(
+        targetId,
+        previous,
+        note: previousNote,
+      );
+    } else {
+      final MatchIdea? match = matchRepository.getById(targetId);
+      final DateTime? previous = match?.reminderDate;
+      if (match == null || previous == null) {
+        return;
+      }
+      final String? previousNote = match.reminderNote;
+      if (match.status.isArchived) {
+        await matchRepository.setReminder(targetId, null);
+      } else {
+        await matchRepository.setReminder(
+          targetId,
+          MatchRepository.defaultReminderFrom(DateTime.now()),
+          note: MatchRepository.defaultReminderNote,
+          journal: false,
+        );
+      }
+      undo = () =>
+          matchRepository.setReminder(targetId, previous, note: previousNote);
+    }
+    onChanged();
+    AppNotice.showOn(
+      notices,
+      'התזכורת סומנה כטופלה',
+      actionLabel: 'ביטול',
+      onAction: undo,
+    );
+  }
+
   _MenuChoice _removeChoice(BuildContext context) => _MenuChoice(
     'הסרה מהלוח שלי',
     () => HomeBoardActions.removeFromBoard(context, item.key),
@@ -1040,6 +1141,10 @@ class _BoardRow extends StatelessWidget {
         : matchRepository.getById(targetId)?.reminderDate != null;
     final bool hasNote = note != null && note.isNotEmpty;
     final List<_MenuChoice> menu = <_MenuChoice>[
+      // A reminder that came due: "טופל" books a live idea's next monthly
+      // look (or clears a friend's), exactly as the old reminders panel did.
+      if (reminder != null)
+        _MenuChoice('טופל', () => _markHandled(context, kind, targetId)),
       _MenuChoice(
         hasReminder ? 'עריכת תזכורת' : 'הוספת תזכורת',
         () => HomeBoardActions.editReminder(context, kind, targetId),
@@ -1186,7 +1291,7 @@ class _BoardRow extends StatelessWidget {
       startAccent: AppColors.genderAccent(gender, dark: dark),
       onTap: () {
         _seen();
-        CardInboxList.openItem(context, notice);
+        NotificationCenter.openNotice(context, notice);
       },
       action: canAsk
           ? TextButton(
@@ -1243,13 +1348,13 @@ class _BoardRow extends StatelessWidget {
           : AppColors.genderAccent(person.gender, dark: dark),
       onTap: () {
         _seen();
-        CardInboxList.openItem(context, notice);
+        NotificationCenter.openNotice(context, notice);
       },
       menu: <_MenuChoice>[
         if (notice.offersWhatsApp)
           _MenuChoice(
             'שליחת ברכה בוואטסאפ',
-            () => CardInboxList.sendGreeting(context, notice),
+            () => NotificationCenter.sendGreeting(context, notice),
           ),
         _removeChoice(context),
       ],

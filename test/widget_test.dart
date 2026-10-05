@@ -1000,6 +1000,84 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  testWidgets('Notifications: read on opening the page, then off the board', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    // The board is drawn from the first friend on.
+    final DateTime now = DateTime.now();
+    final Person friend = Person(
+      id: 'notice-friend',
+      firstName: 'רון',
+      lastName: 'כץ',
+      gender: Gender.male,
+      manualAge: 26,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(friend.id, friend);
+    });
+    addTearDown(() async {
+      await Hive.box<Person>('people').delete(friend.id);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    final InboxProvider inbox = tester
+        .element(find.byType(HomeScreen))
+        .read<InboxProvider>();
+    inbox.debugSetItems(<InboxItem>[
+      InboxItem(
+        id: 'notice-declined',
+        kind: 'accessDeclined',
+        title: 'דני לוי לא אישר גישה',
+        body: '',
+        route: '/reminders',
+        read: false,
+        ownerUid: 'owner-declined',
+        createdAt: DateTime.now(),
+      ),
+    ]);
+    await tester.pump();
+
+    // Unread, it is on the board.
+    await tester.ensureVisible(find.text('הלוח שלי'));
+    await tester.pump();
+    expect(find.text('דני לוי לא אישר גישה'), findsOneWidget);
+
+    // The bell opens the page; opening it is reading it.
+    await tester.tap(find.byTooltip('התראות').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('דני לוי לא אישר גישה'), findsOneWidget);
+    expect(inbox.unreadCount, 0);
+    // The row that was new keeps its tint for this visit.
+    expect(find.text('סמן הכל כנקרא'), findsOneWidget);
+
+    // Back home, the read notice has left the board.
+    await tester.tap(find.byType(BackButton));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('דני לוי לא אישר גישה'), findsNothing);
+
+    // On the page it stays until it is swiped away.
+    await tester.tap(find.byTooltip('התראות').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.drag(find.text('דני לוי לא אישר גישה'), const Offset(-500, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('דני לוי לא אישר גישה'), findsNothing);
+    expect(find.text('אין התראות'), findsOneWidget);
+    expect(inbox.items, isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('Pinning a person opens home directly at the board', (
     WidgetTester tester,
   ) async {

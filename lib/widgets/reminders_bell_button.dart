@@ -1,113 +1,51 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:shadchan/providers/inbox_provider.dart';
-import 'package:shadchan/dialogs/reminders_panel.dart';
-import 'package:shadchan/models/match_idea.dart';
-import 'package:shadchan/providers/match_repository.dart';
-import 'package:shadchan/providers/support_inbox_provider.dart';
-import 'package:shadchan/utils/person_reminders.dart';
+import 'package:shadchan/services/reminder_log.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
+import 'package:shadchan/widgets/notification_center.dart';
 
-/// The bell, drawn the same way in the same slot on all three main screens.
+/// The bell, drawn the same way in the same slot on every main screen.
 ///
-/// It used to be three different bells: the home screen hid its own whenever
-/// no reminder existed and never carried a count, the ideas screen counted
-/// only the proposals it happened to be listing, and המאגר שלי had none at
-/// all. A control that moves between pages — or disappears from one of them —
-/// is not a control anybody learns; it is looked for and then hunted for.
-///
-/// So the bell is always there, always the first action in the bar (in RTL,
-/// the innermost of the left-hand group), and its badge counts everything that
-/// has actually come due — reminders on people as well as on proposals, since
-/// the panel behind it lists both.
+/// Its number is exactly the rows on the notifications page that have not
+/// been read — counted by [NotificationCenter], the same count the app icon's
+/// badge carries — and a tap opens that page.
 class RemindersBellButton extends StatelessWidget {
   const RemindersBellButton({super.key, this.boxed = false});
 
   /// Draws the bell as one of the home bar's rounded squares instead of a bare
   /// icon button.
-  ///
-  /// A flag rather than a second widget, because the thing worth having in one
-  /// place is [_dueCount] — a bell that counted differently from the panel it
-  /// opens is the bug this widget was written to end, and two copies of the
-  /// count is how that comes back.
   final bool boxed;
 
   @override
   Widget build(BuildContext context) {
-    // Watched, so marking a reminder as handled inside the panel takes its
-    // number off the bell without the screen being rebuilt for another reason.
-    final MatchRepository matches = context.watch<MatchRepository>();
-    // Reports and answers are under the same bell as the reminders — see
-    // `SupportInboxList` for why there is only one inbox in this app.
-    final int due =
-        _dueCount(matches) +
-        context.watch<SupportInboxProvider>().unreadCount +
-        _cardInboxUnread(context);
-
-    if (boxed) {
-      return HomeBarButton(
-        tooltip: 'התראות',
-        badgeCount: due,
-        onPressed: () => RemindersPanel.show(context),
-        icon: Icon(
-          due > 0
+    return ListenableBuilder(
+      listenable: ReminderLog.instance,
+      builder: (BuildContext context, _) {
+        final int unread = NotificationCenter.unreadCount(context);
+        void open() => AppNavigation.open(context, '/reminders');
+        final Icon icon = Icon(
+          unread > 0
               ? Icons.notifications_active_rounded
               : Icons.notifications_outlined,
-        ),
-      );
-    }
-
-    return IconButton(
-      tooltip: 'התראות',
-      icon: Badge.count(
-        count: due,
-        isLabelVisible: due > 0,
-        child: Icon(
-          // An empty bell stays quiet; a bell with something behind it is
-          // filled, which is the difference the eye catches from across the
-          // screen before it reads the number.
-          due > 0
-              ? Icons.notifications_active_rounded
-              : Icons.notifications_outlined,
-        ),
-      ),
-      onPressed: () => RemindersPanel.show(context),
+        );
+        if (boxed) {
+          return HomeBarButton(
+            tooltip: 'התראות',
+            badgeCount: unread,
+            onPressed: open,
+            icon: icon,
+          );
+        }
+        return IconButton(
+          tooltip: 'התראות',
+          icon: Badge.count(
+            count: unread,
+            isLabelVisible: unread > 0,
+            child: icon,
+          ),
+          onPressed: open,
+        );
+      },
     );
-  }
-
-  /// Reminders whose date has arrived — today counts, tomorrow does not.
-  int _dueCount(MatchRepository repository) {
-    final DateTime now = DateTime.now();
-    final DateTime endOfToday = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      23,
-      59,
-      59,
-    );
-
-    bool isDue(DateTime? date) => date != null && !date.isAfter(endOfToday);
-
-    final int ideas = repository
-        .getAll()
-        .where(
-          (MatchIdea match) =>
-              !match.status.isArchived && isDue(match.reminderDate),
-        )
-        .length;
-    final int people = PersonReminders.all().values.where(isDue).length;
-
-    return ideas + people;
-  }
-
-  /// Unread notices about personal cards. Tolerates a tree without the
-  /// provider, like the widget tests that draw this bar on its own.
-  static int _cardInboxUnread(BuildContext context) {
-    try {
-      return context.watch<InboxProvider>().unreadCount;
-    } on ProviderNotFoundException {
-      return 0;
-    }
   }
 }

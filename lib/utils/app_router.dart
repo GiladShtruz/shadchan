@@ -716,7 +716,10 @@ abstract final class AppRouter {
                 people.findByCardOwner(owner) ??
                 (hash.isEmpty ? null : people.findByPhoneHash(hash));
             if (person != null) {
-              return '/people/${person.id}';
+              final String focus = state.uri.queryParameters['focus'] ?? '';
+              return focus.isEmpty
+                  ? '/people/${person.id}'
+                  : '/people/${person.id}?focus=$focus';
             }
           } on ProviderNotFoundException {
             // Fall through to the notifications page.

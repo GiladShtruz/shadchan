@@ -29,17 +29,36 @@ class PersonalCardProvider extends ChangeNotifier {
     _deleted = deleted == true || deleted == 'true';
     final Object? accepts = _box.get(_acceptsRequestsKey);
     _acceptsRequests = !(accepts == false || accepts == 'false');
+    final Object? announces = _box.get(_announcesKey);
+    _announces = !(announces == false || announces == 'false');
   }
 
   static const String cardId = 'personal-card';
   static const String _cardKey = 'personalCard.person';
   static const String _deletedKey = 'personalCard.deleted';
   static const String _acceptsRequestsKey = 'personalCard.acceptsRequests';
+  static const String _announcesKey = 'personalCard.announces';
 
   final Box<dynamic> _box;
   Person? _card;
   bool _deleted = false;
   bool _acceptsRequests = true;
+  bool _announces = true;
+
+  /// "לעדכן חברים שלך שמשדכים ב׳שדכן׳ שיצרת כרטיס?" — on unless the owner
+  /// turned it off. Off, no matchmaker is told that the card exists; they
+  /// still find it if they look (unless [acceptsRequests] is off too).
+  /// **One answer for everybody**, published beside the phone identity.
+  bool get announces => _announces;
+
+  Future<void> setAnnounces(bool value) async {
+    if (_announces == value) {
+      return;
+    }
+    _announces = value;
+    persistHomeSetting(_announcesKey, value ? 'true' : 'false');
+    notifyListeners();
+  }
 
   /// Whether matchmakers may ask for access to the card at all.
   ///
@@ -155,7 +174,13 @@ class PersonalCardProvider extends ChangeNotifier {
     _card = null;
     _deleted = false;
     _acceptsRequests = true;
-    await _box.deleteAll(<String>[_cardKey, _deletedKey, _acceptsRequestsKey]);
+    _announces = true;
+    await _box.deleteAll(<String>[
+      _cardKey,
+      _deletedKey,
+      _acceptsRequestsKey,
+      _announcesKey,
+    ]);
     notifyListeners();
   }
 }

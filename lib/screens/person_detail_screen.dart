@@ -172,6 +172,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   final GlobalKey _cardSectionKey = GlobalKey();
   final GlobalKey _notesSectionKey = GlobalKey();
+  final GlobalKey _requestSectionKey = GlobalKey();
 
   @override
   void initState() {
@@ -186,11 +187,27 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       });
     }
     final String? focus = widget.focus;
-    if (focus == 'card' || focus == 'notes') {
+    if (focus == 'card' || focus == 'notes' || focus == 'request') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final BuildContext? target =
-            (focus == 'card' ? _cardSectionKey : _notesSectionKey)
-                .currentContext;
+        if (!mounted) {
+          return;
+        }
+        // "request": where access to the friend's card is asked for. With no
+        // card text the request sits inside the card tile itself; otherwise
+        // it is the panel under the actions.
+        final bool hasText =
+            context
+                .read<PersonRepository>()
+                .getById(widget.personId)
+                ?.description
+                ?.trim()
+                .isNotEmpty ??
+            false;
+        final BuildContext? target = switch (focus) {
+          'notes' => _notesSectionKey,
+          'request' when hasText => _requestSectionKey,
+          _ => _cardSectionKey,
+        }.currentContext;
         if (target != null && target.mounted) {
           Scrollable.ensureVisible(
             target,
@@ -465,7 +482,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               ),
               // Where this card's details come from, and the one next step:
               // ask for access, wait, or invite the friend to write a card.
-              CardLinkPanel(person: person),
+              KeyedSubtree(
+                key: _requestSectionKey,
+                child: CardLinkPanel(person: person),
+              ),
               // Above the card it is about: most of what a profile needs is
               // already sitting in a WhatsApp chat.
               if (_showShareTip)

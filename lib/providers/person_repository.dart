@@ -973,6 +973,8 @@ class PersonRepository extends ChangeNotifier {
         PersonReminderNotification(
           name: name.isEmpty ? 'מישהו מהמאגר' : name,
           date: entry.value,
+          personId: person.id,
+          note: PersonReminders.noteFor(person.id),
         ),
       );
     }
