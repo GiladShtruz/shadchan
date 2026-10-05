@@ -97,6 +97,14 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-10-05: **A single's own "מה אני מחפש/ת" filters their automatic matches.** Not run on a device; no rules or functions change (the `preferred*` fields already travel on `personalCards` and land on the matchmaker's copy through `PersonalCardCodec`).
+  - `MatchSuggestionUtils.followsOwnerWishes(person)` = the friend's card is a live synced personal card (`isCardSynced`) **and** it has anything under "מה אני מחפש/ת". Only then are those fields the single's wishes; on a card the matchmaker wrote by hand they stay out of the default, exactly as before.
+  - `matchesBasicPreferences` (the default of התאמות, `PersonPickerSheet` with a source, `SuggestedMatchesSheet`, and the basic tier of `ranked` → "עוצרים רגע לחשוב") now, for such a friend: uses the chosen styles instead of the default style table, uses the wished age range instead of the app's age rule, and drops a candidate whose **recorded** age, height, region or marital status contradicts the wish (`fitsOwnerWishes`). **Unknown never contradicts** — a candidate with no marital status is still offered; the strict reading (unknown is out) is still "סינון מורחב" (`matchesOwnPreferences`).
+  - `isSuggestedCandidate` (the database's own pairs, home counts) applies the wishes of **either** side, since a pair is offered as a pair.
+  - The matchmaker can always go past it: the filter icon on התאמות (a saved filter wins over everything and opens pre-filled with the wishes), search over the whole database, "לכל המאגר" in the picker. התאמות shows one quiet line, "ההתאמות מסוננות לפי מה ש<שם> מחפש/ת בכרטיס האישי. אפשר לשנות בסינון.", while no saved filter overrides it (`_OwnerWishesNote`).
+  - Since card sync is field by field, a preference the matchmaker edited on the copy is read as the single's too until the single changes it.
+  - Verified: `flutter analyze` (only two deprecation infos from a newer SDK in untouched files), 667 tests (8 new in `test/core/owner_wishes_test.dart`). Not verified: `flutter build apk` (no Android SDK in that environment).
+
 - 2026-09-28 (fixes round 22): **Not run on a device. `firestore.rules` deployed 2026-09-28** — required before this build: a matchmaker's access request now writes `matchmakerGender`, which the old whitelist refused.
   - **"כל הכבוד! X זוגות שלך יוצאים" moved from the head of הרעיונות שלי into הלוח שלי** (inside the board's frame, above the rows; `_BoardSectionState` in `home_screen.dart`). A tap `go`es to `/matches?statuses=dating`. The ideas page keeps only `HomeHeroBand` above its counts.
   - **An open idea is lighter again**: a very light sky (softBlue 0.34) → the palette's cream → soft sand-peach (softSand 0.30), and `_CardTone.soft` gives it a thinner, fainter border (1.4 / α0.42) and a shallower shadow. Blue stays in the frame, bars and words; "יאללה לקדם" is still cream-white and the journal soft rose.

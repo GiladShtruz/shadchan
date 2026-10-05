@@ -3680,9 +3680,17 @@ class _SuggestedMatchesTab extends StatelessWidget {
       );
     }
 
+    // The automatic list follows what the friend wrote in their own card;
+    // saying so is what makes the filter icon read as the way past it.
+    final Widget header =
+        !hasCustomFilters &&
+            MatchSuggestionUtils.followsOwnerWishes(sourcePerson)
+        ? _OwnerWishesNote(person: sourcePerson)
+        : const SizedBox(height: 4);
+
     if (suggestedPeople.isEmpty) {
       return _SuggestionTabScaffold(
-        header: const SizedBox(height: 4),
+        header: header,
         child: _TabEmptyState(
           icon: Icons.favorite_border,
           title: 'לא נמצאו התאמות',
@@ -3695,7 +3703,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
 
     return Column(
       children: <Widget>[
-        const SizedBox(height: 4),
+        header,
         Expanded(
           child: _SuggestedMatchesList(
             sourcePerson: sourcePerson,
@@ -3949,6 +3957,32 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
           ),
         );
       },
+    );
+  }
+}
+
+/// One quiet line over a friend's matches when the automatic list follows
+/// what they themselves asked for in their personal card.
+class _OwnerWishesNote extends StatelessWidget {
+  const _OwnerWishesNote({required this.person});
+
+  final Person person;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String name = person.firstName.trim().isNotEmpty
+        ? person.firstName.trim()
+        : person.fullName.trim();
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(20, 4, 20, 8),
+      child: Text(
+        'ההתאמות מסוננות לפי מה ש$name {מחפש|מחפשת} בכרטיס האישי. '
+                'אפשר לשנות בסינון.'
+            .forGender(person.gender),
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodySmall,
+      ),
     );
   }
 }

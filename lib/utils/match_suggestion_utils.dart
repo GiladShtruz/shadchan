@@ -94,6 +94,13 @@ abstract final class MatchSuggestionUtils {
   ///
   /// With nothing extended recorded the two are the same list, which is what
   /// makes the toggle honest: it only ever appears where it changes something.
+  ///
+  /// **A friend whose card is their own personal card is the exception**
+  /// ([followsOwnerWishes]): what they wrote under "מה אני מחפש/ת" is their
+  /// wish, not a matchmaker's guess, so the basic list honours it — their
+  /// chosen styles replace the default ones, their age range replaces the
+  /// app's rule, and a candidate whose recorded height, region or marital
+  /// status contradicts it is left out (see [fitsOwnerWishes]).
   static bool matchesBasicPreferences({
     required Person source,
     required Person candidate,
@@ -102,22 +109,122 @@ abstract final class MatchSuggestionUtils {
       return false;
     }
 
-    final List<ReligiousLevel> levels =
-        MatchPreferences.defaultReligiousLevelsFor(source.religiousLevel);
-    final List<String> otherLabels = MatchPreferences.defaultOtherLabelsFor(
-      source,
-    );
-    if (levels.isNotEmpty || otherLabels.isNotEmpty) {
-      final bool styleFits =
-          levels.contains(candidate.religiousLevel) ||
-          (candidate.religiousLevel == ReligiousLevel.other &&
-              otherLabels.contains(candidate.religiousLevelOther?.trim()));
-      if (!styleFits) {
+    final bool ownerWishes = followsOwnerWishes(source);
+    if (!(ownerWishes && _choseStyles(source))) {
+      final List<ReligiousLevel> levels =
+          MatchPreferences.defaultReligiousLevelsFor(source.religiousLevel);
+      final List<String> otherLabels = MatchPreferences.defaultOtherLabelsFor(
+        source,
+      );
+      if ((levels.isNotEmpty || otherLabels.isNotEmpty) &&
+          !_styleIn(candidate, levels, otherLabels)) {
         return false;
       }
     }
 
+    if (ownerWishes) {
+      if (!fitsOwnerWishes(source: source, candidate: candidate)) {
+        return false;
+      }
+      if (_statesAgeRange(source)) {
+        return true;
+      }
+    }
     return areAgesCompatible(source: source, candidate: candidate);
+  }
+
+  /// Whether [source]'s automatic matches follow what they themselves asked
+  /// for: their card is a personal card they manage (synced from their own
+  /// account), and they filled in something under "מה אני מחפש/ת".
+  ///
+  /// A card the matchmaker wrote by hand keeps the old behaviour — there the
+  /// same fields are the matchmaker's notes, and applying them by default is
+  /// what emptied the lists (see [matchesBasicPreferences]).
+  static bool followsOwnerWishes(Person source) {
+    return source.isCardSynced && hasExtendedPreferences(source);
+  }
+
+  /// Whether [candidate] respects what [source] wrote under "מה אני מחפש/ת":
+  /// the religious styles and age range they chose, and the height, regions
+  /// and marital statuses they asked for.
+  ///
+  /// **Only a recorded fact can contradict a wish.** A candidate whose age,
+  /// height, region or marital status was never written down is not ruled out
+  /// by it: the wish says who is not wanted, and nobody knows yet whether this
+  /// candidate is that. The strict reading — unknown is out — is still one tap
+  /// away as "סינון מורחב" ([matchesOwnPreferences]).
+  ///
+  /// The app's own age rule is not part of this; callers apply it where the
+  /// wish names no age range.
+  static bool fitsOwnerWishes({
+    required Person source,
+    required Person candidate,
+  }) {
+    if (_choseStyles(source) &&
+        !_styleIn(
+          candidate,
+          source.preferredReligiousLevels,
+          source.preferredReligiousLevelOtherLabels,
+        )) {
+      return false;
+    }
+
+    final int? age = candidate.age;
+    if (age != null) {
+      final int? minAge = source.preferredMinAge;
+      final int? maxAge = source.preferredMaxAge;
+      if (minAge != null && age < minAge) {
+        return false;
+      }
+      if (maxAge != null && age > maxAge) {
+        return false;
+      }
+    }
+
+    final int? height = candidate.heightCm;
+    if (height != null) {
+      final int? minHeight = source.preferredMinHeightCm;
+      final int? maxHeight = source.preferredMaxHeightCm;
+      if (minHeight != null && height < minHeight) {
+        return false;
+      }
+      if (maxHeight != null && height > maxHeight) {
+        return false;
+      }
+    }
+
+    final Region? region = candidate.region;
+    if (region != null &&
+        source.preferredRegions.isNotEmpty &&
+        !source.preferredRegions.contains(region)) {
+      return false;
+    }
+
+    final MaritalStatus? marital = candidate.maritalStatus;
+    if (marital != null &&
+        source.preferredMaritalStatuses.isNotEmpty &&
+        !source.preferredMaritalStatuses.contains(marital)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  static bool _choseStyles(Person person) =>
+      person.preferredReligiousLevels.isNotEmpty ||
+      person.preferredReligiousLevelOtherLabels.isNotEmpty;
+
+  static bool _statesAgeRange(Person person) =>
+      person.preferredMinAge != null || person.preferredMaxAge != null;
+
+  static bool _styleIn(
+    Person candidate,
+    List<ReligiousLevel> levels,
+    List<String> otherLabels,
+  ) {
+    return levels.contains(candidate.religiousLevel) ||
+        (candidate.religiousLevel == ReligiousLevel.other &&
+            otherLabels.contains(candidate.religiousLevelOther?.trim()));
   }
 
   /// Every candidate in [people] for [source], best first: those who pass
@@ -227,6 +334,12 @@ abstract final class MatchSuggestionUtils {
     return (minAge: low, maxAge: high);
   }
 
+  /// Also honours a personal card's "מה אני מחפש/ת" ([fitsOwnerWishes]) — on
+  /// **both** sides, because this is the check that decides whether the app
+  /// offers a pair at all (the database's own ideas, the home screen's counts),
+  /// and a pair one of whom asked for somebody else is not an idea worth
+  /// offering. A wished-for age range on either side stands in for the app's
+  /// age rule.
   static bool isSuggestedCandidate({
     required Person source,
     required Person candidate,
@@ -235,12 +348,30 @@ abstract final class MatchSuggestionUtils {
       return false;
     }
 
-    final List<ReligiousLevel> allowedLevels = religiousLevelsFor(
-      source.religiousLevel,
-    );
-    if (allowedLevels.isNotEmpty &&
-        !allowedLevels.contains(candidate.religiousLevel)) {
+    final bool sourceWishes = followsOwnerWishes(source);
+    final bool candidateWishes = followsOwnerWishes(candidate);
+
+    if (!(sourceWishes && _choseStyles(source))) {
+      final List<ReligiousLevel> allowedLevels = religiousLevelsFor(
+        source.religiousLevel,
+      );
+      if (allowedLevels.isNotEmpty &&
+          !allowedLevels.contains(candidate.religiousLevel)) {
+        return false;
+      }
+    }
+
+    if (sourceWishes &&
+        !fitsOwnerWishes(source: source, candidate: candidate)) {
       return false;
+    }
+    if (candidateWishes &&
+        !fitsOwnerWishes(source: candidate, candidate: source)) {
+      return false;
+    }
+    if ((sourceWishes && _statesAgeRange(source)) ||
+        (candidateWishes && _statesAgeRange(candidate))) {
+      return true;
     }
 
     return areAgesCompatible(source: source, candidate: candidate);
