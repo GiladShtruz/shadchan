@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -209,5 +210,47 @@ void main() {
       expect(filter.matches(person(region: Region.south)), isFalse);
       expect(filter.matches(person(age: 35, region: Region.south)), isFalse);
     });
+
+    test(
+      'survives a round trip through JSON, and drops what it cannot read',
+      () {
+        const PeopleFilterState filter = PeopleFilterState(
+          gender: Gender.male,
+          ageRange: RangeValues(24, 30),
+          religiousLevels: <ReligiousLevel>[ReligiousLevel.datiLeumi],
+          religiousLevelOtherLabels: <String>['ברסלב'],
+          profileStatuses: <ProfileStatus>[ProfileStatus.available],
+          heightRange: RangeValues(160, 180),
+          maritalStatuses: <MaritalStatus>[MaritalStatus.single],
+          regions: <Region>[Region.center],
+          tags: <String>['חברים מהישיבה'],
+        );
+        final PeopleFilterState back = PeopleFilterState.fromJson(
+          jsonDecode(jsonEncode(filter.toJson())) as Map<String, Object?>,
+        );
+        expect(back.gender, Gender.male);
+        expect(back.ageRange, const RangeValues(24, 30));
+        expect(back.religiousLevels, <ReligiousLevel>[
+          ReligiousLevel.datiLeumi,
+        ]);
+        expect(back.religiousLevelOtherLabels, <String>['ברסלב']);
+        expect(back.profileStatuses, <ProfileStatus>[ProfileStatus.available]);
+        expect(back.heightRange, const RangeValues(160, 180));
+        expect(back.maritalStatuses, <MaritalStatus>[MaritalStatus.single]);
+        expect(back.regions, <Region>[Region.center]);
+        expect(back.tags, <String>['חברים מהישיבה']);
+
+        final PeopleFilterState odd = PeopleFilterState.fromJson(
+          <String, Object?>{
+            'gender': 'nobody',
+            'age': <Object?>[30, 20],
+            'regions': <Object?>['center', 'mars', 7],
+          },
+        );
+        expect(odd.gender, isNull);
+        expect(odd.ageRange, isNull);
+        expect(odd.regions, <Region>[Region.center]);
+      },
+    );
   });
 }

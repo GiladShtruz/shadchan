@@ -48,6 +48,78 @@ class PeopleFilterState {
       regions.isEmpty &&
       tags.isEmpty;
 
+  /// The filter as plain JSON — enum names and range ends — for keeping it
+  /// in the settings box.
+  Map<String, Object?> toJson() {
+    List<double>? range(RangeValues? values) =>
+        values == null ? null : <double>[values.start, values.end];
+    return <String, Object?>{
+      'gender': gender?.name,
+      'age': range(ageRange),
+      'religious': <String>[
+        for (final ReligiousLevel level in religiousLevels) level.name,
+      ],
+      'religiousOther': religiousLevelOtherLabels,
+      'statuses': <String>[
+        for (final ProfileStatus status in profileStatuses) status.name,
+      ],
+      'height': range(heightRange),
+      'marital': <String>[
+        for (final MaritalStatus status in maritalStatuses) status.name,
+      ],
+      'regions': <String>[for (final Region region in regions) region.name],
+      'tags': tags,
+    };
+  }
+
+  /// Reads [toJson]'s shape back. Anything it no longer recognises — an
+  /// enum value renamed since, a malformed range — is dropped rather than
+  /// failing the whole filter.
+  static PeopleFilterState fromJson(Map<String, Object?> json) {
+    List<T> names<T extends Enum>(Object? raw, List<T> values) {
+      if (raw is! List) {
+        return <T>[];
+      }
+      return <T>[
+        for (final Object? name in raw)
+          for (final T value in values)
+            if (value.name == name) value,
+      ];
+    }
+
+    List<String> strings(Object? raw) => raw is List
+        ? <String>[
+            for (final Object? item in raw)
+              if (item is String) item,
+          ]
+        : <String>[];
+
+    RangeValues? range(Object? raw) {
+      if (raw is! List || raw.length != 2) {
+        return null;
+      }
+      final Object? start = raw[0];
+      final Object? end = raw[1];
+      if (start is! num || end is! num || start > end) {
+        return null;
+      }
+      return RangeValues(start.toDouble(), end.toDouble());
+    }
+
+    final List<Gender> gender = names(<Object?>[json['gender']], Gender.values);
+    return PeopleFilterState(
+      gender: gender.isEmpty ? null : gender.first,
+      ageRange: range(json['age']),
+      religiousLevels: names(json['religious'], ReligiousLevel.values),
+      religiousLevelOtherLabels: strings(json['religiousOther']),
+      profileStatuses: names(json['statuses'], ProfileStatus.values),
+      heightRange: range(json['height']),
+      maritalStatuses: names(json['marital'], MaritalStatus.values),
+      regions: names(json['regions'], Region.values),
+      tags: strings(json['tags']),
+    );
+  }
+
   /// Whether [person] passes every filter set here, by the rules המאגר שלי
   /// applies: a range, a marital status or a region only matches a card that
   /// records one.

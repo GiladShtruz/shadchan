@@ -18,6 +18,7 @@ import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/home_search_filter_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/tips_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -311,9 +312,10 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _filterPanelOpen = false);
   }
 
-  /// The filter set from the search row — kept for the visit, so every
-  /// search after it looks only through the cards that pass it.
-  PeopleFilterState? _searchFilters;
+  /// The filter set from the search row — saved until it is cleared, so
+  /// every search after it, on this visit or a later one, looks only through
+  /// the cards that pass it.
+  PeopleFilterState? _searchFilters = HomeSearchFilterStore.filters;
 
   /// Whether the filtered cards are listed while nothing is typed: right
   /// after the filter is set, until a tap beside the panel puts it away.
@@ -331,6 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (result == null || !mounted) {
       return;
     }
+    HomeSearchFilterStore.filters = result;
     setState(() {
       _searchFilters = result.isEmpty ? null : result;
       _filterPanelOpen = !result.isEmpty;
@@ -670,6 +673,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _SearchFilterLine(
                         count: query.isEmpty ? results.people.length : null,
                         onClear: () => setState(() {
+                          HomeSearchFilterStore.filters = null;
                           _searchFilters = null;
                           _filterPanelOpen = false;
                         }),
