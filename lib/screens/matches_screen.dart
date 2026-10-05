@@ -11,6 +11,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/utils/idea_recency.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/dating_check_in.dart';
 import 'package:shadchan/utils/home_config.dart';
@@ -18,6 +19,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/search_navigation.dart';
+import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/home_panels.dart';
@@ -438,6 +440,11 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final bool pushed = widget.focusMatchId != null;
 
     return Scaffold(
+      // The same "+" as בית and המאגר שלי; here it goes straight to a new idea.
+      floatingActionButton: AddFab(
+        tooltip: 'רעיון חדש',
+        onPressed: () => context.push('/matches/add'),
+      ),
       // **The bar says "הרעיונות שלי", and the search row is pinned to it.** The
       // heading used to be the first line of the page and the field the second,
       // both of them folding away on a scroll — which is exactly when a list
@@ -727,17 +734,25 @@ class _MatchesScreenState extends State<MatchesScreen> {
       }
     }
 
+    // Most recently updated first — opened, its status changed, or either
+    // person's status changed. See [IdeaRecency]. The proposal somebody
+    // followed a link to keeps its own place; the list is scrolled to it.
+    final Map<String, DateTime> recency = IdeaRecency.of(
+      matches: matches,
+      statusEvents: context.read<MatchRepository>().getAllStatusEvents(),
+      personEvents: personRepository.getAllEvents(),
+    );
+    int byLastUpdate(MatchIdea a, MatchIdea b) {
+      final int byUpdate = (recency[b.id] ?? b.createdAt).compareTo(
+        recency[a.id] ?? a.createdAt,
+      );
+      return byUpdate != 0 ? byUpdate : b.createdAt.compareTo(a.createdAt);
+    }
+
     for (final List<MatchIdea> group in groups.values) {
-      group.sort(_byFocusThenNewest);
+      group.sort(byLastUpdate);
     }
     return groups;
-  }
-
-  /// Newest first. The proposal somebody followed a link to keeps its own
-  /// place — the list is scrolled to it instead. See
-  /// [MatchesScreen.focusMatchId].
-  int _byFocusThenNewest(MatchIdea a, MatchIdea b) {
-    return b.createdAt.compareTo(a.createdAt);
   }
 
   /// Proposals whose reminder date has arrived. A reminder set for the future

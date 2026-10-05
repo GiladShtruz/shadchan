@@ -255,6 +255,43 @@ class MatchRepository extends ChangeNotifier {
   /// — [recordOutcome] knows *who* ended the idea and why, and "הרעיון
   /// נסגר" directly above "הרעיון נדחה (מי: שרה)" says the same thing twice
   /// and dates it twice.
+  /// Keeps [MatchIdea.datingStartedAt] and [MatchIdea.datingEndedAt] true to
+  /// a move from [from] to [to], so a couple's card can say how long they have
+  /// been — or were — going out.
+  ///
+  /// Going out starts the clock. Stopping — closed, separated, married, put
+  /// on hold — stops it and keeps the start. Going back out within a day of
+  /// stopping (an undo, a mis-tap put right) carries on the same stretch.
+  /// A couple who went out before these fields existed get their start from
+  /// the status ledger when they stop.
+  void noteDatingSpan(
+    MatchIdea match, {
+    required MatchStatus from,
+    required MatchStatus to,
+    required DateTime at,
+  }) {
+    if (from == to) {
+      return;
+    }
+    if (to == MatchStatus.dating) {
+      final DateTime? ended = match.datingEndedAt;
+      final bool resumed =
+          match.datingStartedAt != null &&
+          ended != null &&
+          at.difference(ended) < DatingHistory.mistakeWindow;
+      if (!resumed) {
+        match.datingStartedAt = at;
+      }
+      match.datingEndedAt = null;
+    } else if (from == MatchStatus.dating) {
+      match.datingStartedAt ??= DatingCheckIn.startedAt(
+        match,
+        events: getAllStatusEvents(),
+      );
+      match.datingEndedAt = at;
+    }
+  }
+
   Future<void> updateStatus(
     String matchId,
     MatchStatus newStatus, {
@@ -267,6 +304,7 @@ class MatchRepository extends ChangeNotifier {
 
     final DateTime now = DateTime.now();
     final MatchStatus previous = match.status;
+    noteDatingSpan(match, from: previous, to: newStatus, at: now);
     match
       ..status = newStatus
       ..updatedAt = now;
@@ -680,6 +718,7 @@ class MatchRepository extends ChangeNotifier {
     final MatchStatus previous = match.status;
     final String trimmedReason = (reason ?? '').trim();
     final String note = (reminderNote ?? '').trim();
+    noteDatingSpan(match, from: previous, to: MatchStatus.unavailable, at: now);
     match
       ..status = MatchStatus.unavailable
       ..waitingReason = trimmedReason.isEmpty ? null : trimmedReason
@@ -1233,6 +1272,7 @@ class MatchRepository extends ChangeNotifier {
       }
 
       final MatchStatus previous = match.status;
+      noteDatingSpan(match, from: previous, to: target, at: now);
       match.status = target;
       match.updatedAt = now;
       await match.save();
@@ -1344,6 +1384,8 @@ class MatchRepository extends ChangeNotifier {
             'askedMaleAt': doomed.askedMaleAt?.toIso8601String(),
             'askedFemaleAt': doomed.askedFemaleAt?.toIso8601String(),
             'checkInEveryDays': doomed.checkInEveryDays,
+            'datingStartedAt': doomed.datingStartedAt?.toIso8601String(),
+            'datingEndedAt': doomed.datingEndedAt?.toIso8601String(),
           },
           notes: <Map<String, dynamic>>[
             for (final MatchNote note in getNotesForMatch(matchId))
@@ -1424,7 +1466,13 @@ class MatchRepository extends ChangeNotifier {
       ..askedFemaleAt = DateTime.tryParse(
         peek.match['askedFemaleAt'] as String? ?? '',
       )
-      ..checkInEveryDays = peek.match['checkInEveryDays'] as int?;
+      ..checkInEveryDays = peek.match['checkInEveryDays'] as int?
+      ..datingStartedAt = DateTime.tryParse(
+        peek.match['datingStartedAt'] as String? ?? '',
+      )
+      ..datingEndedAt = DateTime.tryParse(
+        peek.match['datingEndedAt'] as String? ?? '',
+      );
     trash.take(matchId);
     await _matchBox.put(match.id, match);
     for (final Map<String, dynamic> raw in peek.notes) {

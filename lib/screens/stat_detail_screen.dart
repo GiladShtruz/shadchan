@@ -451,9 +451,10 @@ class _CouplesPage extends StatelessWidget {
       case MatchStatus.unavailable:
       case MatchStatus.rejected:
       case MatchStatus.dated:
-        // They stopped when the idea last moved.
+        // How long they went out, as recorded when they stopped; for a
+        // couple from before that was recorded, until the idea last moved.
         final String span = AppDateUtils.spanLabel(
-          match.updatedAt.difference(record.startedAt),
+          match.datingSpan() ?? match.updatedAt.difference(record.startedAt),
         );
         return span == 'מהיום' ? 'יצאו פעם אחת' : 'יצאו במשך $span';
     }

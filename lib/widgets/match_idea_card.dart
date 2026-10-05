@@ -224,7 +224,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                 color: tone.gradient != null
                     ? edge.withValues(
                         alpha: tone.soft
-                            ? (highlighted ? 0.80 : 0.42)
+                            ? (highlighted ? 0.85 : 0.6)
                             : (highlighted ? 0.95 : 0.72),
                       )
                     : highlighted
@@ -232,7 +232,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                     : theme.colorScheme.outlineVariant,
                 width: tone.gradient != null
                     ? (tone.soft
-                          ? (highlighted ? 2.0 : 1.4)
+                          ? (highlighted ? 2.2 : 1.6)
                           : (highlighted ? 2.4 : 1.8))
                     : highlighted
                     ? 1.6
@@ -291,6 +291,7 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                 ),
                 _StatusLine(
                   match: match,
+                  datingSince: widget.datingSince,
                   onSetStage: widget.onSetStage,
                   onAction: widget.onQuickAction,
                 ),
@@ -345,8 +346,6 @@ class _CardTone {
     required this.surface,
     required this.gradient,
     this.askFill,
-    this.journalWash,
-    this.journalAccent,
     this.soft = false,
   });
 
@@ -365,11 +364,6 @@ class _CardTone {
   /// status colour. Null keeps that wash.
   final Color? askFill;
 
-  /// The journal's wash and its heading icon, when it wears a colour of its
-  /// own. Null keeps the neutral grey.
-  final Color? journalWash;
-  final Color? journalAccent;
-
   static _CardTone of(
     MatchIdea match, {
     required Person? male,
@@ -379,18 +373,29 @@ class _CardTone {
     final bool dark = theme.brightness == Brightness.dark;
     final Color paper = theme.colorScheme.surface;
 
-    _CardTone washed(Color accent, Color from, Color to) {
+    // **One calm ground for every live card; the status is said by the frame
+    // and the small things.** Each state used to wash its whole card in its
+    // own colour — sky for open, copper for waiting, rose for out — and a page
+    // of them read as a patchwork. Now the inside of every card is the same
+    // light cream from the palette, and blue, orange and pink live only in the
+    // border, the bars, the status word and the icons. Scanning a long list is
+    // reading one colour per card at its edge.
+    final Color ground = dark
+        ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.03), paper)
+        : Color.alphaBlend(AppColors.background.withValues(alpha: 0.55), paper);
+    final Color insidePaper = dark
+        ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.05), paper)
+        : AppColors.surface;
+
+    _CardTone framed(Color accent) {
       return _CardTone(
         accent: accent,
         surface: paper,
-        gradient: LinearGradient(
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-          colors: <Color>[
-            Color.alphaBlend(from, paper),
-            Color.alphaBlend(to, paper),
-          ],
-        ),
+        soft: true,
+        // A flat fill, written as a gradient so the card keeps the framed
+        // treatment live cards share.
+        gradient: LinearGradient(colors: <Color>[ground, ground]),
+        askFill: insidePaper,
       );
     }
 
@@ -399,70 +404,14 @@ class _CardTone {
         (female?.profileStatus.pausesMatches ?? false);
     switch (match.status) {
       case MatchStatus.dating:
-        return washed(
-          dark ? AppColors.femaleAccentDm : AppColors.femaleAccent,
-          AppColors.softRose.withValues(alpha: dark ? 0.18 : 0.72),
-          AppColors.softYellow.withValues(alpha: dark ? 0.10 : 0.42),
-        );
+        return framed(dark ? AppColors.femaleAccentDm : AppColors.femaleAccent);
       case MatchStatus.idea:
       case MatchStatus.checking:
       case MatchStatus.unavailable:
         if (match.status == MatchStatus.unavailable || paused) {
-          final Color copper = dark
-              ? AppColors.secondaryDarkDm
-              : AppColors.secondary;
-          return washed(
-            copper,
-            copper.withValues(alpha: dark ? 0.16 : 0.24),
-            AppColors.softYellow.withValues(alpha: dark ? 0.08 : 0.40),
-          );
+          return framed(dark ? AppColors.secondaryDarkDm : AppColors.secondary);
         }
-        // **Blue leads, but it is only a hint.** Blue is the open idea's
-        // colour, so it stays in the frame, the bars and the words; the
-        // ground is a very light sky at the card's head that passes through
-        // the palette's cream into a soft sand-peach at the foot — the same
-        // two-tone shape the dating (rose → honey) and waiting (copper →
-        // honey) cards wear, so no card is one colour edge to edge. Inside,
-        // "יאללה לקדם" rests on cream-white paper and the journal takes a soft
-        // rose: the dating card turned inside out.
-        final Color paperTone = Color.alphaBlend(
-          AppColors.secondaryLight.withValues(alpha: dark ? 0.02 : 0.30),
-          paper,
-        );
-        return _CardTone(
-          accent: dark ? AppColors.primaryDarkDm : AppColors.primaryDark,
-          surface: paper,
-          soft: true,
-          gradient: LinearGradient(
-            begin: AlignmentDirectional.topStart,
-            end: AlignmentDirectional.bottomEnd,
-            stops: const <double>[0, 0.5, 1],
-            colors: <Color>[
-              Color.alphaBlend(
-                (dark ? AppColors.primaryDarkDm : AppColors.softBlue)
-                    .withValues(alpha: dark ? 0.08 : 0.34),
-                paper,
-              ),
-              paperTone,
-              Color.alphaBlend(
-                AppColors.softSand.withValues(alpha: dark ? 0.04 : 0.30),
-                paper,
-              ),
-            ],
-          ),
-          askFill: dark
-              ? Color.alphaBlend(
-                  AppColors.onSurfaceDm.withValues(alpha: 0.05),
-                  paper,
-                )
-              : AppColors.surface,
-          journalWash: dark
-              ? AppColors.femaleAccentDm.withValues(alpha: 0.10)
-              : AppColors.softRose.withValues(alpha: 0.62),
-          journalAccent: dark
-              ? AppColors.femaleAccentDm
-              : AppColors.femaleAccent,
-        );
+        return framed(dark ? AppColors.primaryDarkDm : AppColors.primaryDark);
       case MatchStatus.rejected:
       case MatchStatus.dated:
       case MatchStatus.married:
@@ -784,9 +733,40 @@ class _StatusLine extends StatelessWidget {
     required this.match,
     required this.onSetStage,
     required this.onAction,
+    this.datingSince,
   });
 
   final MatchIdea match;
+
+  /// When a couple who are out started, from the ledger, for an idea that
+  /// has no [MatchIdea.datingStartedAt] of its own yet.
+  final DateTime? datingSince;
+
+  /// "יוצאים כבר 3 שבועות" for a couple who are out; "יצאו במשך חודשיים"
+  /// for one who stopped — or null when there is nothing to say.
+  String? _datingLine() {
+    if (match.status == MatchStatus.dating) {
+      final DateTime? start = match.datingStartedAt ?? datingSince;
+      if (start == null) {
+        return null;
+      }
+      final String span = AppDateUtils.spanLabel(
+        DateTime.now().difference(start),
+      );
+      return span == 'מהיום' ? 'יוצאים מהיום' : 'יוצאים כבר $span';
+    }
+    final DateTime? ended = match.datingEndedAt;
+    final Duration? span = match.datingSpan();
+    if (ended == null || span == null) {
+      return null;
+    }
+    final String label = AppDateUtils.spanLabel(span);
+    if (match.status == MatchStatus.married) {
+      return label == 'מהיום' ? null : 'יצאו $label עד החתונה';
+    }
+    return label == 'מהיום' ? 'יצאו פעם אחת' : 'יצאו במשך $label';
+  }
+
   final void Function(MatchStage stage)? onSetStage;
   final ValueChanged<MatchQuickAction>? onAction;
 
@@ -794,6 +774,8 @@ class _StatusLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String reason = (match.waitingReason ?? '').trim();
+    final String? dating = _datingLine();
+    final bool dark = theme.brightness == Brightness.dark;
 
     // **Centred at the card's foot, as one line of text.** "סטטוס: …" in the
     // card's own type size, the status word in its colour and a small arrow —
@@ -807,6 +789,43 @@ class _StatusLine extends StatelessWidget {
             onSetStage: onSetStage,
             onAction: onAction,
           ),
+          if (dating != null)
+            // How long they have been — or were — going out.
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    match.status == MatchStatus.dating
+                        ? Icons.favorite_rounded
+                        : Icons.history_rounded,
+                    size: 13,
+                    color: match.status == MatchStatus.dating
+                        ? (dark
+                              ? AppColors.femaleAccentDm
+                              : AppColors.femaleAccent)
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      dating,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: match.status == MatchStatus.dating
+                            ? (dark
+                                  ? AppColors.femaleAccentDm
+                                  : AppColors.femaleAccent)
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (reason.isNotEmpty)
             // Why a waiting idea is waiting, when it says.
             Padding(
@@ -1248,11 +1267,7 @@ class _CardActionBar extends StatelessWidget {
                                 action(MatchQuickAction.contact),
                           ),
                         const SizedBox(height: 10),
-                        MatchJournalView(
-                          matchId: match.id,
-                          background: tone.journalWash,
-                          accent: tone.journalAccent,
-                        ),
+                        MatchJournalView(matchId: match.id),
                       ],
                     ),
                   )

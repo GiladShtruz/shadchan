@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/tag_library.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_tags.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
@@ -32,6 +35,109 @@ class PeopleFilterState {
 
   /// The matchmaker's own tags: a person matches when they carry any of them.
   final List<String> tags;
+
+  /// Whether nothing is set — the same as no filter at all.
+  bool get isEmpty =>
+      gender == null &&
+      ageRange == null &&
+      religiousLevels.isEmpty &&
+      religiousLevelOtherLabels.isEmpty &&
+      profileStatuses.isEmpty &&
+      heightRange == null &&
+      maritalStatuses.isEmpty &&
+      regions.isEmpty &&
+      tags.isEmpty;
+
+  /// Whether [person] passes every filter set here, by the rules המאגר שלי
+  /// applies: a range, a marital status or a region only matches a card that
+  /// records one.
+  bool matches(Person person) {
+    if (gender != null && person.gender != gender) {
+      return false;
+    }
+    final RangeValues? ages = ageRange;
+    if (ages != null) {
+      final int? age = person.age;
+      if (age == null || age < ages.start.round() || age > ages.end.round()) {
+        return false;
+      }
+    }
+    if ((religiousLevels.isNotEmpty || religiousLevelOtherLabels.isNotEmpty) &&
+        !religiousLevels.contains(person.religiousLevel) &&
+        !(person.religiousLevel == ReligiousLevel.other &&
+            religiousLevelOtherLabels.contains(
+              person.religiousLevelOther?.trim(),
+            ))) {
+      return false;
+    }
+    if (profileStatuses.isNotEmpty &&
+        !profileStatuses.contains(person.profileStatus)) {
+      return false;
+    }
+    final RangeValues? heights = heightRange;
+    if (heights != null) {
+      final int? height = person.heightCm;
+      if (height == null ||
+          height < heights.start.round() ||
+          height > heights.end.round()) {
+        return false;
+      }
+    }
+    if (maritalStatuses.isNotEmpty &&
+        !maritalStatuses.contains(person.maritalStatus)) {
+      return false;
+    }
+    if (regions.isNotEmpty && !regions.contains(person.region)) {
+      return false;
+    }
+    if (tags.isNotEmpty &&
+        !person.tags.any(
+          (String tag) =>
+              tags.any((String chosen) => PersonTags.sameTag(tag, chosen)),
+        )) {
+      return false;
+    }
+    return true;
+  }
+}
+
+/// Opens [PeopleFiltersSheet] over [repository]'s people, starting from
+/// [initial], the way המאגר שלי opens it. Null when dismissed.
+Future<PeopleFilterState?> showPeopleFiltersSheet(
+  BuildContext context, {
+  required PersonRepository repository,
+  PeopleFilterState? initial,
+}) {
+  return showModalBottomSheet<PeopleFilterState>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+    clipBehavior: Clip.antiAlias,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+    ),
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.of(context).size.height * 0.84,
+    ),
+    builder: (BuildContext context) {
+      return PeopleFiltersSheet(
+        initialGender: initial?.gender,
+        initialAgeRange: initial?.ageRange,
+        ageBounds: repository.activeAgeBounds,
+        initialReligiousLevels: initial?.religiousLevels ?? const [],
+        initialReligiousLevelOtherLabels:
+            initial?.religiousLevelOtherLabels ?? const <String>[],
+        initialProfileStatuses: initial?.profileStatuses ?? const [],
+        initialHeightRange: initial?.heightRange,
+        heightBounds: (min: 120, max: 200),
+        initialMaritalStatuses: initial?.maritalStatuses ?? const [],
+        initialRegions: initial?.regions ?? const [],
+        availableTags: TagLibrary.inUse(repository.getAll()),
+        initialTags: initial?.tags ?? const <String>[],
+      );
+    },
+  );
 }
 
 /// Bottom sheet used to filter the people list. The basic filters — gender,

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/home_board_store.dart';
+import 'package:hive/hive.dart';
 import 'package:shadchan/services/tag_library.dart';
 import 'package:shadchan/utils/person_tags.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +19,7 @@ import 'package:shadchan/screens/think_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/search_navigation.dart';
+import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -34,13 +37,16 @@ class PeopleScreen extends StatefulWidget {
     super.key,
     this.initialShowArchived = false,
     this.initialProfileStatuses = const <ProfileStatus>[],
-    this.initialSort = PeopleSortOption.alphabetical,
+    this.initialSort,
     this.importBatchId,
   });
 
   final bool initialShowArchived;
   final List<ProfileStatus> initialProfileStatuses;
-  final PeopleSortOption initialSort;
+
+  /// A sort the link asked for. Null opens on the matchmaker's saved default
+  /// ("הגדרה כברירת מחדל" in the sort sheet), else א-ב.
+  final PeopleSortOption? initialSort;
 
   /// Show only the people one import just added, and nothing else.
   ///
@@ -75,6 +81,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
   bool _showArchived = false;
   PeopleSortOption _sortOption = PeopleSortOption.alphabetical;
 
+  /// Squares instead of rows — the same friends, the same information and
+  /// the same buttons, two or three to a line. Remembered across visits.
+  bool _grid = PeopleViewChoice.grid;
+
   /// Cleared by "לכל המאגר", which is the only way out of the batch view.
   String? _importBatchId;
 
@@ -95,7 +105,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
     _showArchived = widget.initialShowArchived;
-    _sortOption = widget.initialSort;
+    final ({PeopleSortOption option, bool ascending})? saved =
+        PeopleSortDefault.read();
+    _sortOption =
+        widget.initialSort ?? saved?.option ?? PeopleSortOption.alphabetical;
+    if (widget.initialSort == null && saved != null) {
+      _sortAscending = saved.ascending;
+    }
     _selectedProfileStatuses = List<ProfileStatus>.from(
       widget.initialProfileStatuses,
     );
@@ -164,20 +180,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
       // the width of the thumb's whole travel.
       floatingActionButton: selection != null
           ? null
-          : FloatingActionButton(
-              // `endFloat` in RTL is the bottom-left corner — the same place
-              // the messaging apps everyone already uses put theirs, and the
-              // same shape: a rounded square in the palette's light blue, with
-              // a white heart and a light-blue plus at its centre.
+          : AddFab(
               tooltip: 'הוספת חברים',
               onPressed: () => AddPeopleDialog.show(context),
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const _HeartPlusIcon(),
             ),
       // The name and the search row are the bar; everything under it — the
       // gender tabs, the filter chips and the list — scrolls as one page.
@@ -244,6 +249,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
           tooltip: 'מיון',
           onPressed: _openSortSheet,
           icon: const Icon(Icons.sort),
+        ),
+        IconButton(
+          tooltip: _grid ? 'תצוגת רשימה' : 'תצוגת רשת',
+          onPressed: () {
+            setState(() => _grid = !_grid);
+            PeopleViewChoice.grid = _grid;
+          },
+          icon: Icon(
+            _grid ? Icons.view_agenda_outlined : Icons.grid_view_rounded,
+          ),
         ),
       ],
     );
@@ -400,59 +415,73 @@ class _PeopleScreenState extends State<PeopleScreen> {
         else
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-            sliver: SliverList.builder(
-              itemCount: visiblePeople.length,
-              itemBuilder: (BuildContext context, int index) {
-                final Person person = visiblePeople[index];
-                final Set<String>? selection = _detailsSelection;
-                if (selection != null) {
-                  return PersonListCard(
-                    person: person,
-                    selected: selection.contains(person.id),
-                    // A tap ticks instead of opening, and a long press does the
-                    // same: while a group is being put together there is no
-                    // second meaning for either gesture.
-                    onTap: () => _toggleDetailsSelection(person),
-                    onLongPress: () => _toggleDetailsSelection(person),
-                  );
-                }
-                return PersonListCard(
-                  person: person,
-                  // Through the same helper the results panel uses: with the
-                  // keyboard up, pushing straight away makes the avatar's hero
-                  // measure a viewport that is a keyboard shorter than the one
-                  // the profile ends up in, and it lands stretched. See
-                  // [pushLeavingSearch] — with nothing focused it is an
-                  // ordinary push.
-                  onTap: () =>
-                      pushLeavingSearch(context, '/people/${person.id}'),
-                  // **A long press ticks, it does not ask.** It used to raise a
-                  // sheet whose middle row was "בקשת פרטים בוואטסאפ" — a menu
-                  // between the gesture and the only thing the gesture is for.
-                  // Pressing a friend now selects them and turns the list into
-                  // a picker; everything else that sheet offered is on the
-                  // friend's own profile, one tap away.
-                  onLongPress: () => _startDetailsSelection(person),
-                  onToggleFavorite: () => context
-                      .read<PersonRepository>()
-                      .toggleFavorite(person.id),
-                  onOpenMatches: () => _openMatchSuggestions(context, person),
-                  onOpenWhatsApp: () => _openWhatsApp(context, person),
-                  keepWhatsAppSlot: true,
-                  // The same call the proposal cards make, so a status set from
-                  // here moves the person's open proposals to "בהמתנה" and asks
-                  // when to look again exactly as it does anywhere else.
-                  onStatusPicked: (Person person, ProfileStatus status) =>
-                      MatchQuickActions.setPersonStatus(
-                        context,
-                        person,
-                        status,
-                      ),
-                );
-              },
-            ),
+            sliver: _grid
+                ? SliverGrid.builder(
+                    itemCount: visiblePeople.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: MediaQuery.sizeOf(context).width >= 600
+                          ? 3
+                          : 2,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      mainAxisExtent: PersonListCard.tileExtent(context),
+                    ),
+                    itemBuilder: (BuildContext context, int index) =>
+                        _personCard(visiblePeople[index], tile: true),
+                  )
+                : SliverList.builder(
+                    itemCount: visiblePeople.length,
+                    itemBuilder: (BuildContext context, int index) =>
+                        _personCard(visiblePeople[index]),
+                  ),
           ),
       ],
+    );
+  }
+
+  /// One friend, as a row or as a square: the same information and the same
+  /// actions either way. See [PersonListCard.tile].
+  Widget _personCard(Person person, {bool tile = false}) {
+    final Set<String>? selection = _detailsSelection;
+    if (selection != null) {
+      return PersonListCard(
+        tile: tile,
+        person: person,
+        selected: selection.contains(person.id),
+        // A tap ticks instead of opening, and a long press does the
+        // same: while a group is being put together there is no
+        // second meaning for either gesture.
+        onTap: () => _toggleDetailsSelection(person),
+        onLongPress: () => _toggleDetailsSelection(person),
+      );
+    }
+    return PersonListCard(
+      tile: tile,
+      person: person,
+      // Through the same helper the results panel uses: with the
+      // keyboard up, pushing straight away makes the avatar's hero
+      // measure a viewport that is a keyboard shorter than the one
+      // the profile ends up in, and it lands stretched. See
+      // [pushLeavingSearch] — with nothing focused it is an
+      // ordinary push.
+      onTap: () => pushLeavingSearch(context, '/people/${person.id}'),
+      // **A long press ticks, it does not ask.** It used to raise a
+      // sheet whose middle row was "בקשת פרטים בוואטסאפ" — a menu
+      // between the gesture and the only thing the gesture is for.
+      // Pressing a friend now selects them and turns the list into
+      // a picker; everything else that sheet offered is on the
+      // friend's own profile, one tap away.
+      onLongPress: () => _startDetailsSelection(person),
+      onToggleFavorite: () =>
+          context.read<PersonRepository>().toggleFavorite(person.id),
+      onOpenMatches: () => _openMatchSuggestions(context, person),
+      onOpenWhatsApp: () => _openWhatsApp(context, person),
+      keepWhatsAppSlot: true,
+      // The same call the proposal cards make, so a status set from
+      // here moves the person's open proposals to "בהמתנה" and asks
+      // when to look again exactly as it does anywhere else.
+      onStatusPicked: (Person person, ProfileStatus status) =>
+          MatchQuickActions.setPersonStatus(context, person, status),
     );
   }
 
@@ -839,6 +868,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
     return a.lastName.toLowerCase().compareTo(b.lastName.toLowerCase());
   }
 
+  bool get _isDefaultSort {
+    final ({PeopleSortOption option, bool ascending})? saved =
+        PeopleSortDefault.read();
+    return saved != null &&
+        saved.option == _sortOption &&
+        saved.ascending == _sortAscending;
+  }
+
   Future<void> _openSortSheet() async {
     final ({PeopleSortOption value, bool ascending})? selected =
         await showModalBottomSheet<({PeopleSortOption value, bool ascending})>(
@@ -893,6 +930,28 @@ class _PeopleScreenState extends State<PeopleScreen> {
                         sheetContext,
                       ).pop((value: option.value, ascending: _sortAscending)),
                     ),
+                  const Divider(height: 1),
+                  // The current sort becomes the one every visit opens on.
+                  ListTile(
+                    leading: const Icon(Icons.push_pin_outlined),
+                    title: const Text('הגדרה כברירת מחדל'),
+                    subtitle: Text(
+                      _isDefaultSort
+                          ? 'המיון הנוכחי הוא ברירת המחדל'
+                          : 'המיון הנוכחי יישמר לכניסות הבאות',
+                    ),
+                    trailing: _isDefaultSort
+                        ? Icon(
+                            Icons.check,
+                            color: Theme.of(sheetContext).colorScheme.primary,
+                          )
+                        : null,
+                    onTap: () {
+                      PeopleSortDefault.save(_sortOption, _sortAscending);
+                      Navigator.of(sheetContext).pop();
+                      AppNotice.show(context, 'המיון נשמר כברירת מחדל');
+                    },
+                  ),
                 ],
               ),
             );
@@ -1435,63 +1494,56 @@ class _DetailsRequestBar extends StatelessWidget {
   }
 }
 
-/// A white heart with a light-blue plus in its middle — "add a friend", in
-/// the app's own sign.
-///
-/// The plus is drawn rather than taken from the icon font: short and heavy
-/// with round ends, the way WhatsApp draws its own, where `Icons.add` is long
-/// and thin.
-class _HeartPlusIcon extends StatelessWidget {
-  const _HeartPlusIcon();
+/// The sort המאגר שלי opens on, once the matchmaker saved one with
+/// "הגדרה כברירת מחדל". Stored as `option|asc` in the settings box.
+abstract final class PeopleSortDefault {
+  static const String _key = 'people.defaultSort';
+  static String? _pending;
 
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox.square(
-      dimension: 28,
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          Icon(Icons.favorite_rounded, color: Colors.white, size: 28),
-          // The heart's body sits a touch above the glyph's centre.
-          Padding(
-            padding: EdgeInsets.only(bottom: 2),
-            child: CustomPaint(
-              size: Size.square(10),
-              painter: _BoldPlusPainter(AppColors.primary),
-            ),
-          ),
-        ],
-      ),
-    );
+  static ({PeopleSortOption option, bool ascending})? read() {
+    final Object? raw =
+        _pending ??
+        (Hive.isBoxOpen('settings')
+            ? Hive.box<dynamic>('settings').get(_key)
+            : null);
+    if (raw is! String) {
+      return null;
+    }
+    final List<String> parts = raw.split('|');
+    for (final PeopleSortOption option in PeopleSortOption.values) {
+      if (option.name == parts.first) {
+        return (
+          option: option,
+          ascending: parts.length < 2 || parts[1] != 'false',
+        );
+      }
+    }
+    return null;
+  }
+
+  static void save(PeopleSortOption option, bool ascending) {
+    _pending = '${option.name}|$ascending';
+    persistHomeSetting(_key, _pending!);
   }
 }
 
-class _BoldPlusPainter extends CustomPainter {
-  const _BoldPlusPainter(this.color);
+/// Whether המאגר שלי is drawn as squares. Remembered across visits.
+abstract final class PeopleViewChoice {
+  static const String _key = 'people.grid';
+  static bool? _pending;
 
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint stroke = Paint()
-      ..color = color
-      ..strokeWidth = 2.8
-      ..strokeCap = StrokeCap.round;
-    final double inset = stroke.strokeWidth / 2;
-    canvas
-      ..drawLine(
-        Offset(size.width / 2, inset),
-        Offset(size.width / 2, size.height - inset),
-        stroke,
-      )
-      ..drawLine(
-        Offset(inset, size.height / 2),
-        Offset(size.width - inset, size.height / 2),
-        stroke,
-      );
+  static bool get grid {
+    if (_pending != null) {
+      return _pending!;
+    }
+    final Object? raw = Hive.isBoxOpen('settings')
+        ? Hive.box<dynamic>('settings').get(_key)
+        : null;
+    return raw == true || raw == 'true';
   }
 
-  @override
-  bool shouldRepaint(covariant _BoldPlusPainter oldDelegate) =>
-      oldDelegate.color != color;
+  static set grid(bool value) {
+    _pending = value;
+    persistHomeSetting(_key, value.toString());
+  }
 }

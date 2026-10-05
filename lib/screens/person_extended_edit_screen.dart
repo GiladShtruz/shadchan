@@ -465,7 +465,8 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       onFinished();
       return;
     }
-    Navigator.of(context).pop();
+    // True says "finished with ✓", which is when the caller confirms.
+    Navigator.of(context).pop(true);
   }
 
   /// "אם תצא עכשיו, החבר לא יישמר." — stay, or leave without the friend.

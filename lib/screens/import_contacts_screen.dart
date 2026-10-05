@@ -628,6 +628,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
 
     final PersonRepository repository = context.read<PersonRepository>();
     int addedCount = 0;
+    Person? lastAdded;
     int fullCards = 0;
     for (int index = 0; index < selected.length; index++) {
       final ContactImportCandidate candidate = selected[index];
@@ -658,6 +659,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       if (outcome.isAdded) {
         await repository.activatePendingContactDraft(staged.person);
         addedCount++;
+        lastAdded = staged.person;
         if (outcome == QuickUpdateOutcome.openFullEditor && mounted) {
           // The full card comes back here, so the batch carries on after it.
           fullCards++;
@@ -688,8 +690,15 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     // A single friend who went through the full card was already confirmed on
     // the way back from it.
     final bool alreadyConfirmed = addedCount == 1 && fullCards == 1;
-    if (addedCount < CommunityProfileStore.bulkImportNoticeFrom &&
-        !alreadyConfirmed) {
+    final Person? single = lastAdded;
+    if (alreadyConfirmed) {
+      return;
+    }
+    if (addedCount == 1 && single != null) {
+      // One friend: the confirmation that names them and offers their
+      // matches and the full card.
+      ContactsAddedCelebration.showNewFriend(context, single);
+    } else if (addedCount < CommunityProfileStore.bulkImportNoticeFrom) {
       ContactsAddedCelebration.show(context, count: addedCount);
     }
   }

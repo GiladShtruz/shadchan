@@ -40,13 +40,15 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       askedMaleAt: fields[16] as DateTime?,
       askedFemaleAt: fields[17] as DateTime?,
       checkInEveryDays: fields[18] as int?,
+      datingStartedAt: fields[19] as DateTime?,
+      datingEndedAt: fields[20] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, MatchIdea obj) {
     writer
-      ..writeByte(19)
+      ..writeByte(21)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -84,7 +86,11 @@ class MatchIdeaAdapter extends TypeAdapter<MatchIdea> {
       ..writeByte(17)
       ..write(obj.askedFemaleAt)
       ..writeByte(18)
-      ..write(obj.checkInEveryDays);
+      ..write(obj.checkInEveryDays)
+      ..writeByte(19)
+      ..write(obj.datingStartedAt)
+      ..writeByte(20)
+      ..write(obj.datingEndedAt);
   }
 
   @override

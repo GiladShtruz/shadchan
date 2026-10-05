@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/app_celebration.dart';
 
@@ -30,10 +31,12 @@ abstract final class ContactsAddedCelebration {
     );
   }
 
-  /// One friend who was added through the full card.
+  /// One friend who was just added — through the quick details or the full
+  /// card.
   ///
   /// Shown back on the screen the matchmaker started from, which is where the
-  /// full editor now returns to instead of opening the friend's profile.
+  /// editors now return to instead of opening the friend's profile. Two next
+  /// steps ride on it: the friend's matches, and the full card.
   static void showNewFriend(BuildContext context, Person person) {
     final String name = person.fullName.trim();
     final String joined = person.gender == Gender.female ? 'נוספה' : 'נוסף';
@@ -43,6 +46,37 @@ abstract final class ContactsAddedCelebration {
       message: name.isEmpty
           ? 'הכרטיס נשמר במאגר שלך'
           : '$name $joined למאגר שלך',
+      actions: nextSteps(context, person),
     );
+  }
+
+  /// "לראות התאמות" and "השלמת פרטים" for [person].
+  ///
+  /// They run on the root navigator, which outlives the screen the card was
+  /// raised over — the import list may be gone by the time one is pressed.
+  static List<CelebrationAction> nextSteps(
+    BuildContext context,
+    Person person, {
+    bool includeCompleteDetails = true,
+  }) {
+    final BuildContext root = Navigator.of(
+      context,
+      rootNavigator: true,
+    ).context;
+    return <CelebrationAction>[
+      if (person.gender != Gender.unknown)
+        CelebrationAction(
+          label: 'לראות התאמות',
+          icon: Icons.favorite_border_rounded,
+          primary: true,
+          onPressed: () => openSuggestionsFor(root, person.id),
+        ),
+      if (includeCompleteDetails)
+        CelebrationAction(
+          label: 'השלמת פרטים',
+          icon: Icons.edit_note_rounded,
+          onPressed: () => openExtendedPersonEditor(root, person.id),
+        ),
+    ];
   }
 }

@@ -177,8 +177,9 @@ void main() {
       expect(find.text('הוספת רעיון'), findsOneWidget);
     });
 
-    testWidgets('each is plain paper with one rule of its own colour under '
-        'it', (WidgetTester tester) async {
+    testWidgets('each wears a wash and a rule of its own colour', (
+      WidgetTester tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -207,10 +208,11 @@ void main() {
         return (card.decoration as BoxDecoration?)?.color;
       }
 
-      // Adding friends leads: a faint wash of its own blue. The idea card is
-      // plain paper.
+      // Both are the page's main buttons now: each on a wash of its own
+      // colour rather than plain paper, and not the same wash.
       expect(cardFor('הוספת חברים'), isNot(AppColors.surface));
-      expect(cardFor('הוספת רעיון'), AppColors.surface);
+      expect(cardFor('הוספת רעיון'), isNot(AppColors.surface));
+      expect(cardFor('הוספת חברים'), isNot(cardFor('הוספת רעיון')));
 
       // The colour is all in the rule: the palette's light blue for friends,
       // the palette's brown for an idea, and no band behind the label.

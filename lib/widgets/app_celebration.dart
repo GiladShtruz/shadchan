@@ -23,6 +23,23 @@ import 'package:shadchan/utils/app_colors.dart';
 /// press "אישור" turns a moment into a chore. It fades out on its own after
 /// [visibleFor], and a tap anywhere takes it away early for somebody who has
 /// already read it.
+/// A button on the celebration card — a next step offered at the moment.
+class CelebrationAction {
+  const CelebrationAction({
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.primary = false,
+  });
+
+  final String label;
+  final IconData? icon;
+  final VoidCallback onPressed;
+
+  /// The filled one; the others are outlined.
+  final bool primary;
+}
+
 abstract final class AppCelebration {
   /// Longer than a toast's three and a half seconds, because there is more to
   /// look at and because the whole point is to let the moment land.
@@ -41,6 +58,7 @@ abstract final class AppCelebration {
     required String message,
     String emoji = '🎉',
     Duration? duration,
+    List<CelebrationAction> actions = const <CelebrationAction>[],
   }) {
     final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) {
@@ -55,11 +73,16 @@ abstract final class AppCelebration {
         message: message,
         emoji: emoji,
         onTap: dismiss,
+        actions: actions,
       ),
     );
     _entry = entry;
     overlay.insert(entry);
-    _timer = Timer(duration ?? visibleFor, dismiss);
+    // A card with something to press stays long enough to press it.
+    _timer = Timer(
+      duration ?? (actions.isEmpty ? visibleFor : const Duration(seconds: 8)),
+      dismiss,
+    );
   }
 
   static void dismiss() {
@@ -76,8 +99,10 @@ class _Celebration extends StatefulWidget {
     required this.message,
     required this.emoji,
     required this.onTap,
+    this.actions = const <CelebrationAction>[],
   });
 
+  final List<CelebrationAction> actions;
   final String headline;
   final String message;
   final String emoji;
@@ -158,6 +183,7 @@ class _CelebrationState extends State<_Celebration>
                       message: widget.message,
                       emoji: widget.emoji,
                       lead: lead,
+                      actions: widget.actions,
                     ),
                   ],
                 ),
@@ -176,7 +202,10 @@ class _Card extends StatelessWidget {
     required this.message,
     required this.emoji,
     required this.lead,
+    this.actions = const <CelebrationAction>[],
   });
+
+  final List<CelebrationAction> actions;
 
   final String headline;
   final String message;
@@ -228,9 +257,46 @@ class _Card extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          if (actions.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 18),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final CelebrationAction action in actions)
+                  _actionButton(action),
+              ],
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _actionButton(CelebrationAction action) {
+    void press() {
+      AppCelebration.dismiss();
+      action.onPressed();
+    }
+
+    final Widget label = Text(action.label);
+    if (action.primary) {
+      return action.icon == null
+          ? FilledButton(onPressed: press, child: label)
+          : FilledButton.icon(
+              onPressed: press,
+              icon: Icon(action.icon, size: 18),
+              label: label,
+            );
+    }
+    return action.icon == null
+        ? OutlinedButton(onPressed: press, child: label)
+        : OutlinedButton.icon(
+            onPressed: press,
+            icon: Icon(action.icon, size: 18),
+            label: label,
+          );
   }
 }
 

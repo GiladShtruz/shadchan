@@ -58,6 +58,10 @@ abstract final class DatingCheckIn {
     if (match.status != MatchStatus.dating) {
       return null;
     }
+    final DateTime? recorded = match.datingStartedAt;
+    if (recorded != null) {
+      return recorded;
+    }
     DateTime? latest;
     for (final MatchStatusEvent event in events) {
       if (event.matchId != match.id || event.toStatus != MatchStatus.dating) {

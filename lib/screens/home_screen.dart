@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SliverConstraints;
+import 'package:shadchan/widgets/people_filters_sheet.dart';
+import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -201,6 +203,12 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Builder(
         builder: (BuildContext context) => Scaffold(
           appBar: _buildGreetingAppBar(),
+          // The same "+" as המאגר שלי, in the same corner; here it asks which
+          // of the two is meant.
+          floatingActionButton: AddFab(
+            tooltip: 'הוספה',
+            onPressed: () => AddChoiceDialog.show(context),
+          ),
           body: SafeArea(
             child: Stack(
               children: <Widget>[
@@ -259,6 +267,20 @@ class _HomeScreenState extends State<HomeScreen> {
           controller: _searchController,
           hintText: 'חיפוש בכל המאגר',
           onCleared: _closeSearch,
+          // The same filter as המאגר שלי. The search stays free text; with a
+          // filter set it looks only through the cards that pass it.
+          trailing: <Widget>[
+            IconButton(
+              tooltip: 'סינון',
+              onPressed: _openSearchFilters,
+              icon: Icon(
+                _hasSearchFilters ? Icons.filter_list_alt : Icons.tune,
+                color: _hasSearchFilters
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -286,7 +308,33 @@ class _HomeScreenState extends State<HomeScreen> {
   void _closeSearch() {
     FocusScope.of(context).unfocus();
     _searchController.clear();
-    setState(() {});
+    setState(() => _filterPanelOpen = false);
+  }
+
+  /// The filter set from the search row — kept for the visit, so every
+  /// search after it looks only through the cards that pass it.
+  PeopleFilterState? _searchFilters;
+
+  /// Whether the filtered cards are listed while nothing is typed: right
+  /// after the filter is set, until a tap beside the panel puts it away.
+  bool _filterPanelOpen = false;
+
+  bool get _hasSearchFilters =>
+      _searchFilters != null && !_searchFilters!.isEmpty;
+
+  Future<void> _openSearchFilters() async {
+    final PeopleFilterState? result = await showPeopleFiltersSheet(
+      context,
+      repository: context.read<PersonRepository>(),
+      initial: _searchFilters,
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _searchFilters = result.isEmpty ? null : result;
+      _filterPanelOpen = !result.isEmpty;
+    });
   }
 
   // --- Home body ----------------------------------------------------------
@@ -563,16 +611,30 @@ class _HomeScreenState extends State<HomeScreen> {
   /// on the page behind went to whatever card happened to be under the finger.
   Widget _buildSearchPanel(ThemeData theme, PersonRepository repository) {
     final String query = _searchController.text.trim();
-    if (query.isEmpty) {
+    final PeopleFilterState? filters = _hasSearchFilters
+        ? _searchFilters
+        : null;
+    if (query.isEmpty && !(filters != null && _filterPanelOpen)) {
       return const SizedBox.shrink();
     }
 
-    // The whole database, word by word — see [HomeSearch].
-    final HomeSearchResults results = HomeSearch.run(
-      query,
-      repository.getAll(),
-      notesFor: repository.getNotesForPerson,
-    );
+    // The whole database, word by word — see [HomeSearch] — or, with a
+    // filter set, only the cards that pass it. With nothing typed the
+    // filtered cards themselves are the answer.
+    final Iterable<Person> pool = filters == null
+        ? repository.getAll()
+        : repository.getAll().where(filters.matches);
+    final HomeSearchResults results = query.isEmpty
+        ? HomeSearchResults(
+            people: pool.where((Person p) => !p.hidden).toList()
+              ..sort(
+                (Person a, Person b) => a.fullName.toLowerCase().compareTo(
+                  b.fullName.toLowerCase(),
+                ),
+              ),
+            content: const <ContentHit>[],
+          )
+        : HomeSearch.run(query, pool, notesFor: repository.getNotesForPerson);
 
     return Stack(
       children: <Widget>[
@@ -600,43 +662,62 @@ class _HomeScreenState extends State<HomeScreen> {
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.5,
                 ),
-                child: results.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 24,
-                        ),
-                        child: Text(
-                          'לא נמצאו תוצאות',
-                          textAlign: TextAlign.center,
-                          // `bodyLarge` folds to the heading ink; this line is
-                          // an absence, not a heading.
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: AppColors.muted(
-                              dark: theme.brightness == Brightness.dark,
-                            ),
-                          ),
-                        ),
-                      )
-                    : HomeSearchResultsList(
-                        results: results,
-                        onOpenPerson: (Person person) {
-                          _closeSearch();
-                          pushLeavingSearch(context, '/people/${person.id}');
-                        },
-                        // A match inside the card opens the profile where the
-                        // words are: the full card open, or the notes.
-                        onOpenHit: (ContentHit hit) {
-                          _closeSearch();
-                          pushLeavingSearch(
-                            context,
-                            '/people/${hit.person.id}?focus=${hit.field.focus}',
-                          );
-                        },
-                        onToggleFavorite: (Person person) =>
-                            repository.toggleFavorite(person.id),
-                        onOpenWhatsApp: _openWhatsApp,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (filters != null)
+                      _SearchFilterLine(
+                        count: query.isEmpty ? results.people.length : null,
+                        onClear: () => setState(() {
+                          _searchFilters = null;
+                          _filterPanelOpen = false;
+                        }),
                       ),
+                    Flexible(
+                      child: results.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 24,
+                              ),
+                              child: Text(
+                                'לא נמצאו תוצאות',
+                                textAlign: TextAlign.center,
+                                // `bodyLarge` folds to the heading ink; this line is
+                                // an absence, not a heading.
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: AppColors.muted(
+                                    dark: theme.brightness == Brightness.dark,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : HomeSearchResultsList(
+                              results: results,
+                              onOpenPerson: (Person person) {
+                                _closeSearch();
+                                pushLeavingSearch(
+                                  context,
+                                  '/people/${person.id}',
+                                );
+                              },
+                              // A match inside the card opens the profile where the
+                              // words are: the full card open, or the notes.
+                              onOpenHit: (ContentHit hit) {
+                                _closeSearch();
+                                pushLeavingSearch(
+                                  context,
+                                  '/people/${hit.person.id}?focus=${hit.field.focus}',
+                                );
+                              },
+                              onToggleFavorite: (Person person) =>
+                                  repository.toggleFavorite(person.id),
+                              onOpenWhatsApp: _openWhatsApp,
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -724,6 +805,44 @@ class _BoardSection extends StatefulWidget {
 
   @override
   State<_BoardSection> createState() => _BoardSectionState();
+}
+
+/// The line over the home search results while a filter is set: what is
+/// being searched, and the way to stop.
+class _SearchFilterLine extends StatelessWidget {
+  const _SearchFilterLine({required this.count, required this.onClear});
+
+  /// How many cards pass, when they are listed themselves.
+  final int? count;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 6, 6, 0),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.filter_list_alt,
+            size: 16,
+            color: AppColors.muted(dark: dark),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              count == null
+                  ? 'מחפש רק בכרטיסים שעומדים בסינון'
+                  : '$count כרטיסים עומדים בסינון',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          TextButton(onPressed: onClear, child: const Text('ניקוי הסינון')),
+        ],
+      ),
+    );
+  }
 }
 
 class _BoardSectionState extends State<_BoardSection> {

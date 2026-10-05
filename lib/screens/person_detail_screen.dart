@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/widgets/voice_note_player.dart';
 import 'package:shadchan/widgets/match_state_tag.dart';
 import 'package:shadchan/widgets/sketch_actions.dart';
@@ -88,6 +89,23 @@ Future<bool> openExtendedPersonEditor(
       ),
     ),
   );
+  // An existing friend's card finished with ✓: say so, with the way to their
+  // matches. A new friend is confirmed by the flow that added them.
+  if (kept == true && !isNewFriend && context.mounted) {
+    final Person? saved = context.read<PersonRepository>().getById(personId);
+    if (saved != null && saved.gender != Gender.unknown) {
+      final BuildContext root = Navigator.of(
+        context,
+        rootNavigator: true,
+      ).context;
+      AppNotice.show(
+        context,
+        'הכרטיס עודכן',
+        actionLabel: 'לראות התאמות',
+        onAction: () => openSuggestionsFor(root, personId),
+      );
+    }
+  }
   return kept ?? true;
 }
 
@@ -1241,7 +1259,8 @@ class _ProfileInlineActions extends StatelessWidget {
           ],
           Expanded(
             child: _ProfileActionButton(
-              icon: const Icon(Icons.group_outlined, size: 22),
+              // The app's own sign: two cards and a heart.
+              icon: const MatchCardsIcon(size: 22),
               label: 'התאמות',
               onPressed: onMatches,
               emphasized: true,
@@ -1250,7 +1269,8 @@ class _ProfileInlineActions extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: _ProfileActionButton(
-              icon: const Icon(Icons.favorite_border, size: 20),
+              // A plain bulb: an idea, not a sparkle.
+              icon: const IdeaBulbIcon(size: 22, heart: false),
               label: 'הוספת רעיון',
               onPressed: onAddProposal,
               subtle: true,

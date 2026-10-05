@@ -1980,6 +1980,33 @@ void main() {
     expect(find.byType(BottomNavigationBar), findsOneWidget);
   });
 
+  testWidgets('A sideways swipe moves between the main tabs, in bar order', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/home');
+    await tester.pumpAndSettle();
+
+    int selected() => tester
+        .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
+        .currentIndex;
+    expect(selected(), 0);
+
+    // In RTL the next tab lies to the left, so a finger moving right brings
+    // it in.
+    await tester.flingFrom(const Offset(80, 420), const Offset(260, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(selected(), 1);
+    expect(tester.takeException(), isNull);
+
+    await tester.flingFrom(const Offset(320, 420), const Offset(-260, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(selected(), 0);
+  });
+
   testWidgets('All three tabs carry the same three controls, in one order', (
     WidgetTester tester,
   ) async {

@@ -96,7 +96,7 @@ class _AddPeopleDialog extends StatelessWidget {
                     ),
                   ),
                 ),
-                _CloseButton(
+                AddDialogCloseButton(
                   slate: slate,
                   dark: dark,
                   onTap: () => Navigator.of(context).pop(),
@@ -104,7 +104,7 @@ class _AddPeopleDialog extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            _MethodCard(
+            AddMethodCard(
               icon: Icons.contacts_rounded,
               title: 'הוספה מאנשי הקשר',
               slate: slate,
@@ -113,7 +113,7 @@ class _AddPeopleDialog extends StatelessWidget {
                   Navigator.of(context).pop(AddPeopleMethod.fromContacts),
             ),
             const SizedBox(height: 10),
-            _MethodCard(
+            AddMethodCard(
               icon: Icons.edit_rounded,
               title: 'הוספה ידנית',
               slate: slate,
@@ -121,7 +121,7 @@ class _AddPeopleDialog extends StatelessWidget {
               onTap: () => Navigator.of(context).pop(AddPeopleMethod.manual),
             ),
             const SizedBox(height: 10),
-            _MethodCard(
+            AddMethodCard(
               icon: Icons.auto_awesome_rounded,
               title: 'הוספה באמצעות AI',
               slate: slate,
@@ -139,8 +139,9 @@ class _AddPeopleDialog extends StatelessWidget {
 
 /// One selectable route into the add flow: a soft slate icon badge, its name,
 /// and a chevron. No explanation under it — the three names say it.
-class _MethodCard extends StatelessWidget {
-  const _MethodCard({
+class AddMethodCard extends StatelessWidget {
+  const AddMethodCard({
+    super.key,
     required this.icon,
     required this.title,
     required this.slate,
@@ -261,8 +262,9 @@ class _SecurityFooter extends StatelessWidget {
   }
 }
 
-class _CloseButton extends StatelessWidget {
-  const _CloseButton({
+class AddDialogCloseButton extends StatelessWidget {
+  const AddDialogCloseButton({
+    super.key,
     required this.slate,
     required this.dark,
     required this.onTap,
@@ -287,5 +289,80 @@ class _CloseButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// What the "+" in בית's corner asks: a friend or an idea. Two rows in the
+/// same shape as [AddPeopleDialog], and a friend leads on into that dialog.
+abstract final class AddChoiceDialog {
+  static Future<void> show(BuildContext context) async {
+    final bool? idea = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final ThemeData theme = Theme.of(dialogContext);
+        final bool dark = theme.brightness == Brightness.dark;
+        final Color slate = dark
+            ? AppColors.primaryDarkDm
+            : AppColors.primaryDark;
+        return Dialog(
+          backgroundColor: theme.colorScheme.surface,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'מה להוסיף?',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    AddDialogCloseButton(
+                      slate: slate,
+                      dark: dark,
+                      onTap: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                AddMethodCard(
+                  icon: Icons.person_add_alt_1_rounded,
+                  title: 'הוספת חבר',
+                  slate: slate,
+                  dark: dark,
+                  onTap: () => Navigator.of(dialogContext).pop(false),
+                ),
+                const SizedBox(height: 10),
+                AddMethodCard(
+                  icon: Icons.lightbulb_outline_rounded,
+                  title: 'הוספת רעיון',
+                  slate: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
+                  dark: dark,
+                  onTap: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (idea == null || !context.mounted) {
+      return;
+    }
+    if (idea) {
+      await context.push<Object?>('/matches/add');
+    } else {
+      await AddPeopleDialog.show(context);
+    }
   }
 }

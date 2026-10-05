@@ -1,10 +1,13 @@
 import 'package:flutter/widgets.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
+import 'package:shadchan/dialogs/home_area_dialog.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
@@ -67,6 +70,10 @@ abstract final class CommunityPromptGate {
     }
     _shownThisLaunch = true;
 
+    if (_maybeAskHomeArea(context)) {
+      return;
+    }
+
     _maybeAsk(
       context,
       people: people,
@@ -74,6 +81,57 @@ abstract final class CommunityPromptGate {
       counts: counts,
       isSignedIn: isSignedIn,
     );
+  }
+
+  /// The same question, for a launch that opens on the personal area — where
+  /// none of the matchmaker's prompts below belong. Shares the launch latch,
+  /// so it is never stacked on another prompt.
+  static void maybeAskHomeAreaOnly(BuildContext context) {
+    if (_shownThisLaunch) {
+      return;
+    }
+    _shownThisLaunch = _maybeAskHomeArea(context);
+  }
+
+  /// Whether this account has both areas — the matchmaker's and a personal
+  /// card of its own — and has not yet said which one is home.
+  static bool needsHomeAreaChoice(BuildContext context) {
+    if (!WorkspaceStore.matchmakerEnabled || WorkspaceStore.homeArea != null) {
+      return false;
+    }
+    try {
+      return context.read<PersonalCardProvider>().hasCard;
+    } on ProviderNotFoundException {
+      return false;
+    }
+  }
+
+  /// "איזה עמוד תרצה להגדיר כעמוד הבית?" — first, because it decides where
+  /// every later launch opens. Moves to the chosen area at once.
+  static bool _maybeAskHomeArea(BuildContext context) {
+    if (!needsHomeAreaChoice(context)) {
+      return false;
+    }
+    Gender? gender;
+    try {
+      gender = context.read<UserProfileProvider>().gender;
+    } on ProviderNotFoundException {
+      gender = null;
+    }
+    HomeAreaDialog.show(context, userGender: gender).then((WorkArea? area) {
+      if (area == null || !context.mounted) {
+        return;
+      }
+      WorkspaceStore.setLastArea(area);
+      final String target = area == WorkArea.personal ? '/me' : '/home';
+      final String here = GoRouter.of(
+        context,
+      ).routerDelegate.currentConfiguration.uri.path;
+      if (here != target) {
+        context.go(target);
+      }
+    });
+    return true;
   }
 
   static void _maybeAsk(
