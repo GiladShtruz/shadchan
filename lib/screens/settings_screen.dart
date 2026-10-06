@@ -4,7 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
+import 'package:shadchan/dialogs/home_area_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
@@ -23,13 +27,21 @@ import 'package:shadchan/widgets/settings_widgets.dart';
 ///
 /// The profile keeps exactly one row pointing here. That row, and not this
 /// page, is what a matchmaker looks for.
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final AccountProvider account = context.watch<AccountProvider>();
     final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final bool bothAreas =
+        WorkspaceStore.matchmakerEnabled &&
+        context.watch<PersonalCardProvider>().hasCard;
 
     return Scaffold(
       appBar: AppBar(title: const Text('הגדרות')),
@@ -59,6 +71,26 @@ class SettingsScreen extends StatelessWidget {
             SettingsGroup(
               title: 'הגדרות',
               children: <Widget>[
+                // Only for an account with both areas: the page a launch
+                // opens on. Asked once by [HomeAreaDialog]; changed here.
+                if (bothAreas)
+                  SettingsRow(
+                    icon: Icons.home_outlined,
+                    title: 'עמוד הבית',
+                    subtitle: switch (WorkspaceStore.launchArea) {
+                      WorkArea.personal => 'האזור האישי',
+                      WorkArea.matchmaker => 'אזור השדכן',
+                    },
+                    onTap: () async {
+                      await HomeAreaDialog.show(
+                        context,
+                        userGender: context.read<UserProfileProvider>().gender,
+                      );
+                      if (mounted) {
+                        setState(() {});
+                      }
+                    },
+                  ),
                 SettingsRow(
                   icon: Icons.palette_outlined,
                   title: 'תצוגה וערכת נושא',

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/widgets/voice_note_player.dart';
 import 'package:shadchan/widgets/match_state_tag.dart';
 import 'package:shadchan/widgets/sketch_actions.dart';
@@ -88,6 +89,23 @@ Future<bool> openExtendedPersonEditor(
       ),
     ),
   );
+  // An existing friend's card finished with ✓: say so, with the way to their
+  // matches. A new friend is confirmed by the flow that added them.
+  if (kept == true && !isNewFriend && context.mounted) {
+    final Person? saved = context.read<PersonRepository>().getById(personId);
+    if (saved != null && saved.gender != Gender.unknown) {
+      final BuildContext root = Navigator.of(
+        context,
+        rootNavigator: true,
+      ).context;
+      AppNotice.show(
+        context,
+        'הכרטיס עודכן',
+        actionLabel: 'לראות התאמות',
+        onAction: () => openSuggestionsFor(root, personId),
+      );
+    }
+  }
   return kept ?? true;
 }
 
@@ -154,6 +172,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   final GlobalKey _cardSectionKey = GlobalKey();
   final GlobalKey _notesSectionKey = GlobalKey();
+  final GlobalKey _requestSectionKey = GlobalKey();
 
   @override
   void initState() {
@@ -168,11 +187,27 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       });
     }
     final String? focus = widget.focus;
-    if (focus == 'card' || focus == 'notes') {
+    if (focus == 'card' || focus == 'notes' || focus == 'request') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final BuildContext? target =
-            (focus == 'card' ? _cardSectionKey : _notesSectionKey)
-                .currentContext;
+        if (!mounted) {
+          return;
+        }
+        // "request": where access to the friend's card is asked for. With no
+        // card text the request sits inside the card tile itself; otherwise
+        // it is the panel under the actions.
+        final bool hasText =
+            context
+                .read<PersonRepository>()
+                .getById(widget.personId)
+                ?.description
+                ?.trim()
+                .isNotEmpty ??
+            false;
+        final BuildContext? target = switch (focus) {
+          'notes' => _notesSectionKey,
+          'request' when hasText => _requestSectionKey,
+          _ => _cardSectionKey,
+        }.currentContext;
         if (target != null && target.mounted) {
           Scrollable.ensureVisible(
             target,
@@ -447,7 +482,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               ),
               // Where this card's details come from, and the one next step:
               // ask for access, wait, or invite the friend to write a card.
-              CardLinkPanel(person: person),
+              KeyedSubtree(
+                key: _requestSectionKey,
+                child: CardLinkPanel(person: person),
+              ),
               // Above the card it is about: most of what a profile needs is
               // already sitting in a WhatsApp chat.
               if (_showShareTip)
@@ -1241,7 +1279,8 @@ class _ProfileInlineActions extends StatelessWidget {
           ],
           Expanded(
             child: _ProfileActionButton(
-              icon: const Icon(Icons.group_outlined, size: 22),
+              // The app's own sign: two cards and a heart.
+              icon: const MatchCardsIcon(size: 22),
               label: 'התאמות',
               onPressed: onMatches,
               emphasized: true,
@@ -1250,7 +1289,8 @@ class _ProfileInlineActions extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: _ProfileActionButton(
-              icon: const Icon(Icons.favorite_border, size: 20),
+              // A plain bulb: an idea, not a sparkle.
+              icon: const IdeaBulbIcon(size: 22, heart: false),
               label: 'הוספת רעיון',
               onPressed: onAddProposal,
               subtle: true,
@@ -3680,9 +3720,17 @@ class _SuggestedMatchesTab extends StatelessWidget {
       );
     }
 
+    // The automatic list follows what the friend wrote in their own card;
+    // saying so is what makes the filter icon read as the way past it.
+    final Widget header =
+        !hasCustomFilters &&
+            MatchSuggestionUtils.followsOwnerWishes(sourcePerson)
+        ? _OwnerWishesNote(person: sourcePerson)
+        : const SizedBox(height: 4);
+
     if (suggestedPeople.isEmpty) {
       return _SuggestionTabScaffold(
-        header: const SizedBox(height: 4),
+        header: header,
         child: _TabEmptyState(
           icon: Icons.favorite_border,
           title: 'לא נמצאו התאמות',
@@ -3695,7 +3743,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
 
     return Column(
       children: <Widget>[
-        const SizedBox(height: 4),
+        header,
         Expanded(
           child: _SuggestedMatchesList(
             sourcePerson: sourcePerson,
@@ -3949,6 +3997,32 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
           ),
         );
       },
+    );
+  }
+}
+
+/// One quiet line over a friend's matches when the automatic list follows
+/// what they themselves asked for in their personal card.
+class _OwnerWishesNote extends StatelessWidget {
+  const _OwnerWishesNote({required this.person});
+
+  final Person person;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String name = person.firstName.trim().isNotEmpty
+        ? person.firstName.trim()
+        : person.fullName.trim();
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(20, 4, 20, 8),
+      child: Text(
+        'ההתאמות מסוננות לפי מה ש$name {מחפש|מחפשת} בכרטיס האישי. '
+                'אפשר לשנות בסינון.'
+            .forGender(person.gender),
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodySmall,
+      ),
     );
   }
 }

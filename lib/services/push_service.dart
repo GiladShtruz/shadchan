@@ -58,9 +58,10 @@ abstract final class PushService {
         ..add(FirebaseMessaging.onMessage.listen(_showInForeground))
         ..add(FirebaseMessaging.onMessageOpenedApp.listen(_open));
 
+      // A push that started the app: Back from where it leads goes home.
       final RemoteMessage? initial = await messaging.getInitialMessage();
       if (initial != null) {
-        _open(initial);
+        _open(initial, launch: true);
       }
     } catch (error, stackTrace) {
       _started = false;
@@ -68,26 +69,57 @@ abstract final class PushService {
     }
   }
 
+  /// Marks the notice a tapped push was about as read. Set by the app.
+  static void Function(String inboxId)? onNoticeOpened;
+
+  /// The app is open: a small banner inside it, not a system notification.
   static void _showInForeground(RemoteMessage message) {
     final RemoteNotification? notification = message.notification;
     if (notification == null) {
       return;
     }
-    unawaited(
-      NotificationService.showRemote(
-        id: message.messageId.hashCode & 0x7fffffff,
-        title: notification.title ?? '',
-        body: notification.body ?? '',
-        route: message.data['route'] as String?,
-      ),
+    NotificationService.onForegroundNotice?.call(
+      notification.title ?? '',
+      notification.body ?? '',
+      routeOf(message.data),
     );
   }
 
-  static void _open(RemoteMessage message) {
-    final Object? route = message.data['route'];
-    if (route is String) {
-      NotificationService.openRoute(route);
+  static void _open(RemoteMessage message, {bool launch = false}) {
+    final Object? inboxId = message.data['inboxId'];
+    if (inboxId is String && inboxId.isNotEmpty) {
+      onNoticeOpened?.call(inboxId);
     }
+    final String? route = routeOf(message.data);
+    if (route != null) {
+      NotificationService.openRoute(route, launch: launch);
+    }
+  }
+
+  /// Where a push leads — the same place its row on the notifications page
+  /// leads: a friend's new card opens their profile at the access request, an
+  /// approval opens the card itself.
+  @visibleForTesting
+  static String? routeOf(Map<String, dynamic> data) {
+    final String kind = data['kind'] as String? ?? '';
+    final String owner = data['ownerUid'] as String? ?? '';
+    final String hash = data['ownerPhoneHash'] as String? ?? '';
+    final String? focus = switch (kind) {
+      'cardCreated' => 'request',
+      'accessApproved' => 'card',
+      _ => null,
+    };
+    if (focus != null && owner.isNotEmpty) {
+      return Uri(
+        path: '/card-friend/$owner',
+        queryParameters: <String, String>{
+          if (hash.isNotEmpty) 'h': hash,
+          'focus': focus,
+        },
+      ).toString();
+    }
+    final Object? route = data['route'];
+    return route is String && route.startsWith('/') ? route : null;
   }
 
   /// Stops pushes to this device, for a sign-out: the next person on the

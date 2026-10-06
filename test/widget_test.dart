@@ -27,12 +27,14 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/screens/home_screen.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/inbox_provider.dart';
+import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
@@ -752,16 +754,27 @@ void main() {
       lessThan(tester.getCenter(find.text('הוספת חברים')).dy),
     );
 
-    // The board is drawn from the first friend on, always open, and a thin
-    // board is topped up with what the app suggests — here, the one friend to
-    // think about.
+    // The board is drawn from the first friend on, always open, with its
+    // shelves across the top. One friend and nothing to do yet: an honest,
+    // short empty line rather than a box of filler.
     expect(find.text('הלוח שלי'), findsOneWidget);
     await tester.ensureVisible(find.text('הוספה ללוח'));
     await tester.pump();
-    expect(find.text('נעמי שגב'), findsWidgets);
-    expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
-    // The heading line under the board's name says what is on it.
-    expect(find.text('הרעיונות הפתוחים, התזכורות ומה שהצמדתי'), findsOneWidget);
+    for (final String chip in <String>[
+      'הכל',
+      'כרטיסים וגישה',
+      'התראות',
+      'רעיונות פתוחים',
+      'הצעות מהמאגר',
+    ]) {
+      expect(find.text(chip), findsOneWidget);
+    }
+    expect(find.text('הלוח ריק כרגע'), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
+    expect(
+      find.text('כרטיסים, התראות ורעיונות – הכל במקום אחד'),
+      findsOneWidget,
+    );
 
     await tester.ensureVisible(find.text('הוספה ללוח'));
     await tester.pump();
@@ -876,10 +889,193 @@ void main() {
       ],
     );
 
-    // The row of open ideas that used to sit further down the page is gone: the
-    // board is the one answer to "what am I working on".
-    expect(find.text('רעיונות פתוחים'), findsNothing);
+    // The names keep their size but not the weight.
+    expect(
+      tester.widget<Text>(find.text('דוד & שרה')).style?.fontWeight,
+      isNot(FontWeight.bold),
+    );
+
+    // Its own chip shows it; the database's suggestions chip says it has
+    // nothing, in one short line.
+    await tester.tap(find.text('רעיונות פתוחים'));
+    await tester.pump();
+    expect(find.text('דוד & שרה'), findsOneWidget);
+    // The chips scroll sideways on a narrow phone.
+    await tester.ensureVisible(find.text('הצעות מהמאגר'));
+    await tester.pump();
+    await tester.tap(find.text('הצעות מהמאגר'));
+    await tester.pump();
+    expect(find.text('דוד & שרה'), findsNothing);
+    expect(find.text('אין כרגע הצעות חדשות מהמאגר'), findsOneWidget);
     expect(find.text('הפעולות הבאות שלך'), findsNothing);
+  });
+
+  testWidgets('Cards and access: shared cards and cards to ask for', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final DateTime now = DateTime.now();
+    final Person shared = Person(
+      id: 'board-card-shared',
+      firstName: 'יעל',
+      lastName: 'ברק',
+      gender: Gender.female,
+      manualAge: 25,
+      cardOwnerUid: 'owner-shared',
+      createdAt: now,
+      updatedAt: now,
+    );
+    final Person writer = Person(
+      id: 'board-card-writer',
+      firstName: 'אורי',
+      lastName: 'נחום',
+      gender: Gender.male,
+      manualAge: 27,
+      phone: '0521234567',
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(shared.id, shared);
+      await Hive.box<Person>('people').put(writer.id, writer);
+    });
+    addTearDown(() async {
+      await Hive.box<Person>('people').delete(shared.id);
+      await Hive.box<Person>('people').delete(writer.id);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    tester
+        .element(find.byType(HomeScreen))
+        .read<InboxProvider>()
+        .debugSetItems(<InboxItem>[
+          InboxItem(
+            id: 'notice-card-created',
+            kind: 'cardCreated',
+            title: 'אורי נחום הוסיף כרטיס אישי',
+            body: 'אפשר לבקש גישה לפרטים',
+            route: '/reminders',
+            read: false,
+            ownerUid: 'owner-writer',
+            ownerPhoneHash: PhoneIdentity.hash('0521234567'),
+            createdAt: now,
+          ),
+        ]);
+    await tester.pump();
+
+    await tester.ensureVisible(find.text('הלוח שלי'));
+    await tester.pump();
+    await tester.tap(find.text('כרטיסים וגישה'));
+    await tester.pump();
+
+    // A friend who shared their card, and one who wrote a card and has not —
+    // with the one thing to do about it on the row itself.
+    expect(find.text('יעל ברק'), findsOneWidget);
+    expect(find.text('אורי נחום'), findsOneWidget);
+    expect(find.text('בקשת גישה'), findsOneWidget);
+
+    // A long press only opens the menu; "הסרה מהלוח שלי" is in it, and
+    // takes the row off the board without touching the friend.
+    await tester.longPress(find.text('יעל ברק'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('יעל ברק'), findsOneWidget);
+    expect(find.text('הסרה מהלוח שלי'), findsOneWidget);
+    await tester.tap(find.text('הסרה מהלוח שלי'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('יעל ברק'), findsNothing);
+    expect(
+      tester
+          .element(find.byType(HomeScreen))
+          .read<PersonRepository>()
+          .getById(shared.id),
+      isNotNull,
+    );
+    HomeBoardStore.instance.unhide('card:${shared.id}');
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('Notifications: read on opening the page, then off the board', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    // The board is drawn from the first friend on.
+    final DateTime now = DateTime.now();
+    final Person friend = Person(
+      id: 'notice-friend',
+      firstName: 'רון',
+      lastName: 'כץ',
+      gender: Gender.male,
+      manualAge: 26,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').put(friend.id, friend);
+    });
+    addTearDown(() async {
+      await Hive.box<Person>('people').delete(friend.id);
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    final InboxProvider inbox = tester
+        .element(find.byType(HomeScreen))
+        .read<InboxProvider>();
+    inbox.debugSetItems(<InboxItem>[
+      InboxItem(
+        id: 'notice-declined',
+        kind: 'accessDeclined',
+        title: 'דני לוי לא אישר גישה',
+        body: '',
+        route: '/reminders',
+        read: false,
+        ownerUid: 'owner-declined',
+        createdAt: DateTime.now(),
+      ),
+    ]);
+    await tester.pump();
+
+    // Unread, it is on the board.
+    await tester.ensureVisible(find.text('הלוח שלי'));
+    await tester.pump();
+    expect(find.text('דני לוי לא אישר גישה'), findsOneWidget);
+
+    // The bell opens the page; opening it is reading it.
+    await tester.tap(find.byTooltip('התראות').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('דני לוי לא אישר גישה'), findsOneWidget);
+    expect(inbox.unreadCount, 0);
+    // The row that was new keeps its tint for this visit.
+    expect(find.text('סמן הכל כנקרא'), findsOneWidget);
+
+    // Back home, the read notice has left the board.
+    await tester.tap(find.byType(BackButton));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('דני לוי לא אישר גישה'), findsNothing);
+
+    // On the page it stays until it is swiped away.
+    await tester.tap(find.byTooltip('התראות').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.drag(find.text('דני לוי לא אישר גישה'), const Offset(-500, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('דני לוי לא אישר גישה'), findsNothing);
+    expect(find.text('אין התראות'), findsOneWidget);
+    expect(inbox.items, isEmpty);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('Pinning a person opens home directly at the board', (
@@ -1978,6 +2174,33 @@ void main() {
     expect(find.text('הפרופיל שלי'), findsOneWidget);
     // The bar stays: the profile is a tab now, not a page on top of them.
     expect(find.byType(BottomNavigationBar), findsOneWidget);
+  });
+
+  testWidgets('A sideways swipe moves between the main tabs, in bar order', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/home');
+    await tester.pumpAndSettle();
+
+    int selected() => tester
+        .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
+        .currentIndex;
+    expect(selected(), 0);
+
+    // In RTL the next tab lies to the left, so a finger moving right brings
+    // it in.
+    await tester.flingFrom(const Offset(80, 420), const Offset(260, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(selected(), 1);
+    expect(tester.takeException(), isNull);
+
+    await tester.flingFrom(const Offset(320, 420), const Offset(-260, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(selected(), 0);
   });
 
   testWidgets('All three tabs carry the same three controls, in one order', (

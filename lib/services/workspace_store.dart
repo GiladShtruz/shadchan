@@ -47,6 +47,7 @@ abstract final class WorkspaceStore {
   static const String _entryKey = 'workspace.entry';
   static const String _matchmakerKey = 'workspace.matchmakerEnabled';
   static const String _lastAreaKey = 'workspace.lastArea';
+  static const String _homeAreaKey = 'workspace.homeArea';
 
   static Box<dynamic>? get _box =>
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
@@ -111,11 +112,35 @@ abstract final class WorkspaceStore {
     _write(_lastAreaKey, area.name);
   }
 
+  /// The page somebody with **both** areas chose as their home page, or null
+  /// while they have not been asked (or have only one area).
+  ///
+  /// Asked once, the first time both areas exist ([HomeAreaPrompt]), and
+  /// changed later from the settings. It decides where a launch opens; see
+  /// [launchArea].
+  static WorkArea? get homeArea => WorkArea.byName(_read(_homeAreaKey));
+
+  static void setHomeArea(WorkArea area) => _write(_homeAreaKey, area.name);
+
+  /// Where a launch opens: the chosen home page when there is one, else the
+  /// area the user was last in. A card-only user always opens on their own.
+  static WorkArea get launchArea {
+    if (!matchmakerEnabled) {
+      return WorkArea.personal;
+    }
+    return homeArea ?? lastArea;
+  }
+
   /// Forgets everything, for a sign-out: the next person on the phone chooses
   /// their own route.
   static Future<void> reset() async {
     _pending.clear();
-    await _box?.deleteAll(<String>[_entryKey, _matchmakerKey, _lastAreaKey]);
+    await _box?.deleteAll(<String>[
+      _entryKey,
+      _matchmakerKey,
+      _lastAreaKey,
+      _homeAreaKey,
+    ]);
     revision.value++;
   }
 }

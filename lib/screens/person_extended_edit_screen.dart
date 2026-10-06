@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/card_announce_switch.dart';
 import 'package:shadchan/widgets/card_text_field.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
 import 'package:flutter/services.dart';
@@ -156,6 +157,10 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
 
   bool get _owner => widget.ownerCard;
 
+  /// The owner is writing their card for the first time: the moment to ask
+  /// whether matchmaker friends should hear about it.
+  bool _firstCard = false;
+
   @override
   void initState() {
     super.initState();
@@ -172,6 +177,8 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       return;
     }
     _loaded = true;
+    // Read before the first save writes a card.
+    _firstCard = _owner && context.read<PersonalCardProvider>().card == null;
     _loadFrom(_readPerson());
   }
 
@@ -465,7 +472,8 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       onFinished();
       return;
     }
-    Navigator.of(context).pop();
+    // True says "finished with ✓", which is when the caller confirms.
+    Navigator.of(context).pop(true);
   }
 
   /// "אם תצא עכשיו, החבר לא יישמר." — stay, or leave without the friend.
@@ -759,6 +767,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
                 _buildNotes(theme, repository.getNotesForPerson(person.id)),
                 _buildContacts(theme),
               ],
+              if (_firstCard) const CardAnnounceSwitch(),
             ],
           ),
         ),

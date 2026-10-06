@@ -12,6 +12,7 @@ import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/utils/community_prompt_gate.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
@@ -164,6 +165,11 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
     super.initState();
     WorkspaceStore.setLastArea(WorkArea.personal);
     _scrollToSection();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        CommunityPromptGate.maybeAskHomeAreaOnly(context);
+      }
+    });
   }
 
   @override

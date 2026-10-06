@@ -118,8 +118,14 @@ class NotificationService {
 
   static const String _routePayloadPrefix = 'route:';
 
-  /// What a tapped push does: go to the route the server attached to it.
-  static void Function(String route)? onOpenRoute;
+  /// What a tapped notification does: open [route]. [launch] is true when the
+  /// tap is what started the app — Back from there should lead home, not out.
+  static void Function(String route, bool launch)? onOpenRoute;
+
+  /// A push that arrived while the app is open: shown inside the app rather
+  /// than as a system notification. Set by the app, like [onOpenRoute].
+  static void Function(String title, String body, String? route)?
+  onForegroundNotice;
 
   /// Draws a push that arrived while the app was open — the system only draws
   /// them itself while it is in the background.
@@ -145,10 +151,10 @@ class NotificationService {
     }
   }
 
-  /// Hands a route from a tapped push to the app.
-  static void openRoute(String route) {
+  /// Hands a route from a tapped notification to the app.
+  static void openRoute(String route, {bool launch = false}) {
     if (route.startsWith('/')) {
-      onOpenRoute?.call(route);
+      onOpenRoute?.call(route, launch);
     }
   }
 
@@ -280,7 +286,13 @@ class NotificationService {
     await _scheduleQueue;
   }
 
-  static Future<void> scheduleMatchReminders(List<MatchIdea> matches) async {
+  /// [describe] gives a reminder its words — the line the matchmaker wrote,
+  /// or a short one naming the couple — exactly as the notifications page
+  /// draws the same reminder.
+  static Future<void> scheduleMatchReminders(
+    List<MatchIdea> matches, {
+    MatchReminderText Function(MatchIdea match)? describe,
+  }) async {
     if (!_isInitialized) {
       return;
     }
@@ -296,6 +308,7 @@ class NotificationService {
 
           await _scheduleMatchRemindersInternal(
             matchesSnapshot,
+            describe: describe,
             requestId: requestId,
           );
         })
@@ -398,10 +411,6 @@ class NotificationService {
   /// reminder and must not be swept away with them.
   static const int _mazelTovIdBase = 50000;
 
-  /// What a tapped notification does. Set by the app so this service does not
-  /// have to know the router exists.
-  static void Function(String matchId)? onOpenMatch;
-
   /// "יש לך הודעות מזל טוב!" — one per wedding, however many arrived.
   ///
   /// Shown immediately rather than scheduled: the messages are already in the
@@ -439,10 +448,6 @@ class NotificationService {
   /// tray helps nobody.
   static const int _supportId = 60000;
 
-  /// What a tapped support notification does. Set by the app, like
-  /// [onOpenMatch], so this service still does not know the router exists.
-  static void Function()? onOpenSupport;
-
   /// "הגיעה פנייה חדשה" for an administrator, "יש לך תשובה" for everybody else.
   ///
   /// Shown immediately: by the time this is called the thing it is about has
@@ -476,23 +481,25 @@ class NotificationService {
       final NotificationAppLaunchDetails? details = await _plugin
           .getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp ?? false) {
-        _handleTap(details?.notificationResponse?.payload);
+        _handleTap(details?.notificationResponse?.payload, launch: true);
       }
     } catch (_) {
       // Nothing to open. Never worth an error on startup.
     }
   }
 
-  static void _handleTap(String? payload) {
+  static void _handleTap(String? payload, {bool launch = false}) {
     if (payload == null) {
       return;
     }
     if (payload == _supportPayload) {
-      onOpenSupport?.call();
+      // The notifications page: a single alert can stand for several
+      // reports, and they are all listed there.
+      openRoute('/reminders', launch: launch);
       return;
     }
     if (payload.startsWith(_routePayloadPrefix)) {
-      openRoute(payload.substring(_routePayloadPrefix.length));
+      openRoute(payload.substring(_routePayloadPrefix.length), launch: launch);
       return;
     }
     if (!payload.startsWith(_matchPayloadPrefix)) {
@@ -500,7 +507,7 @@ class NotificationService {
     }
     final String matchId = payload.substring(_matchPayloadPrefix.length);
     if (matchId.isNotEmpty) {
-      onOpenMatch?.call(matchId);
+      openRoute('/matches/$matchId', launch: launch);
     }
   }
 
@@ -522,6 +529,7 @@ class NotificationService {
 
   static Future<void> _scheduleMatchRemindersInternal(
     List<MatchIdea> matches, {
+    MatchReminderText Function(MatchIdea match)? describe,
     required int requestId,
   }) async {
     try {
@@ -543,12 +551,19 @@ class NotificationService {
         final DateTime? reminderDate = match.reminderDate;
         final tz.TZDateTime? scheduledTime = _notificationTime(reminderDate);
         if (scheduledTime != null) {
+          final MatchReminderText text =
+              describe?.call(match) ??
+              MatchReminderText(
+                title: match.reminderNote ?? 'תזכורת לרעיון',
+                body: 'תזכורת לרעיון',
+              );
           await _plugin.zonedSchedule(
             notifId,
-            'תזכורת לרעיון',
-            match.reminderNote ?? 'יש לך תזכורת לרעיון שידוך',
+            text.title,
+            text.body,
             scheduledTime,
             _matchNotificationDetails,
+            payload: '$_routePayloadPrefix/matches/${match.id}',
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
             androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
@@ -590,12 +605,16 @@ class NotificationService {
 
         final tz.TZDateTime? scheduledTime = _notificationTime(reminder.date);
         if (scheduledTime != null) {
+          final String note = (reminder.note ?? '').trim();
           await _plugin.zonedSchedule(
             notifId,
-            'תזכורת לבדוק שוב',
-            'הגיע הזמן לבדוק שוב עם ${reminder.name}',
+            note.isNotEmpty ? note : 'לבדוק שוב עם ${reminder.name}',
+            note.isNotEmpty ? 'תזכורת · ${reminder.name}' : 'תזכורת',
             scheduledTime,
             _personNotificationDetails,
+            payload: reminder.personId.isEmpty
+                ? null
+                : '$_routePayloadPrefix/people/${reminder.personId}',
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
             androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
@@ -633,8 +652,27 @@ class NotificationService {
 
 /// One per-person reminder ready to be scheduled: who it is about and when.
 class PersonReminderNotification {
-  const PersonReminderNotification({required this.name, required this.date});
+  const PersonReminderNotification({
+    required this.name,
+    required this.date,
+    this.personId = '',
+    this.note,
+  });
 
   final String name;
   final DateTime date;
+
+  /// Where a tap on it goes: this friend's profile.
+  final String personId;
+
+  /// What the matchmaker wrote on the reminder, when they wrote anything.
+  final String? note;
+}
+
+/// The two lines of an idea's reminder in the tray.
+class MatchReminderText {
+  const MatchReminderText({required this.title, required this.body});
+
+  final String title;
+  final String body;
 }

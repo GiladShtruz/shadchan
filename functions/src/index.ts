@@ -64,29 +64,42 @@ const STATUS_LABELS: Record<string, string> = {
   mazelTov: 'מזל טוב',
 };
 
+/**
+ * The notices worth a push to the phone: the personal card's own events. The
+ * rest (a decline, a wedding, a birthday, a status report) wait quietly on the
+ * notifications page. Reminders are pushed by the phone itself.
+ */
+const PUSHED_KINDS = new Set(['cardCreated', 'accessApproved', 'accessRequest']);
+
 /** Writes the inbox row and pushes to every device of [uid]. */
 async function notify(
   uid: string,
   notice: Notice,
   push = true,
 ): Promise<void> {
-  await db
-    .collection('users')
-    .doc(uid)
-    .collection('inbox')
-    .add({
-      ...notice,
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-    });
+  const inbox = db.collection('users').doc(uid).collection('inbox');
+  const row = await inbox.add({
+    ...notice,
+    read: false,
+    createdAt: FieldValue.serverTimestamp(),
+  });
 
-  if (!push) {
+  if (!push || !PUSHED_KINDS.has(notice.kind)) {
     return;
   }
   const tokensDoc = await db.collection('fcmTokens').doc(uid).get();
   const tokens: string[] = (tokensDoc.get('tokens') as string[] | undefined) ?? [];
   if (tokens.length === 0) {
     return;
+  }
+  // The icon's number while the app is closed: the server's unread notices.
+  // The app puts it right (reminders included) the next time it is open.
+  let unread = 1;
+  try {
+    const counted = await inbox.where('read', '==', false).count().get();
+    unread = Math.max(1, counted.data().count);
+  } catch (error) {
+    console.warn('notify: unread count failed', error);
   }
   const response = await getMessaging().sendEachForMulticast({
     tokens,
@@ -96,9 +109,13 @@ async function notify(
       route: notice.route,
       ownerUid: notice.ownerUid ?? '',
       ownerPhoneHash: notice.ownerPhoneHash ?? '',
+      // A tapped push marks its own row read.
+      inboxId: row.id,
     },
-    android: { notification: { channelId: 'personal_card' } },
-    apns: { payload: { aps: { sound: 'default' } } },
+    android: {
+      notification: { channelId: 'personal_card', notificationCount: unread },
+    },
+    apns: { payload: { aps: { sound: 'default', badge: unread } } },
   });
   // Tokens the service says are gone are taken off the list, so a phone that
   // was reset stops costing a failed send on every notice.
@@ -226,8 +243,9 @@ async function announceOnce(
   if (matchmakerUid === ownerUid) {
     return false;
   }
-  // A card the owner hid from this matchmaker, or an owner who takes no
-  // requests, is never announced: to that matchmaker it is no card at all.
+  // A card the owner hid from this matchmaker, an owner who takes no
+  // requests, or one who chose not to tell anybody ("לעדכן חברים שלך…" off),
+  // is never announced.
   const row = await db
     .collection('cardAccess')
     .doc(`${ownerUid}_${matchmakerUid}`)
@@ -238,7 +256,11 @@ async function announceOnce(
   const phoneHash = ownerPhoneHash ?? (await ownerPhoneHashOf(ownerUid));
   if (phoneHash) {
     const entry = await db.collection('phoneDirectory').doc(phoneHash).get();
-    if (entry.exists && entry.get('acceptsRequests') === false) {
+    if (
+      entry.exists &&
+      (entry.get('acceptsRequests') === false ||
+        entry.get('announces') === false)
+    ) {
       return false;
     }
   }

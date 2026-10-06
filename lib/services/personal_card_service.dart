@@ -335,6 +335,7 @@ abstract final class PersonalCardService {
     required bool matchmaker,
     required bool hasCard,
     bool acceptsRequests = true,
+    bool announces = true,
     String? previousHash,
   }) async {
     final String? uid = await durableUid();
@@ -356,6 +357,8 @@ abstract final class PersonalCardService {
           // Off: no matchmaker may ask, and the card shows to none of them —
           // see `CardInviteFlow.cardVisible`. The rules enforce the asking.
           'acceptsRequests': acceptsRequests,
+          // Off: no matchmaker is told the card exists (`announceOnce`).
+          'announces': announces,
           'updatedAt': FieldValue.serverTimestamp(),
         },
       );

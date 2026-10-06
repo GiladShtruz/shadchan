@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -57,8 +58,11 @@ List<T> _parseEnumList<T extends Enum>(String? raw, List<T> values) {
   return values.where((T v) => names.contains(v.name)).toList();
 }
 
-PeopleSortOption _parsePeopleSort(String? raw) {
+PeopleSortOption? _parsePeopleSort(String? raw) {
   switch (raw) {
+    case null:
+    case '':
+      return null;
     case 'age':
       return PeopleSortOption.ageAscending;
     case 'newest':
@@ -186,7 +190,7 @@ abstract final class AppRouter {
       final String path = state.uri.path;
 
       if (atWelcome || atStart) {
-        return WorkspaceStore.lastArea == WorkArea.personal ? '/me' : '/home';
+        return WorkspaceStore.launchArea == WorkArea.personal ? '/me' : '/home';
       }
 
       // Somebody who signed up only to manage their own card never sees the
@@ -199,11 +203,12 @@ abstract final class AppRouter {
         return '/me';
       }
 
-      // A launch opens on the area the user was last in — its main page,
-      // never whatever inner screen they happened to leave from.
+      // A launch opens on the chosen home page, or else the area the user was
+      // last in — its main page, never whatever inner screen they happened to
+      // leave from.
       if (launch &&
           path == '/home' &&
-          WorkspaceStore.lastArea == WorkArea.personal) {
+          WorkspaceStore.launchArea == WorkArea.personal) {
         return '/me';
       }
 
@@ -249,7 +254,18 @@ abstract final class AppRouter {
           return const SignInScreen();
         },
       ),
-      StatefulShellRoute.indexedStack(
+      StatefulShellRoute(
+        // The four main pages side by side: a horizontal swipe on a page's
+        // own root moves to the next one, the way the bar would.
+        navigatorContainerBuilder:
+            (
+              BuildContext context,
+              StatefulNavigationShell navigationShell,
+              List<Widget> children,
+            ) => _SwipeableBranches(
+              navigationShell: navigationShell,
+              children: children,
+            ),
         builder:
             (
               BuildContext context,
@@ -293,7 +309,7 @@ abstract final class AppRouter {
                         q['statuses'],
                         ProfileStatus.values,
                       );
-                  final PeopleSortOption sort = _parsePeopleSort(q['sort']);
+                  final PeopleSortOption? sort = _parsePeopleSort(q['sort']);
                   final String batch = (q['batch'] ?? '').trim();
                   return PeopleScreen(
                     key: ValueKey<String>('people:${state.uri}'),
@@ -700,7 +716,10 @@ abstract final class AppRouter {
                 people.findByCardOwner(owner) ??
                 (hash.isEmpty ? null : people.findByPhoneHash(hash));
             if (person != null) {
-              return '/people/${person.id}';
+              final String focus = state.uri.queryParameters['focus'] ?? '';
+              return focus.isEmpty
+                  ? '/people/${person.id}'
+                  : '/people/${person.id}?focus=$focus';
             }
           } on ProviderNotFoundException {
             // Fall through to the notifications page.
@@ -802,9 +821,10 @@ class _AppShell extends StatelessWidget {
                       activeIcon: Icon(Icons.group),
                       label: 'המאגר שלי',
                     ),
+                    // A bulb with a small heart in it: an idea for two.
                     BottomNavigationBarItem(
-                      icon: Icon(Icons.favorite_border),
-                      activeIcon: Icon(Icons.favorite),
+                      icon: IdeaBulbIcon(),
+                      activeIcon: IdeaBulbIcon(filled: true),
                       label: 'הרעיונות שלי',
                     ),
                     BottomNavigationBarItem(
@@ -844,5 +864,192 @@ class _AppShell extends StatelessWidget {
       (Route<dynamic> route) => route.settings is Page || route.isFirst,
     );
     navigationShell.goBranch(index, initialLocation: true);
+  }
+}
+
+/// The shell's branches, with a swipe between the four main pages.
+///
+/// בית ← המאגר שלי ← הרעיונות שלי ← פרופיל, in the bar's own order: in RTL
+/// the next page lies to the left, so a finger moving right brings it in.
+/// The page follows the finger and the neighbour slides in beside it; let go
+/// past a quarter of the width (or with a flick) and the bar moves with it.
+///
+/// **Only on a page's own root.** On a profile pushed inside המאגר שלי, or
+/// with the matchmaker area switched off, a horizontal drag is left alone.
+/// Anything inside a page that scrolls sideways — a carousel, a swipeable
+/// card — is deeper in the tree, claims the drag first and keeps it.
+class _SwipeableBranches extends StatefulWidget {
+  const _SwipeableBranches({
+    required this.navigationShell,
+    required this.children,
+  });
+
+  final StatefulNavigationShell navigationShell;
+  final List<Widget> children;
+
+  @override
+  State<_SwipeableBranches> createState() => _SwipeableBranchesState();
+}
+
+class _SwipeableBranchesState extends State<_SwipeableBranches>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _settle = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+
+  /// How far the current page is dragged, in pixels; positive is rightwards.
+  double _drag = 0;
+  bool _dragging = false;
+  double _width = 1;
+
+  @override
+  void dispose() {
+    _settle.dispose();
+    super.dispose();
+  }
+
+  int get _current => widget.navigationShell.currentIndex;
+
+  /// The branch [step] places along the bar from the current one.
+  int? _neighbour(int step) {
+    final int at = _navBranches.indexOf(_current);
+    final int next = at + step;
+    if (at < 0 || next < 0 || next >= _navBranches.length) {
+      return null;
+    }
+    return _navBranches[next];
+  }
+
+  /// The page revealed by the current drag: the next one for a drag to the
+  /// right, the previous one for a drag to the left.
+  int? get _revealed => _drag > 0
+      ? _neighbour(1)
+      : _drag < 0
+      ? _neighbour(-1)
+      : null;
+
+  bool _canSwipe() {
+    if (!WorkspaceStore.matchmakerEnabled) {
+      return false;
+    }
+    final String path = GoRouter.of(
+      context,
+    ).routerDelegate.currentConfiguration.uri.path;
+    if (!shouldShowBottomNavigationBar(path)) {
+      return false;
+    }
+    return !(_branchNavigatorKeys[_current].currentState?.canPop() ?? false);
+  }
+
+  void _onStart(DragStartDetails details) {
+    if (_settle.isAnimating || !_canSwipe()) {
+      return;
+    }
+    _dragging = true;
+  }
+
+  void _onUpdate(DragUpdateDetails details) {
+    if (!_dragging) {
+      return;
+    }
+    setState(() {
+      _drag += details.delta.dx;
+      // No neighbour that way: a short, stiff give, not a slide into nothing.
+      if (_revealed == null) {
+        _drag = _drag.clamp(-24.0, 24.0) * 0.5;
+      }
+    });
+  }
+
+  void _onEnd(DragEndDetails details) {
+    if (!_dragging) {
+      return;
+    }
+    _dragging = false;
+    final double velocity = details.primaryVelocity ?? 0;
+    final int? target = _revealed;
+    final bool past =
+        _drag.abs() > _width * 0.25 ||
+        (velocity.abs() > 600 && velocity.sign == _drag.sign);
+    if (target != null && past) {
+      _animateTo(
+        _drag.sign * _width,
+        then: () {
+          _AppShell._goToBranchRoot(target, widget.navigationShell);
+          setState(() => _drag = 0);
+        },
+      );
+    } else {
+      _animateTo(0);
+    }
+  }
+
+  void _animateTo(double end, {VoidCallback? then}) {
+    final double start = _drag;
+    final Animation<double> curve = CurvedAnimation(
+      parent: _settle,
+      curve: Curves.easeOutCubic,
+    );
+    void tick() => setState(() => _drag = start + (end - start) * curve.value);
+    _settle
+      ..reset()
+      ..addListener(tick);
+    _settle.forward().whenComplete(() {
+      _settle.removeListener(tick);
+      if (mounted) {
+        then?.call();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        _width = constraints.maxWidth <= 0 ? 1 : constraints.maxWidth;
+        final int? revealed = _revealed;
+        return GestureDetector(
+          onHorizontalDragStart: _onStart,
+          onHorizontalDragUpdate: _onUpdate,
+          onHorizontalDragEnd: _onEnd,
+          onHorizontalDragCancel: () {
+            if (_dragging) {
+              _dragging = false;
+              _animateTo(0);
+            }
+          },
+          child: Stack(
+            children: <Widget>[
+              for (int i = 0; i < widget.children.length; i++)
+                Positioned.fill(
+                  child: _branch(
+                    i,
+                    visible: i == _current || i == revealed,
+                    dx: i == _current
+                        ? _drag
+                        : _drag > 0
+                        ? _drag - _width
+                        : _drag + _width,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _branch(int index, {required bool visible, required double dx}) {
+    return Offstage(
+      offstage: !visible,
+      child: TickerMode(
+        enabled: visible,
+        child: Transform.translate(
+          offset: Offset(dx, 0),
+          child: widget.children[index],
+        ),
+      ),
+    );
   }
 }

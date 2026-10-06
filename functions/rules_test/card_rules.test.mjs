@@ -213,6 +213,14 @@ test('an owner who takes no requests cannot be asked — but can still grant', a
       matchmaker: false,
       hasCard: true,
       acceptsRequests: false,
+      announces: false,
+      updatedAt: serverTimestamp(),
+    }),
+  );
+  // The announce switch is a boolean, like every flag on the entry.
+  await assertFails(
+    updateDoc(doc(as(OWNER), 'phoneDirectory', OWNER_HASH), {
+      announces: 'no',
       updatedAt: serverTimestamp(),
     }),
   );

@@ -28,7 +28,22 @@ class PersonListCard extends StatelessWidget {
     this.heroEnabled = true,
     this.selected,
     this.trailing,
+    this.tile = false,
   });
+
+  /// Drawn as a square for the grid of המאגר שלי: the photo above, then the
+  /// name, the details and the status, and the same buttons along the foot.
+  /// Nothing the row offers is dropped.
+  final bool tile;
+
+  /// The height a [tile] needs, for the grid's fixed extent: grows with the
+  /// reader's text size so nothing in it is clipped.
+  static double tileExtent(BuildContext context) {
+    final double scale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1).clamp(1.0, 1.6);
+    return 136 + 64 * scale;
+  }
 
   final Person person;
   final VoidCallback onTap;
@@ -95,6 +110,16 @@ class PersonListCard extends StatelessWidget {
       if (person.age != null) person.age!.toString(),
       if (person.religiousLevelLabel.isNotEmpty) person.religiousLevelLabel,
     ];
+
+    if (tile) {
+      return _buildTile(
+        context,
+        theme: theme,
+        dark: dark,
+        accent: accent,
+        details: details,
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -247,6 +272,150 @@ class PersonListCard extends StatelessWidget {
                 const SizedBox(width: 4),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+extension on PersonListCard {
+  Widget _buildTile(
+    BuildContext context, {
+    required ThemeData theme,
+    required bool dark,
+    required Color accent,
+    required List<String> details,
+  }) {
+    final bool selecting = selected != null;
+    final bool isSelected = selected ?? false;
+    final BorderRadius radius = BorderRadius.circular(14);
+    final Widget avatar = PersonAvatar(person: person, radius: 30);
+
+    return Material(
+      color: isSelected
+          ? Color.alphaBlend(
+              theme.colorScheme.primary.withValues(alpha: dark ? 0.22 : 0.10),
+              theme.colorScheme.surface,
+            )
+          : theme.colorScheme.surface,
+      borderRadius: radius,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: Border.all(
+              color: isSelected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: <Widget>[
+              Expanded(
+                child: Stack(
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
+                      child: Column(
+                        children: <Widget>[
+                          heroEnabled
+                              ? Hero(tag: 'person-${person.id}', child: avatar)
+                              : avatar,
+                          const SizedBox(height: 6),
+                          Text(
+                            person.fullName.trim(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: person.gender == Gender.unknown
+                                  ? null
+                                  : accent,
+                            ),
+                          ),
+                          if (details.isNotEmpty)
+                            Text(
+                              details.join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          const SizedBox(height: 2),
+                          _StatusPill(
+                            person: person,
+                            onStatusPicked: onStatusPicked,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (selecting)
+                      PositionedDirectional(
+                        top: 6,
+                        end: 6,
+                        child: Icon(
+                          isSelected
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked,
+                          color: isSelected
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.outline,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (!selecting)
+                SizedBox(
+                  height: 40,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      if (onOpenWhatsApp != null)
+                        ContactChannelButton(
+                          person: person,
+                          onWhatsApp: onOpenWhatsApp!,
+                          onEdit: onCompleteCard,
+                          keepWhatsAppSlot: keepWhatsAppSlot,
+                        ),
+                      if (onOpenMatches != null)
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: 'התאמות',
+                          icon: Icon(Icons.favorite_border, color: accent),
+                          onPressed: onOpenMatches,
+                        )
+                      else if (onToggleFavorite != null)
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: person.isFavorite
+                              ? 'הסרה ממועדפים'
+                              : 'הוספה למועדפים',
+                          icon: Icon(
+                            person.isFavorite
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: person.isFavorite
+                                ? AppColors.favorite
+                                : accent,
+                          ),
+                          onPressed: onToggleFavorite,
+                        ),
+                      ?trailing,
+                    ],
+                  ),
+                ),
+              // The gender hint, along the foot instead of down the side.
+              AccentUnderline(color: accent),
+            ],
           ),
         ),
       ),

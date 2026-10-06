@@ -2,10 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/services/push_service.dart';
+import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/utils/app_navigation.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/match_migrations.dart';
 import 'package:shadchan/services/person_migrations.dart';
@@ -125,31 +130,79 @@ Future<void> _bootstrap() async {
 /// So nothing here blocks the first frame: the plugin comes up after it, and
 /// [NotificationService.requestPermissions] asks with the app visible behind
 /// the alert, which is where iOS expects such a question to be asked from.
+BuildContext? get _navigatorContext {
+  final BuildContext? context =
+      AppRouter.router.routerDelegate.navigatorKey.currentContext;
+  return context != null && context.mounted ? context : null;
+}
+
+/// A tapped notification — a reminder, a push — goes where its row on the
+/// notifications page goes.
+///
+/// **Back after it.** A tap that started the app opens the person's own home
+/// page first and the target on top of it, so Back leads home rather than out
+/// of the app. A tap while the app was already running opens the target on
+/// top of wherever the person was, so Back returns there.
+void _openFromNotification(String route, bool launch) {
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    final GoRouter router = AppRouter.router;
+    if (launch) {
+      final String home = WorkspaceStore.launchArea == WorkArea.personal
+          ? '/me'
+          : '/home';
+      if (Uri.parse(route).path == home) {
+        router.go(route);
+        return;
+      }
+      router.go(home);
+      await WidgetsBinding.instance.endOfFrame;
+      unawaited(router.push<void>(route));
+      return;
+    }
+    final BuildContext? context = _navigatorContext;
+    if (context != null) {
+      unawaited(AppNavigation.open(context, route));
+    } else {
+      unawaited(router.push<void>(route));
+    }
+  });
+}
+
+/// A push that arrived while the app is open: a small banner inside the app
+/// with "פתיחה", instead of a system notification over it.
+void _showForegroundNotice(String title, String body, String? route) {
+  final BuildContext? context = _navigatorContext;
+  if (context == null) {
+    return;
+  }
+  final String text = <String>[
+    title.trim(),
+    body.trim(),
+  ].where((String s) => s.isNotEmpty).join('\n');
+  AppNotice.show(
+    context,
+    text,
+    actionLabel: route == null ? null : 'פתיחה',
+    onAction: route == null ? null : () => _openFromNotification(route, false),
+  );
+}
+
 Future<void> _startNotifications() async {
   try {
     // Set before `initialize`, which delivers a tap that launched the app the
     // moment it is ready — wiring this afterwards would drop exactly the tap
     // that matters most.
-    //
-    // `go` rather than `push`: the notification is the start of a journey, and
-    // there may be no stack behind it on a cold start.
-    NotificationService.onOpenMatch = (String matchId) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        AppRouter.router.go('/matches/$matchId');
-      });
-    };
-    // A tapped support alert lands on the notifications page rather than on
-    // one thread: a single alert can stand for several reports, and they are
-    // all listed there anyway.
-    NotificationService.onOpenSupport = () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        AppRouter.router.go('/reminders');
-      });
-    };
-    NotificationService.onOpenRoute = (String route) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        AppRouter.router.go(route);
-      });
+    NotificationService.onOpenRoute = _openFromNotification;
+    NotificationService.onForegroundNotice = _showForegroundNotice;
+    PushService.onNoticeOpened = (String inboxId) {
+      final BuildContext? context = _navigatorContext;
+      if (context != null) {
+        try {
+          unawaited(context.read<InboxProvider>().markReadById(inboxId));
+        } on ProviderNotFoundException {
+          // Nothing to mark in a harness without an inbox.
+        }
+      }
     };
     await NotificationService.initialize();
 

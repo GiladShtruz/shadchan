@@ -169,7 +169,10 @@ abstract final class HomeBoardActions {
           child: Text(pinned ? 'הסרת הצמדה' : 'הצמדה'),
         ),
         if (removable)
-          const PopupMenuItem<String>(value: 'remove', child: Text('הסרה')),
+          const PopupMenuItem<String>(
+            value: 'remove',
+            child: Text('הסרה מהלוח שלי'),
+          ),
       ],
     );
     if (choice == null || !anchor.mounted) {
@@ -211,7 +214,7 @@ abstract final class HomeBoardActions {
     store.hide(key);
     AppNotice.show(
       context,
-      'הוסר מהלוח',
+      'הוסר מהלוח שלי',
       actionLabel: 'ביטול',
       onAction: () {
         store.unhide(key);

@@ -1,145 +1,312 @@
-import 'dart:math' as math;
+import 'package:hive/hive.dart';
+import 'package:shadchan/services/home_board_store.dart';
 
-/// What kind of thing a row on "הלוח שלי" is, in the order the board cares
-/// about them.
+/// The shelves of "הלוח שלי" — the chips across its top.
 ///
-/// Declaration order *is* the priority: a reminder that just came due outranks
-/// an open proposal, which outranks something pinned a while ago, which
-/// outranks a reminder that has been overdue for weeks. The last two are not
-/// the matchmaker's own work at all — they are what the app offers when the
-/// board would otherwise be thin.
-enum BoardFeedKind {
-  freshReminder(4.0),
-  openIdea(3.0),
-  pinned(2.0),
-  oldReminder(1.0),
-  suggestedIdea(0.4),
-  thinkAbout(0.3);
+/// [all] is not a kind of row: it is every kind the matchmaker has chosen to
+/// see there (see [BoardAllCategories]). Every other value is one kind of row,
+/// and its own chip always shows all of it, whatever "הכל" was set to.
+enum BoardCategory {
+  all('הכל'),
+  cards('כרטיסים וגישה'),
+  alerts('התראות'),
+  openIdeas('רעיונות פתוחים'),
+  suggestions('הצעות מהמאגר');
 
-  const BoardFeedKind(this.weight);
+  const BoardCategory(this.label);
 
-  /// Where the first item of this kind starts in the mix. See
-  /// [HomeBoardFeed.mix].
-  final double weight;
+  final String label;
 
-  /// Offered by the app rather than put there by the matchmaker.
-  bool get isFiller =>
-      this == BoardFeedKind.suggestedIdea || this == BoardFeedKind.thinkAbout;
+  /// The four that are kinds of row.
+  static const List<BoardCategory> kinds = <BoardCategory>[
+    cards,
+    alerts,
+    openIdeas,
+    suggestions,
+  ];
+
+  /// What a dedicated chip says when it has nothing to show.
+  String get emptyLine => switch (this) {
+    all => 'הלוח ריק כרגע',
+    cards => 'אין כרגע עדכונים על כרטיסים או גישה',
+    alerts => 'אין התראות או תזכורות פעילות',
+    openIdeas => 'אין רעיונות פתוחים',
+    suggestions => 'אין כרגע הצעות חדשות מהמאגר',
+  };
 }
 
-/// One row of the mixed board, with the kind it was dealt from.
-class BoardFeedItem<T> {
-  const BoardFeedItem(this.kind, this.value);
+/// How much a row asks of the matchmaker, most first. Declaration order is
+/// the order: it only decides between rows **close in time** — see
+/// [HomeBoardFeed.arrange].
+enum BoardPriority {
+  /// Something only the matchmaker can do: ask for a card's access, send a
+  /// greeting that is due.
+  action,
 
-  final BoardFeedKind kind;
+  /// A reminder that came due, a notice not yet read, something pinned.
+  alert,
+
+  /// A friend's card that changed, access that was given.
+  cardChange,
+
+  /// An open proposal and its next step.
+  openIdea,
+
+  /// A pair the database suggests.
+  suggestion,
+}
+
+/// One row before it is placed: what it is, what it is about, and when
+/// something last happened in it.
+class BoardFeedEntry<T> {
+  const BoardFeedEntry({
+    required this.value,
+    required this.category,
+    required this.priority,
+    required this.activityAt,
+    this.alsoIn = const <BoardCategory>{},
+  });
+
   final T value;
+
+  /// The shelf it belongs to — what counts for variety in "הכל".
+  final BoardCategory category;
+
+  /// Other chips it also answers to: an open proposal whose reminder came due
+  /// is a reminder *and* an open proposal, drawn once in "הכל" and once in
+  /// each of the two chips.
+  final Set<BoardCategory> alsoIn;
+  final BoardPriority priority;
+
+  /// The last thing that happened in it — not when it was created. A status
+  /// change, a reminder coming due, a card edited all bring a row back up.
+  final DateTime activityAt;
+
+  bool isIn(BoardCategory chip) =>
+      chip == BoardCategory.all || chip == category || alsoIn.contains(chip);
 }
 
-/// Deals the board's sources into one feed.
+/// Places the board's rows.
 ///
-/// **One feed, not four shelves.** The board used to be every due reminder,
-/// then every pinned note, then every open proposal — which on a busy day is
-/// twelve reminders before the first proposal, and reads as a report rather
-/// than a desk. So each source keeps its own ranking, and the sources are
-/// interleaved: every item scores its kind's [BoardFeedKind.weight], less a
-/// step for each item of its kind ahead of it, plus a little seeded jitter;
-/// the best head is dealt next, **never the same kind twice in a row** while
-/// another kind is left. The priorities still show — a fresh reminder is
-/// almost always first — but a second reminder waits behind an open proposal.
+/// **Newest first, then most important — and never one kind for long.**
 ///
-/// **Different every day, stable within one.** The jitter comes from [seed],
-/// which the home screen derives from the date and from a tap on the
-/// wordmark; the board does not reshuffle under the matchmaker's finger every
-/// time a reminder ticks over, and does not greet them in the same order every
-/// morning either.
+/// 1. Rows are grouped by how long ago something happened in them ([ages]):
+///    today, the last three days, the week, the month, before. Within a
+///    group, the row asking more of the matchmaker ([BoardPriority]) goes
+///    first, and between two of the same weight the newer one. So a
+///    proposal that moved this morning sits above a reminder that came due
+///    last week, but a reminder that came due this morning sits above a
+///    proposal that moved this morning.
+/// 2. Then no shelf may run more than [maxRun] rows in a row while another
+///    shelf still has something below: the next row of a different shelf is
+///    pulled up to break the run. Twenty friends sharing their cards in one
+///    evening cannot bury the open proposals and the reminders under them —
+///    they arrive two at a time, between the other work.
+///
+/// Suggestions from the database break a run only when nothing of the
+/// matchmaker's own is left to do it — they are what the board offers when
+/// it is thin, never what interrupts it.
 abstract final class HomeBoardFeed {
-  /// How far each item falls behind the one of its own kind ahead of it.
-  static const double step = 0.9;
+  /// The age groups, newest first. A row belongs to the first it fits.
+  static const List<Duration> ages = <Duration>[
+    Duration(days: 1),
+    Duration(days: 3),
+    Duration(days: 7),
+    Duration(days: 30),
+  ];
 
-  /// The most the seed can move an item. Below [step], so the order *within*
-  /// a kind is never disturbed — only how the kinds meet.
-  static const double jitter = 0.6;
+  /// The longest stretch of one shelf before another is pulled up.
+  static const int maxRun = 2;
 
-  /// The board aims for at least this many rows; the app's own suggestions
-  /// only fill up to here.
-  static const int target = 10;
-
-  static List<BoardFeedItem<T>> mix<T>(
-    Map<BoardFeedKind, List<T>> queues, {
-    required int seed,
-  }) {
-    final math.Random random = math.Random(seed);
-    final Map<BoardFeedKind, List<double>> scores =
-        <BoardFeedKind, List<double>>{};
-    final Map<BoardFeedKind, int> heads = <BoardFeedKind, int>{};
-    int total = 0;
-    for (final BoardFeedKind kind in BoardFeedKind.values) {
-      final List<T> queue = queues[kind] ?? <T>[];
-      scores[kind] = <double>[
-        for (int i = 0; i < queue.length; i++)
-          kind.weight - step * i + random.nextDouble() * jitter,
-      ];
-      heads[kind] = 0;
-      total += queue.length;
+  static int ageGroup(DateTime at, DateTime now) {
+    final Duration ago = now.difference(at);
+    for (int i = 0; i < ages.length; i++) {
+      if (ago < ages[i]) {
+        return i;
+      }
     }
+    return ages.length;
+  }
 
-    final List<BoardFeedItem<T>> out = <BoardFeedItem<T>>[];
-    BoardFeedKind? previous;
-    while (out.length < total) {
-      BoardFeedKind? best;
-      BoardFeedKind? bestAny;
-      for (final BoardFeedKind kind in BoardFeedKind.values) {
-        final int head = heads[kind]!;
-        if (head >= scores[kind]!.length) {
-          continue;
+  static List<BoardFeedEntry<T>> arrange<T>(
+    Iterable<BoardFeedEntry<T>> entries, {
+    required DateTime now,
+  }) {
+    final List<BoardFeedEntry<T>> sorted = entries.toList()
+      ..sort((BoardFeedEntry<T> a, BoardFeedEntry<T> b) {
+        final int byAge = ageGroup(
+          a.activityAt,
+          now,
+        ).compareTo(ageGroup(b.activityAt, now));
+        if (byAge != 0) {
+          return byAge;
         }
-        final double score = scores[kind]![head];
-        if (bestAny == null || score > scores[bestAny]![heads[bestAny]!]) {
-          bestAny = kind;
+        final int byWeight = a.priority.index.compareTo(b.priority.index);
+        if (byWeight != 0) {
+          return byWeight;
         }
-        if (kind != previous &&
-            (best == null || score > scores[best]![heads[best]!])) {
-          best = kind;
+        return b.activityAt.compareTo(a.activityAt);
+      });
+
+    final List<BoardFeedEntry<T>> out = <BoardFeedEntry<T>>[];
+    final List<BoardFeedEntry<T>> rest = sorted;
+    while (rest.isNotEmpty) {
+      int pick = 0;
+      if (_runOf(out) >= maxRun && rest.first.category == out.last.category) {
+        final BoardCategory running = out.last.category;
+        int breaker = rest.indexWhere(
+          (BoardFeedEntry<T> e) =>
+              e.category != running && e.category != BoardCategory.suggestions,
+        );
+        if (breaker < 0) {
+          breaker = rest.indexWhere(
+            (BoardFeedEntry<T> e) => e.category != running,
+          );
+        }
+        if (breaker > 0) {
+          pick = breaker;
         }
       }
-      final BoardFeedKind pick = best ?? bestAny!;
-      out.add(BoardFeedItem<T>(pick, queues[pick]![heads[pick]!]));
-      heads[pick] = heads[pick]! + 1;
-      previous = pick;
+      out.add(rest.removeAt(pick));
     }
     return out;
   }
 
-  /// How many filler rows the board may take, given how many rows the
-  /// matchmaker's own work already fills.
-  static int fillerRoom(int ownRows) => math.max(0, target - ownRows);
+  static int _runOf<T>(List<BoardFeedEntry<T>> placed) {
+    if (placed.isEmpty) {
+      return 0;
+    }
+    final BoardCategory last = placed.last.category;
+    int run = 0;
+    for (int i = placed.length - 1; i >= 0; i--) {
+      if (placed[i].category != last) {
+        break;
+      }
+      run++;
+    }
+    return run;
+  }
 
-  /// Takes up to [room] fillers alternately from [a] and [b], so a thin board
-  /// is topped up with both kinds rather than with whichever came first.
-  static (List<A>, List<B>) splitFillers<A, B>(List<A> a, List<B> b, int room) {
-    final List<A> takeA = <A>[];
-    final List<B> takeB = <B>[];
-    int ia = 0;
-    int ib = 0;
-    while (takeA.length + takeB.length < room &&
-        (ia < a.length || ib < b.length)) {
-      final bool turnA = (takeA.length + takeB.length).isEven;
-      if ((turnA && ia < a.length) || ib >= b.length) {
-        takeA.add(a[ia++]);
-      } else {
-        takeB.add(b[ib++]);
+  /// The rows a chip shows, already [arrange]d. "הכל" shows a row when any
+  /// shelf it belongs to is switched on there.
+  static List<BoardFeedEntry<T>> forChip<T>(
+    List<BoardFeedEntry<T>> arranged,
+    BoardCategory chip, {
+    required Set<BoardCategory> inAll,
+  }) {
+    if (chip != BoardCategory.all) {
+      return arranged.where((BoardFeedEntry<T> e) => e.isIn(chip)).toList();
+    }
+    return arranged
+        .where(
+          (BoardFeedEntry<T> e) =>
+              inAll.contains(e.category) ||
+              e.alsoIn.any((BoardCategory c) => inAll.contains(c)),
+        )
+        .toList();
+  }
+}
+
+/// Which shelves "הכל" shows — "התאמת הלוח שלי". Every one until the
+/// matchmaker says otherwise.
+///
+/// **Switching a shelf off only takes it out of "הכל".** Nothing is deleted,
+/// no notification stops, and the shelf's own chip still shows all of it.
+abstract final class BoardAllCategories {
+  static const String _key = 'home.boardAllHidden';
+
+  static String? _pending;
+
+  static Set<BoardCategory> get shown {
+    final Object? raw =
+        _pending ??
+        (Hive.isBoxOpen('settings')
+            ? Hive.box<dynamic>('settings').get(_key)
+            : null);
+    final Set<String> hidden = raw is String && raw.isNotEmpty
+        ? raw.split(',').toSet()
+        : <String>{};
+    return <BoardCategory>{
+      for (final BoardCategory c in BoardCategory.kinds)
+        if (!hidden.contains(c.name)) c,
+    };
+  }
+
+  static set shown(Set<BoardCategory> value) {
+    final String raw = <String>[
+      for (final BoardCategory c in BoardCategory.kinds)
+        if (!value.contains(c)) c.name,
+    ].join(',');
+    _pending = raw;
+    persistHomeSetting(_key, raw);
+  }
+
+  static void resetForTest() => _pending = null;
+}
+
+/// When the matchmaker last opened a row from the board — what stops a row
+/// they already dealt with from still looking new.
+abstract final class BoardSeen {
+  static const String _key = 'home.boardSeen';
+
+  static Map<String, int>? _cache;
+
+  static Map<String, int> get _map {
+    final Map<String, int>? cached = _cache;
+    if (cached != null) {
+      return cached;
+    }
+    final Map<String, int> map = <String, int>{};
+    final Object? raw = Hive.isBoxOpen('settings')
+        ? Hive.box<dynamic>('settings').get(_key)
+        : null;
+    if (raw is String && raw.isNotEmpty) {
+      for (final String pair in raw.split('|')) {
+        final int at = pair.lastIndexOf('=');
+        final int? millis = at < 0
+            ? null
+            : int.tryParse(pair.substring(at + 1));
+        if (millis != null) {
+          map[pair.substring(0, at)] = millis;
+        }
       }
     }
-    return (takeA, takeB);
+    return _cache = map;
   }
 
-  /// A seed that changes once a day and whenever [refresh] does.
-  static int seedFor(DateTime now, int refresh) {
-    final int day = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).difference(DateTime(2024)).inDays;
-    return day * 7919 + refresh;
+  static DateTime? at(String key) {
+    final int? millis = _map[key];
+    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
   }
+
+  /// Whether something happened at [activityAt] that the matchmaker has not
+  /// opened since.
+  static bool isNew(String key, DateTime activityAt) {
+    final DateTime? seen = at(key);
+    return seen == null || activityAt.isAfter(seen);
+  }
+
+  static void mark(String key, {DateTime? now}) {
+    final Map<String, int> map = _map;
+    map[key] = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    // Kept small: only the most recent marks matter.
+    if (map.length > 300) {
+      final List<MapEntry<String, int>> newest = map.entries.toList()
+        ..sort(
+          (MapEntry<String, int> a, MapEntry<String, int> b) =>
+              b.value.compareTo(a.value),
+        );
+      map
+        ..clear()
+        ..addEntries(newest.take(200));
+    }
+    persistHomeSetting(
+      _key,
+      map.entries
+          .map((MapEntry<String, int> e) => '${e.key}=${e.value}')
+          .join('|'),
+    );
+  }
+
+  static void resetForTest() => _cache = null;
 }

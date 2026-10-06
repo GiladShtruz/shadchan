@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/tag_library.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_tags.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
@@ -32,6 +35,181 @@ class PeopleFilterState {
 
   /// The matchmaker's own tags: a person matches when they carry any of them.
   final List<String> tags;
+
+  /// Whether nothing is set — the same as no filter at all.
+  bool get isEmpty =>
+      gender == null &&
+      ageRange == null &&
+      religiousLevels.isEmpty &&
+      religiousLevelOtherLabels.isEmpty &&
+      profileStatuses.isEmpty &&
+      heightRange == null &&
+      maritalStatuses.isEmpty &&
+      regions.isEmpty &&
+      tags.isEmpty;
+
+  /// The filter as plain JSON — enum names and range ends — for keeping it
+  /// in the settings box.
+  Map<String, Object?> toJson() {
+    List<double>? range(RangeValues? values) =>
+        values == null ? null : <double>[values.start, values.end];
+    return <String, Object?>{
+      'gender': gender?.name,
+      'age': range(ageRange),
+      'religious': <String>[
+        for (final ReligiousLevel level in religiousLevels) level.name,
+      ],
+      'religiousOther': religiousLevelOtherLabels,
+      'statuses': <String>[
+        for (final ProfileStatus status in profileStatuses) status.name,
+      ],
+      'height': range(heightRange),
+      'marital': <String>[
+        for (final MaritalStatus status in maritalStatuses) status.name,
+      ],
+      'regions': <String>[for (final Region region in regions) region.name],
+      'tags': tags,
+    };
+  }
+
+  /// Reads [toJson]'s shape back. Anything it no longer recognises — an
+  /// enum value renamed since, a malformed range — is dropped rather than
+  /// failing the whole filter.
+  static PeopleFilterState fromJson(Map<String, Object?> json) {
+    List<T> names<T extends Enum>(Object? raw, List<T> values) {
+      if (raw is! List) {
+        return <T>[];
+      }
+      return <T>[
+        for (final Object? name in raw)
+          for (final T value in values)
+            if (value.name == name) value,
+      ];
+    }
+
+    List<String> strings(Object? raw) => raw is List
+        ? <String>[
+            for (final Object? item in raw)
+              if (item is String) item,
+          ]
+        : <String>[];
+
+    RangeValues? range(Object? raw) {
+      if (raw is! List || raw.length != 2) {
+        return null;
+      }
+      final Object? start = raw[0];
+      final Object? end = raw[1];
+      if (start is! num || end is! num || start > end) {
+        return null;
+      }
+      return RangeValues(start.toDouble(), end.toDouble());
+    }
+
+    final List<Gender> gender = names(<Object?>[json['gender']], Gender.values);
+    return PeopleFilterState(
+      gender: gender.isEmpty ? null : gender.first,
+      ageRange: range(json['age']),
+      religiousLevels: names(json['religious'], ReligiousLevel.values),
+      religiousLevelOtherLabels: strings(json['religiousOther']),
+      profileStatuses: names(json['statuses'], ProfileStatus.values),
+      heightRange: range(json['height']),
+      maritalStatuses: names(json['marital'], MaritalStatus.values),
+      regions: names(json['regions'], Region.values),
+      tags: strings(json['tags']),
+    );
+  }
+
+  /// Whether [person] passes every filter set here, by the rules המאגר שלי
+  /// applies: a range, a marital status or a region only matches a card that
+  /// records one.
+  bool matches(Person person) {
+    if (gender != null && person.gender != gender) {
+      return false;
+    }
+    final RangeValues? ages = ageRange;
+    if (ages != null) {
+      final int? age = person.age;
+      if (age == null || age < ages.start.round() || age > ages.end.round()) {
+        return false;
+      }
+    }
+    if ((religiousLevels.isNotEmpty || religiousLevelOtherLabels.isNotEmpty) &&
+        !religiousLevels.contains(person.religiousLevel) &&
+        !(person.religiousLevel == ReligiousLevel.other &&
+            religiousLevelOtherLabels.contains(
+              person.religiousLevelOther?.trim(),
+            ))) {
+      return false;
+    }
+    if (profileStatuses.isNotEmpty &&
+        !profileStatuses.contains(person.profileStatus)) {
+      return false;
+    }
+    final RangeValues? heights = heightRange;
+    if (heights != null) {
+      final int? height = person.heightCm;
+      if (height == null ||
+          height < heights.start.round() ||
+          height > heights.end.round()) {
+        return false;
+      }
+    }
+    if (maritalStatuses.isNotEmpty &&
+        !maritalStatuses.contains(person.maritalStatus)) {
+      return false;
+    }
+    if (regions.isNotEmpty && !regions.contains(person.region)) {
+      return false;
+    }
+    if (tags.isNotEmpty &&
+        !person.tags.any(
+          (String tag) =>
+              tags.any((String chosen) => PersonTags.sameTag(tag, chosen)),
+        )) {
+      return false;
+    }
+    return true;
+  }
+}
+
+/// Opens [PeopleFiltersSheet] over [repository]'s people, starting from
+/// [initial], the way המאגר שלי opens it. Null when dismissed.
+Future<PeopleFilterState?> showPeopleFiltersSheet(
+  BuildContext context, {
+  required PersonRepository repository,
+  PeopleFilterState? initial,
+}) {
+  return showModalBottomSheet<PeopleFilterState>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+    clipBehavior: Clip.antiAlias,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+    ),
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.of(context).size.height * 0.84,
+    ),
+    builder: (BuildContext context) {
+      return PeopleFiltersSheet(
+        initialGender: initial?.gender,
+        initialAgeRange: initial?.ageRange,
+        ageBounds: repository.activeAgeBounds,
+        initialReligiousLevels: initial?.religiousLevels ?? const [],
+        initialReligiousLevelOtherLabels:
+            initial?.religiousLevelOtherLabels ?? const <String>[],
+        initialProfileStatuses: initial?.profileStatuses ?? const [],
+        initialHeightRange: initial?.heightRange,
+        heightBounds: (min: 120, max: 200),
+        initialMaritalStatuses: initial?.maritalStatuses ?? const [],
+        initialRegions: initial?.regions ?? const [],
+        availableTags: TagLibrary.inUse(repository.getAll()),
+        initialTags: initial?.tags ?? const <String>[],
+      );
+    },
+  );
 }
 
 /// Bottom sheet used to filter the people list. The basic filters — gender,

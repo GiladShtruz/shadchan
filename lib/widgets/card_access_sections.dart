@@ -13,6 +13,7 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/card_announce_switch.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
 /// The card owner's side of access, on the personal area: status reports to
@@ -299,6 +300,8 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
           key: widget.requestsKey,
           title: 'בקשות גישה',
           children: <Widget>[
+            // Whether matchmaker friends are told the card exists at all.
+            const CardAnnounceSwitch(framed: false),
             // One switch for every matchmaker. Off, nobody can ask and the
             // card looks like no card to all of them; giving a friend access
             // from "החברים שלי שמשדכים בשדכן" still works.

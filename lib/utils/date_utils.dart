@@ -220,6 +220,34 @@ abstract final class AppDateUtils {
     return DateTime(year, birthDate.month, safeDay);
   }
 
+  /// When a notification arrived, the way a chat list says it: the time for
+  /// today, "אתמול", the weekday within the week, and the date before that.
+  static String notificationTime(DateTime at, {DateTime? now}) {
+    final DateTime clock = now ?? DateTime.now();
+    final int days = _dateOnly(clock).difference(_dateOnly(at)).inDays;
+    if (days <= 0) {
+      final String h = at.hour.toString().padLeft(2, '0');
+      final String m = at.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+    if (days == 1) {
+      return 'אתמול';
+    }
+    if (days < 7) {
+      const List<String> names = <String>[
+        'יום ב׳',
+        'יום ג׳',
+        'יום ד׳',
+        'יום ה׳',
+        'יום ו׳',
+        'שבת',
+        'יום א׳',
+      ];
+      return names[at.weekday - 1];
+    }
+    return formatDateShort(at);
+  }
+
   static int _daysInMonth(int year, int month) {
     return DateTime(year, month + 1, 0).day;
   }

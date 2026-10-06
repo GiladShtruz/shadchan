@@ -26,6 +26,8 @@ class MatchIdea extends HiveObject {
     this.askedMaleAt,
     this.askedFemaleAt,
     this.checkInEveryDays,
+    this.datingStartedAt,
+    this.datingEndedAt,
   });
 
   @HiveField(0)
@@ -130,4 +132,27 @@ class MatchIdea extends HiveObject {
   /// about a couple they speak to weekly stops reading the reminders.
   @HiveField(18)
   int? checkInEveryDays;
+
+  /// When the couple started going out — set the moment the idea is marked
+  /// "מתחילים לצאת". Kept when they stop, so a closed idea can still say how
+  /// long they went out. See `MatchRepository.noteDatingSpan`.
+  @HiveField(19)
+  DateTime? datingStartedAt;
+
+  /// When they stopped going out — closed, separated or married. Null while
+  /// they are still out.
+  @HiveField(20)
+  DateTime? datingEndedAt;
+
+  /// How long they went out, or have been out so far; null when it is not
+  /// known.
+  Duration? datingSpan({DateTime? now}) {
+    final DateTime? start = datingStartedAt;
+    if (start == null) {
+      return null;
+    }
+    final DateTime end = datingEndedAt ?? now ?? DateTime.now();
+    final Duration span = end.difference(start);
+    return span.isNegative ? Duration.zero : span;
+  }
 }

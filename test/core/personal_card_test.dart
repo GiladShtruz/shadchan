@@ -49,6 +49,23 @@ void main() {
       expect(WorkspaceStore.lastArea, WorkArea.matchmaker);
     });
 
+    test('a chosen home page wins over the area last used', () {
+      WorkspaceStore.resetForTest();
+      WorkspaceStore.setMatchmakerEnabled(true);
+      WorkspaceStore.setLastArea(WorkArea.matchmaker);
+      expect(WorkspaceStore.homeArea, isNull);
+      expect(WorkspaceStore.launchArea, WorkArea.matchmaker);
+
+      WorkspaceStore.setHomeArea(WorkArea.personal);
+      expect(WorkspaceStore.launchArea, WorkArea.personal);
+
+      // A card-only user has only one area, whatever was chosen before.
+      WorkspaceStore.setMatchmakerEnabled(false);
+      WorkspaceStore.setHomeArea(WorkArea.matchmaker);
+      expect(WorkspaceStore.launchArea, WorkArea.personal);
+      WorkspaceStore.setMatchmakerEnabled(true);
+    });
+
     test('a value written as text reads back the same', () async {
       await settings.put('workspace.matchmakerEnabled', 'false');
       await settings.put('workspace.entry', 'cardOwner');

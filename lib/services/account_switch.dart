@@ -8,6 +8,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/services/deleted_matches_store.dart';
 import 'package:shadchan/services/cloud_sync_service.dart';
 import 'package:shadchan/services/account_remote_data_service.dart';
@@ -16,12 +17,14 @@ import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/database_hash_upload.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/home_search_filter_store.dart';
 import 'package:shadchan/services/invite_link_service.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/services/push_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/widgets/notification_center.dart';
 
 /// Leaving one account and handing the phone to the next.
 ///
@@ -148,6 +151,9 @@ abstract final class AccountSwitch {
     InviteLinkService.clear();
     await CommunityProfileStore.reset();
     HomeBoardStore.instance.reset();
+    HomeSearchFilterStore.reset();
+    ReminderLog.instance.reset();
+    NotificationCenter.reset();
     RecentActivityStore.instance.reset();
     DeletedMatchesStore.instance.clear();
     community.reset();

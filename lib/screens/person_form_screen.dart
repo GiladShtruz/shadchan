@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/card_text_field.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
@@ -1007,7 +1008,20 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
           return;
         }
       }
+      final bool added = !_isEditMode;
+      final BuildContext root = Navigator.of(
+        context,
+        rootNavigator: true,
+      ).context;
       context.pushReplacement('/people/$savedPersonId');
+      // A new friend: the same confirmation every add path ends in, with
+      // their matches and the full card one tap away.
+      if (added) {
+        final Person? saved = repository.getById(savedPersonId);
+        if (saved != null && root.mounted) {
+          ContactsAddedCelebration.showNewFriend(root, saved);
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {

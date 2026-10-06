@@ -7,6 +7,9 @@ import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -246,6 +249,21 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
           if (mounted && kept) {
             ContactsAddedCelebration.showNewFriend(context, staged.person);
           }
+        } else if (mounted) {
+          // The deck carries on, so a short line rather than the large card —
+          // with the friend's matches one tap away.
+          final Person added = staged.person;
+          final BuildContext root = Navigator.of(
+            context,
+            rootNavigator: true,
+          ).context;
+          AppNotice.show(
+            context,
+            '${added.fullName.trim()} '
+            '${added.gender == Gender.female ? 'נוספה' : 'נוסף'} למאגר',
+            actionLabel: 'לראות התאמות',
+            onAction: () => openSuggestionsFor(root, added.id),
+          );
         }
         return;
       }

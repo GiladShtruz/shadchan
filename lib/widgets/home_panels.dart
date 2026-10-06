@@ -215,6 +215,7 @@ class HomeActionCards extends StatelessWidget {
                   labelHeight: labelHeight,
                   padding: padding,
                   emphasised: emphasiseAddPeople,
+                  prominent: true,
                 ),
               ),
               SizedBox(width: narrow ? 8 : 12),
@@ -229,6 +230,7 @@ class HomeActionCards extends StatelessWidget {
                   artHeight: artHeight,
                   labelHeight: labelHeight,
                   padding: padding,
+                  prominent: true,
                 ),
               ),
             ],
@@ -257,10 +259,17 @@ class _AddTile extends StatefulWidget {
     this.emphasised = false,
     this.divided = false,
     this.labelColor,
+    this.prominent = false,
   });
 
   final VoidCallback onTap;
   final String art;
+
+  /// The two entry cards on בית: a wash and a frame of their own colour, the
+  /// label in that colour and the drawing on a soft disc, with a shadow tinted
+  /// to match — so they read as the page's two main buttons. The type is the
+  /// same size as before; only the colour and depth change.
+  final bool prominent;
 
   /// The label's ink — the heading blue unless the tile names its own.
   final Color? labelColor;
@@ -297,7 +306,13 @@ class _AddTileState extends State<_AddTile> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color paper = widget.emphasised
+    final bool prominent = widget.prominent;
+    final Color paper = prominent
+        ? Color.alphaBlend(
+            widget.accent.withValues(alpha: dark ? 0.20 : 0.11),
+            theme.colorScheme.surface,
+          )
+        : widget.emphasised
         ? Color.alphaBlend(
             widget.accent.withValues(alpha: dark ? 0.16 : 0.07),
             theme.colorScheme.surface,
@@ -305,6 +320,9 @@ class _AddTileState extends State<_AddTile> {
         : theme.colorScheme.surface;
     final BorderRadius radius = BorderRadius.circular(18);
     final double rest = widget.emphasised ? 0.12 : 0.07;
+    final Color labelInk = prominent
+        ? (dark ? AppColors.heading(dark: true) : widget.accent)
+        : (widget.labelColor ?? AppColors.heading(dark: dark));
 
     return Semantics(
       button: true,
@@ -322,14 +340,25 @@ class _AddTileState extends State<_AddTile> {
           decoration: BoxDecoration(
             color: paper,
             borderRadius: radius,
+            border: prominent
+                ? Border.all(
+                    color: widget.accent.withValues(alpha: dark ? 0.6 : 0.45),
+                    width: 1.4,
+                  )
+                : null,
             boxShadow: <BoxShadow>[
               BoxShadow(
-                // A neutral shadow, very soft: depth, not a 3D button.
-                color: Colors.black.withValues(
-                  alpha: dark ? 0.30 : (_pressed ? 0.05 : rest),
-                ),
-                blurRadius: _pressed ? 4 : (widget.emphasised ? 16 : 12),
-                offset: Offset(0, _pressed ? 1 : 4),
+                // A neutral shadow, very soft: depth, not a 3D button. The
+                // two entry cards on בית take it in their own colour.
+                color: prominent && !dark
+                    ? widget.accent.withValues(alpha: _pressed ? 0.10 : 0.24)
+                    : Colors.black.withValues(
+                        alpha: dark ? 0.30 : (_pressed ? 0.05 : rest),
+                      ),
+                blurRadius: _pressed
+                    ? 4
+                    : (prominent ? 16 : (widget.emphasised ? 16 : 12)),
+                offset: Offset(0, _pressed ? 1 : (prominent ? 5 : 4)),
               ),
             ],
           ),
@@ -348,9 +377,20 @@ class _AddTileState extends State<_AddTile> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: <Widget>[
-                        SizedBox(
+                        Container(
                           height: widget.artHeight,
                           width: widget.artHeight,
+                          padding: prominent
+                              ? EdgeInsets.all(widget.artHeight * 0.14)
+                              : EdgeInsets.zero,
+                          decoration: prominent
+                              ? BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: theme.colorScheme.surface.withValues(
+                                    alpha: dark ? 0.35 : 0.9,
+                                  ),
+                                )
+                              : null,
                           child: ColorFiltered(
                             colorFilter: widget.tint,
                             child: Image.asset(
@@ -383,11 +423,11 @@ class _AddTileState extends State<_AddTile> {
                                 maxLines: 1,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight: prominent
+                                      ? FontWeight.w900
+                                      : FontWeight.w800,
                                   height: 1.2,
-                                  color:
-                                      widget.labelColor ??
-                                      AppColors.heading(dark: dark),
+                                  color: labelInk,
                                 ),
                               ),
                             ),
@@ -751,10 +791,15 @@ class DatingCouplesStrip extends StatelessWidget {
     super.key,
     required this.count,
     required this.onTap,
+    this.compact = false,
   });
 
   final int count;
   final VoidCallback onTap;
+
+  /// One short line, for a place where it must not take room from the work
+  /// around it — "הלוח שלי".
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -793,34 +838,50 @@ class DatingCouplesStrip extends StatelessWidget {
               ],
             ),
           ),
-          padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 8, 10),
+          padding: compact
+              ? const EdgeInsetsDirectional.fromSTEB(8, 5, 6, 5)
+              : const EdgeInsetsDirectional.fromSTEB(10, 10, 8, 10),
           child: Row(
             children: <Widget>[
               Container(
-                width: 32,
-                height: 32,
+                width: compact ? 24 : 32,
+                height: compact ? 24 : 32,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: rose.withValues(alpha: dark ? 0.28 : 0.18),
                 ),
-                child: Icon(Icons.favorite_rounded, size: 18, color: rose),
+                child: Icon(
+                  Icons.favorite_rounded,
+                  size: compact ? 14 : 18,
+                  color: rose,
+                ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: compact ? 8 : 10),
               Expanded(
                 child: Text(
-                  'כל הכבוד! $couples — שומרים איתם על קשר עד החתונה!',
-                  maxLines: 2,
+                  compact
+                      ? 'כל הכבוד! $couples · שומרים על קשר עד החתונה'
+                      : 'כל הכבוד! $couples — שומרים איתם על קשר עד החתונה!',
+                  maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.3,
-                    color: dark ? rose : AppColors.femaleInk,
-                  ),
+                  style:
+                      (compact
+                              ? theme.textTheme.labelMedium
+                              : theme.textTheme.labelLarge)
+                          ?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                            color: dark ? rose : AppColors.femaleInk,
+                          ),
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(Icons.chevron_right_rounded, size: 22, color: rose),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: compact ? 18 : 22,
+                color: rose,
+              ),
             ],
           ),
         ),

@@ -707,8 +707,9 @@ service cloud.firestore {
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.keys().hasOnly(
                          ['uid', 'name', 'matchmaker', 'hasCard',
-                          'acceptsRequests', 'updatedAt'])
+                          'acceptsRequests', 'announces', 'updatedAt'])
                     && request.resource.data.get('acceptsRequests', true) is bool
+                    && request.resource.data.get('announces', true) is bool
                     && request.resource.data.matchmaker is bool
                     && request.resource.data.hasCard is bool
                     && request.resource.data.name is string
@@ -718,8 +719,9 @@ service cloud.firestore {
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.keys().hasOnly(
                          ['uid', 'name', 'matchmaker', 'hasCard',
-                          'acceptsRequests', 'updatedAt'])
+                          'acceptsRequests', 'announces', 'updatedAt'])
                     && request.resource.data.get('acceptsRequests', true) is bool
+                    && request.resource.data.get('announces', true) is bool
                     && request.resource.data.name is string
                     && request.resource.data.name.size() <= 80;
       allow delete: if durable() && resource.data.uid == request.auth.uid;
