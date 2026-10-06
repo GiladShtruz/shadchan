@@ -217,6 +217,9 @@ abstract final class BoardAllCategories {
 
   static String? _pending;
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending = null;
+
   static Set<BoardCategory> get shown {
     final Object? raw =
         _pending ??
@@ -250,6 +253,9 @@ abstract final class BoardSeen {
   static const String _key = 'home.boardSeen';
 
   static Map<String, int>? _cache;
+
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _cache = null;
 
   static Map<String, int> get _map {
     final Map<String, int>? cached = _cache;

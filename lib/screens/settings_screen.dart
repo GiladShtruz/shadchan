@@ -98,8 +98,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 SettingsRow(
                   icon: Icons.folder_outlined,
-                  title: 'גיבוי וייצוא',
-                  subtitle: 'גיבוי בענן, שחזור, ייצוא לאקסל וייבוא',
+                  title: 'ייצוא וייבוא',
+                  subtitle: 'ייצוא לקובץ או לאקסל, וייבוא מקובץ',
                   onTap: () => context.push('/profile/data'),
                 ),
                 // Its own row rather than a line inside the backup screen.

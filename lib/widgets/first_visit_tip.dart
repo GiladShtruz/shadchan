@@ -31,6 +31,9 @@ enum FirstVisitTopic {
 abstract final class FirstVisitTips {
   static final Map<String, bool> _pending = <String, bool>{};
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending.clear();
+
   static bool takeFirstVisit(FirstVisitTopic topic) {
     final Object? stored = Hive.isBoxOpen('settings')
         ? Hive.box<dynamic>('settings').get(topic.key)

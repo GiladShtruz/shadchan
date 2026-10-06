@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/screens/account_gate_screens.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
@@ -82,7 +83,12 @@ void main() {
   });
 
   setUp(() async {
-    await Hive.box<dynamic>('settings').delete('signIn.hasAccount');
+    await Hive.box<dynamic>('settings').deleteAll(<String>[
+      'signIn.hasAccount',
+      'signIn.mustVerifyEmail',
+      'signIn.deletionPending',
+    ]);
+    AccountLoadingScreen.skipped = false;
     // The store's write-through cache is static and outlives the box, so a
     // test that wants a fresh install has to drop it as well as the key.
     SignInPromptStore.resetForTest();
@@ -259,6 +265,70 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userName', 'בודק'));
+  });
+  testWidgets('a phone that never read its account waits for it, '
+      'instead of asking a returning matchmaker to start again', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    await tester.runAsync(() async {
+      await settings.put('signIn.hasAccount', 'true');
+      await settings.deleteAll(<String>['userName', 'userGender']);
+    });
+    try {
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+
+      // The sync is off in tests, so the read "fails" — which is the screen
+      // that offers to try again or to go on.
+      expect(find.text('לא הצלחנו לטעון את המאגר'), findsOneWidget);
+      expect(find.text('ברוך הבא!'), findsNothing);
+
+      await tester.tap(find.text('להמשיך בלי לחכות'));
+      await tester.pumpAndSettle();
+      expect(find.text('לא הצלחנו לטעון את המאגר'), findsNothing);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() async {
+        await settings.put('userName', 'בודק');
+        await settings.put('userGender', 'male');
+      });
+    }
+  });
+
+  testWidgets('an address not yet verified opens on the verification page', (
+    WidgetTester tester,
+  ) async {
+    await tester.runAsync(() async {
+      await Hive.box<dynamic>('settings').putAll(<String, Object?>{
+        'signIn.hasAccount': 'true',
+        'signIn.mustVerifyEmail': 'true',
+      });
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('אימות כתובת המייל'), findsOneWidget);
+    expect(find.text('המאגר שלי'), findsNothing);
+  });
+
+  testWidgets('an account waiting for deletion opens on the offer to restore', (
+    WidgetTester tester,
+  ) async {
+    await tester.runAsync(() async {
+      await Hive.box<dynamic>('settings').putAll(<String, Object?>{
+        'signIn.hasAccount': 'true',
+        'signIn.deletionPending': 'true',
+      });
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('החשבון מתוזמן למחיקה'), findsOneWidget);
+    expect(find.text('שחזור החשבון'), findsOneWidget);
+    expect(find.text('המאגר שלי'), findsNothing);
   });
 }
 

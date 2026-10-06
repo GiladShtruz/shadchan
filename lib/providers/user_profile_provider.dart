@@ -52,6 +52,10 @@ class UserProfileProvider extends ChangeNotifier {
 
   final Box<dynamic> _box;
 
+  /// The profile changed on another phone signed in to the same account. Every
+  /// getter reads the box, so redrawing is all there is to do.
+  void notifySyncChange() => notifyListeners();
+
   /// The matchmaker's full name, as it has always been stored.
   ///
   /// Kept as the single joined key rather than being derived from the two parts

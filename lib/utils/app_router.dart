@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/screens/account_gate_screens.dart';
+import 'package:shadchan/screens/account_screen.dart';
+import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/models/person.dart';
@@ -146,6 +149,10 @@ abstract final class AppRouter {
   static final GoRouter router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/home',
+    // The account gates below are local flags that change while the app is
+    // open — an address verified, a deletion found pending — and the router
+    // has to ask its question again when they do.
+    refreshListenable: SignInPromptStore.gate,
     redirect: (BuildContext context, GoRouterState state) {
       final bool isOnboarded = context.read<UserProfileProvider>().isOnboarded;
       final bool atWelcome = state.uri.path == '/welcome';
@@ -176,6 +183,33 @@ abstract final class AppRouter {
           return null;
         }
         return atSignIn ? null : '/sign-in';
+      }
+
+      // Signed in, and three things before anything else, in this order.
+      //
+      // An account waiting for deletion opens on the offer to restore it and
+      // nothing else.
+      final String gatePath = state.uri.path;
+      if (SignInPromptStore.deletionPending) {
+        return gatePath == '/account-recovery' ? null : '/account-recovery';
+      }
+      // An address that has not been shown to belong to whoever typed it.
+      if (SignInPromptStore.mustVerifyEmail) {
+        return gatePath == '/verify-email' ? null : '/verify-email';
+      }
+      // A phone that has never read the account it is signed in to. The
+      // profile is part of the account, so asking somebody to introduce
+      // themselves before it has arrived would ask a returning matchmaker to
+      // start again.
+      if (!isOnboarded &&
+          !AccountSyncLedger.initialPullDoneHere &&
+          !AccountLoadingScreen.skipped) {
+        return gatePath == '/account-loading' ? null : '/account-loading';
+      }
+      if (gatePath == '/account-recovery' ||
+          gatePath == '/verify-email' ||
+          gatePath == '/account-loading') {
+        return '/home';
       }
 
       if (!isOnboarded) {
@@ -252,6 +286,24 @@ abstract final class AppRouter {
         path: '/sign-in',
         builder: (BuildContext context, GoRouterState state) {
           return const SignInScreen();
+        },
+      ),
+      GoRoute(
+        path: '/account-loading',
+        builder: (BuildContext context, GoRouterState state) {
+          return const AccountLoadingScreen();
+        },
+      ),
+      GoRoute(
+        path: '/verify-email',
+        builder: (BuildContext context, GoRouterState state) {
+          return const VerifyEmailScreen();
+        },
+      ),
+      GoRoute(
+        path: '/account-recovery',
+        builder: (BuildContext context, GoRouterState state) {
+          return const AccountRecoveryScreen();
         },
       ),
       StatefulShellRoute(
@@ -556,6 +608,15 @@ abstract final class AppRouter {
                     path: 'settings',
                     builder: (BuildContext context, GoRouterState state) {
                       return const SettingsScreen();
+                    },
+                  ),
+                  // "החשבון שלי": the address, the ways in, the password, and
+                  // the ways out.
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'account',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const AccountScreen();
                     },
                   ),
                   // The old "כרטיס השידוכים שלי" page. The full personal card replaced

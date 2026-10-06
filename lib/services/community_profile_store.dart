@@ -50,6 +50,9 @@ abstract final class CommunityProfileStore {
   /// frame they are written; this map covers the gap.
   static final Map<String, Object?> _pending = <String, Object?>{};
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending.clear();
+
   static Object? _read(String key) => _pending[key] ?? _box?.get(key);
 
   static void _write(String key, Object value) {

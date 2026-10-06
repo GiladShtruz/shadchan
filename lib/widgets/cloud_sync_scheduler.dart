@@ -16,28 +16,29 @@ import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/account_sync_codec.dart';
+import 'package:shadchan/services/account_sync_engine.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/local_setting_caches.dart';
+import 'package:shadchan/services/profile_backup.dart';
+import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/services/invite_link_service.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/mazel_tov_inbox.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/services/push_service.dart';
 
-/// Runs the cloud backup when the app opens and when it goes away.
+/// Starts the account's database sync, and runs everything else that talks to
+/// the server at the edges of a session.
 ///
-/// Those two moments rather than a watcher on every write: a matchmaker
-/// editing a card touches the database dozens of times in a minute, and
-/// debouncing that into a sensible number of uploads is a whole scheduling
-/// problem to get wrong. Open and close are the boundaries of a session, they
-/// are cheap because the sync only sends what changed, and they cover the case
-/// that actually matters — closing the app is the last thing that happens
-/// before a phone is lost.
-///
-/// The gap this leaves is honest and worth stating: a change made and then
-/// lost to a *crash* never reaches the cloud, because `detached` is not
-/// delivered reliably on either platform. The local database is unaffected —
-/// Hive already wrote it — so the loss is only of the cloud copy, until the
-/// next launch.
+/// The database itself keeps in step with the account on its own once
+/// `SyncProvider.start` has run — see `AccountSyncEngine`. What this adds is
+/// the lifecycle: start on the first frame, hand everything waiting to
+/// Firestore when the app goes to the background, catch up when it comes back,
+/// and redraw the providers whenever another phone changed something. The
+/// community counters, tips, inboxes and the personal card ride the same
+/// moments.
 class CloudSyncScheduler extends StatefulWidget {
   const CloudSyncScheduler({super.key, required this.child});
 
@@ -80,6 +81,11 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // of that.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_checkInvites());
+      if (mounted) {
+        context.read<SyncProvider>()
+          ..onRemoteApplied = _onRemoteApplied
+          ..onLegacyProfile = _onLegacyProfile;
+      }
       _sync();
       // "Is this an administrator?" is a Firestore read, so on the frame the
       // first sync runs the answer is still no. When it arrives the support
@@ -110,6 +116,47 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
         _onFirebaseReady();
       }
     });
+  }
+
+  /// Something changed on another phone signed in to the same account. The
+  /// boxes already hold it; whoever reads them redraws.
+  void _onRemoteApplied(AccountSyncChanges changes) {
+    if (!mounted) {
+      return;
+    }
+    final Set<SyncCollection> collections = changes.collections;
+    if (collections.contains(SyncCollection.people) ||
+        collections.contains(SyncCollection.personNotes) ||
+        collections.contains(SyncCollection.personEvents)) {
+      context.read<PersonRepository>().notifySyncChange();
+    }
+    if (collections.contains(SyncCollection.matches) ||
+        collections.contains(SyncCollection.matchNotes) ||
+        collections.contains(SyncCollection.matchStatusEvents)) {
+      context.read<MatchRepository>().notifySyncChange();
+    }
+    if (collections.contains(SyncCollection.settings)) {
+      LocalSettingCaches.forgetAll();
+      context.read<UserProfileProvider>().notifySyncChange();
+      context.read<PersonalCardProvider>().notifySyncChange();
+      context.read<ThemeModeProvider>().notifySyncChange();
+    }
+  }
+
+  /// An account an older version backed up, met by this device for the first
+  /// time: its single profile document fills whatever this phone's profile is
+  /// missing.
+  Future<void> _onLegacyProfile(Map<String, Object?> json) async {
+    if (!mounted) {
+      return;
+    }
+    final UserProfileProvider profile = context.read<UserProfileProvider>();
+    await ProfileBackup.applyMissing(
+      profile,
+      json,
+      resolvePhoto: (String basename) async =>
+          (await PhotoPickerService.fileFor(basename)).path,
+    );
   }
 
   /// An invitation link opened the app. On a fresh install it answers the
@@ -227,9 +274,15 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // `detached` arrives too late, and often not at all, to start a network
     // call from. `resumed` covers coming back after long enough away that the
     // session is effectively a new one.
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.resumed) {
-      _sync();
+    if (state == AppLifecycleState.paused) {
+      // Everything waiting goes into Firestore's own queue before the app
+      // leaves, where it survives the process being killed.
+      unawaited(context.read<SyncProvider>().syncNow());
+      _sync(includeDatabase: false);
+    }
+    if (state == AppLifecycleState.resumed) {
+      unawaited(context.read<SyncProvider>().resume());
+      _sync(includeDatabase: false);
     }
     if (state == AppLifecycleState.resumed) {
       unawaited(_checkInvites());
@@ -239,17 +292,16 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     }
   }
 
-  void _sync() {
+  void _sync({bool includeDatabase = true}) {
     if (!mounted) {
       return;
     }
-    unawaited(
-      context.read<SyncProvider>().sync(
-        personRepo: context.read<PersonRepository>(),
-        matchRepo: context.read<MatchRepository>(),
-        profile: context.read<UserProfileProvider>(),
-      ),
-    );
+    // The database itself keeps in step with the account on its own once
+    // started — see `AccountSyncEngine`. This only starts it (and brings
+    // Firebase up, which everything below then finds ready).
+    if (includeDatabase) {
+      unawaited(context.read<SyncProvider>().start());
+    }
     // The community tips ride the same two moments. This is the only place the
     // app pulls them on its own, which is what keeps Firebase off the cold
     // start: `TipsProvider`'s constructor reads a local cache and nothing else,

@@ -18,8 +18,10 @@ import {
   getFirestore,
   FieldValue,
   DocumentSnapshot,
+  Timestamp,
 } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import {
@@ -744,3 +746,61 @@ export const onAccountDeleted = functionsV1
     }
     logger.info('onAccountDeleted', { uid });
   });
+
+/**
+ * The end of an account's 30 days of grace.
+ *
+ * Deleting an account in the app does not delete it: it writes
+ * `users/{uid}.deletion` with a `purgeAfter` date and signs out, and signing
+ * back in before then offers to restore everything. This runs once a day and
+ * finishes the job for every account whose date has passed — the database,
+ * its photos and recordings, what it published to the community, and finally
+ * the Authentication user itself, whose deletion runs [onAccountDeleted] for
+ * everything the personal card left behind.
+ *
+ * Apple sign-in was already revoked when the deletion was requested, while a
+ * fresh authorisation code was in hand; there is no way to do it from here.
+ */
+export const purgeDeletedAccounts = onSchedule(
+  { schedule: '15 3 * * *', timeZone: 'Asia/Jerusalem', timeoutSeconds: 540 },
+  async () => {
+    const due = await db
+      .collection('users')
+      .where('deletion.purgeAfter', '<=', Timestamp.now())
+      .limit(50)
+      .get();
+    let purged = 0;
+    for (const account of due.docs) {
+      const uid = account.id;
+      try {
+        await purgeAccount(uid);
+        purged += 1;
+      } catch (error) {
+        logger.error('purgeDeletedAccounts', { uid, error: String(error) });
+      }
+    }
+    logger.info('purgeDeletedAccounts', { due: due.size, purged });
+  },
+);
+
+async function purgeAccount(uid: string): Promise<void> {
+  const bucket = getStorage().bucket();
+  await bucket.deleteFiles({ prefix: `users/${uid}/` });
+  await bucket.deleteFiles({ prefix: `communityMembers/${uid}/` });
+  await db.collection('communityMembers').doc(uid).delete();
+  await deleteQuery('communityEngagements', 'authorUid', uid);
+  await deleteQuery('tips', 'authorUid', uid);
+  await deleteQuery('communityMazelTov', 'fromUid', uid);
+  await deleteQuery('communityMazelTov', 'toUid', uid);
+  // The whole tree under users/{uid}: every record, tombstone, setting,
+  // the inbox and the deletion marker itself.
+  await db.recursiveDelete(db.collection('users').doc(uid));
+  try {
+    await getAuth().deleteUser(uid);
+  } catch (error) {
+    // Already gone — deleted from the app during the grace period.
+    if ((error as { code?: string }).code !== 'auth/user-not-found') {
+      throw error;
+    }
+  }
+}

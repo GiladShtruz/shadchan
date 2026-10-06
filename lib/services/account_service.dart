@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -127,6 +128,7 @@ abstract final class AccountService {
         null,
       );
       debugPrint('ACCOUNT firebase sign-in failed: $details');
+      _rememberPendingLink(error, 'google.com');
       return AccountSignInResult.failure(
         _firebaseMessage(error.code),
         details: details,
@@ -311,6 +313,7 @@ abstract final class AccountService {
         null,
       );
       debugPrint('ACCOUNT apple sign-in failed: $details');
+      _rememberPendingLink(error, 'apple.com');
       return AccountSignInResult.failure(
         _appleMessage(error.code),
         details: details,
@@ -327,6 +330,23 @@ abstract final class AccountService {
         ),
       );
     }
+  }
+
+  /// The address already has an account with another way in. Rather than
+  /// make a second account (and a second, empty database), the credential is
+  /// kept until the matchmaker signs in to that account — see
+  /// [linkPendingCredential].
+  static void _rememberPendingLink(
+    FirebaseAuthException error,
+    String provider,
+  ) {
+    if (error.code != 'account-exists-with-different-credential' ||
+        error.credential == null) {
+      return;
+    }
+    _pendingLink = error.credential;
+    _pendingLinkEmail = error.email;
+    _pendingLinkProvider = provider;
   }
 
   /// A fresh random string for one Apple authorisation.
@@ -383,15 +403,255 @@ abstract final class AccountService {
         password: password,
       );
       final User? current = FirebaseAuth.instance.currentUser;
+      final User? created;
       if (current != null && current.isAnonymous) {
-        await current.linkWithCredential(credential);
-        return;
+        created = (await current.linkWithCredential(credential)).user;
+      } else {
+        created = (await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        )).user;
       }
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
+      // The address is the account's name, so it has to be shown to belong to
+      // whoever typed it before the account is used.
+      try {
+        await created?.sendEmailVerification();
+      } on FirebaseAuthException catch (error) {
+        debugPrint('ACCOUNT verification mail failed: ${error.code}');
+      }
+    });
+  }
+
+  // --- Verifying the address ------------------------------------------------
+
+  /// Accounts created from this date on must verify their address before the
+  /// app opens. Older ones were never asked and are not locked out now.
+  static final DateTime verificationRequiredFrom = DateTime.utc(2026, 10, 6);
+
+  /// Whether [user] still has to confirm the address it signed up with: an
+  /// address-and-password account, with no Google or Apple beside it (those
+  /// prove the address themselves), created after verification began.
+  static bool mustVerifyEmail(User? user) {
+    if (!couldNeedVerification(user)) {
+      return false;
+    }
+    final DateTime? created = user!.metadata.creationTime;
+    return created == null || !created.isBefore(verificationRequiredFrom);
+  }
+
+  /// An unverified address-and-password account with nothing else to vouch
+  /// for the address — whether or not it is new enough to be held to it.
+  static bool couldNeedVerification(User? user) {
+    if (user == null || user.isAnonymous || user.emailVerified) {
+      return false;
+    }
+    final Set<String> providers = user.providerData
+        .map((UserInfo info) => info.providerId)
+        .toSet();
+    return providers.contains('password') &&
+        !providers.contains('google.com') &&
+        !providers.contains('apple.com');
+  }
+
+  /// Sends the verification mail again.
+  static Future<AccountSignInResult> resendVerification() {
+    return _email(() async {
+      await FirebaseAuth.instance.currentUser?.sendEmailVerification();
+    });
+  }
+
+  /// Asks Firebase again whether the address was verified — the link in the
+  /// mail is opened in a browser, so the app only learns about it by asking.
+  static Future<bool> refreshVerification() async {
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return false;
+    }
+    try {
+      await user.reload();
+      // `reload` updates the user; the token carries `email_verified` for the
+      // security rules, so it is refreshed too.
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
+    } on FirebaseAuthException catch (error) {
+      debugPrint('ACCOUNT reload failed: ${error.code}');
+    }
+    return FirebaseAuth.instance.currentUser?.emailVerified ?? false;
+  }
+
+  // --- Changing the password ------------------------------------------------
+
+  /// Changes the password of an address-and-password account, after proving
+  /// the current one.
+  static Future<AccountSignInResult> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) {
+    return _email(() async {
+      final User? user = FirebaseAuth.instance.currentUser;
+      final String? email = user?.email;
+      if (user == null || email == null) {
+        throw FirebaseAuthException(code: 'user-not-found');
+      }
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(email: email, password: currentPassword),
+      );
+      await user.updatePassword(newPassword);
+    });
+  }
+
+  // --- Linking sign-in methods ----------------------------------------------
+
+  /// A sign-in method that hit an existing account with the same address and
+  /// could not be attached to it on the spot. It is linked the moment the
+  /// matchmaker proves the account is theirs by signing in to it another way —
+  /// never before, because the address alone proves nothing.
+  static AuthCredential? _pendingLink;
+  static String? _pendingLinkEmail;
+  static String? _pendingLinkProvider;
+
+  static String? get pendingLinkEmail => _pendingLinkEmail;
+
+  static String? get pendingLinkProviderName => switch (_pendingLinkProvider) {
+    'apple.com' => 'Apple',
+    'google.com' => 'Google',
+    _ => null,
+  };
+
+  static void clearPendingLink() {
+    _pendingLink = null;
+    _pendingLinkEmail = null;
+    _pendingLinkProvider = null;
+  }
+
+  /// Attaches the waiting method to the account now signed in. Answers a
+  /// sentence to show, or null when there was nothing waiting.
+  static Future<String?> linkPendingCredential() async {
+    final AuthCredential? credential = _pendingLink;
+    final String? name = pendingLinkProviderName;
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (credential == null || user == null || user.isAnonymous) {
+      return null;
+    }
+    clearPendingLink();
+    try {
+      await user.linkWithCredential(credential);
+      return 'מעכשיו אפשר להיכנס לחשבון הזה גם עם $name.';
+    } on FirebaseAuthException catch (error) {
+      debugPrint('ACCOUNT pending link failed: ${error.code}');
+      return null;
+    }
+  }
+
+  /// Adds Google to the signed-in account.
+  static Future<AccountSignInResult> linkGoogle() async {
+    return _link(() async {
+      await _ensureGoogleInitialized();
+      final GoogleSignInAccount account = await GoogleSignIn.instance
+          .authenticate();
+      final String? idToken = account.authentication.idToken;
+      if (idToken == null) {
+        throw FirebaseAuthException(code: 'invalid-credential');
+      }
+      return GoogleAuthProvider.credential(idToken: idToken);
+    });
+  }
+
+  /// Adds Apple to the signed-in account — the way to bring a hidden-address
+  /// Apple account and an existing account together, by choice.
+  static Future<AccountSignInResult> linkApple() async {
+    return _link(() async {
+      final String rawNonce = _newNonce();
+      final AuthorizationCredentialAppleID apple =
+          await SignInWithApple.getAppleIDCredential(
+            scopes: <AppleIDAuthorizationScopes>[
+              AppleIDAuthorizationScopes.email,
+              AppleIDAuthorizationScopes.fullName,
+            ],
+            nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
+          );
+      final String? idToken = apple.identityToken;
+      if (idToken == null) {
+        throw FirebaseAuthException(code: 'invalid-credential');
+      }
+      return createAppleFirebaseCredential(
+        idToken: idToken,
+        rawNonce: rawNonce,
+        givenName: apple.givenName,
+        familyName: apple.familyName,
       );
     });
+  }
+
+  /// Adds an address-and-password way in, using the account's own address.
+  static Future<AccountSignInResult> linkPassword(String password) async {
+    final String? email = FirebaseAuth.instance.currentUser?.email;
+    if (email == null || email.isEmpty) {
+      return const AccountSignInResult.failure(
+        'לחשבון הזה אין כתובת מייל שאפשר להוסיף לה סיסמה.',
+      );
+    }
+    return _link(
+      () async =>
+          EmailAuthProvider.credential(email: email, password: password),
+    );
+  }
+
+  /// Removes one way in. Firebase refuses to remove the last one.
+  static Future<AccountSignInResult> unlink(String providerId) async {
+    return _email(() async {
+      await FirebaseAuth.instance.currentUser?.unlink(providerId);
+    });
+  }
+
+  static Future<AccountSignInResult> _link(
+    Future<AuthCredential> Function() credential,
+  ) async {
+    await FirebaseBootstrap.ensureReady();
+    final User? user = FirebaseBootstrap.isReady
+        ? FirebaseAuth.instance.currentUser
+        : null;
+    if (user == null || user.isAnonymous) {
+      return const AccountSignInResult.failure('צריך להיות מחוברים לחשבון.');
+    }
+    try {
+      await user.linkWithCredential(await credential());
+      await user.reload();
+      return const AccountSignInResult.success();
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.canceled ||
+          error.code == GoogleSignInExceptionCode.interrupted) {
+        return const AccountSignInResult.canceled();
+      }
+      return AccountSignInResult.failure(_googleMessage(error.code));
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code == AuthorizationErrorCode.canceled) {
+        return const AccountSignInResult.canceled();
+      }
+      return AccountSignInResult.failure(
+        _appleAuthorizationMessage(error.code),
+      );
+    } on FirebaseAuthException catch (error) {
+      debugPrint('ACCOUNT link failed: ${error.code}');
+      return AccountSignInResult.failure(switch (error.code) {
+        // The other method already has an account of its own — a separate
+        // database. Two accounts are never merged automatically.
+        'credential-already-in-use' || 'email-already-in-use' =>
+          'דרך ההתחברות הזו כבר שייכת לחשבון שדכן אחר, עם מאגר משלו. '
+              'אי אפשר לאחד שני חשבונות.',
+        'provider-already-linked' => 'דרך ההתחברות הזו כבר מקושרת לחשבון.',
+        'weak-password' =>
+          'הסיסמה קצרה מדי. צריך לפחות $minPasswordLength תווים.',
+        'requires-recent-login' =>
+          'צריך להתחבר מחדש לפני הפעולה הזו. כדאי להתנתק ולהיכנס שוב.',
+        'network-request-failed' => 'אין חיבור לאינטרנט. יש להתחבר ולנסות שוב.',
+        _ => 'לא הצלחנו לקשר את דרך ההתחברות. כדאי לנסות שוב.',
+      });
+    } catch (error) {
+      debugPrint('ACCOUNT link failed: $error');
+      return const AccountSignInResult.failure(
+        'לא הצלחנו לקשר את דרך ההתחברות. כדאי לנסות שוב.',
+      );
+    }
   }
 
   /// Sends the "forgotten password" mail. Answers `success` when it went out.
@@ -475,6 +735,59 @@ abstract final class AccountService {
 
   // --- Account deletion ---------------------------------------------------
 
+  /// How long a deleted account can still be restored. After it the
+  /// `purgeDeletedAccounts` Cloud Function erases everything for good.
+  static const Duration deletionGrace = Duration(days: 30);
+
+  static DocumentReference<Map<String, dynamic>> _deletionMarker(String uid) =>
+      FirebaseFirestore.instance.collection('users').doc(uid);
+
+  /// When the signed-in account is due to be erased, or null when it is not
+  /// waiting for deletion. Read from the server where possible: a phone that
+  /// has been away must not miss the request another phone made.
+  static Future<DateTime?> pendingDeletion() async {
+    final User? user = FirebaseBootstrap.isReady
+        ? FirebaseAuth.instance.currentUser
+        : null;
+    if (user == null || user.isAnonymous) {
+      return null;
+    }
+    DocumentSnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await _deletionMarker(
+        user.uid,
+      ).get(const GetOptions(source: Source.server));
+    } on FirebaseException {
+      snapshot = await _deletionMarker(user.uid).get();
+    }
+    final Object? deletion = snapshot.data()?['deletion'];
+    if (deletion is! Map) {
+      return null;
+    }
+    final Object? purgeAfter = deletion['purgeAfter'];
+    return purgeAfter is Timestamp ? purgeAfter.toDate() : null;
+  }
+
+  /// Takes the account back out of deletion — everything in it is still
+  /// there, so nothing else has to happen.
+  static Future<bool> cancelDeletion() async {
+    final User? user = FirebaseBootstrap.isReady
+        ? FirebaseAuth.instance.currentUser
+        : null;
+    if (user == null || user.isAnonymous) {
+      return false;
+    }
+    try {
+      await _deletionMarker(
+        user.uid,
+      ).update(<String, Object?>{'deletion': FieldValue.delete()});
+      return true;
+    } on FirebaseException catch (error) {
+      debugPrint('ACCOUNT cancel deletion failed: ${error.code}');
+      return false;
+    }
+  }
+
   /// Permanently deletes the signed-in account and all data tied to it.
   ///
   /// The user is reauthenticated *before* [deleteRemoteData] runs. Firebase
@@ -486,6 +799,7 @@ abstract final class AccountService {
   static Future<AccountDeletionResult> deleteAccount({
     required Future<bool> Function() deleteRemoteData,
     String? password,
+    bool scheduleOnly = false,
   }) async {
     await FirebaseBootstrap.ensureReady();
     if (!FirebaseBootstrap.isReady) {
@@ -545,6 +859,25 @@ abstract final class AccountService {
           AccountDeletionOutcome.authenticationFailed,
           'לא הצלחנו לאמת מחדש את החשבון הזה.',
         );
+      }
+
+      if (scheduleOnly) {
+        // Apple asks for the app's authorisation to be revoked when an account
+        // is deleted, and the code to do it with exists only now, from the
+        // sheet just shown. Signing in with Apple again during the grace
+        // period simply authorises the app afresh.
+        if (appleAuthorizationCode != null) {
+          await FirebaseAuth.instance.revokeTokenWithAuthorizationCode(
+            appleAuthorizationCode,
+          );
+        }
+        await _deletionMarker(user.uid).set(<String, Object?>{
+          'deletion': <String, Object?>{
+            'requestedAt': FieldValue.serverTimestamp(),
+            'purgeAfter': Timestamp.fromDate(DateTime.now().add(deletionGrace)),
+          },
+        }, SetOptions(merge: true));
+        return const AccountDeletionResult.success();
       }
 
       if (!await deleteRemoteData()) {
@@ -728,16 +1061,17 @@ abstract final class AccountService {
     return switch (code) {
       'invalid-email' => 'כתובת המייל אינה תקינה.',
       'email-already-in-use' =>
-        'הכתובת הזו כבר רשומה. אפשר להתחבר איתה עם הסיסמה שנבחרה.',
+        'הכתובת הזו כבר רשומה. אפשר להתחבר איתה — עם הסיסמה, או עם Google '
+            'או Apple אם נרשמת כך — ולהוסיף סיסמה מתוך "החשבון שלי".',
       'weak-password' =>
         'הסיסמה קצרה מדי. צריך לפחות $minPasswordLength תווים.',
       // Firebase stopped distinguishing "no such user" from "wrong password" on
       // purpose — telling somebody an address is not registered is telling
       // whoever is holding the phone which addresses are. One sentence covers
       // all three codes, as it should.
-      'user-not-found' ||
-      'wrong-password' ||
-      'invalid-credential' => 'המייל או הסיסמה אינם נכונים.',
+      'user-not-found' || 'wrong-password' || 'invalid-credential' =>
+        'המייל או הסיסמה אינם נכונים. אם נרשמת עם Google או Apple, כדאי '
+            'להיכנס בדרך הזו.',
       'user-disabled' => 'החשבון הזה חסום.',
       'too-many-requests' =>
         'היו יותר מדי ניסיונות. כדאי לנסות שוב בעוד כמה דקות.',
@@ -751,7 +1085,8 @@ abstract final class AccountService {
   static String _appleMessage(String code) {
     return switch (code) {
       'account-exists-with-different-credential' =>
-        'לכתובת הזו כבר יש חשבון עם דרך התחברות אחרת.',
+        'לכתובת הזו כבר יש חשבון. כדאי להיכנס בדרך שבה נרשמת — Google או '
+            'מייל וסיסמה — ונחבר אליו גם את Apple.',
       'network-request-failed' => 'אין חיבור לאינטרנט. יש להתחבר ולנסות שוב.',
       'operation-not-allowed' => 'ההתחברות עם Apple עדיין לא הופעלה בפרויקט.',
       'apple-updated-credential-missing' =>
@@ -764,7 +1099,8 @@ abstract final class AccountService {
   static String _firebaseMessage(String code) {
     return switch (code) {
       'account-exists-with-different-credential' =>
-        'לכתובת הזו כבר יש חשבון עם דרך התחברות אחרת.',
+        'לכתובת הזו כבר יש חשבון. כדאי להיכנס בדרך שבה נרשמת — Apple או '
+            'מייל וסיסמה — ונחבר אליו גם את Google.',
       'network-request-failed' => 'אין חיבור לאינטרנט. יש להתחבר ולנסות שוב.',
       'operation-not-allowed' => 'ההתחברות עם Google עדיין לא הופעלה בפרויקט.',
       'user-disabled' => 'החשבון הזה חסום.',

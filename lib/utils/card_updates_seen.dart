@@ -19,6 +19,9 @@ abstract final class CardUpdatesSeen {
 
   static final Map<String, int> _pending = <String, int>{};
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending.clear();
+
   static DateTime? seenAt(String personId) {
     int? millis = _pending[personId];
     if (millis == null && Hive.isBoxOpen('settings')) {

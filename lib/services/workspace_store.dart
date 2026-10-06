@@ -54,6 +54,9 @@ abstract final class WorkspaceStore {
 
   static final Map<String, Object?> _pending = <String, Object?>{};
 
+  /// Drops values read ahead of the box, after another phone changed it.
+  static void forgetCache() => _pending.clear();
+
   /// Bumped on every change, so the shell can redraw its bottom bar the moment
   /// the matchmaker area is switched on or off.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);

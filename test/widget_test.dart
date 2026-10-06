@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -39,7 +40,6 @@ import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/privacy_overview_screen.dart';
-import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
@@ -90,6 +90,14 @@ void main() {
     await Hive.openBox<MatchIdea>('matches');
     await Hive.openBox<MatchNote>('match_notes');
     final Box<dynamic> settings = await Hive.openBox<dynamic>('settings');
+    // This device has read its account once, as every installed phone has:
+    // otherwise a not-yet-onboarded test would open on "טוענים את המאגר שלך".
+    await (await Hive.openBox<dynamic>(AccountSyncLedger.boxName)).putAll(
+      <String, Object?>{
+        'meta.initialPullDone': true,
+        'meta.version': AccountSyncLedger.version,
+      },
+    );
 
     // Mark onboarding as completed so the app lands on the main shell instead
     // of the welcome screen.
@@ -168,14 +176,10 @@ void main() {
     expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
     expect(find.text('רווק'), findsOneWidget);
     expect(find.text('נשוי'), findsOneWidget);
-    // Divorced and widowed users count as single here; the detail is on the
-    // card itself.
-    expect(
-      find.text(
-        'גרוש או אלמן? סמן רווק — כך תופיע בפרופיל אפשרות ליצור כרטיס אישי.',
-      ),
-      findsOneWidget,
-    );
+    // The old hint about divorced and widowed users is gone, and the offer of
+    // a personal card waits until "רווק" is chosen.
+    expect(find.textContaining('גרוש או אלמן'), findsNothing);
+    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsNothing);
     // The button is never dead: it is pressable with the answer missing, and
     // pressing it says what is missing rather than doing nothing.
     expect(
@@ -203,6 +207,13 @@ void main() {
     await tester.runAsync(() => tester.tap(find.text('רווק')));
     await tester.pump();
     expect(find.text('צריך לבחור מצב אישי'), findsNothing);
+    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('נשוי'));
+    await tester.pump();
+    await tester.runAsync(() => tester.tap(find.text('נשוי')));
+    await tester.pump();
+    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsNothing);
   });
 
   testWidgets('Onboarding marks a missing name in red instead of blocking', (
@@ -260,39 +271,19 @@ void main() {
   });
 
   testWidgets(
-    'Erasing the cloud backup is offered only to an account that has one',
+    'The privacy screen offers the community erasure and no backup erasure',
     (WidgetTester tester) async {
       await tester.pumpWidget(
         _buildProfileTestApp(home: const PrivacyOverviewScreen()),
       );
       await tester.pumpAndSettle();
-
-      // To the bottom of the list first. The tiles sit under a screenful of
-      // explanation, and asserting from the top would have every expectation
-      // below pass for the wrong reason — the widget is absent from the
-      // viewport rather than absent from the screen.
       await tester.scrollUntilVisible(find.text('מדיניות הפרטיות המלאה'), 300);
       await tester.pumpAndSettle();
 
-      // Signed out — and under `flutter test` nothing ever signs in — there is
-      // no backup on any server to remove. Offering the button anyway would
-      // imply there was something up there, which is the one thing a privacy
-      // screen must never do.
+      // The database lives in the account now; erasing it is deleting the
+      // account, which has its own page. There is no "backup" to delete.
       expect(find.text('מחיקת הגיבוי בענן'), findsNothing);
-
-      // It is on the screen all the same, drawing nothing. Asserted separately
-      // because the expectation above passes just as happily if the tile is
-      // deleted from the screen altogether — and the signed-in branch cannot
-      // be reached from here, since Firebase never comes up under
-      // `flutter test`. This is what stands in for it.
-      expect(find.byType(DeleteCloudBackupTile), findsOneWidget);
-
-      // The community row is a different erasure with a different subject, and
-      // it is not conditional on an account. The two must not be confused for
-      // each other: this one deletes counters, the other deletes the friends.
       expect(find.text('מחיקת הנתונים שלי מהקהילה'), findsOneWidget);
-
-      // And the screen no longer tells anybody to write in and ask.
       expect(find.textContaining('אפשר לבקש למחוק'), findsNothing);
     },
   );

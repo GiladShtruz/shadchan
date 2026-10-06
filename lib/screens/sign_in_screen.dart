@@ -46,8 +46,8 @@ class SignInScreen extends StatefulWidget {
   /// They arrive here with a profile and a database but no account, so they
   /// are asked to *complete* a registration rather than to start one, and told
   /// the thing they will worry about: nothing is lost. What makes that true is
-  /// [_SignInScreenState._adoptLocalData] — the local records are backed up
-  /// under the new account and published to the community figures.
+  /// [_SignInScreenState._connectDatabase] — the local records move into the
+  /// account and are published to the community figures.
   static const String returningHeadline = 'משלימים הרשמה';
 
   static const String returningBody =
@@ -122,10 +122,20 @@ class _SignInScreenState extends State<SignInScreen> {
         return;
       case AccountSignInOutcome.failure:
         AppNotice.showOn(notices, result.message ?? 'לא הצלחנו להתחבר.');
+        // A method that met an existing account is waiting to be linked to
+        // it; the banner above the buttons says how.
+        setState(() {});
         return;
       case AccountSignInOutcome.success:
         SignInPromptStore.markSignedIn();
-        unawaited(_adoptLocalData());
+        final String? linked = await AccountService.linkPendingCredential();
+        if (linked != null) {
+          AppNotice.showOn(notices, linked);
+        }
+        if (!mounted) {
+          return;
+        }
+        unawaited(_connectDatabase());
         _leave();
     }
   }
@@ -214,43 +224,24 @@ class _SignInScreenState extends State<SignInScreen> {
     context.go('/home');
   }
 
-  /// Brings this device and the account into line, in the one order that can
-  /// lose nothing.
+  /// Opens the account's database on this device.
   ///
-  /// **Restore first, then sync.** `CloudSyncService.restore` only ever *adds*
-  /// — an id that already exists locally is left alone, and the profile fills
-  /// empty fields only — so it can never overwrite what is on this phone.
-  /// `syncNow` then pushes the union upward against an empty fingerprint
-  /// ledger, and an empty ledger means an empty `removed` list, so nothing that
-  /// was already in the account is deleted either. A matchmaker who had a
-  /// database here and a database there ends up with both.
+  /// The sync engine reads the whole account the first time a device meets it
+  /// and merges it with whatever this phone already holds — which is also how
+  /// a database that lived only on this phone moves into the account. Nothing
+  /// is restored by hand any more and nothing can be overwritten: see
+  /// `AccountSyncEngine`.
   ///
-  /// **And then the community, in the same breath.** Publishing used to wait
-  /// for the next app open, which meant a matchmaker who had been using the app
-  /// for months and signed in this morning appeared in the community with no
-  /// history and nowhere on the board — the one moment they are most likely to
-  /// go and look. The counts are recomputed from the local ledgers, so this
-  /// publish carries everything they did before they had an account, and it is
-  /// deliberately after the restore: a database that has just gained records
-  /// from the account should be counted with them.
-  ///
-  /// Unawaited on purpose: this is a backup, and the matchmaker should be on
-  /// the home screen while it happens rather than watching a spinner. Every
-  /// provider is read *before* the first `await` for the same reason — this
-  /// outlives the screen that started it.
-  Future<void> _adoptLocalData() async {
+  /// The community figures follow in the same breath, so a matchmaker who
+  /// used the app for months before signing in appears with their history.
+  Future<void> _connectDatabase() async {
     final SyncProvider sync = context.read<SyncProvider>();
     final PersonRepository people = context.read<PersonRepository>();
     final MatchRepository matches = context.read<MatchRepository>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
     final CommunityProvider community = context.read<CommunityProvider>();
 
-    await sync.restore(
-      personRepo: people,
-      matchRepo: matches,
-      profile: profile,
-    );
-    await sync.sync(personRepo: people, matchRepo: matches, profile: profile);
+    await sync.start();
     await community.refresh(people: people, matches: matches, profile: profile);
   }
 
@@ -301,6 +292,13 @@ class _SignInScreenState extends State<SignInScreen> {
                     ),
                   ),
                   const SizedBox(height: 26),
+                  if (AccountService.pendingLinkEmail != null) ...<Widget>[
+                    _PendingLinkNote(
+                      email: AccountService.pendingLinkEmail!,
+                      provider: AccountService.pendingLinkProviderName ?? '',
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   // Apple only where Apple's own flow exists, and first when it
                   // does: an iPhone already has an Apple account signed in, so
                   // it is the one-tap answer there, and Apple's guidelines put
@@ -420,6 +418,36 @@ class _SignInScreenState extends State<SignInScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Said when Google or Apple met an address that already has an account: the
+/// way in is the method that account was made with, after which the new one
+/// is linked to it — the same account, the same database.
+class _PendingLinkNote extends StatelessWidget {
+  const _PendingLinkNote({required this.email, required this.provider});
+
+  final String email;
+  final String provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Text(
+          'ל־$email כבר יש חשבון. כדאי להיכנס בדרך שבה נרשמת, ומיד אחר כך '
+          'נחבר אליו גם את $provider — אותו חשבון ואותו מאגר.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(height: 1.45),
         ),
       ),
     );

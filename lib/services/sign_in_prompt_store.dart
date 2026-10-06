@@ -64,7 +64,11 @@ abstract final class SignInPromptStore {
 
   /// Records that an account is connected on this device.
   static void markSignedIn() {
+    final bool had = hasAccount;
     _write(_hasAccountKey, true);
+    if (!had) {
+      gate.value++;
+    }
     // Kept in step for the sake of anything still reading the old flag, and so
     // that a downgrade to a build with the optional gate does not re-ask.
     _write(_answeredKey, true);
@@ -72,5 +76,43 @@ abstract final class SignInPromptStore {
 
   /// Records that the account was disconnected, which sends the next launch —
   /// and the current one — back to [SignInScreen].
-  static void markSignedOut() => _write(_hasAccountKey, false);
+  static void markSignedOut() {
+    final bool had = hasAccount;
+    _write(_hasAccountKey, false);
+    _write(_verifyKey, false);
+    _write(_deletionKey, false);
+    if (had) {
+      gate.value++;
+    }
+  }
+
+  static const String _verifyKey = 'signIn.mustVerifyEmail';
+  static const String _deletionKey = 'signIn.deletionPending';
+
+  /// Ticks whenever one of the gates changes, so the router asks its question
+  /// again — see `AppRouter`'s `refreshListenable`.
+  static final ValueNotifier<int> gate = ValueNotifier<int>(0);
+
+  static bool _flag(String key) => _read(key) == true || _read(key) == 'true';
+
+  static void _setFlag(String key, bool value) {
+    if (_flag(key) == value) {
+      return;
+    }
+    _write(key, value);
+    gate.value++;
+  }
+
+  /// The signed-in account was made with an address and a password and the
+  /// address has not been confirmed yet. Remembered on the device because the
+  /// router has to answer on the first frame, before Firebase is up.
+  static bool get mustVerifyEmail => hasAccount && _flag(_verifyKey);
+
+  static void setMustVerifyEmail(bool value) => _setFlag(_verifyKey, value);
+
+  /// The signed-in account asked to be deleted and is inside its 30 days of
+  /// grace: nothing opens but the screen that offers to restore it.
+  static bool get deletionPending => hasAccount && _flag(_deletionKey);
+
+  static void setDeletionPending(bool value) => _setFlag(_deletionKey, value);
 }

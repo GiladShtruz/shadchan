@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/dialogs/account_dialogs.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
@@ -14,9 +15,11 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
+import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
 /// Shown on first launch so the matchmaker can introduce themselves. Name,
@@ -231,15 +234,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     height: 1.35,
                   ),
                 ),
-              Text(
-                '{גרוש או אלמן|גרושה או אלמנה}? {סמן|סמני} '
-                        '{רווק|רווקה} — כך תופיע בפרופיל אפשרות ליצור כרטיס אישי.'
-                    .forGender(_selectedGender),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.35,
+              // A single matchmaker can keep their own card too. Offered here as
+              // one small line, never asked: a tap finishes sign-up and opens
+              // the card in the personal area.
+              if (_selectedIsSingle == true)
+                _AddPersonalCardLine(
+                  onTap: _saving ? null : () => _continue(openCard: true),
                 ),
-              ),
               // Nothing about the community is asked for here. The line about
               // yourself and the public prompts are filled in later from the
               // profile — sign-up is only who you are.
@@ -288,7 +289,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return null;
   }
 
-  Future<void> _continue() async {
+  Future<void> _continue({bool openCard = false}) async {
     if (!_canContinue) {
       final GlobalKey? missing = _firstMissingKey;
       setState(() => _showErrors = true);
@@ -325,18 +326,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       // The number is how friends who keep a personal card find this
       // matchmaker among their contacts. Asked once, and skippable.
       if (profile.myPhone == null) {
-        final String? phone = await MyPhoneDialog.show(
+        final MyPhoneOutcome outcome = await MyPhoneDialog.showForSignUp(
           context,
-          required: true,
           purpose: MyPhonePurpose.matchmaker,
+          belongsToAnotherAccount: _belongsToAnotherAccount,
         );
-        if (phone != null) {
-          await profile.setMyPhone(phone);
-        }
         CommunityPromptsStore.markMatchmakerPhoneAsked();
         if (!mounted) {
           return;
         }
+        if (outcome.useExistingAccount) {
+          await _switchToExistingAccount();
+          return;
+        }
+        if (outcome.phone != null) {
+          await profile.setMyPhone(outcome.phone);
+        }
+        if (!mounted) {
+          return;
+        }
+      }
+      if (openCard) {
+        // The personal area with its card editor on top: back from the
+        // editor lands in the area the card lives in.
+        context.go('/me/card');
+        return;
       }
       // Straight into the real home screen. Landing on the add-contacts flow
       // instead made the first thing the app ever showed a task standing
@@ -374,14 +388,56 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     // The number is what lets friends who match find this card. Asked here,
     // once, and skippable — the personal area asks again while it is missing.
     if (profile.myPhone == null) {
-      final String? phone = await MyPhoneDialog.show(context, required: true);
-      if (phone != null) {
-        await profile.setMyPhone(phone);
+      final MyPhoneOutcome outcome = await MyPhoneDialog.showForSignUp(
+        context,
+        belongsToAnotherAccount: _belongsToAnotherAccount,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (outcome.useExistingAccount) {
+        await _switchToExistingAccount();
+        return;
+      }
+      if (outcome.phone != null) {
+        await profile.setMyPhone(outcome.phone);
       }
     }
     if (mounted) {
       context.go('/me');
     }
+  }
+
+  /// Whether [phone] is already published under a different account.
+  ///
+  /// Read from `phoneDirectory`, the one place a number is tied to an
+  /// account. No answer (offline, no Firebase) counts as no: the step must
+  /// never stop somebody signing up.
+  static Future<bool> _belongsToAnotherAccount(String phone) async {
+    final String? hash = PhoneIdentity.hash(phone);
+    if (hash == null) {
+      return false;
+    }
+    final Map<String, dynamic>? entry = await PersonalCardService.lookup(
+      hash,
+    ).timeout(const Duration(seconds: 8), onTimeout: () => null);
+    final Object? owner = entry?['uid'];
+    if (owner is! String || owner.isEmpty) {
+      return false;
+    }
+    return owner != await PersonalCardService.durableUid();
+  }
+
+  /// "התחברות לחשבון הקיים": this new account is left before anything is
+  /// written into it, and the sign-in screen is where the other one is
+  /// entered — in whichever way it was made.
+  Future<void> _switchToExistingAccount() async {
+    final OverlayState? notices = AppNotice.capture(context);
+    await AccountDialogs.signOut(context);
+    AppNotice.showOn(
+      notices,
+      'אפשר להתחבר עכשיו לחשבון הקיים, באותה דרך שבה נרשמת אליו.',
+    );
   }
 
   Future<void> _pickPhoto() async {
@@ -445,6 +501,36 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   void _showSnackBar(String message) {
     AppNotice.show(context, message);
+  }
+}
+
+/// "הוספת כרטיס אישי לאזור האישי" — the small optional offer under the
+/// personal status, for a single matchmaker.
+class _AddPersonalCardLine extends StatelessWidget {
+  const _AddPersonalCardLine({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color ink = theme.colorScheme.primary;
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton.icon(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: ink,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          visualDensity: VisualDensity.compact,
+          textStyle: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        icon: const Icon(Icons.badge_outlined, size: 18),
+        label: const Text('הוספת כרטיס אישי לאזור האישי'),
+      ),
+    );
   }
 }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -10,7 +12,7 @@ import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/services/deleted_matches_store.dart';
-import 'package:shadchan/services/cloud_sync_service.dart';
+import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/account_remote_data_service.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
@@ -28,35 +30,23 @@ import 'package:shadchan/widgets/notification_center.dart';
 
 /// Leaving one account and handing the phone to the next.
 ///
-/// **Signing out used to cost nothing and that was the bug.** The database
-/// lived in Hive and stayed there: signing out of Google disconnected a backup
-/// and left every person, proposal, note and photograph exactly where they
-/// were, so signing into a second account showed the second matchmaker the
-/// first one's work — and then, on the next sync, uploaded it into their
-/// account. With an account behind every launch, records belong to somebody,
-/// and "somebody" has to be able to change.
+/// **The database belongs to the account, not to the phone**, so signing out
+/// loses nothing: the account holds every record, and signing in again — here
+/// or anywhere — brings all of it back. That is also why signing out no longer
+/// waits for a backup or refuses to happen without one: there is no backup,
+/// only the account, and whatever was changed offline a moment ago is already
+/// in Firestore's own on-disk queue for this account, sent the next time it
+/// signs in on this phone.
 ///
-/// So this is the whole of a sign-out, in the one order that cannot lose
-/// anything:
+/// The order is the one thing that matters:
 ///
-/// 1. **Push what is here upward, and stop if that fails.** This is the last
-///    moment the outgoing account's records exist on this device. A wipe that
-///    ran after a failed upload would be a data loss with a confirmation dialog
-///    in front of it, so a failed sync abandons the whole operation and says so
-///    — see [AccountSwitchResult.syncFailed].
-/// 2. **Sign out.** `AccountService.signOut` drops back to a fresh anonymous
-///    session, which keeps App Check and the AI channel working for the sign-in
-///    screen the matchmaker is about to land on.
-/// 3. **Forget the ledger**, which describes what is in *that* account's cloud
-///    tree and is wrong for any other.
-/// 4. **Erase the local records** — people, proposals, notes, events, the
-///    matchmaker's own profile, the board, the activity strip and everything
-///    the community store remembers about them.
-/// 5. **Clear the gate**, so the app is back at [SignInScreen] on this launch
-///    and the next.
-///
-/// Nothing here touches the cloud tree. The outgoing account's backup is
-/// complete and untouched, and signing back into it restores everything.
+/// 1. **Hand what is waiting to Firestore**, briefly and best-effort.
+/// 2. **Stop the sync, and forget its ledger.** Before anything is cleared —
+///    a running sync would read the emptied boxes as the matchmaker deleting
+///    their whole database, and pass that on to the account.
+/// 3. **Sign out** (back to an anonymous session for App Check and the AI).
+/// 4. **Clear this device**, so the next person to sign in sees their own
+///    database and nobody else's.
 abstract final class AccountSwitch {
   static Future<AccountSwitchResult> signOutAndClear({
     required AccountProvider account,
@@ -69,16 +59,8 @@ abstract final class AccountSwitch {
     InboxProvider? inbox,
     required CommunityProvider community,
   }) async {
-    // Step 1. The one step that is allowed to stop the rest.
-    final bool backedUp = await _finalBackup(
-      sync: sync,
-      people: people,
-      matches: matches,
-      profile: profile,
-    );
-    if (!backedUp) {
-      return AccountSwitchResult.syncFailed;
-    }
+    await _handOver(sync);
+    await sync.forget();
 
     // While the account is still signed in, so its push list can be edited:
     // the next person on this phone must not receive this one's news.
@@ -86,8 +68,11 @@ abstract final class AccountSwitch {
     await cardAccess?.stop();
     await inbox?.stop();
     await account.signOut();
+    // Once more, now that nobody is signed in: anything that started the sync
+    // again in the moments above (the app coming back to the foreground) is
+    // stopped before a single record is cleared.
+    await sync.stop();
     await _clearLocalData(
-      sync: sync,
       people: people,
       matches: matches,
       profile: profile,
@@ -95,6 +80,82 @@ abstract final class AccountSwitch {
       community: community,
     );
     return AccountSwitchResult.done;
+  }
+
+  /// Puts the account into its 30 days of grace and leaves it.
+  ///
+  /// Nothing is erased yet: the account is reauthenticated, marked for
+  /// deletion and signed out, and what it shows the community is taken down
+  /// so it disappears at once. Signing back in within 30 days offers to
+  /// restore everything; after that `purgeDeletedAccounts` erases it for good.
+  static Future<AccountDeletionResult> requestDeletionAndLeave({
+    required AccountProvider account,
+    required SyncProvider sync,
+    required PersonRepository people,
+    required MatchRepository matches,
+    required UserProfileProvider profile,
+    PersonalCardProvider? personalCard,
+    CardAccessProvider? cardAccess,
+    InboxProvider? inbox,
+    required CommunityProvider community,
+    String? password,
+  }) async {
+    await _handOver(sync);
+    final AccountDeletionResult result = await account.deleteAccount(
+      password: password,
+      deleteRemoteData: () async => true,
+      scheduleOnly: true,
+    );
+    if (result.outcome != AccountDeletionOutcome.success) {
+      return result;
+    }
+
+    // Taken down now, rebuilt from the database if the account is restored:
+    // the community row is republished on the next app open, and a deleted
+    // personal card is restored from the personal area like any other.
+    try {
+      await CommunityService.deleteMyData();
+    } on Object catch (error) {
+      debugPrint('ACCOUNT community takedown failed: $error');
+    }
+    if (personalCard != null && personalCard.hasCard) {
+      try {
+        if (await PersonalCardSync.deleteNow()) {
+          await personalCard.markDeleted();
+        }
+      } on Object catch (error) {
+        debugPrint('ACCOUNT card takedown failed: $error');
+      }
+    }
+    await _handOver(sync);
+
+    await sync.forget();
+    await PushService.stop();
+    await cardAccess?.stop();
+    await inbox?.stop();
+    await account.signOut();
+    // Once more, now that nobody is signed in: anything that started the sync
+    // again in the moments above (the app coming back to the foreground) is
+    // stopped before a single record is cleared.
+    await sync.stop();
+    await _clearLocalData(
+      people: people,
+      matches: matches,
+      profile: profile,
+      personalCard: personalCard,
+      community: community,
+    );
+    return result;
+  }
+
+  /// Whatever is waiting goes into Firestore's queue — a moment, not a wait
+  /// for the server. Never a reason not to continue.
+  static Future<void> _handOver(SyncProvider sync) async {
+    try {
+      await sync.syncNow().timeout(const Duration(seconds: 4));
+    } on Object catch (error) {
+      debugPrint('ACCOUNT hand-over before leaving: $error');
+    }
   }
 
   /// Permanently removes the account, its server data and this device's copy.
@@ -112,16 +173,18 @@ abstract final class AccountSwitch {
     required CommunityProvider community,
     String? password,
   }) async {
+    await sync.stop();
     final AccountDeletionResult result = await account.deleteAccount(
       password: password,
       deleteRemoteData: AccountRemoteDataService.deleteAll,
     );
     if (result.outcome != AccountDeletionOutcome.success) {
+      unawaited(sync.start());
       return result;
     }
 
+    await sync.forget();
     await _clearLocalData(
-      sync: sync,
       people: people,
       matches: matches,
       profile: profile,
@@ -132,14 +195,12 @@ abstract final class AccountSwitch {
   }
 
   static Future<void> _clearLocalData({
-    required SyncProvider sync,
     required PersonRepository people,
     required MatchRepository matches,
     required UserProfileProvider profile,
     PersonalCardProvider? personalCard,
     required CommunityProvider community,
   }) async {
-    await sync.forget();
     await people.clearAll();
     await matches.clearAll();
     await profile.clear();
@@ -159,40 +220,6 @@ abstract final class AccountSwitch {
     community.reset();
     SignInPromptStore.markSignedOut();
   }
-
-  /// True when the outgoing account's backup is up to date.
-  ///
-  /// A sync that throws is treated exactly like a sync that reports failure:
-  /// both mean the records on this phone may be the only copy, which is the one
-  /// state in which nothing may be erased.
-  static Future<bool> _finalBackup({
-    required SyncProvider sync,
-    required PersonRepository people,
-    required MatchRepository matches,
-    required UserProfileProvider profile,
-  }) async {
-    try {
-      final CloudSyncResult result = await sync.sync(
-        personRepo: people,
-        matchRepo: matches,
-        profile: profile,
-      );
-      // `skipped` is deliberately not good enough. It means the sync did not
-      // run at all — no account, no Firebase, no network — and the records on
-      // this phone may be the only copy there is.
-      return result == CloudSyncResult.success ||
-          result == CloudSyncResult.upToDate;
-    } on Object catch (error, stackTrace) {
-      debugPrint('ACCOUNT final backup failed: $error\n$stackTrace');
-      return false;
-    }
-  }
 }
 
-enum AccountSwitchResult {
-  done,
-
-  /// The last backup did not go through, so nothing was signed out and nothing
-  /// was erased. The matchmaker is told to try again with a connection.
-  syncFailed,
-}
+enum AccountSwitchResult { done }

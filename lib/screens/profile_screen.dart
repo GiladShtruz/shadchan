@@ -3,22 +3,18 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/dialogs/account_dialogs.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/about_me_sheet.dart';
 import 'package:shadchan/dialogs/matchmaker_shares_sheet.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/providers/account_provider.dart';
-import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
-import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
-import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/services/account_service.dart';
-import 'package:shadchan/services/account_switch.dart';
 import 'package:shadchan/screens/intro_screens.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
@@ -26,7 +22,6 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
-import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
 
@@ -90,7 +85,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final AccountProvider account = context.watch<AccountProvider>();
-    final SyncProvider sync = context.watch<SyncProvider>();
     final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
     final bool hasCard = cards.hasCard;
     final bool matchmaker = WorkspaceStore.matchmakerEnabled;
@@ -266,7 +260,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             SettingsRow(
               icon: Icons.settings_outlined,
               title: 'הגדרות',
-              subtitle: 'תצוגה, גיבוי, פרטיות, עזרה ועוד',
+              subtitle: 'תצוגה, פרטיות, נתונים, עזרה ועוד',
               onTap: () => context.push('/profile/settings'),
             ),
           ],
@@ -276,10 +270,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (account.isSignedIn)
         _AccountActions(
           busy: account.isBusy,
-          onSwitchAccount: () =>
-              _confirmSignOut(account, sync, switching: true),
-          onSignOut: () => _confirmSignOut(account, sync),
-          onDeleteAccount: () => _confirmDeleteAccount(account, sync),
+          onSignOut: () => AccountDialogs.confirmSignOut(context),
         ),
 
       const SettingsVersionFooter(),
@@ -520,205 +511,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     await profile.setIsSingle(isSingle);
   }
-
-  // --- The account --------------------------------------------------------
-
-  /// Asks first, and says exactly what happens — because what happens changed.
-  ///
-  /// **Signing out empties this device now.** It used to disconnect a backup
-  /// and leave the database where it was, which was honest when the app had no
-  /// account behind it. It does have one now: every record belongs to whoever
-  /// is signed in, so leaving takes the records with it and the next person to
-  /// sign in on this phone starts from their own account, not from somebody
-  /// else's work. The dialog says that in as many words, and says the other
-  /// half too — nothing is lost, because it is all in the backup and comes back
-  /// on the way in.
-  ///
-  /// See [AccountSwitch.signOutAndClear] for the order, and for why a failed
-  /// final backup abandons the whole thing rather than pressing on.
-  ///
-  /// [switching] is the same act reached from "התחברות לחשבון אחר": leaving
-  /// this account is how another one is signed into, so only the title changes.
-  Future<void> _confirmSignOut(
-    AccountProvider account,
-    SyncProvider sync, {
-    bool switching = false,
-  }) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text(switching ? 'מעבר לחשבון אחר?' : 'יציאה מהחשבון?'),
-          content: const Text(
-            'לפני היציאה נגבה את המאגר לחשבון שלך, ואז ננקה אותו מהמכשיר הזה — '
-            'כדי שמי שיתחבר כאן אחריך יראה את המאגר שלו בלבד.\n\n'
-            'שום דבר לא נמחק מהחשבון: בפעם הבאה שתתחבר, הכול יחזור.',
-          ),
-          actionsOverflowDirection: VerticalDirection.down,
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('גיבוי ויציאה'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
-    final AccountSwitchResult result = await AccountSwitch.signOutAndClear(
-      account: account,
-      sync: sync,
-      people: context.read<PersonRepository>(),
-      matches: context.read<MatchRepository>(),
-      profile: context.read<UserProfileProvider>(),
-      personalCard: context.read<PersonalCardProvider>(),
-      cardAccess: context.read<CardAccessProvider>(),
-      inbox: context.read<InboxProvider>(),
-      community: context.read<CommunityProvider>(),
-    );
-    if (!mounted) {
-      return;
-    }
-
-    if (result == AccountSwitchResult.syncFailed) {
-      AppNotice.show(
-        context,
-        'לא הצלחנו לגבות את המאגר, אז לא יצאנו מהחשבון. כדאי לבדוק את החיבור '
-        'לאינטרנט ולנסות שוב.',
-      );
-      return;
-    }
-
-    // `go` and not `pop`: there is no profile to return to any more, and the
-    // router's own gate sends anything else straight back here.
-    context.go('/sign-in');
-  }
-
-  /// Permanently removes the authentication account and every app record tied
-  /// to it. A provider sheet (Google/Apple) or the password prompt below is the
-  /// recent-login proof Firebase requires for a destructive account action.
-  Future<void> _confirmDeleteAccount(
-    AccountProvider account,
-    SyncProvider sync,
-  ) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('למחוק את החשבון לצמיתות?'),
-          content: const Text(
-            'הפעולה תמחק את חשבון ההתחברות, את הגיבוי בענן, את נתוני הקהילה, '
-            'פרסומי האירוסין והברכות שעדיין בשרת — וגם את כל המאגר מהמכשיר '
-            'הזה.\n\nאי אפשר לבטל את הפעולה או לשחזר את המידע אחריה. פניות '
-            'תמיכה שכבר נשלחו נשמרות לפי מדיניות הפרטיות.',
-          ),
-          actionsOverflowDirection: VerticalDirection.down,
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('ביטול'),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(dialogContext).colorScheme.error,
-              ),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('מחיקת החשבון'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
-    String? password;
-    if (account.deletionRequiresPassword) {
-      password = await _requestDeletionPassword();
-      if (password == null || !mounted) {
-        return;
-      }
-    }
-
-    final AccountDeletionResult result =
-        await AccountSwitch.deleteAccountAndClear(
-          account: account,
-          sync: sync,
-          people: context.read<PersonRepository>(),
-          matches: context.read<MatchRepository>(),
-          profile: context.read<UserProfileProvider>(),
-          personalCard: context.read<PersonalCardProvider>(),
-          community: context.read<CommunityProvider>(),
-          password: password,
-        );
-    if (!mounted) {
-      return;
-    }
-    if (result.outcome == AccountDeletionOutcome.canceled) {
-      return;
-    }
-    if (result.outcome != AccountDeletionOutcome.success) {
-      AppNotice.show(
-        context,
-        result.message ?? 'לא הצלחנו למחוק את החשבון. כדאי לנסות שוב.',
-      );
-      return;
-    }
-    context.go('/sign-in');
-  }
-
-  Future<String?> _requestDeletionPassword() async {
-    final TextEditingController controller = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            title: const Text('אימות לפני המחיקה'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              obscureText: true,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                labelText: 'הסיסמה שלך',
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-              onSubmitted: (String value) {
-                if (value.isNotEmpty) {
-                  Navigator.of(dialogContext).pop(value);
-                }
-              },
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('ביטול'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (controller.text.isNotEmpty) {
-                    Navigator.of(dialogContext).pop(controller.text);
-                  }
-                },
-                child: const Text('אימות ומחיקה'),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
-  }
 }
 
 class _AccountGroup extends StatelessWidget {
@@ -732,7 +524,7 @@ class _AccountGroup extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     if (account.isSignedIn) {
-      final String? email = account.email;
+      final String? email = account.accountEmail;
       return SettingsGroup(
         title: 'חשבון',
         children: <Widget>[
@@ -744,8 +536,9 @@ class _AccountGroup extends StatelessWidget {
                     photoUrl: account.photoUrl,
                     displayName: account.displayName ?? email,
                   ),
-            title: account.displayName ?? email ?? 'מחובר',
-            subtitle: email,
+            title: 'החשבון שלי',
+            subtitle: email ?? account.displayName,
+            onTap: () => context.push('/profile/account'),
           ),
         ],
       );
@@ -783,8 +576,7 @@ class _AccountGroup extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                'התחברות מאפשרת לגבות את המאגר, לשחזר אותו במכשיר חדש ולהיות '
-                'חלק מקהילת השדכנים.',
+                'המאגר שלך שייך לחשבון, ונפתח בכל מכשיר שמחובר אליו.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
@@ -799,27 +591,13 @@ class _AccountGroup extends StatelessWidget {
   }
 }
 
-/// "התחברות לחשבון אחר", "יציאה מהחשבון" and "מחיקת החשבון והנתונים", at the
-/// very foot of the page.
-///
-/// **Quiet on purpose.** They used to be rows of the account group near the top
-/// of the page, drawn in red — the loudest thing on a page about the matchmaker
-/// themselves, and a row away from a tap by mistake. They are small grey text
-/// buttons under everything else now. None of them does anything on the tap:
-/// each opens a dialog that says what will happen, and the red belongs to that
-/// dialog's confirm button, once somebody has actually chosen to delete.
+/// "התנתקות", at the very foot of the page — quiet, and a dialog away from
+/// happening. Deleting the account lives in "החשבון שלי".
 class _AccountActions extends StatelessWidget {
-  const _AccountActions({
-    required this.busy,
-    required this.onSwitchAccount,
-    required this.onSignOut,
-    required this.onDeleteAccount,
-  });
+  const _AccountActions({required this.busy, required this.onSignOut});
 
   final bool busy;
-  final VoidCallback onSwitchAccount;
   final VoidCallback onSignOut;
-  final VoidCallback onDeleteAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -845,9 +623,7 @@ class _AccountActions extends StatelessWidget {
         children: <Widget>[
           Divider(color: theme.colorScheme.outlineVariant),
           const SizedBox(height: 4),
-          action('התחברות לחשבון אחר', onSwitchAccount),
-          action('יציאה מהחשבון', onSignOut),
-          action('מחיקת החשבון והנתונים', onDeleteAccount),
+          action('התנתקות', onSignOut),
         ],
       ),
     );

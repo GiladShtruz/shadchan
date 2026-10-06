@@ -114,6 +114,20 @@
 					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
 				</array>
 			</dict>
+			<!-- Voice notes on a friend. They are part of the account's
+			     database since 2026-10-06, synced to Cloud Storage. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeAudioData</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				</array>
+			</dict>
 			<!-- `religiousLevel` and `religiousLevelOther`. Apple counts
 			     religious belief as sensitive, and a shidduchim card is built
 			     around it — this is the entry most easily missed and the one
