@@ -176,14 +176,10 @@ void main() {
     expect(find.text('מה המצב האישי שלך?'), findsOneWidget);
     expect(find.text('רווק'), findsOneWidget);
     expect(find.text('נשוי'), findsOneWidget);
-    // Divorced and widowed users count as single here; the detail is on the
-    // card itself.
-    expect(
-      find.text(
-        'גרוש או אלמן? סמן רווק — כך תופיע בפרופיל אפשרות ליצור כרטיס אישי.',
-      ),
-      findsOneWidget,
-    );
+    // The old hint about divorced and widowed users is gone, and the offer of
+    // a personal card waits until "רווק" is chosen.
+    expect(find.textContaining('גרוש או אלמן'), findsNothing);
+    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsNothing);
     // The button is never dead: it is pressable with the answer missing, and
     // pressing it says what is missing rather than doing nothing.
     expect(
@@ -211,6 +207,13 @@ void main() {
     await tester.runAsync(() => tester.tap(find.text('רווק')));
     await tester.pump();
     expect(find.text('צריך לבחור מצב אישי'), findsNothing);
+    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('נשוי'));
+    await tester.pump();
+    await tester.runAsync(() => tester.tap(find.text('נשוי')));
+    await tester.pump();
+    expect(find.text('הוספת כרטיס אישי לאזור האישי'), findsNothing);
   });
 
   testWidgets('Onboarding marks a missing name in red instead of blocking', (

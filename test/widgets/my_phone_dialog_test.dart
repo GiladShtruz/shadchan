@@ -59,4 +59,100 @@ void main() {
       expect(result, '0501234567');
     },
   );
+
+  Future<void> openSignUp(
+    WidgetTester tester, {
+    required void Function(MyPhoneOutcome) onResult,
+    Future<bool> Function(String phone)? taken,
+  }) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme(),
+        builder: (BuildContext context, Widget? child) =>
+            Directionality(textDirection: TextDirection.rtl, child: child!),
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () async {
+                  onResult(
+                    await MyPhoneDialog.showForSignUp(
+                      context,
+                      purpose: MyPhonePurpose.matchmaker,
+                      belongsToAnotherAccount: taken,
+                    ),
+                  );
+                },
+                child: const Text('go'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('sign-up: "שמירה" on the right and filled, "דילוג" on the left', (
+    WidgetTester tester,
+  ) async {
+    MyPhoneOutcome? result;
+    await openSignUp(tester, onResult: (MyPhoneOutcome r) => result = r);
+
+    expect(
+      find.textContaining('אנשי קשר שלך שמנהלים כרטיס אישי'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('חברים שלך שמנהלים'), findsNothing);
+
+    final Offset save = tester.getCenter(find.text('שמירה'));
+    final Offset skip = tester.getCenter(find.text('דילוג'));
+    expect(save.dx, greaterThan(skip.dx));
+    expect(
+      find.ancestor(
+        of: find.text('שמירה'),
+        matching: find.byType(FilledButton),
+      ),
+      findsOneWidget,
+    );
+
+    // Skipping goes on without a number.
+    await tester.tap(find.text('דילוג'));
+    await tester.pumpAndSettle();
+    expect(result?.phone, isNull);
+    expect(result?.useExistingAccount, isFalse);
+  });
+
+  testWidgets('a number already in the system asks what to do', (
+    WidgetTester tester,
+  ) async {
+    MyPhoneOutcome? result;
+    await openSignUp(
+      tester,
+      onResult: (MyPhoneOutcome r) => result = r,
+      taken: (String phone) async => true,
+    );
+    await tester.enterText(find.byType(TextField), '0501234567');
+    await tester.tap(find.text('שמירה'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('מספר הטלפון הזה כבר קיים במערכת. מה תרצה לעשות?'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('יצירת חשבון נוסף עם מספר זה'));
+    await tester.pumpAndSettle();
+    expect(result?.phone, '0501234567');
+
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '0501234567');
+    await tester.tap(find.text('שמירה'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('התחברות לחשבון הקיים'));
+    await tester.pumpAndSettle();
+    expect(result?.useExistingAccount, isTrue);
+    expect(result?.phone, isNull);
+  });
 }
