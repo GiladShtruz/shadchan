@@ -1500,6 +1500,9 @@ abstract final class PeopleSortDefault {
   static const String _key = 'people.defaultSort';
   static String? _pending;
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending = null;
+
   static ({PeopleSortOption option, bool ascending})? read() {
     final Object? raw =
         _pending ??
@@ -1531,6 +1534,9 @@ abstract final class PeopleSortDefault {
 abstract final class PeopleViewChoice {
   static const String _key = 'people.grid';
   static bool? _pending;
+
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending = null;
 
   static bool get grid {
     if (_pending != null) {

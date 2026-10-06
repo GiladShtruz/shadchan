@@ -47,6 +47,14 @@ class MatchRepository extends ChangeNotifier {
   final Box<MatchStatusEvent>? _statusEventBox;
   final Uuid _uuid = const Uuid();
 
+  /// Records changed underneath this repository because the account did — a
+  /// change made on another phone. The boxes already hold them; this redraws
+  /// whoever reads them and re-books the reminders they carry.
+  void notifySyncChange() {
+    notifyListeners();
+    _refreshNotifications();
+  }
+
   /// Every recorded status move, in no particular order.
   ///
   /// This is the ledger `ActivityStats` counts from. Before it existed a status

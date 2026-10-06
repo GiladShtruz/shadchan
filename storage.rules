@@ -25,6 +25,24 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // Voice notes on a friend, recorded in the app or shared from WhatsApp.
+    // They used to stay on the phone; the database belongs to the account
+    // now, and a recording that existed on one phone only would not be part of
+    // it. Same owner-only rule as the photos, an audio type, and a ceiling
+    // generous for a long voice note.
+    match /users/{userId}/voice/{fileName} {
+      function isOwner() {
+        return request.auth != null
+            && request.auth.uid == userId
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+
+      allow read, delete: if isOwner();
+      allow write: if isOwner()
+                   && request.resource.size < 25 * 1024 * 1024
+                   && request.resource.contentType.matches('audio/.*');
+    }
+
     // Screenshots attached to a problem report. Named after the report they
     // belong to, so the file and the words cannot drift apart.
     //

@@ -38,6 +38,9 @@ abstract final class ThinkRotation {
   /// for the same reason.
   static int? _pending;
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending = null;
+
   static int get cursor {
     final Object? raw = _pending ?? _box?.get(_key);
     if (raw is int) {
@@ -91,6 +94,9 @@ abstract final class ThinkLater {
   /// [ThinkRotation._pending]: the write is scheduled on the root zone and the
   /// list has to answer correctly before it lands.
   static Map<String, DateTime>? _cache;
+
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _cache = null;
 
   static Map<String, DateTime> _read() {
     final Map<String, DateTime>? cached = _cache;

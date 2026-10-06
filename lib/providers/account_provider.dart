@@ -90,6 +90,99 @@ class AccountProvider extends ChangeNotifier {
 
   String? get displayName => _google?.displayName ?? _user?.displayName;
 
+  /// The sign-in methods attached to this account: `google.com`, `apple.com`,
+  /// `password`.
+  Set<String> get providerIds => <String>{
+    for (final UserInfo info in _user?.providerData ?? const <UserInfo>[])
+      info.providerId,
+  };
+
+  bool get hasPassword => providerIds.contains('password');
+
+  /// The address the account is known by — the one any of its methods share.
+  String? get accountEmail {
+    final String? own = _user?.email;
+    if (own != null && own.isNotEmpty) {
+      return own;
+    }
+    for (final UserInfo info in _user?.providerData ?? const <UserInfo>[]) {
+      final String? email = info.email;
+      if (email != null && email.isNotEmpty) {
+        return email;
+      }
+    }
+    return null;
+  }
+
+  bool get emailVerified => _user?.emailVerified ?? false;
+
+  /// When the account will be erased, while it is waiting for deletion.
+  DateTime? get deletionDue => _deletionDue;
+  DateTime? _deletionDue;
+
+  /// Asks Firebase again whether the address was verified, and lifts the gate
+  /// when it was.
+  Future<bool> refreshVerification() async {
+    final bool verified = await AccountService.refreshVerification();
+    _refreshUser();
+    if (verified) {
+      SignInPromptStore.setMustVerifyEmail(false);
+    }
+    return verified;
+  }
+
+  Future<AccountSignInResult> resendVerification() =>
+      _signIn(AccountService.resendVerification);
+
+  Future<AccountSignInResult> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) => _signIn(
+    () => AccountService.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    ),
+  );
+
+  Future<AccountSignInResult> linkGoogle() =>
+      _signIn(AccountService.linkGoogle);
+
+  Future<AccountSignInResult> linkApple() => _signIn(AccountService.linkApple);
+
+  Future<AccountSignInResult> linkPassword(String password) =>
+      _signIn(() => AccountService.linkPassword(password));
+
+  Future<AccountSignInResult> unlink(String providerId) =>
+      _signIn(() => AccountService.unlink(providerId));
+
+  /// Re-reads whether this account is waiting for deletion. Run whenever the
+  /// signed-in user changes, so a phone that was away hears about a deletion
+  /// another phone asked for.
+  Future<void> refreshDeletionState() async {
+    if (!isSignedIn) {
+      return;
+    }
+    try {
+      final DateTime? due = await AccountService.pendingDeletion();
+      _deletionDue = due;
+      SignInPromptStore.setDeletionPending(due != null);
+      notifyListeners();
+    } on Object catch (error) {
+      debugPrint('ACCOUNT deletion state unreadable: $error');
+    }
+  }
+
+  /// Takes the account back out of deletion.
+  Future<bool> cancelDeletion() async {
+    final bool done = await AccountService.cancelDeletion();
+    if (done) {
+      _deletionDue = null;
+      SignInPromptStore.setDeletionPending(false);
+      notifyListeners();
+    }
+    return done;
+  }
+
   String? get photoUrl => _google?.photoURL ?? _user?.photoURL;
 
   /// Email/password accounts need their password typed before deletion. The
@@ -142,10 +235,17 @@ class AccountProvider extends ChangeNotifier {
   Future<AccountSignInResult> registerWithEmail({
     required String email,
     required String password,
-  }) {
-    return _signIn(
+  }) async {
+    final AccountSignInResult result = await _signIn(
       () => AccountService.registerWithEmail(email: email, password: password),
     );
+    if (result.outcome == AccountSignInOutcome.success) {
+      // Said here rather than only worked out from the account: an anonymous
+      // session upgraded into this account carries the anonymous one's
+      // creation date, which can be older than the rule's starting date.
+      SignInPromptStore.setMustVerifyEmail(true);
+    }
+    return result;
   }
 
   /// Sends the reset mail. Not a sign-in, but it shares the busy flag so the
@@ -185,6 +285,7 @@ class AccountProvider extends ChangeNotifier {
   Future<AccountDeletionResult> deleteAccount({
     required Future<bool> Function() deleteRemoteData,
     String? password,
+    bool scheduleOnly = false,
   }) async {
     if (_isBusy) {
       return const AccountDeletionResult.canceled();
@@ -194,6 +295,7 @@ class AccountProvider extends ChangeNotifier {
       final AccountDeletionResult result = await AccountService.deleteAccount(
         deleteRemoteData: deleteRemoteData,
         password: password,
+        scheduleOnly: scheduleOnly,
       );
       _refreshUser();
       return result;
@@ -240,7 +342,14 @@ class AccountProvider extends ChangeNotifier {
   }
 
   void _setUser(User? user, {bool fromStream = false}) {
+    final String? previousUid = _user?.uid;
     _user = user;
+    if (fromStream &&
+        user != null &&
+        !user.isAnonymous &&
+        user.uid != previousUid) {
+      unawaited(refreshDeletionState());
+    }
     if (fromStream) {
       _reconcileGate(user);
     }
@@ -282,6 +391,11 @@ class AccountProvider extends ChangeNotifier {
     }
     if (!SignInPromptStore.hasAccount) {
       SignInPromptStore.markSignedIn();
+    }
+    if (AccountService.mustVerifyEmail(user)) {
+      SignInPromptStore.setMustVerifyEmail(true);
+    } else if (!AccountService.couldNeedVerification(user)) {
+      SignInPromptStore.setMustVerifyEmail(false);
     }
   }
 

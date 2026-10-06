@@ -27,18 +27,18 @@ class PrivacyOverviewScreen extends StatelessWidget {
       icon: Icons.lock_outline_rounded,
       title: 'המאגר הוא שלך בלבד',
       body:
-          'כל מה שנשמר באפליקציה — חברים, רעיונות, הערות ותמונות — נשמר '
-          'קודם כול במכשיר שלך. אין באפליקציה שום מסך שמראה מאגר של שדכן '
-          'אחר, ואין דרך לחפש בו.',
+          'כל מה שנשמר באפליקציה — חברים, רעיונות, הערות, הקלטות ותמונות — '
+          'שייך לחשבון שלך. אין באפליקציה שום מסך שמראה מאגר של שדכן אחר, '
+          'ואין דרך לחפש בו.',
     ),
     (
       icon: Icons.cloud_outlined,
-      title: 'הגיבוי בענן נעול לחשבון שלך',
+      title: 'המאגר נעול לחשבון שלך',
       body:
           'חשבון הוא חובה, ואפשר להיכנס עם Google, עם Apple באייפון או עם '
-          'מייל וסיסמה. עותק מוצפן בתעבורה נשמר אוטומטית ב־Firebase, וכללי '
-          'אבטחה בצד השרת מאפשרים לאפליקציה לקרוא רק את הגיבוי של החשבון '
-          'המחובר.',
+          'מייל וסיסמה. המאגר נשמר ב־Firebase ומסתנכרן בין כל המכשירים '
+          'המחוברים לאותו חשבון, וכללי אבטחה בצד השרת מאפשרים לקרוא אותו רק '
+          'לחשבון עצמו. עותק נשמר גם במכשיר, כדי שאפשר יהיה לעבוד בלי חיבור.',
     ),
     (
       icon: Icons.groups_outlined,
@@ -112,9 +112,9 @@ class PrivacyOverviewScreen extends StatelessWidget {
       title: 'למחוק זה למחוק',
       body:
           'אפשר למחוק אדם, תמונה, הערה או רעיון מתוך האפליקציה בכל רגע. '
-          'הסרת האפליקציה מוחקת את כל מה ששמור במכשיר, אבל לא את הגיבוי בענן '
-          '— אותו מוחקים בכפתור שבתחתית המסך הזה. למחיקת החשבון וכל הנתונים '
-          'יחד: הפרופיל שלי ← חשבון ← מחיקת החשבון והנתונים.',
+          'הסרת האפליקציה או התנתקות מוחקות את העותק שבמכשיר, אבל המאגר '
+          'נשאר בחשבון. למחיקת החשבון וכל הנתונים: הפרופיל שלי ← החשבון שלי '
+          '← מחיקת החשבון. יש 30 יום לשחזר אותו לפני שהמחיקה סופית.',
     ),
   ];
 
@@ -163,15 +163,6 @@ class PrivacyOverviewScreen extends StatelessWidget {
             const PrivateModeTile(),
             const SizedBox(height: 4),
             const DeleteCommunityDataTile(),
-            const SizedBox(height: 4),
-            // Last, and separate from the three above it: those are about what
-            // the community sees of *you*, this is about the copy of your
-            // friends' details on the server. It is the heavier of the two
-            // erasures and it belongs at the bottom, where it is reached
-            // deliberately rather than passed over on the way to something
-            // else. Draws nothing at all when there is no account to have a
-            // backup under.
-            const DeleteCloudBackupTile(),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,

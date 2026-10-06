@@ -116,6 +116,12 @@ class ReminderLog extends ChangeNotifier {
 
   List<ReminderLogEntry>? _cache;
 
+  /// The log changed on another phone; read it again.
+  void forgetCache() {
+    _cache = null;
+    notifyListeners();
+  }
+
   List<ReminderLogEntry> get _entries => _cache ??= _read();
 
   List<ReminderLogEntry> _read() {

@@ -24,6 +24,10 @@ import 'package:shadchan/utils/enums.dart';
 /// through [persistHomeSetting] like every store the first frame reads.
 class PersonalCardProvider extends ChangeNotifier {
   PersonalCardProvider(this._box) {
+    _load();
+  }
+
+  void _load() {
     _card = _decode(_box.get(_cardKey));
     final Object? deleted = _box.get(_deletedKey);
     _deleted = deleted == true || deleted == 'true';
@@ -31,6 +35,12 @@ class PersonalCardProvider extends ChangeNotifier {
     _acceptsRequests = !(accepts == false || accepts == 'false');
     final Object? announces = _box.get(_announcesKey);
     _announces = !(announces == false || announces == 'false');
+  }
+
+  /// The card changed on another phone signed in to the same account.
+  void notifySyncChange() {
+    _load();
+    notifyListeners();
   }
 
   static const String cardId = 'personal-card';

@@ -20,6 +20,9 @@ abstract final class TagLibrary {
   /// what makes a tag created this frame readable in the same frame.
   static List<String>? _pending;
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending = null;
+
   static Box<dynamic>? get _box =>
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
 

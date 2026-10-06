@@ -291,27 +291,20 @@ DELETE_HE = f"""
 חשבון הוא חובה, והאפליקציה מאפשרת למחוק אותו בלי לשלוח הודעה ובלי להמתין
 לטיפול ידני:
 
-1. פתחו **הפרופיל שלי**.
-2. באזור **חשבון**, לחצו **מחיקת החשבון והנתונים**.
-3. קראו את האזהרה ואשרו.
-4. אמתו מחדש באמצעות Google או Apple, או הקלידו את הסיסמה בחשבון דוא"ל.
+1. פתחו **הפרופיל שלי** ← **החשבון שלי**.
+2. לחצו **מחיקת החשבון**, קראו את האזהרה ואשרו.
+3. אמתו מחדש באמצעות Google או Apple, או הקלידו את הסיסמה בחשבון דוא"ל.
 
-המחיקה מתחילה מיד ואינה הפיכה. בחשבון Apple האפליקציה מקבלת קוד הרשאה חדש
-ומבטלת גם את אסימוני Sign in with Apple.
+נתוני הקהילה מוסרים מיד והחשבון מנותק. **במשך 30 יום אפשר להתחבר שוב ולשחזר
+את החשבון ואת כל המאגר**, או לבחור במחיקה לצמיתות מיד. בתום 30 יום החשבון
+והמאגר נמחקים לצמיתות, ואי אפשר לשחזר אותם. בחשבון Apple האפליקציה מקבלת קוד
+הרשאה חדש ומבטלת את אסימוני Sign in with Apple.
 
-## מחיקת נתוני שרת בלי למחוק את החשבון
+## מחיקת נתוני הקהילה בלי למחוק את החשבון
 
-זו הדרך המהירה, והיא אינה דורשת לפנות אלינו. **אפשר למחוק בה את הנתונים
-שנשמרו בשרת ולהמשיך להשתמש באפליקציה ובחשבון כרגיל** — מחיקת החשבון היא
-פעולה נפרדת.
-
-1. פתחו את האפליקציה ועברו למסך **„פרטיות והמאגר שלי”**.
-2. לחצו על **„מחיקת הנתונים שלי מהקהילה”** כדי להסיר מהשרת את מוני הפעילות
-   שלכם ואת השם והתמונה שהופיעו בדירוג.
-3. לחצו על **„מחיקת הגיבוי בענן”** כדי להסיר מהשרת את כל הרשומות, הפרופיל
-   וכל התמונות שגובו.
-
-שתי הפעולות פועלות מיד, ואינן נוגעות במאגר ששמור אצלכם במכשיר.
+במסך **„פרטיות והמאגר שלי”** לחצו על **„מחיקת הנתונים שלי מהקהילה”** כדי להסיר
+מהשרת את מוני הפעילות ואת השם והתמונה שהופיעו בדירוג. הפעולה מיידית, ואינה
+נוגעת במאגר שבחשבון.
 
 ## אם אין לכם גישה לאפליקציה
 
@@ -322,8 +315,8 @@ DELETE_HE = f"""
 
 - **חשבון ההתחברות** — הרשומה שלכם בשירות ההזדהות, לרבות כתובת הדוא"ל
   ומזהה החשבון.
-- **הגיבוי בענן** — כל רשומות האנשים, ההצעות, ההערות והפרופיל, וכל קובצי
-  התמונות שגובו.
+- **המאגר שבחשבון** — כל רשומות האנשים, הרעיונות, ההערות, ההקלטות, ההגדרות
+  והפרופיל, וכל קובצי התמונות וההקלטות.
 - **נתוני הקהילה** — מוני הפעילות, והשם והתמונה שהופיעו בדירוג.
 - **הודעות אירוסין, ברכות ממתינות וטיפים לקהילה** המשויכים לחשבון.
 - **המאגר המקומי במכשיר** — אנשים, רעיונות, הערות, תמונות והפרופיל.
@@ -351,22 +344,25 @@ DELETE_HE = f"""
 **App:** Shadchan &middot; **Developer:** Gilad Shtruzman &middot;
 **Contact:** [{CONTACT}](mailto:{CONTACT})
 
-Shadchan is a local-first app with a required account and automatic cloud
-backup. The active database remains on your device and works offline after
-sign-in.
+Shadchan requires an account, and the database belongs to the account: it is
+the same on every device signed in to it, with a copy on each device for
+offline work.
 
-**To delete your account in the app:** open *My profile*, find *Account*, tap
-*Delete account and data*, confirm, then reauthenticate with Google, Apple or
-your password. The operation starts immediately and cannot be undone. Apple
-tokens are revoked for Apple-linked accounts.
+**To delete your account in the app:** open *My profile → My account*, tap
+*Delete account*, confirm, then reauthenticate with Google, Apple or your
+password. Community data is removed immediately and the account is signed out.
+**For 30 days you can sign in again and restore the account and its whole
+database**, or choose to delete it permanently at once. After 30 days the
+account and database are erased permanently. Apple tokens are revoked for
+Apple-linked accounts.
 
 If you no longer have app access, email [{CONTACT}](mailto:{CONTACT}) with the
 subject **"Delete account"** and the address you used. We verify ownership
 before deletion.
 
 **Deleted:** the authentication account (including email address and account
-id); the cloud backup (all person, idea, note and profile records, and every
-backed-up photo file); community data and public avatar; engagement
+id); the account's database (all person, idea, note, recording, settings and
+profile records, and every photo and recording file); community data and public avatar; engagement
 announcements; pending congratulations; community tips; and the local database.
 
 **Not deleted automatically:** files you exported to other storage, and support
@@ -380,8 +376,8 @@ INDEX_HE = f"""
 # שדכן
 
 אפליקציית שדכן מסייעת בניהול חברים, רעיונות, הערות ותזכורות הקשורות לתהליך
-השידוכים. חשבון הוא חובה, המאגר הפעיל שמור במכשיר, וגיבוי מוצפן בתעבורה נשמר
-אוטומטית בענן כדי לאפשר שחזור.
+השידוכים. חשבון הוא חובה, והמאגר שייך לחשבון: הוא נפתח בכל מכשיר שמחובר אליו
+ומסתנכרן ביניהם, עם עותק במכשיר לעבודה בלי חיבור.
 
 הדף הזה מרכז את המסמכים הפומביים של האפליקציה.
 

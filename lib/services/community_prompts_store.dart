@@ -55,6 +55,9 @@ abstract final class CommunityPromptsStore {
   /// these are read again in the same frame they are written; this covers it.
   static final Map<String, Object?> _pending = <String, Object?>{};
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending.clear();
+
   static Object? _read(String key) => _pending[key] ?? _box?.get(key);
 
   static void _write(String key, Object value) {

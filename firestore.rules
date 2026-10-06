@@ -28,9 +28,16 @@ service cloud.firestore {
 
       allow read, write: if isOwner();
 
-      // The four record collections. Named explicitly rather than matched with
-      // a wildcard so a future collection has to be considered before it can
-      // be written.
+      // The record collections. Named explicitly rather than matched with a
+      // wildcard so a future collection has to be considered before it can be
+      // written. Each document carries the record, or `_deleted: true` for a
+      // tombstone, plus `_w` (server time of the write) and `_d` (the device),
+      // which is how every phone signed in to the account keeps in step — see
+      // `AccountSyncEngine`.
+      //
+      // The root document itself holds `deletion: {requestedAt, purgeAfter}`
+      // while the account is in its 30 days of grace; `purgeDeletedAccounts`
+      // erases the whole tree after that.
       match /people/{personId} {
         allow read, write: if isOwner();
       }
@@ -56,8 +63,18 @@ service cloud.firestore {
         allow read, write: if isOwner();
       }
 
-      // The matchmaker's own profile — one document, `main`.
+      // The matchmaker's own profile — one document, `main`. Written by
+      // versions before the account sync; read once by the sync to fill an
+      // account that has no synced profile yet.
       match /profile/{documentId} {
+        allow read, write: if isOwner();
+      }
+
+      // Everything else the account holds that is not a record: the profile,
+      // the board, reminders, dismissed suggestions, tags, preferences — one
+      // document per setting, `{k: key, v: JSON}` (`AccountSyncCodec`). Kept
+      // in step across the account's phones like the records are.
+      match /settings/{documentId} {
         allow read, write: if isOwner();
       }
 

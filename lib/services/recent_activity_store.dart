@@ -102,6 +102,12 @@ class RecentActivityStore extends ChangeNotifier {
 
   List<HomeActivityEntry>? _cache;
 
+  /// The strip changed on another phone; read it again.
+  void forgetCache() {
+    _cache = null;
+    notifyListeners();
+  }
+
   Box<dynamic>? get _box =>
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
 

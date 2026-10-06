@@ -128,6 +128,14 @@ class HomeBoardStore extends ChangeNotifier {
   Map<String, int>? _hiddenCache;
   bool _focusPending = false;
 
+  /// The board changed on another phone; read it again.
+  void forgetCache() {
+    _cache = null;
+    _notesCache = null;
+    _hiddenCache = null;
+    notifyListeners();
+  }
+
   /// Brings the already-mounted home tab to the board after an item is pinned.
   void requestFocus() {
     _focusPending = true;

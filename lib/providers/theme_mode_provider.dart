@@ -8,6 +8,9 @@ class ThemeModeProvider extends ChangeNotifier {
 
   final Box<dynamic> _box;
 
+  /// The choice changed on another phone signed in to the same account.
+  void notifySyncChange() => notifyListeners();
+
   ThemeMode get themeMode {
     final String? value = _box.get(_themeModeKey) as String?;
     return _themeModeFromName(value);

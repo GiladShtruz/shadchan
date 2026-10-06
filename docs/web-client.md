@@ -41,7 +41,7 @@ Two things contain it:
 
 ## The data contract
 
-`lib/services/cloud_sync_service.dart` already mirrors every record as its own
+`lib/services/account_sync_engine.dart` keeps every record as its own
 document — this is not a single backup blob, which is what makes a second client
 viable at all.
 
@@ -66,8 +66,23 @@ users/{uid}/matchStatusEvents/{id}
 - Photos live in Cloud Storage at `users/{uid}/photos/{basename}`, and the
   documents carry **basenames only**. The phone rebuilds them into local file
   paths; the web client must resolve them against Storage instead.
-- The whole set is the *product* of the local Hive database, not a contract the
-  phone honours in reverse. Which leads to:
+- **Since 2026-10-06 the phone keeps these collections in step both ways**
+  (`lib/services/account_sync_engine.dart`), and three things changed for a
+  reader:
+  - every document also carries `_w` (a Firestore `Timestamp`, the server time
+    of the write) and `_d` (the writing device). Fields starting with `_` are
+    sync metadata, never part of the record — ignore them;
+  - **a deleted record is a tombstone, not a missing document**:
+    `{_deleted: true, _w, _d}` with no record fields. The web client must skip
+    every document with `_deleted == true`, or it will show empty rows;
+  - `matches` documents carry five extra keys beyond `matchToJson`
+    (`askedMaleAt`, `askedFemaleAt`, `checkInEveryDays`, `datingStartedAt`,
+    `datingEndedAt`), and there is a seventh collection, `settings`
+    (`{k, v}` — one app setting per document), plus `users/{uid}/voice/` in
+    Storage for recordings. A reader may ignore all of these.
+- A write from the browser would now reach the phones as well — but only if it
+  sets `_w` with `serverTimestamp()` (the phones listen for `_w` after the last
+  one they saw) and never hard-deletes. Phase 1 stays read-only. Which leads to:
 
 ## Phase 1: read-only
 

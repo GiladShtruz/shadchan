@@ -73,6 +73,9 @@ abstract final class NewIdeaRotation {
   /// is not in the box the instant it is set, which this covers.
   static Object? _pending;
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending = null;
+
   static int get cursor {
     final Object? raw = _pending ?? _box?.get(_key);
     if (raw is int) {

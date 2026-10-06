@@ -28,6 +28,13 @@ class PersonRepository extends ChangeNotifier {
   final Box<PersonEvent>? _eventBox;
   final Uuid _uuid = const Uuid();
 
+  /// Records changed underneath this repository because the account did — a
+  /// change made on another phone. See `MatchRepository.notifySyncChange`.
+  void notifySyncChange() {
+    notifyListeners();
+    _refreshPersonRemindersInBackground();
+  }
+
   /// Invoked with a person id whenever that person's availability changes, so
   /// their proposals can move to "בהמתנה" (when someone is busy / on a break)
   /// or back to "רעיון" (once both sides are free again). Wired to

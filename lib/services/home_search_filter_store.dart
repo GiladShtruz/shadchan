@@ -15,6 +15,9 @@ abstract final class HomeSearchFilterStore {
 
   static String? _pending;
 
+  /// See `LocalSettingCaches.forgetAll`.
+  static void forgetCache() => _pending = null;
+
   /// The saved filter, or null when none is set.
   static PeopleFilterState? get filters {
     final Object? raw =

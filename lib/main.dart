@@ -14,7 +14,8 @@ import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/match_migrations.dart';
 import 'package:shadchan/services/person_migrations.dart';
-import 'package:shadchan/models/match_contact.dart';
+import 'package:shadchan/models/hive_adapters.dart';
+import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/match_status_event.dart';
@@ -90,7 +91,7 @@ Future<void> _bootstrap() async {
   }
 
   await Hive.initFlutter();
-  _registerAdapters();
+  registerHiveAdapters();
 
   await Hive.openBox<Person>('people');
   await Hive.openBox<PersonNote>('person_notes');
@@ -99,6 +100,9 @@ Future<void> _bootstrap() async {
   await Hive.openBox<MatchNote>('match_notes');
   await Hive.openBox<MatchStatusEvent>('match_status_events');
   await Hive.openBox<dynamic>('settings');
+  // What this device last agreed with the account. Opened here because the
+  // router reads it on the first frame — see `AccountSyncLedger`.
+  await Hive.openBox<dynamic>(AccountSyncLedger.boxName);
 
   await optional('migrations', () async {
     await PersonMigrations.convertBirthDatesToAges(
@@ -371,54 +375,5 @@ class _StartupErrorApp extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-void _registerAdapters() {
-  if (!Hive.isAdapterRegistered(0)) {
-    Hive.registerAdapter(PersonAdapter());
-  }
-  if (!Hive.isAdapterRegistered(1)) {
-    Hive.registerAdapter(MatchIdeaAdapter());
-  }
-  if (!Hive.isAdapterRegistered(2)) {
-    Hive.registerAdapter(MatchNoteAdapter());
-  }
-  if (!Hive.isAdapterRegistered(3)) {
-    Hive.registerAdapter(GenderAdapter());
-  }
-  if (!Hive.isAdapterRegistered(4)) {
-    Hive.registerAdapter(ReligiousLevelAdapter());
-  }
-  if (!Hive.isAdapterRegistered(5)) {
-    Hive.registerAdapter(MatchStatusAdapter());
-  }
-  if (!Hive.isAdapterRegistered(6)) {
-    Hive.registerAdapter(CurrentHandlerAdapter());
-  }
-  if (!Hive.isAdapterRegistered(7)) {
-    Hive.registerAdapter(ProfileStatusAdapter());
-  }
-  if (!Hive.isAdapterRegistered(8)) {
-    Hive.registerAdapter(PersonNoteAdapter());
-  }
-  if (!Hive.isAdapterRegistered(9)) {
-    Hive.registerAdapter(MaritalStatusAdapter());
-  }
-  if (!Hive.isAdapterRegistered(10)) {
-    Hive.registerAdapter(MatchProgressAdapter());
-  }
-  if (!Hive.isAdapterRegistered(12)) {
-    Hive.registerAdapter(PersonEventAdapter());
-    Hive.registerAdapter(MatchStatusEventAdapter());
-  }
-  if (!Hive.isAdapterRegistered(13)) {
-    Hive.registerAdapter(PersonEventTypeAdapter());
-  }
-  if (!Hive.isAdapterRegistered(11)) {
-    Hive.registerAdapter(MatchContactAdapter());
-  }
-  if (!Hive.isAdapterRegistered(14)) {
-    Hive.registerAdapter(RegionAdapter());
   }
 }

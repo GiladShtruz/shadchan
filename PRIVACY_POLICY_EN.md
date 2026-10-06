@@ -1,18 +1,18 @@
 # Privacy Policy — Shadchan
 
-Last updated: September 25, 2026
+Last updated: October 6, 2026
 
 This policy applies to the **Shadchan** application and its information website. The Application is developed and operated by Gilad Shtruzman ("we"), the controller of the processing described here. Privacy contact: **giladsh22@gmail.com**.
 
 ## In brief
 
-The Application is local-first: the active database lives on the device and continues to work offline. An account is nevertheless required, and a cloud backup is kept automatically in Firebase under that account's identifier. The Application contains no advertising, analytics SDK, crash-reporting SDK, cookies or behavioural tracking, and we do not sell personal information.
+An account is required, and the database belongs to the account: it is stored in Firebase under the account's identifier, opens on every device signed in to that account and stays in sync between them. A copy is also kept on the device so the Application keeps working offline. The Application contains no advertising, analytics SDK, crash-reporting SDK, cookies or behavioural tracking, and we do not sell personal information.
 
 ## 1. Information processed
 
 ### Your account
 
-You can sign in with Google, with Apple on supported Apple devices, or with an email address and password. Firebase Authentication processes the account identifier, sign-in provider, email address and basic profile details supplied by the provider. Passwords for email accounts are handled by Firebase and are not visible to us. For security and abuse prevention, Firebase may also process IP addresses, user-agent strings and sign-in logs. Before sign-in or after sign-out, the Application may create a temporary technical anonymous Firebase identifier; it receives no backup and cannot pass the sign-in gate.
+You can sign in with Google, with Apple on supported Apple devices, or with an email address and password. Firebase Authentication processes the account identifier, sign-in provider, email address and basic profile details supplied by the provider. Passwords for email accounts are handled by Firebase and are not visible to us. For security and abuse prevention, Firebase may also process IP addresses, user-agent strings and sign-in logs. Before sign-in or after sign-out, the Application may create a temporary technical anonymous Firebase identifier; it holds no database and cannot pass the sign-in gate.
 
 ### Matchmaking database
 
@@ -31,15 +31,15 @@ Reminders are local notifications scheduled on the device. Exporting JSON or Exc
 
 ## 2. Purposes
 
-Information is used to operate the Application: database management, match ideas, search and filtering, reminders, imports and sharing you request, backup and restore, community features, support, security and abuse prevention. We do not use it for advertising, marketing, commercial profiling or automated decisions with legal effect, and we do not send marketing communications.
+Information is used to operate the Application: database management, match ideas, search and filtering, reminders, imports and sharing you request, keeping the database in the account and in sync across devices, community features, support, security and abuse prevention. We do not use it for advertising, marketing, commercial profiling or automated decisions with legal effect, and we do not send marketing communications.
 
-## 3. Local storage and cloud backup
+## 3. The database in the account and on the device
 
-Hive and local files are the active source of truth, so the Application can work offline after sign-in. An account is required to separate different users' databases on one device and to make restoration possible.
+The database belongs to the account. Under `users/{uid}` in Cloud Firestore and Cloud Storage the Application stores people, ideas, notes and voice recordings, activity and status history, tags, reminders and notices, the profile, settings and photographs. Every device signed in to the same account shows the same database, and a change on one device reaches the others. Server-side rules restrict the database to the account itself; the Application has no administrator screen or cross-account database search.
 
-A backup under `users/{uid}` in Cloud Firestore and Cloud Storage includes people, ideas, notes, activity and status history, the profile and photographs. It runs on app open, pause/close and after changes, and is used to restore the database on a new device. Server-side rules restrict it to the account that created it; the Application has no administrator screen or cross-account database search.
+A copy of the database is also kept on the device (Hive and local files) so the Application works offline; changes made offline are sent to the account when the connection returns. A database that previously existed only on a device is moved once, automatically, into the account the device is signed in to.
 
-Signing out first attempts a final backup. Only after it succeeds does the Application disconnect the account and clear the local database, so the next user cannot see it. The cloud copy remains and returns when the same account signs in again.
+Signing out removes the device's copy so the next person to sign in sees only their own database. The database stays in the account and returns on every sign-in. Different accounts are never merged: each account is a separate database.
 
 ## 4. Gemini-assisted import
 
@@ -92,11 +92,11 @@ Firebase App Check sends attestation material and tokens to Google or Apple to v
 
 The static website on Firebase Hosting has no accounts, forms, cookies, advertising or analytics. Firebase Hosting and Google may process technical connection information, such as IP address and user-agent, to deliver pages, secure the service and prevent abuse under Google's terms.
 
-**Tags:** tags you put on friends are an internal tool — they stay in your database and your own backup and are not part of any card. For "community inspiration" only the list of general tag *words* in use is sent (not linked to any person, and excluding tags that look like the name of a place, institution, unit or group). Nobody but you can read your list; the service counts how many different matchmakers use each word and shows a word to others only once at least three use it — without revealing who. Nothing is sent in private mode, and the list is deleted with the account.
+**Tags:** tags you put on friends are an internal tool — they stay in your account's database and are not part of any card. For "community inspiration" only the list of general tag *words* in use is sent (not linked to any person, and excluding tags that look like the name of a place, institution, unit or group). Nobody but you can read your list; the service counts how many different matchmakers use each word and shows a word to others only once at least three use it — without revealing who. Nothing is sent in private mode, and the list is deleted with the account.
 
 ## 11. Permissions
 
-The Application may request contacts, photos/media, the microphone and notifications only when the related feature is used. The microphone is used only to record a voice note about a friend from their profile; recordings (including ones shared into the Application from WhatsApp) stay on the device, are not included in the cloud backup, are not sent anywhere, and are deleted with the note. For the personal card, contacts are needed only to find friends who match and to give or request access; the rest of the Application works without that permission. You may revoke a permission in device settings, although the dependent feature may stop working.
+The Application may request contacts, photos/media, the microphone and notifications only when the related feature is used. The microphone is used only to record a voice note about a friend from their profile; recordings (including ones shared into the Application from WhatsApp) are kept in the account's database like other notes and are not sent to anyone else; they are deleted with the note. For the personal card, contacts are needed only to find friends who match and to give or request access; the rest of the Application works without that permission. You may revoke a permission in device settings, although the dependent feature may stop working.
 
 ## 12. Providers and international transfers
 
@@ -107,7 +107,8 @@ Information may be processed outside your country. Firebase Authentication opera
 ## 13. Retention and erasure
 
 - Local data remains until you delete it, delete the account or uninstall the Application.
-- Backup remains until erased from the privacy screen or through account deletion. Uninstalling alone does not erase it.
+- The account's database remains until the account is deleted. Uninstalling or signing out does not erase it.
+- A deleted account is kept for 30 days, during which it can be restored, and is then erased permanently.
 - Community data can be erased immediately from the privacy screen.
 - Engagement records and congratulations follow section 6.
 - Your tips are erased with the account.
@@ -117,9 +118,9 @@ Information may be processed outside your country. Firebase Authentication opera
 
 ## 14. Account deletion
 
-Account deletion can be completed inside the Application: **My profile → bottom of the page → Delete account and data**. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens before deleting the user.
+You can delete the account inside the Application: **My profile → My account → Delete account**. The Application asks you to reauthenticate with Apple, Google or your password. For an Apple-linked account, it obtains a fresh authorization code and sends it to Firebase to revoke Apple tokens.
 
-Deletion removes the Firebase user, cloud backup and photographs, the personal card and its photographs, access grants, the phone, contact and database hashes, notices, community data and public avatar, engagement announcements, pending congratulations and tips, then clears the local database. It cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
+On request, community data and the public avatar are removed immediately, the personal card is flagged as deleted, the account is signed out and the device's copy is cleared. The account and its database are kept for 30 days: signing in during that period offers to restore the account in full, or to delete it permanently at once. After 30 days the server permanently erases the Firebase user, the database, photographs and recordings, the personal card and its photographs, access grants, the phone, contact and database hashes, notices, community data, engagement announcements, pending congratulations and tips. Permanent deletion cannot be undone. Support correspondence follows section 8, and exported files or information shared outside the Application remain outside our control.
 
 If you no longer have access to the Application, request deletion at **giladsh22@gmail.com**. We will verify ownership first.
 

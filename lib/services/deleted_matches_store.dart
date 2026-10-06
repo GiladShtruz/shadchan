@@ -186,6 +186,12 @@ class DeletedMatchesStore extends ChangeNotifier {
     );
   }
 
+  /// The trash changed on another phone; read it again.
+  void forgetCache() {
+    _items = null;
+    notifyListeners();
+  }
+
   @visibleForTesting
   void resetForTest() {
     _items = null;
