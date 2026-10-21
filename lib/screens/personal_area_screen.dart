@@ -291,13 +291,6 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                     profile.gender,
                   ),
                 ),
-                // **The way to the matchmaker's side is a card of its own,
-                // right under the greeting** — for somebody who is both, it is
-                // the other half of the account, not a footnote under it.
-                if (matchmaker) ...<Widget>[
-                  const SizedBox(height: 14),
-                  _SwitchAreaCard(onTap: _goToMatchmaker),
-                ],
                 const SizedBox(height: 14),
                 if (cards.isDeleted)
                   _RestoreCardPrompt(busy: _restoring, onRestore: _restoreCard)
@@ -372,13 +365,27 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                   ),
                 ],
                 const SizedBox(height: 14),
-                // Status reports, requests, who can see the card, friends who
-                // could, and anybody blocked — all decided on the server.
+                // Keep the home page a summary, not an endless list of
+                // permission switches and matchmakers. Full controls live in
+                // /me/privacy and retain their server-enforced behavior.
                 if (!cards.isDeleted)
-                  CardAccessSections(
-                    hasCard: cards.hasCard,
+                  _PersonalAccessOverview(
                     requestsKey: _requestsKey,
+                    hasCard: cards.hasCard,
                   ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    onPressed: () => context.push('/me/privacy'),
+                    icon: const Icon(Icons.manage_accounts_outlined),
+                    label: const Text('ניהול ופרטיות'),
+                  ),
+                ),
+                if (matchmaker) ...<Widget>[
+                  const SizedBox(height: 8),
+                  _SwitchAreaCard(onTap: _goToMatchmaker),
+                ],
                 const SizedBox(height: 20),
                 _ShareAppLink(gender: profile.gender),
                 // Deleting the card is a secondary action: under a rule, quiet,
@@ -717,6 +724,164 @@ class _MyCardSummary extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A quiet overview. Names and counts come exclusively from the access
+/// provider's live Firestore snapshot; no view counts or invented activity.
+class _PersonalAccessOverview extends StatelessWidget {
+  const _PersonalAccessOverview({
+    required this.requestsKey,
+    required this.hasCard,
+  });
+
+  final Key requestsKey;
+  final bool hasCard;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final CardAccessProvider access = context.watch<CardAccessProvider>();
+    final approved = access.approved;
+    final pending = access.pendingRequests;
+    final helpers = access.helpers;
+    final int reports = access.statusReports.length;
+    final String approvedPreview = approved
+        .take(3)
+        .map((row) =>
+            access.nameInContacts(row.matchmakerUid, row.matchmakerName))
+        .where((name) => name.trim().isNotEmpty)
+        .join(' · ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        HomePaperCard(
+          onTap: () => context.push('/me/privacy'),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.visibility_outlined, size: 25),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('מי רואה את הכרטיס שלי',
+                        style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      hasCard
+                          ? '${approved.length} שדכנים קיבלו גישה לכרטיס'
+                          : 'הכרטיס עדיין לא פעיל',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    if (approvedPreview.isNotEmpty)
+                      Text(
+                        approvedPreview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_left_rounded),
+            ],
+          ),
+        ),
+        if (pending.isNotEmpty || reports > 0) ...<Widget>[
+          const SizedBox(height: 12),
+          Container(
+            key: requestsKey,
+            child: HomePaperCard(
+              onTap: () => context.push('/me/privacy'),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.mark_email_unread_outlined),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text('מחכה לטיפול שלך',
+                            style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                        if (pending.isNotEmpty)
+                          Text('${pending.length} בקשות גישה חדשות'),
+                        if (reports > 0)
+                          Text('$reports עדכוני סטטוס לאישור'),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_left_rounded),
+                ],
+              ),
+            ),
+          ),
+        ],
+        if (hasCard && helpers.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 12),
+          HomePaperCard(
+            onTap: () => context.push('/me/privacy'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text('החברים שלי שמשדכים בשדכן',
+                    style: theme.textTheme.titleMedium),
+                const SizedBox(height: 6),
+                for (final helper in helpers.take(3))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      access.nameInContacts(helper.uid, helper.name),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: Text(
+                    helpers.length > 3 ? 'הצגת כל החברים' : 'לתת הרשאה לחבר',
+                    style: theme.textTheme.labelMedium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Lists, privacy toggles and grants are one level below the personal home.
+/// The old CardAccessSections logic remains intact; its request and helper
+/// actions continue using the same rules and confirmation dialogs.
+class PersonalPrivacyScreen extends StatelessWidget {
+  const PersonalPrivacyScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
+    return Scaffold(
+      appBar: ShadchanAppBar(
+        title: 'ניהול ופרטיות',
+        leading: BackButton(onPressed: () => context.pop()),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+          children: <Widget>[
+            Text(
+              'הכרטיס שייך לך. מכאן אפשר לנהל מי מקבל גישה אליו.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            CardAccessSections(hasCard: cards.hasCard),
+          ],
+        ),
       ),
     );
   }
