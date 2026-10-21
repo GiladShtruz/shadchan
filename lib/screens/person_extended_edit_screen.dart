@@ -543,16 +543,28 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   // ----------------------------------------------------------------- photos
 
   Future<void> _addPhotos() async {
+    if (_owner && _photoPaths.length >= 4) {
+      AppNotice.show(context, 'בכרטיס האישי אפשר להוסיף עד 4 תמונות');
+      return;
+    }
     final List<String> added = await PhotoPickerService.pickPhotos(
       context,
       personId: widget.personId,
     );
     if (added.isEmpty || !mounted) {
+      PhotoPickerService.deletePhotoFiles(added);
       return;
     }
+    final int spaces = _owner ? (4 - _photoPaths.length).clamp(0, 4) : added.length;
+    final List<String> accepted = added.take(spaces).toList();
+    PhotoPickerService.deletePhotoFiles(added.skip(spaces));
+    if (accepted.length < added.length) {
+      AppNotice.show(context, 'בכרטיס האישי אפשר לשמור עד 4 תמונות');
+    }
+    if (accepted.isEmpty) return;
     _commit(() {
-      _photoPaths = <String>[..._photoPaths, ...added];
-      _newPhotoPaths.addAll(added);
+      _photoPaths = <String>[..._photoPaths, ...accepted];
+      _newPhotoPaths.addAll(accepted);
     });
   }
 
@@ -567,7 +579,12 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       return;
     }
     _commit(() {
-      _photoPaths = <String>[picked, ..._photoPaths];
+      // Replacing the main photo must not turn four photos into five.
+      if (_owner && _photoPaths.isNotEmpty) {
+        _photoPaths[0] = picked;
+      } else {
+        _photoPaths = <String>[picked, ..._photoPaths];
+      }
       _newPhotoPaths.add(picked);
     });
   }
@@ -875,6 +892,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
         paths: _photoPaths,
         onTapPrimary: _replacePrimary,
         onAdd: _addPhotos,
+        canAdd: !_owner || _photoPaths.length < 4,
         onOpen: _editPhoto,
         onLongPress: _confirmRemovePhoto,
         onReorder: _reorderPhotos,
@@ -1663,6 +1681,7 @@ class _PhotoGallery extends StatelessWidget {
     required this.paths,
     required this.onTapPrimary,
     required this.onAdd,
+    required this.canAdd,
     required this.onOpen,
     required this.onLongPress,
     required this.onReorder,
@@ -1671,6 +1690,7 @@ class _PhotoGallery extends StatelessWidget {
   final List<String> paths;
   final VoidCallback onTapPrimary;
   final VoidCallback onAdd;
+  final bool canAdd;
   final ValueChanged<int> onOpen;
   final ValueChanged<int> onLongPress;
   final ReorderCallback onReorder;
@@ -1710,7 +1730,7 @@ class _PhotoGallery extends StatelessWidget {
             itemCount: paths.length > 1 ? paths.length - 1 : 0,
             onReorder: (int oldIndex, int newIndex) =>
                 onReorder(oldIndex + 1, newIndex + 1),
-            footer: _AddPhotoTile(onTap: onAdd),
+            footer: canAdd ? _AddPhotoTile(onTap: onAdd) : null,
             itemBuilder: (BuildContext context, int index) {
               final int photo = index + 1;
               return Padding(
