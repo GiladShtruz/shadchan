@@ -335,6 +335,7 @@ test('an empty or short card stays private even with prior approval', async () =
       photoPaths: ['personalCards/owner1/a.jpg'],
     }),
   );
+  await assertSucceeds(setDoc(doc(as(OWNER), 'cardAccess', accessId), access('approved')));
   await assertSucceeds(getDoc(doc(as(MM), 'personalCards', OWNER)));
 });
 
