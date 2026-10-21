@@ -681,6 +681,22 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/contactHashes/$(ownerUid)).data.hashes.hasAny([myPhone]);
     }
 
+    // A name alone is not a published card. Keep this check on the server,
+    // not only in Flutter: a stale client must not expose an empty draft.
+    function cardHasContent(data) {
+      return (data.get('photoPaths', []) is list
+              && data.get('photoPaths', []).size() > 0)
+          || (data.get('description', null) is string
+              && data.get('description', '').size() >= 30);
+    }
+
+    function activeCard(ownerUid) {
+      let path = /databases/$(database)/documents/personalCards/$(ownerUid);
+      return exists(path)
+          && get(path).data.deleted == false
+          && cardHasContent(get(path).data);
+    }
+
     // The owner's card. The field list is the whitelist in
     // `PersonalCardCodec.cardFields` plus the bookkeeping around it: nothing
     // a matchmaker keeps privately can be written here, by construction.
@@ -688,11 +704,14 @@ service cloud.firestore {
       allow read: if durable()
                   && (request.auth.uid == ownerUid
                       || (resource.data.deleted == false
+                          && cardHasContent(resource.data)
                           && hasApprovedAccess(ownerUid)));
       allow create, update: if durable()
                             && request.auth.uid == ownerUid
                             && request.resource.data.ownerUid == ownerUid
                             && request.resource.data.deleted is bool
+                            && request.resource.data.photoPaths is list
+                            && request.resource.data.photoPaths.size() <= 4
                             && request.resource.data.status in
                                  ['available', 'busy', 'onBreak', 'mazelTov']
                             && request.resource.data.keys().hasOnly([
@@ -821,6 +840,7 @@ service cloud.firestore {
                        && request.resource.data.status == 'pending'
                        && request.resource.data.requestedBy == 'matchmaker'
                        && inOwnersContacts(request.resource.data.ownerUid)
+                       && activeCard(request.resource.data.ownerUid)
                        && takesRequests(request.resource.data.ownerUid))
                     );
 
@@ -837,6 +857,7 @@ service cloud.firestore {
                        && request.resource.data.status == 'pending'
                        && request.resource.data.requestedBy == 'matchmaker'
                        && inOwnersContacts(resource.data.ownerUid)
+                       && activeCard(resource.data.ownerUid)
                        && takesRequests(resource.data.ownerUid))
                     );
 
