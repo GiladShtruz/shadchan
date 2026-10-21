@@ -104,6 +104,27 @@ void main() {
   });
 
   group('PersonalCardProvider', () {
+    test('a name-only draft is not an active personal card', () async {
+      final PersonalCardProvider cards = PersonalCardProvider(settings);
+      final DateTime now = DateTime(2026, 1, 1);
+      final Person draft = Person(
+        id: 'draft',
+        firstName: 'דניאל',
+        lastName: 'לוי',
+        gender: Gender.male,
+        description: 'קצר',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await cards.save(draft);
+      expect(cards.card, isNotNull);
+      expect(cards.hasCard, isFalse);
+
+      await cards.save(draft.copyWith(description:
+          'אני אוהב לטייל וללמוד דברים חדשים מדי יום'));
+      expect(cards.hasCard, isTrue);
+    });
+
     test('a first draft carries over the old short card and photos', () async {
       final UserProfileProvider profile = UserProfileProvider(settings);
       await profile.saveProfile(
