@@ -555,7 +555,9 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       PhotoPickerService.deletePhotoFiles(added);
       return;
     }
-    final int spaces = _owner ? (4 - _photoPaths.length).clamp(0, 4) : added.length;
+    final int spaces = _owner
+        ? (_photoPaths.length >= 4 ? 0 : 4 - _photoPaths.length)
+        : added.length;
     final List<String> accepted = added.take(spaces).toList();
     PhotoPickerService.deletePhotoFiles(added.skip(spaces));
     if (accepted.length < added.length) {
