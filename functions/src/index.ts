@@ -146,6 +146,15 @@ async function approvedMatchmakers(ownerUid: string): Promise<string[]> {
   return snap.docs.map((d) => d.get('matchmakerUid') as string);
 }
 
+/** An unpublished draft is not a card even if it already has a name. */
+function isActiveCard(card: DocumentSnapshot | undefined): boolean {
+  if (!card?.exists || card.get('deleted') === true) return false;
+  const photos = card.get('photoPaths');
+  const description = card.get('description');
+  return (Array.isArray(photos) && photos.length > 0) ||
+    (typeof description === 'string' && [...description.trim()].length >= 30);
+}
+
 function firstName(card: DocumentSnapshot | undefined): string {
   return ((card?.get('firstName') as string | undefined) ?? '').trim();
 }
@@ -242,7 +251,7 @@ async function announceOnce(
   ownerPhoneHash: string | undefined,
   push: boolean,
 ): Promise<boolean> {
-  if (matchmakerUid === ownerUid) {
+  if (matchmakerUid === ownerUid || !isActiveCard(card)) {
     return false;
   }
   // A card the owner hid from this matchmaker, an owner who takes no
@@ -306,7 +315,7 @@ async function ownerPhoneHashOf(ownerUid: string): Promise<string | undefined> {
  */
 async function announceCard(ownerUid: string): Promise<void> {
   const card = await db.collection('personalCards').doc(ownerUid).get();
-  if (!card.exists || card.get('deleted') === true) {
+  if (!isActiveCard(card)) {
     return;
   }
   const ownerPhoneHash = await ownerPhoneHashOf(ownerUid);
@@ -371,7 +380,7 @@ export const onDatabaseHashesWritten = onDocumentWritten(
           continue;
         }
         const card = await db.collection('personalCards').doc(ownerUid).get();
-        if (!card.exists || card.get('deleted') === true) {
+        if (!isActiveCard(card)) {
           continue;
         }
         const told = await announceOnce(
@@ -413,10 +422,10 @@ export const onPersonalCardWritten = onDocumentWritten(
     if (!after?.exists) {
       return;
     }
-    if (!before?.exists) {
+    if (!isActiveCard(before) && isActiveCard(after)) {
       await announceCard(ownerUid);
-      return;
     }
+    if (!before?.exists) return;
     const wasStatus = before.get('status') as string;
     const status = after.get('status') as string;
     if (
