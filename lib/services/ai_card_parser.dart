@@ -25,6 +25,8 @@ enum AiParseFailure {
   attestation,
 
   empty,
+  tooLarge,
+  truncated,
   unknown,
 }
 

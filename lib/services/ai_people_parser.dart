@@ -74,24 +74,58 @@ abstract final class AiPeopleParser {
 
     final GenerateContentResponse response;
     try {
-      response =
-          await AiClient.model(
-                systemInstruction: Content.system(
-                  isChat ? _chatInstruction : _systemInstruction,
-                ),
-                generationConfig: GenerationConfig(
-                  responseMimeType: 'application/json',
-                  responseSchema: _schema,
-                  temperature: 0,
-                  thinkingConfig: ThinkingConfig.withThinkingBudget(
-                    AiConfig.thinkingBudget,
-                  ),
-                ),
-              )
-              .generateContent(<Content>[Content.text(text)])
-              .timeout(AiConfig.requestTimeout);
+      final model = AiClient.model(
+        systemInstruction: Content.system(
+          isChat ? _chatInstruction : _systemInstruction,
+        ),
+        generationConfig: GenerationConfig(
+          responseMimeType: 'application/json',
+          responseSchema: _schema,
+          temperature: 0,
+          maxOutputTokens: isChat ? AiConfig.maxWhatsappOutputTokens : null,
+          thinkingConfig: ThinkingConfig.withThinkingBudget(
+            AiConfig.thinkingBudget,
+          ),
+        ),
+      );
+      final contents = <Content>[Content.text(text)];
+      if (isChat) {
+        // Count the fully-configured prompt, including system instruction.
+        final counted = await model.countTokens(contents)
+            .timeout(AiConfig.requestTimeout);
+        if (counted.totalTokens > AiConfig.maxWhatsappPromptTokens) {
+          throw const AiParseException(AiParseFailure.tooLarge);
+        }
+      }
+      response = await model.generateContent(contents)
+          .timeout(AiConfig.requestTimeout);
+    } on AiParseException {
+      rethrow;
     } catch (error) {
       throw classifyAiFailure(error);
+    }
+
+    if (isChat) {
+      final finishReason = response.candidates.isEmpty
+          ? null
+          : response.candidates.first.finishReason;
+      if (finishReason != FinishReason.stop) {
+        throw const AiParseException(AiParseFailure.truncated);
+      }
+      try {
+        final decoded = jsonDecode(response.text ?? '');
+        if (decoded is! List && decoded is! Map) {
+          throw const FormatException('Unexpected JSON root');
+        }
+      } on FormatException {
+        throw const AiParseException(AiParseFailure.truncated);
+      }
+      final usage = response.usageMetadata;
+      debugPrint(
+        'AI_IMPORT usage input=${usage?.promptTokenCount} '
+        'output=${usage?.candidatesTokenCount} '
+        'thoughts=${usage?.thoughtsTokenCount}',
+      );
     }
 
     return decodeResponse(

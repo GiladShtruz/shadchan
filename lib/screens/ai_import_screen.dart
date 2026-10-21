@@ -11,6 +11,7 @@ import 'package:shadchan/dialogs/import_problem_dialog.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
 import 'package:shadchan/screens/ai_import_review_screen.dart';
 import 'package:shadchan/screens/whatsapp_export_guide_screen.dart';
+import 'package:shadchan/screens/whatsapp_import_options_screen.dart';
 import 'package:shadchan/utils/import_file_kind.dart';
 import 'package:shadchan/services/ai_import_memory.dart';
 import 'package:shadchan/services/ai_import_runner.dart';
@@ -287,51 +288,23 @@ class _AiImportScreenState extends State<AiImportScreen> {
         }
         _warnAboutLimits(stats);
 
-        // Worked out before anything is sent, so the confirmation below can
-        // quote real numbers and the memory can take the file's repeats off
-        // the bill.
-        final AiImportPlan plan = AiImportRunner.planChat(
-          chat,
+        // Always preview locally, before any AI token count or generation.
+        final AiImportPlan? plan = await WhatsAppImportOptionsScreen.show(
+          context,
+          chat: chat,
           alreadyImported: ignoreMemory
               ? const <String>{}
               : AiImportMemory.seen(),
         );
+        if (!mounted) return;
+        if (plan == null) {
+          _stopWorking();
+          return;
+        }
         log
           ..note('הודעות חדשות', plan.messageCount)
-          ..note('דולגו — יובאו כבר', plan.skipped);
-
-        if (plan.isEmpty && plan.skipped == 0) {
-          // Messages, but nothing in them that could be a card. Not the memory's
-          // doing, so there is nothing to re-read and offering it would only
-          // loop back to this same screen.
-          _failWithReport(
-            log,
-            message: 'לא נמצאו כרטיסים בקובץ.',
-            hint:
-                'בקובץ יש הודעות, אבל אף אחת מהן לא נראית כמו כרטיס של מועמד. '
-                'ודאו שייצאתם את הקבוצה שבה מפרסמים את הכרטיסים.',
-          );
-          return;
-        }
-        if (plan.isEmpty) {
-          _stopWorking();
-          if (await _confirmNothingNew(plan)) {
-            await _run(path, source, ignoreMemory: true);
-          }
-          return;
-        }
-
-        switch (await _confirmPlan(plan)) {
-          case _PlanChoice.cancel:
-            _stopWorking();
-            return;
-          case _PlanChoice.readAll:
-            _stopWorking();
-            await _run(path, source, ignoreMemory: true);
-            return;
-          case _PlanChoice.go:
-            break;
-        }
+          ..note('דולגו — יובאו כבר', plan.skipped)
+          ..note('ממתינות לסבב הבא', plan.remaining);
 
         outcome = await AiImportRunner.runChat(plan, onProgress: report);
       }
@@ -581,6 +554,8 @@ class _AiImportScreenState extends State<AiImportScreen> {
       AiParseFailure.attestation => 'המכשיר הזה לא מאושר לשימוש ב‑AI.',
       AiParseFailure.unavailable => 'החיבור לשירות ה‑AI לא זמין במכשיר הזה.',
       AiParseFailure.network => 'הקריאה לשירות ה‑AI נכשלה.',
+      AiParseFailure.tooLarge => 'יש הודעות ארוכות מדי לניתוח בסבב הזה.',
+      AiParseFailure.truncated => 'הניתוח נעצר לפני שהתשובה הושלמה.',
       _ => 'לא הצלחנו לקרוא את הקובץ.',
     };
   }
@@ -595,6 +570,10 @@ class _AiImportScreenState extends State<AiImportScreen> {
       AiParseFailure.unavailable =>
         'בדקו חיבור לאינטרנט ונסו שוב. אם זה חוזר, שלחו לנו את פרטי התקלה.',
       AiParseFailure.network => 'בדקו חיבור לאינטרנט ונסו שוב.',
+      AiParseFailure.tooLarge =>
+        'נסו תקופה קצרה יותר או הוסיפו כרטיס ארוך ידנית.',
+      AiParseFailure.truncated =>
+        'לא שמרנו תוצאה שנקטעה. אפשר לנסות תקופה קצרה יותר.',
       _ => 'אפשר לנסות שוב, ואם זה חוזר — לשלוח לנו את פרטי התקלה.',
     };
   }
