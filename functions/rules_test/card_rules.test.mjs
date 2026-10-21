@@ -324,6 +324,9 @@ test('an empty or short card stays private even with prior approval', async () =
     setDoc(doc(db, 'personalCards', OWNER), { ...card({ description: 'קצר' }), updatedAt: new Date() }),
   );
   await assertFails(getDoc(doc(as(MM), 'personalCards', OWNER)));
+  await seed((db) =>
+    setDoc(doc(db, 'cardAccess', accessId), { ...access('declined'), updatedAt: new Date() }),
+  );
   await assertFails(setDoc(doc(as(MM), 'cardAccess', accessId), access('pending')));
   await assertSucceeds(getDoc(doc(as(OWNER), 'personalCards', OWNER)));
 
