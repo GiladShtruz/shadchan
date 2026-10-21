@@ -37,4 +37,10 @@ abstract final class AiConfig {
   /// cell is not a problem that rewards deliberation, and the whole cost of it
   /// lands on someone watching a progress bar.
   static const int thinkingBudget = 0;
+
+  // Client-side safeguards, not an account-wide quota or a billing cap.
+  static const int maxWhatsappImportMessages = 200;
+  static const int maxWhatsappRequests = 5;
+  static const int maxWhatsappPromptTokens = 20000;
+  static const int maxWhatsappOutputTokens = 16000;
 }

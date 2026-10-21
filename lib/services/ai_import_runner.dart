@@ -5,6 +5,7 @@ import 'package:shadchan/services/ai_people_parser.dart';
 import 'package:shadchan/services/excel_import_service.dart';
 import 'package:shadchan/services/whatsapp_import_service.dart';
 import 'package:shadchan/utils/parsed_person.dart';
+import 'package:shadchan/utils/ai_config.dart';
 
 /// What a finished import produced, including what it failed to read.
 @immutable
@@ -58,6 +59,10 @@ class AiImportPlan {
     required this.duplicatesDropped,
     required this.mediaPaths,
     required this.messageTexts,
+    this.outsidePeriod = 0,
+    this.undated = 0,
+    this.remaining = 0,
+    this.eligible = 0,
   });
 
   /// The requests that would be made, in order.
@@ -74,6 +79,15 @@ class AiImportPlan {
 
   final Map<String, String> mediaPaths;
   final Map<int, String> messageTexts;
+
+  /// Candidate messages outside the chosen date range.
+  final int outsidePeriod;
+  /// Candidates with no usable timestamp; only eligible for "all history".
+  final int undated;
+  /// New candidates deferred until the next import.
+  final int remaining;
+  /// Candidates in the chosen range including already-processed ones.
+  final int eligible;
 
   int get batchCount => batches.length;
 
@@ -190,12 +204,16 @@ abstract final class AiImportRunner {
   /// small — the overhead is already down to a tenth — and the failure gets
   /// steadily more expensive. Worth re-measuring against a real export before
   /// moving it again.
-  static const int messagesPerBatch = 100;
+  static const int messagesPerBatch = 40;
 
   static Future<AiImportOutcome> runChat(
     AiImportPlan plan, {
     void Function(int done, int total)? onProgress,
   }) async {
+    if (plan.messageCount > AiConfig.maxWhatsappImportMessages ||
+        plan.batchCount > AiConfig.maxWhatsappRequests) {
+      throw StateError('WhatsApp AI import exceeds its safety limits');
+    }
     debugPrint(
       'AI_IMPORT chat: ${plan.messageCount} candidate messages '
       '(${plan.skipped} already imported), ${plan.batchCount} batches, '
@@ -232,34 +250,65 @@ abstract final class AiImportRunner {
   static AiImportPlan planChat(
     WhatsAppChat chat, {
     Set<String> alreadyImported = const <String>{},
+    DateTime? since,
+    int maxMessages = AiConfig.maxWhatsappImportMessages,
   }) {
-    final List<({int index, WhatsAppMessage message})> candidates =
-        chat.candidateMessages;
-    final List<({int index, WhatsAppMessage message})> fresh =
-        <({int index, WhatsAppMessage message})>[
-          for (final ({int index, WhatsAppMessage message}) entry in candidates)
-            if (!alreadyImported.contains(
-              AiImportMemory.fingerprint(
-                sender: entry.message.sender,
-                text: entry.message.text,
-                attachmentName: entry.message.attachmentName,
-              ),
-            ))
-              entry,
-        ];
+    final boundedMax = maxMessages < 0
+        ? 0
+        : maxMessages > AiConfig.maxWhatsappImportMessages
+            ? AiConfig.maxWhatsappImportMessages
+            : maxMessages;
+    final candidates = chat.candidateMessages;
+    int outsidePeriod = 0;
+    int undated = 0;
+    final eligible = <({int index, WhatsAppMessage message})>[];
+    for (final entry in candidates) {
+      if (since != null) {
+        if (entry.message.sentAt == null) {
+          undated++;
+          continue;
+        }
+        if (entry.message.sentAt!.isBefore(since)) {
+          outsidePeriod++;
+          continue;
+        }
+      }
+      eligible.add(entry);
+    }
+    final fresh = <({int index, WhatsAppMessage message})>[
+      for (final entry in eligible)
+        if (!alreadyImported.contains(AiImportMemory.fingerprint(
+          sender: entry.message.sender,
+          text: entry.message.text,
+          attachmentName: entry.message.attachmentName,
+        )))
+          entry,
+    ];
 
+    // Newest first for selection; keep chronological order in the prompt.
+    // Avoid cutting across a photo/card adjacency when possible.
+    int start = fresh.length > boundedMax ? fresh.length - boundedMax : 0;
+    while (start > 0 && start < fresh.length &&
+        (fresh[start].message.hasAttachment ||
+         fresh[start - 1].message.hasAttachment)) {
+      start++;
+    }
+    final selected = fresh.sublist(start);
+    final batches = _splitChat(selected);
+    if (batches.length > AiConfig.maxWhatsappRequests) {
+      throw StateError('WhatsApp AI request budget exceeded');
+    }
     return AiImportPlan(
-      batches: _splitChat(fresh),
-      skipped: candidates.length - fresh.length,
+      batches: batches,
+      skipped: eligible.length - fresh.length,
       duplicatesDropped: chat.messages.length - candidates.length,
       mediaPaths: chat.mediaPaths,
-      // Indexed here so a person's card can be kept word for word: the model
-      // points at the message it read them from, and the text comes from the
-      // export rather than from the answer. Built over *every* candidate, not
-      // just the fresh ones — a photo posted last month can still belong to a
-      // card posted today.
+      outsidePeriod: outsidePeriod,
+      undated: undated,
+      remaining: fresh.length - selected.length,
+      eligible: eligible.length,
       messageTexts: <int, String>{
-        for (final ({int index, WhatsAppMessage message}) entry in candidates)
+        for (final entry in selected)
           if (entry.message.text.isNotEmpty) entry.index: entry.message.text,
       },
     );
