@@ -243,7 +243,7 @@ abstract final class PersonalCardService {
       );
       final Set<String> uploaded = _uploaded();
       final List<String> remotePaths = <String>[];
-      for (final String localPath in card.photosPaths) {
+      for (final String localPath in card.photosPaths.take(4)) {
         final String name = PhotoPickerService.basenameOf(localPath);
         // The stored path is absolute, and iOS moves the app's sandbox on an
         // update: a photo that is still there under a new prefix must not be

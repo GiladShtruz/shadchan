@@ -127,10 +127,14 @@ service firebase.storage {
       }
 
       function approved() {
+        let card = firestore.get(/databases/(default)/documents/personalCards/$(ownerUid)).data;
         return request.auth != null
+            && firestore.exists(/databases/(default)/documents/personalCards/$(ownerUid))
             && firestore.exists(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + request.auth.uid))
             && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + request.auth.uid)).data.status == 'approved'
-            && firestore.get(/databases/(default)/documents/personalCards/$(ownerUid)).data.deleted == false;
+            && card.deleted == false
+            && ((card.photoPaths is list && card.photoPaths.size() > 0)
+                || (card.description is string && card.description.size() >= 30));
       }
 
       allow read: if isOwner() || approved();

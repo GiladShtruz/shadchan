@@ -92,8 +92,14 @@ class PersonalCardProvider extends ChangeNotifier {
   /// card never erases it: it can always be restored.
   Person? get card => _card;
 
-  /// A live card: written, and not deleted.
-  bool get hasCard => _card != null && !_deleted;
+  /// A live card requires content beyond a name/status: at least one photo
+  /// or 30 characters of descriptive text. Drafts are still editable.
+  static bool isActive(Person? card) =>
+      card != null &&
+      (card.photosPaths.isNotEmpty ||
+          (card.description?.trim().runes.length ?? 0) >= 30);
+
+  bool get hasCard => !_deleted && isActive(_card);
 
   /// A card that was written and then deleted — the personal area offers
   /// "שחזור הכרטיס שלי" instead of an empty page.

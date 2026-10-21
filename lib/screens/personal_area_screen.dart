@@ -309,8 +309,17 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                 else ...<Widget>[
                   _MyCardSummary(
                     card: card,
+                    active: cards.hasCard,
                     onEdit: () => context.push('/me/card'),
                   ),
+                  if (!cards.hasCard) ...<Widget>[
+                    const SizedBox(height: 10),
+                    Text(
+                      'הכרטיס עדיין טיוטה. הוספת תמונה אחת או 30 תווים '
+                      'בתיאור תאפשר לשדכנים לבקש גישה.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   ProfileStatusChoices(
                     title: 'הסטטוס שלי',
@@ -596,9 +605,14 @@ class _CreateCardPrompt extends StatelessWidget {
 /// It used to be a three-line summary behind a tap, which meant somebody who
 /// came to see their own card had to open the editor to see it.
 class _MyCardSummary extends StatelessWidget {
-  const _MyCardSummary({required this.card, required this.onEdit});
+  const _MyCardSummary({
+    required this.card,
+    required this.active,
+    required this.onEdit,
+  });
 
   final Person card;
+  final bool active;
   final VoidCallback onEdit;
 
   @override
@@ -619,7 +633,7 @@ class _MyCardSummary extends StatelessWidget {
     final List<String> photos = card.photosPaths
         .where((String path) => File(path).existsSync())
         .toList();
-    final bool shareable = WhatsAppUtils.hasSendableCard(card);
+    final bool shareable = active && WhatsAppUtils.hasSendableCard(card);
 
     return HomePaperCard(
       stripe: accent,

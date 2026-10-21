@@ -61,7 +61,7 @@ function card(extra = {}) {
     religiousLevel: 'datiLeumi',
     religiousLevelOther: null,
     city: null,
-    description: 'אוהב טיולים',
+    description: 'אוהב טיולים בטבע וללמוד דברים חדשים בכל יום',
     heightCm: null,
     maritalStatus: 'single',
     region: 'center',
@@ -313,4 +313,35 @@ test('the inbox is written by the server only', async () => {
   await assertFails(
     setDoc(doc(as(OWNER), 'users', OWNER, 'inbox', 'n1'), { title: 'x' }),
   );
+});
+
+test('an empty or short card stays private even with prior approval', async () => {
+  await seedCardAndContacts({ inContacts: true });
+  await seed((db) =>
+    setDoc(doc(db, 'cardAccess', accessId), { ...access('approved'), updatedAt: new Date() }),
+  );
+  await seed((db) =>
+    setDoc(doc(db, 'personalCards', OWNER), { ...card({ description: 'קצר' }), updatedAt: new Date() }),
+  );
+  await assertFails(getDoc(doc(as(MM), 'personalCards', OWNER)));
+  await seed((db) =>
+    setDoc(doc(db, 'cardAccess', accessId), { ...access('declined'), updatedAt: new Date() }),
+  );
+  await assertFails(setDoc(doc(as(MM), 'cardAccess', accessId), access('pending')));
+  await assertSucceeds(getDoc(doc(as(OWNER), 'personalCards', OWNER)));
+
+  await seed((db) =>
+    updateDoc(doc(db, 'personalCards', OWNER), {
+      photoPaths: ['personalCards/owner1/a.jpg'],
+    }),
+  );
+  await assertSucceeds(setDoc(doc(as(OWNER), 'cardAccess', accessId), access('approved')));
+  await assertSucceeds(getDoc(doc(as(MM), 'personalCards', OWNER)));
+});
+
+test('card uploads are limited to four photo references', async () => {
+  await assertSucceeds(setDoc(doc(as(OWNER), 'personalCards', OWNER),
+    card({ photoPaths: ['a', 'b', 'c', 'd'] })));
+  await assertFails(setDoc(doc(as(OWNER), 'personalCards', OWNER),
+    card({ photoPaths: ['a', 'b', 'c', 'd', 'e'] })));
 });
