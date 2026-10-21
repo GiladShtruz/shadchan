@@ -14,7 +14,9 @@ void main() {
     settings = await Hive.openBox<dynamic>('settings');
   });
 
-  setUp(() async => settings.clear());
+  setUp(() async {
+    await settings.clear();
+  });
 
   tearDownAll(() async {
     await Hive.close();
