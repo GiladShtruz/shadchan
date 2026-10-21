@@ -30,6 +30,12 @@ void main() {
     expect(plan.batches.last.last.message.text, contains('מועמד 229 '));
   });
 
+  test('attempts to raise the message limit are clamped', () {
+    final plan = AiImportRunner.planChat(_chat(230), maxMessages: 10000);
+    expect(plan.messageCount, 200);
+    expect(plan.remaining, 30);
+  });
+
   test('date range filters before applying the 200-message limit', () {
     final chat = WhatsAppImportService.parseText(<String>[
       '1.1.2026, 10:00 - רחל: ${_card(1)}',

@@ -41,6 +41,7 @@ enum _Period { month, threeMonths, year, all }
 class _WhatsAppImportOptionsScreenState
     extends State<WhatsAppImportOptionsScreen> {
   _Period _period = _Period.threeMonths;
+  bool _reprocess = false;
 
   DateTime? get _since => switch (_period) {
         _Period.month => widget.now.subtract(const Duration(days: 30)),
@@ -54,7 +55,7 @@ class _WhatsAppImportOptionsScreenState
     final plan = AiImportRunner.planChat(
       widget.chat,
       since: _since,
-      alreadyImported: widget.alreadyImported,
+      alreadyImported: _reprocess ? const <String>{} : widget.alreadyImported,
     );
     final theme = Theme.of(context);
     return Scaffold(
@@ -84,6 +85,17 @@ class _WhatsAppImportOptionsScreenState
                   if (value != null) setState(() => _period = value);
                 },
               )),
+          if (widget.alreadyImported.isNotEmpty)
+            CheckboxListTile(
+              title: const Text('לקרוא מחדש הודעות שכבר יובאו'),
+              subtitle: const Text(
+                'רק אם כרטיסים חסרים. הקריאה המחודשת משתמשת ב-AI '
+                'ותישאר מוגבלת ל-200 הודעות.',
+              ),
+              value: _reprocess,
+              onChanged: (value) =>
+                  setState(() => _reprocess = value ?? false),
+            ),
           const SizedBox(height: 12),
           Card(
             child: Padding(

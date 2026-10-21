@@ -210,6 +210,10 @@ abstract final class AiImportRunner {
     AiImportPlan plan, {
     void Function(int done, int total)? onProgress,
   }) async {
+    if (plan.messageCount > AiConfig.maxWhatsappImportMessages ||
+        plan.batchCount > AiConfig.maxWhatsappRequests) {
+      throw StateError('WhatsApp AI import exceeds its safety limits');
+    }
     debugPrint(
       'AI_IMPORT chat: ${plan.messageCount} candidate messages '
       '(${plan.skipped} already imported), ${plan.batchCount} batches, '
@@ -249,6 +253,11 @@ abstract final class AiImportRunner {
     DateTime? since,
     int maxMessages = AiConfig.maxWhatsappImportMessages,
   }) {
+    final boundedMax = maxMessages < 0
+        ? 0
+        : maxMessages > AiConfig.maxWhatsappImportMessages
+            ? AiConfig.maxWhatsappImportMessages
+            : maxMessages;
     final candidates = chat.candidateMessages;
     int outsidePeriod = 0;
     int undated = 0;
@@ -278,7 +287,7 @@ abstract final class AiImportRunner {
 
     // Newest first for selection; keep chronological order in the prompt.
     // Avoid cutting across a photo/card adjacency when possible.
-    int start = fresh.length > maxMessages ? fresh.length - maxMessages : 0;
+    int start = fresh.length > boundedMax ? fresh.length - boundedMax : 0;
     while (start > 0 && start < fresh.length &&
         (fresh[start].message.hasAttachment ||
          fresh[start - 1].message.hasAttachment)) {

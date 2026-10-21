@@ -27,17 +27,6 @@ import 'package:shadchan/widgets/app_notice.dart';
 /// people and the same review step.
 enum AiImportSource { excel, whatsapp, pastedText, camera, gallery }
 
-/// What the user decided when shown what an import would cost.
-enum _PlanChoice {
-  /// Read what the plan says — everything the memory has not already seen.
-  go,
-
-  /// Read the file from the top, memory ignored.
-  readAll,
-
-  cancel,
-}
-
 /// The entry page behind "היעזרו ב‑AI להוספה".
 ///
 /// Sources land here one at a time; the ones that are not built yet are shown
@@ -189,15 +178,10 @@ class _AiImportScreenState extends State<AiImportScreen> {
     await _run(path, source);
   }
 
-  /// [ignoreMemory] reads the file as though this device had never seen it —
-  /// the "לקרוא הכול מחדש" way out of [AiImportMemory] having skipped
-  /// something it should not have. It bypasses the memory for this run without
-  /// erasing it, so the choice costs one import rather than every future one.
   Future<void> _run(
     String path,
-    AiImportSource source, {
-    bool ignoreMemory = false,
-  }) async {
+    AiImportSource source,
+  ) async {
     if (_isWorking) {
       return;
     }
@@ -292,9 +276,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
         final AiImportPlan? plan = await WhatsAppImportOptionsScreen.show(
           context,
           chat: chat,
-          alreadyImported: ignoreMemory
-              ? const <String>{}
-              : AiImportMemory.seen(),
+          alreadyImported: AiImportMemory.seen(),
         );
         if (!mounted) return;
         if (plan == null) {
@@ -368,116 +350,6 @@ class _AiImportScreenState extends State<AiImportScreen> {
         hint: 'אפשר לנסות שוב, ואם זה חוזר — לשלוח לנו את פרטי התקלה.',
       );
     }
-  }
-
-  /// Asks before spending anything, quoting what the file will actually cost.
-  ///
-  /// **The one action in the app that runs for minutes on the project's tokens,
-  /// and it used to start on a file-picker tap.** A group export gives no clue
-  /// to its size from the outside — the same share sheet hands over a
-  /// twelve-card chat and a four-year archive of a 900-member group — so the
-  /// only moment the size can be shown is here, after the file is read and
-  /// before a single request goes out.
-  ///
-  /// Requests, not people: it is the number that scales, the number that takes
-  /// the time, and the number a matchmaker can compare against the last import
-  /// they ran.
-  Future<_PlanChoice> _confirmPlan(AiImportPlan plan) async {
-    // A short file is not worth a question, unless the memory is quietly
-    // dropping most of it — that is the one small import somebody may need to
-    // argue with. The point is to catch the export nobody meant to hand over,
-    // and stopping to confirm five requests trains people to tap through the
-    // dialog that matters.
-    if (plan.batchCount <= _confirmAboveBatches && plan.skipped == 0) {
-      return _PlanChoice.go;
-    }
-
-    final StringBuffer body = StringBuffer()
-      ..writeln('בקובץ ${plan.messageCount} הודעות שצריך לקרוא.')
-      ..writeln()
-      ..writeln(
-        'הקריאה תתבצע ב‑${plan.batchCount} בקשות ל‑AI, וזה יכול לקחת כמה דקות.',
-      );
-    if (plan.skipped > 0) {
-      body
-        ..writeln()
-        ..writeln(
-          '${plan.skipped} הודעות כבר יובאו בעבר מהמכשיר הזה, והן ידולגו — '
-          'כך שהייבוא קורא רק את מה שחדש.',
-        );
-    }
-
-    final _PlanChoice? choice = await showDialog<_PlanChoice>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('לקרוא את הקובץ?'),
-        content: SingleChildScrollView(
-          child: Text(body.toString().trimRight()),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(_PlanChoice.cancel),
-            child: const Text('ביטול'),
-          ),
-          // Only when there is something being skipped, and deliberately worded
-          // as what it does rather than as "reset". Somebody who deleted a
-          // person by mistake and wants them back has no other way in, and
-          // "זיכרון הייבוא" is not a thing they know exists.
-          if (plan.skipped > 0)
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(_PlanChoice.readAll),
-              child: const Text('לקרוא הכול מחדש'),
-            ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(_PlanChoice.go),
-            child: const Text('קראו את הקובץ'),
-          ),
-        ],
-      ),
-    );
-    return choice ?? _PlanChoice.cancel;
-  }
-
-  /// Above this many requests the import stops to ask. Below it, a confirmation
-  /// is noise: a handful of requests is seconds, and a dialog on every small
-  /// import is how people learn to dismiss the one that matters.
-  static const int _confirmAboveBatches = 5;
-
-  /// Ends an import whose file held nothing this device had not already read.
-  ///
-  /// A dialog rather than a passing notice, and its own path rather than a
-  /// failure or an empty result, because it is the normal outcome of the most
-  /// ordinary thing a matchmaker does — re-export the group to pick up the last
-  /// few weeks — and because it is the one case where the app's memory could be
-  /// wrong. "לא נמצאו אנשים" here would send somebody hunting for a bug in an
-  /// import that worked perfectly the first time; this says what happened and
-  /// offers the way past it.
-  Future<bool> _confirmNothingNew(AiImportPlan plan) async {
-    if (!mounted) {
-      return false;
-    }
-    final bool? readAll = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('הכול כבר יובא'),
-        content: Text(
-          'כל ${plan.skipped} הכרטיסים בקובץ הזה כבר נקראו מהמכשיר הזה, '
-          'ולא נמצא בו שום דבר חדש.\n\n'
-          'אם חלק מהאנשים חסרים אצלכם — אפשר לקרוא את הקובץ כולו מחדש.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('סגירה'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('לקרוא הכול מחדש'),
-          ),
-        ],
-      ),
-    );
-    return readAll ?? false;
   }
 
   /// Drops the working state without touching anything else, so a re-entrant
