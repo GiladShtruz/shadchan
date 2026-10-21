@@ -280,6 +280,12 @@ abstract final class AppRouter {
               return const PersonExtendedEditScreen.ownerCard();
             },
           ),
+          GoRoute(
+            path: 'privacy',
+            builder: (BuildContext context, GoRouterState state) {
+              return const PersonalPrivacyScreen();
+            },
+          ),
         ],
       ),
       GoRoute(
