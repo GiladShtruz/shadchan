@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shadchan/services/hidden_helpers_store.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
@@ -746,7 +748,6 @@ class _PersonalAccessOverview extends StatelessWidget {
     final CardAccessProvider access = context.watch<CardAccessProvider>();
     final approved = access.approved;
     final pending = access.pendingRequests;
-    final helpers = access.helpers;
     final int reports = access.statusReports.length;
     final String approvedPreview = approved
         .take(3)
@@ -821,36 +822,49 @@ class _PersonalAccessOverview extends StatelessWidget {
             ),
           ),
         ],
-        if (hasCard && helpers.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 12),
-          HomePaperCard(
-            onTap: () => context.push('/me/privacy'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text('החברים שלי שמשדכים בשדכן',
-                    style: theme.textTheme.titleMedium),
-                const SizedBox(height: 6),
-                for (final helper in helpers.take(3))
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Text(
-                      access.nameInContacts(helper.uid, helper.name),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: Text(
-                    helpers.length > 3 ? 'הצגת כל החברים' : 'לתת הרשאה לחבר',
-                    style: theme.textTheme.labelMedium,
+        if (hasCard)
+          ValueListenableBuilder<Box<dynamic>>(
+            valueListenable: Hive.box<dynamic>('settings').listenable(
+              keys: const <String>[HiddenHelpersStore.key],
+            ),
+            builder: (BuildContext context, Box<dynamic> settings, Widget? _) {
+              final Set<String> hidden = HiddenHelpersStore.read(settings);
+              final visible = access.helpers
+                  .where((helper) => !hidden.contains(helper.uid))
+                  .toList();
+              if (visible.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: HomePaperCard(
+                  onTap: () => context.push('/me/privacy'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text('החברים שלי שמשדכים בשדכן',
+                          style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 6),
+                      for (final helper in visible.take(3))
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            access.nameInContacts(helper.uid, helper.name),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: Text(
+                          visible.length > 3 ? 'הצגת כל החברים' : 'לתת הרשאה לחבר',
+                          style: theme.textTheme.labelMedium,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
-        ],
       ],
     );
   }

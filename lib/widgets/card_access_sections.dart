@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shadchan/services/hidden_helpers_store.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -383,55 +385,92 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
           ],
         ),
         if (widget.hasCard)
-          SettingsGroup(
-            title: 'החברים שלי שמשדכים בשדכן',
-            children: <Widget>[
-              if (_permission == null)
-                const SizedBox.shrink()
-              else if (_permission != ContactsPermissionState.granted)
-                SettingsRow(
-                  icon: Icons.contacts_outlined,
-                  title: 'גישה לאנשי הקשר',
-                  subtitle:
-                      'כדי למצוא חברים שמשדכים בשדכן, ולוודא שרק חברים שלך '
-                      'יכולים לבקש גישה לכרטיס. נשלחים רק מספרים מוצפנים, '
-                      'בלי שמות.',
-                  trailing: FilledButton(
-                    onPressed: _askForContacts,
-                    child: Text(
-                      _permission == ContactsPermissionState.permanentlyDenied
-                          ? 'להגדרות'
-                          : 'אישור',
+          ValueListenableBuilder<Box<dynamic>>(
+            valueListenable: Hive.box<dynamic>('settings').listenable(
+              keys: const <String>[HiddenHelpersStore.key],
+            ),
+            builder: (BuildContext context, Box<dynamic> settings, Widget? _) {
+              final Set<String> hidden = HiddenHelpersStore.read(settings);
+              final List<CardHelper> visible = helpers
+                  .where((CardHelper helper) => !hidden.contains(helper.uid))
+                  .toList();
+              final List<CardHelper> hiddenHelpers = helpers
+                  .where((CardHelper helper) => hidden.contains(helper.uid))
+                  .toList();
+              return Column(
+                children: <Widget>[
+                  SettingsGroup(
+                    title: 'החברים שלי שמשדכים בשדכן',
+                    children: <Widget>[
+                      if (_permission == null)
+                        const SizedBox.shrink()
+                      else if (_permission != ContactsPermissionState.granted)
+                        SettingsRow(
+                          icon: Icons.contacts_outlined,
+                          title: 'גישה לאנשי הקשר',
+                          subtitle:
+                              'כדי למצוא חברים שמשדכים בשדכן, ולוודא שרק חברים שלך '
+                              'יכולים לבקש גישה לכרטיס. נשלחים רק מספרים מוצפנים, '
+                              'בלי שמות.',
+                          trailing: FilledButton(
+                            onPressed: _askForContacts,
+                            child: Text(
+                              _permission ==
+                                      ContactsPermissionState.permanentlyDenied
+                                  ? 'להגדרות'
+                                  : 'אישור',
+                            ),
+                          ),
+                        )
+                      else if (_scanning || !access.helpersLoaded)
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(
+                            child: SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      else if (visible.isEmpty)
+                        const SettingsRow(
+                          icon: Icons.diversity_3_outlined,
+                          title: 'אין כרגע חברים נוספים ברשימה',
+                        )
+                      else
+                        for (final CardHelper helper in visible)
+                          _HelperRow(
+                            name: access.nameInContacts(helper.uid, helper.name),
+                            busy: access.isBusy('helper:${helper.uid}'),
+                            onGrant: () => _grant(access, helper),
+                            onHide: () =>
+                                HiddenHelpersStore.setHidden(settings, helper.uid, true),
+                          ),
+                    ],
+                  ),
+                  if (hiddenHelpers.isNotEmpty)
+                    SettingsGroup(
+                      title: 'הוסתרו מהרשימה (לא חסומים)',
+                      children: <Widget>[
+                        for (final CardHelper helper in hiddenHelpers)
+                          SettingsRow(
+                            icon: Icons.visibility_off_outlined,
+                            title: access.nameInContacts(helper.uid, helper.name),
+                            trailing: TextButton(
+                              onPressed: () => HiddenHelpersStore.setHidden(
+                                  settings, helper.uid, false),
+                              child: const Text('החזרה לרשימה'),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                )
-              else if (_scanning || !access.helpersLoaded)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(
-                    child: SizedBox.square(
-                      dimension: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                )
-              else if (helpers.isEmpty)
-                const SettingsRow(
-                  icon: Icons.diversity_3_outlined,
-                  title: 'עוד לא מצאנו חברים שלך בשדכן',
-                )
-              else
-                for (final CardHelper helper in helpers)
-                  _HelperRow(
-                    name: access.nameInContacts(helper.uid, helper.name),
-                    busy: access.isBusy('helper:${helper.uid}'),
-                    onGrant: () => _grant(access, helper),
-                  ),
-            ],
+                ],
+              );
+            },
           ),
         if (blocked.isNotEmpty)
           SettingsGroup(
-            title: 'מוסתרים',
+            title: 'חסומים',
             children: <Widget>[
               for (final CardAccess row in blocked)
                 SettingsRow(
@@ -582,11 +621,13 @@ class _HelperRow extends StatelessWidget {
     required this.name,
     required this.busy,
     required this.onGrant,
+    required this.onHide,
   });
 
   final String name;
   final bool busy;
   final VoidCallback onGrant;
+  final VoidCallback onHide;
 
   @override
   Widget build(BuildContext context) {
@@ -621,6 +662,18 @@ class _HelperRow extends StatelessWidget {
               ),
               child: const Text('לתת גישה'),
             ),
+          PopupMenuButton<String>(
+            tooltip: 'פעולות על החבר',
+            onSelected: (String action) {
+              if (action == 'hide') onHide();
+            },
+            itemBuilder: (_) => const <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'hide',
+                child: Text('הסתר מהרשימה'),
+              ),
+            ],
+          ),
         ],
       ),
     );
