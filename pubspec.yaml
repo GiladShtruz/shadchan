@@ -55,6 +55,7 @@ dependencies:
   # platform interface is pinned below in `dependency_overrides` because its
   # published `^7.0.1` range would otherwise select the incompatible 7.1.0.
   firebase_core: 4.10.0
+  cloud_functions: ^6.3.0
   firebase_auth: 6.5.1
   firebase_app_check: 0.4.4+1
   firebase_ai: 3.12.1

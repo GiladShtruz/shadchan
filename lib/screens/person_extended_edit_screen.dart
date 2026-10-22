@@ -248,7 +248,9 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _maritalStatus = person.maritalStatus;
     _region = person.region;
     _birthDate = person.birthDate;
-    _photoPaths = List<String>.from(person.photosPaths);
+    _photoPaths = List<String>.from(
+      _owner ? person.photosPaths.take(4) : person.photosPaths,
+    );
     _additionalContacts = List<MatchContact>.from(person.additionalContacts);
     _tags = List<String>.from(person.tags);
 
@@ -543,6 +545,10 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   // ----------------------------------------------------------------- photos
 
   Future<void> _addPhotos() async {
+    if (_owner && _photoPaths.length >= 4) {
+      AppNotice.show(context, 'אפשר להוסיף עד 4 תמונות לכרטיס');
+      return;
+    }
     final List<String> added = await PhotoPickerService.pickPhotos(
       context,
       personId: widget.personId,
@@ -551,7 +557,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       return;
     }
     _commit(() {
-      _photoPaths = <String>[..._photoPaths, ...added];
+      final accepted = _owner
+          ? added.take(4 - _photoPaths.length).toList()
+          : added;
+      if (accepted.length < added.length) {
+        PhotoPickerService.deletePhotoFiles(added.skip(accepted.length));
+        AppNotice.show(context, 'אפשר להוסיף עד 4 תמונות לכרטיס');
+      }
+      _photoPaths = <String>[..._photoPaths, ...accepted];
       _newPhotoPaths.addAll(added);
     });
   }
@@ -567,7 +580,12 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       return;
     }
     _commit(() {
-      _photoPaths = <String>[picked, ..._photoPaths];
+      _photoPaths = <String>[
+        picked,
+        ...(_owner && _photoPaths.length >= 4
+            ? _photoPaths.skip(1)
+            : _photoPaths),
+      ];
       _newPhotoPaths.add(picked);
     });
   }
@@ -1119,9 +1137,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   Widget _buildLookingFor(ThemeData theme) {
     return _area(
       area: _Area.looking,
-      title: _owner
-          ? '{מה אני מחפש|מה אני מחפשת}'.forGender(_gender)
-          : 'מה המועמד מחפש',
+      title: _owner ? 'העדפות שיופיעו בכרטיס לשליחה' : 'מה המועמד מחפש',
       icon: Icons.filter_alt_outlined,
       subtitle: _owner
           ? 'לפי זה שדכנים יראו לך התאמות.'

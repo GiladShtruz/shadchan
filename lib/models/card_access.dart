@@ -28,8 +28,22 @@ class CardAccess {
     this.matchmakerGender,
     this.ownerPhoneHash,
     this.ownerPhone,
+    this.cardGranted,
+    this.cardRequested = false,
+    this.granteeUids = const [],
+    this.lookingGranted = false,
+    this.lookingRequested = false,
   });
 
+  final List<String> granteeUids;
+  final bool? cardGranted;
+  final bool cardRequested;
+  final bool lookingGranted;
+  final bool lookingRequested;
+  bool get canReadCard =>
+      status == CardAccessStatus.approved && (cardGranted ?? true);
+  bool get canReadLooking =>
+      status == CardAccessStatus.approved && lookingGranted;
   final String ownerUid;
   final String matchmakerUid;
   final CardAccessStatus status;
@@ -71,6 +85,12 @@ class CardAccess {
       matchmakerGender: data['matchmakerGender'] as String?,
       ownerPhoneHash: data['ownerPhoneHash'] as String?,
       ownerPhone: data['ownerPhone'] as String?,
+      granteeUids:
+          (data['granteeUids'] as List?)?.cast<String>() ?? [matchmaker],
+      cardGranted: data['cardGranted'] as bool?,
+      cardRequested: data['cardRequested'] == true,
+      lookingGranted: data['lookingGranted'] == true,
+      lookingRequested: data['lookingRequested'] == true,
     );
   }
 }

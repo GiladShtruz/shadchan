@@ -309,7 +309,10 @@ class _CardLinkPanelState extends State<CardLinkPanel> {
       } else {
         final CardAccess? row = access.accessTo(ownerUid);
         final bool busy = access.isBusy('request:$ownerUid');
-        switch (row?.status) {
+        switch (row?.status == CardAccessStatus.approved &&
+                row?.canReadCard != true
+            ? (row?.cardRequested == true ? CardAccessStatus.pending : null)
+            : row?.status) {
           case CardAccessStatus.blocked:
             return const SizedBox.shrink();
           case CardAccessStatus.pending:

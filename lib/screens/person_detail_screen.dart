@@ -1,3 +1,5 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
+import 'package:shadchan/widgets/private_looking.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -511,6 +513,37 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               if (inquiry != null) _InquiryLine(contact: inquiry),
               if (inquiry == null || person.proposalContacts.length > 1)
                 _ProposalContactsCard(person: person),
+              if (context.watch<CardAccessProvider>().privateOwnerFor(person) !=
+                  null)
+                PrivateLookingBlock(
+                  ownerUid: context.watch<CardAccessProvider>().privateOwnerFor(
+                    person,
+                  ),
+                ),
+              if (CoupleWorkspaceService.isCouple)
+                ValueListenableBuilder<int>(
+                  valueListenable: CoupleWorkspaceService.recordsRevision,
+                  builder: (context, _, _) => Text(
+                    'נוסף על ידי ${CoupleWorkspaceService.sources(person.id).map((id) => CoupleWorkspaceService.names[id] ?? '').join(' ו')}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              if (CoupleWorkspaceService.isCouple &&
+                  !CoupleWorkspaceService.sources(
+                    person.id,
+                  ).contains(CoupleWorkspaceService.currentUid))
+                TextButton(
+                  onPressed: () async {
+                    try {
+                      await CoupleWorkspaceService.claimPerson(person.id);
+                    } catch (_) {
+                      if (context.mounted) {
+                        AppNotice.show(context, 'לא ניתן לעדכן כרגע');
+                      }
+                    }
+                  },
+                  child: const Text('גם חבר/ה שלי'),
+                ),
               _PersonalNotesCard(
                 key: _notesSectionKey,
                 person: person,
@@ -1619,7 +1652,9 @@ List<_PersonNoteEntry> _noteEntriesFor(Person person, List<PersonNote> notes) {
     for (final PersonNote note in notes)
       _PersonNoteEntry(
         noteId: note.id,
-        text: note.text,
+        text: CoupleWorkspaceService.author('personNotes', note.id) == null
+            ? note.text
+            : '${note.text}\n— ${CoupleWorkspaceService.author('personNotes', note.id)}',
         createdAt: note.createdAt,
         isAutomatic: note.isAutomatic,
         audioFile: note.audioFile,

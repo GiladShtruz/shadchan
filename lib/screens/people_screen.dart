@@ -1,3 +1,4 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:hive/hive.dart';
@@ -103,6 +104,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
   @override
   void initState() {
     super.initState();
+    CoupleWorkspaceService.membership.addListener(_coupleChanged);
+    CoupleWorkspaceService.recordsRevision.addListener(_coupleChanged);
     _searchController.addListener(_handleSearchChanged);
     _showArchived = widget.initialShowArchived;
     final ({PeopleSortOption option, bool ascending})? saved =
@@ -123,8 +126,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
     }
   }
 
+  void _coupleChanged() {
+    if (mounted) setState(() {});
+  }
+
+  String? _sourceUid;
+
   @override
   void dispose() {
+    CoupleWorkspaceService.membership.removeListener(_coupleChanged);
+    CoupleWorkspaceService.recordsRevision.removeListener(_coupleChanged);
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
@@ -194,6 +205,27 @@ class _PeopleScreenState extends State<PeopleScreen> {
         children: <Widget>[
           Column(
             children: <Widget>[
+              if (CoupleWorkspaceService.isCouple)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('הכל'),
+                        selected: _sourceUid == null,
+                        onSelected: (_) => setState(() => _sourceUid = null),
+                      ),
+                      for (final entry in CoupleWorkspaceService.names.entries)
+                        ChoiceChip(
+                          label: Text('החברים של ${entry.value}'),
+                          selected: _sourceUid == entry.key,
+                          onSelected: (_) =>
+                              setState(() => _sourceUid = entry.key),
+                        ),
+                    ],
+                  ),
+                ),
               if (_importBatchId != null)
                 _JustAddedBar(
                   count: visiblePeople.length,
@@ -760,6 +792,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
     final String? batchId = _importBatchId;
     final List<Person> visiblePeople = filteredPeople.where((Person person) {
+      if (_sourceUid != null &&
+          !CoupleWorkspaceService.sources(person.id).contains(_sourceUid)) {
+        return false;
+      }
       // The batch view answers one question and ignores every other control on
       // the screen except the search box.
       if (batchId != null && person.importBatchId != batchId) {

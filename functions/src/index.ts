@@ -1,3 +1,13 @@
+export { reconcileCoupleRecord } from './couple_dedup';
+export {
+  resumeCoupleMigration,
+  resolveMatchmaker,
+  createCoupleInvite,
+  previewCoupleInvite,
+  acceptCoupleInvite,
+  previewCoupleSplit,
+  splitCoupleWorkspace,
+} from './couple_workspace';
 /**
  * The server side of the personal card.
  *
@@ -13,6 +23,8 @@
  * devices, which may or may not arrive. The inbox is the record; the push is
  * a courtesy.
  */
+export { savePrivateLooking } from './private_looking';
+import { isActiveCard } from './card_activity';
 import { initializeApp } from 'firebase-admin/app';
 import {
   getFirestore,
@@ -59,27 +71,35 @@ function g(template: string, gender: Gender | undefined): string {
   );
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  available: 'פנוי',
-  busy: 'תפוס',
-  onBreak: 'בהפסקה',
-  mazelTov: 'מזל טוב',
-};
-
 /**
  * The notices worth a push to the phone: the personal card's own events. The
  * rest (a decline, a wedding, a birthday, a status report) wait quietly on the
  * notifications page. Reminders are pushed by the phone itself.
  */
-const PUSHED_KINDS = new Set(['cardCreated', 'accessApproved', 'accessRequest']);
+const PUSHED_KINDS = new Set([
+  'cardCreated',
+  'accessApproved',
+  'accessRequest',
+]);
 
 /** Writes the inbox row and pushes to every device of [uid]. */
-async function notify(
-  uid: string,
-  notice: Notice,
-  push = true,
-): Promise<void> {
-  const inbox = db.collection('users').doc(uid).collection('inbox');
+async function notify(uid: string, notice: Notice, push = true): Promise<void> {
+  const membership = [
+    'cardCreated',
+    'accessApproved',
+    'accessDeclined',
+    'mazelTov',
+    'birthday',
+  ].includes(notice.kind)
+    ? await db.doc(`memberships/${uid}`).get()
+    : null;
+  const paired = membership?.get('state') === 'active';
+  const inbox = paired
+    ? db
+        .collection('coupleData')
+        .doc(membership!.get('operation'))
+        .collection('inbox')
+    : db.collection('users').doc(uid).collection('inbox');
   const row = await inbox.add({
     ...notice,
     read: false,
@@ -89,8 +109,13 @@ async function notify(
   if (!push || !PUSHED_KINDS.has(notice.kind)) {
     return;
   }
-  const tokensDoc = await db.collection('fcmTokens').doc(uid).get();
-  const tokens: string[] = (tokensDoc.get('tokens') as string[] | undefined) ?? [];
+  const recipients = paired ? (membership!.get('members') as string[]) : [uid];
+  const tokenDocs = await Promise.all(
+    recipients.map((id) => db.doc(`fcmTokens/${id}`).get()),
+  );
+  const tokens: string[] = [
+    ...new Set(tokenDocs.flatMap((d) => d.get('tokens') ?? [])),
+  ];
   if (tokens.length === 0) {
     return;
   }
@@ -112,7 +137,7 @@ async function notify(
       ownerUid: notice.ownerUid ?? '',
       ownerPhoneHash: notice.ownerPhoneHash ?? '',
       // A tapped push marks its own row read.
-      inboxId: row.id,
+      inboxId: paired ? `couple:${row.id}` : row.id,
     },
     android: {
       notification: { channelId: 'personal_card', notificationCount: unread },
@@ -132,7 +157,11 @@ async function notify(
     }
   });
   if (dead.length > 0) {
-    await tokensDoc.ref.update({ tokens: FieldValue.arrayRemove(...dead) });
+    await Promise.all(
+      tokenDocs
+        .filter((d) => d.exists)
+        .map((d) => d.ref.update({ tokens: FieldValue.arrayRemove(...dead) })),
+    );
   }
 }
 
@@ -143,7 +172,7 @@ async function approvedMatchmakers(ownerUid: string): Promise<string[]> {
     .where('ownerUid', '==', ownerUid)
     .where('status', '==', 'approved')
     .get();
-  return snap.docs.map((d) => d.get('matchmakerUid') as string);
+  return snap.docs.filter(d => d.get('cardGranted') !== false).map((d) => d.get('matchmakerUid') as string);
 }
 
 function firstName(card: DocumentSnapshot | undefined): string {
@@ -164,9 +193,22 @@ export const onCardAccessWritten = onDocumentWritten(
     }
     const was = before?.exists ? (before.get('status') as string) : null;
     const now = after.get('status') as string;
-    if (was === now) {
-      return;
+    if (after.get('cardRequested') === true && before?.get('cardRequested') !== true) {
+      await notify(after.get('ownerUid'), {kind: 'accessRequest', title: 'בקשת גישה לכרטיס שלך',
+        body: `${after.get('matchmakerName')} ביקשו גישה לכרטיס שלך`, route: '/me?section=requests'});
     }
+    if (
+      after.get('lookingRequested') === true &&
+      before?.get('lookingRequested') !== true
+    ) {
+      await notify(after.get('ownerUid'), {
+        kind: 'accessRequest',
+        title: 'בקשת גישה ל״מה אני מחפש/ת״',
+        body: `${after.get('matchmakerName')} ביקשו גישה למידע הפרטי שלך`,
+        route: '/me?section=requests',
+      });
+    }
+    if (was === now) return;
     const ownerUid = after.get('ownerUid') as string;
     const matchmakerUid = after.get('matchmakerUid') as string;
     const ownerName = (after.get('ownerName') as string | undefined) ?? '';
@@ -177,7 +219,10 @@ export const onCardAccessWritten = onDocumentWritten(
       await notify(ownerUid, {
         kind: 'accessRequest',
         title: 'בקשת גישה לכרטיס שלך',
-        body: `${matchmakerName} רוצה לקבל גישה לכרטיס שלך`,
+        body:
+          after.get('granteeUids')?.length === 2
+            ? `${matchmakerName} ביקשו ממך גישה לכרטיס שלך`
+            : `${matchmakerName} רוצה לקבל גישה לכרטיס שלך`,
         // Straight to the requests on the personal area, not its top.
         route: '/me?section=requests',
       });
@@ -194,15 +239,13 @@ export const onCardAccessWritten = onDocumentWritten(
         (card.exists ? firstName(card) : '') ||
         ownerName.trim().split(/\s+/)[0] ||
         '';
+      const privateOnly = after.get('cardGranted') === false;
       await notify(matchmakerUid, {
         kind: 'accessApproved',
-        title: g(
-          `${ownerFirst} {אישר|אישרה} גישה לכרטיס {שלו|שלה}`,
-          ownerGender,
-        ),
-        body: `הכרטיס של ${ownerFirst} מתעדכן אצלך מעכשיו`,
+        title: g(privateOnly ? `${ownerFirst} {אישר|אישרה} גישה ל״מה אני מחפש/ת״` : `${ownerFirst} {אישר|אישרה} גישה לכרטיס {שלו|שלה}`, ownerGender),
+        body: privateOnly ? 'המידע הפרטי פתוח לעיניך בלבד' : `הכרטיס של ${ownerFirst} מתעדכן אצלך מעכשיו`,
         // Opens that friend's profile in the matchmaker's database.
-        route: `/card-friend/${ownerUid}`,
+        route: `/card-friend/${ownerUid}${privateOnly && after.get('ownerPhoneHash') ? '?h='+after.get('ownerPhoneHash') : ''}`,
         ownerUid,
         // Firestore refuses an undefined field, so it is only there when set.
         ...(typeof after.get('ownerPhoneHash') === 'string'
@@ -242,7 +285,7 @@ async function announceOnce(
   ownerPhoneHash: string | undefined,
   push: boolean,
 ): Promise<boolean> {
-  if (matchmakerUid === ownerUid) {
+  if (matchmakerUid === ownerUid || !isActiveCard(card.data())) {
     return false;
   }
   // A card the owner hid from this matchmaker, an owner who takes no
@@ -266,7 +309,12 @@ async function announceOnce(
       return false;
     }
   }
-  const marker = card.ref.collection('announced').doc(matchmakerUid);
+  const membership = await db.doc(`memberships/${matchmakerUid}`).get();
+  const recipient =
+    membership.get('state') === 'active'
+      ? membership.get('databaseUid')
+      : matchmakerUid;
+  const marker = card.ref.collection('announced').doc(recipient);
   const created = await db.runTransaction(async (tx) => {
     if ((await tx.get(marker)).exists) {
       return false;
@@ -306,7 +354,7 @@ async function ownerPhoneHashOf(ownerUid: string): Promise<string | undefined> {
  */
 async function announceCard(ownerUid: string): Promise<void> {
   const card = await db.collection('personalCards').doc(ownerUid).get();
-  if (!card.exists || card.get('deleted') === true) {
+  if (!isActiveCard(card.data())) {
     return;
   }
   const ownerPhoneHash = await ownerPhoneHashOf(ownerUid);
@@ -323,7 +371,8 @@ async function announceCard(ownerUid: string): Promise<void> {
   }
 
   const contacts = await db.collection('contactHashes').doc(ownerUid).get();
-  const hashes: string[] = (contacts.get('hashes') as string[] | undefined) ?? [];
+  const hashes: string[] =
+    (contacts.get('hashes') as string[] | undefined) ?? [];
   const refs = hashes.map((h) => db.collection('phoneDirectory').doc(h));
   for (let i = 0; i < refs.length; i += 100) {
     const entries = await db.getAll(...refs.slice(i, i + 100));
@@ -371,7 +420,7 @@ export const onDatabaseHashesWritten = onDocumentWritten(
           continue;
         }
         const card = await db.collection('personalCards').doc(ownerUid).get();
-        if (!card.exists || card.get('deleted') === true) {
+        if (!isActiveCard(card.data())) {
           continue;
         }
         const told = await announceOnce(
@@ -413,11 +462,11 @@ export const onPersonalCardWritten = onDocumentWritten(
     if (!after?.exists) {
       return;
     }
-    if (!before?.exists) {
+    if (!isActiveCard(before?.data()) && isActiveCard(after.data())) {
       await announceCard(ownerUid);
       return;
     }
-    const wasStatus = before.get('status') as string;
+    const wasStatus = before?.get('status') as string;
     const status = after.get('status') as string;
     if (
       status === 'mazelTov' &&
@@ -448,7 +497,8 @@ export const onPersonalCardWritten = onDocumentWritten(
  */
 async function findHelpers(ownerUid: string): Promise<void> {
   const contacts = await db.collection('contactHashes').doc(ownerUid).get();
-  const hashes: string[] = (contacts.get('hashes') as string[] | undefined) ?? [];
+  const hashes: string[] =
+    (contacts.get('hashes') as string[] | undefined) ?? [];
   const helpers: { uid: string; name: string; phoneHash: string }[] = [];
   const seen = new Set<string>();
   const refs = hashes.map((h) => db.collection('phoneDirectory').doc(h));
@@ -542,11 +592,44 @@ export const onContactHashesWritten = onDocumentWritten(
 
 /** Words that name a circle — an institution, a unit, a workplace. */
 const CIRCLE_WORDS = [
-  'ישיבה', 'ישיבת', 'מדרשה', 'מדרשת', 'אולפנה', 'אולפנת', 'מכינה', 'מכינת',
-  'סמינר', 'כולל', 'קהילה', 'קהילת', 'בית כנסת', 'גרעין', 'יחידה', 'יחידת',
-  'גדוד', 'חטיבה', 'חטיבת', 'סיירת', 'שייטת', 'מקום עבודה', 'מהעבודה',
-  'משרד', 'אוניברסיטה', 'אוניברסיטת', 'מכללה', 'מכללת', 'תיכון', 'בית ספר',
-  'אולפן', 'סניף', 'שבט', 'מחזור', 'שכונה', 'שכונת', 'בני עקיבא', 'עזרא',
+  'ישיבה',
+  'ישיבת',
+  'מדרשה',
+  'מדרשת',
+  'אולפנה',
+  'אולפנת',
+  'מכינה',
+  'מכינת',
+  'סמינר',
+  'כולל',
+  'קהילה',
+  'קהילת',
+  'בית כנסת',
+  'גרעין',
+  'יחידה',
+  'יחידת',
+  'גדוד',
+  'חטיבה',
+  'חטיבת',
+  'סיירת',
+  'שייטת',
+  'מקום עבודה',
+  'מהעבודה',
+  'משרד',
+  'אוניברסיטה',
+  'אוניברסיטת',
+  'מכללה',
+  'מכללת',
+  'תיכון',
+  'בית ספר',
+  'אולפן',
+  'סניף',
+  'שבט',
+  'מחזור',
+  'שכונה',
+  'שכונת',
+  'בני עקיבא',
+  'עזרא',
 ];
 
 /**
@@ -609,14 +692,15 @@ export const onTagUsageWritten = onDocumentWritten(
       const ref = db.collection('communityTags').doc(key);
       await db.runTransaction(async (tx) => {
         const current = await tx.get(ref);
-        const users = ((current.exists ? current.get('users') : 0) ?? 0) + delta;
+        const users =
+          ((current.exists ? current.get('users') : 0) ?? 0) + delta;
         if (users <= 0) {
           tx.delete(ref);
         } else {
           tx.set(
             ref,
             {
-              label: current.exists ? current.get('label') ?? label : label,
+              label: current.exists ? (current.get('label') ?? label) : label,
               users,
               updatedAt: FieldValue.serverTimestamp(),
             },
@@ -634,18 +718,8 @@ export const onTagUsageWritten = onDocumentWritten(
 
 export const onStatusReportCreated = onDocumentCreated(
   'statusReports/{reportId}',
-  async (event) => {
-    const report = event.data;
-    if (!report) {
-      return;
-    }
-    const label = STATUS_LABELS[report.get('status') as string] ?? '';
-    await notify(report.get('ownerUid') as string, {
-      kind: 'statusReport',
-      title: 'עדכון סטטוס לאישור',
-      body: `${report.get('matchmakerName') ?? ''} עדכן אצלו שהסטטוס שלך הוא ‘${label}’. זה נכון?`,
-      route: '/me',
-    });
+  async () => {
+    // Retained as a no-op while older builds retire: internal status changes never reach the owner.
   },
 );
 
@@ -720,6 +794,10 @@ export const onAccountDeleted = functionsV1
     const uid = user.uid;
     const cardRef = db.collection('personalCards').doc(uid);
     await db.recursiveDelete(cardRef);
+    await db.doc(`privateLooking/${uid}`).delete();
+    await getStorage()
+      .bucket()
+      .deleteFiles({ prefix: `privateLooking/${uid}/` });
     await deleteQuery('cardAccess', 'ownerUid', uid);
     await deleteQuery('cardAccess', 'matchmakerUid', uid);
     await deleteQuery('statusReports', 'ownerUid', uid);
@@ -784,6 +862,9 @@ export const purgeDeletedAccounts = onSchedule(
 );
 
 async function purgeAccount(uid: string): Promise<void> {
+  if ((await db.doc(`memberships/${uid}`).get()).exists) {
+    throw new Error('Split the couple workspace before purging an account');
+  }
   const bucket = getStorage().bucket();
   await bucket.deleteFiles({ prefix: `users/${uid}/` });
   await bucket.deleteFiles({ prefix: `communityMembers/${uid}/` });
@@ -804,3 +885,48 @@ async function purgeAccount(uid: string): Promise<void> {
     }
   }
 }
+
+/** Aggregate includes legacy cards as well. Never exposes a person's identity. */
+async function refreshPersonalCardCount(): Promise<void> {
+  const startedAt = Date.now();
+  const cards = await db
+    .collection('personalCards')
+    .select('description', 'photoPaths', 'deleted')
+    .get();
+  const count = cards.docs.filter((d) => isActiveCard(d.data())).length;
+  const ref = db.doc('publicStats/personalCards');
+  await db.runTransaction(async (tx) => {
+    const previous = await tx.get(ref);
+    if ((previous.get('startedAt') ?? 0) > startedAt) return;
+    tx.set(ref, { count, startedAt, updatedAt: FieldValue.serverTimestamp() });
+  });
+}
+export const updatePersonalCardCount = onDocumentWritten(
+  'personalCards/{uid}',
+  async () => refreshPersonalCardCount(),
+);
+export const refreshPersonalCardCommunity = onSchedule(
+  { schedule: 'every 60 minutes' },
+  refreshPersonalCardCount,
+);
+
+/** Recovery snapshots and closed workspace files have a bounded retention window. */
+export const purgeWorkspaceRecovery = onSchedule(
+  { schedule: '45 3 * * *', timeoutSeconds: 540 },
+  async () => {
+    for (const collection of ['coupleArchives', 'coupleData']) {
+      const expired = await db
+        .collection(collection)
+        .where('purgeAfter', '<=', Timestamp.now())
+        .limit(100)
+        .get();
+      for (const doc of expired.docs) {
+        if (collection === 'coupleData')
+          await getStorage()
+            .bucket()
+            .deleteFiles({ prefix: `coupleFiles/${doc.id}/` });
+        await db.recursiveDelete(doc.ref);
+      }
+    }
+  },
+);

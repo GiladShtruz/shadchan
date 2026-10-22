@@ -49,6 +49,7 @@ function card(extra = {}) {
     status: 'available',
     deleted: false,
     photoPaths: [],
+    description: 'א'.repeat(30),
     updatedAt: new Date(),
     ...extra,
   };
@@ -123,7 +124,7 @@ test('a request reaches the owner; an approval reaches the matchmaker', async ()
   assert.equal(approved.route, `/card-friend/${OWNER}`);
 });
 
-test('a status report reaches the owner', async () => {
+test('internal status reports remain hidden from the owner', async () => {
   await db.collection('statusReports').add({
     ownerUid: OWNER,
     matchmakerUid: MM,
@@ -132,8 +133,8 @@ test('a status report reaches the owner', async () => {
     resolution: null,
     createdAt: new Date(),
   });
-  const notice = await waitFor(() => inbox(OWNER, 'statusReport'), 'report');
-  assert.match(notice.body, /‘תפוס’/);
+  await new Promise(r => setTimeout(r, 500));
+  assert.equal(await inbox(OWNER, 'statusReport'), undefined);
 });
 
 test('a wedding reaches every approved matchmaker', async () => {

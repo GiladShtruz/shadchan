@@ -1,3 +1,13 @@
+import 'dart:convert';
+import 'package:shadchan/models/person.dart';
+import 'package:shadchan/models/person_note.dart';
+import 'package:shadchan/models/person_event.dart';
+import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/match_note.dart';
+import 'package:shadchan/models/match_status_event.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shadchan/services/couple_workspace_service.dart';
+import 'package:shadchan/services/couple_sync_remote.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -45,6 +55,9 @@ class SyncProvider extends ChangeNotifier {
   Future<void> Function(Map<String, Object?> profile)? onLegacyProfile;
 
   StreamSubscription<User?>? _authChanges;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _membershipChanges;
+  String? _workspaceRevision;
   AccountSyncEngine? _engine;
   String? _uid;
   Future<void>? _starting;
@@ -93,11 +106,33 @@ class SyncProvider extends ChangeNotifier {
       await stop();
       return;
     }
-    if (_uid == user.uid && _engine != null) {
+    _membershipChanges ??= FirebaseFirestore.instance
+        .doc('memberships/${user.uid}')
+        .snapshots()
+        .listen((snapshot) {
+          if (!snapshot.metadata.isFromCache) {
+            final next = snapshot.data();
+            if (next?['state'] !=
+                    CoupleWorkspaceService.membership.value?['state'] ||
+                next?['revision'] !=
+                    CoupleWorkspaceService.membership.value?['revision']) {
+              unawaited(start());
+            }
+          }
+        });
+    final membership = await CoupleWorkspaceService.refresh();
+    final revision =
+        '${user.uid}:${membership?['databaseUid'] ?? user.uid}:${membership?['revision'] ?? 'personal'}';
+    if (!CoupleWorkspaceService.ready) {
+      await stop();
+      return;
+    }
+    if (_uid == user.uid && _engine != null && _workspaceRevision == revision) {
       await _engine!.resume();
       return;
     }
     await stop();
+    _workspaceRevision = revision;
     final Future<void> starting = _startFor(user.uid);
     _starting = starting;
     notifyListeners();
@@ -121,8 +156,16 @@ class SyncProvider extends ChangeNotifier {
         : await Hive.openBox<dynamic>(AccountSyncLedger.boxName);
     final AccountSyncLedger ledger = AccountSyncLedger(box);
     final String? previous = ledger.uid;
-    if (await ledger.bindTo(uid)) {
-      if (previous != null && previous != uid) {
+    final binding = CoupleWorkspaceService.isCouple
+        ? '$uid@${CoupleWorkspaceService.databaseUid}:${CoupleWorkspaceService.membership.value?['revision']}'
+        : uid;
+    if (previous != null &&
+        previous != binding &&
+        previous.split('@').first == uid) {
+      await _preservePendingEdits(ledger, previous, uid);
+    }
+    if (await ledger.bindTo(binding)) {
+      if (previous != null && previous != binding) {
         // This device was last in step with a different account and was not
         // cleared on the way out. Its records belong to that account (whose
         // copy is in the cloud), and must not be merged into this one.
@@ -138,7 +181,9 @@ class SyncProvider extends ChangeNotifier {
     }
     final AccountSyncEngine engine = AccountSyncEngine(
       ledger: ledger,
-      remote: FirestoreAccountSyncRemote(uid),
+      remote: CoupleWorkspaceService.databaseUid == null
+          ? FirestoreAccountSyncRemote(uid)
+          : CoupleSyncRemote(uid, CoupleWorkspaceService.databaseUid!),
       boxes: <SyncCollection, Box<dynamic>>{
         for (final SyncCollection collection in SyncCollection.values)
           if (Hive.isBoxOpen(collection.box))
@@ -156,6 +201,20 @@ class SyncProvider extends ChangeNotifier {
     _engine = engine;
     _uid = uid;
     await engine.start();
+    await _membershipChanges?.cancel();
+    _membershipChanges = FirebaseFirestore.instance
+        .doc('memberships/$uid')
+        .snapshots()
+        .listen((snapshot) {
+          if (snapshot.metadata.isFromCache) return;
+          final data = snapshot.data();
+          final next =
+              '$uid:${data?['databaseUid'] ?? uid}:${data?['revision'] ?? 'personal'}';
+          if (next != _workspaceRevision ||
+              (data != null && data['state'] != 'active')) {
+            unawaited(start());
+          }
+        });
   }
 
   /// The photo half of the old one-way backup's ledger, carried over so the
@@ -180,7 +239,83 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _preservePendingEdits(
+    AccountSyncLedger ledger,
+    String binding,
+    String uid,
+  ) async {
+    final pending = ledger.dirtyPaths.toSet();
+    final rootUid = binding.contains('@')
+        ? binding.split('@')[1].split(':')[0]
+        : uid;
+    for (final collection in SyncCollection.values.where(
+      (c) => c != SyncCollection.settings,
+    )) {
+      try {
+        final cached = await FirebaseFirestore.instance
+            .collection('users/$rootUid/${collection.remote}')
+            .get(const GetOptions(source: Source.cache));
+        for (final doc in cached.docs.where(
+          (d) => d.metadata.hasPendingWrites,
+        )) {
+          pending.add('${collection.remote}/${doc.id}');
+        }
+      } catch (_) {
+        /* Hive's dirty ledger remains available without a Firestore cache. */
+      }
+    }
+    if (pending.isEmpty) return;
+    final snapshot = <String, Object?>{
+      'version': 2,
+      'exportDate': DateTime.now().toIso8601String(),
+    };
+    for (final collection in SyncCollection.values.where(
+      (c) => c != SyncCollection.settings,
+    )) {
+      if (!Hive.isBoxOpen(collection.box)) continue;
+      final box = Hive.box<dynamic>(collection.box);
+      snapshot[collection.remote] = [
+        for (final id in box.keys.whereType<String>())
+          if (pending.contains('${collection.remote}/$id'))
+            switch (collection) {
+              SyncCollection.people => AccountSyncCodec.personToRemote(
+                box.get(id) as Person,
+              ),
+              SyncCollection.personNotes => AccountSyncCodec.personNoteToRemote(
+                box.get(id) as PersonNote,
+              ),
+              SyncCollection.personEvents =>
+                AccountSyncCodec.personEventToRemote(
+                  box.get(id) as PersonEvent,
+                ),
+              SyncCollection.matches => AccountSyncCodec.matchToRemote(
+                box.get(id) as MatchIdea,
+              ),
+              SyncCollection.matchNotes => AccountSyncCodec.matchNoteToRemote(
+                box.get(id) as MatchNote,
+              ),
+              SyncCollection.matchStatusEvents =>
+                AccountSyncCodec.matchStatusEventToRemote(
+                  box.get(id) as MatchStatusEvent,
+                ),
+              SyncCollection.settings => <String, Object?>{},
+            },
+      ];
+    }
+    final recovery = await Hive.openBox<dynamic>('workspace_recovery');
+    await recovery.put(
+      '$uid:${DateTime.now().toIso8601String()}',
+      jsonEncode(snapshot),
+    );
+  }
+
   Future<void> _clearSyncedBoxes() async {
+    await _settings.deleteAll(
+      _settings.keys
+          .whereType<String>()
+          .where(CoupleWorkspaceService.sharedSetting)
+          .toList(),
+    );
     for (final SyncCollection collection in SyncCollection.values) {
       if (collection == SyncCollection.settings ||
           !Hive.isBoxOpen(collection.box)) {
@@ -251,6 +386,9 @@ class SyncProvider extends ChangeNotifier {
   /// Stops and drops this device's ledger. Called on sign-out, before the
   /// local copy is cleared.
   Future<void> forget() async {
+    await _membershipChanges?.cancel();
+    _membershipChanges = null;
+    CoupleWorkspaceService.clear();
     await stop();
     await AccountSyncLedger.maybeInstance?.clear();
     await _settings.deleteAll(<String>[
@@ -265,6 +403,7 @@ class SyncProvider extends ChangeNotifier {
   void dispose() {
     FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
     _authChanges?.cancel();
+    _membershipChanges?.cancel();
     unawaited(_engine?.stop());
     super.dispose();
   }

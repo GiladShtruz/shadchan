@@ -5,6 +5,7 @@ import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/backup_service.dart';
+import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/enums.dart';
 
@@ -29,6 +30,9 @@ class PersonalCardProvider extends ChangeNotifier {
 
   void _load() {
     _card = _decode(_box.get(_cardKey));
+    if ((_card?.photosPaths.length ?? 0) > 4) {
+      _card = _card!.copyWith(photosPaths: _card!.photosPaths.take(4).toList());
+    }
     final Object? deleted = _box.get(_deletedKey);
     _deleted = deleted == true || deleted == 'true';
     final Object? accepts = _box.get(_acceptsRequestsKey);
@@ -93,7 +97,8 @@ class PersonalCardProvider extends ChangeNotifier {
   Person? get card => _card;
 
   /// A live card: written, and not deleted.
-  bool get hasCard => _card != null && !_deleted;
+  bool get hasCard =>
+      _card != null && !_deleted && PersonalCardCodec.isActive(_card!);
 
   /// A card that was written and then deleted — the personal area offers
   /// "שחזור הכרטיס שלי" instead of an empty page.
@@ -147,7 +152,7 @@ class PersonalCardProvider extends ChangeNotifier {
       lastName: profile.lastName ?? '',
       gender: profile.gender ?? Gender.unknown,
       description: profile.personalCard,
-      photosPaths: profile.personalCardPhotos,
+      photosPaths: profile.personalCardPhotos.take(4).toList(),
       maritalStatus: MaritalStatus.single,
       createdAt: now,
       updatedAt: now,
@@ -157,6 +162,9 @@ class PersonalCardProvider extends ChangeNotifier {
   /// Saves [person] as the card. The owner is the only one who ever edits it,
   /// so there is nothing to merge: the latest save is the card.
   Future<void> save(Person person) async {
+    if (person.photosPaths.length > 4) {
+      throw ArgumentError('אפשר להוסיף עד 4 תמונות לכרטיס');
+    }
     final Person saved = person.copyWith(
       id: cardId,
       updatedAt: DateTime.now(),

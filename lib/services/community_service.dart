@@ -1,3 +1,4 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -326,13 +327,16 @@ abstract final class CommunityService {
       return false;
     }
 
+    if (!CoupleWorkspaceService.ready) return false;
+    final effectiveUid = CoupleWorkspaceService.databaseUid ?? user.uid;
+    name = CoupleWorkspaceService.name ?? name;
     final Map<String, Object?> row = <String, Object?>{
       // A hidden matchmaker's name is not stored, not merely not shown. The
       // difference matters: this collection is readable by every installed
       // copy of the app, so "we keep it but hide it" would be a promise the
       // database itself contradicts. What is left against the uid is a row
       // of numbers.
-      'name': hidden ? '' : name.trim(),
+      'name': hidden ? '' : (CoupleWorkspaceService.name ?? name).trim(),
       // A face travels further than a name, so it follows the same rule and
       // is cleared by the same write. See [uploadAvatar].
       'photoUrl': hidden ? '' : photoUrl.trim(),
@@ -382,7 +386,7 @@ abstract final class CommunityService {
     // the device, which is why this costs nothing from the second publish
     // onwards. A device that has forgotten (a reinstall, a new phone) reads
     // once more and finds the date already written.
-    final bool needsJoinedAt = await _wantsJoinedAt(user.uid);
+    final bool needsJoinedAt = await _wantsJoinedAt(effectiveUid);
     if (!needsJoinedAt &&
         CommunityProfileStore.publishedFingerprint == fingerprint) {
       return false;
@@ -395,7 +399,7 @@ abstract final class CommunityService {
     }
 
     try {
-      await _write(user.uid, row);
+      await _write(effectiveUid, row);
       if (needsJoinedAt) {
         CommunityProfileStore.markJoinedAtWritten();
       }
@@ -418,7 +422,7 @@ abstract final class CommunityService {
       // It costs one extra read and it runs once per account, because after it
       // the document matches the whitelist and the ordinary path works again.
       if (error.code == 'permission-denied' &&
-          await _repairAndWrite(user.uid, row)) {
+          await _repairAndWrite(effectiveUid, row)) {
         if (needsJoinedAt) {
           CommunityProfileStore.markJoinedAtWritten();
         }
@@ -571,7 +575,7 @@ abstract final class CommunityService {
     try {
       final DocumentSnapshot<Map<String, dynamic>> doc = await _db
           .collection(membersCollection)
-          .doc(user.uid)
+          .doc(CoupleWorkspaceService.databaseUid ?? user.uid)
           .get();
       final Object? hidden = doc.data()?['hidden'];
       return hidden is bool ? hidden : null;
@@ -618,25 +622,25 @@ abstract final class CommunityService {
       return;
     }
     try {
-      await _db.collection(membersCollection).doc(user.uid).set(
-        <String, Object?>{
-          'hidden': hidden,
-          'name': hidden ? '' : name.trim(),
-          // Hiding takes the picture and the whole public page down in the
-          // same write for the same reason it erases the name: "we keep it but
-          // do not show it" is a promise this collection cannot make, because
-          // every installed copy of the app can read it. What is left against
-          // the uid is a row of numbers.
-          if (hidden) ...<String, Object?>{
-            'photoUrl': '',
-            'about': '',
-            'shares': <String>[],
-            'benefit': '',
-            'contactPhone': '',
-          },
-        },
-        SetOptions(merge: true),
-      );
+      await _db
+          .collection(membersCollection)
+          .doc(CoupleWorkspaceService.databaseUid ?? user.uid)
+          .set(<String, Object?>{
+            'hidden': hidden,
+            'name': hidden ? '' : (CoupleWorkspaceService.name ?? name).trim(),
+            // Hiding takes the picture and the whole public page down in the
+            // same write for the same reason it erases the name: "we keep it but
+            // do not show it" is a promise this collection cannot make, because
+            // every installed copy of the app can read it. What is left against
+            // the uid is a row of numbers.
+            if (hidden) ...<String, Object?>{
+              'photoUrl': '',
+              'about': '',
+              'shares': <String>[],
+              'benefit': '',
+              'contactPhone': '',
+            },
+          }, SetOptions(merge: true));
       if (hidden) {
         await _deleteAvatar(user.uid);
       }
@@ -1123,7 +1127,8 @@ abstract final class CommunityService {
       int? rank;
       if (includeMe && myPoints > 0) {
         final int index = rows.indexWhere(
-          (CommunityRankEntry row) => row.uid == user.uid,
+          (CommunityRankEntry row) =>
+              row.uid == (CoupleWorkspaceService.databaseUid ?? user.uid),
         );
         if (index >= 0) {
           rank = index + 1;

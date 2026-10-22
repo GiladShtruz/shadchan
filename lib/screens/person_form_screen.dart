@@ -704,6 +704,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
 
   String _aiFailureMessage(AiParseFailure reason) {
     switch (reason) {
+      case AiParseFailure.truncated:
+      case AiParseFailure.tooLarge:
+        return 'הכרטיסייה ארוכה מדי. אפשר לקצר אותה ולנסות שוב.';
       case AiParseFailure.empty:
         return 'לא נמצאו פרטים בכרטיסייה. אפשר למלא ידנית.';
       case AiParseFailure.network:

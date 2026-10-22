@@ -61,7 +61,7 @@ function card(extra = {}) {
     religiousLevel: 'datiLeumi',
     religiousLevelOther: null,
     city: null,
-    description: 'אוהב טיולים',
+    description: 'א'.repeat(30),
     heightCm: null,
     maritalStatus: 'single',
     region: 'center',
@@ -290,7 +290,7 @@ test('a matchmaker’s database hashes are written by them and read by nobody el
   await assertFails(setDoc(mine, { hashes: [], names: ['x'], updatedAt: new Date() }));
 });
 
-test('only an approved matchmaker may report a status, only the owner answers', async () => {
+test('matchmaker status changes never generate reports for the single', async () => {
   await seedCardAndContacts({ inContacts: true });
   const report = {
     ownerUid: OWNER,
@@ -304,7 +304,8 @@ test('only an approved matchmaker may report a status, only the owner answers', 
   await seed((db) =>
     setDoc(doc(db, 'cardAccess', accessId), { ...access('approved'), updatedAt: new Date() }),
   );
-  await assertSucceeds(setDoc(doc(as(MM), 'statusReports', 'r1'), report));
+  await assertFails(setDoc(doc(as(MM), 'statusReports', 'r1'), report));
+  await seed(db => setDoc(doc(db, 'statusReports', 'r1'), {...report, createdAt:new Date()}));
   await assertFails(updateDoc(doc(as(MM), 'statusReports', 'r1'), { resolution: 'confirmed' }));
   await assertSucceeds(updateDoc(doc(as(OWNER), 'statusReports', 'r1'), { resolution: 'confirmed' }));
 });
@@ -313,4 +314,96 @@ test('the inbox is written by the server only', async () => {
   await assertFails(
     setDoc(doc(as(OWNER), 'users', OWNER, 'inbox', 'n1'), { title: 'x' }),
   );
+});
+
+test('empty cards cannot be requested; thirty characters activates them', async () => {
+  await seedCardAndContacts({inContacts:true});
+  for (const description of ['', 'א'.repeat(29), ' '.repeat(50)]) {
+    await seed(db => updateDoc(doc(db,'personalCards',OWNER),{description,photoPaths:[]}));
+    await assertFails(setDoc(doc(as(MM),'cardAccess',accessId),access('pending')));
+  }
+  await seed(db => updateDoc(doc(db,'personalCards',OWNER),{description:'א'.repeat(30)}));
+  await assertSucceeds(setDoc(doc(as(MM),'cardAccess',accessId),access('pending')));
+});
+test('four photos allowed, five forbidden; cannot forge activation', async () => {
+  await assertSucceeds(setDoc(doc(as(OWNER),'personalCards',OWNER),card({photoPaths:['a','b','c','d']})));
+  await assertFails(updateDoc(doc(as(OWNER),'personalCards',OWNER),{photoPaths:['a','b','c','d','e']}));
+  await assertFails(updateDoc(doc(as(OWNER),'personalCards',OWNER),{active:true}));
+});
+test('card and private-looking grants are independent and owner controlled', async () => {
+  await seedCardAndContacts({inContacts:true});
+  await seed(async db => {
+    await setDoc(doc(db,'privateLooking',OWNER),{text:'פרטי',audioPath:null});
+    await setDoc(doc(db,'cardAccess',accessId),{...access('approved'),updatedAt:new Date()});
+    await setDoc(doc(db,'users',MM,'personNotes','n'),{text:'של השדכן'});
+  });
+  await assertSucceeds(getDoc(doc(as(MM),'personalCards',OWNER)));
+  await assertFails(getDoc(doc(as(MM),'privateLooking',OWNER)));
+  await assertFails(updateDoc(doc(as(MM),'cardAccess',accessId),{lookingGranted:true,updatedAt:serverTimestamp()}));
+  await assertSucceeds(updateDoc(doc(as(MM),'cardAccess',accessId),{lookingRequested:true,updatedAt:serverTimestamp()}));
+  await assertSucceeds(updateDoc(doc(as(OWNER),'cardAccess',accessId),{lookingGranted:true,cardGranted:false,lookingRequested:false,updatedAt:serverTimestamp()}));
+  await assertSucceeds(getDoc(doc(as(MM),'privateLooking',OWNER)));
+  await assertFails(getDoc(doc(as(MM),'personalCards',OWNER)));
+  await assertFails(updateDoc(doc(as(OWNER),'users',MM,'personNotes','n'),{text:'נמחק'}));
+  await assertSucceeds(updateDoc(doc(as(OWNER),'cardAccess',accessId),{lookingGranted:false,updatedAt:serverTimestamp()}));
+  await assertFails(getDoc(doc(as(MM),'privateLooking',OWNER)));
+  await assertSucceeds(getDoc(doc(as(MM),'users',MM,'personNotes','n')));
+});
+test('couples share records, never private settings or address books', async () => {
+  await seed(async db => {
+    for (const uid of ['a','b']) await setDoc(doc(db,'memberships',uid),{databaseUid:'a',members:['a','b'],state:'active'});
+    await setDoc(doc(db,'users','a','people','p'),{firstName:'דוד'});
+    await setDoc(doc(db,'users','a','settings','private'),{k:'personalCard.person',v:'secret'});
+    await setDoc(doc(db,'contactHashes','a'),{hashes:['secret']});
+  });
+  await assertSucceeds(getDoc(doc(as('b'),'users','a','people','p')));
+  await assertFails(getDoc(doc(as('b'),'users','a','settings','private')));
+  await assertFails(getDoc(doc(as('b'),'contactHashes','a')));
+  await assertFails(setDoc(doc(as('b'),'memberships','b'),{databaseUid:'stranger'}));
+  await assertFails(setDoc(doc(as('b'),'users','b','people','new'),{firstName:'private copy'}));
+  await assertSucceeds(setDoc(doc(as('b'),'users','a','people','new'),{firstName:'shared',_actorUid:'b'}));
+  await assertFails(setDoc(doc(as('b'),'users','a','people','new'),{firstName:'forged',_actorUid:'a'}));
+});
+test('spouse never inherits individual consent', async () => {
+  await seed(async db => {
+    await setDoc(doc(db,'personalCards',OWNER),{...card(),updatedAt:new Date()});
+    await setDoc(doc(db,'privateLooking',OWNER),{text:'פרטי'});
+    for(const uid of [MM,'spouse']) await setDoc(doc(db,'memberships',uid),{databaseUid:MM,members:[MM,'spouse'],state:'active'});
+    await setDoc(doc(db,'cardAccess',accessId),{...access('approved'),lookingGranted:true,updatedAt:new Date()});
+  });
+  await assertFails(getDoc(doc(as('spouse'),'personalCards',OWNER)));
+  await assertFails(getDoc(doc(as('spouse'),'privateLooking',OWNER)));
+  await assertSucceeds(updateDoc(doc(as(OWNER),'cardAccess',accessId),{granteeUids:[MM,'spouse'],updatedAt:serverTimestamp()}));
+  await assertSucceeds(getDoc(doc(as('spouse'),'personalCards',OWNER)));
+  await assertSucceeds(getDoc(doc(as('spouse'),'privateLooking',OWNER)));
+});
+test('shared settings and notices are isolated by pairing, including a later marriage',async()=>{
+ await seed(async db=>{
+  for(const uid of['a','b']) await setDoc(doc(db,'memberships',uid),{databaseUid:'a',members:['a','b'],operation:'old-pair',state:'active'});
+  await setDoc(doc(db,'coupleData','old-pair','settings','board'),{k:'home.board',v:'"old"'});
+  await setDoc(doc(db,'coupleData','old-pair','inbox','notice'),{read:false,body:'private joint notice'});
+  await setDoc(doc(db,'coupleData','new-pair','settings','board'),{k:'home.board',v:'"new"'});
+ });
+ await assertSucceeds(getDoc(doc(as('b'),'coupleData','old-pair','settings','board')));
+ await assertSucceeds(updateDoc(doc(as('b'),'coupleData','old-pair','inbox','notice'),{read:true}));
+ await assertFails(updateDoc(doc(as('b'),'coupleData','old-pair','inbox','notice'),{body:'forged'}));
+ await assertFails(getDoc(doc(as('b'),'coupleData','new-pair','settings','board')));
+ await seed(db=>setDoc(doc(db,'memberships','a'),{databaseUid:'a',members:['a','c'],operation:'new-pair',state:'active'}));
+ await assertFails(getDoc(doc(as('a'),'coupleData','old-pair','settings','board')));
+ await assertSucceeds(getDoc(doc(as('a'),'coupleData','new-pair','settings','board')));
+});
+test('requesting the card while private access is approved preserves private consent',async()=>{
+ await seedCardAndContacts({inContacts:true});
+ await seed(async db=>{
+  await setDoc(doc(db,'privateLooking',OWNER),{text:'פרטי'});
+  await setDoc(doc(db,'cardAccess',accessId),{...access('approved'),cardGranted:false,lookingGranted:true,updatedAt:new Date()});
+ });
+ await assertSucceeds(updateDoc(doc(as(MM),'cardAccess',accessId),{cardRequested:true,updatedAt:serverTimestamp()}));
+ await assertSucceeds(getDoc(doc(as(MM),'privateLooking',OWNER)));
+ await assertFails(getDoc(doc(as(MM),'personalCards',OWNER)));
+ await assertSucceeds(updateDoc(doc(as(OWNER),'cardAccess',accessId),{cardRequested:false,updatedAt:serverTimestamp()}));
+ await assertSucceeds(getDoc(doc(as(MM),'privateLooking',OWNER)));
+});
+test('community tips still work independently of personal cards',async()=>{
+ await assertSucceeds(setDoc(doc(as(MM),'tips','tip-regression'),{authorUid:MM,authorName:'יצחק',status:'pending',text:'טיפ מועיל',createdAt:serverTimestamp()}));
 });

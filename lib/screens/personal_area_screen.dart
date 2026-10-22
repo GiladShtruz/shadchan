@@ -1,3 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/widgets/private_looking.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -294,10 +297,6 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                 // **The way to the matchmaker's side is a card of its own,
                 // right under the greeting** — for somebody who is both, it is
                 // the other half of the account, not a footnote under it.
-                if (matchmaker) ...<Widget>[
-                  const SizedBox(height: 14),
-                  _SwitchAreaCard(onTap: _goToMatchmaker),
-                ],
                 const SizedBox(height: 14),
                 if (cards.isDeleted)
                   _RestoreCardPrompt(busy: _restoring, onRestore: _restoreCard)
@@ -312,6 +311,13 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                     onEdit: () => context.push('/me/card'),
                   ),
                   const SizedBox(height: 14),
+                  if (!cards.hasCard)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'הכרטיס עדיין בטיוטה. להפעלתו יש להוסיף תמונה אחת לפחות או 30 תווים בכרטיס לשליחה.',
+                      ),
+                    ),
                   ProfileStatusChoices(
                     title: 'הסטטוס שלי',
                     status: card.profileStatus,
@@ -321,6 +327,7 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                         _setStatus(card, status),
                   ),
                 ],
+                if (!cards.isDeleted) const PrivateLookingBlock(),
                 // Without the user's own number nobody can find the card, so
                 // the question stays here until it is answered.
                 if (profile.myPhone == null) ...<Widget>[
@@ -370,8 +377,32 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                     hasCard: cards.hasCard,
                     requestsKey: _requestsKey,
                   ),
+                if (FirebaseBootstrap.isReady)
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .doc('publicStats/personalCards')
+                        .snapshots(),
+                    builder: (context, snap) {
+                      final count = snap.data?.data()?['count'];
+                      if (count is! int || snap.hasError) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          '$count רווקים ורווקות מנהלים כרטיס אישי בשדכן',
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    },
+                  ),
                 const SizedBox(height: 20),
                 _ShareAppLink(gender: profile.gender),
+                if (matchmaker) ...<Widget>[
+                  const SizedBox(height: 14),
+                  _SwitchAreaCard(onTap: _goToMatchmaker),
+                ],
+
                 // Deleting the card is a secondary action: under a rule, quiet,
                 // and the very last thing on the page.
                 if (cards.hasCard) ...<Widget>[
