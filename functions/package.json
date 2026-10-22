@@ -8,12 +8,15 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test lib/hebrew_birthday.test.js",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-shadchan \"node --test rules_test/card_rules.test.mjs\"",
-    "test:flows": "npm run build && firebase emulators:exec --only firestore,functions --project demo-shadchan \"node --test rules_test/flows.test.mjs\""
+    "test": "npm run build && node --test lib/*.test.js",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-shadchan \"node --test --test-concurrency=1 rules_test/card_rules.test.mjs rules_test/storage_rules.test.mjs\"",
+    "test:flows": "npm run build && firebase emulators:exec --only firestore,functions --project demo-shadchan \"node --test rules_test/flows.test.mjs\"",
+    "test:workspaces": "npm run build && firebase emulators:exec --only firestore,functions,auth,storage --project demo-shadchan \"node --test --test-concurrency=1 rules_test/flows.test.mjs rules_test/workspace_flows.test.mjs\""
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@hebcal/core": "^5.10.1",
+    "ffprobe-static": "^3.1.0",
     "firebase-admin": "^14.5.0",
     "firebase-functions": "^7.4.0"
   },
@@ -21,6 +24,7 @@
     "@firebase/rules-unit-testing": "^4.0.1",
     "@types/node": "^22.0.0",
     "firebase": "^11.10.0",
+    "firebase-tools": "^15.34.1",
     "typescript": "^5.9.0"
   }
 }

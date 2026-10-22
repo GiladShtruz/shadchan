@@ -20,6 +20,11 @@ import 'package:shadchan/utils/enums.dart';
 /// bookkeeping. Listing what *may* go is the only way a field added to
 /// [Person] later cannot start travelling by accident.
 abstract final class PersonalCardCodec {
+  /// Only authored shareable text counts; a seeded name/status is not a card.
+  static bool isActive(Person card) =>
+      card.photosPaths.isNotEmpty ||
+      (card.description ?? '').trim().runes.length >= 30;
+
   static const List<String> cardFields = <String>[
     'firstName',
     'lastName',
@@ -243,7 +248,7 @@ abstract final class PersonalCardService {
       );
       final Set<String> uploaded = _uploaded();
       final List<String> remotePaths = <String>[];
-      for (final String localPath in card.photosPaths) {
+      for (final String localPath in card.photosPaths.take(4)) {
         final String name = PhotoPickerService.basenameOf(localPath);
         // The stored path is absolute, and iOS moves the app's sandbox on an
         // update: a photo that is still there under a new prefix must not be
@@ -289,6 +294,7 @@ abstract final class PersonalCardService {
               ownerUid: uid,
               photoPaths: remotePaths,
             ),
+            SetOptions(merge: true),
           );
       return true;
     } catch (error, stackTrace) {

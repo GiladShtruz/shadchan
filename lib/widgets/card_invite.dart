@@ -114,7 +114,11 @@ abstract final class CardInviteFlow {
       case CardAccessStatus.pending:
         return CardInviteState.pending;
       case CardAccessStatus.approved:
-        return CardInviteState.approved;
+        return row!.canReadCard
+            ? CardInviteState.approved
+            : row.cardRequested
+            ? CardInviteState.pending
+            : CardInviteState.requestable;
       case CardAccessStatus.blocked:
         return CardInviteState.blocked;
       case CardAccessStatus.declined:
@@ -139,6 +143,7 @@ abstract final class CardInviteFlow {
       case CardAccessStatus.blocked:
         return false;
       case CardAccessStatus.approved:
+        return row!.canReadCard || entry?['acceptsRequests'] != false;
       case CardAccessStatus.pending:
         return true;
       case CardAccessStatus.declined:
@@ -538,7 +543,7 @@ class _FriendCardInviteState extends State<FriendCardInvite> {
     final String key =
         '${person.id}|${person.phone}|${person.cardOwnerUid}|'
         '${access.isConnected}|'
-        '${access.accessTo(_ownerUid ?? '')?.status}';
+        '${access.accessTo(_ownerUid ?? '')?.status}:${access.accessTo(_ownerUid ?? '')?.cardGranted}:${access.accessTo(_ownerUid ?? '')?.cardRequested}';
     if (!force && key == _resolvedFor) {
       return;
     }

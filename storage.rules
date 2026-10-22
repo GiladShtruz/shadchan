@@ -8,6 +8,26 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    function databaseUid() {
+      return firestore.exists(/databases/(default)/documents/memberships/$(request.auth.uid))
+        ? firestore.get(/databases/(default)/documents/memberships/$(request.auth.uid)).data.databaseUid : request.auth.uid;
+    }
+    function grantIncludesMe(ownerUid) {
+      let grant = firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data;
+      return firestore.exists(/databases/(default)/documents/memberships/$(request.auth.uid))
+        ? grant.get('granteeUids', []) == firestore.get(/databases/(default)/documents/memberships/$(request.auth.uid)).data.members
+        : grant.matchmakerUid == request.auth.uid && grant.get('granteeUids', [request.auth.uid]).size() == 1;
+    }
+    match /coupleFiles/{uid}/{folder}/{fileName} {
+      function member() {
+        return request.auth != null && firestore.get(/databases/(default)/documents/memberships/$(request.auth.uid)).data.operation == uid
+          && firestore.get(/databases/(default)/documents/memberships/$(request.auth.uid)).data.state == 'active';
+      }
+      allow read: if member();
+      allow write: if member() && request.resource.size <= 30 * 1024 * 1024
+        && ((folder == 'photos' && request.resource.contentType.matches('image/.*')) || (folder == 'voice' && request.resource.contentType.matches('audio/.*')));
+    }
+
     match /users/{userId}/photos/{fileName} {
       function isOwner() {
         return request.auth != null
@@ -127,9 +147,10 @@ service firebase.storage {
       }
 
       function approved() {
-        return request.auth != null
-            && firestore.exists(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + request.auth.uid))
-            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + request.auth.uid)).data.status == 'approved'
+        return request.auth != null && grantIncludesMe(ownerUid)
+            && firestore.exists(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid()))
+            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data.status == 'approved'
+            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data.get('cardGranted', true) == true
             && firestore.get(/databases/(default)/documents/personalCards/$(ownerUid)).data.deleted == false;
       }
 
@@ -138,6 +159,22 @@ service firebase.storage {
       allow write: if isOwner()
                    && request.resource.size < 12 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
+    }
+
+    match /privateLooking/{ownerUid}/{fileName} {
+      function owner() { return request.auth != null && request.auth.uid == ownerUid; }
+      function approved() {
+        let access = firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data;
+        return grantIncludesMe(ownerUid) && access.status == 'approved' && access.get('lookingGranted', false) == true
+          && firestore.get(/databases/(default)/documents/personalCards/$(ownerUid)).data.deleted == false
+          && firestore.get(/databases/(default)/documents/privateLooking/$(ownerUid)).data.audioPath == 'privateLooking/' + ownerUid + '/' + fileName;
+      }
+      allow read: if request.auth != null && (owner() || approved());
+      // Immutable files: verified media cannot be replaced with longer content.
+      allow create: if owner() && resource == null && request.resource.size <= 30 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
+      allow update: if false;
+      allow delete: if owner() && firestore.get(/databases/(default)/documents/privateLooking/$(ownerUid)).data.audioPath != 'privateLooking/' + ownerUid + '/' + fileName;
     }
 
     match /{allPaths=**} {

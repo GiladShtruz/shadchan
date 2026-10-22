@@ -1,3 +1,4 @@
+import 'package:shadchan/widgets/private_looking.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:go_router/go_router.dart';
@@ -59,6 +60,20 @@ class _IncomingVoiceNoteScreenState extends State<IncomingVoiceNoteScreen> {
       appBar: AppBar(title: const Text('הקלטה קולית')),
       body: Column(
         children: <Widget>[
+          if (count == 1)
+            ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: const Text('ל״מה אני מחפש/ת״ באזור האישי שלי'),
+              subtitle: const Text(
+                'הקלטה אחת עד 10 דקות · לעיני שדכנים שאישרת בלבד',
+              ),
+              onTap: _saving
+                  ? null
+                  : () => openPrivateLookingEditor(
+                      context,
+                      incoming: _recordings.single,
+                    ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(

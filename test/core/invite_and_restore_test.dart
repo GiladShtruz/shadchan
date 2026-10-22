@@ -65,6 +65,7 @@ void main() {
       final DateTime now = DateTime(2026, 1, 1);
       return Person(
         id: 'x',
+        description: 'א'.padRight(30, 'א'),
         firstName: 'נועה',
         lastName: 'כהן',
         gender: Gender.female,

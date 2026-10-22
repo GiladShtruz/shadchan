@@ -98,6 +98,15 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-10-22 (personal home, independent private permissions, couple workspaces): **Not deployed or run on a physical device.**
+  - Personal cards activate at one photo or 30 trimmed characters of sendable text; four photos maximum. Private free text/audio is a separate `privateLooking` document, with independent explicit grants, live revocation and server media verification. Never put it in `Person`, notes or backup/export JSON.
+  - Couple accounts keep separate Auth/contact books/profile settings/reminders. Only the record database, board/tags, notices and score are shared. `memberships` identifies the canonical database and operation ID; `coupleData/{operation}` and `coupleFiles/{operation}` isolate successive pairings. Individual consent never expands automatically to a spouse.
+  - Merge/split are server operations with immutable snapshots, retry leases, phone deduplication, provenance and preserved cross-source ideas. Splitting is explicit, and paired account deletion requires splitting first. Recovery archives/closed workspace files expire after 30 days.
+  - Read `docs/personal-area-and-couple-workspaces.md` before touching these flows. Run `npm test`, `npm run test:rules` and `FUNCTIONS_DISCOVERY_TIMEOUT=60 npm run test:workspaces` from `functions/`. Rules, Storage, Functions and regenerated privacy pages require deployment before client rollout. The separate web client also needs membership resolution; `Person`/enum/backup JSON contracts remain unchanged.
+  - Verified: 9 server unit tests, 29 Firestore/Storage rule tests, 11 Auth/Firestore/Functions/Storage emulator flows, 95 targeted Flutter checks. Full Flutter suite: 726 pass, 2 pre-existing AI import test failures reproduced on base `da7ba49` in a separate worktree. Analyzer: no errors/warnings, five existing SDK/lint infos. Android build unavailable (no Android SDK); iOS/physical WhatsApp sharing not tested.
+
+
+
 - 2026-10-06 (sign-up: personal card line, phone step): **Not run on a device.**
   - **Matchmaker sign-up** (`OnboardingScreen`): the "גרוש או אלמן? סמן רווק…" sentence is gone. Choosing רווק/ה shows one optional line, "הוספת כרטיס אישי לאזור האישי" (`_AddPersonalCardLine`); tapping it runs the same continue (validation, save, phone step) and ends on `/me/card` — the owner card editor over the personal area — instead of `/home`.
   - **Phone step** (`MyPhoneDialog`): "שמירה" is the filled button at the right, "דילוג" (was "אחר כך"; "ביטול" outside sign-up) a muted text button at the left (`actionsAlignment: spaceBetween`). The matchmaker wording reads "אנשי קשר שלך שמנהלים כרטיס אישי…". Skipping continues sign-up as before.

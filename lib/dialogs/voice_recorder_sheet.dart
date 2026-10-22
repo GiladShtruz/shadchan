@@ -77,18 +77,23 @@ class _CaptionDialogState extends State<_CaptionDialog> {
 /// anything else (ביטול, a swipe down, the back key) throws it away and
 /// deletes the file. The microphone is asked for here and nowhere else.
 abstract final class VoiceRecorderSheet {
-  static Future<VoiceRecording?> record(BuildContext context) {
+  static Future<VoiceRecording?> record(
+    BuildContext context, {
+    Duration? maxDuration,
+  }) {
     return showModalBottomSheet<VoiceRecording>(
       context: context,
       showDragHandle: true,
       isDismissible: false,
-      builder: (BuildContext context) => const _RecorderBody(),
+      builder: (BuildContext context) =>
+          _RecorderBody(maxDuration: maxDuration),
     );
   }
 }
 
 class _RecorderBody extends StatefulWidget {
-  const _RecorderBody();
+  const _RecorderBody({this.maxDuration});
+  final Duration? maxDuration;
 
   @override
   State<_RecorderBody> createState() => _RecorderBodyState();
@@ -102,6 +107,7 @@ class _RecorderBodyState extends State<_RecorderBody> {
   String? _path;
   bool _denied = false;
   bool _finished = false;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -127,6 +133,12 @@ class _RecorderBodyState extends State<_RecorderBody> {
       );
       _clock.start();
       _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        if (!_finished &&
+            widget.maxDuration != null &&
+            _clock.elapsed >=
+                widget.maxDuration! - const Duration(seconds: 1)) {
+          unawaited(_save());
+        }
         if (mounted) {
           setState(() {});
         }
@@ -142,6 +154,8 @@ class _RecorderBodyState extends State<_RecorderBody> {
   }
 
   Future<void> _save() async {
+    if (_saving || _finished) return;
+    _saving = true;
     _ticker?.cancel();
     _clock.stop();
     final String? written = await _recorder.stop();

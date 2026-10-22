@@ -1,3 +1,4 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -58,13 +59,67 @@ class InboxItem {
 /// This is the record; a push is only the courtesy that points at it. So the
 /// list is shown on the notifications page whether or not any push arrived.
 class InboxProvider extends ChangeNotifier {
-  InboxProvider({bool enabled = true}) : _enabled = enabled;
+  InboxProvider({bool enabled = true}) : _enabled = enabled {
+    if (_enabled) CoupleWorkspaceService.membership.addListener(_watchShared);
+  }
 
   final bool _enabled;
+  bool _disposed = false;
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   String? _uid;
   bool _starting = false;
   StreamSubscription<Object?>? _subscription;
   List<InboxItem> _items = <InboxItem>[];
+  List<InboxItem> _sharedItems = <InboxItem>[];
+  StreamSubscription<Object?>? _sharedSubscription;
+  String? _sharedRoot;
+
+  void _watchShared() {
+    final root = _uid != null && CoupleWorkspaceService.ready
+        ? CoupleWorkspaceService.workspaceId
+        : null;
+    if (root == _sharedRoot) return;
+    _sharedRoot = root;
+    unawaited(_sharedSubscription?.cancel());
+    _sharedItems = [];
+    if (root == null) {
+      notifyListeners();
+      return;
+    }
+    _sharedSubscription = FirebaseFirestore.instance
+        .collection('coupleData/$root/inbox')
+        .orderBy('createdAt', descending: true)
+        .limit(300)
+        .snapshots()
+        .listen((snap) {
+          _sharedItems = [
+            for (final doc in snap.docs)
+              InboxItem(
+                id: 'couple:${doc.id}',
+                kind: doc.data()['kind'] as String? ?? '',
+                title: doc.data()['title'] as String? ?? '',
+                body: doc.data()['body'] as String? ?? '',
+                route: doc.data()['route'] as String? ?? '',
+                read: doc.data()['read'] == true,
+                ownerUid: doc.data()['ownerUid'] as String?,
+                ownerPhoneHash: doc.data()['ownerPhoneHash'] as String?,
+                createdAt: (doc.data()['createdAt'] as Timestamp?)?.toDate(),
+              ),
+          ];
+          notifyListeners();
+        }, onError: (Object error) => debugPrint('Shared inbox: $error'));
+  }
+
+  DocumentReference<Map<String, dynamic>> _document(String uid, String id) =>
+      id.startsWith('couple:') && CoupleWorkspaceService.databaseUid != null
+      ? FirebaseFirestore.instance.doc(
+          'coupleData/${CoupleWorkspaceService.workspaceId}/inbox/${id.substring(7)}',
+        )
+      : _collection(uid).doc(id);
 
   /// Read and removed ahead of the server's answer, so the page and the bell
   /// change the moment the matchmaker acts rather than a round trip later.
@@ -76,8 +131,8 @@ class InboxProvider extends ChangeNotifier {
   final Set<String> _pendingRead = <String>{};
 
   List<InboxItem> get items => <InboxItem>[
-    for (final InboxItem i in _items)
-      if (!_removedLocally.contains(i.id))
+    for (final InboxItem i in [..._items, ..._sharedItems])
+      if (!_removedLocally.contains(i.id) && i.kind != 'statusReport')
         _readLocally.contains(i.id) && !i.read ? i.asRead() : i,
   ];
   int get unreadCount => items.where((InboxItem i) => !i.read).length;
@@ -99,6 +154,7 @@ class InboxProvider extends ChangeNotifier {
         return;
       }
       _uid = uid;
+      _watchShared();
       for (final String id in _pendingRead.toList()) {
         _pendingRead.remove(id);
         unawaited(_writeRead(uid, id));
@@ -154,7 +210,7 @@ class InboxProvider extends ChangeNotifier {
 
   Future<void> _writeRead(String uid, String id) async {
     try {
-      await _collection(uid).doc(id).update(<String, Object?>{'read': true});
+      await _document(uid, id).update(<String, Object?>{'read': true});
     } catch (error) {
       debugPrint('InboxProvider.markReadById: $error');
     }
@@ -170,9 +226,7 @@ class InboxProvider extends ChangeNotifier {
       return;
     }
     try {
-      await _collection(
-        uid,
-      ).doc(item.id).update(<String, Object?>{'read': true});
+      await _document(uid, item.id).update(<String, Object?>{'read': true});
     } catch (error) {
       debugPrint('InboxProvider.markRead: $error');
     }
@@ -195,9 +249,7 @@ class InboxProvider extends ChangeNotifier {
     try {
       final WriteBatch batch = FirebaseFirestore.instance.batch();
       for (final InboxItem item in unread) {
-        batch.update(_collection(uid).doc(item.id), <String, Object?>{
-          'read': true,
-        });
+        batch.update(_document(uid, item.id), <String, Object?>{'read': true});
       }
       await batch.commit();
     } catch (error) {
@@ -213,13 +265,17 @@ class InboxProvider extends ChangeNotifier {
       return;
     }
     try {
-      await _collection(uid).doc(item.id).delete();
+      await _document(uid, item.id).delete();
     } catch (error) {
       debugPrint('InboxProvider.remove: $error');
     }
   }
 
   Future<void> stop() async {
+    await _sharedSubscription?.cancel();
+    _sharedSubscription = null;
+    _sharedRoot = null;
+    _sharedItems = [];
     await _subscription?.cancel();
     _subscription = null;
     _uid = null;
@@ -228,5 +284,14 @@ class InboxProvider extends ChangeNotifier {
     _removedLocally.clear();
     _pendingRead.clear();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    CoupleWorkspaceService.membership.removeListener(_watchShared);
+    _subscription?.cancel();
+    _sharedSubscription?.cancel();
+    super.dispose();
   }
 }

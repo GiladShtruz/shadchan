@@ -1,3 +1,4 @@
+import 'package:shadchan/screens/couple_workspace_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -71,6 +72,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsGroup(
               title: 'הגדרות',
               children: <Widget>[
+                SettingsRow(
+                  icon: Icons.people_outline,
+                  title: 'יצירת מאגר זוגי / צירוף בן או בת זוג',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CoupleWorkspaceScreen(),
+                    ),
+                  ),
+                ),
                 // Only for an account with both areas: the page a launch
                 // opens on. Asked once by [HomeAreaDialog]; changed here.
                 if (bothAreas)

@@ -1,3 +1,4 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -44,13 +45,44 @@ enum CardRequestOutcome {
 class CardAccessProvider extends ChangeNotifier {
   CardAccessProvider({required PersonRepository people, bool enabled = true})
     : _people = people,
-      _enabled = enabled;
+      _enabled = enabled {
+    if (_enabled) {
+      CoupleWorkspaceService.membership.addListener(_workspaceChanged);
+    }
+  }
+  bool _disposed = false;
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  String _workspaceKey = '';
+  Future<void> _workspaceChain = Future<void>.value();
+  void _workspaceChanged() {
+    final key =
+        '${CoupleWorkspaceService.databaseUid}:${CoupleWorkspaceService.membership.value?['state']}';
+    if (key == _workspaceKey) return;
+    _workspaceKey = key;
+    _workspaceChain = _workspaceChain.then((_) async {
+      await stop();
+      if (CoupleWorkspaceService.ready) await start();
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    CoupleWorkspaceService.membership.removeListener(_workspaceChanged);
+    unawaited(stop());
+    super.dispose();
+  }
 
   final PersonRepository _people;
   final bool _enabled;
 
   String? _uid;
   bool _starting = false;
+  bool matchmakerAccessVerified = false;
   final List<StreamSubscription<Object?>> _subscriptions =
       <StreamSubscription<Object?>>[];
   final Map<String, StreamSubscription<Object?>> _cardSubscriptions =
@@ -86,7 +118,12 @@ class CardAccessProvider extends ChangeNotifier {
   // --- As the card owner ----------------------------------------------------
 
   List<CardAccess> get pendingRequests => _asOwner
-      .where((CardAccess a) => a.status == CardAccessStatus.pending)
+      .where(
+        (CardAccess a) =>
+            a.status == CardAccessStatus.pending ||
+            a.lookingRequested ||
+            a.cardRequested,
+      )
       .toList();
 
   List<CardAccess> get approved => _asOwner
@@ -109,8 +146,8 @@ class CardAccessProvider extends ChangeNotifier {
       for (final CardAccess a in _asOwner)
         if (a.status == CardAccessStatus.approved ||
             a.status == CardAccessStatus.blocked ||
-            a.status == CardAccessStatus.pending)
-          a.matchmakerUid,
+            a.status == CardAccessStatus.pending ||
+            a.lookingRequested) ...<String>[a.matchmakerUid, ...a.granteeUids],
     };
     final List<CardHelper> list = _helpers
         .where((CardHelper h) => !decided.contains(h.uid))
@@ -131,6 +168,11 @@ class CardAccessProvider extends ChangeNotifier {
   /// contacts when the server matched them there, else [fallback] — the
   /// name the matchmaker signed up with.
   String nameInContacts(String matchmakerUid, String fallback) {
+    for (final row in _asOwner) {
+      if (row.matchmakerUid == matchmakerUid && row.granteeUids.length == 2) {
+        return row.matchmakerName;
+      }
+    }
     for (final CardHelper h in _helpers) {
       if (h.uid == matchmakerUid) {
         return ContactHashUpload.nameFor(h.phoneHash) ??
@@ -148,6 +190,18 @@ class CardAccessProvider extends ChangeNotifier {
 
   /// This matchmaker's standing with [ownerUid]'s card, if any.
   CardAccess? accessTo(String ownerUid) => _asMatchmaker[ownerUid];
+
+  String? privateOwnerFor(Person person) {
+    if (person.cardOwnerUid != null) return person.cardOwnerUid;
+    final hash = PhoneIdentity.hash(person.phone);
+    if (hash == null) return null;
+    for (final row in _asMatchmaker.values) {
+      if ((row.ownerPhoneHash ?? PhoneIdentity.hash(row.ownerPhone)) == hash) {
+        return row.ownerUid;
+      }
+    }
+    return null;
+  }
 
   bool isBusy(String key) => _busy.contains(key);
 
@@ -170,13 +224,17 @@ class CardAccessProvider extends ChangeNotifier {
 
   /// Connects, once Firebase is up and a durable account is signed in.
   Future<void> start() async {
-    if (!_enabled || _uid != null || _starting || !FirebaseBootstrap.isReady) {
+    if (_disposed ||
+        !_enabled ||
+        _uid != null ||
+        _starting ||
+        !FirebaseBootstrap.isReady) {
       return;
     }
     _starting = true;
     try {
       final String? uid = await PersonalCardService.durableUid();
-      if (uid == null) {
+      if (uid == null || _disposed) {
         return;
       }
       _uid = uid;
@@ -199,10 +257,12 @@ class CardAccessProvider extends ChangeNotifier {
           }, onError: _log),
         )
         ..add(
-          access
-              .where('matchmakerUid', isEqualTo: uid)
+          (CoupleWorkspaceService.isCouple
+                  ? access.where('granteeUids', arrayContains: uid)
+                  : access.where('matchmakerUid', isEqualTo: uid))
               .snapshots(includeMetadataChanges: true)
               .listen((QuerySnapshot<Map<String, dynamic>> snap) {
+                matchmakerAccessVerified = !snap.metadata.isFromCache;
                 _asMatchmaker = <String, CardAccess>{
                   for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
                       in snap.docs)
@@ -272,6 +332,7 @@ class CardAccessProvider extends ChangeNotifier {
 
   /// Disconnects and forgets, for a sign-out.
   Future<void> stop() async {
+    matchmakerAccessVerified = false;
     for (final StreamSubscription<Object?> s in _subscriptions) {
       await s.cancel();
     }
@@ -303,7 +364,7 @@ class CardAccessProvider extends ChangeNotifier {
   Future<void> _reconcile({required bool authoritative}) async {
     // Follow every approved card.
     for (final CardAccess access in _asMatchmaker.values) {
-      if (access.status == CardAccessStatus.approved &&
+      if (access.canReadCard &&
           !_cardSubscriptions.containsKey(access.ownerUid)) {
         _followCard(access);
       }
@@ -315,15 +376,14 @@ class CardAccessProvider extends ChangeNotifier {
       return;
     }
     for (final String ownerUid in _cardSubscriptions.keys.toList()) {
-      if (_asMatchmaker[ownerUid]?.status != CardAccessStatus.approved) {
+      if (_asMatchmaker[ownerUid]?.canReadCard != true) {
         await _cardSubscriptions.remove(ownerUid)?.cancel();
         await _unlink(ownerUid);
       }
     }
     for (final Person person in _people.getAll()) {
       final String? owner = person.cardOwnerUid;
-      if (owner != null &&
-          _asMatchmaker[owner]?.status != CardAccessStatus.approved) {
+      if (owner != null && _asMatchmaker[owner]?.canReadCard != true) {
         await _unlink(owner);
       }
     }
@@ -441,7 +501,7 @@ class CardAccessProvider extends ChangeNotifier {
   Future<void> _applyCard(CardAccess access, Map<String, dynamic> data) async {
     final String ownerUid = access.ownerUid;
     // Queued before access ended: the card is no longer ours to apply.
-    if (_asMatchmaker[ownerUid]?.status != CardAccessStatus.approved) {
+    if (_asMatchmaker[ownerUid]?.canReadCard != true) {
       return;
     }
     Person? person = CardSyncEngine.findExisting(
@@ -590,7 +650,10 @@ class CardAccessProvider extends ChangeNotifier {
           _accessData(
             ownerUid: row.ownerUid,
             matchmakerUid: row.matchmakerUid,
+            granteeUids: row.granteeUids,
             status: CardAccessStatus.approved,
+            cardGranted: row.canReadCard,
+            lookingGranted: row.canReadLooking,
             requestedBy: row.requestedBy,
             ownerName: row.ownerName,
             matchmakerName: row.matchmakerName,
@@ -612,6 +675,7 @@ class CardAccessProvider extends ChangeNotifier {
           _accessData(
             ownerUid: row.ownerUid,
             matchmakerUid: row.matchmakerUid,
+            granteeUids: row.granteeUids,
             status: CardAccessStatus.revoked,
             requestedBy: row.requestedBy,
             ownerName: row.ownerName,
@@ -684,10 +748,20 @@ class CardAccessProvider extends ChangeNotifier {
     String? matchmakerGender,
     String? ownerPhoneHash,
     String? ownerPhone,
+    List<String>? granteeUids,
+    bool? cardGranted,
+    bool cardRequested = false,
+    bool lookingGranted = false,
+    bool lookingRequested = false,
   }) => <String, Object?>{
     'ownerUid': ownerUid,
     'matchmakerUid': matchmakerUid,
+    'granteeUids': granteeUids ?? [matchmakerUid],
     'status': status.name,
+    'cardGranted': cardGranted ?? (status == CardAccessStatus.approved),
+    'lookingGranted': lookingGranted,
+    'lookingRequested': lookingRequested,
+    'cardRequested': cardRequested,
     'requestedBy': requestedBy,
     'ownerName': ownerName,
     'matchmakerName': matchmakerName,
@@ -707,13 +781,18 @@ class CardAccessProvider extends ChangeNotifier {
     String? ownerName,
     String? ownerPhoneHash,
     String? ownerPhone,
+    bool cardGranted = true,
+    bool lookingGranted = false,
   }) {
     return _run('access:${access.id}', () async {
       await _accessDoc(access.ownerUid, access.matchmakerUid).set(
         _accessData(
           ownerUid: access.ownerUid,
           matchmakerUid: access.matchmakerUid,
+          granteeUids: access.granteeUids,
           status: status,
+          cardGranted: status == CardAccessStatus.approved && cardGranted,
+          lookingGranted: status == CardAccessStatus.approved && lookingGranted,
           requestedBy: access.requestedBy,
           ownerName: ownerName ?? access.ownerName,
           matchmakerName: access.matchmakerName,
@@ -731,23 +810,58 @@ class CardAccessProvider extends ChangeNotifier {
     required String ownerName,
     String? ownerPhoneHash,
     String? ownerPhone,
+    bool cardGranted = true,
+    bool lookingGranted = false,
+    Map<String, dynamic>? expectedRecipient,
   }) {
     final String? uid = _uid;
     return _run('helper:${helper.uid}', () async {
-      await _accessDoc(uid!, helper.uid).set(
+      final recipient = await CoupleWorkspaceService.call('resolveMatchmaker', {
+        'uid': helper.uid,
+      });
+      if (expectedRecipient != null &&
+          (expectedRecipient['uid'] != recipient['uid'] ||
+              jsonEncode(expectedRecipient['members']) !=
+                  jsonEncode(recipient['members']))) {
+        throw StateError('המאגר השתנה. יש לבחור הרשאות מחדש.');
+      }
+      final target = recipient['uid'] as String;
+      await _accessDoc(uid!, target).set(
         _accessData(
           ownerUid: uid,
-          matchmakerUid: helper.uid,
+          matchmakerUid: target,
+          granteeUids: (recipient['members'] as List).cast<String>(),
           status: CardAccessStatus.approved,
           requestedBy: 'owner',
+          cardGranted: cardGranted,
+          lookingGranted: lookingGranted,
           ownerName: ownerName,
-          matchmakerName: helper.name,
+          matchmakerName: recipient['name'] as String,
           ownerPhoneHash: ownerPhoneHash,
           ownerPhone: ownerPhone,
         ),
       );
     });
   }
+
+  Future<bool> setPermissions(
+    CardAccess row, {
+    required bool card,
+    required bool looking,
+  }) => setStatus(
+    row,
+    card || looking ? CardAccessStatus.approved : CardAccessStatus.revoked,
+    cardGranted: card,
+    lookingGranted: looking,
+  );
+
+  Future<bool> requestLooking(CardAccess row) =>
+      _run('looking:${row.id}', () async {
+        await _accessDoc(row.ownerUid, row.matchmakerUid).update({
+          'lookingRequested': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      });
 
   /// The owner lifts a block. The row goes; the matchmaker may ask again.
   Future<bool> unblock(CardAccess access) {
@@ -784,7 +898,7 @@ class CardAccessProvider extends ChangeNotifier {
     required String matchmakerName,
     String? matchmakerGender,
   }) async {
-    final String? uid = _uid;
+    final String? uid = CoupleWorkspaceService.databaseUid ?? _uid;
     final String key = 'request:$ownerUid';
     if (uid == null || _busy.contains(key)) {
       return CardRequestOutcome.failed;
@@ -792,14 +906,26 @@ class CardAccessProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
+      final existing = _asMatchmaker[ownerUid];
+      if (existing?.status == CardAccessStatus.approved &&
+          !existing!.canReadCard) {
+        await _accessDoc(ownerUid, uid).update({
+          'cardRequested': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return CardRequestOutcome.sent;
+      }
       await _accessDoc(ownerUid, uid).set(
         _accessData(
           ownerUid: ownerUid,
           matchmakerUid: uid,
           status: CardAccessStatus.pending,
           requestedBy: 'matchmaker',
+          granteeUids: CoupleWorkspaceService.isCouple
+              ? CoupleWorkspaceService.members
+              : [uid],
           ownerName: ownerName,
-          matchmakerName: matchmakerName,
+          matchmakerName: CoupleWorkspaceService.name ?? matchmakerName,
           matchmakerGender: matchmakerGender,
           ownerPhoneHash: ownerPhoneHash,
         ),
@@ -831,7 +957,7 @@ class CardAccessProvider extends ChangeNotifier {
     final String? owner = person.cardOwnerUid;
     if (uid == null ||
         owner == null ||
-        _asMatchmaker[owner]?.status != CardAccessStatus.approved) {
+        _asMatchmaker[owner]?.canReadCard != true) {
       return;
     }
     try {

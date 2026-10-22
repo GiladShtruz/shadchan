@@ -1,3 +1,4 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -628,7 +629,8 @@ class _JournalLine extends StatelessWidget {
                           ),
                         ),
                       TextSpan(
-                        text: MatchJournalLines.displayText(note),
+                        text:
+                            '${MatchJournalLines.displayText(note)}${CoupleWorkspaceService.author('matchNotes', note.id) == null ? '' : ' · ${CoupleWorkspaceService.author('matchNotes', note.id)}'}',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           height: 1.35,
                           fontWeight: mine ? FontWeight.w700 : FontWeight.w400,

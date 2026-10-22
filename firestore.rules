@@ -14,6 +14,43 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function membershipPath(uid) { return /databases/$(database)/documents/memberships/$(uid); }
+    function paired() { return exists(membershipPath(request.auth.uid)); }
+    function databaseUid() { return paired() ? get(membershipPath(request.auth.uid)).data.databaseUid : request.auth.uid; }
+    function databaseMember(uid) {
+      return durable() && (paired()
+        ? get(membershipPath(request.auth.uid)).data.databaseUid == uid && get(membershipPath(request.auth.uid)).data.state == 'active'
+        : request.auth.uid == uid);
+    }
+    function databaseWrite(uid) {
+      return databaseMember(uid) && (!paired() || request.resource.data._actorUid == request.auth.uid);
+    }
+    function sharedSetting(key) { return key.matches('^(home[.]board.*|tags[.].*|tagLibrary|suggestionDismiss.*|cardSyncRemote[.].*|deletedIdeas.*)$'); }
+    match /memberships/{uid} { allow read: if durable() && request.auth.uid == uid; allow write: if false; }
+    match /couples/{uid} {
+      allow read: if durable() && request.auth.uid in resource.data.members;
+      allow write: if false;
+    }
+    match /coupleData/{workspaceId} {
+      function member() {
+        return durable() && paired() && get(membershipPath(request.auth.uid)).data.operation == workspaceId
+          && get(membershipPath(request.auth.uid)).data.state == 'active';
+      }
+      allow read, write: if false;
+      match /inbox/{id} {
+        allow read, delete: if member();
+        allow update: if member() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create: if false;
+      }
+      match /settings/{id} {
+        allow read: if member();
+        allow write: if member() && request.resource.data._actorUid == request.auth.uid
+          && (request.resource.data.get('_deleted', false) || sharedSetting(request.resource.data.k));
+      }
+    }
+    match /coupleInvites/{id} { allow read, write: if false; }
+    match /coupleArchives/{path=**} { allow read, write: if false; }
+
     match /users/{userId} {
       // An anonymous account must never own a backup. It dies with the
       // install, so data written under one is unrecoverable — and the app
@@ -26,7 +63,9 @@ service cloud.firestore {
             && request.auth.token.firebase.sign_in_provider != 'anonymous';
       }
 
-      allow read, write: if isOwner();
+      allow read: if isOwner();
+      allow write: if isOwner() && (!paired() ||
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deletion']));
 
       // The record collections. Named explicitly rather than matched with a
       // wildcard so a future collection has to be considered before it can be
@@ -39,16 +78,24 @@ service cloud.firestore {
       // while the account is in its 30 days of grace; `purgeDeletedAccounts`
       // erases the whole tree after that.
       match /people/{personId} {
-        allow read, write: if isOwner();
+        allow read: if databaseMember(userId);
+        allow create, update: if databaseWrite(userId);
+        allow delete: if durable() && !paired() && request.auth.uid == userId;
       }
       match /personNotes/{noteId} {
-        allow read, write: if isOwner();
+        allow read: if databaseMember(userId);
+        allow create, update: if databaseWrite(userId);
+        allow delete: if durable() && !paired() && request.auth.uid == userId;
       }
       match /matches/{matchId} {
-        allow read, write: if isOwner();
+        allow read: if databaseMember(userId);
+        allow create, update: if databaseWrite(userId);
+        allow delete: if durable() && !paired() && request.auth.uid == userId;
       }
       match /matchNotes/{noteId} {
-        allow read, write: if isOwner();
+        allow read: if databaseMember(userId);
+        allow create, update: if databaseWrite(userId);
+        allow delete: if durable() && !paired() && request.auth.uid == userId;
       }
 
       // The two history ledgers behind the profile history feeds and the
@@ -57,10 +104,14 @@ service cloud.firestore {
       // being true, and losing them would have silently reset a matchmaker's
       // whole record of their own work.
       match /personEvents/{eventId} {
-        allow read, write: if isOwner();
+        allow read: if databaseMember(userId);
+        allow create, update: if databaseWrite(userId);
+        allow delete: if durable() && !paired() && request.auth.uid == userId;
       }
       match /matchStatusEvents/{eventId} {
-        allow read, write: if isOwner();
+        allow read: if databaseMember(userId);
+        allow create, update: if databaseWrite(userId);
+        allow delete: if durable() && !paired() && request.auth.uid == userId;
       }
 
       // The matchmaker's own profile — one document, `main`. Written by
@@ -459,7 +510,7 @@ service cloud.firestore {
       allow read: if request.auth != null;
 
       allow create, update: if request.auth != null
-                            && request.auth.uid == uid
+                            && databaseMember(uid)
                             && request.resource.data.name is string
                             && request.resource.data.name.size() <= 80
                             && request.resource.data.hidden is bool
@@ -479,7 +530,7 @@ service cloud.firestore {
       // delete carries no `request.resource`, so the field checks above would
       // refuse it — which would have left the app promising a deletion it could
       // not perform.
-      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow delete: if request.auth != null && databaseMember(uid);
     }
 
     // --- "מזל טוב! זוג חדש התארס!" ----------------------------------------
@@ -664,9 +715,16 @@ service cloud.firestore {
       return /databases/$(database)/documents/cardAccess/$(ownerUid + '_' + matchmakerUid);
     }
 
+    function grantIncludesMe(ownerUid) {
+      let grant = get(accessPath(ownerUid, databaseUid())).data;
+      return paired() ? grant.get('granteeUids', []) == get(membershipPath(request.auth.uid)).data.members
+        : grant.matchmakerUid == request.auth.uid && grant.get('granteeUids', [request.auth.uid]).size() == 1;
+    }
+
     function hasApprovedAccess(ownerUid) {
-      return exists(accessPath(ownerUid, request.auth.uid))
-          && get(accessPath(ownerUid, request.auth.uid)).data.status == 'approved';
+      return grantIncludesMe(ownerUid) && exists(accessPath(ownerUid, databaseUid()))
+          && get(accessPath(ownerUid, databaseUid())).data.status == 'approved'
+          && get(accessPath(ownerUid, databaseUid())).data.get('cardGranted', true) == true;
     }
 
     // The contacts rule: a matchmaker may ask for a card only if the card's
@@ -674,16 +732,44 @@ service cloud.firestore {
     // owner published, and against the phone this account published as its
     // own — which must be this account's entry in the directory, so a phone
     // hash cannot be borrowed from somebody else's entry.
+    function knownPhoneInContacts(ownerUid, uid) {
+      let path = /databases/$(database)/documents/userPhones/$(uid);
+      return exists(path) && exists(/databases/$(database)/documents/contactHashes/$(ownerUid))
+        && get(/databases/$(database)/documents/phoneDirectory/$(get(path).data.phoneHash)).data.uid == uid
+        && get(/databases/$(database)/documents/contactHashes/$(ownerUid)).data.hashes.hasAny([get(path).data.phoneHash]);
+    }
     function inOwnersContacts(ownerUid) {
-      let myPhone = get(/databases/$(database)/documents/userPhones/$(request.auth.uid)).data.phoneHash;
-      return exists(/databases/$(database)/documents/contactHashes/$(ownerUid))
-          && get(/databases/$(database)/documents/phoneDirectory/$(myPhone)).data.uid == request.auth.uid
-          && get(/databases/$(database)/documents/contactHashes/$(ownerUid)).data.hashes.hasAny([myPhone]);
+      return paired() ?
+        (knownPhoneInContacts(ownerUid, get(membershipPath(request.auth.uid)).data.members[0]) ||
+         knownPhoneInContacts(ownerUid, get(membershipPath(request.auth.uid)).data.members[1])) :
+        knownPhoneInContacts(ownerUid, request.auth.uid);
     }
 
     // The owner's card. The field list is the whitelist in
     // `PersonalCardCodec.cardFields` plus the bookkeeping around it: nothing
     // a matchmaker keeps privately can be written here, by construction.
+    function activeCard(ownerUid) {
+      let card = get(/databases/$(database)/documents/personalCards/$(ownerUid)).data;
+      return card.deleted == false && (card.get('photoPaths', []).size() > 0 ||
+        (card.get('description', '') is string && card.get('description', '').trim().size() >= 30));
+    }
+    function hasLookingAccess(ownerUid) {
+      return grantIncludesMe(ownerUid) && exists(accessPath(ownerUid, databaseUid()))
+        && get(accessPath(ownerUid, databaseUid())).data.status == 'approved'
+        && get(accessPath(ownerUid, databaseUid())).data.get('lookingGranted', false) == true;
+    }
+    match /privateLookingPresence/{ownerUid} {
+      allow read: if durable() && (request.auth.uid == ownerUid || hasApprovedAccess(ownerUid) || hasLookingAccess(ownerUid));
+      allow write: if false;
+    }
+    match /privateLooking/{ownerUid} {
+      allow read: if durable() && (request.auth.uid == ownerUid ||
+        (hasLookingAccess(ownerUid) && get(/databases/$(database)/documents/personalCards/$(ownerUid)).data.deleted == false));
+      // Callable verifies actual audio length and owns the field whitelist.
+      allow write: if false;
+    }
+    match /publicStats/{id} { allow read: if durable(); allow write: if false; }
+
     match /personalCards/{ownerUid} {
       allow read: if durable()
                   && (request.auth.uid == ownerUid
@@ -706,6 +792,8 @@ service cloud.firestore {
                                  'preferredReligiousLevels',
                                  'preferredReligiousLevelOtherLabels',
                                  'photoPaths', 'status', 'deleted', 'updatedAt'])
+                            && request.resource.data.photoPaths is list
+                            && request.resource.data.photoPaths.size() <= 4
                             && (request.resource.data.get('description', null) == null
                                 || request.resource.data.description.size() <= 4000);
       // Deleting a card is a flag, never an erasure — it has to be
@@ -790,7 +878,12 @@ service cloud.firestore {
         return request.resource.data.keys().hasOnly([
                  'ownerUid', 'matchmakerUid', 'status', 'requestedBy',
                  'ownerName', 'matchmakerName', 'matchmakerGender',
-                 'ownerPhoneHash', 'ownerPhone', 'invited', 'updatedAt'])
+                 'ownerPhoneHash', 'ownerPhone', 'invited', 'updatedAt',
+                 'cardGranted', 'lookingGranted', 'lookingRequested', 'granteeUids', 'cardRequested'])
+            && request.resource.data.get('cardGranted', false) is bool
+            && request.resource.data.get('cardRequested', false) is bool
+            && request.resource.data.get('lookingGranted', false) is bool
+            && request.resource.data.get('lookingRequested', false) is bool
             && request.resource.data.get('matchmakerGender', null)
                  in [null, 'male', 'female']
             && accessId == request.resource.data.ownerUid + '_'
@@ -805,7 +898,7 @@ service cloud.firestore {
       }
 
       function isMatchmaker() {
-        return request.auth.uid == resource.data.matchmakerUid;
+        return request.auth.uid == resource.data.matchmakerUid || request.auth.uid in resource.data.get('granteeUids', []);
       }
 
       allow read: if durable() && (isOwner() || isMatchmaker());
@@ -816,9 +909,13 @@ service cloud.firestore {
                       request.resource.data.ownerUid == request.auth.uid
                       ||
                       // A matchmaker asking.
-                      (request.resource.data.matchmakerUid == request.auth.uid
+                      (request.resource.data.matchmakerUid == databaseUid()
+                       && request.resource.data.get('granteeUids', [request.auth.uid]) == (paired() ? get(membershipPath(request.auth.uid)).data.members : [request.auth.uid])
                        && request.resource.data.ownerUid != request.auth.uid
                        && request.resource.data.status == 'pending'
+                       && request.resource.data.get('cardGranted', false) == false
+                       && request.resource.data.get('lookingGranted', false) == false
+                       && activeCard(request.resource.data.ownerUid)
                        && request.resource.data.requestedBy == 'matchmaker'
                        && inOwnersContacts(request.resource.data.ownerUid)
                        && takesRequests(request.resource.data.ownerUid))
@@ -829,12 +926,27 @@ service cloud.firestore {
                     && request.resource.data.matchmakerUid == resource.data.matchmakerUid
                     && (
                       isOwner()
+                      || (isMatchmaker() && resource.data.status != 'blocked'
+                        && activeCard(resource.data.ownerUid) && takesRequests(resource.data.ownerUid) && inOwnersContacts(resource.data.ownerUid)
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cardRequested', 'updatedAt'])
+                        && request.resource.data.cardRequested == true && resource.data.get('cardGranted', true) == false)
+                      || (isMatchmaker() && resource.data.status != 'blocked'
+                        && activeCard(resource.data.ownerUid)
+                        && takesRequests(resource.data.ownerUid)
+                        && inOwnersContacts(resource.data.ownerUid)
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lookingRequested', 'updatedAt'])
+                        && request.resource.data.lookingRequested == true
+                        && resource.data.get('lookingGranted', false) == false)
                       ||
                       // Asking again after a "not now" or a revoked grant.
                       // Never after a block: that is the owner's to lift.
                       (isMatchmaker()
+                       && request.resource.data.get('granteeUids', []) == resource.data.get('granteeUids', [])
                        && resource.data.status in ['declined', 'revoked']
                        && request.resource.data.status == 'pending'
+                       && request.resource.data.get('cardGranted', false) == false
+                       && request.resource.data.get('lookingGranted', false) == false
+                       && activeCard(request.resource.data.ownerUid)
                        && request.resource.data.requestedBy == 'matchmaker'
                        && inOwnersContacts(resource.data.ownerUid)
                        && takesRequests(resource.data.ownerUid))
@@ -853,7 +965,7 @@ service cloud.firestore {
       allow read: if durable()
                   && (request.auth.uid == resource.data.ownerUid
                       || request.auth.uid == resource.data.matchmakerUid);
-      allow create: if durable()
+      allow create: if false
                     && request.resource.data.matchmakerUid == request.auth.uid
                     && hasApprovedAccess(request.resource.data.ownerUid)
                     && request.resource.data.keys().hasOnly([

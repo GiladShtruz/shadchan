@@ -44,11 +44,11 @@ abstract final class PrivacyPolicyText {
 
 3. המאגר בחשבון ובמכשיר
 
-המאגר שייך לחשבון. תחת users/{uid} ב-Cloud Firestore וב-Cloud Storage נשמרים האנשים, הרעיונות, ההערות וההקלטות הקוליות, היסטוריית הפעילות והסטטוסים, התגיות, התזכורות וההתראות, הפרופיל, ההגדרות והתמונות. כל מכשיר שמחובר לאותו חשבון מציג את אותו מאגר, ושינוי במכשיר אחד מתעדכן בשאר. כללי אבטחה בצד השרת מגבילים את המאגר לחשבון עצמו; אין באפליקציה מסך מנהל או חיפוש שחושף מאגר של משתמש אחר.
+המאגר שייך לחשבון. תחת users/{uid} ב-Cloud Firestore וב-Cloud Storage נשמרים האנשים, הרעיונות, ההערות וההקלטות הקוליות, היסטוריית הפעילות והסטטוסים, התגיות, התזכורות וההתראות, הפרופיל, ההגדרות והתמונות. כל מכשיר שמחובר לאותו חשבון מציג את אותו מאגר, ושינוי במכשיר אחד מתעדכן בשאר. כללי אבטחה בצד השרת מגבילים את המאגר לחשבון עצמו, או לשני בני הזוג לאחר חיבור מפורש למאגר זוגי; אין באפליקציה מסך מנהל או חיפוש שחושף מאגר של משתמש אחר.
 
 עותק של המאגר נשמר גם במכשיר (Hive וקבצים מקומיים), כדי שאפשר יהיה לעבוד בלי רשת; שינויים שנעשו בלי חיבור נשלחים לחשבון כשהחיבור חוזר. מאגר שהיה שמור רק במכשיר עובר פעם אחת, אוטומטית, לחשבון שאליו המכשיר מחובר.
 
-בהתנתקות מהחשבון העותק שבמכשיר נמחק, כדי שמי שיתחבר אחריכם יראה רק את המאגר שלו. המאגר נשאר בחשבון ויחזור בכל כניסה. חשבונות שונים אינם מתאחדים: כל חשבון הוא מאגר נפרד.
+בהתנתקות מהחשבון העותק שבמכשיר נמחק, כדי שמי שיתחבר אחריכם יראה רק את המאגר שלו. המאגר נשאר בחשבון ויחזור בכל כניסה. חשבונות שונים אינם מתאחדים אוטומטית; חיבור בני זוג למאגר משותף מחייב הזמנה ואישור כמתואר בסעיף 4ב.
 
 4. ייבוא בעזרת Gemini
 
@@ -58,16 +58,23 @@ abstract final class PrivacyPolicyText {
 
 4א. הכרטיס האישי וגישה של חברים
 
-מי שנכנס כרווק/ה יכול למלא כרטיס אישי על עצמו ולנהל אותו בעצמו. הכרטיס נשמר ב-Cloud Firestore תחת personalCards/{uid} והתמונות שלו ב-Cloud Storage. הוא כולל את מה שבעל הכרטיס מילא: שם, מגדר, תאריך לידה, סגנון דתי, עיר, אזור, מצב משפחתי, גובה, הכרטיסייה לשליחה, תמונות, "מה אני מחפש/ת" וסטטוס. מספר הטלפון אינו חלק מהכרטיס.
+מי שנכנס כרווק/ה יכול למלא כרטיס אישי על עצמו ולנהל אותו בעצמו. הכרטיס נשמר ב-Cloud Firestore תחת personalCards/{uid} והתמונות שלו ב-Cloud Storage. הוא כולל את מה שבעל הכרטיס מילא: שם, מגדר, תאריך לידה, סגנון דתי, עיר, אזור, מצב משפחתי, גובה, הכרטיסייה לשליחה, עד ארבע תמונות וסטטוס. כל תוכן בכרטיס זה מיועד לשיתוף במסגרת שידוכים. מספר הטלפון אינו חלק מהכרטיס.
 
+- מידע פרטי נפרד: באזור "מה אני מחפש/ת" אפשר לשמור טקסט והקלטה אחת עד עשר דקות, גם יחד. הקלטה מיובאת מועתקת לשדכן ונשמרת בחשבון, בנפרד מהכרטיס לשליחה. בעל הכרטיס שולט בנפרד בהרשאת הגישה לחלק זה; הרשאת כרטיס אינה מעניקה אותה אוטומטית. שדכן מאושר רואה את הגרסה המעודכנת, ובאפליקציה אין לו כלי שיתוף או ייצוא לתוכן הזה. בעל ההקלטה יכול לשתף אותה בעצמו. ביטול ההרשאה מסיר את התצוגה אצל השדכן ואינו משנה את הערותיו.
 - מי רואה את הכרטיס: רק בעל הכרטיס ושדכנים שהוא אישר. ההרשאה נבדקת בשרת, בכללי האבטחה של Firebase, ולא רק באפליקציה. אישור ניתן לכל הכרטיס, ואפשר להסיר אותו או להסתיר את הכרטיס משדכן מסוים בכל עת — מבחינתו ייראה כאילו אין לך כרטיס. אפשר גם לכבות לגמרי את האפשרות של שדכנים לבקש גישה; גם אז אפשר לתת גישה לחברים ביוזמתך.
 - המספר שלך: כדי שחברים יזהו אותך, נשמר "טביעת" גיבוב (hash) של מספר הטלפון שהזנת, יחד עם השם שלך וסימון אם יש לך כרטיס או שאתה משדך. אפשר לחפש מספר אחד בכל פעם, ואי אפשר לעבור על הרשימה. גיבוב של מספר טלפון אינו סוד מוחלט — הוא מסתיר את המספר מקריאה, לא מניסיון מכוון.
 - אנשי הקשר של בעל הכרטיס: רק אם בעל הכרטיס מאשר גישה לאנשי הקשר, נשלח לשרת גיבוב של המספרים שבאנשי הקשר — בלי שמות ובלי המספרים עצמם. השרת משתמש בו כדי למצוא אילו חברים משדכים, וכדי לוודא ששדכן שמבקש גישה שמור אצל בעל הכרטיס. הרשימה מוחלפת בכל עדכון וגלויה רק לכללי השרת.
 - המאגר של השדכן: כשאתם מחוברים ומשדכים, נשלח לשרת גיבוב של מספרי הטלפון של החברים במאגר שלכם — בלי שמות ובלי המספרים עצמם. השרת משתמש בו רק כדי להודיע לכם כשחבר מהמאגר ממלא לעצמו כרטיס אישי, כדי שתוכלו לבקש ממנו גישה. אף משתמש אחר לא יכול לקרוא אותו; הוא מוחלף בכל עדכון ונמחק עם החשבון.
-- אצל השדכן: פרטי הכרטיס ותמונותיו נשמרים גם במכשיר של שדכן מאושר, כדי שיוכל לעבוד איתם ולשתף אותם כמו כל כרטיס. ההערות, הרעיונות והמידע שהשדכן כתב בעצמו — כולל שינויים שעשה בעותק שלו של הכרטיס ובסטטוס — נשארים אצלו בלבד ולעולם אינם מגיעים לבעל הכרטיס או לשדכן אחר. העדכון הוא חד־כיווני: שינויים שבעל הכרטיס עושה מגיעים לשדכנים המאושרים. כשהגישה מוסרת או שהכרטיס נמחק, פרטי הכרטיס והתמונות שהגיעו ממנו מוסרים מהמכשיר של השדכן, והגרסה שהייתה לשדכן לפני כן חוזרת.
+- אצל השדכן: פרטי הכרטיס ותמונותיו נשמרים גם במכשיר של שדכן מאושר, כדי שיוכל לעבוד איתם ולשתף אותם כמו כל כרטיס. ההערות, הרעיונות והמידע שהשדכן כתב בעצמו — כולל שינויים שעשה בעותק שלו של הכרטיס ובסטטוס — נשארים במאגר השדכן ולעולם אינם מגיעים לבעל הכרטיס. אם נבחר מאגר זוגי, הם משותפים גם לבן או בת הזוג, כמוסבר להלן. העדכון הוא חד־כיווני: שינויים שבעל הכרטיס עושה מגיעים לשדכנים המאושרים. כשהגישה מוסרת או שהכרטיס נמחק, פרטי הכרטיס והתמונות שהגיעו ממנו מוסרים מהמכשיר של השדכן, והגרסה שהייתה לשדכן לפני כן חוזרת.
 - מחיקת הכרטיס: מוחקת את הכרטיס בלבד, לא את החשבון. הכרטיס נשמר מסומן כמחוק כדי שאפשר יהיה לשחזר אותו, והשדכנים מפסיקים לראות אותו מיד. הוא נמחק לגמרי עם מחיקת החשבון.
 - התראות: השרת (Cloud Functions) כותב לחשבון התראות על בקשת גישה, אישור או דחייה, כרטיס של חבר, חתונה ויום הולדת עברי, ושולח אותן כהתראת Push דרך Firebase Cloud Messaging. לשם כך נשמר מזהה המכשיר להתראות. על שינויים רגילים בכרטיס לא נשלחות התראות.
 - הזמנה: שדכן יכול לשלוח לחבר קישור הזמנה שכולל את מזהה השדכן ושמו. ההזמנה לא נותנת גישה לאיש; בעל הכרטיס מחליט.
+
+4ב. מאגר זוגי
+
+בני זוג נשואים יכולים לחבר שני חשבונות אישיים למאגר שדכנות אחד בהזמנה ואישור מפורש. האנשים שנבחרו למאגר, הכרטיסים, ההערות, הרעיונות, הסטטוסים והתגיות משותפים ומתעדכנים אצל שניהם. אנשי הקשר במכשיר, פרטי ההתחברות והתזכורות נשארים אישיים. מקור ההוספה ומחבר ההערה נשמרים. בקשת גישה לכרטיס אישי מוצגת בשם שניהם; הרשאה קודמת לאדם אחד אינה מתרחבת אוטומטית לבן הזוג. הניקוד והדירוג משותפים.
+
+מיזוג שומר מקור נתונים ועותק התאוששות בשרת, שאינו פתוח למשתמשים אחרים. בפיצול, לאחר הסבר ואישור, כל צד מקבל את האנשים שנוספו על ידו ואת המידע הרלוונטי. רעיון בין שני הצדדים וההיסטוריה שלו נשמרים אצל שניהם. אין העתקה אוטומטית של כל המאגר לשני הצדדים. שינויים מקומיים שטרם סונכרנו נשמרים במכשיר לשחזור. לפני מחיקת חשבון המחובר למאגר זוגי יש לפצל את המאגר כדי לשמור את המידע של הצד השני.
 
 5. הקהילה והפרופיל הציבורי
 
@@ -105,7 +112,7 @@ Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואס�
 
 11. הרשאות
 
-האפליקציה עשויה לבקש אנשי קשר, תמונות/מדיה, מיקרופון והתראות — רק בעת שימוש בתכונה המתאימה. המיקרופון משמש רק להקלטת הערה קולית על חבר מתוך הפרופיל שלו; הקלטות (כולל הקלטות ששותפו לאפליקציה מווטסאפ) נשמרות במאגר שבחשבון, כמו שאר ההערות, ואינן נשלחות לשום גורם אחר; הן נמחקות עם ההערה. בכרטיס האישי, אנשי הקשר נדרשים רק כדי למצוא חברים שמשדכים ולתת או לבקש גישה; שאר האפליקציה עובדת גם בלי ההרשאה. אפשר לבטל הרשאה בהגדרות המכשיר, אך התכונה התלויה בה עלולה לא לעבוד.
+האפליקציה עשויה לבקש אנשי קשר, תמונות/מדיה, מיקרופון והתראות — רק בעת שימוש בתכונה המתאימה. המיקרופון משמש להקלטת הערה קולית על חבר או הקלטה ב"מה אני מחפש/ת"; הקלטות (כולל הקלטות ששותפו לאפליקציה מווטסאפ) נשמרות במאגר שבחשבון, כמו שאר ההערות, ומשותפות רק לפי הרשאות המאגר הזוגי והמידע הפרטי שתוארו לעיל. הן נמחקות עם ההערה או בהסרת ההקלטה הפרטית. בכרטיס האישי, אנשי הקשר נדרשים רק כדי למצוא חברים שמשדכים ולתת או לבקש גישה; שאר האפליקציה עובדת גם בלי ההרשאה. אפשר לבטל הרשאה בהגדרות המכשיר, אך התכונה התלויה בה עלולה לא לעבוד.
 
 12. שירותים חיצוניים והעברות בינלאומיות
 
@@ -192,7 +199,7 @@ Information is used to operate the Application: database management, match ideas
 
 3. The database in the account and on the device
 
-The database belongs to the account. Under users/{uid} in Cloud Firestore and Cloud Storage the Application stores people, ideas, notes and voice recordings, activity and status history, tags, reminders and notices, the profile, settings and photographs. Every device signed in to the same account shows the same database, and a change on one device reaches the others. Server-side rules restrict the database to the account itself; the Application has no administrator screen or cross-account database search.
+The database belongs to the account. Under users/{uid} in Cloud Firestore and Cloud Storage the Application stores people, ideas, notes and voice recordings, activity and status history, tags, reminders and notices, the profile, settings and photographs. Every device signed in to the same account shows the same database, and a change on one device reaches the others. Server-side rules restrict the database to the account itself, or both spouses after an explicit couple connection; the Application has no administrator screen or cross-account database search.
 
 A copy of the database is also kept on the device (Hive and local files) so the Application works offline; changes made offline are sent to the account when the connection returns. A database that previously existed only on a device is moved once, automatically, into the account the device is signed in to.
 
@@ -206,16 +213,23 @@ Use is governed by the Google Cloud and Generative AI service terms. Google stat
 
 4A. The personal card and access by friends
 
-Someone who signs in as a single person may write a personal card about themselves and manage it themselves. The card is stored in Cloud Firestore under personalCards/{uid} and its photographs in Cloud Storage. It contains what the owner filled in: name, gender, date of birth, religious style, city, region, marital status, height, the card text, photographs, "what I am looking for" and a status. The phone number is not part of the card.
+Someone who signs in as a single person may write a personal card about themselves and manage it themselves. The card is stored in Cloud Firestore under personalCards/{uid} and its photographs in Cloud Storage. It contains what the owner filled in: name, gender, date of birth, religious style, city, region, marital status, height, the card text, up to four photographs and a status. All content in this card is intended for sharing for matchmaking. The phone number is not part of the card.
 
+- Separate private content: "What I am looking for" may contain free text and one recording up to ten minutes, together or separately. Imported audio is copied into Shadchan and stored in the account separately from the shareable card. Its permission is independent and is never granted automatically with card access. Approved matchmakers see the current version; the Application offers them no sharing or export tool for this content. Owners may share their own recording. Revocation removes the private block without changing the matchmaker’s notes.
 - Who sees the card: only its owner and matchmakers the owner approved. Access is checked on the server, in Firebase Security Rules, not only in the Application. Access covers the whole card and can be withdrawn, or the card hidden from a particular matchmaker, at any time — to them it looks as if there is no card. Access requests can also be switched off altogether; the owner can still give friends access on their own initiative.
 - Your number: so that friends can recognise you, a hash of the phone number you entered is stored with your name and whether you have a card or match. Numbers can be looked up one at a time; the list cannot be read out. A hash of a phone number is not a strong secret — it hides the number from reading, not from a determined attempt.
 - The owner's contacts: only if the owner grants contacts access, hashes of the numbers in their contacts are sent to the server — no names and no numbers. The server uses them to find which friends match, and to verify that a matchmaker requesting access is saved in the owner's contacts. The list is replaced on every update and is visible only to the server's rules.
 - A matchmaker's database: while you are signed in as a matchmaker, hashes of the phone numbers of the friends in your database are sent to the server — no names and no numbers. The server uses them only to tell you when a friend in your database writes a personal card of their own, so that you can ask them for access. No other user can read them; they are replaced on every update and erased with the account.
-- On the matchmaker's device: an approved matchmaker's device keeps the card's details and photographs so the matchmaker can work with and share them like any card. Notes, ideas and information the matchmaker wrote themselves — including changes they make to their own copy of the card and its status — stay with that matchmaker only and never reach the owner or another matchmaker. Updates flow one way: changes the owner makes reach the approved matchmakers. When access is withdrawn or the card is deleted, the details and photographs received from it are removed from the matchmaker's device and the matchmaker's earlier version is restored.
+- On the matchmaker's device: an approved matchmaker's device keeps the card's details and photographs so the matchmaker can work with and share them like any card. Notes, ideas and information the matchmaker wrote themselves — including changes they make to their own copy of the card and its status — stay in the matchmaker’s database and never reach the card owner. In an explicitly connected couple workspace they are shared with that matchmaker’s spouse as described below. Updates flow one way: changes the owner makes reach the approved matchmakers. When access is withdrawn or the card is deleted, the details and photographs received from it are removed from the matchmaker's device and the matchmaker's earlier version is restored.
 - Deleting the card: removes the card only, not the account. The card is kept flagged as deleted so it can be restored, and matchmakers stop seeing it at once. It is erased completely with account deletion.
 - Notifications: server functions (Cloud Functions) write notices to the account about access requests, approvals or declines, a friend's card, a wedding and a Hebrew birthday, and send them as push notifications through Firebase Cloud Messaging. A device notification token is stored for this. Ordinary changes to a card send no notification.
 - Invitations: a matchmaker may send a friend an invitation link containing the matchmaker's identifier and name. An invitation grants access to nobody; the card owner decides.
+
+4B. Couple workspaces
+
+Married spouses may connect separate personal accounts to one matchmaking database through an invitation and explicit acceptance. Selected people, cards, notes, ideas, statuses and tags are shared and synchronized. Device address books, login credentials and reminders remain personal. Source attribution and note authorship are retained. Card-access requests name both spouses; previous individual consent never expands automatically to a spouse. Scores and rankings belong to the joint database.
+
+Merging retains provenance and a server recovery archive inaccessible to other users. Splitting requires an explanation and explicit confirmation: each spouse receives the people they contributed and relevant information, while cross-source ideas and their history remain complete on both sides. A full database copy is not automatically given to both spouses. Unsynced local changes are retained on the device for recovery. A paired account must split the workspace before account deletion so the other spouse’s information is preserved.
 
 5. Community and public profile
 
@@ -253,7 +267,7 @@ Tags: tags you put on friends are an internal tool — they stay in your account
 
 11. Permissions
 
-The Application may request contacts, photos/media, the microphone and notifications only when the related feature is used. The microphone is used only to record a voice note about a friend from their profile; recordings (including ones shared into the Application from WhatsApp) are kept in the account's database like other notes and are not sent to anyone else; they are deleted with the note. For the personal card, contacts are needed only to find friends who match and to give or request access; the rest of the Application works without that permission. You may revoke a permission in device settings, although the dependent feature may stop working.
+The Application may request contacts, photos/media, the microphone and notifications only when the related feature is used. The microphone is used for voice notes about a friend or a recording in "what I am looking for"; recordings (including ones shared into the Application from WhatsApp) are kept in the account's database like other notes and are shared only according to the couple-workspace and private-content permissions described above; they are deleted with the note or removal of the private recording. For the personal card, contacts are needed only to find friends who match and to give or request access; the rest of the Application works without that permission. You may revoke a permission in device settings, although the dependent feature may stop working.
 
 12. Providers and international transfers
 

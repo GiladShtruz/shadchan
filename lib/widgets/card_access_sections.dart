@@ -1,3 +1,7 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive/hive.dart';
+import 'package:shadchan/services/private_looking_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
@@ -28,9 +32,11 @@ class CardAccessSections extends StatefulWidget {
     super.key,
     required this.hasCard,
     this.requestsKey,
+    this.management = false,
   });
 
   final bool hasCard;
+  final bool management;
 
   /// Put on the "בקשות גישה" group, so a notice about a request can open the
   /// page right on it.
@@ -116,21 +122,150 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     return true;
   }
 
+  Future<({bool card, bool looking})?> _permissions({
+    CardAccess? row,
+    String? recipientName,
+  }) async {
+    final access = context.read<CardAccessProvider>();
+    var hasLooking = false;
+    try {
+      final data = (await PrivateLookingService.doc(
+        access.uid!,
+      ).get(const GetOptions(source: Source.server))).data();
+      hasLooking =
+          (data?['text'] as String? ?? '').trim().isNotEmpty ||
+          data?['audioPath'] != null;
+    } catch (_) {
+      if (mounted) {
+        AppNotice.show(context, 'לא ניתן לטעון הרשאות כרגע. אפשר לנסות שוב.');
+      }
+      return null;
+    }
+    if (!mounted) return null;
+    var card = row == null || row.status != CardAccessStatus.approved
+        ? true
+        : row.canReadCard;
+    var looking = row?.canReadLooking ?? false;
+    return showDialog<({bool card, bool looking})>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('לתת הרשאה'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (row != null || recipientName != null)
+                Text(recipientName ?? row!.matchmakerName),
+              if ((row?.granteeUids.length ?? 0) == 2)
+                const Text('האישור ניתן לשני בני הזוג במאגר המשותף'),
+              CheckboxListTile(
+                title: const Text('גישה לכרטיס'),
+                value: card,
+                onChanged: (v) => setState(() => card = v!),
+              ),
+              if (hasLooking || looking)
+                CheckboxListTile(
+                  title: const Text('גישה ל׳מה אני מחפש/ת׳ – לעיני השדכן בלבד'),
+                  value: looking,
+                  onChanged: (v) => setState(() => looking = v!),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(context, (card: card, looking: looking)),
+              child: const Text('שמירה'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editPermissions(
+    CardAccessProvider access,
+    CardAccess row,
+  ) async {
+    final choice = await _permissions(row: row);
+    if (choice == null) return;
+    final ok = await access.setPermissions(
+      row,
+      card: choice.card,
+      looking: choice.looking,
+    );
+    if (!ok && mounted) _failed();
+  }
+
+  Set<String> get _hiddenHelpers =>
+      (Hive.box<dynamic>('settings').get('personalCard.hiddenHelpers') as List?)
+          ?.whereType<String>()
+          .toSet() ??
+      <String>{};
+  void _hideHelper(String uid, bool hidden) {
+    final values = _hiddenHelpers;
+    hidden ? values.add(uid) : values.remove(uid);
+    Hive.box<dynamic>(
+      'settings',
+    ).put('personalCard.hiddenHelpers', values.toList());
+    setState(() {});
+  }
+
+  void _openManagement() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('ניהול ופרטיות')),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            CardAccessSections(hasCard: widget.hasCard, management: true),
+          ],
+        ),
+      ),
+    ),
+  );
+
   Future<void> _setStatus(
     CardAccessProvider access,
     CardAccess row,
     CardAccessStatus status,
   ) async {
+    if (status == CardAccessStatus.declined &&
+        row.status == CardAccessStatus.approved &&
+        (row.lookingRequested || row.cardRequested)) {
+      final ok = await access.setPermissions(
+        row,
+        card: row.canReadCard,
+        looking: row.canReadLooking,
+      );
+      if (!ok && mounted) _failed();
+      return;
+    }
     if (status == CardAccessStatus.approved && !await _ensureMyPhone()) {
       return;
     }
     if (!mounted) {
       return;
     }
+    if (!mounted) return;
+    final choice = status == CardAccessStatus.approved
+        ? await _permissions(row: row)
+        : null;
+    if (!mounted || (status == CardAccessStatus.approved && choice == null)) {
+      return;
+    }
     final UserProfileProvider profile = context.read<UserProfileProvider>();
     final bool ok = await access.setStatus(
       row,
-      status,
+      choice != null && !choice.card && !choice.looking
+          ? CardAccessStatus.revoked
+          : status,
+      cardGranted: choice?.card ?? false,
+      lookingGranted: choice?.looking ?? false,
       ownerName: profile.fullName,
       ownerPhoneHash: PhoneIdentity.hash(profile.myPhone),
       ownerPhone: profile.myPhone,
@@ -193,8 +328,19 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
       return;
     }
     final UserProfileProvider profile = context.read<UserProfileProvider>();
+    final recipient = await CoupleWorkspaceService.call('resolveMatchmaker', {
+      'uid': helper.uid,
+    });
+    final choice = await _permissions(
+      recipientName:
+          '${recipient['name']}${(recipient['members'] as List).length == 2 ? ' — האישור ניתן לשני בני הזוג' : ''}',
+    );
+    if (choice == null || (!choice.card && !choice.looking)) return;
     final bool ok = await access.grant(
       helper,
+      cardGranted: choice.card,
+      lookingGranted: choice.looking,
+      expectedRecipient: recipient,
       ownerName: profile.fullName ?? '',
       ownerPhoneHash: PhoneIdentity.hash(profile.myPhone),
       ownerPhone: profile.myPhone,
@@ -203,26 +349,14 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
       return;
     }
     if (ok) {
+      if (InviteLinkService.pending?.fromUid == helper.uid) {
+        InviteLinkService.clear();
+      }
       AppNotice.show(
         context,
         'הגישה לכרטיס שלך ניתנה ל${access.nameInContacts(helper.uid, helper.name)}',
       );
     } else {
-      _failed();
-    }
-  }
-
-  Future<void> _answer(
-    CardAccessProvider access,
-    StatusReport report,
-    bool confirmed,
-  ) async {
-    final bool ok = await access.answerReport(
-      report,
-      confirmed: confirmed,
-      cards: context.read<PersonalCardProvider>(),
-    );
-    if (!ok && mounted) {
       _failed();
     }
   }
@@ -241,7 +375,6 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
   Widget build(BuildContext context) {
     final CardAccessProvider access = context.watch<CardAccessProvider>();
     final Gender? gender = context.userGender;
-    final ThemeData theme = Theme.of(context);
     final List<CardAccess> pending = access.pendingRequests;
     final List<CardAccess> approved = access.approved;
     final List<CardAccess> blocked = access.blocked;
@@ -253,128 +386,60 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (widget.hasCard)
-          _InviteAutoGrant(access: access, ensureMyPhone: _ensureMyPhone),
-        if (access.statusReports.isNotEmpty)
-          SettingsGroup(
-            title: 'עדכוני סטטוס לאישור',
-            children: <Widget>[
-              for (final StatusReport report in access.statusReports)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        // Reports carry no gender, so both forms.
-                        GenderText.resolveOrBoth(
-                          '${report.matchmakerName} {עדכן אצלו|עדכנה אצלה} '
-                          'שהסטטוס שלך הוא '
-                          '‘${_statusLabel(report.status)}’. זה נכון?',
-                          null,
-                        ),
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      _busyOr(
-                        access.isBusy('report:${report.id}'),
-                        Wrap(
-                          spacing: 8,
-                          children: <Widget>[
-                            FilledButton(
-                              onPressed: () => _answer(access, report, true),
-                              child: const Text('כן, נכון'),
-                            ),
-                            OutlinedButton(
-                              onPressed: () => _answer(access, report, false),
-                              child: const Text('לא'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+          ValueListenableBuilder<int>(
+            valueListenable: InviteLinkService.revision,
+            builder: (context, _, _) {
+              final invite = InviteLinkService.pending;
+              if (invite == null || invite.fromUid == access.uid) {
+                return const SizedBox.shrink();
+              }
+              return SettingsGroup(
+                title: 'הזמנה שקיבלתי',
+                children: [
+                  SettingsRow(
+                    icon: Icons.person_add_outlined,
+                    title: invite.name,
+                    trailing: TextButton(
+                      onPressed: () async {
+                        await _grant(
+                          access,
+                          CardHelper(uid: invite.fromUid, name: invite.name),
+                        );
+                      },
+                      child: const Text('בחירת הרשאות'),
+                    ),
                   ),
-                ),
-            ],
+                ],
+              );
+            },
           ),
         SettingsGroup(
-          key: widget.requestsKey,
-          title: 'בקשות גישה',
+          title:
+              'מי רואה את הכרטיס שלי · ${approved.where((r) => r.canReadCard).length}',
           children: <Widget>[
-            // Whether matchmaker friends are told the card exists at all.
-            const CardAnnounceSwitch(framed: false),
-            // One switch for every matchmaker. Off, nobody can ask and the
-            // card looks like no card to all of them; giving a friend access
-            // from "החברים שלי שמשדכים בשדכן" still works.
-            SettingsRow(
-              icon: acceptsRequests
-                  ? Icons.mark_email_unread_outlined
-                  : Icons.do_not_disturb_on_outlined,
-              title: 'שדכנים יכולים לבקש גישה לכרטיס',
-              subtitle: acceptsRequests
-                  ? null
-                  : 'כבוי: אף שדכן או שדכנית לא יכולים לשלוח בקשה, ולא יראו '
-                            'שיש לך כרטיס. '
-                            '{אתה יכול|את יכולה} לתת גישה לחברים בעצמך.'
-                        .forGender(gender),
-              trailing: Switch(
-                value: acceptsRequests,
-                onChanged: (bool value) => cards.setAcceptsRequests(value),
+            if (!widget.management)
+              TextButton(
+                onPressed: _openManagement,
+                child: const Text('לכל השדכנים וניהול הרשאות'),
               ),
-            ),
-            if (pending.isEmpty && acceptsRequests)
-              const SettingsRow(
-                icon: Icons.inbox_outlined,
-                title: 'אין בקשות חדשות',
-              )
-            else
-              for (final CardAccess row in pending)
-                _AccessRow(
-                  name: access.nameInContacts(
-                    row.matchmakerUid,
-                    row.matchmakerName,
-                  ),
-                  busy: access.isBusy('access:${row.id}'),
-                  menu: <String, VoidCallback>{
-                    'הסתר': () => _confirmBlock(access, row),
-                  },
-                  actions: <Widget>[
-                    FilledButton(
-                      onPressed: () =>
-                          _setStatus(access, row, CardAccessStatus.approved),
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      child: const Text('לאשר'),
-                    ),
-                    TextButton(
-                      onPressed: () =>
-                          _setStatus(access, row, CardAccessStatus.declined),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      child: const Text('לא עכשיו'),
-                    ),
-                  ],
-                ),
-          ],
-        ),
-        SettingsGroup(
-          title: 'מי יכול לראות את הכרטיס שלי',
-          children: <Widget>[
             if (approved.isEmpty)
               SettingsRow(
                 icon: Icons.lock_outline_rounded,
                 title: 'רק {אתה|את}'.forGender(gender),
               )
             else
-              for (final CardAccess row in approved)
+              for (final CardAccess row
+                  in (widget.management ? approved : approved.take(3)))
                 _AccessRow(
                   name: access.nameInContacts(
                     row.matchmakerUid,
                     row.matchmakerName,
                   ),
+                  permissionsLabel:
+                      'כרטיס ${row.canReadCard ? '✓' : '—'} | מה אני מחפש ${row.canReadLooking ? '✓' : '—'}',
                   busy: access.isBusy('access:${row.id}'),
                   menu: <String, VoidCallback>{
+                    'שינוי הרשאות': () => _editPermissions(access, row),
                     'הסרת גישה': () =>
                         _setStatus(access, row, CardAccessStatus.revoked),
                     'הסתר': () => _confirmBlock(access, row),
@@ -382,6 +447,70 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                 ),
           ],
         ),
+        if (widget.management || pending.isNotEmpty)
+          SettingsGroup(
+            key: widget.requestsKey,
+            title: 'בקשות גישה',
+            children: <Widget>[
+              // Whether matchmaker friends are told the card exists at all.
+              if (widget.management) const CardAnnounceSwitch(framed: false),
+              // One switch for every matchmaker. Off, nobody can ask and the
+              // card looks like no card to all of them; giving a friend access
+              // from "החברים שלי שמשדכים בשדכן" still works.
+              if (widget.management)
+                SettingsRow(
+                  icon: acceptsRequests
+                      ? Icons.mark_email_unread_outlined
+                      : Icons.do_not_disturb_on_outlined,
+                  title: 'שדכנים יכולים לבקש גישה לכרטיס',
+                  subtitle: acceptsRequests
+                      ? null
+                      : 'כבוי: אף שדכן או שדכנית לא יכולים לשלוח בקשה, ולא יראו '
+                                'שיש לך כרטיס. '
+                                '{אתה יכול|את יכולה} לתת גישה לחברים בעצמך.'
+                            .forGender(gender),
+                  trailing: Switch(
+                    value: acceptsRequests,
+                    onChanged: (bool value) => cards.setAcceptsRequests(value),
+                  ),
+                ),
+              if (widget.management && pending.isEmpty && acceptsRequests)
+                const SettingsRow(
+                  icon: Icons.inbox_outlined,
+                  title: 'אין בקשות חדשות',
+                )
+              else
+                for (final CardAccess row in pending)
+                  _AccessRow(
+                    name: access.nameInContacts(
+                      row.matchmakerUid,
+                      row.matchmakerName,
+                    ),
+                    busy: access.isBusy('access:${row.id}'),
+                    menu: <String, VoidCallback>{
+                      'הסתר': () => _confirmBlock(access, row),
+                    },
+                    actions: <Widget>[
+                      FilledButton(
+                        onPressed: () =>
+                            _setStatus(access, row, CardAccessStatus.approved),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: const Text('לאשר'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            _setStatus(access, row, CardAccessStatus.declined),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: const Text('לא עכשיו'),
+                      ),
+                    ],
+                  ),
+            ],
+          ),
         if (widget.hasCard)
           SettingsGroup(
             title: 'החברים שלי שמשדכים בשדכן',
@@ -421,15 +550,46 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
                   title: 'עוד לא מצאנו חברים שלך בשדכן',
                 )
               else
-                for (final CardHelper helper in helpers)
-                  _HelperRow(
-                    name: access.nameInContacts(helper.uid, helper.name),
-                    busy: access.isBusy('helper:${helper.uid}'),
-                    onGrant: () => _grant(access, helper),
+                for (final CardHelper helper
+                    in (widget.management
+                        ? helpers
+                        : helpers
+                              .where((h) => !_hiddenHelpers.contains(h.uid))
+                              .take(3)))
+                  Column(
+                    children: [
+                      _HelperRow(
+                        name: access.nameInContacts(helper.uid, helper.name),
+                        busy: access.isBusy('helper:${helper.uid}'),
+                        onGrant: () => _grant(access, helper),
+                      ),
+                      TextButton(
+                        onPressed: () => _hideHelper(
+                          helper.uid,
+                          !_hiddenHelpers.contains(helper.uid),
+                        ),
+                        child: Text(
+                          _hiddenHelpers.contains(helper.uid)
+                              ? 'החזרה לרשימה'
+                              : 'הסתר מהרשימה',
+                        ),
+                      ),
+                    ],
                   ),
+              if (!widget.management)
+                TextButton(
+                  onPressed: _openManagement,
+                  child: const Text('הצג עוד'),
+                ),
             ],
           ),
-        if (blocked.isNotEmpty)
+        if (!widget.management)
+          TextButton.icon(
+            onPressed: _openManagement,
+            icon: const Icon(Icons.tune),
+            label: const Text('ניהול ופרטיות'),
+          ),
+        if (widget.management && blocked.isNotEmpty)
           SettingsGroup(
             title: 'מוסתרים',
             children: <Widget>[
@@ -457,122 +617,6 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
       ],
     );
   }
-
-  static String _statusLabel(String name) {
-    for (final ProfileStatus status in ProfileStatus.values) {
-      if (status.name == name) {
-        return status.displayName;
-      }
-    }
-    return name;
-  }
-}
-
-/// The matchmaker whose link brought this person here gets access to the card
-/// by default — the moment the card exists, with nothing to approve. The
-/// friend filled the card in because this matchmaker asked; every other
-/// matchmaker still asks and waits.
-///
-/// Draws nothing. A matchmaker the owner has blocked is never granted, and one
-/// who already has access only clears the invitation.
-class _InviteAutoGrant extends StatefulWidget {
-  const _InviteAutoGrant({required this.access, required this.ensureMyPhone});
-
-  final CardAccessProvider access;
-
-  /// Asks for the owner's own number if it is missing — it is how the
-  /// matchmaker's app finds the friend already in their database.
-  final Future<bool> Function() ensureMyPhone;
-
-  @override
-  State<_InviteAutoGrant> createState() => _InviteAutoGrantState();
-}
-
-class _InviteAutoGrantState extends State<_InviteAutoGrant> {
-  /// Invitations already handled in this visit — one attempt each, so a
-  /// failed write or a dismissed number dialog never loops.
-  final Set<String> _tried = <String>{};
-
-  @override
-  void initState() {
-    super.initState();
-    InviteLinkService.revision.addListener(_schedule);
-    widget.access.addListener(_schedule);
-    _schedule();
-  }
-
-  @override
-  void didUpdateWidget(_InviteAutoGrant oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.access != widget.access) {
-      oldWidget.access.removeListener(_schedule);
-      widget.access.addListener(_schedule);
-    }
-  }
-
-  @override
-  void dispose() {
-    InviteLinkService.revision.removeListener(_schedule);
-    widget.access.removeListener(_schedule);
-    super.dispose();
-  }
-
-  void _schedule() {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeGrant());
-  }
-
-  Future<void> _maybeGrant() async {
-    final CardAccessProvider access = widget.access;
-    final PendingInvite? invite = InviteLinkService.pending;
-    final String? me = access.uid;
-    if (!mounted || invite == null || me == null) {
-      return;
-    }
-    if (invite.fromUid == me || _tried.contains(invite.fromUid)) {
-      return;
-    }
-    CardAccess? row;
-    for (final CardAccess a in <CardAccess>[
-      ...access.approved,
-      ...access.blocked,
-    ]) {
-      if (a.matchmakerUid == invite.fromUid) {
-        row = a;
-      }
-    }
-    if (row != null) {
-      // Already approved, or blocked by the owner — a link never undoes a
-      // block. Either way there is nothing to do.
-      InviteLinkService.clear();
-      return;
-    }
-    _tried.add(invite.fromUid);
-    await widget.ensureMyPhone();
-    if (!mounted) {
-      return;
-    }
-    final UserProfileProvider profile = context.read<UserProfileProvider>();
-    final String name = access.nameInContacts(invite.fromUid, invite.name);
-    final bool ok = await access.grant(
-      CardHelper(uid: invite.fromUid, name: invite.name),
-      ownerName: profile.fullName ?? '',
-      ownerPhoneHash: PhoneIdentity.hash(profile.myPhone),
-      ownerPhone: profile.myPhone,
-    );
-    if (!ok) {
-      return;
-    }
-    InviteLinkService.clear();
-    if (mounted && name.trim().isNotEmpty) {
-      AppNotice.show(
-        context,
-        'ל$name יש עכשיו גישה לכרטיס שלך, דרך הקישור שקיבלת',
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 /// A friend who matchmakes in the app: their full name, and the one thing to
@@ -635,11 +679,13 @@ class _AccessRow extends StatelessWidget {
   const _AccessRow({
     required this.name,
     required this.busy,
+    this.permissionsLabel,
     this.actions = const <Widget>[],
     this.menu = const <String, VoidCallback>{},
   });
 
   final String name;
+  final String? permissionsLabel;
   final bool busy;
   final List<Widget> actions;
   final Map<String, VoidCallback> menu;
@@ -670,14 +716,21 @@ class _AccessRow extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  shown,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: ink,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      shown,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: ink,
+                      ),
+                    ),
+                    if (permissionsLabel != null)
+                      Text(permissionsLabel!, style: theme.textTheme.bodySmall),
+                  ],
                 ),
               ),
               if (busy)

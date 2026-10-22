@@ -1,3 +1,4 @@
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -100,6 +101,13 @@ abstract final class AccountSwitch {
     required CommunityProvider community,
     String? password,
   }) async {
+    if (CoupleWorkspaceService.isCouple) {
+      return const AccountDeletionResult.failure(
+        AccountDeletionOutcome.dataDeletionFailed,
+        'לפני מחיקת החשבון יש לפצל את המאגר הזוגי בהגדרות ← מאגר זוגי ← ניהול מתקדם.',
+      );
+    }
+
     await _handOver(sync);
     final AccountDeletionResult result = await account.deleteAccount(
       password: password,
@@ -173,6 +181,13 @@ abstract final class AccountSwitch {
     required CommunityProvider community,
     String? password,
   }) async {
+    if (CoupleWorkspaceService.isCouple) {
+      return const AccountDeletionResult.failure(
+        AccountDeletionOutcome.dataDeletionFailed,
+        'לפני מחיקת החשבון יש לפצל את המאגר הזוגי בהגדרות ← מאגר זוגי ← ניהול מתקדם.',
+      );
+    }
+
     await sync.stop();
     final AccountDeletionResult result = await account.deleteAccount(
       password: password,
