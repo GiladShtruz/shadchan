@@ -954,10 +954,18 @@ class _SwipeableBranches extends StatefulWidget {
 
 class _SwipeableBranchesState extends State<_SwipeableBranches>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _settle = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 220),
-  );
+  late final AnimationController _settle;
+
+  @override
+  void initState() {
+    super.initState();
+    // Create the ticker while mounted, including when no swipe ever occurs.
+    // A lazy controller first accessed in dispose looks up a dead ancestor.
+    _settle = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+  }
 
   /// How far the current page is dragged, in pixels; positive is rightwards.
   double _drag = 0;

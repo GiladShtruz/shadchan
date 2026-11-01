@@ -58,7 +58,7 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('הפעילות שלי'), findsOneWidget);
+    expect(find.text('הניקוד שלי'), findsOneWidget);
     // No account in a widget test, so the community square is the invitation
     // rather than a figure. See the signed-out test below.
     expect(find.text('הצטרפו לקהילת השדכנים'), findsOneWidget);
@@ -80,7 +80,7 @@ void main() {
     expect(find.textContaining('יעד'), findsNothing);
     expect(find.byType(LinearProgressIndicator), findsNothing);
 
-    await tester.tap(find.text('הפעילות שלי'));
+    await tester.tap(find.text('הניקוד שלי'));
     await tester.pump();
     expect(opened, 1);
   });
@@ -150,8 +150,8 @@ void main() {
 
     // Their own numbers are untouched — the gate withholds the community, not
     // anything that was ever theirs.
-    expect(find.text('הפעילות שלי'), findsOneWidget);
-    expect(find.text('פעילות הקהילה'), findsNothing);
+    expect(find.text('הניקוד שלי'), findsOneWidget);
+    expect(find.text('הניקוד הכללי של הקהילה'), findsNothing);
 
     // And the invitation wears the same tile, so the shape still says a
     // number belongs there.
@@ -171,7 +171,7 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('הפעילות שלי'), findsOneWidget);
+      expect(find.text('הניקוד שלי'), findsOneWidget);
     });
   }
 }

@@ -5,6 +5,7 @@
 // Every access decision about a card is the server's (spec item 110), so the
 // rules are tested as the thing they are — not through the app.
 import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
 import { test, before, after, beforeEach } from 'node:test';
 import {
   initializeTestEnvironment,
@@ -20,6 +21,7 @@ import {
   collection,
   getDocs,
   serverTimestamp,
+  onSnapshot,
 } from 'firebase/firestore';
 
 const OWNER = 'owner1';
@@ -406,4 +408,59 @@ test('requesting the card while private access is approved preserves private con
 });
 test('community tips still work independently of personal cards',async()=>{
  await assertSucceeds(setDoc(doc(as(MM),'tips','tip-regression'),{authorUid:MM,authorName:'יצחק',status:'pending',text:'טיפ מועיל',createdAt:serverTimestamp()}));
+});
+
+// The goal shown on home is shared configuration, never a member-owned score.
+function weeklyGoal(extra = {}) {
+  return { metric: 'ideas', target: 200, title: 'השבוע מחברים יחד',
+    updatedAt: serverTimestamp(), ...extra };
+}
+function goalAdmin(verified = true) {
+  return env.authenticatedContext('goal-admin', {
+    email: 'yitz292@gmail.com', email_verified: verified,
+    firebase: { sign_in_provider: 'password' },
+  }).firestore();
+}
+
+test('weekly goal: a verified admin publishes, members read and receive live edits', async () => {
+  const adminRef = doc(goalAdmin(), 'communityGoals/weekly');
+  const memberRef = doc(as(MM), 'communityGoals/weekly');
+  await assertSucceeds(setDoc(adminRef, weeklyGoal()));
+  assert.equal((await assertSucceeds(getDoc(memberRef))).data().target, 200);
+  const received = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { unsubscribe(); reject(new Error('No live goal update')); }, 10000);
+    const unsubscribe = onSnapshot(memberRef, snapshot => {
+      if (snapshot.data()?.target === 350) {
+        clearTimeout(timeout); unsubscribe(); resolve();
+      }
+    }, error => { clearTimeout(timeout); reject(error); });
+  });
+  await assertSucceeds(setDoc(adminRef, weeklyGoal({ target: 350, metric: 'friends' })));
+  await received;
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'communityGoals/weekly')));
+  await assertFails(setDoc(memberRef, weeklyGoal()));
+  await assertFails(deleteDoc(memberRef));
+  await assertFails(deleteDoc(adminRef));
+});
+
+test('weekly goal: delegated admins can edit; unverified and ordinary accounts cannot', async () => {
+  await seed(db => setDoc(doc(db, 'supportAdmins/reviewer@example.com'), {}));
+  const reviewer = env.authenticatedContext('reviewer', {
+    email: 'reviewer@example.com', email_verified: true,
+  }).firestore();
+  await assertSucceeds(setDoc(doc(reviewer, 'communityGoals/weekly'), weeklyGoal()));
+  await assertFails(setDoc(doc(goalAdmin(false), 'communityGoals/weekly'), weeklyGoal()));
+  await assertFails(setDoc(doc(as(STRANGER), 'communityGoals/weekly'), weeklyGoal()));
+  await assertFails(setDoc(doc(goalAdmin(), 'communityGoals/another'), weeklyGoal()));
+});
+
+test('weekly goal: validates target, metric, heading, timestamp and field whitelist', async () => {
+  const ref = doc(goalAdmin(), 'communityGoals/weekly');
+  for (const extra of [
+    { target: 0 }, { target: -1 }, { target: 1.5 }, { target: 1000001 },
+    { target: '200' }, { metric: 'unknown' }, { title: 'א'.repeat(101) },
+    { title: 42 }, { updatedAt: null }, { privateData: 'no' },
+  ]) await assertFails(setDoc(ref, weeklyGoal(extra)));
+  await assertSucceeds(setDoc(ref, weeklyGoal({ target: 1, title: '' })));
+  await assertSucceeds(setDoc(ref, weeklyGoal({ target: 1000000, metric: 'couples' })));
 });

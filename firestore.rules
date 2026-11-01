@@ -394,10 +394,23 @@ service cloud.firestore {
     // candidate: no person, no proposal, no note, no photo, no phone number —
     // those never leave `users/{uid}`.
     //
-    // `communityGoals` used to sit below this: a shared weekly target the
-    // community aimed at. The feature was removed, and its rule with it, so
-    // the collection is closed by the catch-all at the bottom.
-    //
+    // Shared home-page goal. A verified administrator chooses the public
+    // heading, metric and target; every signed-in member observes this one doc.
+    match /communityGoals/weekly {
+      allow read: if request.auth != null;
+      allow create, update: if isSupportAdmin()
+        && request.resource.data.keys().hasAll(['metric', 'target', 'title', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['metric', 'target', 'title', 'updatedAt'])
+        && request.resource.data.metric in ['ideas', 'friends', 'couples']
+        && request.resource.data.target is int
+        && request.resource.data.target > 0
+        && request.resource.data.target <= 1000000
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
     // Read is open to any signed-in device because it has to be: the
     // leaderboard is a sorted query and the community totals are `sum()` /
     // `count()` aggregates, and neither can run against documents the caller
