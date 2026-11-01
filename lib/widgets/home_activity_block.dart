@@ -8,37 +8,22 @@ import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// "הפעילות שלי" beside "פעילות הקהילה" — two tiles, one number each.
-///
-/// **Two numbers and nothing else.** No leaderboard, no chart, no breakdown —
-/// those all live one tap away on a screen somebody opened *to look at
-/// numbers*, and a home screen that leads with a scoreboard has stopped being a
-/// workspace.
-///
-/// What is left is the one comparison worth putting on the landing page: "12"
-/// says very little on its own and a great deal beside "1,842 בקהילה".
-///
-/// **The window opens on כל הזמנים and changes only by hand.** It rotated by
-/// itself for a while — השבוע → החודש → כל הזמנים on a five-second timer — and
-/// what that produced was a number that changed under the reader's thumb. The
-/// three windows are a row of tabs, both halves move together so the two
-/// figures on screen are always about the same span of time, and every visit
-/// starts from all time: a week or a month that has just rolled over reads "0",
-/// which is a strange thing to be greeted with.
-///
-/// Your own figures need no network and are drawn on the first frame. The
-/// community column fills in when the reads land rather than holding a spinner
-/// in the middle of the page.
-///
-/// **A matchmaker who has not connected an account keeps their own half.**
-/// Where the community figure would be they get an invitation instead. The
-/// point is not to withhold anything they had — the personal numbers are theirs
-/// and go on working — but to make the missing half legible: there is a
-/// community here, and they are not in it yet.
+/// Personal and community scores on one paper surface, with a shared window.
+/// Local points render immediately; community totals fill in after the read.
+/// The selected period starts at all time and changes only on a tap.
 class HomeActivityBlock extends StatefulWidget {
-  const HomeActivityBlock({super.key, required this.onOpen});
+  const HomeActivityBlock({
+    super.key,
+    required this.onOpen,
+    this.loadTotals = CommunityService.totals,
+  });
 
   final VoidCallback onOpen;
+  final Future<CommunityTotals> Function(
+    CommunityPeriod period, {
+    bool forceRefresh,
+  })
+  loadTotals;
 
   /// The three offered, in the order they read best: this week first, because
   /// it is the window somebody is actually working in.
@@ -148,7 +133,7 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
     // Cheap and harmless without an account — `CommunityService` refuses an
     // anonymous uid and answers with an unresolved zero rather than reaching
     // the network.
-    final CommunityTotals totals = await CommunityService.totals(
+    final CommunityTotals totals = await widget.loadTotals(
       period,
       forceRefresh: rolledOver,
     );
@@ -187,9 +172,17 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
     final CommunityTotals? totals = _totals[period];
 
     return HomePaperCard(
+      stripe: communityLead(theme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          Text(
+            'הפעילות שלי והקהילה',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
           // The window both figures belong to, chosen once above the pair
           // rather than named twice inside them. The same control the activity
           // screen uses, so switching window means the same gesture in both
@@ -207,19 +200,13 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
             children: <Widget>[
               Expanded(
                 child: _FigureTile(
-                  label: 'הפעילות שלי',
+                  label: 'הניקוד שלי',
                   value: community.myPoints(period),
                   period: period,
-                  // The warm tone the matchmaker's own surfaces wear, so the
-                  // two tiles are told apart by colour as well as by their
-                  // labels: this half is yours, the one beside it is
-                  // everybody's. It is a rule under the tile now, not a wash
-                  // behind it — see [_Tile].
+                  // The warm accent identifies the reader's contribution.
                   accent: theme.brightness == Brightness.dark
                       ? AppColors.secondaryDarkDm
                       : AppColors.secondary,
-                  // The matchmaker's own figure is drawn in that same brown,
-                  // so the number and the rule under it are one colour.
                   figureInAccent: true,
                   onTap: widget.onOpen,
                 ),
@@ -228,7 +215,7 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
               Expanded(
                 child: signedIn
                     ? _FigureTile(
-                        label: 'פעילות הקהילה',
+                        label: 'הניקוד הכללי של הקהילה',
                         // Zero until the read lands, which is also the honest
                         // answer on a device that has never reached the
                         // network.
@@ -287,21 +274,16 @@ class _FigureTile extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return _Tile(
-      accent: accent,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              maxLines: 1,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                height: 1.1,
-              ),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              height: 1.2,
             ),
           ),
           const SizedBox(height: 4),
@@ -313,10 +295,6 @@ class _FigureTile extends StatelessWidget {
               child: Text(
                 CommunityFigure.format(value),
                 maxLines: 1,
-                // The page's own ink, like every other figure on it. The
-                // tile's accent is the rule under it now — a number in one
-                // colour and a heading in another, on a card the size of a
-                // thumb, is two colours saying the same thing.
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w900,
                   height: 1.0,
@@ -360,7 +338,6 @@ class _JoinTile extends StatelessWidget {
     final Color lead = communityLead(theme);
 
     return _Tile(
-      accent: lead,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -383,34 +360,23 @@ class _JoinTile extends StatelessWidget {
   }
 }
 
-/// The shape both halves wear: equal, compact, and entirely a tap target.
+/// Both figures share the outer paper card and remain separate tap targets.
 ///
-/// No fixed height any more. It used to be squared off against its own width,
-/// which is what made the pair the tallest thing on the home screen; the height
-/// is the three lines of type inside it now, and it grows with the system font
-/// instead of being clamped against it.
-///
-/// **White paper with a rule under it**, exactly as "הוספת חברים" and "הוספת
-/// רעיון" are drawn. Each half used to be a tinted, outlined panel in its own
-/// accent — two coloured boxes on a page whose language is plain paper, and a
-/// wash *and* an outline is two edges for one shape. The colour is all in the
-/// rule now, and it still says the same thing: this half is yours, the one
-/// beside it is everybody's.
 class _Tile extends StatelessWidget {
-  const _Tile({required this.accent, required this.onTap, required this.child});
+  const _Tile({required this.onTap, required this.child});
 
-  final Color accent;
   final VoidCallback onTap;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return HomePaperCard(
-      stripe: accent,
-      radius: 16,
+    return InkWell(
       onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      child: child,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+        child: child,
+      ),
     );
   }
 }

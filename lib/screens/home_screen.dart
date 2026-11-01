@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/activity_figure_row.dart';
@@ -41,7 +40,7 @@ import 'package:shadchan/widgets/home_community_pulse.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_board.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
-import 'package:shadchan/widgets/home_panels.dart';
+import 'package:shadchan/widgets/home_add_hub.dart';
 import 'package:shadchan/widgets/home_search_results.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/home_stage_panels.dart';
@@ -463,38 +462,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-        // 3. The two entry actions. Adding friends leads — a little deeper in
-        // colour and a little wider — because every other thing on the page is
-        // only possible once the database has people in it.
-        //
-        // **Pinned.** Scrolled past, the pair parks under the search bar and
-        // rides there for the rest of the page — the two things the app is
-        // opened to do stay one tap away however far down the board, the
-        // figures or the tips somebody has gone.
-        // Measured against the list's own width rather than the screen's,
-        // so the header's promised height is exactly what the cards take.
-        SliverLayoutBuilder(
-          builder: (BuildContext context, SliverConstraints constraints) {
-            return SliverPersistentHeader(
-              pinned: true,
-              delegate: _PinnedAddCards(
-                height:
-                    HomeActionCards.heightFor(
-                      context,
-                      constraints.crossAxisExtent - 2 * inset(),
-                    ) +
-                    _blockGap +
-                    10,
-                inset: inset(),
-                background: Theme.of(context).scaffoldBackgroundColor,
-                child: HomeActionCards(
-                  onAddPeople: () => AddPeopleDialog.show(context),
-                  onAddIdea: () => context.push('/matches/add'),
-                  emphasiseAddPeople: true,
-                ),
-              ),
-            );
-          },
+        // 3. The main add button and both ways to earn points. It scrolls
+        // with the page so the board keeps its full working space.
+        block(
+          HomeAddHub(
+            gender: userGender,
+            onAddPeople: () => AddPeopleDialog.show(context),
+            onAddIdea: () => context.push('/matches/add'),
+          ),
         ),
 
         // The personal target: how far the database is from ten friends, then
@@ -780,53 +755,4 @@ class _SearchFilterLine extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The two add cards as a pinned header: a strip of the page's own paper,
-/// so the rows scrolling under it disappear behind it rather than through it.
-class _PinnedAddCards extends SliverPersistentHeaderDelegate {
-  _PinnedAddCards({
-    required this.height,
-    required this.inset,
-    required this.background,
-    required this.child,
-  });
-
-  final double height;
-  final double inset;
-  final Color background;
-  final Widget child;
-
-  @override
-  double get minExtent => height;
-
-  @override
-  double get maxExtent => height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    // Filled to the promised extent whatever the child measures, so the
-    // sliver's paint and layout extents can never disagree.
-    return SizedBox.expand(
-      child: ColoredBox(
-        color: background,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            inset,
-            _HomeScreenState._blockGap,
-            inset,
-            10,
-          ),
-          child: Align(alignment: Alignment.topCenter, child: child),
-        ),
-      ),
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant _PinnedAddCards oldDelegate) => true;
 }

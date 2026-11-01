@@ -11,6 +11,7 @@ import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/community_goal_editor.dart';
 
 /// מרכז הפידבק — the one place everything users send arrives.
 ///
@@ -21,12 +22,13 @@ import 'package:shadchan/widgets/app_notice.dart';
 /// the tips queue moved in here beside the reports, and the whole thing is
 /// reached from the app's overflow menu.
 ///
-/// Four tabs:
+/// Five tabs:
 /// * **פידבק** — every report, grouped by what it is about: המלצות ורעיונות,
 ///   הערות ותיקונים, תקלות ובאגים.
 /// * **טיפים** — the approval queue. A tip reaches other matchmakers only from
 ///   here.
 /// * **מה חדש** — the notes that go back out.
+/// * **יעד שבועי** — the shared metric, target and public heading.
 /// * **מנהלים** — who else may see any of it.
 ///
 /// Drawn only for an administrator, and that is a *display* gate — every read
@@ -66,7 +68,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
     final int waitingTips = context.watch<TipsProvider>().pending.length;
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('מרכז הפידבק'),
@@ -77,6 +79,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               const Tab(text: 'פידבק'),
               Tab(text: waitingTips == 0 ? 'טיפים' : 'טיפים ($waitingTips)'),
               const Tab(text: 'מה חדש'),
+              const Tab(text: 'יעד שבועי'),
               const Tab(text: 'מנהלים'),
             ],
           ),
@@ -87,6 +90,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               _ReportsTab(),
               PendingTipsReview(),
               _AnnouncementsTab(),
+              CommunityGoalEditor(),
               _AdminsTab(),
             ],
           ),

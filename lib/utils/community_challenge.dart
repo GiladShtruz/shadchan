@@ -11,21 +11,10 @@ import 'package:shadchan/services/community_service.dart';
 /// it, nobody's contribution is named, and a week where it fills is a week the
 /// community had rather than a week the reader had.
 ///
-/// **A different thing each week, chosen from the week itself.** The metric is
-/// picked by hashing the week key, so every device running this code in the
-/// same week shows the same challenge without a byte of coordination — which is
-/// what makes it *shared* rather than a private goal that happens to be worded
-/// in the plural. The rotation also stops the challenge becoming furniture: the
-/// same bar for the same number every week is a bar nobody looks at twice.
-///
-/// **The target comes from last week, and the point is to beat it.** With a
-/// record in hand the wording says so — "בשבוע שעבר הגענו ל־X" — and the target
-/// is that record raised by about a tenth and rounded to something a person
-/// would say out loud. Without one (a device that was not open last week) the
-/// challenge falls back to a fixed, deliberately reachable number and simply
-/// does not claim a record it cannot know. See
-/// [CommunityProfileStore.communityWeek] for why the record is a remembered
-/// reading rather than a queried fact.
+/// Administrators choose the metric, target and optional public heading in
+/// `communityGoals/weekly`. Until configured, a stable hash of the week picks
+/// a metric with a fixed opening target, identical on every device. A locally
+/// remembered previous week may supply encouragement, never the shared target.
 enum ChallengeMetric {
   ideas,
   friends,
@@ -97,6 +86,49 @@ enum ChallengeMetric {
   }
 }
 
+/// The administrator's shared target, applied each week until changed.
+class WeeklyCommunityGoal {
+  const WeeklyCommunityGoal({
+    required this.metric,
+    required this.target,
+    this.title = '',
+  });
+
+  static const int maxTarget = 1000000;
+  static const int maxTitleLength = 100;
+
+  final ChallengeMetric metric;
+  final int target;
+  final String title;
+
+  bool get isValid =>
+      target > 0 && target <= maxTarget && title.length <= maxTitleLength;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'metric': metric.name,
+    'target': target,
+    'title': title.trim(),
+  };
+
+  static WeeklyCommunityGoal? fromJson(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final Object? target = data['target'];
+    final Object? title = data['title'];
+    if (target is! int || title is! String) return null;
+    for (final ChallengeMetric metric in ChallengeMetric.values) {
+      if (data['metric'] == metric.name) {
+        final WeeklyCommunityGoal goal = WeeklyCommunityGoal(
+          metric: metric,
+          target: target,
+          title: title,
+        );
+        return goal.isValid ? goal : null;
+      }
+    }
+    return null;
+  }
+}
+
 /// This week's shared challenge, ready to draw.
 class CommunityChallenge {
   const CommunityChallenge({
@@ -104,6 +136,7 @@ class CommunityChallenge {
     required this.target,
     required this.current,
     required this.record,
+    this.title = '',
   });
 
   final ChallengeMetric metric;
@@ -117,8 +150,12 @@ class CommunityChallenge {
   /// Last week's figure, when this device saw one.
   final int? record;
 
+  final String title;
+
   /// The invitation, in the plural, with no name in it.
-  String get headline => 'השבוע מנסים להגיע יחד ל־$target ${metric.targetNoun}';
+  String get headline => title.isNotEmpty
+      ? title
+      : 'השבוע מנסים להגיע יחד ל־$target ${metric.targetNoun}';
 
   /// The line under it: what happened last week, or — with nothing to compare
   /// to — why the number is there at all.
@@ -158,14 +195,21 @@ class CommunityChallenge {
     required String weekKey,
     required CommunityTotals week,
     CommunityWeekSnapshot? previousWeek,
+    WeeklyCommunityGoal? goal,
   }) {
-    final ChallengeMetric metric = metricFor(weekKey);
+    final WeeklyCommunityGoal? configured = goal != null && goal.isValid
+        ? goal
+        : null;
+    final ChallengeMetric metric = configured?.metric ?? metricFor(weekKey);
     final int? record = metric.valueInSnapshot(previousWeek);
     return CommunityChallenge(
       metric: metric,
-      target: targetFor(metric, record),
+      // A shared target cannot depend on which phone saw last week's total.
+      // The remembered record remains useful as encouragement, never as config.
+      target: configured?.target ?? metric.openingTarget,
       current: metric.valueIn(week),
       record: record,
+      title: configured?.title.trim() ?? '',
     );
   }
 

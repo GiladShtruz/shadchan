@@ -35,6 +35,73 @@ void main() {
       );
     });
 
+    test('the admin goal overrides the rotating metric and local record', () {
+      const goal = WeeklyCommunityGoal(
+        metric: ChallengeMetric.ideas,
+        target: 200,
+        title: 'מחברים יחד',
+      );
+      final challenge = CommunityChallenge.build(
+        weekKey: 'W2026-08-16',
+        week: _totals(ideas: 50, friends: 99),
+        previousWeek: const CommunityWeekSnapshot(
+          weekKey: 'W2026-08-09',
+          friends: 500,
+          ideas: 900,
+          couples: 100,
+        ),
+        goal: goal,
+      );
+      expect(challenge.metric, ChallengeMetric.ideas);
+      expect(challenge.target, 200);
+      expect(challenge.current, 50);
+      expect(challenge.headline, 'מחברים יחד');
+      expect(challenge.progress, .25);
+    });
+
+    test(
+      'devices with different remembered records share the same default target',
+      () {
+        final withRecord = CommunityChallenge.build(
+          weekKey: 'W2026-08-16',
+          week: _totals(),
+          previousWeek: const CommunityWeekSnapshot(
+            weekKey: 'W2026-08-09',
+            friends: 900,
+            ideas: 900,
+            couples: 900,
+          ),
+        );
+        final withoutRecord = CommunityChallenge.build(
+          weekKey: 'W2026-08-16',
+          week: _totals(),
+        );
+        expect(withRecord.target, withoutRecord.target);
+      },
+    );
+
+    test('goal parsing rejects malformed or out-of-range shared settings', () {
+      const goal = WeeklyCommunityGoal(
+        metric: ChallengeMetric.couples,
+        target: 25,
+      );
+      expect(WeeklyCommunityGoal.fromJson(goal.toJson())?.target, 25);
+      for (final patch in <Map<String, dynamic>>[
+        {'target': 0},
+        {'target': -1},
+        {'target': 1.5},
+        {'target': 1000001},
+        {'metric': 'madeUp'},
+        {'title': 123},
+        {'title': 'א' * 101},
+      ]) {
+        expect(
+          WeeklyCommunityGoal.fromJson({...goal.toJson(), ...patch}),
+          isNull,
+        );
+      }
+    });
+
     test('changes from week to week', () {
       final Set<ChallengeMetric> seen = <ChallengeMetric>{
         for (final String week in <String>[

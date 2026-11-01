@@ -10,6 +10,7 @@ import 'package:shadchan/services/community_engagements_service.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/mazel_tov_service.dart';
 import 'package:shadchan/services/community_service.dart';
+import 'package:shadchan/services/community_goal_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_challenge.dart';
 import 'package:shadchan/utils/community_highlight.dart';
@@ -42,7 +43,19 @@ import 'package:shadchan/widgets/home_section.dart';
 /// share — so it costs one pair of aggregate queries every few minutes, not one
 /// per rebuild.
 class HomeCommunityPulse extends StatefulWidget {
-  const HomeCommunityPulse({super.key, required this.onOpen});
+  const HomeCommunityPulse({
+    super.key,
+    required this.onOpen,
+    this.watchGoal = CommunityGoalService.watch,
+    this.loadTotals = CommunityService.totals,
+  });
+
+  final Stream<WeeklyCommunityGoal?> Function() watchGoal;
+  final Future<CommunityTotals> Function(
+    CommunityPeriod period, {
+    bool forceRefresh,
+  })
+  loadTotals;
 
   /// Where the whole block goes: the activity screen, which is the long form of
   /// everything summarised here.
@@ -52,7 +65,8 @@ class HomeCommunityPulse extends StatefulWidget {
   State<HomeCommunityPulse> createState() => _HomeCommunityPulseState();
 }
 
-class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
+class _HomeCommunityPulseState extends State<HomeCommunityPulse>
+    with WidgetsBindingObserver {
   /// Long enough to read a short sentence without hurrying, short enough that a
   /// glance at the page catches it moving.
   static const Duration _dwell = Duration(seconds: 5);
@@ -61,6 +75,10 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
   int _index = 0;
   CommunityTotals? _day;
   CommunityTotals? _week;
+  WeeklyCommunityGoal? _goal;
+  StreamSubscription<WeeklyCommunityGoal?>? _goalSubscription;
+  String? _loadedWeekKey;
+  int _loadVersion = 0;
 
   /// The weddings whose matchmaker put their own name to them this week,
   /// newest first. Empty in most weeks, and empty until the read comes back.
@@ -88,24 +106,48 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _goalSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
+  }
+
+  void _listenGoal() {
+    _goalSubscription?.cancel();
+    _goalSubscription = widget.watchGoal().listen(
+      (WeeklyCommunityGoal? goal) {
+        if (mounted) setState(() => _goal = goal);
+      },
+      // Keep the last known target offline; Firestore reconnects the listener.
+      onError: (Object error) => debugPrint('Weekly goal read failed: $error'),
+    );
+  }
+
   Future<void> _load() async {
+    final int version = ++_loadVersion;
+    final String weekKey = CommunityPeriods.weekKey();
+    final bool rolledOver = _loadedWeekKey != null && _loadedWeekKey != weekKey;
     // Cheap and harmless without an account — `CommunityService` refuses an
     // anonymous uid and answers with an unresolved zero rather than reaching
     // the network.
-    final CommunityTotals day = await CommunityService.totals(
+    final CommunityTotals day = await widget.loadTotals(
       CommunityPeriod.day,
+      forceRefresh: rolledOver,
     );
-    final CommunityTotals week = await CommunityService.totals(
+    final CommunityTotals week = await widget.loadTotals(
       CommunityPeriod.week,
+      forceRefresh: rolledOver,
     );
     // The one line here that names somebody. Fetched beside the totals rather
     // than derived from them, because the aggregate knows how many weddings
@@ -114,11 +156,16 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     final List<CommunityEngagement> named = week.engagements > 0
         ? await CommunityEngagementsService.namedThisWeek()
         : const <CommunityEngagement>[];
+    if (!mounted || version != _loadVersion) return;
+    if (weekKey != CommunityPeriods.weekKey()) {
+      _load();
+      return;
+    }
     if (week.resolved) {
       // The only place this is written. Next week it is what "בשבוע שעבר הגענו
       // ל־X" reads — see [CommunityProfileStore.recordCommunityWeek].
       CommunityProfileStore.recordCommunityWeek(
-        weekKey: CommunityPeriods.weekKey(),
+        weekKey: weekKey,
         friends: week.friends,
         ideas: week.ideas,
         couples: week.couples,
@@ -130,6 +177,7 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     setState(() {
       _day = day;
       _week = week;
+      _loadedWeekKey = weekKey;
       _namedEngagements = named;
       _index = 0;
     });
@@ -167,7 +215,19 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
     // rebuild that follows.
     if (signedIn && !_wasSignedIn) {
       _wasSignedIn = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _listenGoal();
+        _load();
+      });
+    } else if (!signedIn && _wasSignedIn) {
+      _wasSignedIn = false;
+      _goalSubscription?.cancel();
+      _goalSubscription = null;
+      _goal = null;
+      _day = null;
+      _week = null;
+      _loadVersion++;
     }
     // And this is the rebuild that follows the first publish of the session,
     // which is the moment the cached community figures are known to be stale.
@@ -194,6 +254,7 @@ class _HomeCommunityPulseState extends State<HomeCommunityPulse> {
       weekKey: CommunityPeriods.weekKey(),
       week: week,
       previousWeek: CommunityProfileStore.previousCommunityWeek,
+      goal: _goal,
     );
 
     // **The weekly challenge is drawn even in a quiet week.** It used to be
@@ -351,6 +412,13 @@ class CommunityPulseCard extends StatelessWidget {
             _RotatingLine(line: current, onTap: onLine, sent: sent),
           ],
           const SizedBox(height: 14),
+          Text(
+            'היעד השבועי של הקהילה',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
           _ChallengeBar(challenge: challenge),
         ],
       ),

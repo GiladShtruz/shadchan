@@ -17,6 +17,7 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_panels.dart';
+import 'package:shadchan/widgets/home_add_hub.dart';
 import 'package:shadchan/widgets/match_idea_card.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -742,7 +743,7 @@ void main() {
     expect(find.text('חברים שהוספת'), findsNothing);
     expect(
       tester.getCenter(find.text('חתונות')).dy,
-      lessThan(tester.getCenter(find.text('הוספת חברים')).dy),
+      lessThan(tester.getCenter(find.text('הוסף חברים וצבור נקודות')).dy),
     );
 
     // The board is drawn from the first friend on, always open, with its
@@ -1469,6 +1470,16 @@ void main() {
       AppRouter.router.go('/home');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
+      await tester.scrollUntilVisible(
+        find.text('הלוח שלי'),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(HomeScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(find.byType(DatingCouplesStrip), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -2211,7 +2222,7 @@ void main() {
       expect(find.byType(ShadchanTabActions), findsOneWidget, reason: tab);
       expect(find.byType(RemindersBellButton), findsOneWidget, reason: tab);
       expect(find.byType(AppMenuButton), findsOneWidget, reason: tab);
-      // בית has no "+": its two add cards ride pinned under the search bar.
+      // The home bar stays unchanged; its main add action lives in the body.
       if (tab == '/home') {
         expect(find.byType(AddMenuButton), findsNothing, reason: tab);
       } else {
@@ -2220,28 +2231,38 @@ void main() {
     }
   });
 
-  testWidgets('The home add cards stay pinned under the search bar', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(390, 700));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(_buildTestApp());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'The home add hub follows the greeting and scrolls with the board',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
 
-    final Finder addPeople = find.text('הוספת חברים');
-    expect(addPeople, findsOneWidget);
-    expect(find.text('הוספת רעיון'), findsOneWidget);
+      final Finder hub = find.byType(HomeAddHub);
+      await tester.ensureVisible(hub);
+      await tester.pumpAndSettle();
+      expect(find.text('הוסף חברים וצבור נקודות'), findsOneWidget);
+      expect(find.text('הוסף רעיון וצבור נקודות'), findsOneWidget);
+      expect(
+        find.byTooltip('הוספה וצבירת נקודות').hitTestable(),
+        findsOneWidget,
+      );
 
-    // Well past them: the pair is still on screen, parked under the bar.
-    await tester.drag(
-      find.byType(CustomScrollView).first,
-      const Offset(0, -900),
-    );
-    await tester.pumpAndSettle();
-    expect(addPeople.hitTestable(), findsOneWidget);
-    expect(find.text('הוספת רעיון').hitTestable(), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      await tester.drag(
+        find.byType(CustomScrollView).first,
+        const Offset(0, -400),
+      );
+      await tester.pumpAndSettle();
+      if (hub.evaluate().isEmpty) {
+        expect(find.byTooltip('הוספה וצבירת נקודות'), findsNothing);
+      } else {
+        expect(hub.hitTestable(), findsNothing);
+      }
+      expect(find.byType(ShadchanAppBar).hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('Searching המאגר שלי opens results that go to the person', (
     WidgetTester tester,
