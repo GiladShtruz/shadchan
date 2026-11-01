@@ -18,6 +18,16 @@ service firebase.storage {
         ? grant.get('granteeUids', []) == firestore.get(/databases/(default)/documents/memberships/$(request.auth.uid)).data.members
         : grant.matchmakerUid == request.auth.uid && grant.get('granteeUids', [request.auth.uid]).size() == 1;
     }
+    function newsAdmin() {
+      return request.auth != null && request.auth.token.get('email_verified', false) == true
+        && (request.auth.token.get('email', '').lower() == 'yitz292@gmail.com' ||
+            firestore.exists(/databases/(default)/documents/supportAdmins/$(request.auth.token.get('email', '').lower())));
+    }
+    match /personalNews/{id}/{fileName} {
+      allow read: if request.auth != null && (newsAdmin() || firestore.get(/databases/(default)/documents/personalNews/$(id)).data.published == true);
+      allow create, update: if newsAdmin() && request.resource.size < 12 * 1024 * 1024 && request.resource.contentType.matches('image/.*');
+      allow delete: if newsAdmin();
+    }
     match /coupleFiles/{uid}/{folder}/{fileName} {
       function member() {
         return request.auth != null && firestore.get(/databases/(default)/documents/memberships/$(request.auth.uid)).data.operation == uid

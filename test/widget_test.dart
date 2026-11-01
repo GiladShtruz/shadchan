@@ -2125,7 +2125,7 @@ void main() {
     }
   });
 
-  testWidgets('A card-only user lands on the personal area, never the tabs', (
+  testWidgets('A card-only user has three personal tabs and no matchmaker tabs', (
     WidgetTester tester,
   ) async {
     final Box<dynamic> settings = Hive.box<dynamic>('settings');
@@ -2141,7 +2141,10 @@ void main() {
 
       expect(find.text('האזור האישי'), findsOneWidget);
       expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
-      expect(find.byType(BottomNavigationBar), findsNothing);
+      expect(find.byType(BottomNavigationBar), findsOneWidget);
+      final bar = tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
+      expect(bar.items.map((item) => item.label), ['בית', 'השדכנים שלי', 'פרופיל']);
+      expect(find.text('המאגר שלי'), findsNothing);
       // No way to switch to a matchmaker area that was never switched on.
       expect(find.text('לעבור לאזור השדכן'), findsNothing);
     } finally {

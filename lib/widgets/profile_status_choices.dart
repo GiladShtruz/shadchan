@@ -26,6 +26,7 @@ class ProfileStatusChoices extends StatelessWidget {
     required this.onSelected,
     this.enabled = true,
     this.compact = false,
+    this.framed = true,
   });
 
   final String title;
@@ -36,6 +37,9 @@ class ProfileStatusChoices extends StatelessWidget {
 
   /// Title and answers on one line, in smaller boxes.
   final bool compact;
+
+  /// False when the selector already sits inside a paper card.
+  final bool framed;
 
   static const List<ProfileStatus> choices = <ProfileStatus>[
     ProfileStatus.available,
@@ -88,21 +92,20 @@ class ProfileStatusChoices extends StatelessWidget {
       );
     }
 
-    return HomePaperCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 10),
-          options,
-        ],
-      ),
+        ),
+        const SizedBox(height: 10),
+        options,
+      ],
     );
+    return framed ? HomePaperCard(child: content) : content;
   }
 }
 

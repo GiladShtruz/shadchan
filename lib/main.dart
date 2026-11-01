@@ -229,7 +229,7 @@ Widget _buildApp() {
           Hive.box<Person>('people'),
           Hive.box<PersonNote>('person_notes'),
           Hive.box<PersonEvent>('person_events'),
-        ),
+        )..requireVerifiedCardAccess(),
       ),
       ChangeNotifierProvider<MatchRepository>(
         create: (BuildContext context) {

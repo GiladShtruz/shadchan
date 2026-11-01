@@ -31,7 +31,7 @@ beforeEach(async () => {
 async function audio() {
   const path = `privateLooking/${owner}/file-${++serial}.m4a`;
   await assertSucceeds(
-    uploadBytes(ref(as(owner).storage(), path), new Uint8Array([1, 2, 3]), {
+    uploadBytes(ref(as(owner).storage('gs://demo-shadchan.appspot.com'), path), new Uint8Array([1, 2, 3]), {
       contentType: 'audio/mp4',
     }),
   );
@@ -53,26 +53,26 @@ async function audio() {
 }
 test('a card grant cannot download private audio; private revocation is immediate', async () => {
   const path = await audio();
-  await assertFails(getBytes(ref(as(mm).storage(), path)));
+  await assertFails(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
   await seed((db) =>
     updateDoc(doc(db, 'cardAccess', `${owner}_${mm}`), {
       lookingGranted: true,
       cardGranted: false,
     }),
   );
-  await assertSucceeds(getBytes(ref(as(mm).storage(), path)));
+  await assertSucceeds(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
   await seed((db) =>
     updateDoc(doc(db, 'cardAccess', `${owner}_${mm}`), {
       lookingGranted: false,
     }),
   );
-  await assertFails(getBytes(ref(as(mm).storage(), path)));
-  await assertSucceeds(getBytes(ref(as(owner).storage(), path)));
+  await assertFails(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
+  await assertSucceeds(getBytes(ref(as(owner).storage('gs://demo-shadchan.appspot.com'), path)));
 });
 test('verified audio is immutable and only its current version is readable', async () => {
   const path = await audio();
   await assertFails(
-    uploadBytes(ref(as(owner).storage(), path), new Uint8Array([4, 5, 6]), {
+    uploadBytes(ref(as(owner).storage('gs://demo-shadchan.appspot.com'), path), new Uint8Array([4, 5, 6]), {
       contentType: 'audio/mp4',
     }),
   );
@@ -84,7 +84,7 @@ test('verified audio is immutable and only its current version is readable', asy
       audioPath: 'privateLooking/other.m4a',
     });
   });
-  await assertFails(getBytes(ref(as(mm).storage(), path)));
+  await assertFails(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
 });
 test('a spouse needs explicit named joint consent for private audio', async () => {
   const path = await audio();
@@ -99,13 +99,13 @@ test('a spouse needs explicit named joint consent for private audio', async () =
       lookingGranted: true,
     });
   });
-  await assertFails(getBytes(ref(as(spouse).storage(), path)));
+  await assertFails(getBytes(ref(as(spouse).storage('gs://demo-shadchan.appspot.com'), path)));
   await seed((db) =>
     updateDoc(doc(db, 'cardAccess', `${owner}_${mm}`), {
       granteeUids: [mm, spouse],
     }),
   );
-  await assertSucceeds(getBytes(ref(as(spouse).storage(), path)));
+  await assertSucceeds(getBytes(ref(as(spouse).storage('gs://demo-shadchan.appspot.com'), path)));
 });
 test('a new pairing cannot read the previous pairing files', async () => {
   const operation = `pair-${++serial}`,
@@ -120,13 +120,24 @@ test('a new pairing cannot read the previous pairing files', async () => {
       });
   });
   await assertSucceeds(
-    uploadBytes(ref(as(mm).storage(), path), new Uint8Array([1, 2, 3]), {
+    uploadBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path), new Uint8Array([1, 2, 3]), {
       contentType: 'audio/mp4',
     }),
   );
-  await assertSucceeds(getBytes(ref(as(spouse).storage(), path)));
+  await assertSucceeds(getBytes(ref(as(spouse).storage('gs://demo-shadchan.appspot.com'), path)));
   await seed((db) =>
     updateDoc(doc(db, 'memberships', spouse), { operation: 'different-pair' }),
   );
-  await assertFails(getBytes(ref(as(spouse).storage(), path)));
+  await assertFails(getBytes(ref(as(spouse).storage('gs://demo-shadchan.appspot.com'), path)));
+});
+
+test('news images are admin-controlled and disappear from reader access when unpublished', async () => {
+  const admin = env.authenticatedContext('news-admin', {email: 'yitz292@gmail.com', email_verified: true, firebase: {sign_in_provider: 'password'}});
+  const path = 'personalNews/news-image/photo.jpg';
+  await assertSucceeds(uploadBytes(ref(admin.storage('gs://demo-shadchan.appspot.com'), path), new Uint8Array([1,2,3]), {contentType: 'image/jpeg'}));
+  await assertFails(uploadBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path), new Uint8Array([1]), {contentType: 'image/jpeg'}));
+  await seed(db => setDoc(doc(db, 'personalNews/news-image'), {published: true}));
+  await assertSucceeds(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
+  await seed(db => updateDoc(doc(db, 'personalNews/news-image'), {published: false}));
+  await assertFails(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
 });

@@ -1,6 +1,6 @@
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:hive/hive.dart';
+import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/services/private_looking_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -201,17 +201,9 @@ class _CardAccessSectionsState extends State<CardAccessSections> {
     if (!ok && mounted) _failed();
   }
 
-  Set<String> get _hiddenHelpers =>
-      (Hive.box<dynamic>('settings').get('personalCard.hiddenHelpers') as List?)
-          ?.whereType<String>()
-          .toSet() ??
-      <String>{};
+  Set<String> get _hiddenHelpers => PersonalHelpersStore.hidden;
   void _hideHelper(String uid, bool hidden) {
-    final values = _hiddenHelpers;
-    hidden ? values.add(uid) : values.remove(uid);
-    Hive.box<dynamic>(
-      'settings',
-    ).put('personalCard.hiddenHelpers', values.toList());
+    PersonalHelpersStore.hide(uid, hidden);
     setState(() {});
   }
 

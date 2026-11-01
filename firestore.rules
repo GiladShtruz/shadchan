@@ -384,6 +384,36 @@ service cloud.firestore {
       allow write: if isSupportAdmin();
     }
 
+    // Personal-area announcements are public to signed-in members only after
+    // publication. Drafts and all mutations belong to verified administrators.
+    match /personalNews/{id} {
+      allow read: if durable() && (resource.data.published == true || isSupportAdmin());
+      allow create, update: if isSupportAdmin()
+        && request.resource.data.keys().hasOnly(['title', 'text', 'imagePath', 'published', 'notify', 'updatedAt'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 100
+        && request.resource.data.text is string && request.resource.data.text.size() <= 4000
+        && request.resource.data.published is bool && request.resource.data.notify is bool
+        && (request.resource.data.imagePath == null ||
+          (request.resource.data.imagePath is string && request.resource.data.imagePath.matches('personalNews/' + id + '/[A-Za-z0-9_.-]+')))
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isSupportAdmin();
+    }
+    match /matchmakerActivity/{uid} {
+      allow get: if durable() && (uid == request.auth.uid ||
+        (exists(accessPath(request.auth.uid, uid)) && get(accessPath(request.auth.uid, uid)).data.status == 'approved' && get(accessPath(request.auth.uid, uid)).data.get('cardGranted', true) == true));
+      allow list: if false;
+      allow create, update: if durable() && uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['databaseCount', 'lastActiveAt'])
+        && request.resource.data.databaseCount is int && request.resource.data.databaseCount >= 0 && request.resource.data.databaseCount <= 1000000
+        && request.resource.data.lastActiveAt == request.time;
+      allow delete: if durable() && uid == request.auth.uid;
+    }
+    match /personalInvites/{id} {
+      allow read: if durable() && resource.data.ownerUid == request.auth.uid;
+      allow write: if false;
+    }
+    match /personalNudges/{id} { allow read, write: if false; }
+
     // --- The community -----------------------------------------------------
     //
     // The one place in this database where a user's own row is readable by
@@ -804,7 +834,9 @@ service cloud.firestore {
                                  'preferredRegions', 'preferredMaritalStatuses',
                                  'preferredReligiousLevels',
                                  'preferredReligiousLevelOtherLabels',
-                                 'photoPaths', 'status', 'deleted', 'updatedAt'])
+                                 'photoPaths', 'status', 'deleted', 'updatedAt', 'joinedAt', 'statusUpdatedAt'])
+                            && request.resource.data.get('joinedAt', null) == (resource == null ? null : resource.data.get('joinedAt', null))
+                            && request.resource.data.get('statusUpdatedAt', null) == (resource == null ? null : resource.data.get('statusUpdatedAt', null))
                             && request.resource.data.photoPaths is list
                             && request.resource.data.photoPaths.size() <= 4
                             && (request.resource.data.get('description', null) == null
@@ -819,7 +851,8 @@ service cloud.firestore {
     // never listed, so the directory cannot be read out as a whole. An entry
     // belongs to the account that wrote it.
     match /phoneDirectory/{phoneHash} {
-      allow get: if durable();
+      allow get: if durable() && (resource.data.uid == request.auth.uid ||
+        (knownPhoneInContacts(resource.data.uid, request.auth.uid) && knownPhoneInContacts(request.auth.uid, resource.data.uid)));
       allow list: if false;
       allow create: if durable()
                     && request.resource.data.uid == request.auth.uid

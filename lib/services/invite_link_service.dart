@@ -19,7 +19,12 @@ enum InviteArrival {
 }
 
 class PendingInvite {
-  const PendingInvite({required this.fromUid, required this.name});
+  const PendingInvite({
+    required this.fromUid,
+    required this.name,
+    this.personalToken,
+  });
+  final String? personalToken;
 
   final String fromUid;
   final String name;
@@ -40,6 +45,7 @@ abstract final class InviteLinkService {
   static const MethodChannel _channel = MethodChannel('shadchan/invite_links');
   static const String _fromKey = 'invite.from';
   static const String _nameKey = 'invite.name';
+  static const String _tokenKey = 'invite.personalToken';
 
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
   static final Map<String, Object?> _pending = <String, Object?>{};
@@ -57,7 +63,14 @@ abstract final class InviteLinkService {
       return null;
     }
     final Object? name = _read(_nameKey);
-    return PendingInvite(fromUid: from, name: name is String ? name : '');
+    return PendingInvite(
+      fromUid: from,
+      name: name is String ? name : '',
+      personalToken:
+          _read(_tokenKey) is String && (_read(_tokenKey) as String).isNotEmpty
+          ? _read(_tokenKey) as String
+          : null,
+    );
   }
 
   /// Reads `from` and `name` out of either an invitation URL or a bare
@@ -82,10 +95,20 @@ abstract final class InviteLinkService {
     if (from.isEmpty || !RegExp(r'^[A-Za-z0-9_-]{6,128}$').hasMatch(from)) {
       return null;
     }
-    return PendingInvite(fromUid: from, name: (params['name'] ?? '').trim());
+    final token = params['personalInvite'];
+    if (token != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(token)) {
+      return null;
+    }
+    return PendingInvite(
+      fromUid: from,
+      name: (params['name'] ?? '').trim(),
+      personalToken: token,
+    );
   }
 
   static void _store(PendingInvite invite) {
+    _pending[_tokenKey] = invite.personalToken ?? '';
+    persistHomeSetting(_tokenKey, invite.personalToken ?? '');
     _pending[_fromKey] = invite.fromUid;
     _pending[_nameKey] = invite.name;
     persistHomeSetting(_fromKey, invite.fromUid);
@@ -121,7 +144,11 @@ abstract final class InviteLinkService {
     }
     _store(invite);
     if (!SignInPromptStore.hasAccount && WorkspaceStore.entryRoute == null) {
-      WorkspaceStore.chooseEntry(EntryRoute.cardOwner);
+      WorkspaceStore.chooseEntry(
+        invite.personalToken == null
+            ? EntryRoute.cardOwner
+            : EntryRoute.matchmaker,
+      );
       return InviteArrival.freshInstall;
     }
     return SignInPromptStore.hasAccount
@@ -131,6 +158,8 @@ abstract final class InviteLinkService {
 
   /// The invitation was acted on or put aside.
   static void clear() {
+    _pending[_tokenKey] = '';
+    persistHomeSetting(_tokenKey, '');
     _pending[_fromKey] = '';
     _pending[_nameKey] = '';
     persistHomeSetting(_fromKey, '');

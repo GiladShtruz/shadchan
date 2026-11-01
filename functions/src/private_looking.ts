@@ -141,6 +141,7 @@ export const savePrivateLooking = onCall(
     batch.set(db.doc(`privateLookingPresence/${uid}`), {
       hasContent: !!text.trim() || !!audioPath,
     });
+    batch.set(db.doc(`users/${uid}/private/cardActivity`), {editedAt: FieldValue.serverTimestamp()}, {merge: true});
     await batch.commit();
     if (uploadedPath && uploadedPath !== audioPath)
       await getStorage()

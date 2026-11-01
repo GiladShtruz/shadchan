@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/widgets/card_announce_switch.dart';
 import 'package:shadchan/widgets/card_text_field.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
@@ -155,6 +156,8 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   /// The height warning is a question asked once per visit, not a gate.
   bool _heightWarningShown = false;
 
+  int _ownerOpenedRevision = 0;
+  bool _offeredAfterEdit = false;
   bool get _owner => widget.ownerCard;
 
   /// The owner is writing their card for the first time: the moment to ask
@@ -179,6 +182,9 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _loaded = true;
     // Read before the first save writes a card.
     _firstCard = _owner && context.read<PersonalCardProvider>().card == null;
+    if (_owner) {
+      _ownerOpenedRevision = context.read<PersonalCardProvider>().editRevision;
+    }
     _loadFrom(_readPerson());
   }
 
@@ -469,6 +475,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       }
     }
 
+    if (_owner &&
+        !_offeredAfterEdit &&
+        context.read<PersonalCardProvider>().editRevision !=
+            _ownerOpenedRevision) {
+      _offeredAfterEdit = true;
+      await PersonalAreaService.offerUpdate(context);
+      if (!mounted) return;
+    }
     final VoidCallback? onFinished = widget.onFinished;
     if (onFinished != null) {
       onFinished();

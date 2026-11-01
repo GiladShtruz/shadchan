@@ -1,6 +1,6 @@
 # Privacy Policy — Shadchan
 
-Last updated: October 6, 2026
+Last updated: November 1, 2026
 
 This policy applies to the **Shadchan** application and its information website. The Application is developed and operated by Gilad Shtruzman ("we"), the controller of the processing described here. Privacy contact: **giladsh22@gmail.com**.
 
@@ -59,7 +59,10 @@ Someone who signs in as a single person may write a personal card about themselv
 - **On the matchmaker's device:** an approved matchmaker's device keeps the card's details and photographs so the matchmaker can work with and share them like any card. Notes, ideas and information the matchmaker wrote themselves — including changes they make to their own copy of the card and its status — stay in the matchmaker’s database and never reach the card owner. In an explicitly connected couple workspace they are shared with that matchmaker’s spouse as described below. Updates flow one way: changes the owner makes reach the approved matchmakers. When access is withdrawn or the card is deleted, the details and photographs received from it are removed from the matchmaker's device and the matchmaker's earlier version is restored.
 - **Deleting the card:** removes the card only, not the account. The card is kept flagged as deleted so it can be restored, and matchmakers stop seeing it at once. It is erased completely with account deletion.
 - **Notifications:** server functions (Cloud Functions) write notices to the account about access requests, approvals or declines, a friend's card, a wedding and a Hebrew birthday, and send them as push notifications through Firebase Cloud Messaging. A device notification token is stored for this. Ordinary changes to a card send no notification.
-- **Invitations:** a matchmaker may send a friend an invitation link containing the matchmaker's identifier and name. An invitation grants access to nobody; the card owner decides.
+- **Invitations:** a matchmaker's invitation to create a card still requires the owner's approval. A card owner may also personally invite a friend to match for them by entering the recipient's email and granting shareable-card access in advance. The email and invitation identifiers are stored on the server; redemption requires that same verified email. Links expire after 30 days and may be cancelled. Forwarding a link does not transfer permission. Private wishes and permission for a spouse are never included automatically.
+- **Reciprocal discovery:** automatic friend discovery and join notices require both people to have saved each other in the contacts uploaded with consent. A single-friends list reveals only a name and presence, never card details or card photos. Suggested matchmakers may show their publicly shared profile photo, database size and last activity time. Hiding a suggestion is independent from blocking or withdrawing permission.
+- **Edits and reminders:** card and status edits synchronize quietly to authorized recipients. Only the latest status-change time is shown, without a new journal entry for each change. An explicit owner action may send a generic card-update reminder at most once per 30 days; the notification never specifies what changed. Edit, review and reminder timestamps support quarterly review reminders and the rate limit. Confirming that a card is current does not change its status timestamp.
+- **Community news:** administrators may publish text and images in the personal area and send them to the in-app inbox. Inbox notices remain available without device push permission. Community figures are anonymous counts, never a public roster of card owners.
 
 ## 4B. Couple workspaces
 

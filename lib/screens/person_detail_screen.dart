@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/card_status_timestamp.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/widgets/voice_note_player.dart';
@@ -472,6 +473,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       _changeProfileStatus(context, person, status),
                 ),
               ),
+              if (person.cardOwnerUid != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CardStatusTimestamp(ownerUid: person.cardOwnerUid),
+                ),
               _ProfileInlineActions(
                 person: person,
                 inquiry: inquiry,

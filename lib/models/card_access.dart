@@ -30,6 +30,7 @@ class CardAccess {
     this.ownerPhone,
     this.cardGranted,
     this.cardRequested = false,
+    this.invited = false,
     this.granteeUids = const [],
     this.lookingGranted = false,
     this.lookingRequested = false,
@@ -38,6 +39,7 @@ class CardAccess {
   final List<String> granteeUids;
   final bool? cardGranted;
   final bool cardRequested;
+  final bool invited;
   final bool lookingGranted;
   final bool lookingRequested;
   bool get canReadCard =>
@@ -89,6 +91,7 @@ class CardAccess {
           (data['granteeUids'] as List?)?.cast<String>() ?? [matchmaker],
       cardGranted: data['cardGranted'] as bool?,
       cardRequested: data['cardRequested'] == true,
+      invited: data['invited'] == true,
       lookingGranted: data['lookingGranted'] == true,
       lookingRequested: data['lookingRequested'] == true,
     );
@@ -97,7 +100,21 @@ class CardAccess {
 
 /// A matchmaker among the owner's contacts, as the server found them.
 class CardHelper {
-  const CardHelper({required this.uid, required this.name, this.phoneHash});
+  const CardHelper({
+    required this.uid,
+    required this.name,
+    this.phoneHash,
+    this.photoUrl,
+    this.databaseCount,
+    this.lastActiveAt,
+    this.recipientUid,
+    this.granteeUids = const <String>[],
+  });
+  final String? photoUrl;
+  final int? databaseCount;
+  final DateTime? lastActiveAt;
+  final String? recipientUid;
+  final List<String> granteeUids;
 
   final String uid;
 

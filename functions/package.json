@@ -11,7 +11,8 @@
     "test": "npm run build && node --test lib/*.test.js",
     "test:rules": "firebase emulators:exec --only firestore,storage --project demo-shadchan \"node --test --test-concurrency=1 rules_test/card_rules.test.mjs rules_test/storage_rules.test.mjs\"",
     "test:flows": "npm run build && firebase emulators:exec --only firestore,functions --project demo-shadchan \"node --test rules_test/flows.test.mjs\"",
-    "test:workspaces": "npm run build && firebase emulators:exec --only firestore,functions,auth,storage --project demo-shadchan \"node --test --test-concurrency=1 rules_test/flows.test.mjs rules_test/workspace_flows.test.mjs\""
+    "test:workspaces": "npm run build && firebase emulators:exec --only firestore,functions,auth,storage --project demo-shadchan \"node --test --test-concurrency=1 rules_test/flows.test.mjs rules_test/workspace_flows.test.mjs\"",
+    "test:personal": "npm run build && firebase emulators:exec --only firestore,functions,auth,storage --project demo-shadchan \"node --test --test-concurrency=1 rules_test/personal_area_flows.test.mjs\""
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

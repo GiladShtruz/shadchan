@@ -33,6 +33,7 @@ class PersonalCardProvider extends ChangeNotifier {
     if ((_card?.photosPaths.length ?? 0) > 4) {
       _card = _card!.copyWith(photosPaths: _card!.photosPaths.take(4).toList());
     }
+    _lastSavedPrint = _card == null ? null : _print(_card!);
     final Object? deleted = _box.get(_deletedKey);
     _deleted = deleted == true || deleted == 'true';
     final Object? accepts = _box.get(_acceptsRequestsKey);
@@ -55,6 +56,13 @@ class PersonalCardProvider extends ChangeNotifier {
 
   final Box<dynamic> _box;
   Person? _card;
+  String? _lastSavedPrint;
+  int editRevision = 0;
+  static String _print(Person person) => jsonEncode(<String, Object?>{
+    ...PersonalCardCodec.cardValues(person),
+    'status': person.profileStatus.name,
+    'photos': person.photosPaths,
+  });
   bool _deleted = false;
   bool _acceptsRequests = true;
   bool _announces = true;
@@ -165,6 +173,10 @@ class PersonalCardProvider extends ChangeNotifier {
     if (person.photosPaths.length > 4) {
       throw ArgumentError('אפשר להוסיף עד 4 תמונות לכרטיס');
     }
+    final String print = _print(person);
+    if (_lastSavedPrint == print) return;
+    _lastSavedPrint = print;
+    editRevision++;
     final Person saved = person.copyWith(
       id: cardId,
       updatedAt: DateTime.now(),

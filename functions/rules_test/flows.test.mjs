@@ -55,13 +55,16 @@ function card(extra = {}) {
   };
 }
 
-test('an address book finds the matchmakers in it', async () => {
+test('a reciprocal address book finds the matchmakers in it', async () => {
   await db.collection('phoneDirectory').doc(MM_HASH).set({
     uid: MM,
     name: 'יצחק',
     matchmaker: true,
     hasCard: false,
   });
+  await db.doc(`phoneDirectory/${OWNER_HASH}`).set({uid: OWNER, name: 'נועה כהן', matchmaker: false, hasCard: true});
+  await db.doc(`userPhones/${MM}`).set({phoneHash: MM_HASH});
+  await db.doc(`contactHashes/${MM}`).set({hashes: [OWNER_HASH]});
   await db.collection('userPhones').doc(OWNER).set({ phoneHash: OWNER_HASH });
   await db.collection('contactHashes').doc(OWNER).set({
     hashes: [MM_HASH, 'cccccccccccccccccccccccc'],
@@ -73,9 +76,9 @@ test('an address book finds the matchmakers in it', async () => {
       .collection('private')
       .doc('helpers')
       .get();
-    return doc.exists ? doc.data().helpers : null;
+    return doc.exists && doc.data().helpers?.length ? doc.data().helpers : null;
   }, 'helpers');
-  assert.deepEqual(helpers, [{ uid: MM, name: 'יצחק', phoneHash: MM_HASH }]);
+  assert.deepEqual(helpers.map(({uid, name, phoneHash}) => ({uid, name, phoneHash})), [{ uid: MM, name: 'יצחק', phoneHash: MM_HASH }]);
 });
 
 test('a new card is announced to matchmakers in the owner’s contacts, once', async () => {
@@ -87,20 +90,11 @@ test('a new card is announced to matchmakers in the owner’s contacts, once', a
   assert.equal(notice.ownerPhoneHash, OWNER_HASH);
 });
 
-test('a matchmaker who keeps the friend in their database is told of the card', async () => {
+test('a database-only one-way contact is never told that a candidate has joined', async () => {
   const HOLDER = 'mmC';
-  await db.collection('phoneDirectory').doc(OWNER_HASH).set({
-    uid: OWNER,
-    name: 'נועה כהן',
-    matchmaker: false,
-    hasCard: true,
-  });
-  await db.collection('databaseHashes').doc(HOLDER).set({
-    hashes: [OWNER_HASH, 'dddddddddddddddddddddddd'],
-  });
-  const notice = await waitFor(() => inbox(HOLDER, 'cardCreated'), 'held');
-  assert.equal(notice.title, 'נועה כהן הוסיפה כרטיס אישי');
-  assert.equal(notice.ownerUid, OWNER);
+  await db.collection('databaseHashes').doc(HOLDER).set({hashes: [OWNER_HASH]});
+  await new Promise(r => setTimeout(r, 1200));
+  assert.equal(await inbox(HOLDER, 'cardCreated'), undefined);
 });
 
 test('a request reaches the owner; an approval reaches the matchmaker', async () => {
@@ -120,7 +114,7 @@ test('a request reaches the owner; an approval reaches the matchmaker', async ()
 
   await ref.update({ status: 'approved', updatedAt: new Date() });
   const approved = await waitFor(() => inbox(MM, 'accessApproved'), 'approved');
-  assert.equal(approved.title, 'נועה אישרה גישה לכרטיס שלה');
+  assert.equal(approved.title, 'נועה אישרה לך גישה לכרטיס שלה ❤️');
   assert.equal(approved.route, `/card-friend/${OWNER}`);
 });
 
@@ -137,10 +131,12 @@ test('internal status reports remain hidden from the owner', async () => {
   assert.equal(await inbox(OWNER, 'statusReport'), undefined);
 });
 
-test('a wedding reaches every approved matchmaker', async () => {
-  await db.collection('personalCards').doc(OWNER).update({ status: 'mazelTov' });
-  const notice = await waitFor(() => inbox(MM, 'mazelTov'), 'mazelTov');
-  assert.equal(notice.title, 'נועה התחתנה 🎉');
+test('owner status changes, including a legacy wedding status, send no automatic alert', async () => {
+  const before = (await db.doc(`personalCards/${OWNER}`).get()).updateTime.toMillis();
+  await db.collection('personalCards').doc(OWNER).update({status: 'mazelTov'});
+  await waitFor(async () => (await db.doc(`personalCards/${OWNER}`).get()).get('statusUpdatedAt')?.toMillis() > before, 'status timestamp');
+  await new Promise(r => setTimeout(r, 600));
+  assert.equal(await inbox(MM, 'mazelTov'), undefined);
 });
 
 test('a declined request is answered gently', async () => {

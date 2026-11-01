@@ -140,6 +140,14 @@ _TEMPLATE = """<!doctype html>
   var name = (q.get('name') || '').slice(0, 40);
   if (!/^[A-Za-z0-9_-]{6,128}$/.test(from)) { from = ''; }
   var pair = 'from=' + encodeURIComponent(from) + '&name=' + encodeURIComponent(name);
+  var personal = q.get('personalInvite') || '';
+  if (/^[a-f0-9]{64}$/.test(personal)) {
+    document.querySelectorAll('.lead')[0].textContent = 'חבר הזמין אותך לחשוב עליו בשדכן — יומן אישי ונקי לניהול שידוכים בין חברים.';
+    document.querySelectorAll('.lead')[1].textContent = 'אחרי ההרשמה עם האימייל המאומת שלך, הכרטיס שלו יתווסף למאגר שלך עם הרשאת גישה אישית.';
+    document.querySelector('.points').style.display = 'none';
+    pair += '&personalInvite=' + encodeURIComponent(personal) + '&role=matchmaker';
+    document.getElementById('note').textContent = 'זו הזמנה אישית לשדכן. רק הנמען שהוזמן, לאחר התחברות באימייל המאומת שלו, יקבל גישה לכרטיס. העברת הקישור אינה מעבירה הרשאה.';
+  }
   if (name) {
     document.getElementById('from').textContent = 'הזמנה מ' + name;
   }
@@ -155,7 +163,7 @@ _TEMPLATE = """<!doctype html>
     // An iPhone cannot hand the invitation to a freshly installed app.
     document.getElementById('note').textContent =
       'באייפון: אחרי ההתקנה חוזרים לקישור הזה ולוחצים שוב על ״פתיחה באפליקציה״. '
-      + 'עצם ההזמנה לא נותנת לאף אחד גישה לכרטיס שלך. אתה מחליט למי לתת גישה.';
+      + document.getElementById('note').textContent;
   }
 })();
 </script>
