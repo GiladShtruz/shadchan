@@ -203,6 +203,12 @@ void main() {
       await tester.tap(find.text('פרופיל').last);
       await tester.pumpAndSettle();
       expect(find.text(cards.card!.description!), findsOneWidget);
+      expect(
+        find.text(
+          'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('עריכת הכרטיס'), findsOneWidget);
       await tester.tap(find.text('השדכנים שלי').last);
       await tester.pumpAndSettle();

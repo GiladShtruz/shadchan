@@ -201,7 +201,10 @@ class MyMatchmakersScreen extends StatelessWidget {
                       ),
                     const SizedBox(height: 10),
                     if (helpers.isEmpty)
-                      const Text('מי עוד מכיר אותך מספיק טוב כדי לחשוב עליך?'),
+                      Text(
+                        'מי עוד מכיר אותך מספיק טוב כדי לחשוב {עליך|עלייך}?'
+                            .forGender(context.userGender),
+                      ),
                     for (final helper in helpers)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),

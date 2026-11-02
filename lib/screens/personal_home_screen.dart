@@ -551,7 +551,10 @@ class _CompactPersonalCardState extends State<_CompactPersonalCard> {
               'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
             ),
           if ((card.description ?? '').trim().isEmpty)
-            const Text('כמה מילים עליך יעזרו לחברים להכיר ולהציג אותך.'),
+            Text(
+              'כמה מילים {עליך|עלייך} יעזרו לחברים להכיר ולהציג אותך.'
+                  .forGender(card.gender),
+            ),
         ],
       ),
     );
@@ -584,7 +587,12 @@ class MutualSingleFriendsScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: () => PersonalAreaService.openMatchmaking(context),
-                  child: Text(active ? 'מעבר לאזור השדכן' : 'להצטרפות כשדכן'),
+                  child: Text(
+                    (active
+                            ? 'מעבר לאזור {השדכן|השדכנית}'
+                            : 'להצטרפות {כשדכן|כשדכנית}')
+                        .forGender(context.userGender),
+                  ),
                 ),
               ],
             ),

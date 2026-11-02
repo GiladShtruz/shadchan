@@ -241,6 +241,14 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                     card: card,
                     onEdit: () => PersonalAreaService.editCard(context),
                   ),
+                  if (card.photosPaths.length < 2)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
                   const SizedBox(height: 14),
                   if (!cards.hasCard)
                     const Padding(
@@ -632,7 +640,8 @@ class _MyCardSummary extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             description.isEmpty
-                ? 'עוד אין טקסט בכרטיס. כמה שורות עליך עוזרות לשדכנים להכיר.'
+                ? 'עוד אין טקסט בכרטיס. כמה שורות {עליך|עלייך} עוזרות לשדכנים להכיר.'
+                      .forGender(card.gender)
                 : description,
             style: theme.textTheme.bodyLarge?.copyWith(
               height: 1.55,

@@ -97,6 +97,8 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-11-02 (personal-area requirement follow-up, PR #13): the full profile now shows the gentle missing-photo recommendation as well as the existing missing-description/private-wishes hints. Remaining personal-area empty states, description guidance and matchmaker-entry buttons resolve feminine wording. Existing personal-area navigation/layout tests cover the recommendation in the profile tab. No backend/rules or deployment changes.
+
 - 2026-11-01 (singles’ personal area, permission management and community news):
   - `/me` now hosts exactly three persistent personal tabs: בית / השדכנים שלי / פרופיל. The home uses the shared paper cards, typography and palette, prioritizes one-tap card grants, and shows a compact card/status control, quarterly review and rotating community news. The full card/private wishes remain in the profile; privacy/account controls are secondary routes. Matchmaker entry from the mutual-friends list filters to personal cards.
   - Contact discovery, presence-only single-friend lists and join notices require **reciprocal uploaded contacts plus matching directory ownership**. Hidden helper suggestions are reversible synced settings, separate from grants/blocks. Helper database size and last activity come from actual foreground/interaction/exit reports; unavailable metadata is labelled, never guessed.
