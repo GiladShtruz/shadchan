@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_area_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
@@ -13,7 +14,6 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/my_matchmakers_screen.dart';
 import 'package:shadchan/screens/personal_area_screen.dart';
-import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/personal_area_service.dart';
@@ -69,15 +69,9 @@ class _PersonalShellState extends State<_PersonalShell> {
     super.initState();
     _tab = _tabFor(widget.section);
     WorkspaceStore.setLastArea(WorkArea.personal);
-    FirebaseBootstrap.readyListenable.addListener(_scan);
-    _scan();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) CommunityPromptGate.maybeAskHomeAreaOnly(context);
     });
-  }
-
-  void _scan() {
-    if (FirebaseBootstrap.isReady) unawaited(ContactHashUpload.run());
   }
 
   @override
@@ -86,12 +80,6 @@ class _PersonalShellState extends State<_PersonalShell> {
     if (old.section != widget.section || old.friendUid != widget.friendUid) {
       _tab = _tabFor(widget.section);
     }
-  }
-
-  @override
-  void dispose() {
-    FirebaseBootstrap.readyListenable.removeListener(_scan);
-    super.dispose();
   }
 
   void _select(int index) {
@@ -356,7 +344,10 @@ class _PersonalHome extends StatelessWidget {
           const SizedBox(height: 16),
         ],
         if (card != null && !cards.isDeleted)
-          _CompactPersonalCard(card: card, onView: onProfile)
+          _CompactPersonalCard(
+            card: card,
+            onView: () => PersonCardViewer.openOwnCard(context),
+          )
         else
           HomePaperCard(
             child: Column(

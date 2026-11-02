@@ -2,6 +2,7 @@ import 'package:shadchan/widgets/private_looking.dart';
 import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/widgets/card_status_timestamp.dart';
 import 'dart:io';
+import 'package:shadchan/dialogs/person_card_viewer.dart';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -674,6 +675,10 @@ class _MyCardSummary extends StatelessWidget {
                 ),
               ],
             ],
+          ),
+          TextButton(
+            onPressed: () => PersonCardViewer.openOwnCard(context),
+            child: const Text('תצוגת הכרטיס לשדכנים'),
           ),
         ],
       ),

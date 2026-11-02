@@ -1,4 +1,5 @@
 import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/services/contact_hash_upload.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -191,6 +192,9 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       unawaited(PushService.start());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());
+      // Reciprocal discovery needs both roles' address books. This checks
+      // existing permission only and never opens a permission prompt.
+      unawaited(ContactHashUpload.run());
       _publishTags();
       _publishActivity();
     }
@@ -322,6 +326,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     }
     if (state == AppLifecycleState.resumed && FirebaseBootstrap.isReady) {
       unawaited(context.read<CardAccessProvider>().resume());
+      unawaited(ContactHashUpload.run());
     }
   }
 

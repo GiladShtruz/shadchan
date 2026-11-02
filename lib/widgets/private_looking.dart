@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -15,7 +14,6 @@ import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/private_looking_service.dart';
 import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/services/voice_note_store.dart';
-import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -110,11 +108,7 @@ class PrivateLookingBlock extends StatelessWidget {
                     child: Text(text),
                   ),
                 if (audio != null)
-                  PrivateAudioPlayer(
-                    key: ValueKey(audio),
-                    path: audio,
-                    owner: owner,
-                  ),
+                  PrivateAudioPlayer(key: ValueKey(audio), path: audio),
                 if (owner) ...[
                   TextButton.icon(
                     icon: const Icon(Icons.edit_outlined),
@@ -141,9 +135,8 @@ class PrivateLookingBlock extends StatelessWidget {
 /// Authenticated SDK download, temporary file, no download URL or export hook.
 /// Removing the block on revocation disposes playback and deletes the file.
 class PrivateAudioPlayer extends StatefulWidget {
-  const PrivateAudioPlayer({super.key, required this.path, this.owner = false});
+  const PrivateAudioPlayer({super.key, required this.path});
   final String path;
-  final bool owner;
   @override
   State<PrivateAudioPlayer> createState() => _PrivateAudioPlayerState();
 }
@@ -171,16 +164,12 @@ class _PrivateAudioPlayerState extends State<PrivateAudioPlayer> {
     return file;
   }
 
-  Future<void> _act(bool share) async {
+  Future<void> _act() async {
     setState(() => _busy = true);
     try {
-      final file = await _load();
+      await _load();
       if (!mounted) return;
-      if (share && widget.owner) {
-        await Share.shareXFiles([
-          XFile(file.path),
-        ], sharePositionOrigin: ShareUtils.originOf(context));
-      } else if (_player.playing) {
+      if (_player.playing) {
         await _player.pause();
       } else {
         if (_player.processingState == ProcessingState.completed) {
@@ -211,16 +200,10 @@ class _PrivateAudioPlayerState extends State<PrivateAudioPlayer> {
     builder: (context, snapshot) => Wrap(
       children: [
         TextButton.icon(
-          onPressed: _busy ? null : () => _act(false),
+          onPressed: _busy ? null : _act,
           icon: Icon(_player.playing ? Icons.pause : Icons.play_arrow),
           label: const Text('הקלטה'),
         ),
-        if (widget.owner)
-          TextButton.icon(
-            onPressed: _busy ? null : () => _act(true),
-            icon: const Icon(Icons.share_outlined),
-            label: const Text('שיתוף ההקלטה ל־WhatsApp'),
-          ),
       ],
     ),
   );
@@ -465,7 +448,7 @@ class _LookingEditorState extends State<_LookingEditor> {
             ),
           ),
         if (_audio != null && _newAudio == null)
-          PrivateAudioPlayer(path: _audio!, owner: true),
+          PrivateAudioPlayer(path: _audio!),
         Wrap(
           children: [
             TextButton.icon(

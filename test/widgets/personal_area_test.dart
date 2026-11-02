@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -15,6 +16,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/personal_home_screen.dart';
 import 'package:shadchan/screens/card_friend_screen.dart';
+import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/my_matchmakers_screen.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/app_theme.dart';
@@ -160,11 +162,15 @@ void main() {
     ],
     child: MaterialApp(
       theme: AppTheme.lightTheme(),
-      home: Directionality(
-        textDirection: TextDirection.rtl,
-        child: MediaQuery(
-          data: MediaQueryData(textScaler: TextScaler.linear(scale)),
-          child: home ?? PersonalAreaScreen(createData: _Data.new),
+      home: Builder(
+        builder: (context) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(scale)),
+            child: home ?? PersonalAreaScreen(createData: _Data.new),
+          ),
         ),
       ),
     ),
@@ -219,6 +225,31 @@ void main() {
     },
   );
   testWidgets(
+    'own-card preview uses the shared viewer without adding an owner record or private wishes',
+    (tester) async {
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('צפייה בכרטיס'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('צפייה בכרטיס'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PersonCardViewer), findsOneWidget);
+      expect(find.text(cards.card!.description!), findsOneWidget);
+      expect(find.text('עריכת הכרטיס'), findsNothing);
+      expect(find.text('מה אני מחפשת'), findsNothing);
+      expect(people.count, 0);
+      await tester.runAsync(
+        () => cards.save(
+          cards.card!.copyWith(description: 'טקסט כרטיס שעודכן בזמן התצוגה'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('טקסט כרטיס שעודכן בזמן התצוגה'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
+  testWidgets(
     'hiding a suggestion leaves its access untouched and can be undone',
     (tester) async {
       await tester.pumpWidget(app());
@@ -235,6 +266,46 @@ void main() {
       await tester.tap(find.text('ביטול הסתרה'));
       await tester.pumpAndSettle();
       expect(PersonalHelperActions.hidden, isEmpty);
+    },
+  );
+  testWidgets(
+    'revoking an open card editor cannot reveal or resave its old fields',
+    (tester) async {
+      final friend = Person(
+        id: 'linked-editor',
+        firstName: 'יעל',
+        lastName: 'לוי',
+        gender: Gender.female,
+        description: 'טקסט פרטי מהכרטיס שנשלל',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      )..cardOwnerUid = 'owner123';
+      await tester.runAsync(() => peopleBox.put(friend.id, friend));
+      people.requireVerifiedCardAccess();
+      people.setVerifiedCardOwners({'owner123'});
+      await tester.pumpWidget(
+        app(home: PersonExtendedEditScreen(personId: friend.id)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('כרטיסייה לשליחה'));
+      await tester.pumpAndSettle();
+      expect(find.text('טקסט פרטי מהכרטיס שנשלל'), findsOneWidget);
+      people.setVerifiedCardOwners({});
+      await tester.pumpAndSettle();
+      expect(find.text('טקסט פרטי מהכרטיס שנשלל'), findsNothing);
+      expect(find.text('הגישה לכרטיס הזה אינה זמינה עוד.'), findsOneWidget);
+      // Simulate unlink restoring a pre-card database entry while this editor
+      // stays mounted. Its stale controllers must remain inaccessible.
+      friend
+        ..cardOwnerUid = null
+        ..description = 'המידע המקורי של השדכן';
+      await tester.runAsync(() => people.saveSynced(friend));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('טקסט פרטי מהכרטיס שנשלל'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      expect(people.getById(friend.id)?.description, 'המידע המקורי של השדכן');
     },
   );
   testWidgets(

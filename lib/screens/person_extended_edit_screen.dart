@@ -158,6 +158,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
 
   int _ownerOpenedRevision = 0;
   bool _offeredAfterEdit = false;
+  String? _openedCardOwnerUid;
   bool get _owner => widget.ownerCard;
 
   /// The owner is writing their card for the first time: the moment to ask
@@ -185,7 +186,11 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     if (_owner) {
       _ownerOpenedRevision = context.read<PersonalCardProvider>().editRevision;
     }
-    _loadFrom(_readPerson());
+    final person = _readPerson();
+    if (!_owner) {
+      _openedCardOwnerUid = person?.cardOwnerUid;
+    }
+    _loadFrom(person);
   }
 
   /// The record this page edits: the friend in the database, or the owner's
@@ -195,7 +200,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       final PersonalCardProvider cards = context.read<PersonalCardProvider>();
       return cards.card ?? cards.draftFrom(context.read<UserProfileProvider>());
     }
-    return context.read<PersonRepository>().getById(widget.personId);
+    final person = context.read<PersonRepository>().getById(widget.personId);
+    // Controllers keep the values loaded on entry. After revocation, even a
+    // restored pre-card friend must not expose or autosave those stale values.
+    if (_openedCardOwnerUid != null &&
+        person?.cardOwnerUid != _openedCardOwnerUid) {
+      return null;
+    }
+    return person;
   }
 
   Future<void> _writePerson(Person person) {
@@ -757,7 +769,13 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     if (person == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('עריכת כרטיס')),
-        body: const Center(child: Text('איש הקשר לא נמצא')),
+        body: Center(
+          child: Text(
+            _openedCardOwnerUid == null
+                ? 'איש הקשר לא נמצא'
+                : 'הגישה לכרטיס הזה אינה זמינה עוד.',
+          ),
+        ),
       );
     }
 

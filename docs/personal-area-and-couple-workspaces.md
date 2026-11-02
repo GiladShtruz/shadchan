@@ -2,6 +2,9 @@
 
 ## Personal area
 
+The section-by-section product requirement map and remaining device/deployment
+checks are in [personal-area-requirements.md](personal-area-requirements.md).
+
 The owner's sendable card is still a `Person` kept outside the matchmaker's
 people box. It is active only with at least one photograph or 30 trimmed Unicode
 characters in its sendable text. Seeded names/statuses do not activate a draft.
@@ -26,7 +29,8 @@ The first private save offers all existing card grantees, manual selection or
 skip; later edits remain live for the already authorized recipients.
 
 Matchmakers read private content through authenticated live snapshots and
-protected temporary playback files. They receive no share/export/copy action.
+protected temporary playback files. Neither the owner’s nor the matchmaker’s
+private-audio player exposes an external share/export action.
 Revocation disposes playback and removes the private block. Their own notes,
 ideas, statuses and local edits never flow back to the card owner. Private
 wishes always require a separate explicit grant, including after invitations.
@@ -83,7 +87,10 @@ a current server grant **and card** have been validated. Revocation immediately
 closes server reads; the client removes access, imported photos, remote baselines
 and owner-authored automatic history while preserving the matchmaker's own data.
 A grant/invitation link waits for the authorized local card instead of bouncing
-to the notification list before sync finishes.
+to the notification list before sync finishes. An editor already open on a
+linked card also closes its stale fields when access ends, even after the
+pre-card database record is restored. Own-card preview reuses the same read-only
+viewer as the matchmaker’s card and never adds an owner record to the database.
 
 ## Couple data and identity
 

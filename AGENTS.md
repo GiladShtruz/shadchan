@@ -97,7 +97,12 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
-- 2026-11-02 (personal-area requirement follow-up, PR #13): the full profile now shows the gentle missing-photo recommendation as well as the existing missing-description/private-wishes hints. Remaining personal-area empty states, description guidance and matchmaker-entry buttons resolve feminine wording. Existing personal-area navigation/layout tests cover the recommendation in the profile tab. No backend/rules or deployment changes.
+- 2026-11-02 (personal-area requirement follow-up, PR #13):
+  - The full profile now shows the gentle missing-photo recommendation as well as the existing missing-description/private-wishes hints. Remaining personal-area empty states, description guidance and matchmaker-entry buttons resolve feminine wording.
+  - Home’s card-view button and the profile’s תצוגת הכרטיס לשדכנים reuse `PersonCardViewer.openOwnCard`. The viewer watches `PersonalCardProvider`, stays outside the matchmaking database and excludes private wishes. Existing friend-viewer behavior is unchanged.
+  - An editor opened on an approved personal card remembers that source identity. After revocation it cannot redisplay or autosave stale controllers, including after unlink restores the matchmaker’s original database record. Private-audio players no longer expose an external share/export action, including in the owner’s editor; recording/import/replacement and protected playback remain.
+  - Reciprocal contact discovery now refreshes for both roles at Firebase readiness/foreground resume and after contact-import permission is granted, without prompting from the scheduler. It no longer depends on a matchmaker opening the personal area.
+  - The section-by-section requirement map is in `docs/personal-area-requirements.md`, including verified-email invitation binding and device/deployment checks still needed. The full Flutter run has 756 passing tests and the same two baseline import failures; all 84 final targeted checks (personal area, app navigation, contact import, card sync/privacy) pass after the contact-refresh wiring. Analyzer retains only its three pre-existing infos. No backend/rules or deployment changes.
 
 - 2026-11-01 (singles’ personal area, permission management and community news):
   - `/me` now hosts exactly three persistent personal tabs: בית / השדכנים שלי / פרופיל. The home uses the shared paper cards, typography and palette, prioritizes one-tap card grants, and shows a compact card/status control, quarterly review and rotating community news. The full card/private wishes remain in the profile; privacy/account controls are secondary routes. Matchmaker entry from the mutual-friends list filters to personal cards.
