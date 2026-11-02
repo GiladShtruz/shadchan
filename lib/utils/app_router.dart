@@ -5,8 +5,6 @@ import 'package:shadchan/screens/account_screen.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
-import 'package:shadchan/models/person.dart';
-import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/add_contacts_screen.dart';
 import 'package:shadchan/screens/add_tip_screen.dart';
@@ -36,7 +34,10 @@ import 'package:shadchan/screens/privacy_policy_screen.dart';
 import 'package:shadchan/screens/reminders_screen.dart';
 import 'package:shadchan/screens/entry_route_screen.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
-import 'package:shadchan/screens/personal_area_screen.dart';
+import 'package:shadchan/screens/personal_home_screen.dart';
+import 'package:shadchan/screens/personal_invite_screen.dart';
+import 'package:shadchan/screens/card_friend_screen.dart';
+import 'package:shadchan/services/invite_link_service.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/settings_appearance_screen.dart';
 import 'package:shadchan/screens/settings_screen.dart';
@@ -222,6 +223,14 @@ abstract final class AppRouter {
       final bool launch = _atLaunch;
       _atLaunch = false;
       final String path = state.uri.path;
+      if (InviteLinkService.pending?.personalToken != null &&
+          ![
+            '/invite/personal',
+            '/profile/account',
+            '/sign-in',
+          ].contains(path)) {
+        return '/invite/personal';
+      }
 
       if (atWelcome || atStart) {
         return WorkspaceStore.launchArea == WorkArea.personal ? '/me' : '/home';
@@ -254,6 +263,10 @@ abstract final class AppRouter {
     },
     routes: <RouteBase>[
       GoRoute(
+        path: '/invite/personal',
+        builder: (_, _) => const PersonalInviteScreen(),
+      ),
+      GoRoute(
         path: '/welcome',
         builder: (BuildContext context, GoRouterState state) {
           return const OnboardingScreen();
@@ -271,9 +284,15 @@ abstract final class AppRouter {
         builder: (BuildContext context, GoRouterState state) {
           return PersonalAreaScreen(
             section: state.uri.queryParameters['section'],
+            friendUid: state.uri.queryParameters['friend'],
           );
         },
         routes: <RouteBase>[
+          GoRoute(
+            path: 'news/:id',
+            builder: (_, state) =>
+                PersonalNewsDetailScreen(id: state.pathParameters['id']!),
+          ),
           GoRoute(
             path: 'card',
             builder: (BuildContext context, GoRouterState state) {
@@ -365,6 +384,7 @@ abstract final class AppRouter {
                   final String batch = (q['batch'] ?? '').trim();
                   return PeopleScreen(
                     key: ValueKey<String>('people:${state.uri}'),
+                    personalCardsOnly: q['personalCards'] == '1',
                     initialShowArchived: archived,
                     initialProfileStatuses: statuses,
                     initialSort: sort,
@@ -764,29 +784,15 @@ abstract final class AppRouter {
       ),
       // "דביר אישר גישה לכרטיס שלו" — a notice about one friend's card opens
       // that friend's profile in the database: by the card link, else by the
-      // number the owner approved with. Before the card has landed there is
-      // no profile to open yet, and the notifications page is the next best.
+      // number the owner approved with. Wait for a fresh authorized local
+      // copy; a revoked grant must never fall back to a cached profile.
       GoRoute(
         path: '/card-friend/:ownerUid',
-        redirect: (BuildContext context, GoRouterState state) {
-          final String owner = state.pathParameters['ownerUid'] ?? '';
-          final String hash = state.uri.queryParameters['h'] ?? '';
-          try {
-            final PersonRepository people = context.read<PersonRepository>();
-            final Person? person =
-                people.findByCardOwner(owner) ??
-                (hash.isEmpty ? null : people.findByPhoneHash(hash));
-            if (person != null) {
-              final String focus = state.uri.queryParameters['focus'] ?? '';
-              return focus.isEmpty
-                  ? '/people/${person.id}'
-                  : '/people/${person.id}?focus=$focus';
-            }
-          } on ProviderNotFoundException {
-            // Fall through to the notifications page.
-          }
-          return '/reminders';
-        },
+        builder: (_, state) => CardFriendScreen(
+          ownerUid: state.pathParameters['ownerUid']!,
+          phoneHash: state.uri.queryParameters['h'],
+          focus: state.uri.queryParameters['focus'] ?? 'card',
+        ),
       ),
       GoRoute(
         path: '/privacy-policy',

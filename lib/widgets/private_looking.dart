@@ -6,22 +6,24 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/private_looking_service.dart';
+import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/services/voice_note_store.dart';
-import 'package:shadchan/utils/share_utils.dart';
+import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 const privateLookingNotice =
-    'לעיני השדכנים שאישרת בלבד. התוכן כאן לא ניתן לשיתוף מתוך שדכן.';
+    'המידע מיועד רק לחברים השדכנים שאישרת בנפרד. הוא לא יישלח למועמדים או למועמדות ולא יצורף לכרטיס שמשתפים איתם.';
 
 class PrivateLookingBlock extends StatelessWidget {
-  const PrivateLookingBlock({super.key, this.ownerUid});
+  const PrivateLookingBlock({super.key, this.ownerUid, this.onSaved});
+  final Future<void> Function()? onSaved;
   final String? ownerUid;
   @override
   Widget build(BuildContext context) {
@@ -89,27 +91,34 @@ class PrivateLookingBlock extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  owner ? 'מה אני מחפש/ת' : 'מה הוא/היא מחפש/ת',
+                  owner
+                      ? 'מה אני {מחפש|מחפשת}'.forGender(context.userGender)
+                      : 'פירוט אישי לשדכנים בלבד',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 if (!owner) const Text('לעיניך בלבד'),
+                if (owner && text.isEmpty && audio == null)
+                  Text(
+                    'עוד לא {כתבת|כתבת} מה {אתה מחפש|את מחפשת}. אפשר לכתוב או להקליט כמה מילים שיעזרו לחברים לחשוב על רעיונות מתאימים.'
+                        .forGender(context.userGender),
+                  ),
                 if (text.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Text(text),
                   ),
                 if (audio != null)
-                  PrivateAudioPlayer(
-                    key: ValueKey(audio),
-                    path: audio,
-                    owner: owner,
-                  ),
+                  PrivateAudioPlayer(key: ValueKey(audio), path: audio),
                 if (owner) ...[
                   TextButton.icon(
                     icon: const Icon(Icons.edit_outlined),
                     label: const Text('עריכה'),
                     onPressed: snapshot.hasData
-                        ? () => openPrivateLookingEditor(context, data: data)
+                        ? () => openPrivateLookingEditor(
+                            context,
+                            data: data,
+                            onSaved: onSaved,
+                          )
                         : null,
                   ),
                   const Text(privateLookingNotice),
@@ -126,9 +135,8 @@ class PrivateLookingBlock extends StatelessWidget {
 /// Authenticated SDK download, temporary file, no download URL or export hook.
 /// Removing the block on revocation disposes playback and deletes the file.
 class PrivateAudioPlayer extends StatefulWidget {
-  const PrivateAudioPlayer({super.key, required this.path, this.owner = false});
+  const PrivateAudioPlayer({super.key, required this.path});
   final String path;
-  final bool owner;
   @override
   State<PrivateAudioPlayer> createState() => _PrivateAudioPlayerState();
 }
@@ -156,16 +164,12 @@ class _PrivateAudioPlayerState extends State<PrivateAudioPlayer> {
     return file;
   }
 
-  Future<void> _act(bool share) async {
+  Future<void> _act() async {
     setState(() => _busy = true);
     try {
-      final file = await _load();
+      await _load();
       if (!mounted) return;
-      if (share && widget.owner) {
-        await Share.shareXFiles([
-          XFile(file.path),
-        ], sharePositionOrigin: ShareUtils.originOf(context));
-      } else if (_player.playing) {
+      if (_player.playing) {
         await _player.pause();
       } else {
         if (_player.processingState == ProcessingState.completed) {
@@ -196,16 +200,10 @@ class _PrivateAudioPlayerState extends State<PrivateAudioPlayer> {
     builder: (context, snapshot) => Wrap(
       children: [
         TextButton.icon(
-          onPressed: _busy ? null : () => _act(false),
+          onPressed: _busy ? null : _act,
           icon: Icon(_player.playing ? Icons.pause : Icons.play_arrow),
           label: const Text('הקלטה'),
         ),
-        if (widget.owner)
-          TextButton.icon(
-            onPressed: _busy ? null : () => _act(true),
-            icon: const Icon(Icons.share_outlined),
-            label: const Text('שיתוף ההקלטה ל־WhatsApp'),
-          ),
       ],
     ),
   );
@@ -215,7 +213,9 @@ Future<void> openPrivateLookingEditor(
   BuildContext context, {
   Map<String, dynamic>? data,
   String? incoming,
+  Future<void> Function()? onSaved,
 }) async {
+  bool changed = false;
   try {
     if (data == null) {
       final uid = await PersonalCardService.durableUid();
@@ -233,6 +233,7 @@ Future<void> openPrivateLookingEditor(
         builder: (_) => _LookingEditor(data: data!, incoming: incoming),
       ),
     );
+    changed = saved == true;
     if (saved != true || !first || !context.mounted) return;
     final access = context.read<CardAccessProvider>();
     final rows = access.approved
@@ -323,6 +324,14 @@ Future<void> openPrivateLookingEditor(
     if (context.mounted) {
       AppNotice.show(context, 'לא ניתן לטעון כרגע. אפשר לנסות שוב.');
     }
+  } finally {
+    if (changed && context.mounted) {
+      if (onSaved != null) {
+        await onSaved();
+      } else {
+        await PersonalAreaService.offerUpdate(context);
+      }
+    }
   }
 }
 
@@ -409,7 +418,9 @@ class _LookingEditorState extends State<_LookingEditor> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('מה אני מחפש/ת')),
+    appBar: AppBar(
+      title: Text('מה אני {מחפש|מחפשת}'.forGender(context.userGender)),
+    ),
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -437,7 +448,7 @@ class _LookingEditorState extends State<_LookingEditor> {
             ),
           ),
         if (_audio != null && _newAudio == null)
-          PrivateAudioPlayer(path: _audio!, owner: true),
+          PrivateAudioPlayer(path: _audio!),
         Wrap(
           children: [
             TextButton.icon(

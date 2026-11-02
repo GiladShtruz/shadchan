@@ -47,6 +47,7 @@ class CardAccessProvider extends ChangeNotifier {
     : _people = people,
       _enabled = enabled {
     if (_enabled) {
+      _people.requireVerifiedCardAccess();
       CoupleWorkspaceService.membership.addListener(_workspaceChanged);
     }
   }
@@ -83,6 +84,7 @@ class CardAccessProvider extends ChangeNotifier {
   String? _uid;
   bool _starting = false;
   bool matchmakerAccessVerified = false;
+  final Set<String> _verifiedCards = <String>{};
   final List<StreamSubscription<Object?>> _subscriptions =
       <StreamSubscription<Object?>>[];
   final Map<String, StreamSubscription<Object?>> _cardSubscriptions =
@@ -92,6 +94,9 @@ class CardAccessProvider extends ChangeNotifier {
   Map<String, CardAccess> _asMatchmaker = <String, CardAccess>{};
   List<StatusReport> _reports = <StatusReport>[];
   List<CardHelper> _helpers = <CardHelper>[];
+  List<CardHelper> _friends = <CardHelper>[];
+  List<CardHelper> get mutualFriends => List.unmodifiable(_friends);
+  List<CardHelper> get knownHelpers => List.unmodifiable(_helpers);
   bool _helpersLoaded = false;
   final Set<String> _busy = <String>{};
 
@@ -144,7 +149,7 @@ class CardAccessProvider extends ChangeNotifier {
   List<CardHelper> get helpers {
     final Set<String> decided = <String>{
       for (final CardAccess a in _asOwner)
-        if (a.status == CardAccessStatus.approved ||
+        if (a.canReadCard ||
             a.status == CardAccessStatus.blocked ||
             a.status == CardAccessStatus.pending ||
             a.lookingRequested) ...<String>[a.matchmakerUid, ...a.granteeUids],
@@ -269,6 +274,12 @@ class CardAccessProvider extends ChangeNotifier {
                     if (CardAccess.fromMap(doc.data()) case final CardAccess a)
                       a.ownerUid: a,
                 };
+                if (!snap.metadata.isFromCache) {
+                  _verifiedCards.removeWhere(
+                    (owner) => _asMatchmaker[owner]?.canReadCard != true,
+                  );
+                  _people.setVerifiedCardOwners(_verifiedCards);
+                }
                 notifyListeners();
                 unawaited(
                   _reconcile(authoritative: !snap.metadata.isFromCache),
@@ -317,6 +328,26 @@ class CardAccessProvider extends ChangeNotifier {
                           uid: item['uid'] as String,
                           name: (item['name'] as String?) ?? '',
                           phoneHash: item['phoneHash'] as String?,
+                          photoUrl: item['photoUrl'] as String?,
+                          databaseCount: (item['databaseCount'] as num?)
+                              ?.toInt(),
+                          lastActiveAt: (item['lastActiveAt'] as Timestamp?)
+                              ?.toDate(),
+                          recipientUid: item['recipientUid'] as String?,
+                          granteeUids:
+                              (item['granteeUids'] as List?)?.cast<String>() ??
+                              const [],
+                        ),
+                ];
+                final friends = snap.data()?['friends'];
+                _friends = <CardHelper>[
+                  if (friends is List)
+                    for (final item in friends)
+                      if (item is Map && item['uid'] is String)
+                        CardHelper(
+                          uid: item['uid'] as String,
+                          name: item['name'] as String? ?? '',
+                          phoneHash: item['phoneHash'] as String?,
                         ),
                 ];
                 _helpersLoaded = snap.exists;
@@ -333,6 +364,8 @@ class CardAccessProvider extends ChangeNotifier {
   /// Disconnects and forgets, for a sign-out.
   Future<void> stop() async {
     matchmakerAccessVerified = false;
+    _verifiedCards.clear();
+    if (_enabled) _people.setVerifiedCardOwners(<String>{});
     for (final StreamSubscription<Object?> s in _subscriptions) {
       await s.cancel();
     }
@@ -346,6 +379,7 @@ class CardAccessProvider extends ChangeNotifier {
     _asMatchmaker = <String, CardAccess>{};
     _reports = <StatusReport>[];
     _helpers = <CardHelper>[];
+    _friends = <CardHelper>[];
     _helpersLoaded = false;
     _lookups.clear();
     _applying.clear();
@@ -364,7 +398,8 @@ class CardAccessProvider extends ChangeNotifier {
   Future<void> _reconcile({required bool authoritative}) async {
     // Follow every approved card.
     for (final CardAccess access in _asMatchmaker.values) {
-      if (access.canReadCard &&
+      if (matchmakerAccessVerified &&
+          access.canReadCard &&
           !_cardSubscriptions.containsKey(access.ownerUid)) {
         _followCard(access);
       }
@@ -381,7 +416,7 @@ class CardAccessProvider extends ChangeNotifier {
         await _unlink(ownerUid);
       }
     }
-    for (final Person person in _people.getAll()) {
+    for (final Person person in _people.rawPeopleForCardSync) {
       final String? owner = person.cardOwnerUid;
       if (owner != null && _asMatchmaker[owner]?.canReadCard != true) {
         await _unlink(owner);
@@ -394,11 +429,15 @@ class CardAccessProvider extends ChangeNotifier {
     _cardSubscriptions[ownerUid] = FirebaseFirestore.instance
         .collection(PersonalCardService.cardsCollection)
         .doc(ownerUid)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .listen(
           (DocumentSnapshot<Map<String, dynamic>> snap) {
             final Map<String, dynamic>? data = snap.data();
-            if (data == null) {
+            if (snap.metadata.isFromCache) return;
+            if (data == null || data['deleted'] == true) {
+              _verifiedCards.remove(ownerUid);
+              _people.setVerifiedCardOwners(_verifiedCards);
+              unawaited(_unlink(ownerUid));
               return;
             }
             unawaited(_applySerially(access, data));
@@ -408,6 +447,8 @@ class CardAccessProvider extends ChangeNotifier {
             // permission-denied. Either way the sync is over.
             if (error is FirebaseException &&
                 error.code == 'permission-denied') {
+              _verifiedCards.remove(ownerUid);
+              _people.setVerifiedCardOwners(_verifiedCards);
               unawaited(_cardSubscriptions.remove(ownerUid)?.cancel());
               unawaited(_unlink(ownerUid));
             } else {
@@ -501,11 +542,11 @@ class CardAccessProvider extends ChangeNotifier {
   Future<void> _applyCard(CardAccess access, Map<String, dynamic> data) async {
     final String ownerUid = access.ownerUid;
     // Queued before access ended: the card is no longer ours to apply.
-    if (_asMatchmaker[ownerUid]?.canReadCard != true) {
+    if (_disposed || _asMatchmaker[ownerUid]?.canReadCard != true) {
       return;
     }
     Person? person = CardSyncEngine.findExisting(
-      _people.getAll(),
+      _people.rawPeopleForCardSync,
       ownerUid: ownerUid,
       ownerPhoneHash:
           access.ownerPhoneHash ?? PhoneIdentity.hash(access.ownerPhone),
@@ -577,6 +618,7 @@ class CardAccessProvider extends ChangeNotifier {
       }
     }
 
+    if (_disposed || _asMatchmaker[ownerUid]?.canReadCard != true) return;
     final CardSyncResult result = CardSyncEngine.apply(
       person,
       data,
@@ -589,6 +631,9 @@ class CardAccessProvider extends ChangeNotifier {
         oldCardPhotos.where((String p) => !localPhotos.contains(p)),
       );
     }
+    if (_asMatchmaker[ownerUid]?.canReadCard != true) return;
+    _verifiedCards.add(ownerUid);
+    _people.setVerifiedCardOwners(_verifiedCards);
     if (result.changed || created) {
       await _people.saveSynced(person);
     }
@@ -613,7 +658,7 @@ class CardAccessProvider extends ChangeNotifier {
   }
 
   Future<void> _unlinkNow(String ownerUid) async {
-    final Person? person = _people.findByCardOwner(ownerUid);
+    final Person? person = _people.findByCardOwner(ownerUid, forCardSync: true);
     if (person == null) {
       return;
     }
@@ -623,6 +668,7 @@ class CardAccessProvider extends ChangeNotifier {
       lastRemote: _baselineFor(person.id),
     );
     _setBaseline(person.id, null);
+    await _people.forgetPersonalCardHistory(person.id);
     await _people.saveSynced(person);
     PhotoPickerService.deletePhotoFiles(toDelete);
     await _people.logEvent(
@@ -693,7 +739,9 @@ class CardAccessProvider extends ChangeNotifier {
   /// back to automatic updates on a record they had detached.
   Future<void> resync(String ownerUid) async {
     final CardAccess? access = _asMatchmaker[ownerUid];
-    if (access == null || access.status != CardAccessStatus.approved) {
+    if (!matchmakerAccessVerified ||
+        access == null ||
+        access.status != CardAccessStatus.approved) {
       return;
     }
     try {
@@ -701,7 +749,7 @@ class CardAccessProvider extends ChangeNotifier {
           await FirebaseFirestore.instance
               .collection(PersonalCardService.cardsCollection)
               .doc(ownerUid)
-              .get();
+              .get(const GetOptions(source: Source.server));
       final Map<String, dynamic>? data = snap.data();
       if (data != null) {
         await _applySerially(access, data);

@@ -40,7 +40,9 @@ class PeopleScreen extends StatefulWidget {
     this.initialProfileStatuses = const <ProfileStatus>[],
     this.initialSort,
     this.importBatchId,
+    this.personalCardsOnly = false,
   });
+  final bool personalCardsOnly;
 
   final bool initialShowArchived;
   final List<ProfileStatus> initialProfileStatuses;
@@ -164,7 +166,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
       appBar: selection != null
           ? _buildSelectionAppBar(selection)
           : ShadchanAppBar(
-              title: 'המאגר שלי',
+              title: widget.personalCardsOnly
+                  ? 'חברים עם כרטיס אישי'
+                  : 'המאגר שלי',
               // The bell, the "+" and the overflow menu — the same three, in
               // the same order, as בית and רעיונות. See [ShadchanTabActions];
               // this page's "+" goes straight to adding friends, because on
@@ -224,6 +228,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
                               setState(() => _sourceUid = entry.key),
                         ),
                     ],
+                  ),
+                ),
+              if (widget.personalCardsOnly)
+                SliverToBoxAdapter(
+                  child: TextButton(
+                    onPressed: () => context.go('/people'),
+                    child: const Text('לכל המאגר'),
                   ),
                 ),
               if (_importBatchId != null)
@@ -792,6 +803,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
     final String? batchId = _importBatchId;
     final List<Person> visiblePeople = filteredPeople.where((Person person) {
+      if (widget.personalCardsOnly && person.cardOwnerUid == null) return false;
       if (_sourceUid != null &&
           !CoupleWorkspaceService.sources(person.id).contains(_sourceUid)) {
         return false;

@@ -28,6 +28,26 @@ class PersonRepository extends ChangeNotifier {
   final Box<PersonEvent>? _eventBox;
   final Uuid _uuid = const Uuid();
 
+  Set<String>? _verifiedCardOwners;
+  Iterable<Person> get _readableValues => _box.values.where(_mayRead);
+  bool _mayRead(Person person) =>
+      person.cardOwnerUid == null ||
+      _verifiedCardOwners == null ||
+      _verifiedCardOwners!.contains(person.cardOwnerUid);
+
+  /// Enabled before the app's first frame. Cached grants never unlock a card.
+  void requireVerifiedCardAccess() {
+    _verifiedCardOwners = <String>{};
+  }
+
+  void setVerifiedCardOwners(Set<String> owners) {
+    _verifiedCardOwners = Set<String>.from(owners);
+    notifyListeners();
+  }
+
+  /// Sync/revocation must still reach the underlying copy to remove its fields.
+  List<Person> get rawPeopleForCardSync => _box.values.toList();
+
   /// Records changed underneath this repository because the account did — a
   /// change made on another phone. See `MatchRepository.notifySyncChange`.
   void notifySyncChange() {
@@ -42,11 +62,11 @@ class PersonRepository extends ChangeNotifier {
   /// two repositories.
   Future<void> Function(String personId)? onPersonStatusChanged;
 
-  int get count => _box.length;
+  int get count => _readableValues.length;
 
   int get pendingCount {
     int total = 0;
-    for (final Person person in _box.values) {
+    for (final Person person in _readableValues) {
       if (person.needsReview) total++;
     }
     return total;
@@ -58,7 +78,7 @@ class PersonRepository extends ChangeNotifier {
   /// ones. This is the number the add-contacts screens count up.
   int get databaseCount {
     int total = 0;
-    for (final Person person in _box.values) {
+    for (final Person person in _readableValues) {
       if (!person.hidden) total++;
     }
     return total;
@@ -67,7 +87,7 @@ class PersonRepository extends ChangeNotifier {
   ({int min, int max})? get activeAgeBounds {
     int? min;
     int? max;
-    for (final Person person in _box.values) {
+    for (final Person person in _readableValues) {
       if (person.needsReview || person.profileStatus.isArchived) {
         continue;
       }
@@ -89,13 +109,13 @@ class PersonRepository extends ChangeNotifier {
   }
 
   List<Person> getAll() {
-    final List<Person> people = _box.values.toList();
+    final List<Person> people = _readableValues.toList();
     people.sort(_sortByFirstName);
     return people;
   }
 
   List<Person> getPending() {
-    final List<Person> people = _box.values
+    final List<Person> people = _readableValues
         .where((Person person) => person.needsReview && !person.hidden)
         .toList();
     people.sort(_sortByFirstName);
@@ -104,7 +124,7 @@ class PersonRepository extends ChangeNotifier {
 
   /// Contact-import drafts that are not part of the visible database yet.
   List<Person> getPendingContactDrafts() {
-    final List<Person> people = _box.values
+    final List<Person> people = _readableValues
         .where(
           (Person person) =>
               person.needsReview &&
@@ -117,12 +137,13 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Person? getById(String id) {
-    return _box.get(id);
+    final person = _box.get(id);
+    return person != null && _mayRead(person) ? person : null;
   }
 
   /// The record that follows [ownerUid]'s own card, if any.
-  Person? findByCardOwner(String ownerUid) {
-    for (final Person person in _box.values) {
+  Person? findByCardOwner(String ownerUid, {bool forCardSync = false}) {
+    for (final Person person in forCardSync ? _box.values : _readableValues) {
       if (person.cardOwnerUid == ownerUid) {
         return person;
       }
@@ -134,12 +155,30 @@ class PersonRepository extends ChangeNotifier {
   /// friend already in the database is recognised when their card arrives, so
   /// no second record is ever made for them.
   Person? findByPhoneHash(String phoneHash) {
-    for (final Person person in _box.values) {
+    for (final Person person in _readableValues) {
       if (PhoneIdentity.hash(person.phone) == phoneHash) {
         return person;
       }
     }
     return null;
+  }
+
+  /// Remove owner-authored automatic history when its source permission ends.
+  /// The matchmaker's own notes and proposal history remain theirs.
+  Future<void> forgetPersonalCardHistory(String personId) async {
+    final events = _eventBox;
+    if (events == null) return;
+    await events.deleteAll(
+      events.values
+          .where(
+            (event) =>
+                event.personId == personId &&
+                (event.type == PersonEventType.cardSynced ||
+                    event.type == PersonEventType.cardSyncedMinor),
+          )
+          .map((e) => e.id)
+          .toList(),
+    );
   }
 
   /// Saves a change that arrived from the owner's card.
@@ -172,7 +211,7 @@ class PersonRepository extends ChangeNotifier {
       return getAll();
     }
 
-    final List<Person> people = _box.values.where((Person person) {
+    final List<Person> people = _readableValues.where((Person person) {
       return person.firstName.toLowerCase().contains(normalizedQuery) ||
           person.lastName.toLowerCase().contains(normalizedQuery);
     }).toList();
@@ -206,7 +245,7 @@ class PersonRepository extends ChangeNotifier {
     final List<ProfileStatus> selectedProfileStatuses =
         profileStatuses ?? const <ProfileStatus>[];
 
-    final List<Person> people = _box.values.where((Person person) {
+    final List<Person> people = _readableValues.where((Person person) {
       if (person.hidden) {
         return false;
       }
@@ -256,7 +295,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   List<Person> getByGender(Gender gender) {
-    final List<Person> people = _box.values
+    final List<Person> people = _readableValues
         .where((Person person) => person.gender == gender)
         .toList();
     people.sort(_sortByFirstName);
@@ -269,7 +308,7 @@ class PersonRepository extends ChangeNotifier {
       return null;
     }
 
-    for (final Person person in _box.values) {
+    for (final Person person in _readableValues) {
       if (PhoneUtils.normalizeForComparison(person.phone) == normalizedPhone) {
         return person;
       }
@@ -287,7 +326,7 @@ class PersonRepository extends ChangeNotifier {
   /// contacts can resurface in the import list (where they appear only while
   /// searching).
   Set<String> getNormalizedPhones() {
-    return _box.values
+    return _readableValues
         .where((Person person) => !person.hidden)
         .map((Person person) => PhoneUtils.normalizeForComparison(person.phone))
         .whereType<String>()
@@ -296,7 +335,7 @@ class PersonRepository extends ChangeNotifier {
 
   /// Phones of hidden (soft-deleted) people.
   Set<String> getHiddenNormalizedPhones() {
-    return _box.values
+    return _readableValues
         .where((Person person) => person.hidden)
         .map((Person person) => PhoneUtils.normalizeForComparison(person.phone))
         .whereType<String>()

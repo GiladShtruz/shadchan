@@ -306,12 +306,6 @@ abstract final class CardSyncEngine {
         ..cardRemoteStatus = remote.name;
       changed = true;
       statusChanged = differs;
-      if (differs && !firstLink) {
-        updates.add(
-          '${person.firstName.trim()} {עדכן|עדכנה} את הסטטוס ל־${remote.displayName}'
-              .forGender(person.gender),
-        );
-      }
     }
 
     return CardSyncResult(

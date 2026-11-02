@@ -9,7 +9,7 @@ abstract final class PrivacyPolicyText {
   static const String hebrew = '''
 מדיניות פרטיות — שדכן
 
-עודכן לאחרונה: 6 באוקטובר 2026
+עודכן לאחרונה: 1 בנובמבר 2026
 
 מדיניות זו חלה על אפליקציית שדכן ועל אתר המידע שלה. האפליקציה פותחה ומופעלת בידי גלעד שטרוזמן ("אנחנו"), והוא בעל השליטה במידע המתואר כאן. לשאלות ולבקשות פרטיות: giladsh22@gmail.com.
 
@@ -67,8 +67,11 @@ abstract final class PrivacyPolicyText {
 - המאגר של השדכן: כשאתם מחוברים ומשדכים, נשלח לשרת גיבוב של מספרי הטלפון של החברים במאגר שלכם — בלי שמות ובלי המספרים עצמם. השרת משתמש בו רק כדי להודיע לכם כשחבר מהמאגר ממלא לעצמו כרטיס אישי, כדי שתוכלו לבקש ממנו גישה. אף משתמש אחר לא יכול לקרוא אותו; הוא מוחלף בכל עדכון ונמחק עם החשבון.
 - אצל השדכן: פרטי הכרטיס ותמונותיו נשמרים גם במכשיר של שדכן מאושר, כדי שיוכל לעבוד איתם ולשתף אותם כמו כל כרטיס. ההערות, הרעיונות והמידע שהשדכן כתב בעצמו — כולל שינויים שעשה בעותק שלו של הכרטיס ובסטטוס — נשארים במאגר השדכן ולעולם אינם מגיעים לבעל הכרטיס. אם נבחר מאגר זוגי, הם משותפים גם לבן או בת הזוג, כמוסבר להלן. העדכון הוא חד־כיווני: שינויים שבעל הכרטיס עושה מגיעים לשדכנים המאושרים. כשהגישה מוסרת או שהכרטיס נמחק, פרטי הכרטיס והתמונות שהגיעו ממנו מוסרים מהמכשיר של השדכן, והגרסה שהייתה לשדכן לפני כן חוזרת.
 - מחיקת הכרטיס: מוחקת את הכרטיס בלבד, לא את החשבון. הכרטיס נשמר מסומן כמחוק כדי שאפשר יהיה לשחזר אותו, והשדכנים מפסיקים לראות אותו מיד. הוא נמחק לגמרי עם מחיקת החשבון.
-- התראות: השרת (Cloud Functions) כותב לחשבון התראות על בקשת גישה, אישור או דחייה, כרטיס של חבר, חתונה ויום הולדת עברי, ושולח אותן כהתראת Push דרך Firebase Cloud Messaging. לשם כך נשמר מזהה המכשיר להתראות. על שינויים רגילים בכרטיס לא נשלחות התראות.
-- הזמנה: שדכן יכול לשלוח לחבר קישור הזמנה שכולל את מזהה השדכן ושמו. ההזמנה לא נותנת גישה לאיש; בעל הכרטיס מחליט.
+- התראות: השרת (Cloud Functions) כותב לחשבון התראות על בקשת גישה, אישור או דחייה, כרטיס של חבר, חתונה ויום הולדת עברי, ושולח אותן כהתראת Push דרך Firebase Cloud Messaging. לשם כך נשמר מזהה המכשיר להתראות. על שינויים רגילים בכרטיס, לרבות סטטוס, לא נשלחות התראות אוטומטיות.
+- הזמנות: הזמנה של שדכן ליצירת כרטיס עדיין מחייבת אישור של בעל הכרטיס. בנוסף, בעל כרטיס יכול להזמין אישית חבר לשדך עבורו. ביצירת ההזמנה הוא מזין את האימייל של הנמען ומאשר מראש גישה לכרטיס השיתופי בלבד. האימייל ומזהי ההזמנה נשמרים בשרת; הקישור מוגבל לאותו אימייל מאומת, פג אחרי 30 יום וניתן לביטול. העברת הקישור אינה מעניקה גישה לאחרים. מידע ״מה אני מחפש/ת״ אינו נכלל באישור זה, וגם הרשאה לבן זוג אינה ניתנת אוטומטית.
+- קשר הדדי וגילוי חברים: גילוי אוטומטי של חברים והודעות על הצטרפות נשלחים רק כששני הצדדים שמורים זה אצל זה באנשי הקשר שהועלו בהסכמה. ברשימת חברים רווקים מוצגים רק השם ועצם ההצטרפות, ללא פרטי הכרטיס או תמונותיו. חברים שאפשר לאשר עשויים להציג את תמונת הפרופיל שהחבר פרסם לקהילה, מספר החברים במאגר ומועד הפעילות האחרונה. הסתרת המלצה אינה חסימה או ביטול הרשאה.
+- עדכון כרטיס ותזכורות: שינויי כרטיס וסטטוס מתעדכנים אצל מורשים בשקט. מועד שינוי הסטטוס האחרון נשמר בנפרד, ללא שורת היסטוריה לכל שינוי. רק בחירה יזומה של בעל הכרטיס שולחת למורשים תזכורת כללית שהכרטיס התחדש, לכל היותר פעם ב־30 יום וללא פירוט השינוי. נשמרים מועדי עריכה, בדיקה ושליחת התזכורת לצורך תזכורת רבעונית ומניעת הצפה. אישור ״הכול מעודכן״ אינו משנה את מועד הסטטוס.
+- חדשות לקהילה: מנהלי המערכת רשאים לפרסם טקסט ותמונה באזור האישי ולשלוח אותם גם לתיבת ההתראות. התראות פנימיות נשמרות בחשבון ופועלות גם ללא הרשאת Push במכשיר. נתוני הקהילה מוצגים כספירות כלליות, ללא רשימה פומבית של בעלי כרטיס.
 
 4ב. מאגר זוגי
 
@@ -164,7 +167,7 @@ Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואס�
   static const String english = '''
 Privacy Policy — Shadchan
 
-Last updated: October 6, 2026
+Last updated: November 1, 2026
 
 This policy applies to the Shadchan application and its information website. The Application is developed and operated by Gilad Shtruzman ("we"), the controller of the processing described here. Privacy contact: giladsh22@gmail.com.
 
@@ -223,7 +226,10 @@ Someone who signs in as a single person may write a personal card about themselv
 - On the matchmaker's device: an approved matchmaker's device keeps the card's details and photographs so the matchmaker can work with and share them like any card. Notes, ideas and information the matchmaker wrote themselves — including changes they make to their own copy of the card and its status — stay in the matchmaker’s database and never reach the card owner. In an explicitly connected couple workspace they are shared with that matchmaker’s spouse as described below. Updates flow one way: changes the owner makes reach the approved matchmakers. When access is withdrawn or the card is deleted, the details and photographs received from it are removed from the matchmaker's device and the matchmaker's earlier version is restored.
 - Deleting the card: removes the card only, not the account. The card is kept flagged as deleted so it can be restored, and matchmakers stop seeing it at once. It is erased completely with account deletion.
 - Notifications: server functions (Cloud Functions) write notices to the account about access requests, approvals or declines, a friend's card, a wedding and a Hebrew birthday, and send them as push notifications through Firebase Cloud Messaging. A device notification token is stored for this. Ordinary changes to a card send no notification.
-- Invitations: a matchmaker may send a friend an invitation link containing the matchmaker's identifier and name. An invitation grants access to nobody; the card owner decides.
+- Invitations: a matchmaker's invitation to create a card still requires the owner's approval. A card owner may also personally invite a friend to match for them by entering the recipient's email and granting shareable-card access in advance. The email and invitation identifiers are stored on the server; redemption requires that same verified email. Links expire after 30 days and may be cancelled. Forwarding a link does not transfer permission. Private wishes and permission for a spouse are never included automatically.
+- Reciprocal discovery: automatic friend discovery and join notices require both people to have saved each other in the contacts uploaded with consent. A single-friends list reveals only a name and presence, never card details or card photos. Suggested matchmakers may show their publicly shared profile photo, database size and last activity time. Hiding a suggestion is independent from blocking or withdrawing permission.
+- Edits and reminders: card and status edits synchronize quietly to authorized recipients. Only the latest status-change time is shown, without a new journal entry for each change. An explicit owner action may send a generic card-update reminder at most once per 30 days; the notification never specifies what changed. Edit, review and reminder timestamps support quarterly review reminders and the rate limit. Confirming that a card is current does not change its status timestamp.
+- Community news: administrators may publish text and images in the personal area and send them to the in-app inbox. Inbox notices remain available without device push permission. Community figures are anonymous counts, never a public roster of card owners.
 
 4B. Couple workspaces
 

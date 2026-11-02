@@ -104,7 +104,9 @@ void main() {
       final Set<String> allowed = RegExp(
         r"'([A-Za-z]+)'",
       ).allMatches(list).map((RegExpMatch m) => m.group(1)!).toSet();
-      expect(remote.keys.toSet(), allowed);
+      expect(remote.keys.toSet(), allowed.difference({'joinedAt', 'statusUpdatedAt'}));
+      expect(remote.containsKey('statusUpdatedAt'), isFalse);
+      expect(remote.containsKey('joinedAt'), isFalse);
     });
 
     test('applying a card keeps what the matchmaker wrote', () {

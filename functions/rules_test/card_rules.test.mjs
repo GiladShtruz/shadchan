@@ -105,6 +105,9 @@ async function seed(fn) {
 async function seedCardAndContacts({ inContacts }) {
   await seed(async (db) => {
     await setDoc(doc(db, 'personalCards', OWNER), { ...card(), updatedAt: new Date() });
+    await setDoc(doc(db, 'userPhones', OWNER), { phoneHash: OWNER_HASH });
+    await setDoc(doc(db, 'phoneDirectory', OWNER_HASH), { uid: OWNER, name: 'דניאל', matchmaker: false, hasCard: true });
+    await setDoc(doc(db, 'contactHashes', MM), { hashes: [OWNER_HASH] });
     await setDoc(doc(db, 'userPhones', MM), { phoneHash: MM_HASH });
     await setDoc(doc(db, 'phoneDirectory', MM_HASH), {
       uid: MM,
@@ -269,9 +272,12 @@ test('a phone hash cannot be borrowed from somebody else’s entry', async () =>
   );
 });
 
-test('the phone directory can be looked up, never listed', async () => {
+test('the directory reveals presence only to reciprocal contacts, never as a list', async () => {
   await seedCardAndContacts({ inContacts: true });
-  await assertSucceeds(getDoc(doc(as(STRANGER), 'phoneDirectory', MM_HASH)));
+  await assertFails(getDoc(doc(as(STRANGER), 'phoneDirectory', MM_HASH)));
+  await assertSucceeds(getDoc(doc(as(OWNER), 'phoneDirectory', MM_HASH)));
+  await seed(db => updateDoc(doc(db, 'contactHashes', MM), {hashes: []}));
+  await assertFails(getDoc(doc(as(OWNER), 'phoneDirectory', MM_HASH)));
   await assertFails(getDocs(collection(as(STRANGER), 'phoneDirectory')));
 });
 
@@ -463,4 +469,58 @@ test('weekly goal: validates target, metric, heading, timestamp and field whitel
   ]) await assertFails(setDoc(ref, weeklyGoal(extra)));
   await assertSucceeds(setDoc(ref, weeklyGoal({ target: 1, title: '' })));
   await assertSucceeds(setDoc(ref, weeklyGoal({ target: 1000000, metric: 'couples' })));
+});
+
+test('personal news: only verified admins publish; members cannot read drafts or write content', async () => {
+  const published = {title: 'חדשות בקהילה', text: 'טקסט בלבד', imagePath: null, published: true, notify: true, updatedAt: serverTimestamp()};
+  const adminRef = doc(goalAdmin(), 'personalNews/news-one');
+  await assertSucceeds(setDoc(adminRef, published));
+  await assertSucceeds(getDoc(doc(as(OWNER), 'personalNews/news-one')));
+  await assertFails(setDoc(doc(as(OWNER), 'personalNews/forged'), published));
+  await assertFails(setDoc(doc(goalAdmin(false), 'personalNews/unverified'), published));
+  for (const extra of [{title: ''}, {text: 'א'.repeat(4001)}, {imagePath: 'personalCards/someone/private.jpg'}, {notify: 'yes'}, {secret: 'no'}])
+    await assertFails(setDoc(adminRef, {...published, ...extra}));
+  await assertSucceeds(setDoc(adminRef, {...published, published: false}));
+  await assertFails(getDoc(doc(as(OWNER), 'personalNews/news-one')));
+  await assertSucceeds(getDoc(adminRef));
+  await assertSucceeds(deleteDoc(adminRef));
+});
+
+test('personal card status and join timestamps are server-owned; aggregate numbers reveal no roster', async () => {
+  await seedCardAndContacts({inContacts: true});
+  const ref = doc(as(OWNER), 'personalCards', OWNER);
+  await assertFails(updateDoc(ref, {statusUpdatedAt: serverTimestamp()}));
+  await assertFails(updateDoc(ref, {joinedAt: serverTimestamp()}));
+  await assertSucceeds(updateDoc(ref, {status: 'busy', updatedAt: serverTimestamp()}));
+  await assertFails(getDocs(collection(as(STRANGER), 'personalCards')));
+  await seed(db => setDoc(doc(db, 'publicStats/personalArea'), {singles: 1}));
+  await assertSucceeds(getDoc(doc(as(STRANGER), 'publicStats/personalArea')));
+  await assertFails(setDoc(doc(as(STRANGER), 'publicStats/personalArea'), {singles: 999}));
+});
+
+test('invites, reminders and discovery caches are server-owned and account private', async () => {
+  await seed(async db => {
+    await setDoc(doc(db, 'personalInvites/one'), {ownerUid: OWNER, recipientEmail: 'friend@example.com'});
+    await setDoc(doc(db, `users/${OWNER}/private/cardActivity`), {nudgedAt: new Date()});
+    await setDoc(doc(db, `users/${OWNER}/private/helpers`), {helpers: []});
+  });
+  await assertSucceeds(getDoc(doc(as(OWNER), 'personalInvites/one')));
+  await assertFails(getDoc(doc(as(STRANGER), 'personalInvites/one')));
+  await assertFails(setDoc(doc(as(OWNER), 'personalInvites/forged'), {ownerUid: OWNER}));
+  await assertFails(setDoc(doc(as(OWNER), 'personalNudges/forged'), {ownerUid: OWNER}));
+  await assertSucceeds(getDoc(doc(as(OWNER), `users/${OWNER}/private/cardActivity`)));
+  await assertFails(updateDoc(doc(as(OWNER), `users/${OWNER}/private/cardActivity`), {nudgedAt: null}));
+  await assertFails(getDoc(doc(as(STRANGER), `users/${OWNER}/private/helpers`)));
+  await assertFails(setDoc(doc(as(OWNER), `users/${OWNER}/private/helpers`), {helpers: ['forged']}));
+});
+
+test('matchmaker activity is exact owner-written metadata, readable by current card owners only', async () => {
+  const mine = doc(as(MM), `matchmakerActivity/${MM}`);
+  await assertSucceeds(setDoc(mine, {databaseCount: 17, lastActiveAt: serverTimestamp()}));
+  await assertFails(setDoc(mine, {databaseCount: -1, lastActiveAt: serverTimestamp()}));
+  await assertFails(getDoc(doc(as(STRANGER), `matchmakerActivity/${MM}`)));
+  await seed(db => setDoc(doc(db, 'cardAccess', accessId), {...access('approved'), updatedAt: new Date()}));
+  await assertSucceeds(getDoc(doc(as(OWNER), `matchmakerActivity/${MM}`)));
+  await seed(db => updateDoc(doc(db, 'cardAccess', accessId), {status: 'revoked'}));
+  await assertFails(getDoc(doc(as(OWNER), `matchmakerActivity/${MM}`)));
 });

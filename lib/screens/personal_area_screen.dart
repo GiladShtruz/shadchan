@@ -1,7 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/widgets/private_looking.dart';
+import 'package:shadchan/services/personal_area_service.dart';
+import 'package:shadchan/widgets/card_status_timestamp.dart';
 import 'dart:io';
+import 'package:shadchan/dialogs/person_card_viewer.dart';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -11,14 +12,12 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/workspace_store.dart';
-import 'package:shadchan/utils/community_prompt_gate.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/share_utils.dart';
@@ -28,33 +27,21 @@ import 'package:shadchan/widgets/card_access_sections.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_section.dart';
-import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/profile_status_choices.dart';
 
-/// The card owner's own area: their card, their status, and who may see it.
-///
-/// **No bottom bar, on purpose.** This is not a fourth tab of the matchmaker's
-/// app; it is the other half of the account, and somebody who only came to
-/// manage their card should never be shown a database or a list of ideas.
-/// A user who is both reaches the matchmaker's tabs through one clear button.
-///
-/// Opening this page is what makes it the page the app opens on next time —
-/// see [WorkspaceStore.lastArea].
-class PersonalAreaScreen extends StatefulWidget {
-  const PersonalAreaScreen({super.key, this.section});
-
-  /// A part of the page to open on — `requests`, from a notice about an
-  /// access request, lands on the requests themselves rather than on the
-  /// greeting.
-  final String? section;
+/// The full personal profile, hosted by the personal area's third tab.
+/// Card content and private wishes remain separate; permission management is
+/// a secondary route and never an authorization shortcut.
+class PersonalProfileScreen extends StatefulWidget {
+  const PersonalProfileScreen({super.key});
 
   @override
-  State<PersonalAreaScreen> createState() => _PersonalAreaScreenState();
+  State<PersonalProfileScreen> createState() => _PersonalProfileScreenState();
 }
 
-class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
+class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
   bool _savingStatus = false;
   bool _deleting = false;
   bool _restoring = false;
@@ -161,54 +148,6 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
     }
   }
 
-  final GlobalKey _requestsKey = GlobalKey();
-
-  @override
-  void initState() {
-    super.initState();
-    WorkspaceStore.setLastArea(WorkArea.personal);
-    _scrollToSection();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        CommunityPromptGate.maybeAskHomeAreaOnly(context);
-      }
-    });
-  }
-
-  @override
-  void didUpdateWidget(PersonalAreaScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.section != oldWidget.section) {
-      _scrollToSection();
-    }
-  }
-
-  /// Brings the asked-for section into view — once on the first frame, and
-  /// once more a moment later, when the requests have arrived from the server
-  /// and the sections above them have taken their real height.
-  void _scrollToSection() {
-    if (widget.section != 'requests') {
-      return;
-    }
-    void reveal() {
-      final BuildContext? target = _requestsKey.currentContext;
-      if (!mounted || target == null) {
-        return;
-      }
-      Scrollable.ensureVisible(
-        target,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-        alignment: 0.05,
-      );
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      reveal();
-      Future<void>.delayed(const Duration(milliseconds: 700), reveal);
-    });
-  }
-
   Future<void> _setStatus(Person card, ProfileStatus status) async {
     if (_savingStatus || card.profileStatus == status) {
       return;
@@ -240,7 +179,12 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
     }
     setState(() => _savingStatus = true);
     try {
-      await context.read<PersonalCardProvider>().setStatus(status);
+      final cards = context.read<PersonalCardProvider>();
+      await cards.setStatus(status);
+      if (cards.card != null && FirebaseBootstrap.isReady) {
+        await PersonalCardSync.publishNow(cards.card!);
+      }
+      if (mounted) await PersonalAreaService.offerUpdate(context);
     } finally {
       if (mounted) {
         setState(() => _savingStatus = false);
@@ -273,16 +217,6 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
       ),
       child: Builder(
         builder: (BuildContext context) => Scaffold(
-          appBar: ShadchanAppBar(
-            title: 'האזור האישי',
-            actions: <Widget>[
-              HomeBarButton(
-                tooltip: 'הפרופיל שלי',
-                icon: const Icon(Icons.person_outline_rounded),
-                onPressed: () => context.go('/profile'),
-              ),
-            ],
-          ),
           body: SafeArea(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
@@ -290,9 +224,7 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                 HomeGreeting(
                   greeting: _greetingFor(TimeOfDay.now()),
                   name: firstName.isEmpty ? 'שלום' : firstName,
-                  line: 'כאן {אתה מנהל|את מנהלת} את הכרטיס האישי שלך'.forGender(
-                    profile.gender,
-                  ),
+                  line: 'הכרטיס שלך, כפי שהחברים השדכנים רואים אותו',
                 ),
                 // **The way to the matchmaker's side is a card of its own,
                 // right under the greeting** — for somebody who is both, it is
@@ -303,13 +235,21 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                 else if (card == null)
                   _CreateCardPrompt(
                     gender: profile.gender,
-                    onCreate: () => context.push('/me/card'),
+                    onCreate: () => PersonalAreaService.editCard(context),
                   )
                 else ...<Widget>[
                   _MyCardSummary(
                     card: card,
-                    onEdit: () => context.push('/me/card'),
+                    onEdit: () => PersonalAreaService.editCard(context),
                   ),
+                  if (card.photosPaths.length < 2)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
                   const SizedBox(height: 14),
                   if (!cards.hasCard)
                     const Padding(
@@ -327,7 +267,13 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                         _setStatus(card, status),
                   ),
                 ],
-                if (!cards.isDeleted) const PrivateLookingBlock(),
+                CardStatusTimestamp(
+                  ownerUid: context.read<CardAccessProvider>().uid,
+                ),
+                if (!cards.isDeleted)
+                  PrivateLookingBlock(
+                    onSaved: () => PersonalAreaService.offerUpdate(context),
+                  ),
                 // Without the user's own number nobody can find the card, so
                 // the question stays here until it is answered.
                 if (profile.myPhone == null) ...<Widget>[
@@ -370,32 +316,31 @@ class _PersonalAreaScreenState extends State<PersonalAreaScreen> {
                   ),
                 ],
                 const SizedBox(height: 14),
-                // Status reports, requests, who can see the card, friends who
-                // could, and anybody blocked — all decided on the server.
-                if (!cards.isDeleted)
-                  CardAccessSections(
-                    hasCard: cards.hasCard,
-                    requestsKey: _requestsKey,
-                  ),
-                if (FirebaseBootstrap.isReady)
-                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .doc('publicStats/personalCards')
-                        .snapshots(),
-                    builder: (context, snap) {
-                      final count = snap.data?.data()?['count'];
-                      if (count is! int || snap.hasError) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Text(
-                          '$count רווקים ורווקות מנהלים כרטיס אישי בשדכן',
-                          textAlign: TextAlign.center,
+                TextButton.icon(
+                  icon: const Icon(Icons.lock_outline),
+                  label: const Text('הגדרות גישה ופרטיות'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => Scaffold(
+                        appBar: AppBar(title: const Text('ניהול ופרטיות')),
+                        body: ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            CardAccessSections(
+                              hasCard: cards.hasCard,
+                              management: true,
+                            ),
+                          ],
                         ),
-                      );
-                    },
+                      ),
+                    ),
                   ),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('הגדרות וחשבון'),
+                  onPressed: () => context.push('/profile/settings'),
+                ),
                 const SizedBox(height: 20),
                 _ShareAppLink(gender: profile.gender),
                 if (matchmaker) ...<Widget>[
@@ -471,10 +416,7 @@ class _ShareAppLink extends StatelessWidget {
           theme: theme,
           onTap: () async {
             try {
-              await Share.share(
-                CommunityLinks.singleShareMessage(gender),
-                sharePositionOrigin: ShareUtils.originOf(anchor),
-              );
+              await PersonalAreaService.invite(anchor);
             } on Object {
               // Nothing to share to is not worth a message.
             }
@@ -699,7 +641,8 @@ class _MyCardSummary extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             description.isEmpty
-                ? 'עוד אין טקסט בכרטיס. כמה שורות עליך עוזרות לשדכנים להכיר.'
+                ? 'עוד אין טקסט בכרטיס. כמה שורות {עליך|עלייך} עוזרות לשדכנים להכיר.'
+                      .forGender(card.gender)
                 : description,
             style: theme.textTheme.bodyLarge?.copyWith(
               height: 1.55,
@@ -732,6 +675,10 @@ class _MyCardSummary extends StatelessWidget {
                 ),
               ],
             ],
+          ),
+          TextButton(
+            onPressed: () => PersonCardViewer.openOwnCard(context),
+            child: const Text('תצוגת הכרטיס לשדכנים'),
           ),
         ],
       ),

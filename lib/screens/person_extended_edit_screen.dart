@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/widgets/card_announce_switch.dart';
 import 'package:shadchan/widgets/card_text_field.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
@@ -155,6 +156,9 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   /// The height warning is a question asked once per visit, not a gate.
   bool _heightWarningShown = false;
 
+  int _ownerOpenedRevision = 0;
+  bool _offeredAfterEdit = false;
+  String? _openedCardOwnerUid;
   bool get _owner => widget.ownerCard;
 
   /// The owner is writing their card for the first time: the moment to ask
@@ -179,7 +183,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _loaded = true;
     // Read before the first save writes a card.
     _firstCard = _owner && context.read<PersonalCardProvider>().card == null;
-    _loadFrom(_readPerson());
+    if (_owner) {
+      _ownerOpenedRevision = context.read<PersonalCardProvider>().editRevision;
+    }
+    final person = _readPerson();
+    if (!_owner) {
+      _openedCardOwnerUid = person?.cardOwnerUid;
+    }
+    _loadFrom(person);
   }
 
   /// The record this page edits: the friend in the database, or the owner's
@@ -189,7 +200,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       final PersonalCardProvider cards = context.read<PersonalCardProvider>();
       return cards.card ?? cards.draftFrom(context.read<UserProfileProvider>());
     }
-    return context.read<PersonRepository>().getById(widget.personId);
+    final person = context.read<PersonRepository>().getById(widget.personId);
+    // Controllers keep the values loaded on entry. After revocation, even a
+    // restored pre-card friend must not expose or autosave those stale values.
+    if (_openedCardOwnerUid != null &&
+        person?.cardOwnerUid != _openedCardOwnerUid) {
+      return null;
+    }
+    return person;
   }
 
   Future<void> _writePerson(Person person) {
@@ -469,6 +487,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       }
     }
 
+    if (_owner &&
+        !_offeredAfterEdit &&
+        context.read<PersonalCardProvider>().editRevision !=
+            _ownerOpenedRevision) {
+      _offeredAfterEdit = true;
+      await PersonalAreaService.offerUpdate(context);
+      if (!mounted) return;
+    }
     final VoidCallback? onFinished = widget.onFinished;
     if (onFinished != null) {
       onFinished();
@@ -743,7 +769,13 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     if (person == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('עריכת כרטיס')),
-        body: const Center(child: Text('איש הקשר לא נמצא')),
+        body: Center(
+          child: Text(
+            _openedCardOwnerUid == null
+                ? 'איש הקשר לא נמצא'
+                : 'הגישה לכרטיס הזה אינה זמינה עוד.',
+          ),
+        ),
       );
     }
 

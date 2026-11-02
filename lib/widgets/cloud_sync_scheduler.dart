@@ -1,3 +1,5 @@
+import 'package:shadchan/services/workspace_store.dart';
+import 'package:shadchan/services/contact_hash_upload.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -27,6 +29,7 @@ import 'package:shadchan/services/invite_link_service.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/mazel_tov_inbox.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
+import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/push_service.dart';
 
 /// Starts the account's database sync, and runs everything else that talks to
@@ -106,6 +109,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
         // The personal card goes to the server shortly after it is saved —
         // its owner expects the matchmakers they approved to see a change
         // without waiting for the app to be closed.
+        WorkspaceStore.revision.addListener(_noteCardChange);
         _cards = context.read<PersonalCardProvider>()
           ..addListener(_noteCardChange);
         _profile = context.read<UserProfileProvider>()
@@ -172,7 +176,11 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       case InviteArrival.freshInstall:
         AppRouter.router.go('/sign-in');
       case InviteArrival.signedIn:
-        AppRouter.router.go('/me');
+        AppRouter.router.go(
+          InviteLinkService.pending?.personalToken == null
+              ? '/me'
+              : '/invite/personal',
+        );
       case InviteArrival.none:
         break;
     }
@@ -184,12 +192,35 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       unawaited(PushService.start());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());
+      // Reciprocal discovery needs both roles' address books. This checks
+      // existing permission only and never opens a permission prompt.
+      unawaited(ContactHashUpload.run());
       _publishTags();
+      _publishActivity();
     }
   }
 
   /// The general tag words in use, for "השראה מהקהילה" — see
   /// [CommunityTagsService]. A no-op when nothing changed.
+  void _publishActivity({bool leaving = false}) {
+    if ((leaving ||
+            WidgetsBinding.instance.lifecycleState ==
+                AppLifecycleState.resumed) &&
+        mounted &&
+        WorkspaceStore.matchmakerEnabled &&
+        FirebaseBootstrap.isReady) {
+      unawaited(
+        PersonalCardService.publishActivity(
+          context
+              .read<PersonRepository>()
+              .rawPeopleForCardSync
+              .where((p) => !p.hidden)
+              .length,
+        ),
+      );
+    }
+  }
+
   void _publishTags() {
     if (!mounted) {
       return;
@@ -203,7 +234,10 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
 
   void _noteCardChange() {
     _cardTimer?.cancel();
-    _cardTimer = Timer(const Duration(seconds: 2), _syncPersonalCard);
+    _cardTimer = Timer(const Duration(seconds: 2), () {
+      _syncPersonalCard();
+      _publishActivity();
+    });
   }
 
   void _syncPersonalCard() {
@@ -223,6 +257,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     _account?.removeListener(_refreshSupportInbox);
     _people?.removeListener(_noteActivity);
     _matches?.removeListener(_noteActivity);
+    WorkspaceStore.revision.removeListener(_noteCardChange);
     _cards?.removeListener(_noteCardChange);
     _profile?.removeListener(_noteCardChange);
     FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
@@ -254,6 +289,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
         ),
       );
       _publishTags();
+      _publishActivity();
     });
   }
 
@@ -275,6 +311,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // call from. `resumed` covers coming back after long enough away that the
     // session is effectively a new one.
     if (state == AppLifecycleState.paused) {
+      _publishActivity(leaving: true);
       // Everything waiting goes into Firestore's own queue before the app
       // leaves, where it survives the process being killed.
       unawaited(context.read<SyncProvider>().syncNow());
@@ -289,6 +326,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     }
     if (state == AppLifecycleState.resumed && FirebaseBootstrap.isReady) {
       unawaited(context.read<CardAccessProvider>().resume());
+      unawaited(ContactHashUpload.run());
     }
   }
 
@@ -330,6 +368,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     // The personal card and this account's phone identity. A no-op until
     // Firebase is up, and a no-op again when nothing changed since last time.
     _syncPersonalCard();
+    _publishActivity();
 
     // And the support inbox: a report that arrived for an administrator, or an
     // answer that came back for whoever sent one. Same two moments again —

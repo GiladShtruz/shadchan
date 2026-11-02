@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
 import 'package:shadchan/utils/share_utils.dart';
@@ -23,9 +24,11 @@ class PersonCardViewer extends StatefulWidget {
     super.key,
     required this.personId,
     this.initialIndex = 0,
+    this.ownerCard = false,
   });
 
   final String personId;
+  final bool ownerCard;
 
   /// Which photo opens first. The profile's thumbnail strip passes the one
   /// that was tapped, so a photo opens as itself rather than as the first of
@@ -45,6 +48,19 @@ class PersonCardViewer extends StatefulWidget {
       ),
     );
   }
+
+  /// The same read-only card approved matchmakers open, without adding the
+  /// owner's card to their matchmaking database or including private wishes.
+  static Future<void> openOwnCard(BuildContext context) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => const PersonCardViewer(
+            personId: PersonalCardProvider.cardId,
+            ownerCard: true,
+          ),
+        ),
+      );
 
   @override
   State<PersonCardViewer> createState() => _PersonCardViewerState();
@@ -71,9 +87,14 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
   Widget build(BuildContext context) {
     // Watched rather than read once: deleting a photo from elsewhere, or an
     // edit to the card text, should be reflected here without reopening.
-    final Person? person = context.watch<PersonRepository>().getById(
-      widget.personId,
-    );
+    final owner = widget.ownerCard
+        ? context.watch<PersonalCardProvider>()
+        : null;
+    final Person? person = owner == null
+        ? context.watch<PersonRepository>().getById(widget.personId)
+        : owner.isDeleted
+        ? null
+        : owner.card;
 
     if (person == null) {
       return const Scaffold(
@@ -148,7 +169,7 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
             counter: photoPaths.length > 1
                 ? '${_currentIndex + 1}/${photoPaths.length}'
                 : null,
-            showActions: true,
+            showActions: !widget.ownerCard,
             channel: ContactChannels.forPerson(person),
             onShare: () => ShareUtils.sharePerson(
               person,

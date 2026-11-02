@@ -7,6 +7,7 @@ import 'package:shadchan/dialogs/support_chat_sheet.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/screens/tips_admin_screen.dart';
+import 'package:shadchan/screens/personal_news_admin_screen.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
@@ -22,12 +23,13 @@ import 'package:shadchan/widgets/community_goal_editor.dart';
 /// the tips queue moved in here beside the reports, and the whole thing is
 /// reached from the app's overflow menu.
 ///
-/// Five tabs:
+/// Six tabs:
 /// * **פידבק** — every report, grouped by what it is about: המלצות ורעיונות,
 ///   הערות ותיקונים, תקלות ובאגים.
 /// * **טיפים** — the approval queue. A tip reaches other matchmakers only from
 ///   here.
 /// * **מה חדש** — the notes that go back out.
+/// * **עדכונים לרווקים** — community posts and inbox announcements.
 /// * **יעד שבועי** — the shared metric, target and public heading.
 /// * **מנהלים** — who else may see any of it.
 ///
@@ -68,7 +70,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
     final int waitingTips = context.watch<TipsProvider>().pending.length;
 
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('מרכז הפידבק'),
@@ -79,6 +81,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               const Tab(text: 'פידבק'),
               Tab(text: waitingTips == 0 ? 'טיפים' : 'טיפים ($waitingTips)'),
               const Tab(text: 'מה חדש'),
+              const Tab(text: 'עדכונים לרווקים'),
               const Tab(text: 'יעד שבועי'),
               const Tab(text: 'מנהלים'),
             ],
@@ -90,6 +93,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               _ReportsTab(),
               PendingTipsReview(),
               _AnnouncementsTab(),
+              PersonalNewsAdminScreen(),
               CommunityGoalEditor(),
               _AdminsTab(),
             ],

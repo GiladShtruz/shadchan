@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'package:shadchan/services/contact_hash_upload.dart';
+import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
@@ -280,6 +283,12 @@ class AddContactsSession extends ChangeNotifier {
       _isLoading = false;
       _notify();
       return;
+    }
+
+    // First-time permission also enables reciprocal discovery for a
+    // matchmaker who never visits the personal area. Do not block importing.
+    if (FirebaseBootstrap.isReady) {
+      unawaited(ContactHashUpload.run());
     }
 
     final Box<dynamic> box = await _openSkippedBox();

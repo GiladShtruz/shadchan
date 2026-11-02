@@ -421,6 +421,22 @@ abstract final class PersonalCardService {
     }
   }
 
+  /// Current database size and an actual foreground/activity timestamp.
+  /// Readable only by this account and its explicitly approved card owners.
+  static Future<void> publishActivity(int databaseCount) async {
+    if (!FirebaseBootstrap.isReady) return;
+    final uid = await durableUid();
+    if (uid == null) return;
+    try {
+      await _db.doc('matchmakerActivity/$uid').set({
+        'databaseCount': databaseCount,
+        'lastActiveAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      debugPrint('Matchmaker activity was not refreshed: $error');
+    }
+  }
+
   /// Registers this device for push notifications under the account.
   static Future<void> saveDeviceToken(String token) async {
     final String? uid = await durableUid();
