@@ -63,7 +63,10 @@ class _Access extends CardAccessProvider {
   @override
   bool get isConnected => true;
   @override
-  bool get helpersLoaded => true;
+  bool get ownerAccessLoaded => ready;
+  bool ready = true;
+  @override
+  bool get helpersLoaded => ready;
   @override
   List<CardHelper> get mutualFriends => const [
     CardHelper(uid: 'single123', name: 'נועה'),
@@ -260,6 +263,8 @@ void main() {
       expect(access.approved, isEmpty);
       await tester.tap(find.text('השדכנים שלי').last);
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('ניהול הרשאות והזמנות'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('חברים מוסתרים'));
       await tester.pumpAndSettle();
       expect(find.text('אורי'), findsOneWidget);
@@ -342,11 +347,32 @@ void main() {
     },
   );
 
+  testWidgets('unresolved access does not claim zero approved friends', (
+    tester,
+  ) async {
+    access.ready = false;
+    access.candidates.clear();
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('—'), findsNWidgets(2));
+    expect(find.text('יש לך חברים בשדכן שעוד לא נתת להם גישה!'), findsNothing);
+    expect(find.text('רשימת החברים תופיע לאחר החיבור לחשבון'), findsOneWidget);
+    access.ready = true;
+    access.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.text('0'), findsOneWidget);
+    expect(
+      find.text('מי עוד מכיר אותך מספיק טוב כדי לחשוב עלייך?'),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final width in [320.0, 390.0]) {
     testWidgets('personal home and matchmakers fit $width px at large type', (
       tester,
     ) async {
-      await tester.binding.setSurfaceSize(Size(width, 1000));
+      await tester.binding.setSurfaceSize(Size(width, 640));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(app(scale: 1.5));
       await tester.pumpAndSettle();

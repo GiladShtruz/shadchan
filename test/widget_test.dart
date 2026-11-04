@@ -743,7 +743,7 @@ void main() {
     expect(find.text('חברים שהוספת'), findsNothing);
     expect(
       tester.getCenter(find.text('חתונות')).dy,
-      lessThan(tester.getCenter(find.text('הוסף חברים וצבור נקודות')).dy),
+      lessThan(tester.getCenter(find.text('הוסף חברים')).dy),
     );
 
     // The board is drawn from the first friend on, always open, with its
@@ -2245,8 +2245,8 @@ void main() {
       final Finder hub = find.byType(HomeAddHub);
       await tester.ensureVisible(hub);
       await tester.pumpAndSettle();
-      expect(find.text('הוסף חברים וצבור נקודות'), findsOneWidget);
-      expect(find.text('הוסף רעיון וצבור נקודות'), findsOneWidget);
+      expect(find.text('הוסף חברים'), findsOneWidget);
+      expect(find.text('הוסף רעיון'), findsOneWidget);
       expect(
         find.byTooltip('הוספה וצבירת נקודות').hitTestable(),
         findsOneWidget,

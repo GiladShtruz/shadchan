@@ -47,8 +47,8 @@ void main() {
     int people = 0;
     int ideas = 0;
     await tester.pumpWidget(wrap(people: () => people++, idea: () => ideas++));
-    await tester.tap(find.text('הוסף חברים וצבור נקודות'));
-    await tester.tap(find.text('הוסף רעיון וצבור נקודות'));
+    await tester.tap(find.text('הוסף חברים'));
+    await tester.tap(find.text('הוסף רעיון'));
     expect(people, 1);
     expect(ideas, 1);
 
@@ -56,7 +56,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('מה נוסיף היום?'), findsOneWidget);
-    await tester.tap(find.text('הוסף רעיון וצבור נקודות').last);
+    await tester.tap(find.text('הוסף רעיון').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(ideas, 2);
@@ -69,8 +69,9 @@ void main() {
     (tester) async {
       await tester.pumpWidget(wrap(gender: Gender.female, reducedMotion: true));
       await tester.pumpAndSettle();
-      expect(find.text('הוסיפי חברים וצברי נקודות'), findsOneWidget);
-      expect(find.text('הוסיפי רעיון וצברי נקודות'), findsOneWidget);
+      expect(find.text('הוסיפי חברים'), findsOneWidget);
+      expect(find.text('הוסיפי רעיון'), findsOneWidget);
+      expect(find.text('וצברי נקודות'), findsNWidgets(2));
       expect(
         tester
             .widgetList<Image>(find.byType(Image))
@@ -115,11 +116,11 @@ void main() {
         final Offset plus = tester.getCenter(find.byIcon(Icons.add_rounded));
         expect(plus.dx, closeTo(width / 2, 1));
         expect(
-          tester.getCenter(find.text('הוסיפי חברים וצברי נקודות')).dx,
+          tester.getCenter(find.text('הוסיפי חברים')).dx,
           greaterThan(plus.dx),
         );
         expect(
-          tester.getCenter(find.text('הוסיפי רעיון וצברי נקודות')).dx,
+          tester.getCenter(find.text('הוסיפי רעיון')).dx,
           lessThan(plus.dx),
         );
         await tester.pumpWidget(const SizedBox.shrink());

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shadchan/widgets/app_notice.dart';
-import 'package:shadchan/screens/personal_home_screen.dart';
+import 'package:shadchan/widgets/personal_community_news.dart';
 
 class PersonalNewsAdminScreen extends StatelessWidget {
   const PersonalNewsAdminScreen({super.key});

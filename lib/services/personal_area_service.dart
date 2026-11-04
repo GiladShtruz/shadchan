@@ -12,6 +12,7 @@ import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
@@ -41,6 +42,34 @@ abstract final class PersonalAreaService {
     return Map<String, dynamic>.from(result.data as Map);
   }
 
+  static Future<void> updateStatus(
+    BuildContext context,
+    ProfileStatus status,
+  ) async {
+    final cards = context.read<PersonalCardProvider>();
+    if (cards.card == null || cards.card!.profileStatus == status) return;
+    try {
+      await cards.setStatus(status);
+      final published =
+          FirebaseBootstrap.isReady &&
+          cards.card != null &&
+          await PersonalCardSync.publishNow(cards.card!);
+      if (!context.mounted) return;
+      if (!published) {
+        AppNotice.show(
+          context,
+          'הסטטוס נשמר במכשיר ויתעדכן אצל השדכנים כשהחיבור יחזור.',
+        );
+        return;
+      }
+      await offerUpdate(context);
+    } catch (_) {
+      if (context.mounted) {
+        AppNotice.show(context, 'לא הצלחנו לשמור את הסטטוס. כדאי לנסות שוב.');
+      }
+    }
+  }
+
   static Future<void> editCard(BuildContext context) async {
     await context.push('/me/card');
   }
@@ -54,6 +83,7 @@ abstract final class PersonalAreaService {
         )) {
       return;
     }
+    bool requested = false;
     try {
       final uid = await PersonalCardService.durableUid();
       if (uid == null || !context.mounted) return;
@@ -85,6 +115,7 @@ abstract final class PersonalAreaService {
         ),
       );
       if (yes != true) return;
+      requested = true;
       if (cards.card != null &&
           !await PersonalCardSync.publishNow(cards.card!)) {
         throw StateError('הכרטיס עדיין לא סונכרן');
@@ -92,7 +123,7 @@ abstract final class PersonalAreaService {
       await call('remindMyMatchmakers');
       if (context.mounted) AppNotice.show(context, 'התזכורת לחברים נשלחה ❤️');
     } catch (_) {
-      if (context.mounted) {
+      if (requested && context.mounted) {
         AppNotice.show(
           context,
           'לא ניתן לשלוח עדכון כרגע. אפשר לנסות שוב מאוחר יותר.',
@@ -115,6 +146,7 @@ abstract final class PersonalAreaService {
     final email = await showDialog<String>(
       context: context,
       builder: (dialog) => AlertDialog(
+        scrollable: true,
         title: Text(
           'מזמינים חבר לחשוב {עליך|עלייך}'.forGender(context.userGender),
         ),

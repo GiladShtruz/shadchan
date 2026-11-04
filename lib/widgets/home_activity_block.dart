@@ -72,6 +72,8 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
   /// at that moment every community figure in hand is one publish out of date,
   /// including the reader's own contribution to it.
   int _revision = -1;
+  int _generation = 0;
+  final Map<CommunityPeriod, int> _requests = {};
 
   @override
   void initState() {
@@ -111,9 +113,7 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
   /// [CommunityService]'s process cache with the activity screen, so asking
   /// for them together costs the same as asking for them one at a time.
   Future<void> _loadAll() async {
-    for (final CommunityPeriod period in HomeActivityBlock.periods) {
-      await _load(period);
-    }
+    await Future.wait(HomeActivityBlock.periods.map(_load));
   }
 
   Future<void> _load(CommunityPeriod period) async {
@@ -133,11 +133,19 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
     // Cheap and harmless without an account — `CommunityService` refuses an
     // anonymous uid and answers with an unresolved zero rather than reaching
     // the network.
-    final CommunityTotals totals = await widget.loadTotals(
-      period,
-      forceRefresh: rolledOver,
-    );
-    if (mounted) {
+    final generation = _generation;
+    final request = (_requests[period] ?? 0) + 1;
+    _requests[period] = request;
+    CommunityTotals totals;
+    try {
+      totals = await widget.loadTotals(period, forceRefresh: rolledOver);
+    } catch (_) {
+      return; // Keep the last verified value; an unavailable total is not zero.
+    }
+    if (mounted &&
+        generation == _generation &&
+        _requests[period] == request &&
+        key == CommunityPeriods.keyFor(period)) {
       setState(() {
         _totals[period] = totals;
         _keys[period] = key;
@@ -155,16 +163,26 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
     // from `initState` usually happened with no account at all. This is the
     // rebuild that follows; asking again here is what fills the community
     // column in instead of leaving it on "0" until the next launch.
-    if (signedIn && !_wasSignedIn) {
-      _wasSignedIn = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadAll());
+    if (signedIn != _wasSignedIn) {
+      _wasSignedIn = signedIn;
+      _generation++;
+      _totals.clear();
+      _keys.clear();
+      if (signedIn) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _loadAll();
+        });
+      }
     }
     final int revision = community.publishRevision;
     if (revision != _revision) {
       _revision = revision;
       if (revision > 0) {
+        _generation++;
         _totals.clear();
-        WidgetsBinding.instance.addPostFrameCallback((_) => _loadAll());
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _loadAll();
+        });
       }
     }
 
@@ -216,10 +234,7 @@ class _HomeActivityBlockState extends State<HomeActivityBlock>
                 child: signedIn
                     ? _FigureTile(
                         label: 'הניקוד הכללי של הקהילה',
-                        // Zero until the read lands, which is also the honest
-                        // answer on a device that has never reached the
-                        // network.
-                        value: totals?.points ?? 0,
+                        value: totals?.resolved == true ? totals!.points : null,
                         period: period,
                         accent: communityLead(theme),
                         onTap: widget.onOpen,
@@ -257,7 +272,7 @@ class _FigureTile extends StatelessWidget {
   });
 
   final String label;
-  final int value;
+  final int? value;
 
   /// Draws the figure in [accent] rather than the page's ink.
   final bool figureInAccent;
@@ -293,7 +308,7 @@ class _FigureTile extends StatelessWidget {
               key: ValueKey<String>('${period.name}:$value'),
               fit: BoxFit.scaleDown,
               child: Text(
-                CommunityFigure.format(value),
+                value == null ? '—' : CommunityFigure.format(value!),
                 maxLines: 1,
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w900,
@@ -307,7 +322,7 @@ class _FigureTile extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
-              'נקודות פעילות',
+              value == null ? 'הנתון עדיין לא זמין' : 'נקודות פעילות',
               maxLines: 1,
               textAlign: TextAlign.center,
               style: theme.textTheme.labelSmall?.copyWith(
