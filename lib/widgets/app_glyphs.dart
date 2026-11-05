@@ -122,9 +122,12 @@ class _BulbPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    // The glass: most of a circle, narrowing into the neck.
-    final Offset centre = Offset(s * 0.5, s * 0.4);
-    final double r = s * 0.29;
+    // The glass: most of a circle, narrowing into the neck. Drawn a little
+    // higher and smaller than it once was, to leave room for the screw base's
+    // three bands — with only two, the shape read as a generic badge rather
+    // than as a bulb.
+    final Offset centre = Offset(s * 0.5, s * 0.36);
+    final double r = s * 0.27;
     const double open = 0.62; // half-angle of the gap at the bottom, radians
     final Path glass = Path()
       ..addArc(
@@ -136,12 +139,12 @@ class _BulbPainter extends CustomPainter {
         centre + Offset(-r * math.sin(open), r * math.cos(open));
     final Offset right =
         centre + Offset(r * math.sin(open), r * math.cos(open));
-    final double neckTop = s * 0.72;
+    final double neckTop = s * 0.65;
     glass
       ..moveTo(left.dx, left.dy)
-      ..quadraticBezierTo(s * 0.38, s * 0.66, s * 0.39, neckTop)
+      ..quadraticBezierTo(s * 0.38, s * 0.6, s * 0.39, neckTop)
       ..moveTo(right.dx, right.dy)
-      ..quadraticBezierTo(s * 0.62, s * 0.66, s * 0.61, neckTop);
+      ..quadraticBezierTo(s * 0.62, s * 0.6, s * 0.61, neckTop);
 
     if (filled) {
       // A layer of its own, so the heart cut out below clears only the glass.
@@ -153,17 +156,24 @@ class _BulbPainter extends CustomPainter {
     }
     canvas.drawPath(glass, stroke);
 
-    // The base: two short lines under the neck.
+    // The base: three bands under the neck, each a little shorter than the
+    // one above it, in a slightly finer line so they stay apart at icon size.
+    final Paint band = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = s * 0.07
+      ..strokeCap = StrokeCap.round;
     canvas
       ..drawLine(Offset(s * 0.39, neckTop), Offset(s * 0.61, neckTop), stroke)
+      ..drawLine(Offset(s * 0.41, s * 0.765), Offset(s * 0.59, s * 0.765), band)
       ..drawLine(
-        Offset(s * 0.42, s * 0.85),
-        Offset(s * 0.58, s * 0.85),
-        stroke,
+        Offset(s * 0.445, s * 0.88),
+        Offset(s * 0.555, s * 0.88),
+        band,
       );
 
     if (heart) {
-      final Path h = _heartPath(Offset(s * 0.5, s * 0.42), s * 0.26);
+      final Path h = _heartPath(Offset(s * 0.5, s * 0.38), s * 0.24);
       if (filled) {
         // Cut out of the filled glass.
         canvas.drawPath(

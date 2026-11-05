@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
@@ -12,9 +13,11 @@ import 'package:shadchan/widgets/person_avatar.dart';
 /// cross). The drawings were pleasant on their own but came from another
 /// style — thick, uneven strokes next to an app that is otherwise thin lines
 /// on cream paper — so a page of suggestions read like a second app. The
-/// glyphs now come from the same places as the rest of the app: the idea is
+/// glyphs now come from the same places as the rest of the app: a new idea is
 /// the bottom bar's own bulb ([IdeaBulbIcon]), the rest are Material's rounded
-/// outlines.
+/// outlines — a question mark for an idea that already exists ("what is
+/// happening with it?"), so a pair with an idea never wears the same sign as a
+/// pair still waiting for one.
 enum IdeaActionKind {
   /// "פתיחת רעיון" — the one answer that moves anything forward.
   openIdea,
@@ -94,10 +97,10 @@ class IdeaAction extends StatelessWidget {
 
     final Widget glyph = switch (kind) {
       IdeaActionKind.openIdea => IdeaBulbIcon(size: 19, color: color),
-      IdeaActionKind.existingIdea => IdeaBulbIcon(
+      IdeaActionKind.existingIdea => Icon(
+        AppIcons.help,
         size: 19,
         color: color,
-        filled: true,
       ),
       IdeaActionKind.notSuitable => Icon(
         Icons.close_rounded,
@@ -223,6 +226,7 @@ class SuggestionRow extends StatelessWidget {
     this.surfaceColor,
     this.nameColor,
     this.mutedColor,
+    this.frameColor,
   });
 
   final Person person;
@@ -251,6 +255,11 @@ class SuggestionRow extends StatelessWidget {
   final Color? nameColor;
   final Color? mutedColor;
 
+  /// The colour of the frame when the pair already has a live idea — the very
+  /// frame its card wears on "הרעיונות שלי" ([AppColors.ideaFrame]): blue
+  /// open, orange waiting, rose out. Null draws the plain row.
+  final Color? frameColor;
+
   /// The width of each answer, the same on every row so the columns line up.
   static const double actionWidth = 60;
 
@@ -260,93 +269,299 @@ class SuggestionRow extends StatelessWidget {
     final Color muted = mutedColor ?? theme.colorScheme.onSurfaceVariant;
     final String name = person.fullName.trim();
 
-    return Material(
-      color: surfaceColor ?? theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(10, 7, 2, 7),
-          child: Row(
-            children: <Widget>[
-              GestureDetector(
-                onTap: onAvatarTap,
-                child: PersonAvatar(person: person, radius: 20),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Flexible(
-                          child: Text(
-                            name.isEmpty ? 'ללא שם' : name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: nameColor,
-                              fontWeight: FontWeight.w800,
-                            ),
+    return SuggestionFrame(
+      surfaceColor: surfaceColor,
+      frameColor: frameColor,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(10, 7, 2, 7),
+        child: Row(
+          children: <Widget>[
+            GestureDetector(
+              onTap: onAvatarTap,
+              child: PersonAvatar(person: person, radius: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          name.isEmpty ? 'ללא שם' : name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: nameColor,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                        if (tag != null) ...<Widget>[
-                          const SizedBox(width: 6),
-                          // Beside the name, so the age and the religious
-                          // style below always keep their whole line; held to a
-                          // short width so the name keeps the rest.
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 64),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: AlignmentDirectional.centerStart,
-                              child: tag,
-                            ),
+                      ),
+                      if (tag != null) ...<Widget>[
+                        const SizedBox(width: 6),
+                        // Beside the name, so the age and the religious
+                        // style below always keep their whole line; held to a
+                        // short width so the name keeps the rest.
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 64),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerStart,
+                            child: tag,
                           ),
-                        ],
+                        ),
                       ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    summary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            IdeaAction(
+              kind: hasIdea
+                  ? IdeaActionKind.existingIdea
+                  : IdeaActionKind.openIdea,
+              width: actionWidth,
+              onTap: onOpenIdea,
+            ),
+            IdeaAction(
+              kind: dismissed
+                  ? IdeaActionKind.restore
+                  : IdeaActionKind.notSuitable,
+              width: actionWidth,
+              onTap: onNotSuitable,
+            ),
+            // Material's chevrons follow the text direction: in this RTL
+            // app `chevron_right` is the one drawn pointing left — forward.
+            IconButton(
+              tooltip: 'פתיחת הכרטיס',
+              onPressed: onOpenCard,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 40),
+              padding: EdgeInsets.zero,
+              icon: Icon(Icons.chevron_right_rounded, color: muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The paper a suggestion sits on — a row in the list or a square in the grid.
+///
+/// Plain, it is the page's own surface. With a [frameColor] — the pair already
+/// has a live idea — it wears exactly what that idea's card wears on
+/// "הרעיונות שלי": the calm cream ground, a 1.6 border in the status colour and
+/// a soft shadow of the same colour, so the status reads the same at a glance
+/// on both pages.
+class SuggestionFrame extends StatelessWidget {
+  const SuggestionFrame({
+    super.key,
+    required this.child,
+    required this.onTap,
+    this.surfaceColor,
+    this.frameColor,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+  final Color? surfaceColor;
+  final Color? frameColor;
+
+  static const double radius = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color paper = surfaceColor ?? theme.colorScheme.surface;
+    final Color? frame = frameColor;
+    final BorderRadius corners = BorderRadius.circular(radius);
+    if (frame == null) {
+      return Material(
+        color: paper,
+        borderRadius: corners,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(onTap: onTap, child: child),
+      );
+    }
+    // The ground live idea cards share (`MatchIdeaCard`'s `_CardTone`).
+    final Color ground = dark
+        ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.03), paper)
+        : Color.alphaBlend(AppColors.background.withValues(alpha: 0.55), paper);
+    return Material(
+      color: ground,
+      elevation: 2,
+      shadowColor: frame.withValues(alpha: 0.22),
+      shape: RoundedRectangleBorder(
+        borderRadius: corners,
+        side: BorderSide(color: frame.withValues(alpha: 0.6), width: 1.6),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(onTap: onTap, child: child),
+    );
+  }
+}
+
+/// One suggested match as a square, for the grid view of "התאמות".
+///
+/// Everything the row carries, rearranged rather than trimmed: the photo, the
+/// name, age and religious style, the idea's status (or "כבר נצפתה"), the two
+/// answers, and the arrow into the full card — which sits in the square's top
+/// corner so the foot holds only the two answers and nothing crowds them.
+/// Framed by status exactly as a row is ([SuggestionFrame]).
+class SuggestionTile extends StatelessWidget {
+  const SuggestionTile({
+    super.key,
+    required this.person,
+    required this.summary,
+    required this.onTap,
+    required this.onOpenIdea,
+    required this.onNotSuitable,
+    required this.onOpenCard,
+    this.onAvatarTap,
+    this.hasIdea = false,
+    this.dismissed = false,
+    this.tag,
+    this.surfaceColor,
+    this.nameColor,
+    this.mutedColor,
+    this.frameColor,
+  });
+
+  final Person person;
+  final String summary;
+  final VoidCallback onTap;
+  final VoidCallback? onAvatarTap;
+  final VoidCallback onOpenIdea;
+  final VoidCallback onNotSuitable;
+  final VoidCallback onOpenCard;
+  final bool hasIdea;
+  final bool dismissed;
+  final Widget? tag;
+  final Color? surfaceColor;
+  final Color? nameColor;
+  final Color? mutedColor;
+  final Color? frameColor;
+
+  static const double avatarRadius = 28;
+  static const double _tagSlot = 18;
+
+  /// The height every square in a grid is given: computed from the type the
+  /// square draws, put through the reader's own text size, so a square never
+  /// overflows at large text and every square in the grid is the same height.
+  static double extentFor(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double line(TextStyle? style, double fallback) =>
+        scaler.scale((style?.fontSize ?? fallback) * 1.45);
+    final double name = line(theme.textTheme.titleSmall, 14);
+    final double summary = line(theme.textTheme.bodySmall, 12);
+    final double tag = scaler.scale(_tagSlot);
+    // The answer: its padding, the 32px disc, the gap, and its word.
+    final double action = 6 + 32 + 3 + scaler.scale(10.5 * 1.4);
+    return 10 + avatarRadius * 2 + 6 + name + summary + tag + 4 + action + 10;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color muted = mutedColor ?? theme.colorScheme.onSurfaceVariant;
+    final String name = person.fullName.trim();
+    final double tagSlot = MediaQuery.textScalerOf(context).scale(_tagSlot);
+
+    return SuggestionFrame(
+      surfaceColor: surfaceColor,
+      frameColor: frameColor,
+      onTap: onTap,
+      child: Stack(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 10, 6, 6),
+            child: Column(
+              children: <Widget>[
+                GestureDetector(
+                  onTap: onAvatarTap,
+                  child: PersonAvatar(person: person, radius: avatarRadius),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  name.isEmpty ? 'ללא שם' : name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: nameColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  summary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                ),
+                // A slot of its own, held even when empty, so the answers sit
+                // at the same height in every square.
+                SizedBox(
+                  height: tagSlot,
+                  child: tag == null
+                      ? null
+                      : Center(
+                          child: FittedBox(fit: BoxFit.scaleDown, child: tag),
+                        ),
+                ),
+                const Spacer(),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: IdeaAction(
+                        kind: hasIdea
+                            ? IdeaActionKind.existingIdea
+                            : IdeaActionKind.openIdea,
+                        onTap: onOpenIdea,
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      summary,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                    Expanded(
+                      child: IdeaAction(
+                        kind: dismissed
+                            ? IdeaActionKind.restore
+                            : IdeaActionKind.notSuitable,
+                        onTap: onNotSuitable,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 4),
-              IdeaAction(
-                kind: hasIdea
-                    ? IdeaActionKind.existingIdea
-                    : IdeaActionKind.openIdea,
-                width: actionWidth,
-                onTap: onOpenIdea,
-              ),
-              IdeaAction(
-                kind: dismissed
-                    ? IdeaActionKind.restore
-                    : IdeaActionKind.notSuitable,
-                width: actionWidth,
-                onTap: onNotSuitable,
-              ),
-              // Material's chevrons follow the text direction: in this RTL
-              // app `chevron_right` is the one drawn pointing left — forward.
-              IconButton(
-                tooltip: 'פתיחת הכרטיס',
-                onPressed: onOpenCard,
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 40),
-                padding: EdgeInsets.zero,
-                icon: Icon(Icons.chevron_right_rounded, color: muted),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          // Into the full card, in the square's far corner (where the arrow
+          // points) — the same arrow and the same word as at the end of a row.
+          PositionedDirectional(
+            top: 2,
+            end: 2,
+            child: IconButton(
+              tooltip: 'פתיחת הכרטיס',
+              onPressed: onOpenCard,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+              icon: Icon(Icons.chevron_right_rounded, color: muted),
+            ),
+          ),
+        ],
       ),
     );
   }
