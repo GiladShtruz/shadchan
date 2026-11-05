@@ -11,6 +11,7 @@ import 'package:shadchan/app.dart';
 import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
+import 'package:shadchan/widgets/idea_actions.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -1741,6 +1742,64 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a match row opens the full card, and an empty card asks for details',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final DateTime now = DateTime(2026, 7, 27);
+      final Person source = _testPerson(
+        id: 'row-source',
+        firstName: 'אביב',
+        lastName: 'כהן',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      );
+      final Person bare = _testPerson(
+        id: 'row-bare',
+        firstName: 'תמר',
+        lastName: 'ריקה',
+        gender: Gender.female,
+        age: 25,
+        now: now,
+        phone: '0521234567',
+      );
+      await tester.runAsync(() async {
+        await Hive.box<Person>(
+          'people',
+        ).putAll(<String, Person>{source.id: source, bare.id: bare});
+      });
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+      openSuggestionsFor(tester.element(find.byType(HomeScreen)), source.id);
+      await tester.pumpAndSettle();
+
+      final Finder row = find.byKey(const ValueKey<String>('row-bare'));
+      expect(
+        find.descendant(of: row, matching: find.text('פתיחת רעיון')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: row, matching: find.text('לא מתאים')),
+        findsOneWidget,
+      );
+      // The two answers in the app's own glyphs, beside the person.
+      expect(
+        find.descendant(of: row, matching: find.byType(IdeaAction)),
+        findsNWidgets(2),
+      );
+
+      await tester.tap(
+        find.descendant(of: row, matching: find.byTooltip('פתיחת הכרטיס')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(PersonCardViewer), findsOneWidget);
+      expect(find.text('עדיין אין כרטיס מלא לתמר'), findsOneWidget);
+      expect(find.text('בקשת פרטים ב־WhatsApp'), findsOneWidget);
+    },
+  );
+
   testWidgets('Each side of a proposal offers its chat or the other card', (
     WidgetTester tester,
   ) async {
@@ -2216,38 +2275,45 @@ void main() {
     }
   });
 
-  testWidgets('A card-only user has three personal tabs and no matchmaker tabs', (
-    WidgetTester tester,
-  ) async {
-    final Box<dynamic> settings = Hive.box<dynamic>('settings');
-    await tester.runAsync(
-      () => settings.put('workspace.matchmakerEnabled', 'false'),
-    );
-    WorkspaceStore.resetForTest();
-    try {
-      await tester.pumpWidget(_buildTestApp());
-      await tester.pump();
-      AppRouter.router.go('/home');
-      await tester.pumpAndSettle();
-
-      expect(find.text('האזור האישי'), findsOneWidget);
-      expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
-      expect(find.byType(BottomNavigationBar), findsOneWidget);
-      final bar = tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar));
-      expect(bar.items.map((item) => item.label), ['בית', 'השדכנים שלי', 'פרופיל']);
-      expect(find.text('המאגר שלי'), findsNothing);
-      // No way to switch to a matchmaker area that was never switched on.
-      expect(find.text('לעבור לאזור השדכן'), findsNothing);
-    } finally {
-      await tester.pumpWidget(const SizedBox.shrink());
+  testWidgets(
+    'A card-only user has three personal tabs and no matchmaker tabs',
+    (WidgetTester tester) async {
+      final Box<dynamic> settings = Hive.box<dynamic>('settings');
       await tester.runAsync(
-        () => settings.delete('workspace.matchmakerEnabled'),
+        () => settings.put('workspace.matchmakerEnabled', 'false'),
       );
-      await tester.runAsync(() => settings.delete('workspace.lastArea'));
       WorkspaceStore.resetForTest();
-      AppRouter.router.go('/home');
-    }
-  });
+      try {
+        await tester.pumpWidget(_buildTestApp());
+        await tester.pump();
+        AppRouter.router.go('/home');
+        await tester.pumpAndSettle();
+
+        expect(find.text('האזור האישי'), findsOneWidget);
+        expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
+        expect(find.byType(BottomNavigationBar), findsOneWidget);
+        final bar = tester.widget<BottomNavigationBar>(
+          find.byType(BottomNavigationBar),
+        );
+        expect(bar.items.map((item) => item.label), [
+          'בית',
+          'השדכנים שלי',
+          'פרופיל',
+        ]);
+        expect(find.text('המאגר שלי'), findsNothing);
+        // No way to switch to a matchmaker area that was never switched on.
+        expect(find.text('לעבור לאזור השדכן'), findsNothing);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(
+          () => settings.delete('workspace.matchmakerEnabled'),
+        );
+        await tester.runAsync(() => settings.delete('workspace.lastArea'));
+        WorkspaceStore.resetForTest();
+        AppRouter.router.go('/home');
+      }
+    },
+  );
 
   testWidgets('The matchmaker bar ends with a profile tab', (
     WidgetTester tester,

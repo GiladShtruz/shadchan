@@ -10,7 +10,7 @@ import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
 import 'package:shadchan/widgets/voice_note_player.dart';
 import 'package:shadchan/widgets/match_state_tag.dart';
-import 'package:shadchan/widgets/sketch_actions.dart';
+import 'package:shadchan/widgets/idea_actions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -3224,11 +3224,29 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
             ),
             Expanded(
               child: searching
-                  ? _SearchResultsList(
-                      results: searchResults,
-                      onOpenPreview: (Person candidate) =>
-                          _openMatchPreview(context, person, candidate),
-                    )
+                  // The search is answered in the same rows as the list it
+                  // replaces, with the same answers on each.
+                  ? searchResults.isEmpty
+                        ? const _TabEmptyState(
+                            icon: Icons.search_off,
+                            title: 'לא נמצאו תוצאות',
+                            subtitle: 'אפשר לנסות שם אחר',
+                          )
+                        : _SuggestedMatchesList(
+                            searching: true,
+                            sourcePerson: person,
+                            suggestedPeople: searchResults,
+                            dismissedIds: dismissedIds,
+                            matchRepository: matchRepository,
+                            onOpenPreview: (Person candidate) =>
+                                _openMatchPreview(context, person, candidate),
+                            onAccept: (Person candidate) =>
+                                _acceptSuggestion(context, person, candidate),
+                            onReject: (Person candidate) =>
+                                _rejectSuggestion(context, person, candidate),
+                            onRestore: (Person candidate) =>
+                                _restoreSuggestion(person, candidate),
+                          )
                   : _SuggestedMatchesTab(
                       sourcePerson: person,
                       suggestedPeople: suggestedPeople,
@@ -3625,120 +3643,6 @@ class _SuggestionSearchField extends StatelessWidget {
   }
 }
 
-/// Results of the whole-database manual search — people who may not pass the
-/// automatic filter. Tapping one opens the match preview overlay, and anybody
-/// with a card carries the same expander the suggestions list does.
-class _SearchResultsList extends StatefulWidget {
-  const _SearchResultsList({
-    required this.results,
-    required this.onOpenPreview,
-  });
-
-  final List<Person> results;
-  final ValueChanged<Person> onOpenPreview;
-
-  @override
-  State<_SearchResultsList> createState() => _SearchResultsListState();
-}
-
-class _SearchResultsListState extends State<_SearchResultsList> {
-  final Set<String> _expandedIds = <String>{};
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.results.isEmpty) {
-      return const _TabEmptyState(
-        icon: Icons.search_off,
-        title: 'לא נמצאו תוצאות',
-        subtitle: 'אפשר לנסות שם אחר',
-      );
-    }
-
-    final ThemeData theme = Theme.of(context);
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 32),
-      itemCount: widget.results.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (BuildContext context, int index) {
-        final Person candidate = widget.results[index];
-        final bool hasCard = hasCandidateCard(candidate);
-        final bool expanded = _expandedIds.contains(candidate.id);
-
-        return Material(
-          color: _profileSurfaceColor(theme),
-          borderRadius: BorderRadius.circular(20),
-          child: Column(
-            children: <Widget>[
-              InkWell(
-                onTap: () => widget.onOpenPreview(candidate),
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: <Widget>[
-                      PersonAvatar(person: candidate, radius: 24),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              candidate.fullName.trim(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: _profileTextColor(theme),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              _personSummary(candidate),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: _profileMutedColor(theme),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (hasCard) ...<Widget>[
-                        CandidateCardButton(
-                          expanded: expanded,
-                          onPressed: () => setState(() {
-                            if (!_expandedIds.remove(candidate.id)) {
-                              _expandedIds.add(candidate.id);
-                            }
-                          }),
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-                      Icon(
-                        Icons.chevron_right,
-                        color: _profileMutedColor(theme),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (expanded)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  child: CandidateQuickCard(
-                    candidate: candidate,
-                    surfaceColor: _profileWarmSurfaceColor(theme),
-                    textColor: _profileTextColor(theme),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
 class _SuggestedMatchesTab extends StatelessWidget {
   const _SuggestedMatchesTab({
     required this.sourcePerson,
@@ -3828,6 +3732,7 @@ class _SuggestedMatchesList extends StatefulWidget {
     required this.onAccept,
     required this.onReject,
     required this.onRestore,
+    this.searching = false,
   });
 
   final Person sourcePerson;
@@ -3839,18 +3744,26 @@ class _SuggestedMatchesList extends StatefulWidget {
   final ValueChanged<Person> onReject;
   final ValueChanged<Person> onRestore;
 
+  /// The whole-database search results rather than the automatic list: no
+  /// "סומנו כלא מתאימים" heading, and a scroll position of its own.
+  final bool searching;
+
   @override
   State<_SuggestedMatchesList> createState() => _SuggestedMatchesListState();
 }
 
 class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
-  /// Candidates whose quick-view card is currently expanded inline.
-  final Set<String> _expandedIds = <String>{};
+  /// Candidates looked at during this visit without an idea being opened —
+  /// they say "כבר נצפתה" so a long list can be worked through in one go.
   final Set<String> _viewedIds = <String>{};
   final ScrollController _scroll = ScrollController();
 
   void _view(Person candidate, VoidCallback action) {
-    setState(() => _viewedIds.add(candidate.id));
+    // Only a first look changes the row; a second one must not rebuild the
+    // list under the page that is being opened over it.
+    if (!_viewedIds.contains(candidate.id)) {
+      setState(() => _viewedIds.add(candidate.id));
+    }
     action();
   }
 
@@ -3860,29 +3773,56 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
     super.dispose();
   }
 
-  /// Where each card-less candidate stands with a card of their own, worked
-  /// out once per visit — see [CardInviteFlow].
-  final Map<String, Future<CardInviteState>> _inviteStates =
-      <String, Future<CardInviteState>>{};
+  /// Where the matchmaker last left the list.
+  double? _anchor;
 
-  Future<CardInviteState> _inviteStateFor(Person candidate) {
-    return _inviteStates.putIfAbsent(
-      candidate.id,
-      () => CardInviteFlow.stateFor(
-        context.read<CardAccessProvider>(),
-        candidate,
-      ),
-    );
+  /// **Keeps the place through a page opened over the list.** Opening an idea
+  /// hides the bottom bar for as long as the idea is on screen, so for that
+  /// time this list is laid out a bar taller — and a list scrolled to its end
+  /// has its offset clamped by the extra height. Without this, coming back
+  /// put the rows a bar's height lower than they were left.
+  ///
+  /// Only real scrolling moves [_anchor]; a clamp is not a scroll and sends no
+  /// update. When the list is its usual height again and the anchor fits, it
+  /// goes back there.
+  bool _onScroll(Notification notification) {
+    if (notification is ScrollUpdateNotification && notification.depth == 0) {
+      _anchor = notification.metrics.pixels;
+    } else if (notification is ScrollMetricsNotification &&
+        notification.depth == 0) {
+      final double? anchor = _anchor;
+      final ScrollMetrics metrics = notification.metrics;
+      if (anchor != null &&
+          metrics.pixels < anchor - 0.5 &&
+          anchor <= metrics.maxScrollExtent) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _scroll.hasClients) {
+            _scroll.jumpTo(anchor);
+          }
+        });
+      }
+    }
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
+    return NotificationListener<Notification>(
+      onNotification: _onScroll,
+      child: _list(context),
+    );
+  }
+
+  Widget _list(BuildContext context) {
     return ListView.separated(
       controller: _scroll,
-      key: PageStorageKey('suggestions:${widget.sourcePerson.id}'),
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 32),
+      key: PageStorageKey(
+        '${widget.searching ? 'search' : 'suggestions'}:'
+        '${widget.sourcePerson.id}',
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 32),
       itemCount: widget.suggestedPeople.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 6),
       itemBuilder: (BuildContext context, int index) {
         final ThemeData theme = Theme.of(context);
         final Person candidate = widget.suggestedPeople[index];
@@ -3890,193 +3830,72 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
           widget.sourcePerson.id,
           candidate.id,
         );
-        void openIdea() => _view(
-          candidate,
-          () => existingMatch == null
-              ? widget.onAccept(candidate)
-              : widget.onOpenPreview(candidate),
-        );
-        final bool hasCard = hasCandidateCard(candidate);
-        final bool expanded = _expandedIds.contains(candidate.id);
         final bool dismissed = widget.dismissedIds.contains(candidate.id);
         final bool firstDismissed =
+            !widget.searching &&
             dismissed &&
             (index == 0 ||
                 !widget.dismissedIds.contains(
                   widget.suggestedPeople[index - 1].id,
                 ));
-        final VoidCallback onThirdAction = dismissed
-            ? () => widget.onRestore(candidate)
-            : () => widget.onReject(candidate);
 
-        final Widget row = Material(
-          color: _profileSurfaceColor(theme),
-          borderRadius: BorderRadius.circular(20),
-          child: Column(
-            children: <Widget>[
-              InkWell(
-                onTap: () => _view(
-                  candidate,
-                  () => existingMatch != null
-                      ? AppNavigation.open(
-                          context,
-                          '/matches/${existingMatch.id}',
-                        )
-                      : widget.onOpenPreview(candidate),
-                ),
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: <Widget>[
-                      GestureDetector(
-                        onTap: () => openPersonProfile(context, candidate.id),
-                        child: PersonAvatar(person: candidate, radius: 25),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: Text(
-                                    candidate.fullName.trim(),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: _profileTextColor(theme),
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              _personSummary(candidate),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: _profileMutedColor(theme),
-                              ),
-                            ),
-                            if (existingMatch == null &&
-                                _viewedIds.contains(candidate.id))
-                              Text(
-                                'כבר נצפתה',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            if (existingMatch != null) ...<Widget>[
-                              const SizedBox(height: 6),
-                              Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: _StatusChip(
-                                  status: existingMatch.status,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // The three answers, drawn by hand, under the person they are
-              // about: the card, the idea, or not suitable.
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-                // No card to open: the first answer becomes the invitation to
-                // write one — or, for a friend who keeps one already, the
-                // request for access to it.
-                child: hasCard
-                    ? SketchActionBar(
-                        compact: true,
-                        fullCardExpanded: expanded,
-                        restoresInstead: dismissed,
-                        onFullCard: () => setState(() {
-                          if (!_expandedIds.remove(candidate.id)) {
-                            _expandedIds.add(candidate.id);
-                          }
-                        }),
-                        onOpenIdea: openIdea,
-                        openIdeaLabel: existingMatch == null
-                            ? 'לפתוח רעיון'
-                            : 'לרעיון הקיים',
-                        onNotSuitable: onThirdAction,
-                      )
-                    : FutureBuilder<CardInviteState>(
-                        future: _inviteStateFor(candidate),
-                        builder:
-                            (
-                              BuildContext context,
-                              AsyncSnapshot<CardInviteState> snapshot,
-                            ) {
-                              final CardInviteState state =
-                                  snapshot.data ?? CardInviteState.noCard;
-                              final String? label =
-                                  state == CardInviteState.noCard
-                                  ? CardInviteFlow.detailsRequestLabel
-                                  : CardInviteFlow.labelFor(state);
-                              return SketchActionBar(
-                                compact: true,
-                                fullCardLabel:
-                                    label ?? CardInviteFlow.detailsRequestLabel,
-                                onFullCard:
-                                    state == CardInviteState.pending ||
-                                        label == null
-                                    ? null
-                                    : () async {
-                                        await CardInviteFlow.run(
-                                          context,
-                                          candidate,
-                                        );
-                                        if (mounted) {
-                                          setState(
-                                            () => _inviteStates.remove(
-                                              candidate.id,
-                                            ),
-                                          );
-                                        }
-                                      },
-                                restoresInstead: dismissed,
-                                onOpenIdea: openIdea,
-                                openIdeaLabel: existingMatch == null
-                                    ? 'לפתוח רעיון'
-                                    : 'לרעיון הקיים',
-                                onNotSuitable: onThirdAction,
-                              );
-                            },
-                      ),
-              ),
-              if (expanded)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  child: CandidateQuickCard(
-                    candidate: candidate,
-                    surfaceColor: _profileWarmSurfaceColor(theme),
-                    textColor: _profileTextColor(theme),
-                  ),
-                ),
-            ],
+        final Widget? tag = existingMatch != null
+            ? _StatusChip(status: existingMatch.status)
+            // Looked at this visit: a small eye rather than a word, so the
+            // name keeps the room.
+            : _viewedIds.contains(candidate.id)
+            ? Icon(
+                Icons.visibility_outlined,
+                size: 15,
+                color: _profileMutedColor(theme),
+                semanticLabel: 'כבר נצפתה',
+              )
+            : null;
+
+        final Widget row = SuggestionRow(
+          person: candidate,
+          summary: _rowSummary(candidate),
+          tag: tag,
+          hasIdea: existingMatch != null,
+          dismissed: dismissed,
+          surfaceColor: _profileSurfaceColor(theme),
+          nameColor: _profileTextColor(theme),
+          mutedColor: _profileMutedColor(theme),
+          // The details compare the two of them — or, once there is an idea,
+          // go to it.
+          onTap: existingMatch != null
+              ? () =>
+                    AppNavigation.open(context, '/matches/${existingMatch.id}')
+              : () => _view(candidate, () => widget.onOpenPreview(candidate)),
+          onAvatarTap: () => openPersonProfile(context, candidate.id),
+          onOpenIdea: () => _view(
+            candidate,
+            () => existingMatch == null
+                ? widget.onAccept(candidate)
+                : AppNavigation.open(context, '/matches/${existingMatch.id}'),
+          ),
+          onNotSuitable: dismissed
+              ? () => widget.onRestore(candidate)
+              : () => widget.onReject(candidate),
+          // Always the full card — an empty one, with a way to ask for the
+          // details, when nothing has been written yet.
+          onOpenCard: () => _view(
+            candidate,
+            () => PersonCardViewer.open(context, candidate.id),
           ),
         );
 
-        // Keyed by the person: rows move when somebody is turned down, and
-        // without a key a row's `FutureBuilder` would keep the previous
-        // occupant's answer for a frame and draw the wrong first action.
+        // Keyed by the person: rows move when somebody is turned down.
         return KeyedSubtree(
           key: ValueKey<String>(candidate.id),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // The turned-down tail says what it is, so a card that moved
+              // The turned-down tail says what it is, so a row that moved
               // there reads as "done" rather than as "still here".
               if (firstDismissed)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
                   child: Text(
                     'סומנו כלא מתאימים',
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -4092,6 +3911,16 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
       },
     );
   }
+}
+
+/// What a row in התאמות says about a candidate: age and religious style, and
+/// nothing else — the row is scanned, not read.
+String _rowSummary(Person person) {
+  final List<String> parts = <String>[
+    if (person.age != null) 'גיל ${person.age}',
+    if (person.religiousLevelLabel.isNotEmpty) person.religiousLevelLabel,
+  ];
+  return parts.isEmpty ? 'פרטים חסרים' : parts.join(' · ');
 }
 
 /// One quiet line over a friend's matches when the automatic list follows

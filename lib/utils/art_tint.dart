@@ -34,7 +34,4 @@ ColorFilter artTint(Color target, double bodyLuminance) {
 abstract final class ArtTint {
   static const double addFriends = 73.9;
   static const double addIdea = 99.2;
-  static const double actionArrow = 80.6;
-  static const double actionHeart = 112.3;
-  static const double actionX = 56.9;
 }

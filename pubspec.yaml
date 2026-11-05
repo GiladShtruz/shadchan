@@ -172,16 +172,12 @@ flutter:
     # the paper tone into the ground, so one file serves the light and the dark
     # theme and the same drawing can wear either card's colour.
     #
-    # The two home entry cards and the suggestion-card actions are different.
-    # Hand-drawn, already coloured, cut off their black JPEG ground
-    # (`note1.jpeg`, `heart1.jpeg`, `heart2.jpeg`, `arrow2.jpeg`, `x2.jpeg`,
-    # none of them bundled) into transparent PNGs. Drawn as they are — never
+    # The two home entry cards are different. Hand-drawn, already coloured,
+    # cut off their black JPEG ground (`note1.jpeg`, `heart1.jpeg`, neither
+    # bundled) into transparent PNGs. Drawn as they are — never
     # recoloured — because the uneven line weight is the point of them.
     - assets/add_friends_art.png
     - assets/add_idea_art.png
-    - assets/action_heart.png
-    - assets/action_arrow.png
-    - assets/action_x.png
     - assets/home_add_people2.png
     - assets/home_add_idea2.png
     - assets/shadchan-tip.png

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shadchan/widgets/sketch_actions.dart';
+import 'package:shadchan/widgets/idea_actions.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/match_quick_actions.dart';
@@ -496,11 +496,10 @@ class _IdeaCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            // The three answers, drawn by hand: both full cards side by side,
-            // open the idea, or not suitable.
-            SketchActionBar(
-              onFullCard: onComparePair,
-              fullCardLabel: 'השוואת כרטיסים',
+            // The three answers: both full cards side by side, open the
+            // idea, or not suitable.
+            IdeaActionBar(
+              onCompare: onComparePair,
               onOpenIdea: onOpen,
               onNotSuitable: onSkip,
             ),
