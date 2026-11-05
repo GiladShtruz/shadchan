@@ -80,7 +80,7 @@ class HomeAddHub extends StatelessWidget {
         children: <Widget>[
           Expanded(child: _action(people: true, onTap: onAddPeople)),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: _PulsingAddButton(onPressed: () => _choose(context)),
           ),
           Expanded(child: _action(people: false, onTap: onAddIdea)),
@@ -139,23 +139,44 @@ class _EarnAction extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
+              // **Each line stays one line.** On a narrow phone, or with
+              // larger system text, "הוסיפי חברים" used to break in two and
+              // push the caption under it onto a third and fourth line; a line
+              // that does not fit is now scaled down instead.
+              _OneLine(
                 title,
-                textAlign: TextAlign.center,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                   height: 1.35,
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall,
-              ),
+              _OneLine(subtitle, style: theme.textTheme.bodySmall),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A single line of text, centred, scaled down rather than wrapped.
+class _OneLine extends StatelessWidget {
+  const _OneLine(this.text, {this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        text,
+        maxLines: 1,
+        softWrap: false,
+        textAlign: TextAlign.center,
+        style: style,
       ),
     );
   }
@@ -178,7 +199,7 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
   );
   late final Animation<double> _scale = Tween<double>(
     begin: 1,
-    end: 1.045,
+    end: 1.06,
   ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
 
   @override
@@ -207,22 +228,50 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scale,
-      child: SizedBox.square(
-        dimension: 76,
-        child: IconButton.filled(
-          onPressed: widget.onPressed,
-          tooltip: 'הוספה וצבירת נקודות',
-          iconSize: 44,
-          style: IconButton.styleFrom(
-            backgroundColor: Theme.of(context).brightness == Brightness.dark
-                ? AppColors.secondaryDarkDm
-                : AppColors.secondary,
-            foregroundColor: AppColors.surface,
+    final Color copper = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.secondaryDarkDm
+        : AppColors.secondary;
+    // A soft copper halo breathes out with each pulse, so the plus reads as
+    // something alive to be pressed rather than as a large static badge. It
+    // follows the same controller, so it rests when the pulse rests.
+    return SizedBox.square(
+      dimension: 88,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          AnimatedBuilder(
+            animation: _pulse,
+            builder: (BuildContext context, Widget? child) {
+              final double t = _pulse.value;
+              return Container(
+                width: 76 + 12 * t,
+                height: 76 + 12 * t,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: copper.withValues(alpha: 0.16 * t),
+                ),
+              );
+            },
           ),
-          icon: const Icon(Icons.add_rounded),
-        ),
+          ScaleTransition(
+            scale: _scale,
+            child: SizedBox.square(
+              dimension: 76,
+              child: IconButton.filled(
+                onPressed: widget.onPressed,
+                tooltip: 'הוספה וצבירת נקודות',
+                iconSize: 44,
+                style: IconButton.styleFrom(
+                  backgroundColor: copper,
+                  foregroundColor: AppColors.surface,
+                  elevation: 3,
+                  shadowColor: copper.withValues(alpha: 0.5),
+                ),
+                icon: const Icon(Icons.add_rounded),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
