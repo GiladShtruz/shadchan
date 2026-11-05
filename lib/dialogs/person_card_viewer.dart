@@ -7,7 +7,9 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/utils/contact_channel.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/person_avatar_assets.dart';
+import 'package:shadchan/utils/phone_utils.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -187,14 +189,15 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
                 top: false,
                 child: Padding(
                   padding: EdgeInsets.only(
-                    bottom: description.isEmpty ? 24 : 0,
+                    bottom: description.isEmpty && widget.ownerCard ? 24 : 0,
                   ),
                   child: _PhotoDots(
                     count: photoPaths.length,
                     currentIndex: _currentIndex,
-                    // The dots sit above the card text when there is one, and
-                    // at the bottom edge when there isn't.
-                    aboveCardText: description.isNotEmpty,
+                    // The dots sit above whatever is at the foot — the card
+                    // text, or the empty card's request — and at the bottom
+                    // edge only when nothing is.
+                    aboveCardText: description.isNotEmpty || !widget.ownerCard,
                   ),
                 ),
               ),
@@ -210,6 +213,20 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
                 showToggle: true,
                 onToggle: () =>
                     setState(() => _isTextExpanded = !_isTextExpanded),
+              ),
+            )
+          // **A card with nothing written in it still opens** — as an empty
+          // card that says so, with the one thing worth doing about it.
+          // Opening nothing, or an error, is what made an arrow into a card
+          // feel broken on exactly the people who most need a card.
+          else if (!widget.ownerCard)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: EmptyCardRequest(
+                person: person,
+                onRequest: () => _requestDetails(person),
               ),
             ),
         ],
@@ -229,6 +246,18 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
     final bool launched = await WhatsAppUtils.openChat(person);
     if (!launched && mounted) {
       _showError('אין מספר טלפון תקין לפתיחת WhatsApp');
+    }
+  }
+
+  /// "בקשת פרטים ב־WhatsApp": the details request the profile sends, straight
+  /// into this person's own chat.
+  Future<void> _requestDetails(Person person) async {
+    // Stamped before leaving for WhatsApp, while this route is still fully
+    // active — the same order the profile and המאגר שלי keep.
+    await context.read<PersonRepository>().touch(person.id);
+    final bool launched = await WhatsAppUtils.openDetailsRequest(person);
+    if (!launched && mounted) {
+      _showError('לא הצלחנו לפתוח את WhatsApp');
     }
   }
 
@@ -514,6 +543,84 @@ class _EmptyCardBackdrop extends StatelessWidget {
               child: Image.asset(avatarAsset, width: 200, height: 200),
             )
           : const Icon(Icons.person_outline, size: 140, color: Colors.white24),
+    );
+  }
+}
+
+/// The foot of a card nobody has written yet: it says so, in the person's own
+/// gender, and offers the details request in WhatsApp. Without a number
+/// WhatsApp can reach, the button stays and says why it cannot be used.
+class EmptyCardRequest extends StatelessWidget {
+  const EmptyCardRequest({
+    super.key,
+    required this.person,
+    required this.onRequest,
+  });
+
+  final Person person;
+  final VoidCallback onRequest;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool female = person.gender == Gender.female;
+    final String first = person.firstName.trim();
+    final String name = first.isNotEmpty ? first : person.fullName.trim();
+    final bool reachable = PhoneUtils.toWhatsAppNumber(person.phone) != null;
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: <Color>[Colors.black, Colors.black87, Colors.transparent],
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 36, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                name.isEmpty
+                    ? 'עדיין אין כרטיס מלא'
+                    : 'עדיין אין כרטיס מלא ל$name',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                reachable
+                    ? 'אפשר לבקש ${female ? 'ממנה' : 'ממנו'} את הפרטים ותמונה ב־WhatsApp'
+                    : 'אין מספר טלפון שמור שאפשר לפנות אליו ב־WhatsApp',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: reachable ? onRequest : null,
+                icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
+                label: const Text('בקשת פרטים ב־WhatsApp'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

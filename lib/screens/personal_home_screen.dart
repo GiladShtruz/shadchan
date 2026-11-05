@@ -314,11 +314,14 @@ class _PersonalHome extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'עברו שלושה חודשים מאז העדכון האחרון. הכול עדיין רלוונטי?',
+                Text(
+                  'עברו שלושה חודשים מאז הפעם האחרונה שעדכנת את הכרטיס שלך. הכול עדיין רלוונטי?',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
+                const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
+                  runSpacing: 4,
                   children: [
                     FilledButton(
                       onPressed: () async {
@@ -500,7 +503,7 @@ class _CompactPersonalCardState extends State<_CompactPersonalCard> {
                     ),
                     Text(
                       [
-                        if (card.age != null) '${card.age}',
+                        if (card.age != null) 'גיל ${card.age}',
                         if ((card.city ?? '').isNotEmpty) card.city!,
                       ].join(' · '),
                     ),
@@ -539,14 +542,36 @@ class _CompactPersonalCardState extends State<_CompactPersonalCard> {
               ),
             ],
           ),
-          if (card.photosPaths.length < 2)
-            const Text(
+          // Gentle hints, in the quiet ink: a suggestion, never a score.
+          for (final String hint in <String>[
+            if (card.photosPaths.length < 2)
               'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
-            ),
-          if ((card.description ?? '').trim().isEmpty)
-            Text(
+            if ((card.description ?? '').trim().isEmpty)
               'כמה מילים {עליך|עלייך} יעזרו לחברים להכיר ולהציג אותך.'
                   .forGender(card.gender),
+          ])
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.lightbulb_outline_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      hint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
