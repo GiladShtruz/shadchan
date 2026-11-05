@@ -743,7 +743,7 @@ void main() {
     expect(find.text('חברים שהוספת'), findsNothing);
     expect(
       tester.getCenter(find.text('חתונות')).dy,
-      lessThan(tester.getCenter(find.text('הוסף חברים וצבור נקודות')).dy),
+      lessThan(tester.getCenter(find.text('הוסף חברים')).dy),
     );
 
     // The board is drawn from the first friend on, always open, with its
@@ -1650,6 +1650,97 @@ void main() {
     expect(color!.computeLuminance(), lessThan(0.3));
   });
 
+  testWidgets(
+    'returning from a new idea and WhatsApp preserves the suggestion position',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final now = DateTime(2026, 7, 27);
+      final source = _testPerson(
+        phone: '0501234567',
+        description: 'כרטיס דוד',
+        id: 'source-stable',
+        firstName: 'דוד',
+        lastName: 'לוי',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      );
+      final candidates = List.generate(
+        15,
+        (i) => _testPerson(
+          id: 'stable-$i',
+          firstName: 'חברה$i',
+          lastName: 'כהן',
+          gender: Gender.female,
+          age: 25,
+          now: now.subtract(Duration(minutes: i)),
+          phone: '0509876543',
+          description: 'כרטיס אישי',
+        ),
+      );
+      await tester.runAsync(() async {
+        await Hive.box<Person>('people').put(source.id, source);
+        for (final person in candidates) {
+          await Hive.box<Person>('people').put(person.id, person);
+        }
+      });
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+      final root = tester.element(find.byType(HomeScreen));
+      openSuggestionsFor(root, source.id);
+      await tester.pumpAndSettle();
+      final scroll = find
+          .byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          )
+          .last;
+      await tester.scrollUntilVisible(
+        find.text('חברה8 כהן'),
+        300,
+        scrollable: scroll,
+      );
+      await tester.pumpAndSettle();
+      final position = tester.state<ScrollableState>(scroll).position;
+      final offset = position.pixels;
+      final beforeY = tester
+          .getTopLeft(find.byKey(const ValueKey<String>('stable-8')))
+          .dy;
+      final repository = root.read<MatchRepository>();
+      final idea = await tester.runAsync(
+        () => repository.create(source.id, candidates[8].id),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey<String>('stable-8'))).dy,
+        closeTo(beforeY, 1),
+      );
+      await tester.tap(find.text('חברה8 כהן'));
+      await tester.pumpAndSettle();
+      expect(idea, isNotNull);
+      await tester.tap(find.byType(FaIcon).first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('פתיחת שיחה עם'), findsOneWidget);
+      Navigator.of(tester.element(find.textContaining('פתיחת שיחה עם'))).pop();
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('התאמות · דוד לוי'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('stable-8')),
+          matching: find.text('לרעיון הקיים'),
+        ),
+        findsOneWidget,
+      );
+      expect(position.pixels, closeTo(offset, 1));
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey<String>('stable-8'))).dy,
+        closeTo(beforeY, 1),
+      );
+    },
+  );
+
   testWidgets('Each side of a proposal offers its chat or the other card', (
     WidgetTester tester,
   ) async {
@@ -2245,8 +2336,8 @@ void main() {
       final Finder hub = find.byType(HomeAddHub);
       await tester.ensureVisible(hub);
       await tester.pumpAndSettle();
-      expect(find.text('הוסף חברים וצבור נקודות'), findsOneWidget);
-      expect(find.text('הוסף רעיון וצבור נקודות'), findsOneWidget);
+      expect(find.text('הוסף חברים'), findsOneWidget);
+      expect(find.text('הוסף רעיון'), findsOneWidget);
       expect(
         find.byTooltip('הוספה וצבירת נקודות').hitTestable(),
         findsOneWidget,

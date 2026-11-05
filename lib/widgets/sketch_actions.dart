@@ -22,6 +22,7 @@ class SketchActionBar extends StatelessWidget {
     required this.onNotSuitable,
     this.fullCardExpanded = false,
     this.fullCardLabel,
+    this.openIdeaLabel = 'לפתוח רעיון',
     this.compact = false,
     this.restoresInstead = false,
   });
@@ -42,6 +43,7 @@ class SketchActionBar extends StatelessWidget {
   /// "השוואת כרטיסים" for a pair, "לבקשת פרטים בוואטסאפ" for a friend with no
   /// card yet.
   final String? fullCardLabel;
+  final String openIdeaLabel;
 
   /// A smaller drawing, for a row inside a list.
   final bool compact;
@@ -68,7 +70,7 @@ class SketchActionBar extends StatelessWidget {
         Expanded(
           child: SketchAction(
             asset: 'assets/action_heart.png',
-            label: 'לפתוח רעיון',
+            label: openIdeaLabel,
             onTap: onOpenIdea,
             compact: compact,
             tint: artTint(

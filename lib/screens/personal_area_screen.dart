@@ -12,7 +12,6 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
-import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -179,12 +178,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     }
     setState(() => _savingStatus = true);
     try {
-      final cards = context.read<PersonalCardProvider>();
-      await cards.setStatus(status);
-      if (cards.card != null && FirebaseBootstrap.isReady) {
-        await PersonalCardSync.publishNow(cards.card!);
-      }
-      if (mounted) await PersonalAreaService.offerUpdate(context);
+      await PersonalAreaService.updateStatus(context, status);
     } finally {
       if (mounted) {
         setState(() => _savingStatus = false);

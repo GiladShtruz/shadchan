@@ -3048,6 +3048,7 @@ class _SuggestionsPage extends StatefulWidget {
 class _SuggestionsPageState extends State<_SuggestionsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  final List<String> _visitOrder = <String>[];
 
   /// Whether the list is narrowed to the candidate's *extended* filter — the
   /// height, city, region, marital status and age range recorded under "עריכה
@@ -3152,6 +3153,21 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
       ...availableFirst(rejectedSuggestions),
       ...dismissedSuggestions,
     ];
+
+    // Creating an idea updates its status in place, not its position in this
+    // visit. Only an explicit filter/dismiss/restore starts a new ordering.
+    final present = suggestedPeople.map((p) => p.id).toSet();
+    _visitOrder.removeWhere((id) => !present.contains(id));
+    final known = _visitOrder.toSet();
+    _visitOrder.addAll(
+      suggestedPeople.where((p) => !known.contains(p.id)).map((p) => p.id),
+    );
+    final positions = {
+      for (var i = 0; i < _visitOrder.length; i++) _visitOrder[i]: i,
+    };
+    suggestedPeople.sort(
+      (a, b) => positions[a.id]!.compareTo(positions[b.id]!),
+    );
 
     final String query = _query.trim().toLowerCase();
     final bool searching = query.isNotEmpty;
@@ -3349,7 +3365,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     );
 
     if (filters != null && mounted) {
-      setState(() {});
+      setState(_visitOrder.clear);
     }
   }
 
@@ -3479,7 +3495,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     if (!mounted) {
       return;
     }
-    setState(() {});
+    setState(_visitOrder.clear);
     AppNotice.showOn(
       notices,
       '${candidate.fullName.trim()} ${candidate.gender == Gender.female ? 'הועברה' : 'הועבר'} לסוף הרשימה',
@@ -3495,7 +3511,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
           await SuggestionDismissals.restore(candidate.id, sourcePerson.id);
         }
         if (mounted) {
-          setState(() {});
+          setState(_visitOrder.clear);
         }
       },
     );
@@ -3506,7 +3522,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
     await SuggestionDismissals.restore(sourcePerson.id, candidate.id);
     await SuggestionDismissals.restore(candidate.id, sourcePerson.id);
     if (mounted) {
-      setState(() {});
+      setState(_visitOrder.clear);
     }
   }
 
@@ -3830,6 +3846,19 @@ class _SuggestedMatchesList extends StatefulWidget {
 class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
   /// Candidates whose quick-view card is currently expanded inline.
   final Set<String> _expandedIds = <String>{};
+  final Set<String> _viewedIds = <String>{};
+  final ScrollController _scroll = ScrollController();
+
+  void _view(Person candidate, VoidCallback action) {
+    setState(() => _viewedIds.add(candidate.id));
+    action();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   /// Where each card-less candidate stands with a card of their own, worked
   /// out once per visit — see [CardInviteFlow].
@@ -3849,6 +3878,8 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
+      controller: _scroll,
+      key: PageStorageKey('suggestions:${widget.sourcePerson.id}'),
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 32),
       itemCount: widget.suggestedPeople.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -3858,6 +3889,12 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
         final MatchIdea? existingMatch = widget.matchRepository.findExisting(
           widget.sourcePerson.id,
           candidate.id,
+        );
+        void openIdea() => _view(
+          candidate,
+          () => existingMatch == null
+              ? widget.onAccept(candidate)
+              : widget.onOpenPreview(candidate),
         );
         final bool hasCard = hasCandidateCard(candidate);
         final bool expanded = _expandedIds.contains(candidate.id);
@@ -3878,12 +3915,15 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
           child: Column(
             children: <Widget>[
               InkWell(
-                onTap: () => existingMatch != null
-                    ? AppNavigation.open(
-                        context,
-                        '/matches/${existingMatch.id}',
-                      )
-                    : widget.onOpenPreview(candidate),
+                onTap: () => _view(
+                  candidate,
+                  () => existingMatch != null
+                      ? AppNavigation.open(
+                          context,
+                          '/matches/${existingMatch.id}',
+                        )
+                      : widget.onOpenPreview(candidate),
+                ),
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -3922,6 +3962,12 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                                 color: _profileMutedColor(theme),
                               ),
                             ),
+                            if (existingMatch == null &&
+                                _viewedIds.contains(candidate.id))
+                              Text(
+                                'כבר נצפתה',
+                                style: theme.textTheme.bodySmall,
+                              ),
                             if (existingMatch != null) ...<Widget>[
                               const SizedBox(height: 6),
                               Align(
@@ -3955,7 +4001,10 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                             _expandedIds.add(candidate.id);
                           }
                         }),
-                        onOpenIdea: () => widget.onAccept(candidate),
+                        onOpenIdea: openIdea,
+                        openIdeaLabel: existingMatch == null
+                            ? 'לפתוח רעיון'
+                            : 'לרעיון הקיים',
                         onNotSuitable: onThirdAction,
                       )
                     : FutureBuilder<CardInviteState>(
@@ -3993,7 +4042,10 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
                                         }
                                       },
                                 restoresInstead: dismissed,
-                                onOpenIdea: () => widget.onAccept(candidate),
+                                onOpenIdea: openIdea,
+                                openIdeaLabel: existingMatch == null
+                                    ? 'לפתוח רעיון'
+                                    : 'לרעיון הקיים',
                                 onNotSuitable: onThirdAction,
                               );
                             },

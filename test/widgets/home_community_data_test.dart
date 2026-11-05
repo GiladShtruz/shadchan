@@ -20,6 +20,9 @@ class _Account extends AccountProvider {
 
 class _Community extends CommunityProvider {
   _Community() : super(connect: () async {});
+  int revision = 0;
+  @override
+  int get publishRevision => revision;
   @override
   int myPoints(CommunityPeriod period) => switch (period) {
     CommunityPeriod.week => 11,
@@ -37,10 +40,12 @@ CommunityTotals _totals(int points) => CommunityTotals(
   engagements: 0,
 );
 
-Widget _wrap(Widget child) => MultiProvider(
+Widget _wrap(Widget child, {_Community? community}) => MultiProvider(
   providers: [
     ChangeNotifierProvider<AccountProvider>(create: (_) => _Account()),
-    ChangeNotifierProvider<CommunityProvider>(create: (_) => _Community()),
+    ChangeNotifierProvider<CommunityProvider>(
+      create: (_) => community ?? _Community(),
+    ),
   ],
   child: MaterialApp(
     home: Directionality(
@@ -80,6 +85,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('21'), findsOneWidget);
     expect(find.text('201'), findsOneWidget);
+  });
+
+  testWidgets('a slower obsolete read cannot overwrite a refreshed score', (
+    tester,
+  ) async {
+    final community = _Community();
+    final pending = <Completer<CommunityTotals>>[];
+    await tester.pumpWidget(
+      _wrap(
+        HomeActivityBlock(
+          onOpen: () {},
+          loadTotals: (period, {bool forceRefresh = false}) {
+            if (period != CommunityPeriod.allTime) {
+              return Future.value(_totals(10));
+            }
+            final result = Completer<CommunityTotals>();
+            pending.add(result);
+            return result.future;
+          },
+        ),
+        community: community,
+      ),
+    );
+    await tester.pump();
+    final old = pending.toList();
+    community.revision++;
+    community.notifyListeners();
+    await tester.pump();
+    pending.last.complete(_totals(222));
+    await tester.pumpAndSettle();
+    expect(find.text('222'), findsOneWidget);
+    for (final request in old) {
+      request.complete(_totals(111));
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('222'), findsOneWidget);
+    expect(find.text('111'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('unresolved community score is not presented as zero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrap(
+        HomeActivityBlock(
+          onOpen: () {},
+          loadTotals: (_, {bool forceRefresh = false}) async =>
+              CommunityTotals.empty,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('91'), findsOneWidget);
+    expect(find.text('—'), findsOneWidget);
+    expect(find.text('הנתון עדיין לא זמין'), findsOneWidget);
+    expect(find.text('0'), findsNothing);
   });
 
   testWidgets(
@@ -145,7 +207,7 @@ void main() {
       expect(find.text('מגדילים את המעגל'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       unawaited(goals.close());
-    await tester.pump();
+      await tester.pump();
     },
   );
 }

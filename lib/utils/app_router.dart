@@ -1,3 +1,4 @@
+import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/screens/account_gate_screens.dart';

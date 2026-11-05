@@ -98,6 +98,8 @@ class CardAccessProvider extends ChangeNotifier {
   List<CardHelper> get mutualFriends => List.unmodifiable(_friends);
   List<CardHelper> get knownHelpers => List.unmodifiable(_helpers);
   bool _helpersLoaded = false;
+  bool _ownerAccessLoaded = false;
+  bool get ownerAccessLoaded => _ownerAccessLoaded;
   final Set<String> _busy = <String>{};
 
   /// Directory answers, by phone hash. A card that exists is remembered for
@@ -152,7 +154,7 @@ class CardAccessProvider extends ChangeNotifier {
         if (a.canReadCard ||
             a.status == CardAccessStatus.blocked ||
             a.status == CardAccessStatus.pending ||
-            a.lookingRequested) ...<String>[a.matchmakerUid, ...a.granteeUids],
+            a.cardRequested) ...<String>[a.matchmakerUid, ...a.granteeUids],
     };
     final List<CardHelper> list = _helpers
         .where((CardHelper h) => !decided.contains(h.uid))
@@ -250,16 +252,19 @@ class CardAccessProvider extends ChangeNotifier {
 
       _subscriptions
         ..add(
-          access.where('ownerUid', isEqualTo: uid).snapshots().listen((
-            QuerySnapshot<Map<String, dynamic>> snap,
-          ) {
-            _asOwner = <CardAccess>[
-              for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-                  in snap.docs)
-                ?CardAccess.fromMap(doc.data()),
-            ];
-            notifyListeners();
-          }, onError: _log),
+          access
+              .where('ownerUid', isEqualTo: uid)
+              .snapshots(includeMetadataChanges: true)
+              .listen((QuerySnapshot<Map<String, dynamic>> snap) {
+                _ownerAccessLoaded =
+                    !snap.metadata.isFromCache || snap.docs.isNotEmpty;
+                _asOwner = <CardAccess>[
+                  for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                      in snap.docs)
+                    ?CardAccess.fromMap(doc.data()),
+                ];
+                notifyListeners();
+              }, onError: _log),
         )
         ..add(
           (CoupleWorkspaceService.isCouple
@@ -315,7 +320,7 @@ class CardAccessProvider extends ChangeNotifier {
               .doc(uid)
               .collection('private')
               .doc('helpers')
-              .snapshots()
+              .snapshots(includeMetadataChanges: true)
               .listen((DocumentSnapshot<Map<String, dynamic>> snap) {
                 final Object? list = snap.data()?['helpers'];
                 _helpers = <CardHelper>[
@@ -350,7 +355,7 @@ class CardAccessProvider extends ChangeNotifier {
                           phoneHash: item['phoneHash'] as String?,
                         ),
                 ];
-                _helpersLoaded = snap.exists;
+                _helpersLoaded = snap.exists || !snap.metadata.isFromCache;
                 notifyListeners();
               }, onError: _log),
         );
@@ -381,6 +386,7 @@ class CardAccessProvider extends ChangeNotifier {
     _helpers = <CardHelper>[];
     _friends = <CardHelper>[];
     _helpersLoaded = false;
+    _ownerAccessLoaded = false;
     _lookups.clear();
     _applying.clear();
     _photosIncomplete.clear();
@@ -472,10 +478,15 @@ class CardAccessProvider extends ChangeNotifier {
         remote.split('/').last,
       );
       final File file = await PhotoPickerService.fileFor(name);
-      if (!file.existsSync()) {
+      if (!file.existsSync() || file.lengthSync() == 0) {
+        // A failed write must never leave a file that looks like a cached photo.
+        final partial = File('${file.path}.part');
         try {
-          await FirebaseStorage.instance.ref(remote).writeToFile(file);
+          await FirebaseStorage.instance.ref(remote).writeToFile(partial);
+          if (await partial.length() == 0) throw StateError('Empty card photo');
+          await partial.rename(file.path);
         } catch (error) {
+          if (await partial.exists()) await partial.delete();
           _log(error);
           continue;
         }
@@ -606,7 +617,12 @@ class CardAccessProvider extends ChangeNotifier {
         previous == null ||
         jsonEncode(previous['photoPaths']) !=
             jsonEncode(remotePhotos.whereType<String>().toList()) ||
-        _photosIncomplete.contains(ownerUid);
+        _photosIncomplete.contains(ownerUid) ||
+        CardSyncEngine.missingPhotos(
+          person.photosPaths,
+          ownerUid,
+          remotePhotos,
+        );
     final List<String>? localPhotos = legacyDetached || !photosMoved
         ? null
         : await _downloadPhotos(ownerUid, remotePhotos);

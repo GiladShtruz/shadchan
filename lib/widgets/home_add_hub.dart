@@ -60,11 +60,10 @@ class HomeAddHub extends StatelessWidget {
 
   Widget _action({required bool people, required VoidCallback onTap}) {
     return _EarnAction(
-      label:
-          (people
-                  ? '{הוסף|הוסיפי} חברים {וצבור|וצברי} נקודות'
-                  : '{הוסף|הוסיפי} רעיון {וצבור|וצברי} נקודות')
-              .forGender(gender),
+      title: (people ? '{הוסף|הוסיפי} חברים' : '{הוסף|הוסיפי} רעיון').forGender(
+        gender,
+      ),
+      subtitle: '{וצבור|וצברי} נקודות'.forGender(gender),
       people: people,
       onTap: onTap,
     );
@@ -93,12 +92,14 @@ class HomeAddHub extends StatelessWidget {
 
 class _EarnAction extends StatelessWidget {
   const _EarnAction({
-    required this.label,
+    required this.title,
+    required this.subtitle,
     required this.people,
     required this.onTap,
   });
 
-  final String label;
+  final String title;
+  final String subtitle;
   final bool people;
   final VoidCallback onTap;
 
@@ -109,41 +110,51 @@ class _EarnAction extends StatelessWidget {
     final Color accent = people
         ? (dark ? AppColors.primaryDarkDm : AppColors.addPeopleAccent)
         : (dark ? AppColors.secondaryDarkDm : AppColors.addIdeaAccent);
-    return InkWell(
+    return Semantics(
+      button: true,
+      label: '$title $subtitle',
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ExcludeSemantics(
-              child: ColorFiltered(
-                colorFilter: artTint(
-                  accent,
-                  people ? ArtTint.addFriends : ArtTint.addIdea,
-                ),
-                child: Image.asset(
-                  people
-                      ? 'assets/add_friends_art.png'
-                      : 'assets/add_idea_art.png',
-                  width: 36,
-                  height: 36,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ExcludeSemantics(
+                child: ColorFiltered(
+                  colorFilter: artTint(
+                    accent,
+                    people ? ArtTint.addFriends : ArtTint.addIdea,
+                  ),
+                  child: Image.asset(
+                    people
+                        ? 'assets/add_friends_art.png'
+                        : 'assets/add_idea_art.png',
+                    width: 44,
+                    height: 44,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // Natural wrapping on a narrow phone; a single line when it fits.
-            // No fitted text: the home's type scale and accessibility survive.
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                height: 1.35,
+              const SizedBox(height: 8),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  height: 1.35,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ),
     );

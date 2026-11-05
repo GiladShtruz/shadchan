@@ -97,6 +97,20 @@ Guidance for future agents working in this repository.
 
 ## Recent Notes
 
+- 2026-11-05 (follow-up to the home/personal-area review):
+  - The suggestions page keeps a visit-local candidate order and explicit scroll controller. Opening/creating an idea changes its status and action to “לרעיון הקיים” in place, and previewed candidates are marked “כבר נצפתה”. Explicit filters/dismiss/restore still rerank. Back through WhatsApp options preserves the same row and offset.
+  - `cardCreated` notices open `focus=card` only for an actively approved, linked owner; others retain the request flow. Card sync retries missing/empty local owner photos even when the remote baseline is unchanged after restart. Downloads use a temporary file and are renamed only on success; existing grant checks still gate applying them.
+  - Personal home explicitly offers “הצג עוד” beyond ten helpers. The full helpers screen has no display cap. A request for private wishes alone no longer suppresses the separate card-grant suggestion.
+  - Regression coverage includes 25 helpers with access to the last one, partial/missing photo caches, notice routing before/after revocation, and returning from a newly created idea through WhatsApp without moving its list position. No backend schema/rules/function changes or deployment.
+
+- 2026-11-04 (home and personal-area review):
+  - Home add actions keep their artwork and central pulse, with a short action title and secondary gendered points caption. The combined semantics label remains tappable. Banner/search, matchmaker greeting/statistics and board are unchanged.
+  - Personal helper actions sit together at normal type sizes and stack at enlarged type. The matchmakers header scrolls with the lists; secondary management routes live in one menu. Hidden helpers subscribe to provider/store changes. Unresolved access/discovery counts and community totals are not shown as verified zeros; an empty offline Firestore cache is not a completed response.
+  - Home score requests run independently and reject stale in-flight results after refresh/sign-out/window changes. `PersonalAreaService.updateStatus` is the shared quiet save path for both personal screens; unsynced saves are explained and do not offer a nudge. Eligibility-read failures no longer claim a notification failed before the user chose to send one.
+  - Personal news widgets now live in `lib/widgets/personal_community_news.dart`, shared by home, detail and admin. Manual navigation pauses automatic rotation; explicit resume, reduced motion, inactive tabs and background lifecycle are respected.
+  - No schema/rules/Functions, model contracts or production deployment changes. Prior rollout requirements in the 2026-11-01 note still apply.
+
+
 - 2026-11-02 (personal-area requirement follow-up, PR #13):
   - The full profile now shows the gentle missing-photo recommendation as well as the existing missing-description/private-wishes hints. Remaining personal-area empty states, description guidance and matchmaker-entry buttons resolve feminine wording.
   - Home’s card-view button and the profile’s תצוגת הכרטיס לשדכנים reuse `PersonCardViewer.openOwnCard`. The viewer watches `PersonalCardProvider`, stays outside the matchmaking database and excludes private wishes. Existing friend-viewer behavior is unchanged.

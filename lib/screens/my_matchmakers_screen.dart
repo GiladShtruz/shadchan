@@ -109,136 +109,176 @@ class MyMatchmakersScreen extends StatelessWidget {
       key: ValueKey(approved),
       length: 2,
       initialIndex: approved ? 1 : 0,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'ככל {שתיתן|שתיתני} גישה ליותר חברים שמכירים אותך, כך יהיו יותר אנשים שיוכלו לחשוב {עליך|עלייך} ❤️'
-                      .forGender(context.userGender),
-                ),
-                const SizedBox(height: 10),
-                const Text('🔒 הכרטיס שלך גלוי רק לחברים שאישרת להם גישה.'),
-                Wrap(
-                  children: [
-                    TextButton(
-                      onPressed: () => _hidden(context, access),
-                      child: const Text('חברים מוסתרים'),
-                    ),
-                    TextButton(
-                      onPressed: () => _privacy(context, cards.hasCard),
-                      child: const Text('הרשאות ותוכן לשדכנים'),
-                    ),
-                    TextButton(
-                      onPressed: () => _invitations(context, access.uid),
-                      child: const Text('הזמנות אישיות'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const TabBar(
-            tabs: [
-              Tab(text: 'חברים שאפשר לאשר'),
-              Tab(text: 'חברים שאישרתי'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    for (final row in access.pendingRequests)
-                      HomePaperCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'ככל {שתיתן|שתיתני} גישה ליותר חברים שמכירים אותך, כך יהיו יותר אנשים שיוכלו לחשוב {עליך|עלייך} ❤️'
+                        .forGender(context.userGender),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('🔒 הכרטיס שלך גלוי רק לחברים שאישרת להם גישה.'),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: PopupMenuButton<String>(
+                      tooltip: 'ניהול הרשאות והזמנות',
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'hidden':
+                            _hidden(context, access);
+                          case 'privacy':
+                            _privacy(context, cards.hasCard);
+                          case 'invites':
+                            _invitations(context, access.uid);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'hidden',
+                          child: Text('חברים מוסתרים'),
+                        ),
+                        PopupMenuItem(
+                          value: 'privacy',
+                          child: Text('הרשאות ותוכן לשדכנים'),
+                        ),
+                        PopupMenuItem(
+                          value: 'invites',
+                          child: Text('הזמנות אישיות'),
+                        ),
+                      ],
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('${row.matchmakerName} ביקשו גישה'),
-                            if (row.granteeUids.length == 2)
-                              const Text('הבקשה מתייחסת לשני בני הזוג'),
-                            if (row.lookingRequested)
-                              TextButton(
-                                onPressed: () =>
-                                    _privacy(context, cards.hasCard),
-                                child: const Text('בחירת הרשאות למידע הפרטי'),
-                              ),
-                            if (row.status == CardAccessStatus.pending ||
-                                row.cardRequested)
-                              FilledButton(
-                                onPressed: access.isBusy('access:${row.id}')
-                                    ? null
-                                    : () async {
-                                        final ok = await access.setStatus(
-                                          row,
-                                          CardAccessStatus.approved,
-                                          cardGranted: true,
-                                          lookingGranted: row.canReadLooking,
-                                        );
-                                        if (!ok && context.mounted) {
-                                          AppNotice.show(
-                                            context,
-                                            'האישור לא נשמר',
-                                          );
-                                        }
-                                      },
-                                child: const Text('לתת גישה לכרטיס'),
-                              ),
-                            TextButton(
-                              onPressed: () => access.setPermissions(
-                                row,
-                                card: row.canReadCard,
-                                looking: row.canReadLooking,
-                              ),
-                              child: const Text('לא עכשיו'),
-                            ),
+                            Icon(Icons.tune, size: 18),
+                            SizedBox(width: 8),
+                            Flexible(child: Text('ניהול הרשאות והזמנות')),
+                            Icon(Icons.expand_more, size: 18),
                           ],
                         ),
                       ),
-                    const SizedBox(height: 10),
-                    if (helpers.isEmpty)
-                      Text(
-                        'מי עוד מכיר אותך מספיק טוב כדי לחשוב {עליך|עלייך}?'
-                            .forGender(context.userGender),
-                      ),
-                    for (final helper in helpers)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: PersonalHelperCard(helper: helper),
-                      ),
-                    OutlinedButton.icon(
-                      onPressed: () => PersonalHelperActions.contacts(context),
-                      icon: const Icon(Icons.contacts_outlined),
-                      label: const Text('איתור חברים בקשר הדדי'),
                     ),
-                    FilledButton(
-                      onPressed: () => PersonalAreaService.invite(context),
-                      child: const Text('מזמינים חבר לשדכן'),
-                    ),
-                  ],
-                ),
-                ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (granted.isEmpty)
-                      const Text(
-                        'עדיין לא נתת גישה לחברים. אפשר להתחיל בחבר שמכיר אותך היטב.',
-                      ),
-                    for (final row in granted)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _GrantedCard(row: row),
-                      ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
+        body: Column(
+          children: [
+            const TabBar(
+              tabs: [
+                Tab(text: 'חברים שאפשר לאשר'),
+                Tab(text: 'חברים שאישרתי'),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      for (final row in access.pendingRequests)
+                        HomePaperCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text('${row.matchmakerName} ביקשו גישה'),
+                              if (row.granteeUids.length == 2)
+                                const Text('הבקשה מתייחסת לשני בני הזוג'),
+                              if (row.lookingRequested)
+                                TextButton(
+                                  onPressed: () =>
+                                      _privacy(context, cards.hasCard),
+                                  child: const Text('בחירת הרשאות למידע הפרטי'),
+                                ),
+                              if (row.status == CardAccessStatus.pending ||
+                                  row.cardRequested)
+                                FilledButton(
+                                  onPressed: access.isBusy('access:${row.id}')
+                                      ? null
+                                      : () async {
+                                          final ok = await access.setStatus(
+                                            row,
+                                            CardAccessStatus.approved,
+                                            cardGranted: true,
+                                            lookingGranted: row.canReadLooking,
+                                          );
+                                          if (!ok && context.mounted) {
+                                            AppNotice.show(
+                                              context,
+                                              'האישור לא נשמר',
+                                            );
+                                          }
+                                        },
+                                  child: const Text('לתת גישה לכרטיס'),
+                                ),
+                              TextButton(
+                                onPressed: () => access.setPermissions(
+                                  row,
+                                  card: row.canReadCard,
+                                  looking: row.canReadLooking,
+                                ),
+                                child: const Text('לא עכשיו'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      if (!access.helpersLoaded)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text('רשימת החברים תופיע לאחר החיבור לחשבון'),
+                        )
+                      else if (helpers.isEmpty)
+                        Text(
+                          'מי עוד מכיר אותך מספיק טוב כדי לחשוב {עליך|עלייך}?'
+                              .forGender(context.userGender),
+                        ),
+                      for (final helper in helpers)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: PersonalHelperCard(helper: helper),
+                        ),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            PersonalHelperActions.contacts(context),
+                        icon: const Icon(Icons.contacts_outlined),
+                        label: const Text('איתור חברים בקשר הדדי'),
+                      ),
+                      FilledButton(
+                        onPressed: () => PersonalAreaService.invite(context),
+                        child: const Text('מזמינים חבר לשדכן'),
+                      ),
+                    ],
+                  ),
+                  ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      if (!access.ownerAccessLoaded)
+                        const Text('אישורי הגישה יופיעו לאחר החיבור לחשבון')
+                      else if (granted.isEmpty)
+                        const Text(
+                          'עדיין לא נתת גישה לחברים. אפשר להתחיל בחבר שמכיר אותך היטב.',
+                        ),
+                      for (final row in granted)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _GrantedCard(row: row),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -331,23 +371,36 @@ class _HiddenHelpers extends StatefulWidget {
 class _HiddenHelpersState extends State<_HiddenHelpers> {
   @override
   Widget build(BuildContext context) {
-    final hidden = widget.access.helpers
-        .where((h) => PersonalHelperActions.hidden.contains(h.uid))
-        .toList();
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        if (hidden.isEmpty) const Text('אין חברים מוסתרים'),
-        for (final helper in hidden)
-          ListTile(
-            title: Text(helper.name),
-            trailing: TextButton(
-              onPressed: () =>
-                  setState(() => PersonalHelperActions.hide(helper.uid, false)),
-              child: const Text('ביטול הסתרה'),
-            ),
-          ),
-      ],
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        widget.access,
+        PersonalHelpersStore.revision,
+      ]),
+      builder: (context, _) {
+        final candidates = <String, CardHelper>{
+          for (final helper in widget.access.knownHelpers) helper.uid: helper,
+          for (final helper in widget.access.helpers) helper.uid: helper,
+        };
+        final hidden = candidates.values
+            .where((h) => PersonalHelperActions.hidden.contains(h.uid))
+            .toList();
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (hidden.isEmpty) const Text('אין חברים מוסתרים'),
+            for (final helper in hidden)
+              ListTile(
+                title: Text(helper.name),
+                trailing: TextButton(
+                  onPressed: () => setState(
+                    () => PersonalHelperActions.hide(helper.uid, false),
+                  ),
+                  child: const Text('ביטול הסתרה'),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -366,6 +419,7 @@ class PersonalHelperCard extends StatelessWidget {
     final photo = helper.photoUrl?.trim();
     final hasPhoto = photo != null && photo.isNotEmpty;
     return HomePaperCard(
+      stripe: Theme.of(context).colorScheme.primary,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -407,15 +461,37 @@ class PersonalHelperCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
-          FilledButton(
-            onPressed: access.isBusy('helper:${helper.uid}')
-                ? null
-                : () => PersonalHelperActions.grant(context, helper),
-            child: const Text('לתת גישה'),
-          ),
-          TextButton(
-            onPressed: () => PersonalHelperActions.hide(helper.uid, true),
-            child: const Text('הסתרה'),
+          Builder(
+            builder: (context) {
+              final grant = FilledButton(
+                onPressed: access.isBusy('helper:${helper.uid}')
+                    ? null
+                    : () => PersonalHelperActions.grant(context, helper),
+                child: const Text('לתת גישה'),
+              );
+              final hide = TextButton(
+                onPressed: access.isBusy('helper:${helper.uid}')
+                    ? null
+                    : () => PersonalHelperActions.hide(helper.uid, true),
+                child: const Text('הסתרה'),
+              );
+              // Keep the secondary action beside the primary one when readable;
+              // increased system text gets the full available width instead.
+              final scale = MediaQuery.textScalerOf(context).scale(15) / 15;
+              if (scale <= 1.1) {
+                return Row(
+                  children: [
+                    Expanded(child: grant),
+                    const SizedBox(width: 8),
+                    hide,
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [grant, hide],
+              );
+            },
           ),
         ],
       ),
