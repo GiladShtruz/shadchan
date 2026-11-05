@@ -217,8 +217,17 @@ abstract final class NotificationCenter {
     final Person? person = line.person;
     switch (item.kind) {
       case 'cardCreated':
-        // Straight to where access is asked for.
-        return person == null ? null : '/people/${person.id}?focus=request';
+        if (person == null) return null;
+        final granted =
+            person.cardOwnerUid == item.ownerUid &&
+            _maybe<CardAccessProvider>(
+                  context,
+                  listen: false,
+                )?.accessTo(item.ownerUid ?? '')?.canReadCard ==
+                true;
+        // An authorized reader opens the whole card, including its photos.
+        // Everyone else still lands on the access request, never a preview.
+        return '/people/${person.id}?focus=${granted ? 'card' : 'request'}';
       case 'accessApproved':
         // Straight to the card itself, whole and up to date.
         if (person != null) {

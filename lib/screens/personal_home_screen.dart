@@ -300,7 +300,11 @@ class _PersonalHome extends StatelessWidget {
           ),
         TextButton(
           onPressed: () => context.go('/me?section=helpers'),
-          child: const Text('לכל החברים ובקשות הגישה'),
+          child: Text(
+            helpers.length > 10
+                ? 'הצג עוד · לכל ${helpers.length} החברים ובקשות הגישה'
+                : 'לכל החברים ובקשות הגישה',
+          ),
         ),
         if (cards.hasCard &&
             lastReview != null &&

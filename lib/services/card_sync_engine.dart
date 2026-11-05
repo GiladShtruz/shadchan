@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:path/path.dart' as path;
 
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/backup_service.dart';
@@ -43,6 +45,24 @@ abstract final class CardSyncEngine {
   /// The prefix of every photo file downloaded from an owner's card, so those
   /// files can be told apart from the matchmaker's own and removed when the
   /// sync ends.
+  /// Failed downloads must be retried after restart even when the remote
+  /// baseline is unchanged. Own/local photographs do not satisfy this check.
+  static bool missingPhotos(
+    List<String> local,
+    String ownerUid,
+    List<Object?> remote,
+  ) {
+    final available = <String>{
+      for (final name in local)
+        if (File(name).existsSync() && File(name).lengthSync() > 0)
+          path.basename(name),
+    };
+    return remote.whereType<String>().any(
+      (name) =>
+          !available.contains(photoFileName(ownerUid, name.split('/').last)),
+    );
+  }
+
   static String photoFileName(String ownerUid, String remoteName) =>
       'card_${ownerUid}_$remoteName';
 

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
@@ -49,6 +50,60 @@ Person _local({bool withOwnContent = true}) {
 }
 
 void main() {
+  test(
+    'missing owner photos are retried even with an unchanged remote baseline',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'card-photo-retry',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final remote = ['personalCards/owner/a.jpg', 'personalCards/owner/b.jpg'];
+      final first = File(
+        '${directory.path}/${CardSyncEngine.photoFileName('owner', 'a.jpg')}',
+      );
+      final second = File(
+        '${directory.path}/${CardSyncEngine.photoFileName('owner', 'b.jpg')}',
+      );
+      await first.writeAsBytes([1, 2]);
+      expect(
+        CardSyncEngine.missingPhotos([first.path], 'owner', remote),
+        isTrue,
+      );
+      await second.writeAsBytes([]);
+      expect(
+        CardSyncEngine.missingPhotos(
+          [first.path, second.path],
+          'owner',
+          remote,
+        ),
+        isTrue,
+      );
+      await second.writeAsBytes([3, 4]);
+      expect(
+        CardSyncEngine.missingPhotos(
+          [first.path, second.path],
+          'owner',
+          remote,
+        ),
+        isFalse,
+      );
+      await first.delete();
+      expect(
+        CardSyncEngine.missingPhotos(
+          [first.path, second.path],
+          'owner',
+          remote,
+        ),
+        isTrue,
+      );
+      expect(
+        CardSyncEngine.missingPhotos([second.path], 'another-owner', remote),
+        isTrue,
+      );
+      expect(CardSyncEngine.missingPhotos([], 'owner', []), isFalse);
+    },
+  );
+
   test('the first link keeps a snapshot of what the matchmaker wrote', () {
     final Person person = _local();
     final CardSyncResult result = CardSyncEngine.apply(

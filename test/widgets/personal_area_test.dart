@@ -1,3 +1,6 @@
+import 'package:shadchan/widgets/notification_center.dart';
+import 'package:shadchan/services/notification_feed.dart';
+import 'package:shadchan/providers/inbox_provider.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -367,6 +370,94 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'home previews ten helpers and the full screen contains every helper',
+    (tester) async {
+      access.candidates.clear();
+      access.candidates.addAll(
+        List.generate(
+          25,
+          (i) => CardHelper(
+            uid: 'helper-$i',
+            name: 'חבר ${i.toString().padLeft(2, '0')}',
+          ),
+        ),
+      );
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.text('הצג עוד · לכל 25 החברים ובקשות הגישה'), findsOneWidget);
+      expect(find.text('חבר 24'), findsNothing);
+      await tester.tap(find.text('השדכנים שלי').last);
+      await tester.pumpAndSettle();
+      final scroll = find
+          .descendant(
+            of: find.byType(MyMatchmakersScreen),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
+          )
+          .last;
+      await tester.scrollUntilVisible(
+        find.text('חבר 24'),
+        350,
+        scrollable: scroll,
+        maxScrolls: 40,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('חבר 24'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'a card-created update opens photos only for an authorized reader',
+    (tester) async {
+      final friend = cards.card!.copyWith()..cardOwnerUid = 'owner123';
+      final notice = InboxItem(
+        id: 'created',
+        kind: 'cardCreated',
+        title: 'כרטיס חדש',
+        body: '',
+        route: '/reminders',
+        read: false,
+        ownerUid: 'owner123',
+      );
+      final line = AppNotification(
+        id: 'created',
+        source: NotificationSource.inbox,
+        time: DateTime.now(),
+        read: false,
+        groupKey: 'created',
+        title: 'כרטיס חדש',
+        person: friend,
+        inbox: notice,
+      );
+      Widget route() => app(
+        home: Builder(
+          builder: (context) =>
+              Text(NotificationCenter.routeFor(context, line) ?? 'none'),
+        ),
+      );
+      await tester.pumpWidget(route());
+      expect(find.text('/people/${friend.id}?focus=request'), findsOneWidget);
+      access.grants.add(
+        const CardAccess(
+          ownerUid: 'owner123',
+          matchmakerUid: 'reader',
+          status: CardAccessStatus.approved,
+          requestedBy: 'owner',
+        ),
+      );
+      await tester.pumpWidget(route());
+      expect(find.text('/people/${friend.id}?focus=card'), findsOneWidget);
+      access.grants.clear();
+      await tester.pumpWidget(route());
+      expect(find.text('/people/${friend.id}?focus=request'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   for (final width in [320.0, 390.0]) {
     testWidgets('personal home and matchmakers fit $width px at large type', (

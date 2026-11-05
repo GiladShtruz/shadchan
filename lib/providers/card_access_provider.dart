@@ -154,7 +154,7 @@ class CardAccessProvider extends ChangeNotifier {
         if (a.canReadCard ||
             a.status == CardAccessStatus.blocked ||
             a.status == CardAccessStatus.pending ||
-            a.lookingRequested) ...<String>[a.matchmakerUid, ...a.granteeUids],
+            a.cardRequested) ...<String>[a.matchmakerUid, ...a.granteeUids],
     };
     final List<CardHelper> list = _helpers
         .where((CardHelper h) => !decided.contains(h.uid))
@@ -478,10 +478,15 @@ class CardAccessProvider extends ChangeNotifier {
         remote.split('/').last,
       );
       final File file = await PhotoPickerService.fileFor(name);
-      if (!file.existsSync()) {
+      if (!file.existsSync() || file.lengthSync() == 0) {
+        // A failed write must never leave a file that looks like a cached photo.
+        final partial = File('${file.path}.part');
         try {
-          await FirebaseStorage.instance.ref(remote).writeToFile(file);
+          await FirebaseStorage.instance.ref(remote).writeToFile(partial);
+          if (await partial.length() == 0) throw StateError('Empty card photo');
+          await partial.rename(file.path);
         } catch (error) {
+          if (await partial.exists()) await partial.delete();
           _log(error);
           continue;
         }
@@ -612,7 +617,12 @@ class CardAccessProvider extends ChangeNotifier {
         previous == null ||
         jsonEncode(previous['photoPaths']) !=
             jsonEncode(remotePhotos.whereType<String>().toList()) ||
-        _photosIncomplete.contains(ownerUid);
+        _photosIncomplete.contains(ownerUid) ||
+        CardSyncEngine.missingPhotos(
+          person.photosPaths,
+          ownerUid,
+          remotePhotos,
+        );
     final List<String>? localPhotos = legacyDetached || !photosMoved
         ? null
         : await _downloadPhotos(ownerUid, remotePhotos);
