@@ -33,6 +33,13 @@ class AccountSyncLedger {
   static const String _dirtyPrefix = 'dirty.';
   static const String _cursorPrefix = 'cursor.';
   static const String _filePrefix = 'file.';
+  static const String _logKey = 'meta.log';
+  static const String _statsKey = 'meta.stats';
+  static const String _migrationKey = 'meta.migration';
+
+  /// How many lines of the sync log are kept. Enough to see what happened
+  /// around a complaint, small enough to publish beside the account's health.
+  static const int logLimit = 60;
 
   final Box<dynamic> _box;
 
@@ -188,6 +195,61 @@ class AccountSyncLedger {
       _box.put('$_filePrefix$key', fingerprint);
 
   Future<void> removeFile(String key) => _box.delete('$_filePrefix$key');
+
+  // --- The log and the health of the sync ---------------------------------
+
+  /// The latest lines of the sync's own diary, oldest first. Each line is a
+  /// time and a short event — collection names, counts and error codes, never
+  /// a record's contents — so it can be shown to support without exposing
+  /// anybody in the database.
+  List<String> get log {
+    final Object? stored = _box.get(_logKey);
+    return stored is List ? stored.whereType<String>().toList() : <String>[];
+  }
+
+  Future<void> addLog(String event, {DateTime? at}) async {
+    final String stamp = (at ?? DateTime.now()).toUtc().toIso8601String();
+    final List<String> lines = <String>[...log, '$stamp $event'];
+    final int overflow = lines.length - logLimit;
+    await _box.put(_logKey, overflow > 0 ? lines.sublist(overflow) : lines);
+    debugPrint('ACCOUNT_SYNC $event');
+  }
+
+  /// Running figures: the last time the account was read and written, the
+  /// number of failed writes, conflicts kept and duplicates merged.
+  Map<String, Object?> get stats {
+    final Object? stored = _box.get(_statsKey);
+    return stored is Map
+        ? Map<String, Object?>.from(stored)
+        : <String, Object?>{};
+  }
+
+  Future<void> updateStats(
+    Map<String, Object?> Function(Map<String, Object?>) change,
+  ) => _box.put(_statsKey, change(stats));
+
+  Future<void> bumpStat(String name, [int by = 1]) => updateStats(
+    (Map<String, Object?> s) => s..[name] = ((s[name] as int?) ?? 0) + by,
+  );
+
+  Future<void> stampStat(String name, DateTime at) => updateStats(
+    (Map<String, Object?> s) => s..[name] = at.toUtc().toIso8601String(),
+  );
+
+  /// The one-time move of this device's database into the account: when it
+  /// began, whether a snapshot was taken, and — once the counts agreed — when
+  /// it was verified, with the figures it was verified against.
+  Map<String, Object?> get migration {
+    final Object? stored = _box.get(_migrationKey);
+    return stored is Map
+        ? Map<String, Object?>.from(stored)
+        : <String, Object?>{};
+  }
+
+  Future<void> setMigration(Map<String, Object?> value) =>
+      _box.put(_migrationKey, value);
+
+  bool get migrationVerified => migration['verifiedAt'] is String;
 
   @visibleForTesting
   Box<dynamic> get box => _box;

@@ -55,6 +55,13 @@ class SignInScreen extends StatefulWidget {
       'להשלים הרשמה לחשבון. כל החברים והרעיונות שכבר יש לך נשארים ועוברים '
       'לחשבון החדש.';
 
+  /// Said when somebody tries to register an address that already has an
+  /// account. The form becomes sign-in; a second account is never made.
+  static const String alreadyRegistered =
+      'לכתובת הזו כבר יש חשבון. אפשר להתחבר עם הסיסמה, ואם שכחת אותה — '
+      '"שכחתי סיסמה" ישלח קישור לאיפוס. אם נרשמת עם Google או Apple, '
+      'כדאי להיכנס בדרך הזו.';
+
   @override
   State<SignInScreen> createState() => _SignInScreenState();
 }
@@ -121,6 +128,18 @@ class _SignInScreenState extends State<SignInScreen> {
         // to this screen, so nothing is recorded and nothing is said.
         return;
       case AccountSignInOutcome.failure:
+        if (result.code == 'email-already-in-use' &&
+            _mode == _EmailMode.register) {
+          // The address already is an account — the one with the database in
+          // it. Never a second one: the form turns into sign-in, with the
+          // forgotten-password link right under it.
+          setState(() {
+            _mode = _EmailMode.signIn;
+            _showErrors = false;
+          });
+          AppNotice.showOn(notices, SignInScreen.alreadyRegistered);
+          return;
+        }
         AppNotice.showOn(notices, result.message ?? 'לא הצלחנו להתחבר.');
         // A method that met an existing account is waiting to be linked to
         // it; the banner above the buttons says how.

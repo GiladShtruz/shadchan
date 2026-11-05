@@ -302,4 +302,19 @@ class CoupleSyncRemote implements AccountSyncRemote {
     // Shared media is retained through merge/split recovery, not garbage-collected by one spouse's stale copy.
     if (!_sharedFile(key)) await _personal.deleteFile(key);
   }
+
+  @override
+  Future<void> waitForWrites() =>
+      FirebaseFirestore.instance.waitForPendingWrites();
+
+  /// Records live in the shared database; settings are split between the
+  /// personal account and the workspace, so they are not counted.
+  @override
+  Future<int?> countLive(SyncCollection collection) =>
+      collection == SyncCollection.settings
+      ? Future<int?>.value()
+      : _shared.countLive(collection);
+
+  @override
+  void saveConflict(SyncConflict conflict) => _personal.saveConflict(conflict);
 }

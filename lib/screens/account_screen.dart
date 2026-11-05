@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/account_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -45,6 +46,7 @@ class AccountScreen extends StatelessWidget {
                       : 'המאגר שלך שמור בחשבון הזה ומסונכרן בכל מכשיר '
                             'שמחובר אליו',
                 ),
+                const _SyncStatusRow(),
                 if (providers.contains('password') && !account.emailVerified)
                   SettingsRow(
                     icon: Icons.mark_email_unread_outlined,
@@ -297,5 +299,53 @@ class _QuietAction extends StatelessWidget {
         child: Text(label),
       ),
     );
+  }
+}
+
+/// Whether this device is in step with the account, in one line. Read-only:
+/// there is nothing to press, because there is nothing to back up — every
+/// change already travels on its own.
+class _SyncStatusRow extends StatelessWidget {
+  const _SyncStatusRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final SyncProvider? sync = _maybeSync(context);
+    if (sync == null) {
+      return const SizedBox.shrink();
+    }
+    final DateTime? at = sync.lastSyncAt;
+    final String subtitle;
+    if (!sync.initialPullDone) {
+      subtitle = 'טוענים את המאגר מהחשבון…';
+    } else if (at == null) {
+      subtitle = 'המאגר נטען מהחשבון';
+    } else {
+      // A time, not a promise of a connection: a change made offline waits on
+      // the phone and goes by itself, so there is nothing to act on here.
+      subtitle = 'סונכרן לאחרונה ${_when(at)}';
+    }
+    return SettingsRow(
+      icon: Icons.cloud_done_outlined,
+      title: 'סנכרון המאגר',
+      subtitle: subtitle,
+    );
+  }
+
+  static SyncProvider? _maybeSync(BuildContext context) {
+    try {
+      return context.watch<SyncProvider>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  static String _when(DateTime at) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final DateTime now = DateTime.now();
+    final bool today =
+        now.year == at.year && now.month == at.month && now.day == at.day;
+    final String time = '${two(at.hour)}:${two(at.minute)}';
+    return today ? 'היום ב־$time' : '${two(at.day)}.${two(at.month)} ב־$time';
   }
 }

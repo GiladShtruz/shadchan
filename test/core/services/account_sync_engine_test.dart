@@ -114,6 +114,22 @@ class FakeAccount implements AccountSyncRemote {
   Future<void> deleteFile(String key) async {
     files.remove(key);
   }
+
+  final List<SyncConflict> conflicts = <SyncConflict>[];
+
+  @override
+  Future<void> waitForWrites() async {
+    if (offline) {
+      throw const SocketException('offline');
+    }
+  }
+
+  @override
+  Future<int?> countLive(SyncCollection collection) async =>
+      of(collection).values.where((RemoteDocument d) => d.data != null).length;
+
+  @override
+  void saveConflict(SyncConflict conflict) => conflicts.add(conflict);
 }
 
 /// One phone: its own boxes, ledger and folders.
@@ -173,7 +189,13 @@ class Device {
   }
 }
 
-Person person(String id, String first, {String? city, List<String>? photos}) {
+Person person(
+  String id,
+  String first, {
+  String? city,
+  String? phone,
+  List<String>? photos,
+}) {
   final DateTime at = DateTime(2026, 1, 1);
   return Person(
     id: id,
@@ -181,6 +203,7 @@ Person person(String id, String first, {String? city, List<String>? photos}) {
     lastName: 'כהן',
     gender: Gender.male,
     city: city,
+    phone: phone,
     photosPaths: photos ?? <String>[],
     createdAt: at,
     updatedAt: at,
@@ -556,5 +579,195 @@ void main() {
 
     await a.engine!.stop();
     await b.engine!.stop();
+  });
+
+  test(
+    'the same friend added on a phone without the account is joined by phone',
+    () async {
+      final FakeAccount account = FakeAccount();
+      final Device a = await Device.open('a', root);
+      await a.people.put(
+        'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+        person(
+          'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+          'דוד',
+          phone: '+972-50-123-4567',
+        ),
+      );
+      await a.connect(account);
+
+      // A phone that was used without an account knows the same friend under
+      // another id, with a city the account lacks and a note about him.
+      const String localId = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
+      final Device b = await Device.open('b', root);
+      await b.people.put(
+        localId,
+        person(localId, 'דוד', city: 'צפת', phone: '050 123 4567'),
+      );
+      await b.boxes[SyncCollection.personNotes]!.put(
+        'n1',
+        PersonNote(
+          id: 'n1',
+          personId: localId,
+          text: 'אוהב טיולים',
+          createdAt: DateTime(2026, 10, 1),
+          isAutomatic: false,
+        ),
+      );
+      await b.settings.put('personReminder.$localId', '2026-12-01');
+      await b.connect(account);
+      await a.settle();
+
+      expect(b.people.length, 1);
+      final Person joined =
+          b.people.get('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa') as Person;
+      expect(joined.city, 'צפת');
+      final PersonNote note =
+          b.boxes[SyncCollection.personNotes]!.get('n1') as PersonNote;
+      expect(note.personId, 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa');
+      expect(
+        b.settings.get('personReminder.aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'),
+        '2026-12-01',
+      );
+      expect(b.settings.containsKey('personReminder.$localId'), isFalse);
+      // The account never hears of the second id, and has one person.
+      expect(
+        account
+            .of(SyncCollection.people)
+            .values
+            .where((RemoteDocument d) => d.data != null)
+            .length,
+        1,
+      );
+      expect(
+        (a.people.get('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa') as Person).city,
+        'צפת',
+      );
+      expect(account.conflicts, isEmpty);
+      expect(b.ledger.stats['duplicatesMerged'], 1);
+
+      await a.engine!.stop();
+      await b.engine!.stop();
+    },
+  );
+
+  test('a shared phone with a different gender is not joined', () async {
+    final FakeAccount account = FakeAccount();
+    final Device a = await Device.open('a', root);
+    await a.people.put('r1', person('r1', 'דוד', phone: '0501234567'));
+    await a.connect(account);
+
+    final Device b = await Device.open('b', root);
+    await b.people.put(
+      'l1',
+      person('l1', 'שרה', phone: '0501234567')..gender = Gender.female,
+    );
+    await b.connect(account);
+    expect(b.people.length, 2);
+
+    await a.engine!.stop();
+    await b.engine!.stop();
+  });
+
+  test('the losing edit of a conflict is kept in the account', () async {
+    final FakeAccount account = FakeAccount();
+    final Device a = await Device.open('a', root);
+    final Device b = await Device.open('b', root);
+    await a.people.put('p1', person('p1', 'דוד'));
+    await a.connect(account);
+    await b.connect(account);
+    await b.engine!.stop();
+
+    await b.people.put('p1', person('p1', 'דוד', city: 'בני ברק'));
+    await a.people.put('p1', person('p1', 'דוד', city: 'צפת'));
+    await a.settle();
+
+    final AccountSyncEngine again = AccountSyncEngine(
+      ledger: b.ledger,
+      remote: account,
+      boxes: b.boxes,
+      photosDirectory: b.photos.path,
+      voiceDirectory: b.voice.path,
+      flushDelay: const Duration(milliseconds: 10),
+      nowMillis: () => 0,
+    );
+    b.engine = again;
+    await again.start();
+    await b.settle();
+
+    expect((b.people.get('p1') as Person).city, 'צפת');
+    expect(account.conflicts, hasLength(1));
+    expect(account.conflicts.single.lostSide, 'local');
+    expect(account.conflicts.single.lost['city'], 'בני ברק');
+    expect(account.conflicts.single.kept['city'], 'צפת');
+
+    await a.engine!.stop();
+    await again.stop();
+  });
+
+  test('verification counts every collection and every file', () async {
+    final FakeAccount account = FakeAccount();
+    final Device a = await Device.open('a', root);
+    File('${a.photos.path}/face.jpg').writeAsBytesSync(<int>[1, 2, 3]);
+    await a.people.put(
+      'p1',
+      person('p1', 'דוד', photos: <String>['${a.photos.path}/face.jpg']),
+    );
+    await a.people.put('p2', person('p2', 'יוסף'));
+    await a.connect(account);
+
+    final SyncVerification? result = await a.engine!.verify();
+    expect(result, isNotNull);
+    expect(result!.ok, isTrue);
+    expect(result.local[SyncCollection.people], 2);
+    expect(result.account[SyncCollection.people], 2);
+    expect(result.filesPending, 0);
+    expect(a.ledger.migrationVerified, isTrue);
+    expect(a.ledger.log.any((String l) => l.contains('verify ok')), isTrue);
+
+    // Offline: not verified, not failed — postponed.
+    account.offline = true;
+    expect(await a.engine!.verify(), isNull);
+
+    await a.engine!.stop();
+  });
+
+  test('a missing account record fails verification', () async {
+    final FakeAccount account = FakeAccount();
+    final Device a = await Device.open('a', root);
+    await a.people.put('p1', person('p1', 'דוד'));
+    await a.connect(account);
+    // The server lost it (or refused it) without telling this device.
+    account.of(SyncCollection.people).remove('p1');
+
+    final SyncVerification? result = await a.engine!.verify();
+    expect(result!.ok, isFalse);
+    expect(a.ledger.migrationVerified, isFalse);
+
+    await a.engine!.stop();
+  });
+
+  test('ids are rewritten inside keys, values and nested maps', () {
+    const String from = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+    const String to = 'cccccccc-3333-4333-8333-cccccccccccc';
+    expect(
+      AccountSyncEngine.rewriteId(
+        <String, Object?>{
+          'person:$from': <Object?>[from, 'x'],
+          'k': 'reminder.$from',
+        },
+        from,
+        to,
+      ),
+      <String, Object?>{
+        'person:$to': <Object?>[to, 'x'],
+        'k': 'reminder.$to',
+      },
+    );
+    // A short id only where it is the whole value.
+    expect(AccountSyncEngine.rewriteId('p12', 'p1', 'q'), 'p12');
+    expect(AccountSyncEngine.rewriteId('p1', 'p1', 'q'), 'q');
+    expect(AccountSyncEngine.phoneKey('+972 50-123-4567'), '0501234567');
+    expect(AccountSyncEngine.phoneKey('123'), isNull);
   });
 }

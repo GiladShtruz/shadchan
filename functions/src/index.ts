@@ -738,6 +738,8 @@ export const onAccountDeleted = functionsV1
     await db.doc(`matchmakerActivity/${uid}`).delete();
     // Deleting it counts this matchmaker out of every tag word they used.
     await db.collection('tagUsage').doc(uid).delete();
+    // The support view of this account's sync (counts and error codes).
+    await db.collection('accountHealth').doc(uid).delete();
     await db.recursiveDelete(
       db.collection('users').doc(uid).collection('inbox'),
     );
@@ -802,6 +804,7 @@ async function purgeAccount(uid: string): Promise<void> {
   await deleteQuery('tips', 'authorUid', uid);
   await deleteQuery('communityMazelTov', 'fromUid', uid);
   await deleteQuery('communityMazelTov', 'toUid', uid);
+  await db.collection('accountHealth').doc(uid).delete();
   // The whole tree under users/{uid}: every record, tombstone, setting,
   // the inbox and the deletion marker itself.
   await db.recursiveDelete(db.collection('users').doc(uid));

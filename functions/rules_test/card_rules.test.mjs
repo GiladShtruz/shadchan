@@ -524,3 +524,76 @@ test('matchmaker activity is exact owner-written metadata, readable by current c
   await seed(db => updateDoc(doc(db, 'cardAccess', accessId), {status: 'revoked'}));
   await assertFails(getDoc(doc(as(OWNER), `matchmakerActivity/${MM}`)));
 });
+
+test('account health: written by the account, read by it and by support only', async () => {
+  const report = {
+    uid: OWNER,
+    email: 'owner@example.com',
+    emailVerified: true,
+    providers: ['password'],
+    createdAt: '2026-10-06T00:00:00.000Z',
+    updatedAt: serverTimestamp(),
+    devices: { d1: { counts: { people: 3 }, log: ['x verify ok'] } },
+  };
+  await assertSucceeds(setDoc(doc(as(OWNER), `accountHealth/${OWNER}`), report));
+  await assertSucceeds(getDoc(doc(as(OWNER), `accountHealth/${OWNER}`)));
+  // Another account can neither read nor write it, nor forge its own uid.
+  await assertFails(getDoc(doc(as(STRANGER), `accountHealth/${OWNER}`)));
+  await assertFails(setDoc(doc(as(STRANGER), `accountHealth/${OWNER}`), report));
+  await assertFails(
+    setDoc(doc(as(STRANGER), `accountHealth/${STRANGER}`), report),
+  );
+  // Nothing beyond the whitelist — no record contents can be smuggled in.
+  await assertFails(
+    setDoc(doc(as(OWNER), `accountHealth/${OWNER}`), { ...report, people: [] }),
+  );
+  // An anonymous session cannot report.
+  const anonymous = env
+    .authenticatedContext(OWNER, { firebase: { sign_in_provider: 'anonymous' } })
+    .firestore();
+  await assertFails(setDoc(doc(anonymous, `accountHealth/${OWNER}`), report));
+  // Support reads it, and only with a verified address.
+  const support = env
+    .authenticatedContext('support', {
+      email: 'yitz292@gmail.com',
+      email_verified: true,
+      firebase: { sign_in_provider: 'google.com' },
+    })
+    .firestore();
+  await assertSucceeds(getDoc(doc(support, `accountHealth/${OWNER}`)));
+  const unverified = env
+    .authenticatedContext('support2', {
+      email: 'yitz292@gmail.com',
+      email_verified: false,
+      firebase: { sign_in_provider: 'password' },
+    })
+    .firestore();
+  await assertFails(getDoc(doc(unverified, `accountHealth/${OWNER}`)));
+  await assertFails(setDoc(doc(support, `accountHealth/${OWNER}`), report));
+});
+
+test('sync conflicts are kept under the account, readable by it alone', async () => {
+  const conflict = {
+    collection: 'people',
+    recordId: 'p1',
+    lostSide: 'local',
+    device: 'd1',
+    kept: { city: 'צפת' },
+    lost: { city: 'בני ברק' },
+    at: serverTimestamp(),
+  };
+  await assertSucceeds(
+    setDoc(doc(as(OWNER), `users/${OWNER}/syncConflicts/c1`), conflict),
+  );
+  await assertSucceeds(getDoc(doc(as(OWNER), `users/${OWNER}/syncConflicts/c1`)));
+  await assertFails(getDoc(doc(as(STRANGER), `users/${OWNER}/syncConflicts/c1`)));
+  await assertFails(
+    setDoc(doc(as(STRANGER), `users/${OWNER}/syncConflicts/c2`), conflict),
+  );
+  await assertFails(
+    updateDoc(doc(as(OWNER), `users/${OWNER}/syncConflicts/c1`), { lostSide: 'remote' }),
+  );
+  await assertFails(
+    setDoc(doc(as(OWNER), `users/${OWNER}/syncConflicts/c3`), { ...conflict, extra: 1 }),
+  );
+});

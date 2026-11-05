@@ -11,6 +11,7 @@ import 'package:shadchan/screens/personal_news_admin_screen.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/date_utils.dart';
+import 'package:shadchan/widgets/account_health_lookup.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/community_goal_editor.dart';
 
@@ -23,7 +24,7 @@ import 'package:shadchan/widgets/community_goal_editor.dart';
 /// the tips queue moved in here beside the reports, and the whole thing is
 /// reached from the app's overflow menu.
 ///
-/// Six tabs:
+/// Seven tabs:
 /// * **פידבק** — every report, grouped by what it is about: המלצות ורעיונות,
 ///   הערות ותיקונים, תקלות ובאגים.
 /// * **טיפים** — the approval queue. A tip reaches other matchmakers only from
@@ -31,6 +32,8 @@ import 'package:shadchan/widgets/community_goal_editor.dart';
 /// * **מה חדש** — the notes that go back out.
 /// * **עדכונים לרווקים** — community posts and inbox announcements.
 /// * **יעד שבועי** — the shared metric, target and public heading.
+/// * **חשבונות** — one account's sync and migration state, found by address
+///   or user ID (`AccountHealthLookup`), for answering "I don't see my data".
 /// * **מנהלים** — who else may see any of it.
 ///
 /// Drawn only for an administrator, and that is a *display* gate — every read
@@ -70,7 +73,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
     final int waitingTips = context.watch<TipsProvider>().pending.length;
 
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('מרכז הפידבק'),
@@ -83,6 +86,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               const Tab(text: 'מה חדש'),
               const Tab(text: 'עדכונים לרווקים'),
               const Tab(text: 'יעד שבועי'),
+              const Tab(text: 'חשבונות'),
               const Tab(text: 'מנהלים'),
             ],
           ),
@@ -95,6 +99,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               _AnnouncementsTab(),
               PersonalNewsAdminScreen(),
               CommunityGoalEditor(),
+              AccountHealthLookup(),
               _AdminsTab(),
             ],
           ),

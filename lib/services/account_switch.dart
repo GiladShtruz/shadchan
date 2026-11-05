@@ -1,5 +1,8 @@
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
+import 'dart:io';
+
+import 'package:hive/hive.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/providers/account_provider.dart';
@@ -16,12 +19,16 @@ import 'package:shadchan/services/deleted_matches_store.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/account_remote_data_service.dart';
 import 'package:shadchan/services/account_service.dart';
+import 'package:shadchan/services/account_sync_codec.dart';
+import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/services/voice_note_store.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/database_hash_upload.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/home_search_filter_store.dart';
 import 'package:shadchan/services/invite_link_service.dart';
+import 'package:shadchan/services/local_setting_caches.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/services/push_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -233,7 +240,56 @@ abstract final class AccountSwitch {
     RecentActivityStore.instance.reset();
     DeletedMatchesStore.instance.clear();
     community.reset();
+    await clearAccountCopy();
     SignInPromptStore.markSignedOut();
+  }
+
+  /// Everything else on this device that is a copy of the account: every
+  /// synced setting (tags, board notes, reminders, preferences…) and the
+  /// photos and recordings the records referred to.
+  ///
+  /// **This is what keeps two accounts apart on one phone.** The stores above
+  /// reset what they know about; a setting nobody remembered to reset would
+  /// otherwise still be in the box when the next account signs in, and its
+  /// first read — which sends whatever this device holds and the account
+  /// lacks — would carry it into the other person's database. The account
+  /// keeps all of it; signing back in brings it down again.
+  ///
+  /// Only ever called with the sync stopped: a running sync would read these
+  /// deletions as the matchmaker's own and pass them on.
+  static Future<void> clearAccountCopy() async {
+    if (Hive.isBoxOpen('settings')) {
+      final Box<dynamic> settings = Hive.box<dynamic>('settings');
+      final List<String> synced = settings.keys
+          .whereType<String>()
+          .where(
+            (String key) =>
+                AccountSyncCodec.isSyncedSetting(key) ||
+                CoupleWorkspaceService.sharedSetting(key),
+          )
+          .toList();
+      if (synced.isNotEmpty) {
+        await settings.deleteAll(synced);
+      }
+      // Every store's in-memory copy of a setting just removed.
+      LocalSettingCaches.forgetAll();
+    }
+    for (final Future<Directory> Function() folder
+        in <Future<Directory> Function()>[
+          PhotoPickerService.ensurePhotosDirectory,
+          VoiceNoteStore.directory,
+        ]) {
+      try {
+        final Directory directory = await folder();
+        if (directory.existsSync()) {
+          for (final FileSystemEntity entity in directory.listSync()) {
+            await entity.delete(recursive: true);
+          }
+        }
+      } on Object catch (error) {
+        debugPrint('ACCOUNT local files not cleared: $error');
+      }
+    }
   }
 }
 

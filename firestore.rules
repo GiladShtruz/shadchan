@@ -129,6 +129,19 @@ service cloud.firestore {
         allow read, write: if isOwner();
       }
 
+      // The losing version of a record two devices edited at once
+      // (`AccountSyncEngine._keepConflict`) — kept, not discarded, so support
+      // can restore it. Written and read by the account only.
+      match /syncConflicts/{conflictId} {
+        allow read, delete: if isOwner();
+        allow create: if isOwner()
+            && request.resource.data.keys().hasOnly(
+                 ['collection', 'recordId', 'lostSide', 'device', 'kept', 'lost', 'at'])
+            && request.resource.data.collection is string
+            && request.resource.data.recordId is string;
+        allow update: if false;
+      }
+
       // News addressed to this account — an access request, an answer, a
       // friend's wedding or birthday. Written only by Cloud Functions (which
       // bypass these rules), read and cleared by the account itself.
@@ -899,6 +912,23 @@ service cloud.firestore {
                    && request.resource.data.keys().hasOnly(['hashes', 'updatedAt'])
                    && request.resource.data.hashes is list
                    && request.resource.data.hashes.size() <= 20000;
+    }
+
+    // The support view of one account's sync: its identity (uid, address,
+    // ways in) and, per device, whether the account was read and the move
+    // into it verified, record counts, last send/receive and the sync log's
+    // last lines — collection names and error codes, never a record. Written
+    // by the account itself; read by it and by support administrators only.
+    match /accountHealth/{uid} {
+      allow read: if (durable() && request.auth.uid == uid) || isSupportAdmin();
+      allow create, update: if durable() && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && request.resource.data.keys().hasOnly(
+               ['uid', 'email', 'emailVerified', 'providers', 'createdAt',
+                'updatedAt', 'devices'])
+          && request.resource.data.devices is map
+          && request.resource.data.devices.size() <= 100;
+      allow delete: if durable() && request.auth.uid == uid;
     }
 
     match /fcmTokens/{uid} {
