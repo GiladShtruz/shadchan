@@ -441,8 +441,11 @@ async function findHelpers(ownerUid: string): Promise<void> {
       const uid = helper.uid as string;
       const grant = await db.doc(`cardAccess/${ownerUid}_${uid}`).get();
       if (grant.get('status') === 'approved' || grant.get('status') === 'blocked') continue;
+      // Asked as the question it is, in the owner's own grammatical gender.
+      // The helper's gender is not known here (and a couple account is two
+      // people), so the friend's side is phrased without one.
       await notify(ownerUid, {kind: 'friendJoined', title: `${helper.name} בשדכן!`,
-        body: g('אפשר לתת גישה לכרטיס שלך כדי שיוכלו לחשוב {עליך|עלייך} ❤️', card.get('gender') as Gender),
+        body: g('רוצה לתת גישה לכרטיס שלך, כדי שיוכלו לחשוב {עליך|עלייך}? ❤️', card.get('gender') as Gender),
         route: `/me?section=helpers&friend=${uid}`}, true, `friendJoined_${uid}`);
     }
   }

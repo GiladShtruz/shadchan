@@ -118,7 +118,7 @@ class MyMatchmakersScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'ככל {שתיתן|שתיתני} גישה ליותר חברים שמכירים אותך, כך יהיו יותר אנשים שיוכלו לחשוב {עליך|עלייך} ❤️'
+                    'ככל {שתיתן|שתתני} גישה ליותר חברים שמכירים אותך, כך יהיו יותר אנשים שיוכלו לחשוב {עליך|עלייך} ❤️'
                         .forGender(context.userGender),
                   ),
                   const SizedBox(height: 10),
