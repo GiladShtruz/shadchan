@@ -45,6 +45,57 @@ abstract class AccountSyncRemote {
   Future<bool> download(String key, File target);
 
   Future<void> deleteFile(String key);
+
+  // --- Verification and preservation ---------------------------------------
+
+  /// Completes once every write handed to [write] so far has reached the
+  /// server — the moment counting the account means anything.
+  Future<void> waitForWrites();
+
+  /// How many live (not deleted) documents [collection] holds on the server,
+  /// or null when this account cannot say (a shared couple workspace splits
+  /// one collection across two places).
+  Future<int?> countLive(SyncCollection collection);
+
+  /// Keeps the version of a record that lost a conflict between two devices
+  /// that both edited it, so nothing anybody typed is discarded silently.
+  /// Best-effort: returns without waiting for the server.
+  void saveConflict(SyncConflict conflict);
+}
+
+/// The losing side of an edit-against-edit conflict, kept in the account
+/// under `users/{uid}/syncConflicts` for support to look at and restore.
+class SyncConflict {
+  const SyncConflict({
+    required this.collection,
+    required this.id,
+    required this.kept,
+    required this.lost,
+    required this.lostSide,
+    required this.deviceId,
+  });
+
+  final SyncCollection collection;
+  final String id;
+
+  /// The version that is now in the account and on this device.
+  final Map<String, Object?> kept;
+
+  /// The version that was replaced.
+  final Map<String, Object?> lost;
+
+  /// `local` when this device's edit lost, `remote` when another device's did.
+  final String lostSide;
+  final String deviceId;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'collection': collection.remote,
+    'recordId': id,
+    'lostSide': lostSide,
+    'device': deviceId,
+    'kept': AccountSyncCodec.stripMeta(kept),
+    'lost': AccountSyncCodec.stripMeta(lost),
+  };
 }
 
 class RemoteDocument {
@@ -242,5 +293,44 @@ class FirestoreAccountSyncRemote implements AccountSyncRemote {
         rethrow;
       }
     }
+  }
+
+  @override
+  Future<void> waitForWrites() =>
+      FirebaseFirestore.instance.waitForPendingWrites();
+
+  @override
+  Future<int?> countLive(SyncCollection collection) async {
+    final CollectionReference<Map<String, dynamic>> ref = _root.collection(
+      collection.remote,
+    );
+    // Two aggregate counts, each billed at about one read per thousand
+    // documents — a migration check that costs nothing like a full read.
+    final AggregateQuerySnapshot all = await ref.count().get(
+      source: AggregateSource.server,
+    );
+    final AggregateQuerySnapshot deleted = await ref
+        .where(AccountSyncCodec.deletedField, isEqualTo: true)
+        .count()
+        .get(source: AggregateSource.server);
+    return (all.count ?? 0) - (deleted.count ?? 0);
+  }
+
+  @override
+  void saveConflict(SyncConflict conflict) {
+    unawaited(
+      _root
+          .collection('syncConflicts')
+          .add(<String, Object?>{
+            ...conflict.toJson(),
+            'at': FieldValue.serverTimestamp(),
+          })
+          .then(
+            (_) {},
+            onError: (Object error) {
+              debugPrint('ACCOUNT_SYNC conflict not kept: $error');
+            },
+          ),
+    );
   }
 }

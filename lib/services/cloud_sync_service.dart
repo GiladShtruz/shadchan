@@ -19,6 +19,8 @@ abstract final class CloudSyncService {
     for (final SyncCollection collection in SyncCollection.values)
       collection.remote,
     'profile',
+    // The losing versions of conflicts between two devices.
+    'syncConflicts',
   ];
 
   /// The two Storage folders under `users/{uid}`.

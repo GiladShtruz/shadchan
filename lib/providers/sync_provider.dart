@@ -14,11 +14,13 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/account_health_service.dart';
 import 'package:shadchan/services/account_sync_codec.dart';
 import 'package:shadchan/services/account_sync_engine.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:shadchan/services/account_sync_remote.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/migration_snapshot.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/services/voice_note_store.dart';
 
@@ -179,16 +181,22 @@ class SyncProvider extends ChangeNotifier {
     if (generation != _generation) {
       return;
     }
+    final Map<SyncCollection, Box<dynamic>> boxes =
+        <SyncCollection, Box<dynamic>>{
+          for (final SyncCollection collection in SyncCollection.values)
+            if (Hive.isBoxOpen(collection.box))
+              collection: Hive.box<dynamic>(collection.box),
+        };
+    await _beginMigration(ledger, uid, boxes);
+    if (generation != _generation) {
+      return;
+    }
     final AccountSyncEngine engine = AccountSyncEngine(
       ledger: ledger,
       remote: CoupleWorkspaceService.databaseUid == null
           ? FirestoreAccountSyncRemote(uid)
           : CoupleSyncRemote(uid, CoupleWorkspaceService.databaseUid!),
-      boxes: <SyncCollection, Box<dynamic>>{
-        for (final SyncCollection collection in SyncCollection.values)
-          if (Hive.isBoxOpen(collection.box))
-            collection: Hive.box<dynamic>(collection.box),
-      },
+      boxes: boxes,
       photosDirectory: photos.path,
       voiceDirectory: voice.path,
       onRemoteApplied: (AccountSyncChanges changes) {
@@ -200,7 +208,10 @@ class SyncProvider extends ChangeNotifier {
     );
     _engine = engine;
     _uid = uid;
+    _ledger = ledger;
+    _boxes = boxes;
     await engine.start();
+    unawaited(_afterPull(engine, ledger, uid));
     await _membershipChanges?.cancel();
     _membershipChanges = FirebaseFirestore.instance
         .doc('memberships/$uid')
@@ -215,6 +226,129 @@ class SyncProvider extends ChangeNotifier {
             unawaited(start());
           }
         });
+  }
+
+  // --- Migration, verification and the account's health --------------------
+
+  AccountSyncLedger? _ledger;
+  Map<SyncCollection, Box<dynamic>> _boxes = <SyncCollection, Box<dynamic>>{};
+  bool _verifying = false;
+
+  /// The first time this device meets [uid]'s account, whatever the device
+  /// already holds is about to be merged into it. A copy is put aside first.
+  Future<void> _beginMigration(
+    AccountSyncLedger ledger,
+    String uid,
+    Map<SyncCollection, Box<dynamic>> boxes,
+  ) async {
+    await MigrationSnapshot.expire();
+    if (ledger.initialPullDone || ledger.migration['startedAt'] != null) {
+      return;
+    }
+    final bool hasRecords = MigrationSnapshot.hasRecords(boxes);
+    final bool snapshot =
+        hasRecords && await MigrationSnapshot.take(uid, boxes) != null;
+    await ledger.setMigration(<String, Object?>{
+      'startedAt': DateTime.now().toUtc().toIso8601String(),
+      'hadLocalData': hasRecords,
+      'snapshot': snapshot,
+    });
+    await ledger.addLog(
+      hasRecords
+          ? 'migration started, snapshot ${snapshot ? 'kept' : 'FAILED'}'
+          : 'first read on this device, nothing local',
+    );
+  }
+
+  /// Once the account has been read: count it against this device, let the
+  /// snapshot go when everything is there, and tell support how it went.
+  Future<void> _afterPull(
+    AccountSyncEngine engine,
+    AccountSyncLedger ledger,
+    String uid,
+  ) async {
+    if (!engine.isPulled) {
+      await _report(force: true);
+      return;
+    }
+    await _verify(engine, ledger, uid);
+  }
+
+  Future<void> _verify(
+    AccountSyncEngine engine,
+    AccountSyncLedger ledger,
+    String uid,
+  ) async {
+    if (_verifying) {
+      return;
+    }
+    final bool wasVerified = ledger.migrationVerified;
+    if (wasVerified) {
+      await _report();
+      return;
+    }
+    _verifying = true;
+    try {
+      final SyncVerification? result = await engine.verify();
+      if (result != null && result.ok) {
+        await MigrationSnapshot.release(uid);
+      }
+      if (!identical(engine, _engine)) {
+        return;
+      }
+      await _report(force: result != null);
+      notifyListeners();
+    } on Object catch (error) {
+      debugPrint('ACCOUNT_SYNC verification failed: $error');
+    } finally {
+      _verifying = false;
+    }
+  }
+
+  Future<void> _report({bool force = false}) async {
+    final AccountSyncLedger? ledger = _ledger;
+    if (ledger == null) {
+      return;
+    }
+    await AccountHealthService.report(
+      ledger: ledger,
+      counts: localCounts,
+      running: _engine != null,
+      lastError: _engine?.lastError,
+      force: force,
+    );
+  }
+
+  /// How many records this device holds, per collection.
+  Map<SyncCollection, int> get localCounts => <SyncCollection, int>{
+    for (final MapEntry<SyncCollection, Box<dynamic>> e in _boxes.entries)
+      e.key: e.key == SyncCollection.settings
+          ? e.value.keys
+                .whereType<String>()
+                .where(AccountSyncCodec.isSyncedSetting)
+                .length
+          : e.value.length,
+  };
+
+  /// Whether this device's move into the account was counted and found whole.
+  bool get migrationVerified => _ledger?.migrationVerified ?? false;
+
+  /// The last moment this device heard from or wrote to the account.
+  DateTime? get lastSyncAt {
+    final Map<String, Object?> stats = _ledger?.stats ?? <String, Object?>{};
+    DateTime? latest;
+    for (final String key in <String>[
+      'lastFullReadAt',
+      'lastSentAt',
+      'lastReceivedAt',
+    ]) {
+      final Object? value = stats[key];
+      final DateTime? at = value is String ? DateTime.tryParse(value) : null;
+      if (at != null && (latest == null || at.isAfter(latest))) {
+        latest = at;
+      }
+    }
+    return latest?.toLocal();
   }
 
   /// The photo half of the old one-way backup's ledger, carried over so the
@@ -332,6 +466,8 @@ class SyncProvider extends ChangeNotifier {
     final AccountSyncEngine? engine = _engine;
     _engine = null;
     _uid = null;
+    _ledger = null;
+    _boxes = <SyncCollection, Box<dynamic>>{};
     if (engine != null) {
       await engine.stop();
       notifyListeners();
@@ -344,7 +480,13 @@ class SyncProvider extends ChangeNotifier {
       await start();
       return;
     }
-    await _engine!.resume();
+    final AccountSyncEngine engine = _engine!;
+    await engine.resume();
+    final AccountSyncLedger? ledger = _ledger;
+    final String? uid = _uid;
+    if (ledger != null && uid != null && engine.isPulled) {
+      unawaited(_verify(engine, ledger, uid));
+    }
   }
 
   /// Sends whatever is waiting, now. Answers whether the sync is running at

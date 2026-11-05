@@ -56,6 +56,11 @@ abstract final class AccountRemoteDataService {
       // The tag words this matchmaker contributed to "השראה מהקהילה". The
       // server counts them back out when the document goes.
       await FirebaseFirestore.instance.collection('tagUsage').doc(uid).delete();
+      // What support could see about this account's sync.
+      await FirebaseFirestore.instance
+          .collection('accountHealth')
+          .doc(uid)
+          .delete();
 
       // Delete both sides of the temporary congratulations postbox. Outgoing
       // messages still identify this uid as their sender; incoming ones would

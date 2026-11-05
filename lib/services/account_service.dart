@@ -685,6 +685,7 @@ abstract final class AccountService {
       return AccountSignInResult.failure(
         _emailMessage(error.code),
         details: details,
+        code: error.code,
       );
     } catch (error, stackTrace) {
       debugPrint('ACCOUNT email auth failed: $error\n$stackTrace');
@@ -1119,16 +1120,26 @@ class AccountSignInResult {
   const AccountSignInResult.success()
     : outcome = AccountSignInOutcome.success,
       message = null,
-      details = null;
+      details = null,
+      code = null;
 
   const AccountSignInResult.canceled([this.details])
     : outcome = AccountSignInOutcome.canceled,
-      message = null;
+      message = null,
+      code = null;
 
-  const AccountSignInResult.failure(String this.message, {this.details})
-    : outcome = AccountSignInOutcome.failure;
+  const AccountSignInResult.failure(
+    String this.message, {
+    this.details,
+    this.code,
+  }) : outcome = AccountSignInOutcome.failure;
 
   final AccountSignInOutcome outcome;
+
+  /// The Firebase error code behind a failure, when there was one — for a
+  /// screen that does something different about one of them (an address
+  /// that is already registered is sent to sign-in, not left at "error").
+  final String? code;
 
   /// A Hebrew sentence to show, on [AccountSignInOutcome.failure] only.
   final String? message;
