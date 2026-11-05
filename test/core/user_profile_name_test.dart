@@ -45,7 +45,7 @@ void main() {
     expect(profile.name, 'רבקה כהן־שטרן');
   });
 
-  test('the community name is a display name over the account name', () async {
+  test('one name, everywhere, changed in one place', () async {
     final UserProfileProvider profile = provider();
     await profile.saveProfile(
       name: 'רבקה',
@@ -53,23 +53,53 @@ void main() {
       gender: Gender.female,
       isSingle: false,
     );
-    // Nothing chosen: the community sees the full name, as before.
-    expect(profile.communityName, isNull);
     expect(profile.communityDisplayName, 'רבקה כהן');
+    expect(profile.tipAuthorName, 'רבקה כהן');
 
-    await profile.setCommunityName('  הרבנית רבקה  ');
-    expect(profile.communityDisplayName, 'הרבנית רבקה');
-    // The account's own name is untouched.
+    await profile.setDisplayName(firstName: ' שרה ', lastName: 'לוי ');
+    // The profile, the community, the leaderboard and the tips all read it.
+    expect(profile.firstName, 'שרה');
+    expect(profile.name, 'שרה לוי');
+    expect(profile.fullName, 'שרה לוי');
+    expect(profile.communityDisplayName, 'שרה לוי');
+    expect(profile.tipAuthorName, 'שרה לוי');
+
+    // An empty first name is no name: nothing changes.
+    await profile.setDisplayName(firstName: '  ', lastName: 'x');
+    expect(profile.fullName, 'שרה לוי');
+  });
+
+  test(
+    'a community name chosen in an older version becomes the name',
+    () async {
+      await box.put('userName', 'רבקה כהן');
+      await box.put('userFirstName', 'רבקה');
+      await box.put('userLastName', 'כהן');
+      await box.put('userCommunityName', 'הרבנית רבקה');
+      await box.put('userTipAuthorName', 'ר. כהן');
+
+      final UserProfileProvider profile = provider();
+      await profile.migrateLegacyNames();
+      // What strangers were shown is kept, not replaced by the name it hid.
+      expect(profile.fullName, 'הרבנית רבקה');
+      expect(profile.communityDisplayName, 'הרבנית רבקה');
+      expect(profile.tipAuthorName, 'הרבנית רבקה');
+      expect(profile.communityName, isNull);
+      expect(box.containsKey('userTipAuthorName'), isFalse);
+    },
+  );
+
+  test('a community name equal to the name simply goes', () async {
+    await box.put('userName', 'רבקה כהן');
+    await box.put('userFirstName', 'רבקה');
+    await box.put('userLastName', 'כהן');
+    await box.put('userCommunityName', 'רבקה כהן');
+
+    final UserProfileProvider profile = provider();
+    await profile.migrateLegacyNames();
     expect(profile.fullName, 'רבקה כהן');
-    expect(profile.name, 'רבקה כהן');
-
-    // Typing one's own name back, or clearing it, returns to following it.
-    await profile.setCommunityName('רבקה כהן');
+    expect(profile.firstName, 'רבקה');
     expect(profile.communityName, isNull);
-    await profile.setCommunityName('שם אחר');
-    await profile.setCommunityName('');
-    expect(profile.communityName, isNull);
-    expect(profile.communityDisplayName, 'רבקה כהן');
   });
 
   test('a profile saved before the split still answers both halves', () async {

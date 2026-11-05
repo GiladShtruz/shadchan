@@ -1,4 +1,5 @@
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/services/auto_match_rules.dart';
 import 'package:shadchan/utils/enums.dart';
 
 /// What a candidate is looking for, resolved for use.
@@ -70,7 +71,20 @@ class MatchPreferences {
   /// including a style the matchmaker invented — defaults to itself alone,
   /// which is the only safe answer when the app does not know what the label
   /// means.
+  ///
+  /// For the styles the app offers ([ReligiousLevels.global]) the table is now
+  /// the matchmaker's own, from "סינון אוטומטי" in the settings
+  /// ([AutoMatchRules]); its defaults are exactly the cases below. A retired
+  /// style keeps the rule written here.
   static List<ReligiousLevel> defaultReligiousLevelsFor(ReligiousLevel? level) {
+    if (level != null) {
+      final List<ReligiousLevel>? chosen = AutoMatchRules.current.stylesFor(
+        level,
+      );
+      if (chosen != null) {
+        return chosen;
+      }
+    }
     switch (level) {
       case null:
         return const <ReligiousLevel>[];

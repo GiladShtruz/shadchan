@@ -1943,6 +1943,71 @@ void main() {
     },
   );
 
+  testWidgets(
+    'the התאמות filter offers "חזרה לסינון המקורי" instead of "נקה"',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final DateTime now = DateTime(2026, 7, 27);
+      final Person source = _testPerson(
+        id: 'reset-source',
+        firstName: 'אביב',
+        lastName: 'כהן',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      );
+      await tester.runAsync(() async {
+        await Hive.box<Person>('people').put(source.id, source);
+        await MatchProposalFilterSheet.saveFiltersFor(
+          source.id,
+          const MatchProposalFilters(minAge: 20, maxAge: 22),
+        );
+      });
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+      openSuggestionsFor(tester.element(find.byType(HomeScreen)), source.id);
+      await tester.pumpAndSettle();
+
+      // The sheet's own filter icon, over the page underneath.
+      await tester.tap(find.byTooltip('סינון').last);
+      await tester.pumpAndSettle();
+      expect(find.text('נקה'), findsNothing);
+      expect(find.text('חזרה לסינון המקורי'), findsOneWidget);
+
+      await tester.tap(find.text('חזרה לסינון המקורי'));
+      await tester.pumpAndSettle();
+      // The saved filter is forgotten: the list is back on its own start.
+      expect(MatchProposalFilterSheet.savedFiltersFor(source.id), isNull);
+      expect(find.text('חזרה לסינון המקורי'), findsNothing);
+    },
+  );
+
+  testWidgets('the settings carry the one name and the automatic filter', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/profile/settings');
+    await tester.pumpAndSettle();
+
+    expect(find.text('השם שלי'), findsOneWidget);
+    expect(find.text('סינון אוטומטי בהתאמות'), findsOneWidget);
+
+    await tester.tap(find.text('סינון אוטומטי בהתאמות'));
+    await tester.pumpAndSettle();
+    expect(find.text('הפרש גילים'), findsOneWidget);
+    expect(find.text('בחור עד גיל 30'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('חזרה לברירת המחדל'),
+      400,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('חזרה לברירת המחדל'), findsOneWidget);
+  });
+
   testWidgets('Each side of a proposal offers its chat or the other card', (
     WidgetTester tester,
   ) async {

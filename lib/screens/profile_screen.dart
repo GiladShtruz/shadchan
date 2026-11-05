@@ -10,9 +10,6 @@ import 'package:shadchan/dialogs/matchmaker_shares_sheet.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/providers/account_provider.dart';
-import 'package:shadchan/providers/community_provider.dart';
-import 'package:shadchan/providers/match_repository.dart';
-import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/intro_screens.dart';
@@ -203,21 +200,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // above it is private — the account, the matchmaker's own shidduch card —
       // and everything below it is app configuration. This is the one part of
       // the page that other people read, and it is drawn as a group of its own
-      // so that is never in doubt: three rows, each saying what is currently
+      // so that is never in doubt: a few rows, each saying what is currently
       // filled in, and the whole of the public page behind them.
       if (matchmaker)
         SettingsGroup(
           title: 'מה שדכנים אחרים רואים',
           accent: rose,
           children: <Widget>[
-            SettingsRow(
-              icon: Icons.person_pin_outlined,
-              title: 'השם שלי בקהילה',
-              subtitle: profile.communityName == null
-                  ? '${profile.fullName ?? ''} · אפשר לבחור שם אחר לתצוגה'
-                  : profile.communityName!,
-              onTap: () => _editCommunityName(profile),
-            ),
             SettingsRow(
               icon: Icons.badge_outlined,
               title: 'מה תרצה ששדכנים אחרים ידעו עליך?',
@@ -426,31 +415,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     await profile.setCommunityShares(shares);
-  }
-
-  /// The name the leaderboard and the community lines show. Published at once
-  /// rather than on the next app pause: somebody who just renamed themselves
-  /// goes to the board to see it.
-  Future<void> _editCommunityName(UserProfileProvider profile) async {
-    final String? name = await CommunityNameSheet.show(
-      context,
-      initial: profile.communityName ?? '',
-      accountName: profile.fullName ?? '',
-    );
-    if (name == null || !mounted) {
-      return;
-    }
-    await profile.setCommunityName(name);
-    if (!mounted) {
-      return;
-    }
-    unawaited(
-      context.read<CommunityProvider>().refresh(
-        people: context.read<PersonRepository>(),
-        matches: context.read<MatchRepository>(),
-        profile: profile,
-      ),
-    );
   }
 
   Future<void> _editBenefit(UserProfileProvider profile) async {

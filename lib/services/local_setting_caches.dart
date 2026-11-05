@@ -1,3 +1,5 @@
+import 'package:shadchan/services/own_card_mirror.dart';
+import 'package:shadchan/services/auto_match_rules.dart';
 import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_prompts_store.dart';
@@ -44,5 +46,7 @@ abstract final class LocalSettingCaches {
     ReminderLog.instance.forgetCache();
     RecentActivityStore.instance.forgetCache();
     DeletedMatchesStore.instance.forgetCache();
+    AutoMatchRules.forgetCache();
+    OwnCardMirror.forgetCache();
   }
 }

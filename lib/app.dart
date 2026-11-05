@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/widgets/achievement_watcher.dart';
+import 'package:shadchan/widgets/own_card_mirror_watcher.dart';
 import 'package:shadchan/widgets/app_badge_sync.dart';
 import 'package:shadchan/widgets/app_update_prompt.dart';
 import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
@@ -55,11 +56,15 @@ class App extends StatelessWidget {
                 // earned wherever the matchmaker happens to be working, and this
                 // has to be watching from all of them.
                 child: AchievementWatcher(
-                  // The app icon's number, kept equal to the bell's.
-                  child: AppBadgeSync(
-                    child: IncomingBackupImportListener(
-                      child: IncomingSharedProfileListener(
-                        child: child ?? const SizedBox.shrink(),
+                  // A single who matchmakes too finds their own personal card
+                  // among their friends, kept in step with it.
+                  child: OwnCardMirrorWatcher(
+                    // The app icon's number, kept equal to the bell's.
+                    child: AppBadgeSync(
+                      child: IncomingBackupImportListener(
+                        child: IncomingSharedProfileListener(
+                          child: child ?? const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ),

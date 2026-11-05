@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -27,7 +28,12 @@ extension UserGenderContext on BuildContext {
 /// Stores the profile of the matchmaker (the app's owner) collected during the
 /// first-launch onboarding flow.
 class UserProfileProvider extends ChangeNotifier {
-  UserProfileProvider(this._box);
+  UserProfileProvider(this._box) {
+    if (_box.containsKey(_communityNameKey) ||
+        _box.containsKey(_tipAuthorNameKey)) {
+      unawaited(migrateLegacyNames());
+    }
+  }
 
   static const String _nameKey = 'userName';
   static const String _firstNameKey = 'userFirstName';
@@ -54,7 +60,14 @@ class UserProfileProvider extends ChangeNotifier {
 
   /// The profile changed on another phone signed in to the same account. Every
   /// getter reads the box, so redrawing is all there is to do.
-  void notifySyncChange() => notifyListeners();
+  void notifySyncChange() {
+    // Another phone may still be on a version with a second name.
+    if (_box.containsKey(_communityNameKey) ||
+        _box.containsKey(_tipAuthorNameKey)) {
+      unawaited(migrateLegacyNames());
+    }
+    notifyListeners();
+  }
 
   /// The matchmaker's full name, as it has always been stored.
   ///
@@ -124,37 +137,97 @@ class UserProfileProvider extends ChangeNotifier {
     return name;
   }
 
-  /// How the matchmaker chose to be called in the community — "הרבנית רחל",
-  /// "שרה מבית שמש". Null when they never set one.
-  ///
-  /// **Only a display name.** The account's own name ([name], [fullName]) is
-  /// what the app greets them by, signs support reports with and hands to the
-  /// friends whose cards they follow; none of that changes. This is read only
-  /// where the community reads a name — see [communityDisplayName].
+  /// The community-only name an older version let a matchmaker choose beside
+  /// their own ("השם שלי בקהילה"). **Gone as a separate name** — see
+  /// [setDisplayName]; read only by [migrateLegacyNames] and the backup.
   String? get communityName {
     final String? value = (_box.get(_communityNameKey) as String?)?.trim();
     return (value == null || value.isEmpty) ? null : value;
   }
 
+  /// Only the backup still writes this: a restored older backup carries a
+  /// community name, which becomes the one name ([migrateLegacyNames]).
   Future<void> setCommunityName(String? value) async {
-    String trimmed = (value ?? '').trim();
-    if (trimmed.length > maxCommunityNameLength) {
-      trimmed = trimmed.substring(0, maxCommunityNameLength).trim();
-    }
-    // Typing one's own full name back in is the same as having none: the
-    // profile then keeps following a later change to the name.
-    if (trimmed.isEmpty || trimmed == fullName) {
+    final String trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty) {
       await _box.delete(_communityNameKey);
     } else {
       await _box.put(_communityNameKey, trimmed);
     }
+    await migrateLegacyNames();
     notifyListeners();
   }
 
   /// The name the community shows: the leaderboard, the activity lines, a
-  /// "מזל טוב" sent to another matchmaker. The chosen [communityName], else the
-  /// full name, as before.
-  String? get communityDisplayName => communityName ?? fullName;
+  /// "מזל טוב" sent to another matchmaker. **The same name as everywhere
+  /// else** — [fullName].
+  String? get communityDisplayName => fullName;
+
+  /// Changes the one name the matchmaker goes by. Everything that shows a
+  /// name reads it from here ([name], [firstName], [fullName],
+  /// [communityDisplayName], [tipAuthorName]), so a change here is a change
+  /// everywhere; the community copy is republished by whoever called this.
+  Future<void> setDisplayName({
+    required String firstName,
+    String? lastName,
+  }) async {
+    String clip(String value) => value.length > maxCommunityNameLength
+        ? value.substring(0, maxCommunityNameLength).trim()
+        : value;
+    final String first = clip(firstName.trim());
+    final String last = clip((lastName ?? '').trim());
+    if (first.isEmpty) {
+      return;
+    }
+    await _box.put(
+      _nameKey,
+      <String>[first, last].where((String p) => p.isNotEmpty).join(' '),
+    );
+    await _box.put(_firstNameKey, first);
+    if (last.isEmpty) {
+      await _box.delete(_lastNameKey);
+    } else {
+      await _box.put(_lastNameKey, last);
+    }
+    // The older second names go: there is one name now.
+    await _box.deleteAll(<String>[_communityNameKey, _tipAuthorNameKey]);
+    notifyListeners();
+  }
+
+  /// Folds the older second names into the one name.
+  ///
+  /// A community name somebody chose ("שרה מבית שמש") was a decision about
+  /// what strangers read, so it **becomes** the name rather than being
+  /// replaced by the account name it was chosen to hide: its first word is
+  /// the first name, the rest the surname. A tip signature simply goes —
+  /// tips are signed with the one name from now on. Runs on start and
+  /// whenever the account's settings arrive from another phone.
+  Future<void> migrateLegacyNames() => _migrating ??= _migrateLegacyNames()
+      .whenComplete(() => _migrating = null);
+
+  /// One migration at a time: the constructor starts one, and a sync arriving
+  /// a moment later must wait for it rather than run a second beside it.
+  Future<void>? _migrating;
+
+  Future<void> _migrateLegacyNames() async {
+    final String? community = communityName;
+    if (community != null) {
+      if (community == fullName) {
+        await _box.delete(_communityNameKey);
+      } else {
+        final List<String> parts = community.split(RegExp(r'\s+'))
+          ..removeWhere((String part) => part.isEmpty);
+        await setDisplayName(
+          firstName: parts.first,
+          lastName: parts.skip(1).join(' '),
+        );
+        return;
+      }
+    }
+    if (_box.containsKey(_tipAuthorNameKey)) {
+      await _box.delete(_tipAuthorNameKey);
+    }
+  }
 
   Gender? get gender {
     final String? value = _box.get(_genderKey) as String?;
@@ -298,26 +371,8 @@ class UserProfileProvider extends ChangeNotifier {
     ];
   }
 
-  /// The name a contributed tip is signed with — first name and surname.
-  ///
-  /// Kept apart from [name], which onboarding fills with whatever the
-  /// matchmaker wants to be greeted by and is usually a first name alone. A tip
-  /// is read by strangers, so it is signed in full; the value is asked for once
-  /// and remembered here.
-  String? get tipAuthorName {
-    final String? value = (_box.get(_tipAuthorNameKey) as String?)?.trim();
-    return (value == null || value.isEmpty) ? null : value;
-  }
-
-  Future<void> setTipAuthorName(String? value) async {
-    final String trimmed = (value ?? '').trim();
-    if (trimmed.isEmpty) {
-      await _box.delete(_tipAuthorNameKey);
-    } else {
-      await _box.put(_tipAuthorNameKey, trimmed);
-    }
-    notifyListeners();
-  }
+  /// The name a contributed tip is signed with: the one name ([fullName]).
+  String? get tipAuthorName => fullName;
 
   /// The user's own phone number — the account's, not a card's.
   ///

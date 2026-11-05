@@ -41,6 +41,7 @@ import 'package:shadchan/dialogs/delete_person_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/own_card_mirror.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/utils/contact_channel.dart';
@@ -573,6 +574,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             controller: _scrollController,
             padding: const EdgeInsets.only(bottom: 20),
             children: <Widget>[
+              if (OwnCardMirror.isMirror(person.id)) const _OwnCardNote(),
               _FriendCardTile(
                 key: _cardSectionKey,
                 person: person,
@@ -987,6 +989,43 @@ class _ProfileTagPill extends StatelessWidget {
 ///
 /// It replaced a round avatar with three small squares under it and, further
 /// down, a separate box holding the text — three places for one card.
+/// Above the matchmaker's own card in their database: it is their personal
+/// card, kept in step with the personal area, and that is where it is edited.
+class _OwnCardNote extends StatelessWidget {
+  const _OwnCardNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: HomePaperCard(
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              Icons.sync_rounded,
+              size: 20,
+              color: _profileAccentColor(context),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'זה הכרטיס האישי שלך. הוא מתעדכן אוטומטית מהאזור האישי.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            TextButton(
+              onPressed: () => context.push('/me/card'),
+              child: const Text('עריכה'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FriendCardTile extends StatefulWidget {
   const _FriendCardTile({
     super.key,
@@ -3543,14 +3582,17 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
         ? Gender.female
         : Gender.male;
 
-    final MatchProposalFilters? filters = await MatchProposalFilterSheet.show(
+    // "חזרה לסינון המקורי" forgets the saved filter: the list is back on the
+    // friend's own "מה אני מחפש/ת" when they manage their card, and on the
+    // app's automatic rules otherwise.
+    final MatchFilterChoice? choice = await MatchProposalFilterSheet.show(
       context,
       targetGender: targetGender,
       sourcePersonId: sourcePerson.id,
       initialFilters: _defaultSuggestionFilters(sourcePerson),
     );
 
-    if (filters != null && mounted) {
+    if (choice != null && mounted) {
       setState(_visitOrder.clear);
     }
   }

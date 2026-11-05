@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/person_tags.dart';
 import 'package:shadchan/services/tag_library.dart';
@@ -319,14 +321,14 @@ class _PersonPickerSheetState extends State<PersonPickerSheet> {
     if (key == null) {
       return;
     }
-    final MatchProposalFilters? picked = await MatchProposalFilterSheet.show(
+    final MatchFilterChoice? picked = await MatchProposalFilterSheet.show(
       context,
       targetGender: widget.filterGender ?? Gender.unknown,
       sourcePersonId: key,
       initialFilters: _filters,
     );
     if (picked != null && mounted) {
-      setState(() => _filters = picked);
+      setState(() => _filters = picked.filters);
     }
   }
 
@@ -936,10 +938,25 @@ class MatchProposalFilters {
 /// It used to be a second sheet of its own, with its own chips, its own slider
 /// and its own buttons; two filters that narrow the same database by the same
 /// fields should not look like two different features.
+/// What the candidate filter sheet was closed with.
+class MatchFilterChoice {
+  const MatchFilterChoice(this.filters);
+
+  /// The filter now saved — or null: "חזרה לסינון המקורי" forgot the saved
+  /// one, and the list is back on its own starting filter (the friend's "מה
+  /// אני מחפש/ת", or the app's automatic rules).
+  final MatchProposalFilters? filters;
+
+  bool get isReset => filters == null;
+}
+
 abstract final class MatchProposalFilterSheet {
+  /// The button that replaces "נקה" on the candidate filters.
+  static const String resetLabel = 'חזרה לסינון המקורי';
+
   /// Opens the shared filter sheet and remembers the answer under
   /// [sourcePersonId]. Returns null when it was dismissed.
-  static Future<MatchProposalFilters?> show(
+  static Future<MatchFilterChoice?> show(
     BuildContext context, {
     required Gender targetGender,
     required String sourcePersonId,
@@ -970,6 +987,7 @@ abstract final class MatchProposalFilterSheet {
         return PeopleFiltersSheet(
           title: 'סינון מועמדים',
           showGender: false,
+          resetLabel: resetLabel,
           initialGender: targetGender,
           initialAgeRange: _rangeIn(initial.minAge, initial.maxAge, ageBounds),
           ageBounds: ageBounds,
@@ -995,6 +1013,10 @@ abstract final class MatchProposalFilterSheet {
     if (picked == null) {
       return null;
     }
+    if (identical(picked, PeopleFiltersSheet.resetResult)) {
+      await clearFiltersFor(sourcePersonId);
+      return const MatchFilterChoice(null);
+    }
 
     final MatchProposalFilters filters = MatchProposalFilters(
       minAge: picked.ageRange?.start.round(),
@@ -1009,7 +1031,21 @@ abstract final class MatchProposalFilterSheet {
       tags: picked.tags,
     );
     await saveFiltersFor(sourcePersonId, filters);
-    return filters;
+    return MatchFilterChoice(filters);
+  }
+
+  /// Forgets the filter saved under [sourcePersonId].
+  ///
+  /// Plain background I/O in the root zone, like `persistHomeSetting`: the
+  /// box forgets the key at once, and the disk write must not belong to
+  /// whichever zone the sheet was closed from.
+  static Future<void> clearFiltersFor(String sourcePersonId) async {
+    if (!Hive.isBoxOpen('settings')) {
+      return;
+    }
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    final String key = '$settingsKeyPrefix$sourcePersonId';
+    Zone.root.run(() => unawaited(settings.delete(key)));
   }
 
   /// A saved pair as a slider range, clamped into [bounds].
