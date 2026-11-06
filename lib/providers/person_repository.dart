@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/own_card_mirror.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
@@ -505,6 +506,8 @@ class PersonRepository extends ChangeNotifier {
     }
 
     await _box.delete(id);
+    // The matchmaker's own card, deleted from their database, stays deleted.
+    OwnCardMirror.noteDeleted(id);
     HomeBoardStore.instance.forget(HomeItemKind.person, id);
     RecentActivityStore.instance.forget(HomeItemKind.person, id);
     notifyListeners();

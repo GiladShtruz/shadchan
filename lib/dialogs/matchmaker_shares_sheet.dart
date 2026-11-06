@@ -246,50 +246,67 @@ class _CommunityBenefitSheetState extends State<CommunityBenefitSheet> {
   }
 }
 
-/// "השם שלי בקהילה" — how the leaderboard, the activity lines and a "מזל טוב"
-/// sent to another matchmaker name this one.
+/// "השם שלי" — the one name this matchmaker goes by, everywhere: the profile,
+/// the greeting, the leaderboard and the community lines, a "מזל טוב" sent to
+/// another matchmaker, a tip they wrote, the friends whose cards they follow.
 ///
-/// The account's own name is not touched: it is shown under the field as the
-/// fallback, and clearing the field goes back to it.
-class CommunityNameSheet extends StatefulWidget {
-  const CommunityNameSheet({
+/// There used to be a second, community-only name beside it, which meant the
+/// same person could read one name on their profile and see another on the
+/// board. Now there is this one, edited in one place (the settings).
+class DisplayNameSheet extends StatefulWidget {
+  const DisplayNameSheet({
     super.key,
-    required this.initial,
-    required this.accountName,
+    required this.firstName,
+    required this.lastName,
   });
 
-  final String initial;
-  final String accountName;
+  final String firstName;
+  final String lastName;
 
-  /// Returns the new name (possibly empty, meaning "use my own name"), or null
-  /// when the sheet was dismissed.
-  static Future<String?> show(
+  /// Returns the new first name and surname, or null when the sheet was
+  /// dismissed.
+  static Future<({String first, String last})?> show(
     BuildContext context, {
-    required String initial,
-    required String accountName,
+    required String firstName,
+    required String lastName,
   }) {
-    return showModalBottomSheet<String>(
+    return showModalBottomSheet<({String first, String last})>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (BuildContext sheetContext) =>
-          CommunityNameSheet(initial: initial, accountName: accountName),
+          DisplayNameSheet(firstName: firstName, lastName: lastName),
     );
   }
 
   @override
-  State<CommunityNameSheet> createState() => _CommunityNameSheetState();
+  State<DisplayNameSheet> createState() => _DisplayNameSheetState();
 }
 
-class _CommunityNameSheetState extends State<CommunityNameSheet> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initial.isEmpty ? widget.accountName : widget.initial,
+class _DisplayNameSheetState extends State<DisplayNameSheet> {
+  late final TextEditingController _first = TextEditingController(
+    text: widget.firstName,
   );
+  late final TextEditingController _last = TextEditingController(
+    text: widget.lastName,
+  );
+  bool _showError = false;
 
   @override
   void dispose() {
-    _controller.dispose();
+    _first.dispose();
+    _last.dispose();
     super.dispose();
+  }
+
+  void _save() {
+    if (_first.text.trim().isEmpty) {
+      setState(() => _showError = true);
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pop((first: _first.text.trim(), last: _last.text.trim()));
   }
 
   @override
@@ -306,15 +323,15 @@ class _CommunityNameSheetState extends State<CommunityNameSheet> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Text(
-                'השם שלי בקהילה',
+                'השם שלי',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 6),
               Text(
-                'כך יופיע השם שלך לשדכנים אחרים — בדירוג, בפעילות הקהילה '
-                'ובברכות מזל טוב. השם בחשבון שלך לא משתנה.',
+                'זה השם שמופיע בכל מקום — בפרופיל, בקהילה, בדירוג, בברכות '
+                'מזל טוב ובטיפים. שינוי כאן מתעדכן בכולם.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                   height: 1.4,
@@ -322,33 +339,42 @@ class _CommunityNameSheetState extends State<CommunityNameSheet> {
               ),
               const SizedBox(height: 16),
               TextField(
-                controller: _controller,
+                controller: _first,
                 autofocus: true,
+                maxLength: UserProfileProvider.maxCommunityNameLength,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: 'שם פרטי',
+                  counterText: '',
+                  errorText: _showError && _first.text.trim().isEmpty
+                      ? 'צריך שם פרטי'
+                      : null,
+                ),
+                onChanged: (_) {
+                  if (_showError) {
+                    setState(() {});
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _last,
                 maxLength: UserProfileProvider.maxCommunityNameLength,
                 textInputAction: TextInputAction.done,
                 decoration: const InputDecoration(
-                  labelText: 'שם לתצוגה בקהילה',
-                  hintText: 'למשל: שרה כהן · הרבנית רחל',
+                  labelText: 'שם משפחה',
                   counterText: '',
                 ),
-                onSubmitted: (_) =>
-                    Navigator.of(context).pop(_controller.text.trim()),
+                onSubmitted: (_) => _save(),
               ),
               const SizedBox(height: 12),
               FilledButton(
-                onPressed: () =>
-                    Navigator.of(context).pop(_controller.text.trim()),
+                onPressed: _save,
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
                 ),
                 child: const Text('שמירה'),
               ),
-              if (widget.initial.trim().isNotEmpty &&
-                  widget.accountName.trim().isNotEmpty)
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(''),
-                  child: Text('חזרה לשם שלי (${widget.accountName.trim()})'),
-                ),
             ],
           ),
         ),

@@ -42,6 +42,7 @@ import 'package:shadchan/services/invite_link_service.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/settings_appearance_screen.dart';
 import 'package:shadchan/screens/settings_screen.dart';
+import 'package:shadchan/screens/settings_auto_match_screen.dart';
 import 'package:shadchan/screens/settings_data_screen.dart';
 import 'package:shadchan/screens/settings_help_screen.dart';
 import 'package:shadchan/screens/sign_in_screen.dart';
@@ -649,6 +650,13 @@ abstract final class AppRouter {
                   ),
                   // The settings are one short page and five screens behind it. Each of
                   // these used to be a card on `/profile` itself.
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'auto-match',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsAutoMatchScreen();
+                    },
+                  ),
                   GoRoute(
                     parentNavigatorKey: _rootNavigatorKey,
                     path: 'appearance',

@@ -1,4 +1,6 @@
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/services/auto_match_rules.dart';
+import 'package:shadchan/services/own_card_mirror.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_preferences.dart';
 
@@ -141,7 +143,9 @@ abstract final class MatchSuggestionUtils {
   /// same fields are the matchmaker's notes, and applying them by default is
   /// what emptied the lists (see [matchesBasicPreferences]).
   static bool followsOwnerWishes(Person source) {
-    return source.isCardSynced && hasExtendedPreferences(source);
+    // The matchmaker's own card in their database is theirs too.
+    return (source.isCardSynced || OwnCardMirror.isMirror(source.id)) &&
+        hasExtendedPreferences(source);
   }
 
   /// Whether [candidate] respects what [source] wrote under "מה אני מחפש/ת":
@@ -285,20 +289,15 @@ abstract final class MatchSuggestionUtils {
     return <ReligiousLevel>[sourceLevel];
   }
 
+  /// The ages of women a man of [maleAge] is shown by default: the age rule
+  /// of "סינון אוטומטי" in the settings ([AutoMatchRules]) — by default 5
+  /// years younger to 1 older up to 30, 7 to 2 from 31 to 40, and 12 to 5
+  /// above 40.
   static ({int minAge, int maxAge})? femaleAgeRangeForMale(int? maleAge) {
     if (maleAge == null) {
       return null;
     }
-
-    if (maleAge > 40) {
-      return (minAge: maleAge - 12, maxAge: maleAge + 5);
-    }
-
-    if (maleAge > 30) {
-      return (minAge: maleAge - 7, maxAge: maleAge + 2);
-    }
-
-    return (minAge: maleAge - 5, maxAge: maleAge + 1);
+    return AutoMatchRules.current.femaleRangeFor(maleAge);
   }
 
   /// The ages of men a woman of [femaleAge] is shown by default.

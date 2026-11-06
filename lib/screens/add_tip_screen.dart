@@ -42,9 +42,10 @@ class _AddTipScreenState extends State<AddTipScreen> {
   void initState() {
     super.initState();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
-    _author.text = profile.tipAuthorName ?? profile.name ?? '';
+    // Tips are signed with the one name the matchmaker goes by; it is
+    // changed in the settings, not here.
+    _author.text = profile.tipAuthorName ?? '';
     _tip.addListener(() => setState(() {}));
-    _author.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<TipsProvider>().refreshMine();
@@ -72,7 +73,7 @@ class _AddTipScreenState extends State<AddTipScreen> {
   String? get _nameError =>
       !_showErrors || _author.text.trim().length >= minNameLength
       ? null
-      : 'צריך למלא שם';
+      : 'צריך להגדיר שם בהגדרות';
 
   String? get _tipError =>
       !_showErrors || _tip.text.trim().length >= minTipLength
@@ -90,11 +91,9 @@ class _AddTipScreenState extends State<AddTipScreen> {
 
   Future<void> _submit() async {
     final TipsProvider tips = context.read<TipsProvider>();
-    final UserProfileProvider profile = context.read<UserProfileProvider>();
     final OverlayState? notices = AppNotice.capture(context);
 
     setState(() => _sending = true);
-    await profile.setTipAuthorName(_author.text);
     final bool sent = await tips.submit(
       text: _tip.text,
       authorName: _author.text,
@@ -132,10 +131,10 @@ class _AddTipScreenState extends State<AddTipScreen> {
             else ...<Widget>[
               TextField(
                 controller: _author,
-                textInputAction: TextInputAction.next,
+                readOnly: true,
                 decoration: InputDecoration(
-                  labelText: 'שם פרטי ושם משפחה',
-                  helperText: 'השם יופיע בקטן מתחת לטיפ',
+                  labelText: 'השם שלי',
+                  helperText: 'יופיע בקטן מתחת לטיפ · אפשר לשנות אותו בהגדרות',
                   border: const OutlineInputBorder(),
                   errorText: _nameError,
                 ),

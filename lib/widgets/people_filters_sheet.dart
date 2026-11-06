@@ -233,7 +233,24 @@ class PeopleFiltersSheet extends StatefulWidget {
     this.initialTags = const <String>[],
     this.title = 'סינון אנשים',
     this.showGender = true,
+    this.resetLabel,
   });
+
+  /// What the sheet pops when the secondary button is a [resetLabel]: not a
+  /// filter, but "forget the one I set and go back to where this list starts".
+  /// Compared by identity.
+  static final PeopleFilterState resetResult = PeopleFilterState(
+    gender: null,
+    ageRange: null,
+    religiousLevels: const <ReligiousLevel>[],
+    profileStatuses: const <ProfileStatus>[],
+  );
+
+  /// Replaces "נקה" with a button that returns the list to its original
+  /// filter ([resetResult]) — used by the candidate filters, where an empty
+  /// filter is not the starting point: the list starts from the friend's own
+  /// wishes or the app's automatic rules.
+  final String? resetLabel;
 
   /// What the sheet calls itself. The one filter surface serves both the
   /// database and the candidate pickers, and each says whose list it narrows.
@@ -684,6 +701,7 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
               ),
             ),
             _FilterActionsBar(
+              clearLabel: widget.resetLabel,
               onApply: () {
                 Navigator.of(context).pop(
                   PeopleFilterState(
@@ -704,6 +722,10 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                 );
               },
               onClear: () {
+                if (widget.resetLabel != null) {
+                  Navigator.of(context).pop(PeopleFiltersSheet.resetResult);
+                  return;
+                }
                 setState(() {
                   // A hidden gender is not the user's to clear: it is the side
                   // the flow is already choosing.
@@ -866,10 +888,17 @@ class _AdvancedFilterCard extends StatelessWidget {
 }
 
 class _FilterActionsBar extends StatelessWidget {
-  const _FilterActionsBar({required this.onApply, required this.onClear});
+  const _FilterActionsBar({
+    required this.onApply,
+    required this.onClear,
+    this.clearLabel,
+  });
 
   final VoidCallback onApply;
   final VoidCallback onClear;
+
+  /// The secondary button's word; null is the plain "נקה".
+  final String? clearLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -892,7 +921,7 @@ class _FilterActionsBar extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(
-            flex: 5,
+            flex: clearLabel == null ? 5 : 4,
             child: FilledButton(
               onPressed: onApply,
               style: FilledButton.styleFrom(
@@ -906,7 +935,7 @@ class _FilterActionsBar extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            flex: 3,
+            flex: clearLabel == null ? 3 : 4,
             child: OutlinedButton(
               onPressed: onClear,
               style: OutlinedButton.styleFrom(
@@ -920,7 +949,12 @@ class _FilterActionsBar extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              child: const Text('נקה'),
+              child: clearLabel == null
+                  ? const Text('נקה')
+                  : FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(clearLabel!, maxLines: 1),
+                    ),
             ),
           ),
         ],

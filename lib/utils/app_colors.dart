@@ -273,6 +273,34 @@ abstract final class AppColors {
     }
   }
 
+  /// The frame a *live* idea wears, wherever it is drawn — its card on
+  /// "הרעיונות שלי" and its row or square in "התאמות" alike, so a status is
+  /// one colour everywhere: open is the blue, waiting the orange-copper (a
+  /// stored "בהמתנה", or either side on a break or taken — [paused]), and a
+  /// couple who are out the rose. Null for an idea that is over: it wears no
+  /// frame at all.
+  static Color? ideaFrame(
+    MatchStatus status, {
+    bool paused = false,
+    bool dark = false,
+  }) {
+    switch (status) {
+      case MatchStatus.dating:
+        return dark ? femaleAccentDm : femaleAccent;
+      case MatchStatus.idea:
+      case MatchStatus.checking:
+      case MatchStatus.unavailable:
+        if (status == MatchStatus.unavailable || paused) {
+          return dark ? secondaryDarkDm : secondary;
+        }
+        return dark ? primaryDarkDm : primaryDark;
+      case MatchStatus.rejected:
+      case MatchStatus.dated:
+      case MatchStatus.married:
+        return null;
+    }
+  }
+
   /// [matchState] by the status's stored name, for the callers that hold one.
   static Color statusColor(String status) {
     for (final MatchStatus value in MatchStatus.values) {

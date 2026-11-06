@@ -402,25 +402,21 @@ class _CardTone {
     final bool paused =
         (male?.profileStatus.pausesMatches ?? false) ||
         (female?.profileStatus.pausesMatches ?? false);
-    switch (match.status) {
-      case MatchStatus.dating:
-        return framed(dark ? AppColors.femaleAccentDm : AppColors.femaleAccent);
-      case MatchStatus.idea:
-      case MatchStatus.checking:
-      case MatchStatus.unavailable:
-        if (match.status == MatchStatus.unavailable || paused) {
-          return framed(dark ? AppColors.secondaryDarkDm : AppColors.secondary);
-        }
-        return framed(dark ? AppColors.primaryDarkDm : AppColors.primaryDark);
-      case MatchStatus.rejected:
-      case MatchStatus.dated:
-      case MatchStatus.married:
-        return _CardTone(
-          accent: theme.colorScheme.secondary,
-          surface: paper,
-          gradient: null,
-        );
+    // The same rule "התאמות" frames its rows by, so one status is one colour
+    // on both pages.
+    final Color? frame = AppColors.ideaFrame(
+      match.status,
+      paused: paused,
+      dark: dark,
+    );
+    if (frame != null) {
+      return framed(frame);
     }
+    return _CardTone(
+      accent: theme.colorScheme.secondary,
+      surface: paper,
+      gradient: null,
+    );
   }
 }
 

@@ -41,6 +41,8 @@ import 'package:shadchan/dialogs/delete_person_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/dialogs/home_board_actions.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/own_card_mirror.dart';
+import 'package:hive/hive.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/utils/contact_channel.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -54,14 +56,11 @@ import 'package:shadchan/widgets/first_visit_tip.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 
 /// Opens the "התאמות" view for a person from anywhere in the app — the heart on
-/// a row in המאגר שלי lands on exactly the same screen the profile's own
-/// התאמות button opens, so there is only one matches experience to learn.
+/// a row in המאגר שלי, the profile's own התאמות button, a new friend's
+/// "לראות התאמות" — always the same view, raised the same way: a sheet from
+/// the bottom (see [openSuggestionsSheet]).
 Future<void> openSuggestionsFor(BuildContext context, String personId) {
-  return Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (BuildContext context) => _SuggestionsPage(personId: personId),
-    ),
-  );
+  return openSuggestionsSheet(context, personId);
 }
 
 /// Opens the extended card editor ("עריכה מורחבת") for a person.
@@ -112,32 +111,161 @@ Future<bool> openExtendedPersonEditor(
   return kept ?? true;
 }
 
-/// The same view, raised as a sheet over the list it was opened from.
+/// The "התאמות" view, raised as a sheet over whatever it was opened from.
 ///
-/// From המאגר שלי the matchmaker is running down a list of people and dipping
-/// into one person's matches; a full page push makes that a departure and a
-/// return. As a sheet, closing it puts the list back exactly where it was.
+/// It used to be a page of its own from the profile and a sheet only from
+/// המאגר שלי. A page push makes looking at somebody's matches a departure and
+/// a return; a sheet that comes up from below — the way "הוספת רעיון" does
+/// from the same profile — keeps the page it came from in view and puts it
+/// back exactly where it was. It opens tall enough to work in, and the handle
+/// (or the expand icon in its bar) takes it to the full screen and back; a
+/// drag down closes it.
+///
+/// Pushed on the caller's own navigator, as the page used to be, so anything
+/// opened from inside it (an idea, a profile, a card) lands on top of it and
+/// a back press comes back to it.
 Future<void> openSuggestionsSheet(BuildContext context, String personId) {
   final ThemeData theme = Theme.of(context);
+  final Gender gender =
+      context.read<PersonRepository>().getById(personId)?.gender ??
+      Gender.unknown;
 
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    showDragHandle: true,
+    // The sheet draws its own handle, which also resizes it.
+    showDragHandle: false,
     backgroundColor: _profileCanvasColor(theme),
+    clipBehavior: Clip.antiAlias,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
     ),
     builder: (BuildContext sheetContext) {
-      return SizedBox(
-        // Tall enough to work in, short enough that the list underneath is
-        // still visible behind it.
-        height: MediaQuery.of(sheetContext).size.height * 0.9,
-        child: _SuggestionsPage(personId: personId, asSheet: true),
+      return ProfilePersonAccent(
+        gender: gender,
+        child: _ResizableSuggestionsSheet(personId: personId),
       );
     },
   );
+}
+
+/// The sheet's frame: its handle and its height.
+///
+/// Opens at [_open] of the screen, which leaves the page underneath showing
+/// along the top; dragging the handle up (or tapping it, or the expand icon)
+/// takes it to the whole screen, and dragging it down past [_closeBelow]
+/// closes it.
+class _ResizableSuggestionsSheet extends StatefulWidget {
+  const _ResizableSuggestionsSheet({required this.personId});
+
+  final String personId;
+
+  @override
+  State<_ResizableSuggestionsSheet> createState() =>
+      _ResizableSuggestionsSheetState();
+}
+
+class _ResizableSuggestionsSheetState
+    extends State<_ResizableSuggestionsSheet> {
+  static const double _open = 0.9;
+  static const double _full = 1.0;
+  static const double _closeBelow = 0.6;
+
+  double _fraction = _open;
+  bool _dragging = false;
+
+  bool get _expanded => _fraction > (_open + _full) / 2;
+
+  void _toggle() {
+    setState(() => _fraction = _expanded ? _open : _full);
+  }
+
+  void _onDrag(DragUpdateDetails details, double maxHeight) {
+    setState(() {
+      _dragging = true;
+      _fraction = (_fraction - details.primaryDelta! / maxHeight).clamp(
+        0.3,
+        _full,
+      );
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final double velocity = details.primaryVelocity ?? 0;
+    if (_fraction < _closeBelow || velocity > 1400 && _fraction < _open) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    setState(() {
+      _dragging = false;
+      if (velocity < -400) {
+        _fraction = _full;
+      } else if (velocity > 400) {
+        _fraction = _open;
+      } else {
+        _fraction = _expanded ? _full : _open;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height;
+        return AnimatedContainer(
+          duration: _dragging
+              ? Duration.zero
+              : const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          height: maxHeight * _fraction,
+          child: Column(
+            children: <Widget>[
+              Semantics(
+                button: true,
+                label: _expanded ? 'הקטנת המסך' : 'הגדלה למסך מלא',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggle,
+                  onVerticalDragUpdate: (DragUpdateDetails details) =>
+                      _onDrag(details, maxHeight),
+                  onVerticalDragEnd: _onDragEnd,
+                  child: SizedBox(
+                    height: 22,
+                    width: double.infinity,
+                    child: Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.4,
+                          ),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _SuggestionsPage(
+                  personId: widget.personId,
+                  asSheet: true,
+                  sheetExpanded: _expanded,
+                  onToggleSheetSize: _toggle,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class PersonDetailScreen extends StatefulWidget {
@@ -446,6 +574,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             controller: _scrollController,
             padding: const EdgeInsets.only(bottom: 20),
             children: <Widget>[
+              if (OwnCardMirror.isMirror(person.id)) const _OwnCardNote(),
               _FriendCardTile(
                 key: _cardSectionKey,
                 person: person,
@@ -585,15 +714,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 
-  Future<void> _openSuggestions(BuildContext context, Person person) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => ProfilePersonAccent(
-          gender: person.gender,
-          child: _SuggestionsPage(personId: person.id),
-        ),
-      ),
-    );
+  Future<void> _openSuggestions(BuildContext context, Person person) {
+    return openSuggestionsSheet(context, person.id);
   }
 
   /// Changes the global profile status — the same flow the chips on the ideas
@@ -867,6 +989,43 @@ class _ProfileTagPill extends StatelessWidget {
 ///
 /// It replaced a round avatar with three small squares under it and, further
 /// down, a separate box holding the text — three places for one card.
+/// Above the matchmaker's own card in their database: it is their personal
+/// card, kept in step with the personal area, and that is where it is edited.
+class _OwnCardNote extends StatelessWidget {
+  const _OwnCardNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: HomePaperCard(
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              Icons.sync_rounded,
+              size: 20,
+              color: _profileAccentColor(context),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'זה הכרטיס האישי שלך. הוא מתעדכן אוטומטית מהאזור האישי.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            TextButton(
+              onPressed: () => context.push('/me/card'),
+              child: const Text('עריכה'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FriendCardTile extends StatefulWidget {
   const _FriendCardTile({
     super.key,
@@ -3033,13 +3192,24 @@ class _MatchPreviewHalf extends StatelessWidget {
 /// bar. It owns the suggestion filtering, ordering and accept/reject flow that
 /// used to live inside the person page's tab.
 class _SuggestionsPage extends StatefulWidget {
-  const _SuggestionsPage({required this.personId, this.asSheet = false});
+  const _SuggestionsPage({
+    required this.personId,
+    this.asSheet = false,
+    this.sheetExpanded = false,
+    this.onToggleSheetSize,
+  });
 
   final String personId;
 
   /// Raised over a list instead of pushed as a page: the canvas is the sheet's
   /// own, and the bar closes rather than goes back.
   final bool asSheet;
+
+  /// The sheet fills the screen; its bar's icon then offers to shrink it.
+  final bool sheetExpanded;
+
+  /// Takes the sheet to the whole screen and back. Null outside a sheet.
+  final VoidCallback? onToggleSheetSize;
 
   @override
   State<_SuggestionsPage> createState() => _SuggestionsPageState();
@@ -3049,6 +3219,25 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   final List<String> _visitOrder = <String>[];
+
+  /// Squares rather than rows: the same candidates in the same order with the
+  /// same answers, more of them on the screen at once. Remembered across
+  /// visits, like the person picker's own choice.
+  bool _grid = _readGridChoice();
+
+  static const String _gridKey = 'suggestions.grid';
+
+  static bool _readGridChoice() {
+    final Object? raw = Hive.isBoxOpen('settings')
+        ? Hive.box<dynamic>('settings').get(_gridKey)
+        : null;
+    return raw == true || raw == 'true';
+  }
+
+  void _toggleView() {
+    setState(() => _grid = !_grid);
+    persistHomeSetting(_gridKey, _grid.toString());
+  }
 
   /// Whether the list is narrowed to the candidate's *extended* filter — the
   /// height, city, region, marital status and age range recorded under "עריכה
@@ -3095,8 +3284,8 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
           ),
         )
         .toList();
-    // Order the suggestions in tiers: candidates that already have an
-    // open/בהמתנה proposal with this person come first, then the remaining
+    // Order the suggestions in tiers: candidates that already have a live
+    // idea with this person (open, בהמתנה or out together) come first, then the remaining
     // active suggestions, then candidates whose opened proposal was rejected,
     // and at the very end everybody marked "לא מתאים".
     //
@@ -3126,7 +3315,8 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
         rejectedSuggestions.add(candidate);
       } else if (existingStatus == MatchStatus.idea ||
           existingStatus == MatchStatus.checking ||
-          existingStatus == MatchStatus.unavailable) {
+          existingStatus == MatchStatus.unavailable ||
+          existingStatus == MatchStatus.dating) {
         prioritizedSuggestions.add(candidate);
       } else {
         activeSuggestions.add(candidate);
@@ -3212,6 +3402,19 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
             : null,
         centerTitle: true,
         title: Text('התאמות · ${person.fullName.trim()}'),
+        actions: <Widget>[
+          if (widget.onToggleSheetSize != null)
+            IconButton(
+              tooltip: widget.sheetExpanded ? 'הקטנת המסך' : 'מסך מלא',
+              onPressed: widget.onToggleSheetSize,
+              icon: Icon(
+                widget.sheetExpanded
+                    ? Icons.close_fullscreen_rounded
+                    : Icons.open_in_full_rounded,
+                size: 20,
+              ),
+            ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -3221,6 +3424,8 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
               onChanged: (String value) => setState(() => _query = value),
               filtersActive: savedSuggestionFilters != null,
               onFilterPressed: () => _openSuggestionFilters(context, person),
+              grid: _grid,
+              onToggleView: _toggleView,
             ),
             Expanded(
               child: searching
@@ -3234,6 +3439,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
                           )
                         : _SuggestedMatchesList(
                             searching: true,
+                            grid: _grid,
                             sourcePerson: person,
                             suggestedPeople: searchResults,
                             dismissedIds: dismissedIds,
@@ -3248,6 +3454,7 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
                                 _restoreSuggestion(person, candidate),
                           )
                   : _SuggestedMatchesTab(
+                      grid: _grid,
                       sourcePerson: person,
                       suggestedPeople: suggestedPeople,
                       dismissedIds: dismissedIds,
@@ -3375,14 +3582,17 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
         ? Gender.female
         : Gender.male;
 
-    final MatchProposalFilters? filters = await MatchProposalFilterSheet.show(
+    // "חזרה לסינון המקורי" forgets the saved filter: the list is back on the
+    // friend's own "מה אני מחפש/ת" when they manage their card, and on the
+    // app's automatic rules otherwise.
+    final MatchFilterChoice? choice = await MatchProposalFilterSheet.show(
       context,
       targetGender: targetGender,
       sourcePersonId: sourcePerson.id,
       initialFilters: _defaultSuggestionFilters(sourcePerson),
     );
 
-    if (filters != null && mounted) {
+    if (choice != null && mounted) {
       setState(_visitOrder.clear);
     }
   }
@@ -3556,6 +3766,8 @@ class _SuggestionSearchField extends StatelessWidget {
     required this.onChanged,
     required this.filtersActive,
     required this.onFilterPressed,
+    required this.grid,
+    required this.onToggleView,
   });
 
   final TextEditingController controller;
@@ -3564,6 +3776,10 @@ class _SuggestionSearchField extends StatelessWidget {
   /// A filter of the matchmaker's own is set — the icon carries a dot.
   final bool filtersActive;
   final VoidCallback onFilterPressed;
+
+  /// The list is drawn as squares; the toggle offers the rows back.
+  final bool grid;
+  final VoidCallback onToggleView;
 
   @override
   Widget build(BuildContext context) {
@@ -3575,6 +3791,20 @@ class _SuggestionSearchField extends StatelessWidget {
         children: <Widget>[
           Expanded(child: _field(theme)),
           const SizedBox(width: 6),
+          // Rows or squares — the same toggle, in the same place, as the
+          // person picker's.
+          IconButton(
+            tooltip: grid ? 'תצוגת רשימה' : 'תצוגת ריבועים',
+            onPressed: onToggleView,
+            style: IconButton.styleFrom(
+              backgroundColor: _profileSurfaceColor(theme),
+              foregroundColor: _profileMutedColor(theme),
+            ),
+            icon: Icon(
+              grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
+            ),
+          ),
+          const SizedBox(width: 4),
           // The filter is one icon beside the search, not a banner of its
           // own: the list gets the room.
           Stack(
@@ -3645,6 +3875,7 @@ class _SuggestionSearchField extends StatelessWidget {
 
 class _SuggestedMatchesTab extends StatelessWidget {
   const _SuggestedMatchesTab({
+    required this.grid,
     required this.sourcePerson,
     required this.suggestedPeople,
     required this.dismissedIds,
@@ -3656,6 +3887,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
     required this.onRestore,
   });
 
+  final bool grid;
   final Person sourcePerson;
   final List<Person> suggestedPeople;
 
@@ -3707,6 +3939,7 @@ class _SuggestedMatchesTab extends StatelessWidget {
         header,
         Expanded(
           child: _SuggestedMatchesList(
+            grid: grid,
             sourcePerson: sourcePerson,
             suggestedPeople: suggestedPeople,
             dismissedIds: dismissedIds,
@@ -3733,6 +3966,7 @@ class _SuggestedMatchesList extends StatefulWidget {
     required this.onReject,
     required this.onRestore,
     this.searching = false,
+    this.grid = false,
   });
 
   final Person sourcePerson;
@@ -3747,6 +3981,9 @@ class _SuggestedMatchesList extends StatefulWidget {
   /// The whole-database search results rather than the automatic list: no
   /// "סומנו כלא מתאימים" heading, and a scroll position of its own.
   final bool searching;
+
+  /// Squares ([SuggestionTile]) rather than rows ([SuggestionRow]).
+  final bool grid;
 
   @override
   State<_SuggestedMatchesList> createState() => _SuggestedMatchesListState();
@@ -3806,110 +4043,231 @@ class _SuggestedMatchesListState extends State<_SuggestedMatchesList> {
   }
 
   @override
+  void didUpdateWidget(covariant _SuggestedMatchesList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Rows and squares have different heights: a place kept in one means
+    // nothing in the other.
+    if (oldWidget.grid != widget.grid) {
+      _anchor = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return NotificationListener<Notification>(
       onNotification: _onScroll,
-      child: _list(context),
+      child: widget.grid ? _gridView(context) : _list(context),
+    );
+  }
+
+  PageStorageKey<String> get _storageKey => PageStorageKey<String>(
+    '${widget.searching ? 'search' : 'suggestions'}:'
+    '${widget.grid ? 'grid' : 'list'}:'
+    '${widget.sourcePerson.id}',
+  );
+
+  bool _isFirstDismissed(int index) {
+    final List<Person> people = widget.suggestedPeople;
+    return !widget.searching &&
+        widget.dismissedIds.contains(people[index].id) &&
+        (index == 0 || !widget.dismissedIds.contains(people[index - 1].id));
+  }
+
+  /// The turned-down tail says what it is, so a row that moved there reads as
+  /// "done" rather than as "still here".
+  Widget _dismissedHeading(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+      child: Text(
+        'סומנו כלא מתאימים',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: _profileMutedColor(theme),
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 
   Widget _list(BuildContext context) {
     return ListView.separated(
       controller: _scroll,
-      key: PageStorageKey(
-        '${widget.searching ? 'search' : 'suggestions'}:'
-        '${widget.sourcePerson.id}',
-      ),
+      key: _storageKey,
       padding: const EdgeInsets.fromLTRB(12, 2, 12, 32),
       itemCount: widget.suggestedPeople.length,
       separatorBuilder: (_, _) => const SizedBox(height: 6),
       itemBuilder: (BuildContext context, int index) {
         final ThemeData theme = Theme.of(context);
         final Person candidate = widget.suggestedPeople[index];
-        final MatchIdea? existingMatch = widget.matchRepository.findExisting(
-          widget.sourcePerson.id,
-          candidate.id,
-        );
-        final bool dismissed = widget.dismissedIds.contains(candidate.id);
-        final bool firstDismissed =
-            !widget.searching &&
-            dismissed &&
-            (index == 0 ||
-                !widget.dismissedIds.contains(
-                  widget.suggestedPeople[index - 1].id,
-                ));
-
-        final Widget? tag = existingMatch != null
-            ? _StatusChip(status: existingMatch.status)
-            // Looked at this visit: a small eye rather than a word, so the
-            // name keeps the room.
-            : _viewedIds.contains(candidate.id)
-            ? Icon(
-                Icons.visibility_outlined,
-                size: 15,
-                color: _profileMutedColor(theme),
-                semanticLabel: 'כבר נצפתה',
-              )
-            : null;
-
-        final Widget row = SuggestionRow(
-          person: candidate,
-          summary: _rowSummary(candidate),
-          tag: tag,
-          hasIdea: existingMatch != null,
-          dismissed: dismissed,
-          surfaceColor: _profileSurfaceColor(theme),
-          nameColor: _profileTextColor(theme),
-          mutedColor: _profileMutedColor(theme),
-          // The details compare the two of them — or, once there is an idea,
-          // go to it.
-          onTap: existingMatch != null
-              ? () =>
-                    AppNavigation.open(context, '/matches/${existingMatch.id}')
-              : () => _view(candidate, () => widget.onOpenPreview(candidate)),
-          onAvatarTap: () => openPersonProfile(context, candidate.id),
-          onOpenIdea: () => _view(
-            candidate,
-            () => existingMatch == null
-                ? widget.onAccept(candidate)
-                : AppNavigation.open(context, '/matches/${existingMatch.id}'),
-          ),
-          onNotSuitable: dismissed
-              ? () => widget.onRestore(candidate)
-              : () => widget.onReject(candidate),
-          // Always the full card — an empty one, with a way to ask for the
-          // details, when nothing has been written yet.
-          onOpenCard: () => _view(
-            candidate,
-            () => PersonCardViewer.open(context, candidate.id),
-          ),
-        );
-
         // Keyed by the person: rows move when somebody is turned down.
         return KeyedSubtree(
           key: ValueKey<String>(candidate.id),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // The turned-down tail says what it is, so a row that moved
-              // there reads as "done" rather than as "still here".
-              if (firstDismissed)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
-                  child: Text(
-                    'סומנו כלא מתאימים',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: _profileMutedColor(theme),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              if (dismissed) Opacity(opacity: 0.6, child: row) else row,
+              if (_isFirstDismissed(index)) _dismissedHeading(theme),
+              _cell(context, candidate, square: false),
             ],
           ),
         );
       },
     );
+  }
+
+  /// The same candidates as squares: two across on a phone, more on a wider
+  /// screen, every square the same height. The turned-down tail is a grid of
+  /// its own under its heading.
+  Widget _gridView(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<Person> people = widget.suggestedPeople;
+    int split = people.length;
+    if (!widget.searching) {
+      for (int i = 0; i < people.length; i++) {
+        if (widget.dismissedIds.contains(people[i].id)) {
+          split = i;
+          break;
+        }
+      }
+    }
+    final List<Person> live = people.sublist(0, split);
+    final List<Person> turnedDown = people.sublist(split);
+    final SliverGridDelegate delegate =
+        SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 200,
+          mainAxisExtent: SuggestionTile.extentFor(context),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+        );
+
+    Widget grid(List<Person> group) => SliverGrid(
+      gridDelegate: delegate,
+      delegate: SliverChildBuilderDelegate(
+        (BuildContext context, int index) => KeyedSubtree(
+          key: ValueKey<String>(group[index].id),
+          child: _cell(context, group[index], square: true),
+        ),
+        childCount: group.length,
+        findChildIndexCallback: (Key key) {
+          if (key is! ValueKey<String>) {
+            return null;
+          }
+          final int at = group.indexWhere((Person p) => p.id == key.value);
+          return at < 0 ? null : at;
+        },
+      ),
+    );
+
+    return CustomScrollView(
+      controller: _scroll,
+      key: _storageKey,
+      slivers: <Widget>[
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
+          sliver: grid(live),
+        ),
+        if (turnedDown.isNotEmpty) ...<Widget>[
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            sliver: SliverToBoxAdapter(child: _dismissedHeading(theme)),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            sliver: grid(turnedDown),
+          ),
+        ],
+        const SliverToBoxAdapter(child: SizedBox(height: 32)),
+      ],
+    );
+  }
+
+  /// One candidate, as a row or as a square — the same facts, the same
+  /// frame and the same answers either way.
+  Widget _cell(BuildContext context, Person candidate, {required bool square}) {
+    final ThemeData theme = Theme.of(context);
+    final MatchIdea? existingMatch = widget.matchRepository.findExisting(
+      widget.sourcePerson.id,
+      candidate.id,
+    );
+    final bool dismissed = widget.dismissedIds.contains(candidate.id);
+
+    final Widget? tag = existingMatch != null
+        ? _StatusChip(status: existingMatch.status)
+        // Looked at this visit: a small eye rather than a word, so the
+        // name keeps the room.
+        : _viewedIds.contains(candidate.id)
+        ? Icon(
+            Icons.visibility_outlined,
+            size: 15,
+            color: _profileMutedColor(theme),
+            semanticLabel: 'כבר נצפתה',
+          )
+        : null;
+
+    // A live idea frames the candidate exactly as its card is framed on
+    // "הרעיונות שלי": blue open, orange waiting, rose out.
+    final Color? frame = existingMatch == null
+        ? null
+        : AppColors.ideaFrame(
+            existingMatch.status,
+            paused:
+                widget.sourcePerson.profileStatus.pausesMatches ||
+                candidate.profileStatus.pausesMatches,
+            dark: theme.brightness == Brightness.dark,
+          );
+
+    // The details compare the two of them — or, once there is an idea, go
+    // to it.
+    final VoidCallback onTap = existingMatch != null
+        ? () => AppNavigation.open(context, '/matches/${existingMatch.id}')
+        : () => _view(candidate, () => widget.onOpenPreview(candidate));
+    void onAvatarTap() => openPersonProfile(context, candidate.id);
+    void onOpenIdea() => _view(
+      candidate,
+      () => existingMatch == null
+          ? widget.onAccept(candidate)
+          : AppNavigation.open(context, '/matches/${existingMatch.id}'),
+    );
+    final VoidCallback onNotSuitable = dismissed
+        ? () => widget.onRestore(candidate)
+        : () => widget.onReject(candidate);
+    // Always the full card — an empty one, with a way to ask for the details,
+    // when nothing has been written yet.
+    void onOpenCard() =>
+        _view(candidate, () => PersonCardViewer.open(context, candidate.id));
+
+    final Widget cell = square
+        ? SuggestionTile(
+            person: candidate,
+            summary: _rowSummary(candidate),
+            tag: tag,
+            hasIdea: existingMatch != null,
+            dismissed: dismissed,
+            surfaceColor: _profileSurfaceColor(theme),
+            nameColor: _profileTextColor(theme),
+            mutedColor: _profileMutedColor(theme),
+            frameColor: frame,
+            onTap: onTap,
+            onAvatarTap: onAvatarTap,
+            onOpenIdea: onOpenIdea,
+            onNotSuitable: onNotSuitable,
+            onOpenCard: onOpenCard,
+          )
+        : SuggestionRow(
+            person: candidate,
+            summary: _rowSummary(candidate),
+            tag: tag,
+            hasIdea: existingMatch != null,
+            dismissed: dismissed,
+            surfaceColor: _profileSurfaceColor(theme),
+            nameColor: _profileTextColor(theme),
+            mutedColor: _profileMutedColor(theme),
+            frameColor: frame,
+            onTap: onTap,
+            onAvatarTap: onAvatarTap,
+            onOpenIdea: onOpenIdea,
+            onNotSuitable: onNotSuitable,
+            onOpenCard: onOpenCard,
+          );
+    return dismissed ? Opacity(opacity: 0.6, child: cell) : cell;
   }
 }
 

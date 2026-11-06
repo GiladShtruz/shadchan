@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:shadchan/screens/couple_workspace_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,10 @@ import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/home_area_dialog.dart';
 import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/dialogs/matchmaker_shares_sheet.dart';
+import 'package:shadchan/providers/community_provider.dart';
+import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/workspace_store.dart';
@@ -36,9 +42,35 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  /// Renames the matchmaker everywhere at once. The community copy (the
+  /// leaderboard, the public page) is republished straight away rather than on
+  /// the next app pause: somebody who just renamed themselves goes to look.
+  Future<void> _editName(UserProfileProvider profile) async {
+    final ({String first, String last})? name = await DisplayNameSheet.show(
+      context,
+      firstName: profile.firstName ?? '',
+      lastName: profile.lastName ?? '',
+    );
+    if (name == null || !mounted) {
+      return;
+    }
+    await profile.setDisplayName(firstName: name.first, lastName: name.last);
+    if (!mounted) {
+      return;
+    }
+    unawaited(
+      context.read<CommunityProvider>().refresh(
+        people: context.read<PersonRepository>(),
+        matches: context.read<MatchRepository>(),
+        profile: profile,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final AccountProvider account = context.watch<AccountProvider>();
+    final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final bool bothAreas =
         WorkspaceStore.matchmakerEnabled &&
@@ -72,6 +104,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsGroup(
               title: 'הגדרות',
               children: <Widget>[
+                // The one name, and the one place to change it: the profile,
+                // the community, the leaderboard, tips and greetings all read
+                // it from the same field.
+                SettingsRow(
+                  icon: Icons.badge_outlined,
+                  title: 'השם שלי',
+                  subtitle: profile.fullName ?? 'עוד לא הוגדר',
+                  onTap: () => _editName(profile),
+                ),
                 SettingsRow(
                   icon: Icons.people_outline,
                   title: 'יצירת מאגר זוגי / צירוף בן או בת זוג',
@@ -100,6 +141,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         setState(() {});
                       }
                     },
+                  ),
+                // The criteria התאמות opens on for a friend with no filter of
+                // their own. A matchmaker's setting, so only with that area.
+                if (WorkspaceStore.matchmakerEnabled)
+                  SettingsRow(
+                    icon: Icons.tune_rounded,
+                    title: 'סינון אוטומטי בהתאמות',
+                    subtitle: 'הפרש גילים וסגנונות דתיים שיוצעו',
+                    onTap: () => context.push('/profile/auto-match'),
                   ),
                 SettingsRow(
                   icon: Icons.palette_outlined,

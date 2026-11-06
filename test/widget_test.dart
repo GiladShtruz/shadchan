@@ -15,6 +15,8 @@ import 'package:shadchan/widgets/idea_actions.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/widgets/app_glyphs.dart';
+import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_panels.dart';
@@ -132,6 +134,8 @@ void main() {
     await settings.put('userIsSingle', false);
     await settings.delete('userPersonalCard');
     await settings.delete('userPersonalCardPhotos');
+    // התאמות opens as rows unless a test turns the squares on itself.
+    await settings.delete('suggestions.grid');
     AppRouter.router.go('/home');
   });
 
@@ -1799,6 +1803,210 @@ void main() {
       expect(find.text('בקשת פרטים ב־WhatsApp'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'התאמות rises as a sheet, frames a live idea and switches to squares',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final DateTime now = DateTime(2026, 7, 27);
+      final Person source = _testPerson(
+        id: 'sheet-source',
+        firstName: 'אביב',
+        lastName: 'כהן',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      );
+      final Person withIdea = _testPerson(
+        id: 'sheet-idea',
+        firstName: 'נועה',
+        lastName: 'לוי',
+        gender: Gender.female,
+        age: 25,
+        now: now,
+      );
+      final Person plain = _testPerson(
+        id: 'sheet-plain',
+        firstName: 'תמר',
+        lastName: 'רז',
+        gender: Gender.female,
+        age: 25,
+        now: now,
+      );
+      final MatchIdea idea = _testMatch(
+        id: 'sheet-match',
+        personAId: source.id,
+        personBId: withIdea.id,
+        now: now,
+      );
+      await tester.runAsync(() async {
+        await Hive.box<Person>('people').putAll(<String, Person>{
+          source.id: source,
+          withIdea.id: withIdea,
+          plain.id: plain,
+        });
+        await Hive.box<MatchIdea>('matches').put(idea.id, idea);
+      });
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+      openSuggestionsFor(tester.element(find.byType(HomeScreen)), source.id);
+      await tester.pumpAndSettle();
+
+      // A sheet from the bottom, over the page it came from — not a new page.
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.text('התאמות · אביב כהן'), findsOneWidget);
+
+      // The candidate with an open idea leads, framed in the open blue, and
+      // is answered with a question mark; the plain one keeps its bulb.
+      final Finder ideaRow = find.byKey(const ValueKey<String>('sheet-idea'));
+      final Finder plainRow = find.byKey(const ValueKey<String>('sheet-plain'));
+      expect(
+        tester.getTopLeft(ideaRow).dy,
+        lessThan(tester.getTopLeft(plainRow).dy),
+      );
+      expect(
+        tester
+            .widget<SuggestionRow>(
+              find.descendant(
+                of: ideaRow,
+                matching: find.byType(SuggestionRow),
+              ),
+            )
+            .frameColor,
+        AppColors.primaryDark,
+      );
+      expect(
+        find.descendant(of: ideaRow, matching: find.byIcon(AppIcons.help)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: plainRow, matching: find.byType(IdeaBulbIcon)),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<SuggestionRow>(
+              find.descendant(
+                of: plainRow,
+                matching: find.byType(SuggestionRow),
+              ),
+            )
+            .frameColor,
+        isNull,
+      );
+
+      // The sheet can be taken to the whole screen and back.
+      final double openHeight = tester.getSize(find.byType(BottomSheet)).height;
+      await tester.tap(find.byTooltip('מסך מלא'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(BottomSheet)).height,
+        greaterThan(openHeight),
+      );
+      await tester.tap(find.byTooltip('הקטנת המסך'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(BottomSheet)).height,
+        closeTo(openHeight, 1),
+      );
+
+      // Squares: the same people, the same answers, the same frame.
+      await tester.tap(find.byTooltip('תצוגת ריבועים'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SuggestionRow), findsNothing);
+      expect(find.byType(SuggestionTile), findsNWidgets(2));
+      expect(
+        tester
+            .widget<SuggestionTile>(
+              find.descendant(
+                of: find.byKey(const ValueKey<String>('sheet-idea')),
+                matching: find.byType(SuggestionTile),
+              ),
+            )
+            .frameColor,
+        AppColors.primaryDark,
+      );
+      for (final String word in <String>['לרעיון הקיים', 'פתיחת רעיון']) {
+        expect(find.text(word), findsOneWidget);
+      }
+      expect(find.text('לא מתאים'), findsNWidgets(2));
+      expect(find.byTooltip('פתיחת הכרטיס'), findsNWidgets(2));
+      // Remembered for the next visit (written outside the test's zone).
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      expect(Hive.box<dynamic>('settings').get('suggestions.grid'), 'true');
+
+      await tester.tap(find.byTooltip('תצוגת רשימה'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SuggestionRow), findsNWidgets(2));
+    },
+  );
+
+  testWidgets(
+    'the התאמות filter offers "חזרה לסינון המקורי" instead of "נקה"',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final DateTime now = DateTime(2026, 7, 27);
+      final Person source = _testPerson(
+        id: 'reset-source',
+        firstName: 'אביב',
+        lastName: 'כהן',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      );
+      await tester.runAsync(() async {
+        await Hive.box<Person>('people').put(source.id, source);
+        await MatchProposalFilterSheet.saveFiltersFor(
+          source.id,
+          const MatchProposalFilters(minAge: 20, maxAge: 22),
+        );
+      });
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+      openSuggestionsFor(tester.element(find.byType(HomeScreen)), source.id);
+      await tester.pumpAndSettle();
+
+      // The sheet's own filter icon, over the page underneath.
+      await tester.tap(find.byTooltip('סינון').last);
+      await tester.pumpAndSettle();
+      expect(find.text('נקה'), findsNothing);
+      expect(find.text('חזרה לסינון המקורי'), findsOneWidget);
+
+      await tester.tap(find.text('חזרה לסינון המקורי'));
+      await tester.pumpAndSettle();
+      // The saved filter is forgotten: the list is back on its own start.
+      expect(MatchProposalFilterSheet.savedFiltersFor(source.id), isNull);
+      expect(find.text('חזרה לסינון המקורי'), findsNothing);
+    },
+  );
+
+  testWidgets('the settings carry the one name and the automatic filter', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/profile/settings');
+    await tester.pumpAndSettle();
+
+    expect(find.text('השם שלי'), findsOneWidget);
+    expect(find.text('סינון אוטומטי בהתאמות'), findsOneWidget);
+
+    await tester.tap(find.text('סינון אוטומטי בהתאמות'));
+    await tester.pumpAndSettle();
+    expect(find.text('הפרש גילים'), findsOneWidget);
+    expect(find.text('בחור עד גיל 30'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('חזרה לברירת המחדל'),
+      400,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('חזרה לברירת המחדל'), findsOneWidget);
+  });
 
   testWidgets('Each side of a proposal offers its chat or the other card', (
     WidgetTester tester,
