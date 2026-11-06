@@ -8,8 +8,7 @@ import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/community_challenge.dart';
 import 'package:shadchan/utils/community_period.dart';
-import 'package:shadchan/widgets/home_activity_block.dart';
-import 'package:shadchan/widgets/home_community_pulse.dart';
+import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 class _Account extends AccountProvider {
@@ -61,7 +60,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _wrap(
-        HomeActivityBlock(
+        HomeWeekBlock(
           onOpen: () {},
           loadTotals: (period, {bool forceRefresh = false}) async =>
               _totals(switch (period) {
@@ -74,17 +73,25 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(HomePaperCard), findsOneWidget);
-    expect(find.text('91'), findsOneWidget);
-    expect(find.text('901'), findsOneWidget);
-    await tester.tap(find.text('השבוע'));
-    await tester.pumpAndSettle();
+    expect(find.text(HomeWeekBlock.title), findsOneWidget);
+    // "השבוע בשדכן" opens on the week.
     expect(find.text('11'), findsOneWidget);
     expect(find.text('101'), findsOneWidget);
-    expect(find.text('901'), findsNothing);
+    await tester.tap(find.text('כל הזמנים'));
+    await tester.pumpAndSettle();
+    expect(find.text('91'), findsOneWidget);
+    expect(find.text('901'), findsOneWidget);
+    expect(find.text('101'), findsNothing);
     await tester.tap(find.text('החודש'));
     await tester.pumpAndSettle();
     expect(find.text('21'), findsOneWidget);
     expect(find.text('201'), findsOneWidget);
+    // One live line from the selected window's own totals.
+    expect(find.text('זוג אחד התחיל לצאת החודש'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('6 רעיונות נפתחו החודש'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('a slower obsolete read cannot overwrite a refreshed score', (
@@ -94,10 +101,10 @@ void main() {
     final pending = <Completer<CommunityTotals>>[];
     await tester.pumpWidget(
       _wrap(
-        HomeActivityBlock(
+        HomeWeekBlock(
           onOpen: () {},
           loadTotals: (period, {bool forceRefresh = false}) {
-            if (period != CommunityPeriod.allTime) {
+            if (period != CommunityPeriod.week) {
               return Future.value(_totals(10));
             }
             final result = Completer<CommunityTotals>();
@@ -130,7 +137,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _wrap(
-        HomeActivityBlock(
+        HomeWeekBlock(
           onOpen: () {},
           loadTotals: (_, {bool forceRefresh = false}) async =>
               CommunityTotals.empty,
@@ -138,10 +145,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('91'), findsOneWidget);
+    expect(find.text('11'), findsOneWidget);
     expect(find.text('—'), findsOneWidget);
-    expect(find.text('הנתון עדיין לא זמין'), findsOneWidget);
+    expect(find.text('עדיין לא זמין'), findsOneWidget);
     expect(find.text('0'), findsNothing);
+    // Nothing about the target or the community is said before it is known.
+    expect(find.text('היעד השבועי של הקהילה'), findsNothing);
   });
 
   testWidgets(
@@ -150,7 +159,7 @@ void main() {
       final goals = StreamController<WeeklyCommunityGoal?>();
       await tester.pumpWidget(
         _wrap(
-          HomeCommunityPulse(
+          HomeWeekBlock(
             onOpen: () {},
             watchGoal: () => goals.stream,
             loadTotals: (_, {bool forceRefresh = false}) async => _totals(100),
@@ -198,7 +207,7 @@ void main() {
         closeTo(.1, .001),
       );
       expect(find.text('יחד פותחים רעיונות'), findsNothing);
-      expect(find.text('מה קורה בקהילה עכשיו'), findsOneWidget);
+      expect(find.text(HomeWeekBlock.title), findsOneWidget);
       // The original news still rotates independently of the administrator edit.
       expect(find.text('6 רעיונות נפתחו היום'), findsOneWidget);
       await tester.pump(const Duration(seconds: 5));
@@ -210,4 +219,30 @@ void main() {
       await tester.pump();
     },
   );
+
+  for (final double width in <double>[320, 390]) {
+    testWidgets('השבוע בשדכן fits ${width.toInt()}px at 1.5x text', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+          child: _wrap(
+            HomeWeekBlock(
+              onOpen: () {},
+              watchGoal: () => Stream<WeeklyCommunityGoal?>.value(null),
+              loadTotals: (_, {bool forceRefresh = false}) async =>
+                  _totals(123456),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('היעד השבועי של הקהילה'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 }

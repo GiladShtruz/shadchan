@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/art_tint.dart';
@@ -5,18 +7,29 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// The two ways to earn points, gathered around the home's main add button.
+/// "מה עושים עכשיו?" — the home's action area: a header (the title and the
+/// one recommendation, see [HomeNextSteps]) over the main add button with the
+/// two standing actions on either side of it.
+///
+/// **Two words on each side, and nothing else.** The actions used to carry
+/// "וצבור נקודות" under them, which made the most important controls on the
+/// landing page read as a scoring mechanic. Points are acknowledged *after* an
+/// action, briefly (see `PointsReward`); here there is only what to do.
 class HomeAddHub extends StatelessWidget {
   const HomeAddHub({
     super.key,
     required this.onAddPeople,
     required this.onAddIdea,
     this.gender,
+    this.header,
   });
 
   final VoidCallback onAddPeople;
   final VoidCallback onAddIdea;
   final Gender? gender;
+
+  /// Drawn above the actions inside the same card.
+  final Widget? header;
 
   void _choose(BuildContext context) {
     showModalBottomSheet<void>(
@@ -59,11 +72,10 @@ class HomeAddHub extends StatelessWidget {
   }
 
   Widget _action({required bool people, required VoidCallback onTap}) {
-    return _EarnAction(
+    return _AddAction(
       title: (people ? '{הוסף|הוסיפי} חברים' : '{הוסף|הוסיפי} רעיון').forGender(
         gender,
       ),
-      subtitle: '{וצבור|וצברי} נקודות'.forGender(gender),
       people: people,
       onTap: onTap,
     );
@@ -74,32 +86,41 @@ class HomeAddHub extends StatelessWidget {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return HomePaperCard(
       stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 18),
+      padding: const EdgeInsets.fromLTRB(8, 14, 8, 14),
       elevation: 4,
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(child: _action(people: true, onTap: onAddPeople)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: _PulsingAddButton(onPressed: () => _choose(context)),
+          if (header != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+              child: header!,
+            ),
+          Row(
+            children: <Widget>[
+              Expanded(child: _action(people: true, onTap: onAddPeople)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: _PulsingAddButton(onPressed: () => _choose(context)),
+              ),
+              Expanded(child: _action(people: false, onTap: onAddIdea)),
+            ],
           ),
-          Expanded(child: _action(people: false, onTap: onAddIdea)),
         ],
       ),
     );
   }
 }
 
-class _EarnAction extends StatelessWidget {
-  const _EarnAction({
+class _AddAction extends StatelessWidget {
+  const _AddAction({
     required this.title,
-    required this.subtitle,
     required this.people,
     required this.onTap,
   });
 
   final String title;
-  final String subtitle;
   final bool people;
   final VoidCallback onTap;
 
@@ -112,7 +133,7 @@ class _EarnAction extends StatelessWidget {
         : (dark ? AppColors.secondaryDarkDm : AppColors.addIdeaAccent);
     return Semantics(
       button: true,
-      label: '$title $subtitle',
+      label: title,
       onTap: onTap,
       excludeSemantics: true,
       child: InkWell(
@@ -139,10 +160,8 @@ class _EarnAction extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              // **Each line stays one line.** On a narrow phone, or with
-              // larger system text, "הוסיפי חברים" used to break in two and
-              // push the caption under it onto a third and fourth line; a line
-              // that does not fit is now scaled down instead.
+              // **One line.** On a narrow phone, or with larger system text,
+              // "הוסיפי חברים" is scaled down rather than broken in two.
               _OneLine(
                 title,
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -150,8 +169,6 @@ class _EarnAction extends StatelessWidget {
                   height: 1.35,
                 ),
               ),
-              const SizedBox(height: 2),
-              _OneLine(subtitle, style: theme.textTheme.bodySmall),
             ],
           ),
         ),
@@ -202,6 +219,14 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
     end: 1.06,
   ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
 
+  /// A breath every so often after the arrival, so the plus keeps inviting
+  /// without the page ever being in constant motion.
+  static const Duration _restBetweenBreaths = Duration(seconds: 9);
+
+  Timer? _rest;
+
+  bool _animate = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -209,12 +234,21 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
         !MediaQuery.disableAnimationsOf(context) &&
         !MediaQuery.accessibleNavigationOf(context) &&
         TickerMode.valuesOf(context).enabled;
+    if (animate == _animate) {
+      return;
+    }
+    _animate = animate;
     if (animate) {
-      if (!_pulse.isAnimating) {
-        // Two slow breaths on arrival, then rest so the page stays calm.
-        _pulse.repeat(reverse: true, count: 4);
-      }
+      // Two slow breaths on arrival, then one now and then.
+      _pulse.repeat(reverse: true, count: 4);
+      _rest ??= Timer.periodic(_restBetweenBreaths, (_) {
+        if (mounted && _animate && !_pulse.isAnimating) {
+          _pulse.repeat(reverse: true, count: 2);
+        }
+      });
     } else {
+      _rest?.cancel();
+      _rest = null;
       _pulse.stop();
       _pulse.value = 0;
     }
@@ -222,6 +256,7 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
 
   @override
   void dispose() {
+    _rest?.cancel();
     _pulse.dispose();
     super.dispose();
   }
@@ -259,7 +294,7 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
               dimension: 76,
               child: IconButton.filled(
                 onPressed: widget.onPressed,
-                tooltip: 'הוספה וצבירת נקודות',
+                tooltip: 'הוספת חברים או רעיון',
                 iconSize: 44,
                 style: IconButton.styleFrom(
                   backgroundColor: copper,

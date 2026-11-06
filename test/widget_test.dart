@@ -33,6 +33,8 @@ import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/home_screen.dart';
+import 'package:shadchan/screens/board_screen.dart';
+import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
@@ -718,7 +720,7 @@ void main() {
     expect(find.byType(PersonCardViewer), findsNothing);
   });
 
-  testWidgets('The board can be filled from the home screen itself', (
+  testWidgets('The home board is a few rows; the whole board is one tap away', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 900));
@@ -742,21 +744,41 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The same four all-time figures as "הנתונים שלך" sit at the top of the
-    // page, above the two add buttons — one noun each.
-    expect(find.text('חתונות'), findsOneWidget);
+    // The four all-time figures are one quiet line now, above "מה עושים
+    // עכשיו?" and its two add buttons.
+    final Finder figures = find.byType(ActivityFigureLine);
+    expect(figures, findsOneWidget);
+    expect(find.textContaining('חתונות', findRichText: true), findsOneWidget);
     expect(find.text('חברים שהוספת'), findsNothing);
+    expect(find.text('מה עושים עכשיו?'), findsOneWidget);
     expect(
-      tester.getCenter(find.text('חתונות')).dy,
+      tester.getCenter(figures).dy,
       lessThan(tester.getCenter(find.text('הוסף חברים')).dy),
     );
+    // One recommendation inside the action area. A database of one friend is
+    // still being built, so it is about growing it.
+    expect(
+      find.text('כל חבר שמצטרף למאגר הוא עוד סיכוי להתאמה'),
+      findsOneWidget,
+    );
+    // The week's pace, small; the one friend was added back in August.
+    expect(find.text('השבוע 0/5 פעולות'), findsOneWidget);
 
-    // The board is drawn from the first friend on, always open, with its
-    // shelves across the top. One friend and nothing to do yet: an honest,
-    // short empty line rather than a box of filler.
+    // At home the board is only its first rows and "לכל הלוח" — no shelves.
     expect(find.text('הלוח שלי'), findsOneWidget);
-    await tester.ensureVisible(find.text('הוספה ללוח'));
+    await tester.ensureVisible(find.text('לכל הלוח'));
     await tester.pump();
+    expect(find.text('כרטיסים וגישה'), findsNothing);
+    expect(find.text('אין כרגע משהו שמחכה לך בלוח'), findsOneWidget);
+    expect(find.text('הוספה ללוח'), findsNothing);
+
+    await tester.tap(find.text('לכל הלוח'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // The whole board, with its shelves across the top. One friend and
+    // nothing to do yet: an honest, short empty line rather than filler.
+    expect(find.byType(BoardScreen), findsOneWidget);
     for (final String chip in <String>[
       'הכל',
       'כרטיסים וגישה',
@@ -767,11 +789,6 @@ void main() {
       expect(find.text(chip), findsOneWidget);
     }
     expect(find.text('הלוח ריק כרגע'), findsOneWidget);
-    expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
-    expect(
-      find.text('כרטיסים, התראות ורעיונות – הכל במקום אחד'),
-      findsOneWidget,
-    );
 
     await tester.ensureVisible(find.text('הוספה ללוח'));
     await tester.pump();
@@ -892,8 +909,13 @@ void main() {
       isNot(FontWeight.bold),
     );
 
-    // Its own chip shows it; the database's suggestions chip says it has
-    // nothing, in one short line.
+    // On the whole board, its own chip shows it; the database's suggestions
+    // chip says it has nothing, in one short line.
+    await tester.ensureVisible(find.text('לכל הלוח'));
+    await tester.pump();
+    await tester.tap(find.text('לכל הלוח'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.text('רעיונות פתוחים'));
     await tester.pump();
     expect(find.text('דוד & שרה'), findsOneWidget);
@@ -964,8 +986,11 @@ void main() {
         ]);
     await tester.pump();
 
-    await tester.ensureVisible(find.text('הלוח שלי'));
+    await tester.ensureVisible(find.text('לכל הלוח'));
     await tester.pump();
+    await tester.tap(find.text('לכל הלוח'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.text('כרטיסים וגישה'));
     await tester.pump();
 
@@ -988,7 +1013,7 @@ void main() {
     expect(find.text('יעל ברק'), findsNothing);
     expect(
       tester
-          .element(find.byType(HomeScreen))
+          .element(find.byType(BoardScreen))
           .read<PersonRepository>()
           .getById(shared.id),
       isNotNull,
@@ -1471,20 +1496,15 @@ void main() {
       expect(find.text('פתוחים'), findsOneWidget);
       expect(tester.getTopLeft(find.text('פתוחים')).dy, closeTo(countsTop, 1));
 
-      // And the strip opens the board on the home screen.
+      // And the strip is on the whole board ("לכל הלוח"); the home screen
+      // keeps only the board's first few rows.
       AppRouter.router.go('/home');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
-      await tester.scrollUntilVisible(
-        find.text('הלוח שלי'),
-        200,
-        scrollable: find
-            .descendant(
-              of: find.byType(HomeScreen),
-              matching: find.byType(Scrollable),
-            )
-            .first,
-      );
+      expect(find.byType(DatingCouplesStrip), findsNothing);
+      AppRouter.router.push('/board');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       expect(find.byType(DatingCouplesStrip), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -2613,7 +2633,7 @@ void main() {
       expect(find.text('הוסף חברים'), findsOneWidget);
       expect(find.text('הוסף רעיון'), findsOneWidget);
       expect(
-        find.byTooltip('הוספה וצבירת נקודות').hitTestable(),
+        find.byTooltip('הוספת חברים או רעיון').hitTestable(),
         findsOneWidget,
       );
 
@@ -2623,7 +2643,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       if (hub.evaluate().isEmpty) {
-        expect(find.byTooltip('הוספה וצבירת נקודות'), findsNothing);
+        expect(find.byTooltip('הוספת חברים או רעיון'), findsNothing);
       } else {
         expect(hub.hitTestable(), findsNothing);
       }

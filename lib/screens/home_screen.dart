@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/add_fab.dart';
-import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
-import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
@@ -28,23 +25,20 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
 import 'package:shadchan/utils/home_search.dart';
-import 'package:shadchan/utils/home_stage.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/matchmaker_tips.dart';
-import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
-import 'package:shadchan/widgets/home_activity_block.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
-import 'package:shadchan/widgets/home_community_pulse.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_board.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
-import 'package:shadchan/widgets/home_add_hub.dart';
+import 'package:shadchan/widgets/activity_figure_row.dart';
+import 'package:shadchan/widgets/home_action_area.dart';
+import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/home_search_results.dart';
 import 'package:shadchan/widgets/home_section.dart';
-import 'package:shadchan/widgets/home_stage_panels.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 
@@ -71,13 +65,17 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _homeScrollController = ScrollController();
   final GlobalKey _boardSectionKey = GlobalKey();
 
   /// Bumped by a tap on the wordmark, which deals the board again.
   int _boardRefresh = 0;
+
+  /// One per visit — arrival, coming back to the app, a tap on the wordmark.
+  /// The recommendation is chosen once per visit (see [HomeActionArea]).
+  int _visit = 0;
 
   /// The single vertical gap between every block on the page.
   static const double _blockGap = 14;
@@ -98,6 +96,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.addListener(() => setState(() {}));
     _scheduleBoardFocus();
     _scheduleCommunityPrompts();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() => _visit++);
+    }
   }
 
   /// The one moment per launch when the app is allowed to say something of its
@@ -139,6 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     _homeScrollController.dispose();
     super.dispose();
@@ -283,7 +290,10 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       FocusScope.of(context).unfocus();
     }
-    setState(() => _boardRefresh++);
+    setState(() {
+      _boardRefresh++;
+      _visit++;
+    });
     if (_homeScrollController.hasClients) {
       _homeScrollController.animateTo(
         0,
@@ -344,50 +354,14 @@ class _HomeScreenState extends State<HomeScreen> {
       _scheduleBoardFocus(force: true);
     }
 
-    final List<MatchIdea> allMatches = matchRepository.getAll();
-    // "זוגות שיוצאים" is not on this page any more — it lives at the head of
-    // "הרעיונות שלי", where the couples themselves are. See
-    // `MatchesScreen`'s dating strip.
-    final List<HomeOpenIdea> openIdeas = HomeOpenIdeas.build(
-      matches: allMatches,
-      personById: personRepository.getById,
-      isAlerting: (MatchIdea match) =>
-          ReminderAlerts.isAlerting(match.id, match.reminderDate),
-      isDue: ReminderAlerts.isDue,
-      reopenedAt: HomeOpenIdeas.reopenedFromEvents(
-        statusEvents: matchRepository.getAllStatusEvents(),
-      ),
+    final List<HomeOpenIdea> openIdeas = boardOpenIdeas(
+      matches: matchRepository,
+      people: personRepository,
     );
-
     final int friends = personRepository.databaseCount;
-    final HomeStage stage = HomeStage.forCount(friends);
-    final HomeMilestone milestone = HomeMilestone.forCount(friends);
-
-    // At most one encouragement card, picked by what the database actually
-    // needs next. A brand-new matchmaker already has the welcome card above, so
-    // they get nothing here — being urged twice in one screen to do the thing
-    // you have not done yet is nagging, not onboarding.
-    final Widget? nudge;
-    if (friends == 0) {
-      nudge = null;
-    } else if (friends >= 10 && allMatches.isEmpty) {
-      // The one moment the app can say something genuinely useful about
-      // opening a first proposal.
-      nudge = HomeFirstIdeaCard(
-        friends: friends,
-        onOpenIdea: () => context.push('/matches/add'),
-      );
-    } else if (stage == HomeStage.starting) {
-      // Under ten friends, importing a group really is the fastest way to grow.
-      nudge = HomeImportInvite(onTap: () => context.push('/people/ai'));
-    } else {
-      nudge = null;
-    }
 
     double inset() => homeHorizontalInset(context);
-    // One gap between blocks, everywhere. The page used to run 12, 14, 16, 18
-    // and 22 between its areas, which is what made a screen of otherwise calm
-    // cards feel unsettled — nothing lined up with anything.
+    // One gap between blocks, everywhere.
     SliverPadding block(Widget child, {double top = _blockGap}) {
       return SliverPadding(
         padding: EdgeInsets.fromLTRB(inset(), top, inset(), 0),
@@ -395,35 +369,25 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // The order of what follows *is* the design, and it is an order of
-    // usefulness. The greeting, then the two ways to grow the database, then
-    // the board — which is now the whole of "what am I working on", because
-    // every open proposal lands on it by itself. Only after all of that does
-    // the page turn to figures: what has been done, what the community is
-    // doing, the week's shared target, and a tip to close on.
+    // **An action screen, not a dashboard.** Somebody who opens the app for
+    // five seconds should know what can be done now without reading the page:
+    // the greeting, the four figures as one quiet line, then "מה עושים
+    // עכשיו?" — one recommendation chosen for this matchmaker at this moment
+    // (see [HomeNextSteps]) over the main "+" and the two standing actions —
+    // a small weekly pace, the few board rows that matter most, and only then
+    // the week in the community and a tip.
     //
-    // **Three areas left this page rather than being redrawn on it.**
-    // "עוצרים רגע לחשוב על חברים" is at the head of המאגר שלי, "רעיונות שהמאגר
-    // מציע לך" and the couples who are out are at the head of הרעיונות שלי.
-    // Each of them was an invitation into a screen it now sits on top of, which
-    // is one tap shorter and one block of home screen cheaper. Gone entirely:
-    // "הפעולות הבאות" — a ranked queue on a page that already has a board — and
-    // "רעיונות פתוחים", which the board now carries.
-    //
-    // A block with nothing in it is not drawn at all rather than shown as an
-    // empty box — an empty screen teaches that the app is empty.
-    // The first name and nothing else. A greeting is how someone is spoken to,
-    // not how they are filed — "בוקר טוב, רבקה כהן־שטרן" is a form letter.
+    // **One page for everybody.** A new matchmaker, a busy one and a veteran
+    // with nothing urgent all see these same blocks in this same order; what
+    // changes is what the recommendation says and what the board holds.
     final String greetingName =
         userProfile.firstName ?? '{שדכן|שדכנית}'.forGender(userGender);
 
     return CustomScrollView(
       controller: _homeScrollController,
       slivers: <Widget>[
-        // 1. The greeting, and one warm line under it. On the page rather than
-        // in the bar, with nothing drawn around it. A matchmaker who also
-        // keeps a card of their own finds the way into it in the far corner of
-        // the same line — never a row of its own.
+        // 1. The greeting. A matchmaker who also keeps a card of their own
+        // finds the way into it in the far corner of the same line.
         block(
           HomeGreeting(
             greeting: _timeOfDayGreeting(
@@ -446,48 +410,28 @@ class _HomeScreenState extends State<HomeScreen> {
           top: 8,
         ),
 
-        // A brand-new matchmaker lands on the real home screen with one
-        // welcoming card on it, not on a wizard that has to be got through.
-        if (friends == 0)
-          block(
-            HomeWelcomeCard(onAddPeople: () => AddPeopleDialog.show(context)),
-          ),
-
-        // 2. The four all-time figures — friends, ideas, couples who went
-        // out, weddings — above the two ways to grow them.
+        // 2. The four all-time figures, as one line under the greeting —
+        // still a tap into each list, no longer competing with the action.
         if (friends > 0)
           block(
-            ActivityFigureRow(
+            ActivityFigureLine(
               people: personRepository,
               matches: matchRepository,
             ),
+            top: 4,
           ),
 
-        // 3. The main add button and both ways to earn points. It scrolls
-        // with the page so the board keeps its full working space.
-        block(
-          HomeAddHub(
-            gender: userGender,
-            onAddPeople: () => AddPeopleDialog.show(context),
-            onAddIdea: () => context.push('/matches/add'),
-          ),
-        ),
+        // 3. "מה עושים עכשיו?" — the one recommendation, the "+" and the two
+        // standing actions.
+        block(HomeActionArea(openIdeas: openIdeas, visit: _visit), top: 10),
 
-        // The personal target: how far the database is from ten friends, then
-        // twenty-five, then fifty, then a hundred. It stops entirely at a
-        // hundred friends, where a target is no longer the useful thing to say.
-        if (friends > 0 && stage.showsTarget)
-          block(HomeMilestoneCard(milestone: milestone)),
+        // 4. The week's pace, small, never a task.
+        block(const HomeWeeklyProgress(), top: 10),
 
-        // Exactly one encouragement card, never a stack of them.
-        if (nudge != null) block(nudge),
-
-        // 3. הלוח שלי — every open proposal, whatever asked to be remembered
-        // today, and whatever was pinned by hand. One surface for "what am I
-        // working on", which is why "רעיונות פתוחים" no longer needs a row of
-        // its own further down the page.
+        // 5. הלוח שלי — only the few rows that matter most, and "לכל הלוח".
         HomeBoardSection(
           focusKey: _boardSectionKey,
+          mode: HomeBoardMode.home,
           entries: board.entries,
           openIdeas: openIdeas,
           personRepository: personRepository,
@@ -495,36 +439,17 @@ class _HomeScreenState extends State<HomeScreen> {
           refresh: _boardRefresh,
         ),
 
-        // The friends who keep a card of their own, and asking them for it —
-        // the same screen המאגר שלי opens.
-        block(const FriendsWithCardsLink()),
-
-        // 4. What has been done — the matchmaker's own score beside the
-        // community's, two squares and one window at a time. The breakdown, the
-        // chart and the leaderboard are all one tap away on a screen somebody
-        // opened *to look at numbers*.
+        // 6. השבוע בשדכן — my activity, the community's, the weekly target
+        // and one live line, in one card.
         block(
-          HomeActivityBlock(
-            onOpen: () => AppNavigation.open(context, '/activity'),
-          ),
-        ),
-
-        // 5 and 6. The community, live: what it did today, and the one target
-        // it is working towards together this week. The only block on the page
-        // that moves on its own, and the only one that is about other people —
-        // which is why it sits directly under the numbers, where the page turns
-        // from "your work" to "everybody's".
-        block(
-          HomeCommunityPulse(
-            onOpen: () => AppNavigation.open(context, '/activity'),
-          ),
+          HomeWeekBlock(onOpen: () => AppNavigation.open(context, '/activity')),
         ),
 
         // Somebody else's good news, for one launch. It draws nothing at all
         // when there is none, which is nearly always.
         block(const HomeEngagementCard()),
 
-        // 7. The community's tip.
+        // 7. The tip, last and secondary.
         block(
           HomeTipCarousel(
             tips: _tips(context),

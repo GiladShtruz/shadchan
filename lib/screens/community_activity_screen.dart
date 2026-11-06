@@ -860,6 +860,10 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
   CommunityTotals? _week;
   bool _loading = true;
 
+  /// Singles keeping a live personal card. Null until the server answers, and
+  /// the line is not drawn until then.
+  int? _singles;
+
   @override
   void initState() {
     super.initState();
@@ -867,6 +871,16 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
     // whenever the screen refreshes, and a refresh that redraws the same
     // cached numbers is not a refresh.
     _load(_period, force: true);
+    _loadSingles();
+  }
+
+  Future<void> _loadSingles() async {
+    final int? singles = await CommunityService.singlesWithCards(
+      forceRefresh: true,
+    );
+    if (mounted && singles != null) {
+      setState(() => _singles = singles);
+    }
   }
 
   Future<void> _load(CommunityPeriod period, {bool force = false}) async {
@@ -982,17 +996,9 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
               label: 'חתונות',
               value: totals?.engagements ?? 0,
             ),
-            CommunityStatLine(
-              icon: Icons.groups_outlined,
-              label: 'שדכנים פעילים',
-              value: totals?.activeMatchmakers ?? 0,
-            ),
-            // Last of the six, and the only one that is not about work done.
-            // "שדכנים פעילים" says how many of us were busy in this window;
-            // this says how many of us there *are* that were not here before
-            // it — which is the line that makes the community feel like one
-            // rather than like a scoreboard. Over כל הזמנים it is the size of
-            // the community.
+            // Last of the six, and the only ones that are not about work done:
+            // how many of us there *are* that were not here before this
+            // window — over כל הזמנים, the size of the community.
             CommunityStatLine(
               icon: Icons.person_add_alt_1_outlined,
               label: _period == CommunityPeriod.allTime
@@ -1000,6 +1006,15 @@ class _CommunityActivityCardState extends State<_CommunityActivityCard> {
                   : 'שדכנים חדשים שהצטרפו לקהילה',
               value: totals?.newMatchmakers ?? 0,
             ),
+            // The singles who look after a card of their own. One total
+            // whichever window is chosen — a card is kept, not done in a week
+            // — and only once the server has said, never a guessed zero.
+            if (_singles != null)
+              CommunityStatLine(
+                icon: Icons.badge_outlined,
+                label: 'חברים רווקים שמנהלים כרטיס אישי בשדכן',
+                value: _singles!,
+              ),
             // A read that never left the device says so, instead of passing
             // itself off as a community that did nothing.
             if (totals != null && !totals.resolved) ...<Widget>[

@@ -30,6 +30,7 @@ import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/new_idea_suggestions.dart';
 import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/utils/person_reminders.dart';
+import 'package:shadchan/utils/reminder_alerts.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
@@ -70,9 +71,19 @@ class HomeBoardSection extends StatefulWidget {
     required this.personRepository,
     required this.matchRepository,
     required this.refresh,
+    this.mode = HomeBoardMode.window,
   });
 
+  /// How many rows the home screen shows before "לכל הלוח".
+  static const int homeRows = 4;
+
+  /// The route of the whole board.
+  static const String route = '/board';
+
   final Key focusKey;
+
+  /// The home screen's short version, or the whole board on its own screen.
+  final HomeBoardMode mode;
 
   /// The pinned entries, newest first.
   final List<HomeBoardEntry> entries;
@@ -88,6 +99,39 @@ class HomeBoardSection extends StatefulWidget {
 
   @override
   State<HomeBoardSection> createState() => _HomeBoardSectionState();
+}
+
+/// The shapes the board is drawn in.
+enum HomeBoardMode {
+  /// A framed window that scrolls inside itself, with every shelf's chip.
+  window,
+
+  /// The home screen: only the [HomeBoardSection.homeRows] rows that matter
+  /// most, in the order "הכל" puts them, and "לכל הלוח". No chips — the
+  /// shelves are on the whole board, where somebody went to look through it.
+  home,
+
+  /// The whole board on its own screen: chips, every row, no inner scroll.
+  screen,
+}
+
+/// Every proposal that is open right now, the way the board reads them —
+/// shared by the home screen and the board's own screen so the two never
+/// disagree about what is open.
+List<HomeOpenIdea> boardOpenIdeas({
+  required MatchRepository matches,
+  required PersonRepository people,
+}) {
+  return HomeOpenIdeas.build(
+    matches: matches.getAll(),
+    personById: people.getById,
+    isAlerting: (MatchIdea match) =>
+        ReminderAlerts.isAlerting(match.id, match.reminderDate),
+    isDue: ReminderAlerts.isDue,
+    reopenedAt: HomeOpenIdeas.reopenedFromEvents(
+      statusEvents: matches.getAllStatusEvents(),
+    ),
+  );
 }
 
 T? _maybeWatch<T>(BuildContext context) {
@@ -543,6 +587,96 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     setState(() {});
   }
 
+  /// The home screen's version: the few rows that matter most, and the way
+  /// to the rest.
+  Widget _buildHome(
+    BuildContext context,
+    List<BoardFeedEntry<_BoardItem>> rows,
+    Color warm,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final double inset = homeHorizontalInset(context);
+    return SliverToBoxAdapter(
+      child: Column(
+        key: widget.focusKey,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const HomeSectionHeader(title: 'הלוח שלי'),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: inset),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color.alphaBlend(
+                  warm.withValues(alpha: dark ? 0.14 : 0.10),
+                  theme.scaffoldBackgroundColor,
+                ),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: warm.withValues(alpha: 0.45),
+                  width: 1.2,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (rows.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 14,
+                        ),
+                        child: Text(
+                          'אין כרגע משהו שמחכה לך בלוח',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      )
+                    else
+                      for (final BoardFeedEntry<_BoardItem> entry in rows)
+                        _BoardRow(
+                          key: ValueKey<String>(entry.value.key),
+                          item: entry.value,
+                          personRepository: widget.personRepository,
+                          matchRepository: widget.matchRepository,
+                          onChanged: () => setState(() {}),
+                        ),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: TextButton(
+                        onPressed: () =>
+                            AppNavigation.open(context, HomeBoardSection.route),
+                        style: TextButton.styleFrom(
+                          foregroundColor: dark
+                              ? AppColors.secondaryDarkDm
+                              : AppColors.secondaryInk,
+                          visualDensity: VisualDensity.compact,
+                          textStyle: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text('לכל הלוח'),
+                            Icon(Icons.chevron_right_rounded, size: 18),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -567,15 +701,29 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
         .length;
     final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
 
+    if (widget.mode == HomeBoardMode.home) {
+      return _buildHome(
+        context,
+        HomeBoardFeed.forChip(
+          arranged,
+          BoardCategory.all,
+          inAll: inAll,
+        ).take(HomeBoardSection.homeRows).toList(),
+        warm,
+      );
+    }
+    final bool screen = widget.mode == HomeBoardMode.screen;
+
     return SliverToBoxAdapter(
       child: Column(
         key: widget.focusKey,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const HomeSectionHeader(
-            title: 'הלוח שלי',
-            subtitle: 'כרטיסים, התראות ורעיונות – הכל במקום אחד',
-          ),
+          if (!screen)
+            const HomeSectionHeader(
+              title: 'הלוח שלי',
+              subtitle: 'כרטיסים, התראות ורעיונות – הכל במקום אחד',
+            ),
           Padding(
             padding: EdgeInsets.symmetric(
               horizontal: homeHorizontalInset(context),
@@ -627,6 +775,19 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium,
                         ),
+                      )
+                    else if (screen)
+                      Column(
+                        children: <Widget>[
+                          for (final BoardFeedEntry<_BoardItem> entry in shown)
+                            _BoardRow(
+                              key: ValueKey<String>(entry.value.key),
+                              item: entry.value,
+                              personRepository: widget.personRepository,
+                              matchRepository: widget.matchRepository,
+                              onChanged: () => setState(() {}),
+                            ),
+                        ],
                       )
                     else
                       SizedBox(

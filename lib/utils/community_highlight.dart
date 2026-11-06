@@ -164,6 +164,56 @@ abstract final class CommunityHighlight {
     ];
   }
 
+  /// The lines for a window other than the week — "312 רעיונות נפתחו
+  /// החודש", "47 שדכנים בקהילה". The week's own lines come from [pulseLines],
+  /// which knows about today and about named weddings; these are only what the
+  /// totals of [month] or all time can say. Zero figures say nothing.
+  static List<CommunityPulseLine> periodLines(
+    CommunityTotals totals, {
+    required bool allTime,
+  }) {
+    final String when = allTime ? 'בקהילה' : 'החודש';
+    CommunityPulseLine plain(String text) => CommunityPulseLine(text: text);
+    return <CommunityPulseLine>[
+      if (totals.engagements > 0)
+        plain(
+          totals.engagements == 1
+              ? 'מזל טוב! חתונה אחת $when 🎉'
+              : 'מזל טוב! ${totals.engagements} חתונות $when 🎉',
+        ),
+      if (totals.couples > 0)
+        plain(
+          totals.couples == 1
+              ? (allTime
+                    ? 'זוג אחד יצא דרך שדכני הקהילה'
+                    : 'זוג אחד התחיל לצאת החודש')
+              : (allTime
+                    ? '${totals.couples} זוגות יצאו דרך שדכני הקהילה'
+                    : '${totals.couples} זוגות התחילו לצאת החודש'),
+        ),
+      if (totals.ideas > 0)
+        plain(
+          totals.ideas == 1
+              ? 'רעיון אחד נפתח $when'
+              : '${totals.ideas} רעיונות נפתחו $when',
+        ),
+      if (totals.newMatchmakers > 0)
+        plain(
+          allTime
+              ? '${totals.newMatchmakers} שדכנים בקהילה'
+              : (totals.newMatchmakers == 1
+                    ? 'שדכן חדש הצטרף החודש'
+                    : '${totals.newMatchmakers} שדכנים הצטרפו החודש'),
+        ),
+      if (totals.friends > 0)
+        plain(
+          totals.friends == 1
+              ? 'חבר אחד נוסף למאגרים $when'
+              : '${totals.friends} חברים נוספו למאגרים $when',
+        ),
+    ];
+  }
+
   /// A stable-per-day seed. Not the date itself, so a caller does not have to
   /// know or care how the rotation is spread.
   static int seedFor(DateTime at) =>

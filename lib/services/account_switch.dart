@@ -1,3 +1,4 @@
+import 'package:shadchan/utils/home_next_step.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
 import 'dart:io';
@@ -237,6 +238,7 @@ abstract final class AccountSwitch {
     HomeSearchFilterStore.reset();
     ReminderLog.instance.reset();
     NotificationCenter.reset();
+    NextStepStore.forget();
     RecentActivityStore.instance.reset();
     DeletedMatchesStore.instance.clear();
     community.reset();

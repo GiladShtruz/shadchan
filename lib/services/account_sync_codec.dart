@@ -210,6 +210,9 @@ abstract final class AccountSyncCodec {
     'invite.',
     'tips.approvedCache',
     'support_seen_',
+    // Which home recommendation this phone showed last — written on every
+    // visit, and meaningless on another phone.
+    'home.nextStep',
   ];
 
   static bool isSyncedSetting(String key) {
