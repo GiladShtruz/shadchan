@@ -115,8 +115,8 @@ dev_dependencies:
 dependency_overrides:
   firebase_core_platform_interface: 7.0.1
 
-# Icon sources live in assets/icon/ and are derived from assets/logo10.jpeg:
-# app_icon.png is the artwork bled out to a full square (logo10.jpeg has white
+# Icon sources live in assets/icon/ and are derived from assets/logo11.jpeg:
+# app_icon.png is the artwork bled out to a full square (logo11.jpeg has white
 # rounded corners, which both platforms would render as white nubs under their
 # own mask), and the adaptive pair keeps the cards inside Android's safe zone
 # so the circular/squircle masks can't clip them.
@@ -136,10 +136,9 @@ flutter_launcher_icons:
 #
 # `assets/icon/splash_logo.png` is the launch mark: `app_icon.png` given the same
 # rounded-square corner the launcher mask applies, so the tile on the splash and
-# the icon on the home screen are the one shape. Since logo10 the icon is built
-# from two flat colours with no film grain, so the flattened file compresses well
-# (~140 KB) and can be used directly; the gradient logos before it had to be
-# rebuilt from the two adaptive layers to stay small.
+# the icon on the home screen are the one shape. logo11's diagonal blue gradient
+# is rebuilt as a smooth fitted surface with the white artwork composited back
+# on, so there is no JPEG grain and the flattened file can be used directly.
 #
 # The committed bitmaps derived from it — `splash.png` under every Android
 # density (light and dark are the same file; the tile carries its own background)
