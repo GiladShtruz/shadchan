@@ -20,10 +20,10 @@ class NotificationService {
 
   /// The tint Android puts on `ic_notification` (a white-on-transparent mark:
   /// Android draws a notification icon from its alpha alone, which is why the
-  /// full-bleed launcher icon used to show as a plain square). The same stone
+  /// full-bleed launcher icon used to show as a plain square). The same
   /// blue as `notification_color` in `res/values/colors.xml`, which covers the
   /// pushes the system draws itself.
-  static const Color _notificationColor = Color(0xFF698C9E);
+  static const Color _notificationColor = Color(0xFF377FA8);
 
   static const AndroidNotificationDetails _androidMatchDetails =
       AndroidNotificationDetails(
