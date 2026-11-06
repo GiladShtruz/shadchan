@@ -11,7 +11,12 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 class PersonalCommunityNews extends StatefulWidget {
-  const PersonalCommunityNews({super.key});
+  const PersonalCommunityNews({super.key, this.includeStats = true});
+
+  /// False where the community's figures are already said on their own line
+  /// (the personal home's [PersonalCommunityLine]) — then only the
+  /// administrator's published news turn over here.
+  final bool includeStats;
   @override
   State<PersonalCommunityNews> createState() => _PersonalCommunityNewsState();
 }
@@ -57,7 +62,7 @@ class _PersonalCommunityNewsState extends State<PersonalCommunityNews>
     final data = context.watch<PersonalAreaProvider>();
     final stats = data.stats;
     final items = <PersonalNews>[...data.news];
-    if (stats['weekKey'] == CommunityPeriods.weekKey()) {
+    if (widget.includeStats && stats['weekKey'] == CommunityPeriods.weekKey()) {
       for (final entry in <(String, String)>[
         ('newSinglesWeek', 'רווקים ורווקות הצטרפו השבוע'),
         ('newMatchmakersWeek', 'שדכנים חדשים הצטרפו השבוע'),
@@ -91,7 +96,7 @@ class _PersonalCommunityNewsState extends State<PersonalCommunityNews>
     }
     if (items.isEmpty) return const SizedBox.shrink();
     final item = items[_index % items.length];
-    return HomePaperCard(
+    final card = HomePaperCard(
       stripe: AppColors.primary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -156,6 +161,9 @@ class _PersonalCommunityNewsState extends State<PersonalCommunityNews>
         ],
       ),
     );
+    return widget.includeStats
+        ? card
+        : Padding(padding: const EdgeInsets.only(top: 12), child: card);
   }
 }
 

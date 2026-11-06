@@ -101,23 +101,19 @@ test('reciprocal discovery and join notifications never reveal a one-way contact
   await db.doc(`userPhones/${owner.uid}`).set({ phoneHash: oh });
   await db.doc(`userPhones/${target.uid}`).set({ phoneHash: th });
   await db.doc(`contactHashes/${owner.uid}`).set({ hashes: [th] });
-  await waitFor(
-    async () =>
-      (await db.doc(`users/${owner.uid}/private/helpers`).get()).exists,
-    'initial discovery',
-  );
-  assert.equal(
-    (await db.doc(`users/${owner.uid}/private/helpers`).get()).get('helpers')
-      .length,
-    0,
-  );
-  assert.equal((await rows(owner.uid, 'friendJoined')).length, 0);
+  // A matchmaker the owner saved is listed without saving the owner back;
+  // whether a single keeps a card is still told only both ways.
+  const oneWay = await waitFor(async () => {
+    const d = await db.doc(`users/${owner.uid}/private/helpers`).get();
+    return d.get('helpers')?.length === 1 && d;
+  }, 'one-way matchmaker discovery');
+  assert.equal(oneWay.get('friends').length, 0);
   await db.doc(`contactHashes/${target.uid}`).set({ hashes: [oh] });
   const cache = await waitFor(async () => {
     const d = await db.doc(`users/${owner.uid}/private/helpers`).get();
-    return d.get('helpers')?.length === 1 && d;
-  }, 'reciprocal helpers');
-  assert.equal(cache.get('friends').length, 1);
+    return d.get('friends')?.length === 1 && d;
+  }, 'reciprocal single friend');
+  assert.equal(cache.get('helpers').length, 1);
   await db
     .doc(`matchmakerActivity/${target.uid}`)
     .set({ databaseCount: 17, lastActiveAt: Timestamp.now() });
@@ -140,8 +136,13 @@ test('reciprocal discovery and join notifications never reveal a one-way contact
   await db.doc(`contactHashes/${target.uid}`).set({ hashes: [] });
   await waitFor(async () => {
     const d = await db.doc(`users/${owner.uid}/private/helpers`).get();
-    return d.get('helpers')?.length === 0 && d.get('friends')?.length === 0;
-  }, 'remove one-way relationship');
+    return d.get('helpers')?.length === 1 && d.get('friends')?.length === 0;
+  }, 'a one-way relationship keeps the matchmaker, not the single');
+  await db.doc(`contactHashes/${owner.uid}`).set({ hashes: [] });
+  await waitFor(async () => {
+    const d = await db.doc(`users/${owner.uid}/private/helpers`).get();
+    return d.get('helpers')?.length === 0;
+  }, 'removed from the owner\'s contacts');
 });
 
 test('an invitation is bound to the verified recipient and cannot be forwarded or replayed after revocation', async () => {

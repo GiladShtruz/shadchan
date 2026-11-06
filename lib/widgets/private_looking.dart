@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -18,13 +21,38 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
+/// The quiet line under the recording actions.
+const lookingImportHint =
+    'כבר יש לך הקלטה ב־WhatsApp? אפשר להעביר אותה לכאן בקלות — ההקלטה נשמרת בשדכן ולא תלויה בקובץ המקורי.';
+
+/// Under the owner's "מה אני מחפש/ת", small: who sees it, and that it does
+/// not travel.
+const lookingOwnerNotice =
+    'לעיני השדכנים שאישרת בלבד. התוכן כאן לא ניתן לשיתוף מתוך שדכן.';
+
 const privateLookingNotice =
     'המידע מיועד רק לחברים השדכנים שאישרת בנפרד. הוא לא יישלח למועמדים או למועמדות ולא יצורף לכרטיס שמשתפים איתם.';
 
 class PrivateLookingBlock extends StatelessWidget {
-  const PrivateLookingBlock({super.key, this.ownerUid, this.onSaved});
+  const PrivateLookingBlock({
+    super.key,
+    this.ownerUid,
+    this.onSaved,
+    this.ownerGender,
+  });
   final Future<void> Function()? onSaved;
   final String? ownerUid;
+
+  /// The single's gender, on a matchmaker's copy — "מה הוא מחפש" or "מה היא
+  /// מחפשת".
+  final Gender? ownerGender;
+
+  /// The matchmaker's heading for [person]'s "מה אני מחפש/ת".
+  static String headingFor(Gender? gender) => switch (gender) {
+    Gender.male => 'מה הוא מחפש',
+    Gender.female => 'מה היא מחפשת',
+    _ => 'מה הוא/היא מחפש/ת',
+  };
   @override
   Widget build(BuildContext context) {
     final access = context.watch<CardAccessProvider>();
@@ -93,10 +121,14 @@ class PrivateLookingBlock extends StatelessWidget {
                 Text(
                   owner
                       ? 'מה אני {מחפש|מחפשת}'.forGender(context.userGender)
-                      : 'פירוט אישי לשדכנים בלבד',
+                      : headingFor(ownerGender),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                if (!owner) const Text('לעיניך בלבד'),
+                if (!owner)
+                  Text(
+                    'לעיניך בלבד',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 if (owner && text.isEmpty && audio == null)
                   Text(
                     'עוד לא {כתבת|כתבת} מה {אתה מחפש|את מחפשת}. אפשר לכתוב או להקליט כמה מילים שיעזרו לחברים לחשוב על רעיונות מתאימים.'
@@ -108,7 +140,11 @@ class PrivateLookingBlock extends StatelessWidget {
                     child: Text(text),
                   ),
                 if (audio != null)
-                  PrivateAudioPlayer(key: ValueKey(audio), path: audio),
+                  PrivateAudioPlayer(
+                    key: ValueKey(audio),
+                    path: audio,
+                    shareable: owner,
+                  ),
                 if (owner) ...[
                   TextButton.icon(
                     icon: const Icon(Icons.edit_outlined),
@@ -135,8 +171,17 @@ class PrivateLookingBlock extends StatelessWidget {
 /// Authenticated SDK download, temporary file, no download URL or export hook.
 /// Removing the block on revocation disposes playback and deletes the file.
 class PrivateAudioPlayer extends StatefulWidget {
-  const PrivateAudioPlayer({super.key, required this.path});
+  const PrivateAudioPlayer({
+    super.key,
+    required this.path,
+    this.shareable = false,
+  });
   final String path;
+
+  /// The owner's own recording only: "שיתוף ל־WhatsApp" sends it back out.
+  /// A matchmaker's player never offers it — what the single tells their
+  /// matchmakers is not theirs to forward.
+  final bool shareable;
   @override
   State<PrivateAudioPlayer> createState() => _PrivateAudioPlayerState();
 }
@@ -194,26 +239,54 @@ class _PrivateAudioPlayerState extends State<PrivateAudioPlayer> {
     super.dispose();
   }
 
+  Future<void> _share(Rect? origin) async {
+    setState(() => _busy = true);
+    try {
+      final file = await _load();
+      await Share.shareXFiles([XFile(file.path)], sharePositionOrigin: origin);
+    } catch (_) {
+      if (mounted) AppNotice.show(context, 'לא ניתן לשתף את ההקלטה כרגע');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<PlayerState>(
     stream: _player.playerStateStream,
     builder: (context, snapshot) => Wrap(
+      spacing: 4,
       children: [
         TextButton.icon(
           onPressed: _busy ? null : _act,
           icon: Icon(_player.playing ? Icons.pause : Icons.play_arrow),
           label: const Text('הקלטה'),
         ),
+        if (widget.shareable)
+          Builder(
+            builder: (anchor) => TextButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _share(ShareUtils.originOf(anchor)),
+              icon: const Icon(Icons.share_outlined, size: 18),
+              label: const Text('שיתוף ל־WhatsApp'),
+            ),
+          ),
       ],
     ),
   );
 }
+
+/// What the editor does the moment it opens: nothing, the recorder, or the
+/// file picker for a recording already in WhatsApp.
+enum LookingEditorStart { edit, record, import }
 
 Future<void> openPrivateLookingEditor(
   BuildContext context, {
   Map<String, dynamic>? data,
   String? incoming,
   Future<void> Function()? onSaved,
+  LookingEditorStart start = LookingEditorStart.edit,
 }) async {
   bool changed = false;
   try {
@@ -230,7 +303,8 @@ Future<void> openPrivateLookingEditor(
     final first = data['everFilled'] != true;
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => _LookingEditor(data: data!, incoming: incoming),
+        builder: (_) =>
+            _LookingEditor(data: data!, incoming: incoming, start: start),
       ),
     );
     changed = saved == true;
@@ -336,9 +410,14 @@ Future<void> openPrivateLookingEditor(
 }
 
 class _LookingEditor extends StatefulWidget {
-  const _LookingEditor({required this.data, this.incoming});
+  const _LookingEditor({
+    required this.data,
+    this.incoming,
+    this.start = LookingEditorStart.edit,
+  });
   final Map<String, dynamic> data;
   final String? incoming;
+  final LookingEditorStart start;
   @override
   State<_LookingEditor> createState() => _LookingEditorState();
 }
@@ -358,7 +437,36 @@ class _LookingEditorState extends State<_LookingEditor> {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _import(widget.incoming!),
       );
+    } else if (widget.start != LookingEditorStart.edit) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.start == LookingEditorStart.record ? _record() : _pick();
+      });
     }
+  }
+
+  Future<void> _record() async {
+    final recorded = await VoiceRecorderSheet.record(
+      context,
+      maxDuration: const Duration(minutes: 10),
+    );
+    if (recorded != null && mounted) {
+      setState(() {
+        _newAudio = recorded.fileName;
+        _duration = recorded.durationMs;
+      });
+    }
+  }
+
+  Future<void> _pick() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: VoiceNoteStore.audioExtensions
+          .map((e) => e.substring(1))
+          .toList(),
+    );
+    final path = picked?.files.single.path;
+    if (path != null && mounted) await _import(path);
   }
 
   @override
@@ -454,42 +562,16 @@ class _LookingEditorState extends State<_LookingEditor> {
             TextButton.icon(
               icon: const Icon(Icons.mic),
               label: const Text('הקלטה עד 10 דקות'),
-              onPressed: _busy
-                  ? null
-                  : () async {
-                      final recorded = await VoiceRecorderSheet.record(
-                        context,
-                        maxDuration: const Duration(minutes: 10),
-                      );
-                      if (recorded != null && mounted) {
-                        setState(() {
-                          _newAudio = recorded.fileName;
-                          _duration = recorded.durationMs;
-                        });
-                      }
-                    },
+              onPressed: _busy ? null : _record,
             ),
             TextButton.icon(
               icon: const Icon(Icons.audio_file_outlined),
-              label: const Text('ייבוא הקלטה מ־WhatsApp / קובץ'),
-              onPressed: _busy
-                  ? null
-                  : () async {
-                      final picked = await FilePicker.platform.pickFiles(
-                        type: FileType.custom,
-                        allowedExtensions: VoiceNoteStore.audioExtensions
-                            .map((e) => e.substring(1))
-                            .toList(),
-                      );
-                      final path = picked?.files.single.path;
-                      if (path != null && mounted) await _import(path);
-                    },
+              label: const Text('ייבוא הקלטה מ־WhatsApp'),
+              onPressed: _busy ? null : _pick,
             ),
           ],
         ),
-        const Text(
-          'אפשר גם לשתף הקלטה מ־WhatsApp אל שדכן ולבחור ״מה אני מחפש/ת״. הקלטה מיובאת נשמרת בשדכן.',
-        ),
+        Text(lookingImportHint, style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 16),
         const Text(privateLookingNotice),
         const SizedBox(height: 16),

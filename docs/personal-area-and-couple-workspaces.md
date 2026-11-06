@@ -43,8 +43,10 @@ private wishes, account/privacy controls and deletion/restoration live in the
 profile tab. Permission management separates available/approved friends; hiding
 is reversible synced presentation state, independent from blocking and grants.
 
-Automatic discovery and join notices require reciprocal uploaded contact hashes
-and matching directory ownership. The server writes only a name/presence row for
+Matchmaker discovery ("החברים שלי שמשדכים בשדכן") and its join notices need the
+matchmaker's number in the owner's uploaded contact hashes and matching directory
+ownership — one way, like the request rule (since 2026-11-06). Single-friend
+discovery still requires reciprocal uploaded contact hashes. The server writes only a name/presence row for
 single friends, never candidate details/photos. A targeted personal invitation is
 separate: `createPersonalInvite` binds a random token to the recipient's verified
 email. `redeemPersonalInvite` atomically claims it once and grants card access to

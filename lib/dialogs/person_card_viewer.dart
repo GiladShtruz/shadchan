@@ -53,16 +53,19 @@ class PersonCardViewer extends StatefulWidget {
 
   /// The same read-only card approved matchmakers open, without adding the
   /// owner's card to their matchmaking database or including private wishes.
-  static Future<void> openOwnCard(BuildContext context) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          fullscreenDialog: true,
-          builder: (_) => const PersonCardViewer(
-            personId: PersonalCardProvider.cardId,
-            ownerCard: true,
-          ),
-        ),
-      );
+  static Future<void> openOwnCard(
+    BuildContext context, {
+    int initialIndex = 0,
+  }) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => PersonCardViewer(
+        personId: PersonalCardProvider.cardId,
+        ownerCard: true,
+        initialIndex: initialIndex,
+      ),
+    ),
+  );
 
   @override
   State<PersonCardViewer> createState() => _PersonCardViewerState();
