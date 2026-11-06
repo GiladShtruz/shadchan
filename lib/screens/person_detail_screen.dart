@@ -651,6 +651,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               if (context.watch<CardAccessProvider>().privateOwnerFor(person) !=
                   null)
                 PrivateLookingBlock(
+                  ownerGender: person.gender,
                   ownerUid: context.watch<CardAccessProvider>().privateOwnerFor(
                     person,
                   ),

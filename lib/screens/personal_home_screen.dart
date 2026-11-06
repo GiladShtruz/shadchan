@@ -1,30 +1,25 @@
 import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
+import 'package:shadchan/screens/personal_privacy_screen.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/widgets/home_community_link.dart';
+import 'package:shadchan/widgets/personal_home_sections.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/dialogs/person_card_viewer.dart';
-import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_area_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
-import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/my_matchmakers_screen.dart';
 import 'package:shadchan/screens/personal_area_screen.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
-import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
-import 'package:shadchan/widgets/app_notice.dart';
-import 'package:shadchan/widgets/card_status_timestamp.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
-import 'package:shadchan/widgets/home_section.dart';
-import 'package:shadchan/widgets/person_avatar.dart';
-import 'package:shadchan/widgets/profile_status_choices.dart';
 import 'package:shadchan/widgets/reminders_bell_button.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 
@@ -108,10 +103,7 @@ class _PersonalShellState extends State<_PersonalShell> {
           child: IndexedStack(
             index: _tab,
             children: [
-              TickerMode(
-                enabled: _tab == 0,
-                child: _PersonalHome(onProfile: () => _select(2)),
-              ),
+              TickerMode(enabled: _tab == 0, child: const _PersonalHome()),
               TickerMode(
                 enabled: _tab == 1,
                 child: MyMatchmakersScreen(
@@ -163,469 +155,139 @@ class _PersonalShellState extends State<_PersonalShell> {
   }
 }
 
-class _PersonalHome extends StatelessWidget {
-  const _PersonalHome({required this.onProfile});
-  final VoidCallback onProfile;
+/// The personal home: the owner's card in their own hands, who can think
+/// about them, and the friends around them who matchmake here.
+///
+/// The order is the design — greeting, the two access figures, the card,
+/// the status, "מה אני מחפש/ת", the friends who matchmake, who sees the
+/// card, "מה חדש אצלי" (only when there is), the community, and the
+/// secondary actions at the foot. Nothing here shows what any matchmaker
+/// does with the card: not views, not ideas, not notes.
+class _PersonalHome extends StatefulWidget {
+  const _PersonalHome();
+
+  @override
+  State<_PersonalHome> createState() => _PersonalHomeState();
+}
+
+class _PersonalHomeState extends State<_PersonalHome> {
+  bool _restoring = false;
+
+  static String _greeting(int hour) => hour >= 5 && hour < 12
+      ? 'בוקר טוב'
+      : hour >= 12 && hour < 17
+      ? 'צהריים טובים'
+      : hour >= 17 && hour < 21
+      ? 'ערב טוב'
+      : 'לילה טוב';
+
+  Future<void> _restore() async {
+    setState(() => _restoring = true);
+    await PersonalCardLifecycle.restore(context);
+    if (mounted) setState(() => _restoring = false);
+  }
+
+  void _toMatchmaker() {
+    WorkspaceStore.setLastArea(WorkArea.matchmaker);
+    context.go('/home');
+  }
+
   @override
   Widget build(BuildContext context) {
-    final profile = context.watch<UserProfileProvider>();
-    final cards = context.watch<PersonalCardProvider>();
-    final access = context.watch<CardAccessProvider>();
-    final data = context.watch<PersonalAreaProvider>();
-    final approved = access.approved.where((a) => a.canReadCard).length;
-    final helpers = access.helpers
-        .where((h) => !PersonalHelperActions.hidden.contains(h.uid))
-        .toList();
-    final card = cards.card;
-    final hour = DateTime.now().hour;
-    final greeting = hour >= 5 && hour < 12
-        ? 'בוקר טוב'
-        : hour < 17 && hour >= 12
-        ? 'צהריים טובים'
-        : hour >= 17 && hour < 21
-        ? 'ערב טוב'
-        : 'לילה טוב';
-    DateTime? lastReview = data.date('reviewedAt');
-    DateTime? edited = card?.updatedAt;
-    final remoteEdit = data.date('editedAt');
-    if (remoteEdit != null && (edited == null || remoteEdit.isAfter(edited))) {
-      edited = remoteEdit;
-    }
-    if (edited != null && (lastReview == null || edited.isAfter(lastReview))) {
-      lastReview = edited;
-    }
+    final UserProfileProvider profile = context.watch<UserProfileProvider>();
+    final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
+    final Person? card = cards.card;
+    final String first = (profile.firstName ?? '').trim();
+    const SizedBox gap = SizedBox(height: 22);
+    const Divider rule = Divider(height: 1);
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: [
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+      children: <Widget>[
         HomeGreeting(
-          greeting: greeting,
-          name: '${profile.firstName ?? 'שלום'}! 👋',
-          line: '{תן|תני} לחברים שלך לחשוב {עליך|עלייך}'.forGender(
-            profile.gender,
-          ),
+          greeting: _greeting(DateTime.now().hour),
+          name: first.isEmpty ? 'שלום' : first,
+          trailing: WorkspaceStore.matchmakerEnabled
+              ? SwitchToMatchmakerButton(onTap: _toMatchmaker)
+              : null,
         ),
-        const SizedBox(height: 16),
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _PersonalStat(
-                  value: access.ownerAccessLoaded ? '$approved' : '—',
-                  label: 'שדכנים עם גישה לכרטיס שלי',
-                  onTap: () => context.go('/me?section=approved'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _PersonalStat(
-                  value: access.helpersLoaded
-                      ? '${access.mutualFriends.length}'
-                      : '—',
-                  label: 'חברים רווקים שהצטרפו לשדכן',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const MutualSingleFriendsScreen(),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _PersonalStat(
-                  value: data.stats['singles'] is num
-                      ? '${data.stats['singles']}'
-                      : '—',
-                  label: 'רווקים ורווקות בקהילה',
-                  onTap: () => _inviteCommunity(context),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        Text(
-          helpers.isNotEmpty
-              ? 'יש לך חברים בשדכן שעוד לא נתת להם גישה!'
-              : 'נותנים לחברים לחשוב {עליך|עלייך}'.forGender(profile.gender),
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 10),
-        if (helpers.isNotEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final helper in helpers.take(10))
-                    Padding(
-                      padding: const EdgeInsetsDirectional.only(end: 12),
-                      child: SizedBox(
-                        width: 238,
-                        child: PersonalHelperCard(
-                          helper: helper,
-                          compact: true,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+        const SizedBox(height: 8),
+        const PersonalAccessFigures(),
+        const SizedBox(height: 14),
+        if (card == null || cards.isDeleted)
+          PersonalCardPrompt(
+            deleted: cards.isDeleted,
+            busy: _restoring,
+            onAction: cards.isDeleted
+                ? _restore
+                : () => PersonalAreaService.editCard(context),
           )
-        else if (!access.helpersLoaded)
-          const HomePaperCard(
-            child: Text('רשימת החברים תופיע לאחר החיבור לחשבון'),
-          )
-        else
-          HomePaperCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'מי עוד מכיר אותך מספיק טוב כדי לחשוב {עליך|עלייך}?'
-                      .forGender(profile.gender),
-                ),
-                const SizedBox(height: 10),
-                FilledButton(
-                  onPressed: () => PersonalAreaService.invite(context),
-                  child: const Text('מזמינים חבר לשדכן'),
-                ),
-                TextButton(
-                  onPressed: () => PersonalHelperActions.contacts(context),
-                  child: const Text('איתור חברים מאנשי הקשר'),
-                ),
-              ],
-            ),
-          ),
-        TextButton(
-          onPressed: () => context.go('/me?section=helpers'),
-          child: Text(
-            helpers.length > 10
-                ? 'הצג עוד · לכל ${helpers.length} החברים ובקשות הגישה'
-                : 'לכל החברים ובקשות הגישה',
-          ),
-        ),
-        if (cards.hasCard &&
-            lastReview != null &&
-            PersonalAreaProvider.reviewDue(lastReview)) ...[
-          HomePaperCard(
-            stripe: AppColors.secondary,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'עברו שלושה חודשים מאז הפעם האחרונה שעדכנת את הכרטיס שלך. הכול עדיין רלוונטי?',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    FilledButton(
-                      onPressed: () async {
-                        try {
-                          await PersonalAreaService.call(
-                            'confirmPersonalCardCurrent',
-                          );
-                        } catch (_) {
-                          if (context.mounted) {
-                            AppNotice.show(
-                              context,
-                              'האישור לא נשמר. כדאי לנסות שוב.',
-                            );
-                          }
-                        }
-                      },
-                      child: const Text('הכול מעודכן ✓'),
-                    ),
-                    TextButton(
-                      onPressed: () => PersonalAreaService.editCard(context),
-                      child: const Text('אני רוצה לשנות משהו'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+        else ...<Widget>[
+          PersonalMyCard(card: card, active: cards.hasCard),
+          const SizedBox(height: 14),
+          PersonalStatusRow(card: card),
         ],
-        if (card != null && !cards.isDeleted)
-          _CompactPersonalCard(
-            card: card,
-            onView: () => PersonCardViewer.openOwnCard(context),
-          )
-        else
-          HomePaperCard(
-            child: Column(
-              children: [
-                Text(
-                  cards.isDeleted ? 'הכרטיס שלך נמחק' : 'עוד אין לך כרטיס אישי',
-                ),
-                FilledButton(
-                  onPressed: cards.isDeleted
-                      ? onProfile
-                      : () => PersonalAreaService.editCard(context),
-                  child: Text(
-                    cards.isDeleted ? 'שחזור הכרטיס שלי' : 'יצירת הכרטיס שלי',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        const SizedBox(height: 16),
-        const PersonalCommunityNews(),
-        const SizedBox(height: 16),
-        HomePaperCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'עוד חברים יכולים לחשוב {עליך|עלייך}!'.forGender(
-                  profile.gender,
-                ),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'מזמינים חברים שמכירים אותך, ונותנים להם הזדמנות לחשוב על רעיון מתאים.',
-              ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: () => PersonalAreaService.invite(context),
-                icon: const Icon(Icons.share_outlined),
-                label: const Text('מזמינים חברים לשדכן'),
-              ),
-            ],
-          ),
-        ),
+        if (!cards.isDeleted) ...<Widget>[gap, const PersonalLookingSection()],
+        gap,
+        rule,
+        const SizedBox(height: 14),
+        const PersonalMatchmakersStrip(),
+        const SizedBox(height: 10),
+        const PersonalWhoSees(),
+        const PersonalWhatsNew(),
+        gap,
+        rule,
+        const SizedBox(height: 14),
+        const PersonalCommunityLine(),
+        const PersonalCommunityNews(includeStats: false),
+        const SizedBox(height: 18),
+        _PersonalFooter(gender: profile.gender),
       ],
     );
   }
-
-  void _inviteCommunity(BuildContext context) => showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (sheet) => SafeArea(
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'יש לך חברים שעוד לא הצטרפו לשדכן? משתפים אותם, כדי שגם החברים שלהם יוכלו להתחיל לחשוב בשבילם!',
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(sheet);
-                  PersonalAreaService.invite(context);
-                },
-                child: const Text('משתפים חברים בשדכן'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
-class _PersonalStat extends StatelessWidget {
-  const _PersonalStat({
-    required this.value,
-    required this.label,
-    required this.onTap,
-  });
-  final String value, label;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => HomePaperCard(
-    stripe: AppColors.secondary,
-    onTap: onTap,
-    padding: const EdgeInsets.all(8),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    ),
-  );
-}
+/// The three secondary actions, quiet, at the very foot.
+class _PersonalFooter extends StatelessWidget {
+  const _PersonalFooter({required this.gender});
+  final Gender? gender;
 
-class _CompactPersonalCard extends StatefulWidget {
-  const _CompactPersonalCard({required this.card, required this.onView});
-  final Person card;
-  final VoidCallback onView;
-  @override
-  State<_CompactPersonalCard> createState() => _CompactPersonalCardState();
-}
-
-class _CompactPersonalCardState extends State<_CompactPersonalCard> {
-  bool _saving = false;
   @override
   Widget build(BuildContext context) {
-    final card = widget.card;
-    return HomePaperCard(
-      stripe: AppColors.genderAccent(
-        card.gender,
-        dark: Theme.of(context).brightness == Brightness.dark,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('הכרטיס שלי', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              PersonAvatar(person: card, radius: 30),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      card.fullName,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      [
-                        if (card.age != null) 'גיל ${card.age}',
-                        if ((card.city ?? '').isNotEmpty) card.city!,
-                      ].join(' · '),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ProfileStatusChoices(
-            title: 'הסטטוס שלי',
-            framed: false,
-            status: card.profileStatus,
-            gender: card.gender,
-            enabled: !_saving,
-            onSelected: (status) async {
-              setState(() => _saving = true);
+    final ThemeData theme = Theme.of(context);
+    Icon icon(IconData data) =>
+        Icon(data, size: 17, color: theme.colorScheme.onSurfaceVariant);
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 4,
+      children: <Widget>[
+        Builder(
+          builder: (BuildContext anchor) => FooterLink(
+            icon: icon(Icons.share_outlined),
+            label: 'שיתוף האפליקציה',
+            theme: theme,
+            onTap: () async {
               try {
-                await PersonalAreaService.updateStatus(context, status);
-              } finally {
-                if (mounted) setState(() => _saving = false);
+                await PersonalAreaService.invite(anchor);
+              } on Object {
+                // Nothing to share to is not worth a message.
               }
             },
           ),
-          CardStatusTimestamp(ownerUid: context.read<CardAccessProvider>().uid),
-          Wrap(
-            spacing: 8,
-            children: [
-              FilledButton(
-                onPressed: () => PersonalAreaService.editCard(context),
-                child: const Text('עריכת הכרטיס'),
-              ),
-              TextButton(
-                onPressed: widget.onView,
-                child: const Text('צפייה בכרטיס'),
-              ),
-            ],
-          ),
-          // Gentle hints, in the quiet ink: a suggestion, never a score.
-          for (final String hint in <String>[
-            if (card.photosPaths.length < 2)
-              'כדאי להוסיף עוד תמונה כדי לעזור לחברים להציג אותך בצורה טובה יותר.',
-            if ((card.description ?? '').trim().isEmpty)
-              'כמה מילים {עליך|עלייך} יעזרו לחברים להכיר ולהציג אותך.'
-                  .forGender(card.gender),
-          ])
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Icon(
-                      Icons.lightbulb_outline_rounded,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      hint,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class MutualSingleFriendsScreen extends StatelessWidget {
-  const MutualSingleFriendsScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final access = context.watch<CardAccessProvider>();
-    final active =
-        WorkspaceStore.matchmakerEnabled &&
-        context.watch<PersonRepository>().databaseCount > 1;
-    return Scaffold(
-      appBar: AppBar(title: const Text('חברים שהצטרפו לשדכן')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          HomePaperCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  (active
-                          ? '{עבור|עברי} לאזור {השדכן|השדכנית} {ותתחיל|ותתחילי} לחשוב על החברים שלך!'
-                          : 'גם החברים שלך מחכים שמישהו יחשוב עליהם! {הצטרף|הצטרפי} לשדכן {ותתחיל|ותתחילי} לחשוב גם {אתה|את} בשבילם ❤️')
-                      .forGender(context.userGender),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => PersonalAreaService.openMatchmaking(context),
-                  child: Text(
-                    (active
-                            ? 'מעבר לאזור {השדכן|השדכנית}'
-                            : 'להצטרפות {כשדכן|כשדכנית}')
-                        .forGender(context.userGender),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'מוצגים רק חברים ששמורים אצלך ושגם שמרו אותך באנשי הקשר שלהם. פרטי הכרטיסים שלהם אינם מוצגים כאן.',
-          ),
-          for (final friend in access.mutualFriends)
-            ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: Text(access.nameInContacts(friend.uid, friend.name)),
-            ),
-        ],
-      ),
+        ),
+        FooterLink(
+          icon: icon(Icons.lock_outline_rounded),
+          label: 'ניהול ופרטיות',
+          theme: theme,
+          onTap: () => PersonalPrivacyScreen.open(context),
+        ),
+        FooterLink(
+          icon: icon(Icons.settings_outlined),
+          label: 'הגדרות חשבון',
+          theme: theme,
+          onTap: () => context.push('/profile/settings'),
+        ),
+      ],
     );
   }
 }

@@ -21,6 +21,8 @@ import 'package:shadchan/screens/personal_home_screen.dart';
 import 'package:shadchan/screens/card_friend_screen.dart';
 import 'package:shadchan/screens/person_extended_edit_screen.dart';
 import 'package:shadchan/screens/my_matchmakers_screen.dart';
+import 'package:shadchan/screens/friends_with_cards_screen.dart';
+import 'package:shadchan/widgets/private_looking.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/community_period.dart';
@@ -63,6 +65,10 @@ class _Access extends CardAccessProvider {
   @override
   CardAccess? accessTo(String ownerUid) =>
       grants.where((g) => g.ownerUid == ownerUid).firstOrNull;
+  @override
+  Map<String, CardAccess> get matchmakerRows => {
+    for (final g in grants) g.ownerUid: g,
+  };
   @override
   bool get isConnected => true;
   @override
@@ -151,6 +157,13 @@ void main() {
       ),
     );
   });
+
+  /// The personal home is a long page; most checks want all of it built.
+  Future<void> tall(WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 2600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+  }
+
   Widget app({double scale = 1, Widget? home}) => MultiProvider(
     providers: [
       ChangeNotifierProvider<PersonRepository>.value(value: people),
@@ -182,23 +195,125 @@ void main() {
     ),
   );
 
-  testWidgets('home is compact, gendered and grants card access in one tap', (
-    tester,
-  ) async {
+  testWidgets(
+    'home greets without an emoji and grants card access from the friends strip',
+    (tester) async {
+      await tall(tester);
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.textContaining('👋', findRichText: true), findsNothing);
+      expect(find.textContaining('יעל', findRichText: true), findsWidgets);
+      expect(find.text('עוד לא נתת גישה לחברים'), findsOneWidget);
+      expect(find.text('חבר נוסף שלך משדך בשדכן'), findsOneWidget);
+      expect(find.text('החברים שלי שמשדכים בשדכן'), findsOneWidget);
+      expect(find.text('אפשר לתת גישה'), findsOneWidget);
+      // A card-only account has no way across to the matchmaker's side.
+      expect(find.text('לאזור השדכנית'), findsNothing);
+      await tester.tap(find.text('אורי'));
+      await tester.pumpAndSettle();
+      // "מה אני מחפש/ת" is empty, so there is nothing to choose: one tap.
+      await tester.tap(find.text('לתת גישה'));
+      await tester.pumpAndSettle();
+      expect(access.grantCalls, 1);
+      expect(access.approved, hasLength(1));
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('רואה את הכרטיס'), findsOneWidget);
+      expect(find.text('נתת גישה לחבר אחד שלך'), findsOneWidget);
+      expect(find.text('חבר אחד יכול לחשוב עלייך'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+    },
+  );
+  testWidgets(
+    'a single who also matchmakes has a way across beside the greeting',
+    (tester) async {
+      await tall(tester);
+      await tester.runAsync(
+        () => settings.put('workspace.matchmakerEnabled', 'true'),
+      );
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.text('לאזור השדכנית'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+    },
+  );
+  testWidgets(
+    'a request leads the strip, shows in "מה חדש אצלי" and tops the grant tab',
+    (tester) async {
+      await tall(tester);
+      access.candidates.add(
+        const CardHelper(uid: 'newer', name: 'בתיה', granteeUids: ['newer']),
+      );
+      access.grants.add(
+        const CardAccess(
+          ownerUid: 'owner123',
+          matchmakerUid: 'asker',
+          status: CardAccessStatus.pending,
+          requestedBy: 'matchmaker',
+          matchmakerName: 'שרה',
+          matchmakerGender: 'female',
+        ),
+      );
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.text('מה חדש אצלי'), findsOneWidget);
+      expect(find.text('שרה ביקשה גישה לכרטיס שלך'), findsOneWidget);
+      expect(find.text('ביקשה גישה'), findsOneWidget);
+      final double asker = tester.getTopRight(find.text('שרה').first).dx;
+      final double other = tester.getTopRight(find.text('אורי')).dx;
+      // RTL: the first face in the strip is the right-most.
+      expect(asker, greaterThan(other));
+      await tester.tap(find.text('השדכנים שלי').last);
+      await tester.pumpAndSettle();
+      expect(find.text('אפשר לתת גישה · 3'), findsOneWidget);
+      final double top = tester.getTopLeft(find.text('שרה').last).dy;
+      expect(top, lessThan(tester.getTopLeft(find.text('אורי').last).dy));
+      expect(find.text('לאשר'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+    },
+  );
+  testWidgets('"מה חדש אצלי" is not drawn when nothing is new', (tester) async {
+    await tall(tester);
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    expect(find.text('תני לחברים שלך לחשוב עלייך'), findsOneWidget);
-    expect(find.text('טקסט הכרטיס המלא', findRichText: true), findsNothing);
-    expect(find.text('לתת גישה'), findsOneWidget);
-    await tester.tap(find.text('לתת גישה'));
-    await tester.pumpAndSettle();
-    expect(access.grantCalls, 1);
-    expect(access.approved, hasLength(1));
-    expect(find.text('אורי'), findsNothing);
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('מה חדש אצלי'), findsNothing);
+    expect(
+      find.text('42 רווקים ורווקות מנהלים כרטיס אישי בשדכן'),
+      findsOneWidget,
+    );
+    expect(find.text('3 הצטרפו השבוע'), findsOneWidget);
+    expect(find.text('ניהול ופרטיות'), findsOneWidget);
+    expect(find.text('מחיקת הכרטיס שלי'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 5));
   });
+  testWidgets(
+    'deleting the card lives under "ניהול ופרטיות", not on the home',
+    (tester) async {
+      await tall(tester);
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('פרופיל').last);
+      await tester.pumpAndSettle();
+      expect(find.text('מחיקת הכרטיס שלי'), findsNothing);
+      await tester.tap(find.text('בית').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('ניהול ופרטיות'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ניהול ופרטיות'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('מחיקת הכרטיס שלי'),
+        300,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('מחיקת הכרטיס שלי'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
+    },
+  );
   testWidgets(
     'three tabs separate the full profile from home and expose persistent notifications',
     (tester) async {
@@ -224,10 +339,10 @@ void main() {
       expect(find.text('עריכת הכרטיס'), findsOneWidget);
       await tester.tap(find.text('השדכנים שלי').last);
       await tester.pumpAndSettle();
-      expect(find.text('חברים שאפשר לאשר'), findsOneWidget);
-      expect(find.text('חברים שאישרתי'), findsOneWidget);
+      expect(find.text('אישרתי גישה · 0'), findsOneWidget);
+      expect(find.text('אפשר לתת גישה · 1'), findsOneWidget);
       expect(find.textContaining('הכרטיס שלך גלוי רק לחברים'), findsOneWidget);
-      expect(find.text('12 חברים במאגר'), findsOneWidget);
+      expect(find.text('12 אנשים במאגר'), findsOneWidget);
     },
   );
   testWidgets(
@@ -235,9 +350,9 @@ void main() {
     (tester) async {
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('צפייה בכרטיס'));
+      await tester.ensureVisible(find.text('צפייה בכרטיס המלא'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('צפייה בכרטיס'));
+      await tester.tap(find.text('צפייה בכרטיס המלא'));
       await tester.pumpAndSettle();
       expect(find.byType(PersonCardViewer), findsOneWidget);
       expect(find.text(cards.card!.description!), findsOneWidget);
@@ -258,14 +373,18 @@ void main() {
   testWidgets(
     'hiding a suggestion leaves its access untouched and can be undone',
     (tester) async {
+      await tall(tester);
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      await tester.tap(find.text('הסתרה'));
+      await tester.tap(find.text('אורי'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('הסתר מהרשימה'));
       await tester.pumpAndSettle();
       expect(find.text('אורי'), findsNothing);
       expect(access.approved, isEmpty);
       await tester.tap(find.text('השדכנים שלי').last);
       await tester.pumpAndSettle();
+      expect(find.text('מוסתרים מהרשימה · 1'), findsOneWidget);
       await tester.tap(find.byTooltip('ניהול הרשאות והזמנות'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('חברים מוסתרים'));
@@ -353,17 +472,18 @@ void main() {
   testWidgets('unresolved access does not claim zero approved friends', (
     tester,
   ) async {
+    await tall(tester);
     access.ready = false;
     access.candidates.clear();
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     expect(find.text('—'), findsNWidgets(2));
-    expect(find.text('יש לך חברים בשדכן שעוד לא נתת להם גישה!'), findsNothing);
+    expect(find.text('עוד לא נתת גישה לחברים'), findsNothing);
     expect(find.text('רשימת החברים תופיע לאחר החיבור לחשבון'), findsOneWidget);
     access.ready = true;
     access.notifyListeners();
     await tester.pumpAndSettle();
-    expect(find.text('0'), findsOneWidget);
+    expect(find.text('עוד לא נתת גישה לחברים'), findsOneWidget);
     expect(
       find.text('מי עוד מכיר אותך מספיק טוב כדי לחשוב עלייך?'),
       findsOneWidget,
@@ -372,8 +492,9 @@ void main() {
   });
 
   testWidgets(
-    'home previews ten helpers and the full screen contains every helper',
+    'home previews six friends and the full screen contains every one',
     (tester) async {
+      await tall(tester);
       access.candidates.clear();
       access.candidates.addAll(
         List.generate(
@@ -386,7 +507,7 @@ void main() {
       );
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      expect(find.text('הצג עוד · לכל 25 החברים ובקשות הגישה'), findsOneWidget);
+      expect(find.text('לכל 25 השדכנים'), findsOneWidget);
       expect(find.text('חבר 24'), findsNothing);
       await tester.tap(find.text('השדכנים שלי').last);
       await tester.pumpAndSettle();
@@ -458,6 +579,40 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets(
+    'a matchmaker sees friends with a card and asks only those without access',
+    (tester) async {
+      access.grants.add(
+        const CardAccess(
+          ownerUid: 'reader-card',
+          matchmakerUid: 'me',
+          status: CardAccessStatus.approved,
+          requestedBy: 'owner',
+          ownerName: 'דנה כהן',
+        ),
+      );
+      await tester.pumpWidget(app(home: const FriendsWithCardsScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text('חברים שלי שהוסיפו כרטיס אישי'), findsOneWidget);
+      expect(find.text('נועה'), findsOneWidget);
+      expect(find.text('אפשר לבקש גישה'), findsOneWidget);
+      expect(find.text('בקשת גישה'), findsOneWidget);
+      expect(find.text('דנה כהן'), findsOneWidget);
+      expect(find.text('יש לך גישה לכרטיס'), findsOneWidget);
+      // Those still to ask lead the list.
+      expect(
+        tester.getTopLeft(find.text('נועה')).dy,
+        lessThan(tester.getTopLeft(find.text('דנה כהן')).dy),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  test('a matchmaker reads a single\'s wishes under their own gender', () {
+    expect(PrivateLookingBlock.headingFor(Gender.female), 'מה היא מחפשת');
+    expect(PrivateLookingBlock.headingFor(Gender.male), 'מה הוא מחפש');
+  });
 
   for (final width in [320.0, 390.0]) {
     testWidgets('personal home and matchmakers fit $width px at large type', (

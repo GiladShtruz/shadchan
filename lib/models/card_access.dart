@@ -107,12 +107,17 @@ class CardHelper {
     this.photoUrl,
     this.databaseCount,
     this.lastActiveAt,
+    this.joinedAt,
     this.recipientUid,
     this.granteeUids = const <String>[],
   });
   final String? photoUrl;
   final int? databaseCount;
   final DateTime? lastActiveAt;
+
+  /// When they joined the community as a matchmaker — the newest lead the
+  /// personal home's list. Null for an account that predates the field.
+  final DateTime? joinedAt;
   final String? recipientUid;
   final List<String> granteeUids;
 

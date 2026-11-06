@@ -193,7 +193,14 @@ class CardAccessProvider extends ChangeNotifier {
 
   List<StatusReport> get statusReports => _reports;
 
+  /// Every row this owner has written or been asked through — blocked ones
+  /// included, so a list built from it can leave them out on purpose.
+  List<CardAccess> get ownerRows => List.unmodifiable(_asOwner);
+
   // --- As a matchmaker ------------------------------------------------------
+
+  /// This matchmaker's rows with every card owner, by owner uid.
+  Map<String, CardAccess> get matchmakerRows => Map.unmodifiable(_asMatchmaker);
 
   /// This matchmaker's standing with [ownerUid]'s card, if any.
   CardAccess? accessTo(String ownerUid) => _asMatchmaker[ownerUid];
@@ -338,6 +345,7 @@ class CardAccessProvider extends ChangeNotifier {
                               ?.toInt(),
                           lastActiveAt: (item['lastActiveAt'] as Timestamp?)
                               ?.toDate(),
+                          joinedAt: (item['joinedAt'] as Timestamp?)?.toDate(),
                           recipientUid: item['recipientUid'] as String?,
                           granteeUids:
                               (item['granteeUids'] as List?)?.cast<String>() ??

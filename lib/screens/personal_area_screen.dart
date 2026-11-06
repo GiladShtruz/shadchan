@@ -10,8 +10,8 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/widgets/home_community_link.dart';
-import 'package:shadchan/widgets/app_notice.dart';
-import 'package:shadchan/services/personal_card_sync.dart';
+import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
+import 'package:shadchan/screens/personal_privacy_screen.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -22,7 +22,6 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/person_photo_carousel.dart';
-import 'package:shadchan/widgets/card_access_sections.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -42,109 +41,13 @@ class PersonalProfileScreen extends StatefulWidget {
 
 class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
   bool _savingStatus = false;
-  bool _deleting = false;
   bool _restoring = false;
-
-  /// Deletes the card — the card only, never the account or the matchmaker's
-  /// side of it. Every matchmaker stops seeing it at once; it stays restorable
-  /// indefinitely.
-  Future<void> _deleteCard() async {
-    final bool? sure = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('למחוק את הכרטיס שלך?'),
-        content: const Text(
-          'השדכנים שקיבלו גישה יפסיקו לראות אותו מיד. החשבון שלך נשאר, '
-          'ואפשר לשחזר את הכרטיס בכל עת.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('ביטול'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('מחיקה'),
-          ),
-        ],
-      ),
-    );
-    if (sure != true || !mounted) {
-      return;
-    }
-    setState(() => _deleting = true);
-    final bool ok = await PersonalCardSync.deleteNow();
-    if (!mounted) {
-      return;
-    }
-    if (ok) {
-      await context.read<PersonalCardProvider>().markDeleted();
-    } else {
-      AppNotice.show(context, 'לא הצלחנו למחוק כרגע. אפשר לנסות שוב.');
-    }
-    if (mounted) {
-      setState(() => _deleting = false);
-    }
-  }
 
   /// Brings the card back as "פנוי", then asks about the old grants.
   Future<void> _restoreCard() async {
-    final PersonalCardProvider cards = context.read<PersonalCardProvider>();
-    final CardAccessProvider access = context.read<CardAccessProvider>();
     setState(() => _restoring = true);
-    final Person? restored = await cards.restore();
-    final bool ok =
-        restored != null && await PersonalCardSync.publishNow(restored);
-    if (!mounted) {
-      return;
-    }
-    if (!ok) {
-      await cards.markDeleted();
-      if (mounted) {
-        setState(() => _restoring = false);
-        AppNotice.show(context, 'לא הצלחנו לשחזר כרגע. אפשר לנסות שוב.');
-      }
-      return;
-    }
-    setState(() => _restoring = false);
-    if (access.approved.isEmpty) {
-      AppNotice.show(context, 'הכרטיס שוחזר');
-      return;
-    }
-    final bool? keep = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('הכרטיס שוחזר'),
-        content: Text(
-          '{האם תרצה|האם תרצי} לשחזר גם את אישורי הגישה לשדכנים?'.forGender(
-            dialogContext.userGender,
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('לא'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('כן, לשחזר'),
-          ),
-        ],
-      ),
-    );
-    final bool done = keep == true
-        ? await access.reawakenApproved()
-        : await access.revokeAllApproved();
-    if (!done && mounted) {
-      AppNotice.show(
-        context,
-        'לא הצלחנו לעדכן את אישורי הגישה. אפשר לנסות שוב.',
-      );
-    }
+    await PersonalCardLifecycle.restore(context);
+    if (mounted) setState(() => _restoring = false);
   }
 
   Future<void> _setStatus(Person card, ProfileStatus status) async {
@@ -312,23 +215,8 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                 const SizedBox(height: 14),
                 TextButton.icon(
                   icon: const Icon(Icons.lock_outline),
-                  label: const Text('הגדרות גישה ופרטיות'),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => Scaffold(
-                        appBar: AppBar(title: const Text('ניהול ופרטיות')),
-                        body: ListView(
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            CardAccessSections(
-                              hasCard: cards.hasCard,
-                              management: true,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                  label: const Text('ניהול ופרטיות'),
+                  onPressed: () => PersonalPrivacyScreen.open(context),
                 ),
                 TextButton.icon(
                   icon: const Icon(Icons.settings_outlined),
@@ -340,28 +228,6 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                 if (matchmaker) ...<Widget>[
                   const SizedBox(height: 14),
                   _SwitchAreaCard(onTap: _goToMatchmaker),
-                ],
-
-                // Deleting the card is a secondary action: under a rule, quiet,
-                // and the very last thing on the page.
-                if (cards.hasCard) ...<Widget>[
-                  const SizedBox(height: 8),
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: _deleting
-                        ? const SizedBox.square(
-                            dimension: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : TextButton(
-                            onPressed: _deleteCard,
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.mutedInk,
-                            ),
-                            child: const Text('מחיקת הכרטיס שלי'),
-                          ),
-                  ),
                 ],
               ],
             ),

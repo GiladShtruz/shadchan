@@ -403,6 +403,21 @@ export async function mutualContacts(a: string, b: string): Promise<boolean> {
   return ad.get('uid') === a && bd.get('uid') === b;
 }
 
+/**
+ * Every matchmaker the owner has saved in their phone, and the single friends
+ * with a card who saved the owner back.
+ *
+ * **The two lists answer two different questions, so they have two rules.**
+ * "Which of my contacts matchmake here?" is the owner's own address book
+ * read back to them: a matchmaker is somebody who offers to think about
+ * friends, the owner already has their number, and the request rule
+ * (`inOwnersContacts`) is one-directional for exactly the same reason. It
+ * used to demand that the matchmaker had *also* uploaded contacts and saved
+ * the owner — so a friend who matchmakes from a database typed by hand, or
+ * never let the app read their contacts, was simply missing from the list.
+ * Whether a *single* keeps a card is the more private fact, and stays
+ * reciprocal ([mutualContacts]).
+ */
 async function findHelpers(ownerUid: string): Promise<void> {
   const contacts = await db.doc(`contactHashes/${ownerUid}`).get();
   const hashes: string[] = contacts.get('hashes') ?? [];
@@ -412,22 +427,31 @@ async function findHelpers(ownerUid: string): Promise<void> {
     const entries = await db.getAll(...hashes.slice(i, i + 100).map(h => db.doc(`phoneDirectory/${h}`)));
     for (const entry of entries) {
       const uid = entry.get('uid');
-      if (!entry.exists || typeof uid !== 'string' || seen.has(uid) || !await mutualContacts(ownerUid, uid)) continue;
+      if (!entry.exists || typeof uid !== 'string' || uid === ownerUid || seen.has(uid)) continue;
+      // The entry must still be the one its account published as its own
+      // number, or a number could be claimed for somebody else's list.
+      if ((await db.doc(`userPhones/${uid}`).get()).get('phoneHash') !== entry.id) continue;
       seen.add(uid);
+      const matchmaker = entry.get('matchmaker') === true;
+      const single = entry.get('hasCard') === true && entry.get('announces') !== false;
+      if (!matchmaker && !single) continue;
+      const mutual = single ? await mutualContacts(ownerUid, uid) : false;
+      if (!matchmaker && !mutual) continue;
       const member = await db.doc(`communityMembers/${uid}`).get();
       const activity = await db.doc(`matchmakerActivity/${uid}`).get();
       const row = {uid, name: entry.get('name') ?? '', phoneHash: entry.id,
         photoUrl: member.get('hidden') === false && typeof member.get('photoUrl') === 'string' && member.get('photoUrl').trim() ? member.get('photoUrl') : null,
         databaseCount: activity.get('databaseCount') ?? null,
-        lastActiveAt: activity.get('lastActiveAt') ?? null};
-      if (entry.get('matchmaker') === true) {
+        lastActiveAt: activity.get('lastActiveAt') ?? null,
+        // When they joined as a matchmaker, so the newest friends lead.
+        joinedAt: member.get('joinedAt') ?? null};
+      if (matchmaker) {
         const membership = await db.doc(`memberships/${uid}`).get();
         helpers.push({...row, name: membership.get('state') === 'active' ? membership.get('name') : row.name,
           recipientUid: membership.get('state') === 'active' ? membership.get('databaseUid') : uid,
           granteeUids: membership.get('state') === 'active' ? membership.get('members') : [uid]});
       }
-      if (entry.get('hasCard') === true && entry.get('announces') !== false &&
-          isActiveCard((await db.doc(`personalCards/${uid}`).get()).data())) {
+      if (mutual && isActiveCard((await db.doc(`personalCards/${uid}`).get()).data())) {
         // Presence only. No candidate details or personal-card photograph.
         friends.push({uid, name: row.name, phoneHash: entry.id});
       }
@@ -836,8 +860,14 @@ async function refreshPersonalCardCount(): Promise<void> {
   const joinedThisWeek = (value: unknown) => value instanceof Timestamp &&
     new Date(value.toDate().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'})) >= sunday;
   const activity = await db.collection('matchmakerActivity').get();
-  const totals = {singles: count, weekKey,
+  // The calendar month in Israel — "X הצטרפו החודש" on the personal home.
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthKey = `M${monthStart.getFullYear()}-${two(monthStart.getMonth()+1)}`;
+  const joinedThisMonth = (value: unknown) => value instanceof Timestamp &&
+    new Date(value.toDate().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'})) >= monthStart;
+  const totals = {singles: count, weekKey, monthKey,
     newSinglesWeek: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisWeek(d.get('joinedAt'))).length,
+    newSinglesMonth: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisMonth(d.get('joinedAt'))).length,
     newMatchmakersWeek: members.docs.filter(d => joinedThisWeek(d.get('joinedAt'))).length,
     activeMatchmakers: activity.docs.filter(d => joinedThisWeek(d.get('lastActiveAt'))).length,
     couplesWeek: sum('weekCouples'), engagementsWeek: sum('weekEngagements')};

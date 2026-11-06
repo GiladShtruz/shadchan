@@ -1,5 +1,6 @@
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/services/tag_library.dart';
@@ -401,6 +402,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
               child: HomeThinkBanner(onTap: () => ThinkScreen.open(context)),
             ),
           ),
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(12, 0, 12, 6),
+            child: FriendsWithCardsLink(),
+          ),
+        ),
         if (pendingContactDrafts.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(

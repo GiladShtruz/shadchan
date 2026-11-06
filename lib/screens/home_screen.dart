@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/activity_figure_row.dart';
@@ -493,6 +494,10 @@ class _HomeScreenState extends State<HomeScreen> {
           matchRepository: matchRepository,
           refresh: _boardRefresh,
         ),
+
+        // The friends who keep a card of their own, and asking them for it —
+        // the same screen המאגר שלי opens.
+        block(const FriendsWithCardsLink()),
 
         // 4. What has been done — the matchmaker's own score beside the
         // community's, two squares and one window at a time. The breakdown, the
