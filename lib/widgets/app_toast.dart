@@ -44,7 +44,11 @@ abstract final class AppToast {
     if (overlay == null) {
       return;
     }
+    showIn(overlay, message, emoji: emoji);
+  }
 
+  /// [show], into a given overlay — for a caller above the navigator.
+  static void showIn(OverlayState overlay, String message, {String? emoji}) {
     dismiss();
 
     final OverlayEntry entry = OverlayEntry(

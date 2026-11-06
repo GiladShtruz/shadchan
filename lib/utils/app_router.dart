@@ -22,6 +22,7 @@ import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
 import 'package:shadchan/screens/community_activity_screen.dart';
 import 'package:shadchan/screens/dashboard_screen.dart';
+import 'package:shadchan/screens/board_screen.dart';
 import 'package:shadchan/screens/help_center_screen.dart';
 import 'package:shadchan/screens/home_screen.dart';
 import 'package:shadchan/screens/privacy_overview_screen.dart';
@@ -753,6 +754,13 @@ abstract final class AppRouter {
             fallbackName: state.uri.queryParameters['name'] ?? '',
             fallbackPhotoUrl: state.uri.queryParameters['photo'] ?? '',
           );
+        },
+      ),
+      // "הלוח שלי" in full; the home screen shows only its first rows.
+      GoRoute(
+        path: '/board',
+        builder: (BuildContext context, GoRouterState state) {
+          return const BoardScreen();
         },
       ),
       // The community and the matchmaker's own numbers, on one screen.

@@ -48,6 +48,10 @@ abstract final class AppCelebration {
   static OverlayEntry? _entry;
   static Timer? _timer;
 
+  /// Whether a celebration is on screen now — a moment that already says
+  /// what happened, so nothing smaller should speak over it.
+  static bool get isShowing => _entry != null;
+
   /// Shows [headline] over [message], replacing whatever is on screen.
   ///
   /// [emoji] is the mark at the top of the card. One, large — a card with three

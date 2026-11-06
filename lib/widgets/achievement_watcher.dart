@@ -9,7 +9,11 @@ import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/community_achievements.dart';
 import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/dating_history.dart';
+import 'package:shadchan/utils/activity_stats.dart';
+import 'package:shadchan/utils/app_router.dart';
+import 'package:shadchan/widgets/app_celebration.dart';
 import 'package:shadchan/widgets/app_toast.dart';
+import 'package:shadchan/widgets/points_reward.dart';
 
 /// Congratulates the matchmaker **when the thing happens**, and never again
 /// afterwards.
@@ -53,6 +57,11 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
   PersonRepository? _people;
   MatchRepository? _matches;
 
+  /// The all-time breakdown at the last check — what "+N" is measured from.
+  /// In memory only: a launch starts from what is already there, so nothing
+  /// done before it is ever "rewarded" again.
+  ActivityBreakdown? _last;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -71,6 +80,7 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
     if (!CommunityProfileStore.hasBaselinedAchievements) {
       _baseline();
     }
+    _last = _reached().breakdown;
   }
 
   @override
@@ -96,6 +106,9 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
     if (!mounted || !CommunityProfileStore.hasBaselinedAchievements) {
       return;
     }
+    final _Reached reached = _reached();
+    final ActivityBreakdown? before = _last;
+    _last = reached.breakdown;
 
     // A large import says one thing about the import, and the milestones it
     // crossed are marked as told rather than queued behind it. Being handed
@@ -106,23 +119,60 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
     if (imported >= CommunityProfileStore.bulkImportNoticeFrom) {
       CommunityProfileStore.clearPendingBulkImport();
       _baselineQuietly();
-      AppToast.show(
-        context,
-        CommunityAchievements.bulkImportMessage(imported),
-        emoji: '🙌',
-      );
+      _toast(CommunityAchievements.bulkImportMessage(imported), '🙌');
       return;
     }
 
-    final Achievement? achievement = _firstUnseen(_reached());
+    final Achievement? achievement = _firstUnseen(reached);
     if (achievement == null) {
+      if (before != null) {
+        _reward(before, reached.breakdown);
+      }
       return;
     }
     // Only the most significant one. `firstUnseen` already ranks them, and
     // marking just this one seen leaves the rest for the days they are the best
     // thing that happened — which is the whole point of not queueing.
     CommunityProfileStore.markSeen(achievement.id);
-    AppToast.show(context, achievement.title, emoji: '🎉');
+    _toast(achievement.title, '🎉');
+  }
+
+  /// The router's navigator overlay: this widget sits above the navigator,
+  /// so the overlay notices draw in is not among its ancestors.
+  OverlayState? get _overlay =>
+      AppRouter.router.routerDelegate.navigatorKey.currentState?.overlay ??
+      Overlay.maybeOf(context, rootOverlay: true);
+
+  void _toast(String message, String emoji) {
+    final OverlayState? overlay = _overlay;
+    if (overlay != null) {
+      AppToast.showIn(overlay, message, emoji: emoji);
+    }
+  }
+
+  /// "+N" for what was just done — only when nothing larger is already saying
+  /// it (a milestone, a batch celebration), and only for growth: a deletion
+  /// moves the baseline and says nothing.
+  void _reward(ActivityBreakdown before, ActivityBreakdown after) {
+    final int points = after.points - before.points;
+    if (points <= 0 || AppCelebration.isShowing) {
+      return;
+    }
+    final OverlayState? overlay = _overlay;
+    if (overlay == null) {
+      return;
+    }
+    int grew(int a, int b) => b > a ? b - a : 0;
+    PointsReward.show(
+      overlay,
+      points: points,
+      label: PointsReward.labelFor(
+        friends: grew(before.friends, after.friends),
+        ideas: grew(before.ideas, after.ideas),
+        couples: grew(before.couples, after.couples),
+        engagements: grew(before.engagements, after.engagements),
+      ),
+    );
   }
 
   /// Marks everything currently reached as told without saying any of it.
@@ -164,6 +214,7 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
       ideas: matches.getAll().length,
       points: counts.allTime.points,
       couples: counts.allTime.couples,
+      breakdown: counts.allTime,
     );
   }
 
@@ -177,10 +228,12 @@ class _Reached {
     required this.ideas,
     required this.points,
     required this.couples,
+    required this.breakdown,
   });
 
   final int friends;
   final int ideas;
   final int points;
   final int couples;
+  final ActivityBreakdown breakdown;
 }

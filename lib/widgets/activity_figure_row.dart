@@ -195,3 +195,95 @@ class _FigureTile extends StatelessWidget {
     );
   }
 }
+
+/// The same four all-time figures as [ActivityFigureRow], said as one quiet
+/// line: "611 חברים · 213 רעיונות · 8 זוגות יצאו · 2 חתונות".
+///
+/// **For the home screen, where the figures must not compete with what to do
+/// next.** Four tiles at the head of the page were the loudest thing on it;
+/// the numbers are still here, each still a tap into its list, but they read
+/// as a caption under the greeting rather than as a dashboard. The activity
+/// screen keeps the tiles.
+class ActivityFigureLine extends StatelessWidget {
+  const ActivityFigureLine({
+    super.key,
+    required this.people,
+    required this.matches,
+  });
+
+  final PersonRepository people;
+  final MatchRepository matches;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final ActivityBreakdown all = ActivityStats.allTime(
+      people: people.getAll(),
+      matches: matches.getAll(),
+      matchStatusEvents: matches.getAllStatusEvents(),
+      excludedFromDating: DatingCountExclusions.all(),
+    );
+    final TextStyle? figure = theme.textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w900,
+    );
+    final TextStyle? noun = theme.textTheme.bodySmall?.copyWith(
+      color: AppColors.muted(dark: dark),
+      fontWeight: FontWeight.w600,
+    );
+
+    Widget part(int value, String label, VoidCallback onTap) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          child: Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(text: CommunityFigure.format(value), style: figure),
+                TextSpan(text: ' $label', style: noun),
+              ],
+            ),
+            maxLines: 1,
+          ),
+        ),
+      );
+    }
+
+    Widget dot() => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text('·', style: noun),
+    );
+
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            part(all.friends, 'חברים', () => context.go('/people')),
+            dot(),
+            part(all.ideas, 'רעיונות', () => context.go('/matches')),
+            dot(),
+            part(
+              all.couples,
+              'זוגות יצאו',
+              () => context.push(
+                '/stats/month/${MonthlyStatMetric.dating.name}?window=all',
+              ),
+            ),
+            dot(),
+            part(
+              all.engagements,
+              'חתונות',
+              () => context.push(
+                '/stats/month/${MonthlyStatMetric.weddings.name}?window=all',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

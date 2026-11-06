@@ -124,6 +124,7 @@ void main() {
         'migratedBirthDatesToAges',
         'invite.from',
         'contactHashes.print',
+        'home.nextStep',
       ]) {
         expect(AccountSyncCodec.isSyncedSetting(key), isFalse, reason: key);
       }

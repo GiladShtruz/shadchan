@@ -52,7 +52,7 @@ void main() {
     expect(people, 1);
     expect(ideas, 1);
 
-    await tester.tap(find.byTooltip('הוספה וצבירת נקודות'));
+    await tester.tap(find.byTooltip('הוספת חברים או רעיון'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('מה נוסיף היום?'), findsOneWidget);
@@ -65,13 +65,14 @@ void main() {
   });
 
   testWidgets(
-    'the labels follow the user gender and retain both existing drawings',
+    'the labels follow the user gender, carry no captions, keep both drawings',
     (tester) async {
       await tester.pumpWidget(wrap(gender: Gender.female, reducedMotion: true));
       await tester.pumpAndSettle();
       expect(find.text('הוסיפי חברים'), findsOneWidget);
       expect(find.text('הוסיפי רעיון'), findsOneWidget);
-      expect(find.text('וצברי נקודות'), findsNWidgets(2));
+      // No "צבור נקודות" on the buttons: what to do, nothing about scoring.
+      expect(find.textContaining('נקודות'), findsNothing);
       expect(
         tester
             .widgetList<Image>(find.byType(Image))

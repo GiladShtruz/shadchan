@@ -153,7 +153,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 SettingsRow(
                   icon: Icons.palette_outlined,
-                  title: 'תצוגה וערכת נושא',
+                  title: 'תצוגה בהירה או כהה',
+                  subtitle: 'ברירת המחדל היא תצוגה בהירה',
                   onTap: () => context.push('/profile/appearance'),
                 ),
                 SettingsRow(

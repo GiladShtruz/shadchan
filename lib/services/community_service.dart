@@ -837,6 +837,42 @@ abstract final class CommunityService {
     return merged;
   }
 
+  static _Cached<int>? _singlesCache;
+
+  /// "חברים רווקים שמנהלים כרטיס אישי בשדכן": how many singles keep a live
+  /// personal card, or null when that cannot be said right now.
+  ///
+  /// The figure is the server's own (`publicStats/personalArea.singles`,
+  /// written by `refreshPersonalCardCount`), counted by the same rule that
+  /// decides a card is real — one photo or thirty characters of sendable text
+  /// (`isActiveCard`) — so a single who opened an empty personal area is not
+  /// counted. It is one total, not a window: a card is kept, not done.
+  ///
+  /// Null rather than zero on any failure, so a read that did not land is never
+  /// passed off as a community with no cards in it.
+  static Future<int?> singlesWithCards({bool forceRefresh = false}) async {
+    final _Cached<int>? cached = _singlesCache;
+    if (!forceRefresh && cached != null && cached.isFresh) {
+      return cached.value;
+    }
+    if (await _account() == null) {
+      return null;
+    }
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _db
+          .doc('publicStats/personalArea')
+          .get();
+      final Object? value = doc.data()?['singles'];
+      if (value is! num) {
+        return cached?.value;
+      }
+      _singlesCache = _Cached<int>(value.toInt());
+      return value.toInt();
+    } catch (_) {
+      return cached?.value;
+    }
+  }
+
   /// How many accounts joined the community inside [period].
   ///
   /// A `count()` over one range filter on `joinedAt` — a single-field query,
