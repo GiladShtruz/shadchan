@@ -268,7 +268,15 @@ abstract final class CardSyncEngine {
       final List<String>? ownerPhotos = localPhotoPaths;
       if (ownerPhotos != null) {
         person.photosPaths = previous == null
-            ? List<String>.from(ownerPhotos)
+            ? <String>[
+                ...ownerPhotos,
+                // The owner's pictures could not be fetched this time (they
+                // are tried again): until they arrive the matchmaker's own
+                // pictures of the friend stay, rather than leaving a card
+                // with text and no face.
+                if (ownerPhotos.isEmpty)
+                  ...photosBefore.where((String p) => !isCardPhoto(p)),
+              ]
             : <String>[
                 ...ownerPhotos,
                 ...photosBefore.where((String p) => !isCardPhoto(p)),

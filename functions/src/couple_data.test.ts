@@ -3,14 +3,26 @@ import assert from 'node:assert/strict';
 import { mergeDatabases, splitDatabase, normalizedPhone } from './couple_data';
 import { isActiveCard } from './card_activity';
 test('draft threshold and deletion', () => {
+  const words = (n: number) => Array.from({ length: n }, () => 'מילה').join(' ');
   assert.equal(
     isActiveCard({ firstName: 'דוד', description: ' '.repeat(50) }),
     false,
   );
-  assert.equal(isActiveCard({ description: 'א'.repeat(29) }), false);
-  assert.equal(isActiveCard({ description: 'א'.repeat(30) }), true);
-  assert.equal(isActiveCard({ photoPaths: ['photo'] }), true);
-  assert.equal(isActiveCard({ photoPaths: ['photo'], deleted: true }), false);
+  // A photo alone, or text alone, is still a draft.
+  assert.equal(isActiveCard({ photoPaths: ['photo'] }), false);
+  assert.equal(isActiveCard({ description: words(40) }), false);
+  assert.equal(isActiveCard({ photoPaths: ['photo'], description: words(19) }), false);
+  assert.equal(isActiveCard({ photoPaths: ['photo'], description: words(20) }), true);
+  // Runs of spaces and new lines are one gap, not many words.
+  assert.equal(
+    isActiveCard({ photoPaths: ['p'], description: `  ${words(10)}\n\n   ${words(9)}  ` }),
+    false,
+  );
+  assert.equal(isActiveCard({ photoPaths: [], description: words(30) }), false);
+  assert.equal(
+    isActiveCard({ photoPaths: ['photo'], description: words(20), deleted: true }),
+    false,
+  );
 });
 test('phone normalization', () => {
   assert.equal(

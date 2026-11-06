@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/backup_service.dart';
+import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/enums.dart';
 
@@ -153,6 +155,147 @@ void main() {
 
       await reopened.setStatus(ProfileStatus.onBreak);
       expect(reopened.card?.profileStatus, ProfileStatus.onBreak);
+    });
+    test(
+      'an older card with six photos keeps all six until the owner chooses',
+      () async {
+        final DateTime now = DateTime(2026, 1, 1);
+        final List<String> six = <String>[
+          for (int i = 0; i < 6; i++) 'p$i.jpg',
+        ];
+        final Person legacy = Person(
+          id: PersonalCardProvider.cardId,
+          firstName: 'נועה',
+          lastName: 'כהן',
+          gender: Gender.female,
+          photosPaths: six,
+          createdAt: now,
+          updatedAt: now,
+        );
+        // Written as an older version wrote it: straight into the settings box.
+        await settings.put(
+          'personalCard.person',
+          jsonEncode(BackupService.personToJson(legacy)),
+        );
+
+        final PersonalCardProvider cards = PersonalCardProvider(settings);
+        expect(cards.card?.photosPaths, six);
+        expect(cards.needsPhotoChoice, isTrue);
+
+        // An unrelated save carries the six on: nothing chooses for the owner.
+        await cards.setStatus(ProfileStatus.onBreak);
+        expect(cards.card?.photosPaths, six);
+        // Adding a seventh is still refused.
+        expect(
+          () => cards.save(
+            cards.card!.copyWith(photosPaths: <String>[...six, 'x.jpg']),
+          ),
+          throwsArgumentError,
+        );
+
+        await cards.keepPhotos(const <String>['p5.jpg', 'p1.jpg', 'p2.jpg']);
+        expect(cards.card?.photosPaths, const <String>[
+          'p5.jpg',
+          'p1.jpg',
+          'p2.jpg',
+        ]);
+        expect(cards.needsPhotoChoice, isFalse);
+      },
+    );
+
+    test('a draft from the old short card keeps every old photo', () async {
+      final UserProfileProvider profile = UserProfileProvider(settings);
+      await profile.saveProfile(
+        name: 'דן',
+        lastName: 'לוי',
+        gender: Gender.male,
+        isSingle: true,
+      );
+      await profile.setPersonalCardContent(
+        text: 'טקסט',
+        photoPaths: const <String>['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'],
+      );
+      final Person draft = PersonalCardProvider(settings).draftFrom(profile);
+      expect(draft.photosPaths.length, 5);
+    });
+  });
+
+  group('a live card', () {
+    final DateTime now = DateTime(2026, 1, 1);
+    Person card({List<String> photos = const <String>[], String? text}) =>
+        Person(
+          id: 'c',
+          firstName: 'נועה',
+          lastName: 'כהן',
+          gender: Gender.female,
+          photosPaths: photos,
+          description: text,
+          createdAt: now,
+          updatedAt: now,
+        );
+    final String twenty = List<String>.generate(
+      20,
+      (int i) => 'מילה$i',
+    ).join(' ');
+    final String nineteen = List<String>.generate(
+      19,
+      (int i) => 'מילה$i',
+    ).join(' ');
+
+    test('needs a photo and twenty words, both', () {
+      expect(PersonalCardCodec.isActive(card()), isFalse);
+      expect(
+        PersonalCardCodec.isActive(card(photos: <String>['a.jpg'])),
+        isFalse,
+      );
+      expect(PersonalCardCodec.isActive(card(text: twenty)), isFalse);
+      expect(
+        PersonalCardCodec.isActive(
+          card(photos: <String>['a.jpg'], text: nineteen),
+        ),
+        isFalse,
+      );
+      expect(
+        PersonalCardCodec.isActive(
+          card(photos: <String>['a.jpg'], text: twenty),
+        ),
+        isTrue,
+      );
+      // Long text with no spaces is one word, not a card.
+      expect(
+        PersonalCardCodec.isActive(
+          card(photos: <String>['a.jpg'], text: 'א' * 300),
+        ),
+        isFalse,
+      );
+    });
+
+    test('says what is still missing', () {
+      expect(
+        PersonalCardCodec.draftHint(
+          card(photos: <String>['a.jpg'], text: twenty),
+        ),
+        isNull,
+      );
+      expect(
+        PersonalCardCodec.draftHint(card(text: twenty)),
+        contains('תמונה אחת'),
+      );
+      expect(
+        PersonalCardCodec.draftHint(
+          card(photos: <String>['a.jpg'], text: nineteen),
+        ),
+        contains('עוד מילה אחת'),
+      );
+      final String both = PersonalCardCodec.draftHint(card())!;
+      expect(both, contains('תמונה אחת'));
+      expect(both, contains('עוד 20 מילים'));
+    });
+
+    test('counts words the way the server does', () {
+      expect(PersonalCardCodec.wordCount(null), 0);
+      expect(PersonalCardCodec.wordCount('   '), 0);
+      expect(PersonalCardCodec.wordCount('  אחת  שתיים\n\nשלוש '), 3);
     });
   });
 }

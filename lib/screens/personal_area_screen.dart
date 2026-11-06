@@ -1,3 +1,4 @@
+import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/widgets/private_looking.dart';
 import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/widgets/card_status_timestamp.dart';
@@ -149,11 +150,9 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                     ),
                   const SizedBox(height: 14),
                   if (!cards.hasCard)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        'הכרטיס עדיין בטיוטה. להפעלתו יש להוסיף תמונה אחת לפחות או 30 תווים בכרטיס לשליחה.',
-                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(PersonalCardCodec.draftHint(card) ?? ''),
                     ),
                   ProfileStatusChoices(
                     title: 'הסטטוס שלי',

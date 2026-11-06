@@ -73,6 +73,7 @@ class CardAccessProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _cancelPhotoRetries();
     CoupleWorkspaceService.membership.removeListener(_workspaceChanged);
     unawaited(stop());
     super.dispose();
@@ -118,6 +119,39 @@ class CardAccessProvider extends ChangeNotifier {
   /// Cards whose photos did not all download — tried again on resume, so a
   /// photo refused or cut off once is not missing until the owner next edits.
   final Set<String> _photosIncomplete = <String>{};
+
+  /// A card whose photos did not all arrive is read again soon, not only on
+  /// the next resume: a matchmaker who opens the friend a minute after access
+  /// was granted should see the face, not wait for the app to go to the
+  /// background and come back. Backs off, and gives up after
+  /// [_photoRetryLimit] tries — the resume retry remains.
+  final Map<String, int> _photoRetries = <String, int>{};
+  final Map<String, Timer> _photoRetryTimers = <String, Timer>{};
+  static const int _photoRetryLimit = 5;
+
+  void _schedulePhotoRetry(String ownerUid) {
+    if (_disposed || _photoRetryTimers.containsKey(ownerUid)) return;
+    final int attempt = _photoRetries[ownerUid] ?? 0;
+    if (attempt >= _photoRetryLimit) return;
+    _photoRetries[ownerUid] = attempt + 1;
+    _photoRetryTimers[ownerUid] = Timer(
+      Duration(seconds: 15 * (1 << attempt)),
+      () {
+        _photoRetryTimers.remove(ownerUid);
+        if (!_disposed && _photosIncomplete.contains(ownerUid)) {
+          unawaited(resync(ownerUid));
+        }
+      },
+    );
+  }
+
+  void _cancelPhotoRetries() {
+    for (final Timer timer in _photoRetryTimers.values) {
+      timer.cancel();
+    }
+    _photoRetryTimers.clear();
+    _photoRetries.clear();
+  }
 
   bool get isConnected => _uid != null;
   String? get uid => _uid;
@@ -398,6 +432,7 @@ class CardAccessProvider extends ChangeNotifier {
     _lookups.clear();
     _applying.clear();
     _photosIncomplete.clear();
+    _cancelPhotoRetries();
     notifyListeners();
   }
 
@@ -489,13 +524,32 @@ class CardAccessProvider extends ChangeNotifier {
       if (!file.existsSync() || file.lengthSync() == 0) {
         // A failed write must never leave a file that looks like a cached photo.
         final partial = File('${file.path}.part');
-        try {
-          await FirebaseStorage.instance.ref(remote).writeToFile(partial);
-          if (await partial.length() == 0) throw StateError('Empty card photo');
-          await partial.rename(file.path);
-        } catch (error) {
-          if (await partial.exists()) await partial.delete();
-          _log(error);
+        bool fetched = false;
+        // Twice, a moment apart: a cut-off mobile connection is the common
+        // reason a card arrives with its text and without its pictures.
+        for (int attempt = 0; attempt < 2 && !fetched; attempt++) {
+          try {
+            if (attempt > 0) {
+              await Future<void>.delayed(const Duration(seconds: 2));
+            }
+            await FirebaseStorage.instance.ref(remote).writeToFile(partial);
+            if (await partial.length() == 0) {
+              throw StateError('Empty card photo');
+            }
+            await partial.rename(file.path);
+            fetched = true;
+          } catch (error) {
+            if (await partial.exists()) await partial.delete();
+            _log(error);
+            // Refused is refused; trying again a second later changes nothing.
+            if (error is FirebaseException &&
+                (error.code == 'unauthorized' ||
+                    error.code == 'object-not-found')) {
+              break;
+            }
+          }
+        }
+        if (!fetched) {
           continue;
         }
       }
@@ -637,8 +691,10 @@ class CardAccessProvider extends ChangeNotifier {
     if (localPhotos != null) {
       if (localPhotos.length < remotePhotos.whereType<String>().length) {
         _photosIncomplete.add(ownerUid);
+        _schedulePhotoRetry(ownerUid);
       } else {
         _photosIncomplete.remove(ownerUid);
+        _photoRetries.remove(ownerUid);
       }
     }
 

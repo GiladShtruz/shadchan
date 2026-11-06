@@ -18,6 +18,8 @@ import 'package:shadchan/utils/home_config.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/match_stage.dart';
 import 'package:shadchan/utils/reminder_alerts.dart';
+import 'package:shadchan/services/reminder_log.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -178,6 +180,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     _searchController.addListener(_handleSearchChanged);
     _listScroll.addListener(_handleScroll);
     BackInterceptor.add(_handleBack);
+    ReminderLog.instance.addListener(_onReminderLog);
     _category = widget.initialShowArchived
         ? MatchCategory.closed
         : _categoryFor(widget.initialStatuses);
@@ -263,6 +266,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
   @override
   void dispose() {
     BackInterceptor.remove(_handleBack);
+    ReminderLog.instance.removeListener(_onReminderLog);
     _closeActions.dispose();
     _searchController
       ..removeListener(_handleSearchChanged)
@@ -757,6 +761,20 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   /// Proposals whose reminder date has arrived. A reminder set for the future
   /// is not one of them.
+  /// A reminder read on the notifications page (or opened from "הלוח שלי")
+  /// puts its idea back in its place: the list redraws when the log changes.
+  void _onReminderLog() {
+    if (mounted) setState(() {});
+  }
+
+  /// The ideas lifted to the top of הכל: an active reminder that has come due
+  /// and is still waiting for the matchmaker.
+  ///
+  /// **Lifted only until it is dealt with.** Handled — the reminder moved on
+  /// ("טופל", a new date) or was cleared, or the idea closed — or read, on the
+  /// notifications page or from "הלוח שלי", and the idea goes back to its
+  /// ordinary place by its last update. Swiping it aside does the same by
+  /// hand. The next reminder that comes due lifts it again.
   List<MatchIdea> _dueReminders(List<MatchIdea> matches) {
     final DateTime today = DateTime.now();
     final DateTime endOfToday = DateTime(
@@ -774,7 +792,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
           !date.isAfter(endOfToday) &&
           !match.status.isArchived &&
           _takenOffTop[match.id] != date &&
-          !ReminderAlerts.isTakenOffTop(match.id, date);
+          !ReminderAlerts.isTakenOffTop(match.id, date) &&
+          !ReminderLog.instance.isRead(HomeItemKind.idea, match.id, date);
     }).toList();
     due.sort(
       (MatchIdea a, MatchIdea b) => a.reminderDate!.compareTo(b.reminderDate!),
@@ -1389,13 +1408,13 @@ class _CategoryChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final BorderRadius radius = BorderRadius.circular(12);
 
-    // A breath of the shelf's colour at rest and a little more when chosen —
-    // enough to tell the shelves apart at a glance, never a saturated block.
+    // White inside, every one of them, and the shelf's colour only in the
+    // frame — the same frame on all five, a little firmer on the chosen one.
+    // A tinted fill made five differently coloured blocks of what is one row
+    // of counts.
+    final bool dark = theme.brightness == Brightness.dark;
     return Material(
-      color: Color.alphaBlend(
-        accent.withValues(alpha: isSelected ? 0.16 : 0.05),
-        theme.colorScheme.surface,
-      ),
+      color: dark ? theme.colorScheme.surface : Colors.white,
       borderRadius: radius,
       child: InkWell(
         borderRadius: radius,
@@ -1405,8 +1424,8 @@ class _CategoryChip extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: radius,
             border: Border.all(
-              color: accent.withValues(alpha: isSelected ? 0.6 : 0.28),
-              width: isSelected ? 1.3 : 1,
+              color: accent.withValues(alpha: isSelected ? 0.95 : 0.7),
+              width: isSelected ? 2 : 1.3,
             ),
           ),
           child: Column(

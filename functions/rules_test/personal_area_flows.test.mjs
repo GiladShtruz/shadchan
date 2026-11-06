@@ -61,8 +61,8 @@ const card = (uid, extra = {}) => ({
   firstName: 'יעל',
   lastName: 'לוי',
   gender: 'female',
-  description: 'א'.repeat(40),
-  photoPaths: [],
+  description: Array.from({ length: 20 }, (_, i) => `מילה${i}`).join(' '),
+  photoPaths: ['personalCards/x/one.jpg'],
   deleted: false,
   status: 'available',
   updatedAt: Timestamp.now(),
@@ -97,7 +97,7 @@ test('reciprocal discovery and join notifications never reveal a one-way contact
     .set({ uid: target.uid, name: 'אורי', matchmaker: true, hasCard: true });
   await db
     .doc(`personalCards/${target.uid}`)
-    .set(card(target.uid, { description: 'פרטים שאסור לחשוף'.repeat(4) }));
+    .set(card(target.uid, { description: 'פרטים שאסור לחשוף '.repeat(7) }));
   await db.doc(`userPhones/${owner.uid}`).set({ phoneHash: oh });
   await db.doc(`userPhones/${target.uid}`).set({ phoneHash: th });
   await db.doc(`contactHashes/${owner.uid}`).set({ hashes: [th] });
@@ -333,8 +333,8 @@ test('community totals are computed from actual active cards, with no public can
   const expected = (await db.collection('personalCards').get()).docs.filter(
     (d) =>
       !d.get('deleted') &&
-      (d.get('photoPaths')?.length > 0 ||
-        [...(d.get('description') ?? '').trim()].length >= 30),
+      d.get('photoPaths')?.length > 0 &&
+      (d.get('description') ?? '').trim().split(/\s+/u).filter(Boolean).length >= 20,
   ).length;
   const stats = await waitFor(async () => {
     const d = await db.doc('publicStats/personalArea').get();

@@ -77,11 +77,14 @@ abstract final class PersonalCardSync {
     final String print = SyncStateStore.fingerprint(
       BackupService.personToJson(card),
     );
-    final bool ok = await PersonalCardService.publishCard(card);
-    if (ok) {
+    final CardPublish result = await PersonalCardService.publishCard(card);
+    if (result == CardPublish.complete) {
       await _settings?.put(_cardPrintKey, print);
+    } else if (result == CardPublish.missingPhotos) {
+      // Published, but not finished: the next run sends the photos.
+      await _settings?.delete(_cardPrintKey);
     }
-    return ok;
+    return result.reachedServer;
   }
 
   /// Marks the card deleted on the server now; see [publishNow].
@@ -103,7 +106,10 @@ abstract final class PersonalCardSync {
     if (_settings?.get(_cardPrintKey) == print) {
       return;
     }
-    if (await PersonalCardService.publishCard(card)) {
+    // Only a complete publish is remembered. One that went up without a photo
+    // that was not on this device yet is tried again on the next run (app
+    // open, resume, any card change), until every photo is there.
+    if (await PersonalCardService.publishCard(card) == CardPublish.complete) {
       await _settings?.put(_cardPrintKey, print);
     }
   }

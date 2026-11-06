@@ -48,8 +48,8 @@ function card(extra = {}) {
     dateOfBirth: '1999-04-07',
     status: 'available',
     deleted: false,
-    photoPaths: [],
-    description: 'א'.repeat(30),
+    photoPaths: ['personalCards/x/one.jpg'],
+    description: Array.from({ length: 20 }, (_, i) => `מילה${i}`).join(' '),
     updatedAt: new Date(),
     ...extra,
   };

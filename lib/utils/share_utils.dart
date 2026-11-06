@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/models/person.dart';
@@ -44,28 +46,11 @@ abstract final class ShareUtils {
   }
 
   static Future<void> sharePerson(Person person, {Rect? origin}) async {
-    final List<String> photoPaths = _existingPhotoPaths(person);
-    final String card = _shareText(person);
-
-    // Nothing to send is nothing to send. Without this guard a candidate with
-    // no card text and no photos would share the credit on its own, which is an
-    // advertisement somebody did not mean to forward.
-    if (card.isEmpty && photoPaths.isEmpty) {
-      return;
-    }
-
-    final String shareText = CommunityLinks.creditCard(card);
-
-    if (photoPaths.isNotEmpty) {
-      await Share.shareXFiles(
-        photoPaths.map((String path) => XFile(path)).toList(),
-        text: shareText,
-        sharePositionOrigin: origin,
-      );
-      return;
-    }
-
-    await Share.share(shareText, sharePositionOrigin: origin);
+    await shareCard(
+      text: _shareText(person),
+      photoPaths: person.photosPaths,
+      origin: origin,
+    );
   }
 
   /// Shares a card written as free text, with any number of photos.
@@ -77,25 +62,86 @@ abstract final class ShareUtils {
     Iterable<String> photoPaths = const <String>[],
     Rect? origin,
   }) async {
-    final String trimmed = text.trim();
-    final List<String> existing = <String>[
-      ...photoPaths.where((String path) => File(path).existsSync()),
-      if (photoPath != null && File(photoPath).existsSync()) photoPath,
-    ];
-    if (trimmed.isEmpty && existing.isEmpty) {
-      return;
-    }
+    await shareCard(
+      text: text,
+      photoPaths: <String>[...photoPaths, ?photoPath],
+      origin: origin,
+    );
+  }
 
-    final String shareText = CommunityLinks.creditCard(trimmed);
-    if (existing.isNotEmpty) {
+  /// **The one way a card leaves the app as a share.** Every photo and the
+  /// text go together as one share — one album with one caption in WhatsApp,
+  /// never a message per photo and never the same text three times.
+  ///
+  /// * The photos are the files that exist, each once, in the card's order.
+  /// * The text is the card's, with [CommunityLinks.sharedCardCredit] once at
+  ///   its foot.
+  /// * **Android** opens the system share sheet natively
+  ///   (`MainActivity.shareCardWithChooser`): `share_plus` puts the text on the
+  ///   intent as one string, which WhatsApp copies onto every photo of a
+  ///   multi-photo share. Natively the text goes to WhatsApp as a caption list
+  ///   — the text on the first photo, nothing on the rest — and as the usual
+  ///   string to every other app.
+  /// * **iOS** shares the files and the text in one activity sheet.
+  ///
+  /// Returns false when there was nothing to share.
+  static Future<bool> shareCard({
+    required String? text,
+    required Iterable<String> photoPaths,
+    Rect? origin,
+  }) async {
+    final String card = (text ?? '').trim();
+    final List<String> photos = existingPhotos(photoPaths);
+    // Nothing to send is nothing to send. Without this guard a candidate with
+    // no card text and no photos would share the credit on its own, which is
+    // an advertisement somebody did not mean to forward.
+    if (card.isEmpty && photos.isEmpty) {
+      return false;
+    }
+    final String shareText = CommunityLinks.creditCard(card);
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        final bool? shown = await cardChannel.invokeMethod<bool>(
+          'shareCard',
+          <String, Object>{'text': shareText, 'paths': photos},
+        );
+        if (shown == true) {
+          return true;
+        }
+      } on PlatformException {
+        // Falls through to the plugin's share sheet.
+      } on MissingPluginException {
+        // Same — a test, or an engine without the channel.
+      }
+    }
+    if (photos.isNotEmpty) {
       await Share.shareXFiles(
-        existing.map((String path) => XFile(path)).toList(),
+        photos.map((String path) => XFile(path)).toList(),
         text: shareText,
         sharePositionOrigin: origin,
       );
-      return;
+    } else {
+      await Share.share(shareText, sharePositionOrigin: origin);
     }
-    await Share.share(shareText, sharePositionOrigin: origin);
+    return true;
+  }
+
+  /// The native side of card shares on Android — see `MainActivity`.
+  static const MethodChannel cardChannel = MethodChannel(
+    'shadchan/whatsapp_direct',
+  );
+
+  /// [paths] that exist on this device, each once, in order.
+  static List<String> existingPhotos(Iterable<String> paths) {
+    final Set<String> seen = <String>{};
+    return <String>[
+      for (final String path in paths)
+        if (path.trim().isNotEmpty &&
+            seen.add(path) &&
+            File(path).existsSync() &&
+            File(path).lengthSync() > 0)
+          path,
+    ];
   }
 
   /// Whether [person] has anything a card share would carry.
@@ -131,27 +177,17 @@ abstract final class ShareUtils {
           _shareText(side),
         ].where((String part) => part.isNotEmpty).join('\n'),
     ].join('\n\n———\n\n');
-    final List<String> photos = <String>[
-      for (final Person side in sides) ..._existingPhotoPaths(side),
-    ];
-    final String shareText = CommunityLinks.creditCard(text);
-    if (photos.isNotEmpty) {
-      await Share.shareXFiles(
-        photos.map((String path) => XFile(path)).toList(),
-        text: shareText,
-        sharePositionOrigin: origin,
-      );
-    } else {
-      await Share.share(shareText, sharePositionOrigin: origin);
-    }
-    return true;
+    return shareCard(
+      text: text,
+      photoPaths: <String>[
+        for (final Person side in sides) ...side.photosPaths,
+      ],
+      origin: origin,
+    );
   }
 
-  static List<String> _existingPhotoPaths(Person person) {
-    return person.photosPaths
-        .where((String path) => File(path).existsSync())
-        .toList();
-  }
+  static List<String> _existingPhotoPaths(Person person) =>
+      existingPhotos(person.photosPaths);
 
   /// Shares only the card text: the contact's own details are shared
   /// separately, on purpose, through [shareInquiryContact].

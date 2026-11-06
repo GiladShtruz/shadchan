@@ -29,10 +29,10 @@ class PersonalCardProvider extends ChangeNotifier {
   }
 
   void _load() {
+    // A card from an older version may carry more photos than a card may
+    // now hold. It is kept whole — never cut down on load — until the owner
+    // says which to keep ([needsPhotoChoice], [keepPhotos]).
     _card = _decode(_box.get(_cardKey));
-    if ((_card?.photosPaths.length ?? 0) > 4) {
-      _card = _card!.copyWith(photosPaths: _card!.photosPaths.take(4).toList());
-    }
     _lastSavedPrint = _card == null ? null : _print(_card!);
     final Object? deleted = _box.get(_deletedKey);
     _deleted = deleted == true || deleted == 'true';
@@ -160,7 +160,9 @@ class PersonalCardProvider extends ChangeNotifier {
       lastName: profile.lastName ?? '',
       gender: profile.gender ?? Gender.unknown,
       description: profile.personalCard,
-      photosPaths: profile.personalCardPhotos.take(4).toList(),
+      // All of them: the owner chooses which four stay (see
+      // [needsPhotoChoice]), the app never does.
+      photosPaths: List<String>.from(profile.personalCardPhotos),
       maritalStatus: MaritalStatus.single,
       createdAt: now,
       updatedAt: now,
@@ -170,7 +172,8 @@ class PersonalCardProvider extends ChangeNotifier {
   /// Saves [person] as the card. The owner is the only one who ever edits it,
   /// so there is nothing to merge: the latest save is the card.
   Future<void> save(Person person) async {
-    if (person.photosPaths.length > 4) {
+    if (person.photosPaths.length > PersonalCardCodec.maxPhotos &&
+        !_onlyKeptLegacyPhotos(person.photosPaths)) {
       throw ArgumentError('אפשר להוסיף עד 4 תמונות לכרטיס');
     }
     final String print = _print(person);
@@ -188,6 +191,34 @@ class PersonalCardProvider extends ChangeNotifier {
     _card = saved;
     persistHomeSetting(_cardKey, jsonEncode(BackupService.personToJson(saved)));
     notifyListeners();
+  }
+
+  /// More photos than a card may carry, left over from an older version —
+  /// the owner is asked which to keep (`CardPhotoChoiceDialog`). Until they
+  /// answer, the card is published with its first
+  /// [PersonalCardCodec.maxPhotos] and nothing is deleted.
+  bool get needsPhotoChoice =>
+      (_card?.photosPaths.length ?? 0) > PersonalCardCodec.maxPhotos;
+
+  /// A save may go on carrying an older card's extra photos — a status change,
+  /// a word of text — as long as it adds none: the owner has not chosen yet,
+  /// and nothing they did should choose for them.
+  bool _onlyKeptLegacyPhotos(List<String> photos) {
+    final List<String> stored = _card?.photosPaths ?? const <String>[];
+    return photos.length <= stored.length && photos.every(stored.contains);
+  }
+
+  /// The owner chose which of an older card's photos to keep.
+  Future<void> keepPhotos(List<String> keep) async {
+    final Person? current = _card;
+    if (current == null) {
+      return;
+    }
+    final List<String> chosen = keep
+        .where(current.photosPaths.contains)
+        .take(PersonalCardCodec.maxPhotos)
+        .toList();
+    await save(current.copyWith(photosPaths: chosen));
   }
 
   /// The owner's own availability — פנוי, בהפסקה, תפוס, מזל טוב.
