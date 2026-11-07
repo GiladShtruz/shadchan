@@ -138,6 +138,14 @@ abstract final class ContactsImportService {
     return FlutterContacts.permissions.openSettings();
   }
 
+  /// How many contacts the address book handed over on the last device read,
+  /// before any filtering — null until one has run.
+  ///
+  /// It is what tells "this phone has no contacts" apart from "none of your
+  /// contacts has a mobile number": two empty lists that need two different
+  /// sentences.
+  static int? lastDeviceContactCount;
+
   /// The last decoded cache, held for the life of the process.
   ///
   /// Re-opening the Hive box and re-reading a few thousand maps is not free,
@@ -210,7 +218,12 @@ abstract final class ContactsImportService {
       },
     );
 
+    lastDeviceContactCount = contacts.length;
     final List<ContactImportCandidate> candidates = <ContactImportCandidate>[];
+    // One row per number. The same person saved twice — on the phone and in
+    // Google, or once per account — arrives as two contacts the OS did not
+    // merge; showing both is a duplicate the matchmaker can add twice.
+    final Map<String, int> indexByPhone = <String, int>{};
     for (int index = 0; index < contacts.length; index++) {
       final Contact contact = contacts[index];
       final ContactImportCandidate? candidate = buildCandidate(
@@ -226,7 +239,14 @@ abstract final class ContactsImportService {
       // add-friends search reaches past the regular list and tags them
       // `במאגר`, which it can only do if they are still here.
       if (candidate != null) {
-        candidates.add(candidate);
+        final int? seenAt = indexByPhone[candidate.normalizedPhone];
+        if (seenAt == null) {
+          indexByPhone[candidate.normalizedPhone] = candidates.length;
+          candidates.add(candidate);
+        } else if (candidate.isFavorite && !candidates[seenAt].isFavorite) {
+          // Starred in either copy means starred.
+          candidates[seenAt] = candidate;
+        }
       }
 
       if (index % _processingBatchSize == 0 || index == contacts.length - 1) {
@@ -302,13 +322,22 @@ abstract final class ContactsImportService {
     );
   }
 
+  /// Whether [phone] is an Israeli mobile number, however the address book
+  /// happens to have written it.
+  ///
+  /// This used to look at the raw string's first characters, accepting only
+  /// `05…` and `+9725…`. Address books write the same number many other ways —
+  /// `972 54…` without the plus, `00972…`, `+972 (0)54…`, and very often (on
+  /// Samsung especially) wrapped in invisible direction marks such as U+202A —
+  /// and every one of those contacts silently vanished from the list. That is
+  /// what "some contacts are missing on some phones" was. The test is now made
+  /// on the normalised number, which is the same form duplicates are matched
+  /// on: ten digits starting with `05`.
   static bool isSuggestedMobilePhone(String phone) {
-    final String compactPhone = phone
-        .trim()
-        .replaceAll(RegExp(r'[\s\-().]'), '')
-        .replaceAll('־', '');
-
-    return compactPhone.startsWith('05') || compactPhone.startsWith('+9725');
+    final String? normalized = PhoneUtils.normalizeForComparison(phone);
+    return normalized != null &&
+        normalized.length == 10 &&
+        normalized.startsWith('05');
   }
 
   static bool isFilteredByName(String displayName) {

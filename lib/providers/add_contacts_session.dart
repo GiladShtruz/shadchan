@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -50,7 +50,17 @@ class ContactCandidateEntry {
 class AddContactsSession extends ChangeNotifier {
   AddContactsSession(this._repository) {
     _repository.addListener(_handleRepositoryChanged);
+    // Coming back to the app is the moment the answer may have changed: the
+    // matchmaker went to the device settings to allow access, or added a
+    // contact in the phone's own app. Neither should need this screen closed
+    // and reopened to show up.
+    _lifecycle = AppLifecycleListener(onResume: _handleResumed);
   }
+
+  /// A device read younger than this is not repeated on resume — a share
+  /// sheet or the WhatsApp round trip from this screen should not walk the
+  /// whole address book again.
+  static const Duration _resumeRefreshAfter = Duration(seconds: 30);
 
   /// Shared with the swipe deck since the very first version: a contact removed
   /// in either place stays out of both.
@@ -66,6 +76,19 @@ class AddContactsSession extends ChangeNotifier {
   double? _loadingProgress;
   String _loadingMessage = 'טוענים אנשי קשר...';
   ContactsPermissionState? _permissionState;
+  AppLifecycleListener? _lifecycle;
+
+  /// Access has not been granted and the system question has not been put in
+  /// this visit: the screen explains why it is needed first, and only a tap
+  /// on "לאפשר גישה" raises the system dialog. A prompt that arrives with no
+  /// explanation is the one people refuse.
+  bool _awaitingPermissionRequest = false;
+
+  /// Permission is granted but reading the address book failed. Distinct
+  /// from "no permission" and from "no contacts", each of which has its own
+  /// sentence and its own way out.
+  bool _loadFailed = false;
+  DateTime? _lastDeviceReadAt;
 
   /// Every usable device contact, including the ones already in the database
   /// and the ones removed from the list — search reaches all of them.
@@ -90,6 +113,13 @@ class AddContactsSession extends ChangeNotifier {
   String get loadingMessage => _loadingMessage;
   ContactsPermissionState? get permissionState => _permissionState;
   bool get hasAnyCandidate => _allCandidates.isNotEmpty;
+  bool get awaitingPermissionRequest => _awaitingPermissionRequest;
+  bool get loadFailed => _loadFailed;
+
+  /// True when the last device read returned no contacts at all — not "none
+  /// of them fits", but an empty address book.
+  bool get deviceHasNoContacts =>
+      ContactsImportService.lastDeviceContactCount == 0;
 
   /// Every usable device contact, whatever its status.
   List<ContactImportCandidate> get allCandidates =>
@@ -266,15 +296,46 @@ class AddContactsSession extends ChangeNotifier {
 
   // ---------------------------------------------------------------- loading
 
+  /// Opens the screen: shows what it can without asking anything, and asks
+  /// for access only after explaining why ([requestAccess]).
   Future<void> load() async {
     _isLoading = true;
     _isRefreshing = false;
+    _loadFailed = false;
     _loadingProgress = null;
+    _loadingMessage = 'בודקים גישה לאנשי קשר...';
+    _notify();
+
+    final ContactsPermissionState permissionState = await _safePermission(
+      ContactsImportService.checkPermission,
+    );
+    if (_disposed) {
+      return;
+    }
+    _permissionState = permissionState;
+    if (permissionState == ContactsPermissionState.granted) {
+      await _loadGranted();
+      return;
+    }
+    // Not granted yet. A permanent refusal goes straight to the settings
+    // explanation; anything else waits for the matchmaker to ask for it.
+    _awaitingPermissionRequest =
+        permissionState == ContactsPermissionState.denied;
+    _isLoading = false;
+    _notify();
+  }
+
+  /// Raises the system permission dialog, after the explanation was read.
+  Future<void> requestAccess() async {
+    _awaitingPermissionRequest = false;
+    _isLoading = true;
+    _loadFailed = false;
     _loadingMessage = 'מבקשים גישה לאנשי קשר...';
     _notify();
 
-    final ContactsPermissionState permissionState =
-        await ContactsImportService.requestPermission();
+    final ContactsPermissionState permissionState = await _safePermission(
+      ContactsImportService.requestPermission,
+    );
     if (_disposed) {
       return;
     }
@@ -284,7 +345,43 @@ class AddContactsSession extends ChangeNotifier {
       _notify();
       return;
     }
+    await _loadGranted();
+  }
 
+  /// Reads the address book again in the background, keeping what is on the
+  /// screen until the new list arrives. Used by the manual refresh and on
+  /// return to the app.
+  Future<void> refresh() async {
+    if (_permissionState != ContactsPermissionState.granted || _isLoading) {
+      return load();
+    }
+    if (_isRefreshing) {
+      return;
+    }
+    _isRefreshing = true;
+    _loadFailed = false;
+    _notify();
+    // The access may have been taken away in the device settings since the
+    // last read. Reading without it returns nothing, which would look like
+    // an empty address book; say what actually happened instead.
+    final ContactsPermissionState state = await _safePermission(
+      ContactsImportService.checkPermission,
+    );
+    if (_disposed) {
+      return;
+    }
+    if (state != ContactsPermissionState.granted) {
+      _permissionState = state;
+      _awaitingPermissionRequest = state == ContactsPermissionState.denied;
+      _isRefreshing = false;
+      _notify();
+      return;
+    }
+    await _readDevice();
+  }
+
+  Future<void> _loadGranted() async {
+    _awaitingPermissionRequest = false;
     // First-time permission also enables reciprocal discovery for a
     // matchmaker who never visits the personal area. Do not block importing.
     if (FirebaseBootstrap.isReady) {
@@ -303,8 +400,7 @@ class AddContactsSession extends ChangeNotifier {
     // publishing the cached list is what used to leave this screen blank for
     // several seconds even though the list it was going to show had been on
     // disk the whole time.
-    final Future<List<ContactImportCandidate>>
-    deviceContacts = ContactsImportService.loadCandidates(
+    final Future<List<ContactImportCandidate>?> deviceContacts = _fetchDevice(
       _repository,
       onProgress: (ContactImportLoadProgress progress) {
         if (_disposed || !_isLoading) {
@@ -317,8 +413,13 @@ class AddContactsSession extends ChangeNotifier {
       },
     );
 
-    final List<ContactImportCandidate> cached =
-        await ContactsImportService.loadCachedCandidates(_repository);
+    List<ContactImportCandidate> cached = const <ContactImportCandidate>[];
+    try {
+      cached = await ContactsImportService.loadCachedCandidates(_repository);
+    } catch (error) {
+      // A cache that cannot be read is only a slower first frame.
+      debugPrint('CONTACTS cache read failed: $error');
+    }
     if (_disposed) {
       return;
     }
@@ -338,34 +439,111 @@ class AddContactsSession extends ChangeNotifier {
       _notify();
     }
 
-    final List<ContactImportCandidate> fresh = await deviceContacts;
+    _applyDeviceRead(await deviceContacts);
+  }
+
+  Future<void> _readDevice() async {
+    _applyDeviceRead(await _fetchDevice(_repository));
+  }
+
+  /// The device read, with a failure turned into null instead of an
+  /// exception nobody awaits: an unhandled error here used to leave the
+  /// screen on its spinner (or on a stale cache) for good.
+  Future<List<ContactImportCandidate>?> _fetchDevice(
+    PersonRepository repository, {
+    void Function(ContactImportLoadProgress progress)? onProgress,
+  }) async {
+    try {
+      final List<ContactImportCandidate> fresh =
+          await ContactsImportService.loadCandidates(
+            repository,
+            onProgress: onProgress,
+          );
+      _lastDeviceReadAt = DateTime.now();
+      return fresh;
+    } catch (error, stack) {
+      debugPrint('CONTACTS device read failed: $error\n$stack');
+      return null;
+    }
+  }
+
+  void _applyDeviceRead(List<ContactImportCandidate>? fresh) {
     if (_disposed) {
       return;
     }
-
-    ContactsImportService.sortByFavoriteThenName(fresh);
-    _allCandidates = fresh;
     _isLoading = false;
     _isRefreshing = false;
     _loadingProgress = null;
     _loadingMessage = 'טוענים אנשי קשר...';
+    if (fresh == null) {
+      // A cached list already on screen stays there; the failure is still
+      // reported, so the matchmaker knows it may be out of date.
+      _loadFailed = true;
+      _notify();
+      return;
+    }
+    _loadFailed = false;
+    ContactsImportService.sortByFavoriteThenName(fresh);
+    _allCandidates = fresh;
     _captureProgressTotal();
     _notify();
   }
 
-  Future<void> openSettingsAndRecheck() async {
-    await ContactsImportService.openSettings();
-    final ContactsPermissionState permissionState =
-        await ContactsImportService.checkPermission();
+  Future<ContactsPermissionState> _safePermission(
+    Future<ContactsPermissionState> Function() ask,
+  ) async {
+    try {
+      return await ask();
+    } catch (error) {
+      // No plugin (tests) or a platform refusal: treat as not granted, which
+      // always leaves a way forward on screen.
+      debugPrint('CONTACTS permission call failed: $error');
+      return ContactsPermissionState.denied;
+    }
+  }
+
+  void _handleResumed() {
+    if (_disposed || _isLoading) {
+      return;
+    }
+    if (_permissionState != ContactsPermissionState.granted) {
+      // Back from the device settings — or the access was granted some other
+      // way. Check quietly; only a change is acted on.
+      unawaited(_recheckAfterResume());
+      return;
+    }
+    final DateTime? last = _lastDeviceReadAt;
+    if (last == null ||
+        DateTime.now().difference(last) >= _resumeRefreshAfter) {
+      unawaited(refresh());
+    }
+  }
+
+  Future<void> _recheckAfterResume() async {
+    final ContactsPermissionState state = await _safePermission(
+      ContactsImportService.checkPermission,
+    );
     if (_disposed) {
       return;
     }
-    if (permissionState == ContactsPermissionState.granted) {
-      await load();
-      return;
+    if (state == ContactsPermissionState.granted) {
+      _permissionState = state;
+      _isLoading = true;
+      _loadingMessage = 'טוענים אנשי קשר...';
+      _notify();
+      await _loadGranted();
     }
-    _permissionState = permissionState;
-    _notify();
+  }
+
+  /// Opens the device settings. The answer is picked up when the app comes
+  /// back to the foreground ([_handleResumed]); `openSettings` itself returns
+  /// the moment the settings screen opens, long before anything was changed.
+  Future<void> openSettingsAndRecheck() async {
+    try {
+      await ContactsImportService.openSettings();
+    } catch (error) {
+      debugPrint('CONTACTS open settings failed: $error');
+    }
   }
 
   void _captureProgressTotal() {
@@ -419,6 +597,7 @@ class AddContactsSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _lifecycle?.dispose();
     _repository.removeListener(_handleRepositoryChanged);
     super.dispose();
   }

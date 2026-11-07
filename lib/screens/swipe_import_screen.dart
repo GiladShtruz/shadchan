@@ -16,6 +16,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/add_contacts_common.dart';
+import 'package:shadchan/widgets/contacts_access_state.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/initials_avatar.dart';
 
@@ -399,37 +400,9 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
       );
     }
 
-    final ContactsPermissionState? permissionState = session.permissionState;
-    if (permissionState == ContactsPermissionState.denied ||
-        permissionState == ContactsPermissionState.permanentlyDenied) {
-      final bool isPermanentlyDenied =
-          permissionState == ContactsPermissionState.permanentlyDenied;
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              EmptyState(
-                icon: Icons.contact_phone_outlined,
-                title: 'אין גישה לאנשי הקשר',
-                subtitle: isPermanentlyDenied
-                    ? 'כדי לייבא אנשי קשר צריך לאשר גישה בהגדרות המכשיר'
-                    : 'כדי לייבא אנשי קשר צריך לאשר גישה לספר הטלפונים',
-                buttonText: isPermanentlyDenied ? 'פתיחת הגדרות' : 'לנסות שוב',
-                onButtonPressed: isPermanentlyDenied
-                    ? session.openSettingsAndRecheck
-                    : session.load,
-              ),
-              if (isPermanentlyDenied)
-                TextButton(
-                  onPressed: session.load,
-                  child: const Text('בדיקה מחדש'),
-                ),
-            ],
-          ),
-        ),
-      );
+    final Widget? stateView = ContactsAccessState.viewFor(session);
+    if (stateView != null) {
+      return stateView;
     }
 
     if (_deck == null) {

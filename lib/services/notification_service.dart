@@ -5,6 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:shadchan/utils/reminder_schedule_plan.dart';
 import 'package:shadchan/models/match_idea.dart';
 
 class NotificationService {
@@ -117,6 +118,13 @@ class NotificationService {
       );
 
   static const String _routePayloadPrefix = 'route:';
+
+  /// Ceilings on scheduled reminder notifications. iOS keeps only the 64
+  /// soonest pending notifications per app and drops the rest without a word;
+  /// these two plus the few others the app schedules stay under it, and the
+  /// plan keeps the *nearest* reminders when it has to choose.
+  static const int _maxMatchNotifications = 40;
+  static const int _maxPersonNotifications = 15;
 
   /// What a tapped notification does: open [route]. [launch] is true when the
   /// tap is what started the app — Back from there should lead home, not out.
@@ -541,39 +549,62 @@ class NotificationService {
         }
       }
 
-      int notifId = 20000;
-
+      final List<PlannedReminder<MatchIdea>> due =
+          <PlannedReminder<MatchIdea>>[];
       for (final MatchIdea match in matches) {
+        final tz.TZDateTime? scheduledTime = _notificationTime(
+          match.reminderDate,
+        );
+        if (scheduledTime != null) {
+          due.add(PlannedReminder<MatchIdea>(at: scheduledTime, item: match));
+        }
+      }
+      final ReminderSchedulePlan<MatchIdea> plan = ReminderSchedulePlan.build(
+        due,
+        maxNotifications: _maxMatchNotifications,
+      );
+
+      int notifId = 20000;
+      for (final PlannedReminder<MatchIdea> planned in plan.single) {
         if (requestId != _latestMatchRequestId) {
           return;
         }
-
-        final DateTime? reminderDate = match.reminderDate;
-        final tz.TZDateTime? scheduledTime = _notificationTime(reminderDate);
-        if (scheduledTime != null) {
-          final MatchReminderText text =
-              describe?.call(match) ??
-              MatchReminderText(
-                title: match.reminderNote ?? 'תזכורת לרעיון',
-                body: 'תזכורת לרעיון',
-              );
-          await _plugin.zonedSchedule(
-            notifId,
-            text.title,
-            text.body,
-            scheduledTime,
-            _matchNotificationDetails,
-            payload: '$_routePayloadPrefix/matches/${match.id}',
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.absoluteTime,
-            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          );
-          notifId++;
+        final MatchIdea match = planned.item;
+        final MatchReminderText text =
+            describe?.call(match) ??
+            MatchReminderText(
+              title: match.reminderNote ?? 'תזכורת לרעיון',
+              body: 'תזכורת לרעיון',
+            );
+        await _plugin.zonedSchedule(
+          notifId++,
+          text.title,
+          text.body,
+          tz.TZDateTime.from(planned.at, tz.local),
+          _matchNotificationDetails,
+          payload: '$_routePayloadPrefix/matches/${match.id}',
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
+      }
+      for (final ReminderBundle<MatchIdea> bundle in plan.bundles) {
+        if (requestId != _latestMatchRequestId) {
+          return;
         }
-
-        if (notifId >= 30000) {
-          break;
-        }
+        // Every one of them is still a row on the notifications page; this
+        // one push is only the knock on the door.
+        await _plugin.zonedSchedule(
+          notifId++,
+          'יש לך ${bundle.count} רעיונות שכדאי לחזור אליהם',
+          'התזכורות מחכות בעמוד ההתראות',
+          tz.TZDateTime.from(bundle.at, tz.local),
+          _matchNotificationDetails,
+          payload: '$_routePayloadPrefix/reminders',
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
       }
     } catch (error, stackTrace) {
       debugPrint(
@@ -596,35 +627,63 @@ class NotificationService {
         }
       }
 
-      int notifId = 30000;
-
+      final List<PlannedReminder<PersonReminderNotification>> due =
+          <PlannedReminder<PersonReminderNotification>>[];
       for (final PersonReminderNotification reminder in reminders) {
+        final tz.TZDateTime? scheduledTime = _notificationTime(reminder.date);
+        if (scheduledTime != null) {
+          due.add(
+            PlannedReminder<PersonReminderNotification>(
+              at: scheduledTime,
+              item: reminder,
+            ),
+          );
+        }
+      }
+      final ReminderSchedulePlan<PersonReminderNotification> plan =
+          ReminderSchedulePlan.build(
+            due,
+            maxNotifications: _maxPersonNotifications,
+          );
+
+      int notifId = 30000;
+      for (final PlannedReminder<PersonReminderNotification> planned
+          in plan.single) {
         if (requestId != _latestPersonRequestId) {
           return;
         }
-
-        final tz.TZDateTime? scheduledTime = _notificationTime(reminder.date);
-        if (scheduledTime != null) {
-          final String note = (reminder.note ?? '').trim();
-          await _plugin.zonedSchedule(
-            notifId,
-            note.isNotEmpty ? note : 'לבדוק שוב עם ${reminder.name}',
-            note.isNotEmpty ? 'תזכורת · ${reminder.name}' : 'תזכורת',
-            scheduledTime,
-            _personNotificationDetails,
-            payload: reminder.personId.isEmpty
-                ? null
-                : '$_routePayloadPrefix/people/${reminder.personId}',
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.absoluteTime,
-            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          );
-          notifId++;
+        final PersonReminderNotification reminder = planned.item;
+        final String note = (reminder.note ?? '').trim();
+        await _plugin.zonedSchedule(
+          notifId++,
+          note.isNotEmpty ? note : 'לבדוק שוב עם ${reminder.name}',
+          note.isNotEmpty ? 'תזכורת · ${reminder.name}' : 'תזכורת',
+          tz.TZDateTime.from(planned.at, tz.local),
+          _personNotificationDetails,
+          payload: reminder.personId.isEmpty
+              ? null
+              : '$_routePayloadPrefix/people/${reminder.personId}',
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
+      }
+      for (final ReminderBundle<PersonReminderNotification> bundle
+          in plan.bundles) {
+        if (requestId != _latestPersonRequestId) {
+          return;
         }
-
-        if (notifId >= 40000) {
-          break;
-        }
+        await _plugin.zonedSchedule(
+          notifId++,
+          'יש לך ${bundle.count} חברים לבדוק שוב איתם',
+          'התזכורות מחכות בעמוד ההתראות',
+          tz.TZDateTime.from(bundle.at, tz.local),
+          _personNotificationDetails,
+          payload: '$_routePayloadPrefix/reminders',
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
       }
     } catch (error, stackTrace) {
       debugPrint(

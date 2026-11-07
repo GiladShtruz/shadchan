@@ -13,6 +13,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/add_contacts_common.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/contacts_access_state.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/initials_avatar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
@@ -124,23 +125,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       );
     }
 
-    final ContactsPermissionState? permissionState = session.permissionState;
-    if (permissionState == ContactsPermissionState.denied ||
-        permissionState == ContactsPermissionState.permanentlyDenied) {
-      return _PermissionStateView(
-        isPermanentlyDenied:
-            permissionState == ContactsPermissionState.permanentlyDenied,
-        onRetry: session.load,
-        onOpenSettings: session.openSettingsAndRecheck,
-      );
-    }
-
-    if (!session.hasAnyCandidate) {
-      return const EmptyState(
-        icon: Icons.contact_phone_outlined,
-        title: 'לא נמצאו אנשי קשר מתאימים',
-        subtitle: 'מוצגים רק אנשי קשר חדשים עם שם ומספר טלפון',
-      );
+    final Widget? stateView = ContactsAccessState.viewFor(session);
+    if (stateView != null) {
+      return stateView;
     }
 
     final List<ContactCandidateEntry> rows = _rowsFor(session);
@@ -151,6 +138,8 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     return Column(
       children: <Widget>[
         if (session.isRefreshing) const LinearProgressIndicator(minHeight: 3),
+        if (session.loadFailed)
+          ContactsRefreshFailedBanner(onRetry: session.refresh),
         // The banner is the only part that leaves on scroll; the search field
         // below it is outside the scroll view, which is what keeps it sticky.
         AnimatedSize(
@@ -180,6 +169,16 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                 label: 'מיון: ${_sortOptionLabel(_sortOption)}',
                 highlighted: !_filterSuggestedNames,
                 onPressed: () => _openFilterSortSheet(session),
+              ),
+              const Spacer(),
+              // Contacts added to the phone while this screen is open show up
+              // on return to the app by themselves; this is for anyone who
+              // does not want to wait for that.
+              IconButton(
+                tooltip: 'רענון אנשי הקשר',
+                visualDensity: VisualDensity.compact,
+                onPressed: session.isRefreshing ? null : session.refresh,
+                icon: const Icon(Icons.refresh_rounded),
               ),
             ],
           ),
@@ -1114,43 +1113,6 @@ class _LoadingContactsView extends StatelessWidget {
               style: theme.textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PermissionStateView extends StatelessWidget {
-  const _PermissionStateView({
-    required this.isPermanentlyDenied,
-    required this.onRetry,
-    required this.onOpenSettings,
-  });
-
-  final bool isPermanentlyDenied;
-  final Future<void> Function() onRetry;
-  final Future<void> Function() onOpenSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            EmptyState(
-              icon: Icons.contact_phone_outlined,
-              title: 'אין גישה לאנשי הקשר',
-              subtitle: isPermanentlyDenied
-                  ? 'כדי לייבא אנשי קשר צריך לאשר גישה בהגדרות המכשיר'
-                  : 'כדי לייבא אנשי קשר צריך לאשר גישה לספר הטלפונים',
-              buttonText: isPermanentlyDenied ? 'פתיחת הגדרות' : 'לנסות שוב',
-              onButtonPressed: isPermanentlyDenied ? onOpenSettings : onRetry,
-            ),
-            if (isPermanentlyDenied)
-              TextButton(onPressed: onRetry, child: const Text('בדיקה מחדש')),
           ],
         ),
       ),

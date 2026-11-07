@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -87,10 +88,26 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
+    // The address book answers "not asked yet".
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_contacts'),
+      (MethodCall call) async =>
+          call.method == 'permissions.check' ? 'denied' : null,
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('flutter_contacts'),
+        null,
+      ),
+    );
+
     AppRouter.router.push('/people/import');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('הוספת אנשי קשר'), findsOneWidget);
+    // Access is never asked for cold: the screen explains first and the
+    // system question waits for this button.
+    expect(find.text('לאפשר גישה לאנשי קשר'), findsWidgets);
 
     // The location is *not* `/people/import`: an imperatively pushed page is
     // deliberately left out of `RouteMatchList.uri`. This is exactly the state
