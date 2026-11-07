@@ -65,7 +65,9 @@ void main() {
       final DateTime now = DateTime(2026, 1, 1);
       return Person(
         id: 'x',
-        description: 'א'.padRight(30, 'א'),
+        // A live card: a photo and twenty words.
+        description: List<String>.filled(20, 'מילה').join(' '),
+        photosPaths: const <String>['a.jpg'],
         firstName: 'נועה',
         lastName: 'כהן',
         gender: Gender.female,

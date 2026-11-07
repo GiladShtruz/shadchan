@@ -806,8 +806,12 @@ service cloud.firestore {
     // a matchmaker keeps privately can be written here, by construction.
     function activeCard(ownerUid) {
       let card = get(/databases/$(database)/documents/personalCards/$(ownerUid)).data;
-      return card.deleted == false && (card.get('photoPaths', []).size() > 0 ||
-        (card.get('description', '') is string && card.get('description', '').trim().size() >= 30));
+      // Live = at least one photo AND at least 20 words of text — the same
+      // line as `PersonalCardCodec.isActive` and `isActiveCard` (functions).
+      return card.deleted == false && card.get('photoPaths', []).size() > 0 &&
+        card.get('description', '') is string &&
+        card.get('description', '').trim().size() > 0 &&
+        card.get('description', '').trim().split('\\s+').size() >= 20;
     }
     function hasLookingAccess(ownerUid) {
       return grantIncludesMe(ownerUid) && exists(accessPath(ownerUid, databaseUid()))

@@ -379,6 +379,13 @@ export const onPersonalCardWritten = onDocumentWritten(
       await announceCard(ownerUid);
       return;
     }
+    // Back to a draft (the last photo removed, the text cut under twenty
+    // words): off every "חברים שלי שהוסיפו כרטיס אישי" list until it is a
+    // card again. Grants already given are left alone.
+    if (isActiveCard(before?.data()) && !isActiveCard(after.data()) &&
+        before?.get('deleted') === after.get('deleted')) {
+      await refreshContactNeighbours(ownerUid);
+    }
 
   },
 );

@@ -49,6 +49,7 @@ import 'package:shadchan/screens/privacy_overview_screen.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/services/home_board_store.dart';
+import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/workspace_store.dart';
@@ -1288,6 +1289,93 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('תפוס'), findsOneWidget);
     expect(find.text('בהפסקה'), findsOneWidget);
+  });
+
+  testWidgets('A due reminder lifts its idea in הכל until it is read', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(ReminderLog.instance.reset);
+    final DateTime now = DateTime.now();
+    final DateTime due = DateTime(now.year, now.month, now.day);
+    final List<Person> people = <Person>[
+      _testPerson(
+        id: 'lift-a',
+        firstName: 'מורם',
+        lastName: 'אחד',
+        gender: Gender.male,
+        age: 27,
+        now: now,
+      ),
+      _testPerson(
+        id: 'lift-b',
+        firstName: 'מורמת',
+        lastName: 'אחת',
+        gender: Gender.female,
+        age: 25,
+        now: now,
+      ),
+      _testPerson(
+        id: 'plain-a',
+        firstName: 'רגיל',
+        lastName: 'אחד',
+        gender: Gender.male,
+        age: 28,
+        now: now,
+      ),
+      _testPerson(
+        id: 'plain-b',
+        firstName: 'רגילה',
+        lastName: 'אחת',
+        gender: Gender.female,
+        age: 26,
+        now: now,
+      ),
+    ];
+    await tester.runAsync(() async {
+      await Hive.box<Person>('people').putAll(<String, Person>{
+        for (final Person person in people) person.id: person,
+      });
+      await Hive.box<MatchIdea>('matches').putAll(<String, MatchIdea>{
+        'lifted': _testMatch(
+          id: 'lifted',
+          personAId: 'lift-a',
+          personBId: 'lift-b',
+          now: now.subtract(const Duration(days: 10)),
+          reminderDate: due,
+        ),
+        'plain': _testMatch(
+          id: 'plain',
+          personAId: 'plain-a',
+          personBId: 'plain-b',
+          now: now,
+        ),
+      });
+    });
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+    AppRouter.router.go('/matches');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('ביקשת שנזכיר לך (1)'), findsOneWidget);
+    // Lifted above the newer idea, which would otherwise lead.
+    expect(
+      tester.getTopLeft(find.text('מורם אחד')).dy,
+      lessThan(tester.getTopLeft(find.text('רגיל אחד')).dy),
+    );
+
+    // Read on the notifications page: back in its own place.
+    ReminderLog.instance.markReadFor(HomeItemKind.idea, 'lifted', due);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('ביקשת שנזכיר לך (1)'), findsNothing);
+    expect(
+      tester.getTopLeft(find.text('מורם אחד')).dy,
+      greaterThan(tester.getTopLeft(find.text('רגיל אחד')).dy),
+    );
   });
 
   testWidgets('Ideas default to all live states and celebrate dating couples', (

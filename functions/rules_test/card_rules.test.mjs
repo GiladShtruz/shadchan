@@ -53,6 +53,9 @@ function as(uid) {
     .firestore();
 }
 
+// A live card needs a photo and twenty words of text.
+const TWENTY_WORDS = Array.from({ length: 20 }, (_, i) => `מילה${i}`).join(' ');
+
 function card(extra = {}) {
   return {
     ownerUid: OWNER,
@@ -63,7 +66,7 @@ function card(extra = {}) {
     religiousLevel: 'datiLeumi',
     religiousLevelOther: null,
     city: null,
-    description: 'א'.repeat(30),
+    description: TWENTY_WORDS,
     heightCm: null,
     maritalStatus: 'single',
     region: 'center',
@@ -75,7 +78,7 @@ function card(extra = {}) {
     preferredMaritalStatuses: [],
     preferredReligiousLevels: [],
     preferredReligiousLevelOtherLabels: [],
-    photoPaths: [],
+    photoPaths: [`personalCards/${OWNER}/one.jpg`],
     status: 'available',
     deleted: false,
     updatedAt: serverTimestamp(),
@@ -324,13 +327,21 @@ test('the inbox is written by the server only', async () => {
   );
 });
 
-test('empty cards cannot be requested; thirty characters activates them', async () => {
+test('drafts cannot be requested; a photo and twenty words activate a card', async () => {
   await seedCardAndContacts({inContacts:true});
-  for (const description of ['', 'א'.repeat(29), ' '.repeat(50)]) {
-    await seed(db => updateDoc(doc(db,'personalCards',OWNER),{description,photoPaths:[]}));
+  const nineteen = TWENTY_WORDS.split(' ').slice(1).join(' ');
+  const drafts = [
+    { description: '', photoPaths: [] },
+    { description: ' '.repeat(50), photoPaths: ['p'] },
+    { description: nineteen, photoPaths: ['p'] },
+    { description: TWENTY_WORDS, photoPaths: [] },
+    { description: 'א'.repeat(300), photoPaths: ['p'] },
+  ];
+  for (const draft of drafts) {
+    await seed(db => updateDoc(doc(db,'personalCards',OWNER),draft));
     await assertFails(setDoc(doc(as(MM),'cardAccess',accessId),access('pending')));
   }
-  await seed(db => updateDoc(doc(db,'personalCards',OWNER),{description:'א'.repeat(30)}));
+  await seed(db => updateDoc(doc(db,'personalCards',OWNER),{description:TWENTY_WORDS,photoPaths:['p']}));
   await assertSucceeds(setDoc(doc(as(MM),'cardAccess',accessId),access('pending')));
 });
 test('four photos allowed, five forbidden; cannot forge activation', async () => {

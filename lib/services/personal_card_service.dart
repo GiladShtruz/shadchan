@@ -10,6 +10,20 @@ import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
 
+/// How far [PersonalCardService.publishCard] got.
+enum CardPublish {
+  /// Nothing reached the server.
+  failed,
+
+  /// The card is on the server, but a photo was not on this device yet.
+  missingPhotos,
+
+  /// The server holds exactly this card, every photo included.
+  complete;
+
+  bool get reachedServer => this != CardPublish.failed;
+}
+
 /// The fields of a personal card that travel to the matchmakers its owner
 /// approves — and nothing else.
 ///
@@ -20,10 +34,54 @@ import 'package:shadchan/utils/enums.dart';
 /// bookkeeping. Listing what *may* go is the only way a field added to
 /// [Person] later cannot start travelling by accident.
 abstract final class PersonalCardCodec {
-  /// Only authored shareable text counts; a seeded name/status is not a card.
+  /// The fewest words of card text a live card carries.
+  static const int minWords = 20;
+
+  /// The most photos a card carries — also enforced by `firestore.rules`.
+  static const int maxPhotos = 4;
+
+  /// Words in [text]: whitespace-separated runs, exactly as `firestore.rules`
+  /// (`activeCard`) and `functions/src/card_activity.ts` count them.
+  static int wordCount(String? text) {
+    final String trimmed = (text ?? '').trim();
+    if (trimmed.isEmpty) {
+      return 0;
+    }
+    return trimmed.split(RegExp(r'\s+')).length;
+  }
+
+  /// **A card is live only with both a photo and [minWords] words of text.**
+  ///
+  /// Until then it is a draft: no matchmaker is told about it, it is not on
+  /// anybody's "חברים שלי שהוסיפו כרטיס אישי", and nobody can ask for access
+  /// to it — a name and a picture, or a paragraph with no face, is not yet a
+  /// card a matchmaker can think about. The server holds the same line
+  /// (`isActiveCard` in the functions, `activeCard` in the rules), so a client
+  /// that drew it differently could still not announce a draft.
   static bool isActive(Person card) =>
-      card.photosPaths.isNotEmpty ||
-      (card.description ?? '').trim().runes.length >= 30;
+      card.photosPaths.isNotEmpty && wordCount(card.description) >= minWords;
+
+  /// What a draft card still lacks, in the owner's words — or null when the
+  /// card is live. Both conditions are named when both are missing, so the
+  /// owner is never told "add a photo", does so, and only then learns about
+  /// the words.
+  static String? draftHint(Person card) {
+    if (isActive(card)) {
+      return null;
+    }
+    final bool photo = card.photosPaths.isNotEmpty;
+    final int missingWords = minWords - wordCount(card.description);
+    final String words = missingWords == 1
+        ? 'עוד מילה אחת'
+        : 'עוד $missingWords מילים';
+    final String need = !photo && missingWords > 0
+        ? 'להוסיף תמונה אחת לפחות ו־$words בטקסט הכרטיס'
+        : !photo
+        ? 'להוסיף תמונה אחת לפחות'
+        : '$words בטקסט הכרטיס';
+    return 'הכרטיס עדיין בטיוטה ולא מוצג לשדכנים. כדי להפעיל אותו צריך $need '
+        '(לפחות תמונה אחת ו־$minWords מילים).';
+  }
 
   static const List<String> cardFields = <String>[
     'firstName',
@@ -236,11 +294,18 @@ abstract final class PersonalCardService {
 
   /// Uploads the card's photos and writes the card document.
   ///
-  /// True when the server now holds exactly this card.
-  static Future<bool> publishCard(Person card) async {
+  /// [CardPublish.complete] when the server now holds exactly this card,
+  /// photos included. [CardPublish.missingPhotos] when the document went up
+  /// but a photo of the card was not on this device to upload — typically a
+  /// second phone of the same account, where the account sync has brought the
+  /// card's text and is still downloading its pictures. The text is worth
+  /// sending at once; the publish is simply not finished, and the caller must
+  /// not remember it as done, or the matchmakers keep a card without its
+  /// photos until the owner next edits it.
+  static Future<CardPublish> publishCard(Person card) async {
     final String? uid = await durableUid();
     if (uid == null) {
-      return false;
+      return CardPublish.failed;
     }
     try {
       final Reference root = FirebaseStorage.instance.ref(
@@ -248,8 +313,16 @@ abstract final class PersonalCardService {
       );
       final Set<String> uploaded = _uploaded();
       final List<String> remotePaths = <String>[];
-      for (final String localPath in card.photosPaths.take(4)) {
+      bool missing = false;
+      final Set<String> seen = <String>{};
+      for (final String localPath in card.photosPaths) {
+        if (remotePaths.length >= PersonalCardCodec.maxPhotos) {
+          break;
+        }
         final String name = PhotoPickerService.basenameOf(localPath);
+        if (!seen.add(name)) {
+          continue;
+        }
         // The stored path is absolute, and iOS moves the app's sandbox on an
         // update: a photo that is still there under a new prefix must not be
         // left off the card the matchmakers receive.
@@ -258,7 +331,8 @@ abstract final class PersonalCardService {
           file = await PhotoPickerService.fileFor(name);
         }
         if (!uploaded.contains(name)) {
-          if (!file.existsSync()) {
+          if (!file.existsSync() || file.lengthSync() == 0) {
+            missing = true;
             continue;
           }
           await root
@@ -296,11 +370,11 @@ abstract final class PersonalCardService {
             ),
             SetOptions(merge: true),
           );
-      return true;
+      return missing ? CardPublish.missingPhotos : CardPublish.complete;
     } catch (error, stackTrace) {
       debugPrint('PersonalCardService.publishCard failed: $error');
       debugPrint('$stackTrace');
-      return false;
+      return CardPublish.failed;
     }
   }
 

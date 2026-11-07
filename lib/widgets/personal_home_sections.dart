@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/dialogs/access_permissions_dialog.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
@@ -323,7 +324,7 @@ class PersonalMyCard extends StatelessWidget {
           if (!active) ...<Widget>[
             const SizedBox(height: 8),
             Text(
-              'הכרטיס עדיין בטיוטה: תמונה אחת או כמה שורות עליך, והוא יוצג לחברים שאישרת.',
+              PersonalCardCodec.draftHint(card) ?? '',
               style: theme.textTheme.bodySmall,
             ),
           ],

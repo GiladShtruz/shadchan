@@ -1,5 +1,6 @@
 package com.gilad.shadchan
 
+import android.content.ClipData
 import android.content.ContentResolver
 import android.content.Intent
 import android.database.Cursor
@@ -80,6 +81,12 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             WHATSAPP_CHANNEL_NAME,
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "shareCard" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    val paths = call.argument<List<String>>("paths") ?: emptyList()
+                    result.success(shareCardWithChooser(text, paths))
+                }
+
                 "sendToChat" -> {
                     val phone = call.argument<String>("phone")
                     val text = call.argument<String>("text") ?: ""
@@ -211,6 +218,69 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         flushPendingSharedProfiles()
     }
 
+    /// The card's photos, copied into the shared cache folder and exposed
+    /// through the FileProvider. Each path once: the same photo listed twice
+    /// would otherwise arrive twice.
+    private fun cardShareUris(paths: List<String>): ArrayList<Uri> {
+        val shareDirectory = File(cacheDir, "card_share")
+        shareDirectory.deleteRecursively()
+        shareDirectory.mkdirs()
+        val uris = ArrayList<Uri>()
+        for (path in paths.distinct()) {
+            try {
+                val source = File(path)
+                if (!source.exists() || source.length() == 0L) continue
+                val copy = File(shareDirectory, "${UUID.randomUUID()}_${sanitizeFileName(source.name)}")
+                source.copyTo(copy, overwrite = true)
+                uris.add(FileProvider.getUriForFile(this, "$packageName.cardshare", copy))
+            } catch (_: Exception) {
+            }
+        }
+        return uris
+    }
+
+    /// The SEND intent for a card: every photo in one share, the text once.
+    ///
+    /// With several photos WhatsApp turns a plain-string EXTRA_TEXT into the
+    /// caption of *every* photo, so the card's text arrived three or four
+    /// times. For WhatsApp the text goes as a list of captions instead, one
+    /// per photo, with the text on the first and nothing on the rest: one
+    /// album, one caption. Every other app gets the ordinary string.
+    private fun cardShareIntent(text: String, uris: ArrayList<Uri>, forWhatsApp: Boolean): Intent {
+        val intent = when {
+            uris.size > 1 -> Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                type = "image/*"
+            }
+            uris.size == 1 -> Intent(Intent.ACTION_SEND).apply {
+                putExtra(Intent.EXTRA_STREAM, uris[0])
+                type = "image/*"
+            }
+            else -> Intent(Intent.ACTION_SEND).apply { type = "text/plain" }
+        }
+        if (text.isNotBlank()) {
+            if (forWhatsApp && uris.size > 1) {
+                intent.putCharSequenceArrayListExtra(Intent.EXTRA_TEXT, whatsAppCaptions(text, uris.size))
+            } else {
+                intent.putExtra(Intent.EXTRA_TEXT, text)
+            }
+        }
+        if (uris.isNotEmpty()) {
+            val clip = ClipData.newRawUri(null, uris[0])
+            for (i in 1 until uris.size) clip.addItem(ClipData.Item(uris[i]))
+            intent.clipData = clip
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return intent
+    }
+
+    private fun whatsAppCaptions(text: String, count: Int): ArrayList<CharSequence> {
+        val captions = ArrayList<CharSequence>()
+        captions.add(text)
+        for (i in 1 until count) captions.add("")
+        return captions
+    }
+
     /// Opens one WhatsApp chat — [phone] in international digits — with a card's
     /// text and photos already in the composer, without the share sheet.
     ///
@@ -221,40 +291,11 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     private fun sendToWhatsAppChat(phone: String, text: String, paths: List<String>): Boolean {
         val digits = phone.filter { it.isDigit() }
         if (digits.isEmpty()) return false
-
-        val shareDirectory = File(cacheDir, "card_share")
-        shareDirectory.deleteRecursively()
-        shareDirectory.mkdirs()
-        val uris = ArrayList<Uri>()
-        for (path in paths) {
-            try {
-                val source = File(path)
-                if (!source.exists()) continue
-                val copy = File(shareDirectory, "${UUID.randomUUID()}_${sanitizeFileName(source.name)}")
-                source.copyTo(copy, overwrite = true)
-                uris.add(FileProvider.getUriForFile(this, "$packageName.cardshare", copy))
-            } catch (_: Exception) {
-            }
-        }
-
-        for (target in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val intent = if (uris.size > 1) {
-                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-                    type = "image/*"
-                }
-            } else if (uris.size == 1) {
-                Intent(Intent.ACTION_SEND).apply {
-                    putExtra(Intent.EXTRA_STREAM, uris[0])
-                    type = "image/*"
-                }
-            } else {
-                Intent(Intent.ACTION_SEND).apply { type = "text/plain" }
-            }
+        val uris = cardShareUris(paths)
+        for (target in WHATSAPP_PACKAGES) {
+            val intent = cardShareIntent(text, uris, forWhatsApp = true)
             intent.setPackage(target)
-            intent.putExtra(Intent.EXTRA_TEXT, text)
             intent.putExtra("jid", "$digits@s.whatsapp.net")
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (intent.resolveActivity(packageManager) == null) continue
             return try {
                 startActivity(intent)
@@ -264,6 +305,34 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             }
         }
         return false
+    }
+
+    /// The system share sheet for a card — one share with every photo and the
+    /// text once — with WhatsApp's captions handed to WhatsApp alone through
+    /// EXTRA_REPLACEMENT_EXTRAS (see [cardShareIntent]).
+    private fun shareCardWithChooser(text: String, paths: List<String>): Boolean {
+        val uris = cardShareUris(paths)
+        val base = cardShareIntent(text, uris, forWhatsApp = false)
+        val chooser = Intent.createChooser(base, "שיתוף הכרטיס")
+        if (uris.size > 1 && text.isNotBlank()) {
+            val replacements = Bundle()
+            for (target in WHATSAPP_PACKAGES) {
+                replacements.putBundle(target, Bundle().apply {
+                    putCharSequenceArrayList(Intent.EXTRA_TEXT, whatsAppCaptions(text, uris.size))
+                })
+            }
+            chooser.putExtra(Intent.EXTRA_REPLACEMENT_EXTRAS, replacements)
+        }
+        if (uris.isNotEmpty()) {
+            chooser.clipData = base.clipData
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return try {
+            startActivity(chooser)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun isInviteIntent(intent: Intent): Boolean {
@@ -583,6 +652,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
 
         private const val INVITE_CHANNEL_NAME = "shadchan/invite_links"
         private const val WHATSAPP_CHANNEL_NAME = "shadchan/whatsapp_direct"
+        private val WHATSAPP_PACKAGES = listOf("com.whatsapp", "com.whatsapp.w4b")
         private const val INVITE_SCHEME = "shadchan-invite"
         private const val PREFS_NAME = "shadchan_native"
         private const val REFERRER_READ_KEY = "installReferrerRead"

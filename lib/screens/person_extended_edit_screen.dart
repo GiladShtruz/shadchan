@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
 import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/widgets/card_announce_switch.dart';
 import 'package:shadchan/widgets/card_text_field.dart';
@@ -191,6 +192,31 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       _openedCardOwnerUid = person?.cardOwnerUid;
     }
     _loadFrom(person);
+    if (_owner && CardPhotoChoiceDialog.needed(_photoPaths)) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _askWhichPhotosToKeep(),
+      );
+    }
+  }
+
+  /// "אפשר לשמור עד 4 תמונות בכרטיס" — before anything else on the page.
+  /// Backing out leaves the card exactly as it was, and leaves the page: the
+  /// card cannot be edited with more photos than it may carry.
+  Future<void> _askWhichPhotosToKeep() async {
+    if (!mounted) return;
+    final List<String>? keep = await CardPhotoChoiceDialog.show(
+      context,
+      _photoPaths,
+      gender: _gender == Gender.unknown
+          ? context.read<UserProfileProvider>().gender
+          : _gender,
+    );
+    if (!mounted) return;
+    if (keep == null) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    _commit(() => _photoPaths = keep);
   }
 
   /// The record this page edits: the friend in the database, or the owner's
@@ -266,9 +292,11 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
     _maritalStatus = person.maritalStatus;
     _region = person.region;
     _birthDate = person.birthDate;
-    _photoPaths = List<String>.from(
-      _owner ? person.photosPaths.take(4) : person.photosPaths,
-    );
+    // An owner card from an older version may have more than four photos;
+    // they are all loaded, and the owner is asked which to keep before going
+    // on ([_askWhichPhotosToKeep]) — never cut down here, where the next
+    // autosave would have deleted the rest without a word.
+    _photoPaths = List<String>.from(person.photosPaths);
     _additionalContacts = List<MatchContact>.from(person.additionalContacts);
     _tags = List<String>.from(person.tags);
 

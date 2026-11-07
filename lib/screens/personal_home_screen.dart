@@ -1,5 +1,6 @@
 import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
 import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
 import 'package:shadchan/screens/personal_privacy_screen.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -173,6 +174,32 @@ class _PersonalHome extends StatefulWidget {
 class _PersonalHomeState extends State<_PersonalHome> {
   bool _restoring = false;
 
+  /// Asked at most once per visit: "לא עכשיו" is an answer for now, and the
+  /// question comes back on the next visit — the card goes on carrying its
+  /// first four photos meanwhile, and nothing is deleted.
+  bool _photoChoiceAsked = false;
+
+  void _maybeAskPhotoChoice(PersonalCardProvider cards) {
+    if (_photoChoiceAsked || !cards.needsPhotoChoice || cards.isDeleted) {
+      return;
+    }
+    _photoChoiceAsked = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final Person? card = cards.card;
+      if (!mounted || card == null || !cards.needsPhotoChoice) return;
+      final List<String>? keep = await CardPhotoChoiceDialog.show(
+        context,
+        card.photosPaths,
+        gender: card.gender == Gender.unknown
+            ? context.read<UserProfileProvider>().gender
+            : card.gender,
+      );
+      if (keep != null && mounted) {
+        await cards.keepPhotos(keep);
+      }
+    });
+  }
+
   static String _greeting(int hour) => hour >= 5 && hour < 12
       ? 'בוקר טוב'
       : hour >= 12 && hour < 17
@@ -197,6 +224,7 @@ class _PersonalHomeState extends State<_PersonalHome> {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
     final Person? card = cards.card;
+    _maybeAskPhotoChoice(cards);
     final String first = (profile.firstName ?? '').trim();
     const SizedBox gap = SizedBox(height: 22);
     const Divider rule = Divider(height: 1);

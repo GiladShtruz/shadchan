@@ -150,7 +150,10 @@ void main() {
         firstName: 'יעל',
         lastName: 'לוי',
         gender: Gender.female,
-        description: 'טקסט הכרטיס המלא'.padRight(40, 'א'),
+        // A live card needs a photo and twenty words.
+        description:
+            'טקסט הכרטיס המלא ${List<String>.filled(17, 'מילה').join(' ')}',
+        photosPaths: const <String>['/no/such/card-photo.jpg'],
         city: 'מודיעין',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
