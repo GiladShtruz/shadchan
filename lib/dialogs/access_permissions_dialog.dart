@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
@@ -115,6 +116,9 @@ abstract final class PersonalAccessFlow {
     BuildContext context,
     MatchmakerFriend friend,
   ) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final PersonalCardProvider cards = context.read<PersonalCardProvider>();
     if (!cards.hasCard) {
       AppNotice.show(context, 'יש להשלים כרטיס פעיל לפני מתן גישה');
@@ -190,6 +194,9 @@ abstract final class PersonalAccessFlow {
   /// "לא עכשיו" on a request: the request goes, nothing is granted, and the
   /// friend stays on the list to be given access later.
   static Future<void> decline(BuildContext context, CardAccess row) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final bool ok = row.status == CardAccessStatus.approved
         ? await access.setPermissions(
@@ -208,6 +215,9 @@ abstract final class PersonalAccessFlow {
     BuildContext context,
     MatchmakerFriend friend,
   ) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final CardAccess? row = friend.row;
     if (row == null) return;
     final CardAccessProvider access = context.read<CardAccessProvider>();
@@ -237,6 +247,9 @@ abstract final class PersonalAccessFlow {
 
   /// Withdraws every permission at once.
   static Future<void> revoke(BuildContext context, CardAccess row) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final bool ok = await access.setStatus(row, CardAccessStatus.revoked);
     if (context.mounted) {

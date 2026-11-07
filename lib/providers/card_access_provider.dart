@@ -1,3 +1,4 @@
+import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -325,6 +326,15 @@ class CardAccessProvider extends ChangeNotifier {
                     (owner) => _asMatchmaker[owner]?.canReadCard != true,
                   );
                   _people.setVerifiedCardOwners(_verifiedCards);
+                  // What an offline launch may go on showing: the cards this
+                  // answer still allows, out of those confirmed before, plus
+                  // any confirmed since. A grant that ended drops out here.
+                  OfflineCache.saveVerifiedCardOwners(<String>{
+                    ...OfflineCache.verifiedCardOwners.where(
+                      (owner) => _asMatchmaker[owner]?.canReadCard == true,
+                    ),
+                    ..._verifiedCards,
+                  });
                 }
                 notifyListeners();
                 unawaited(
@@ -408,6 +418,14 @@ class CardAccessProvider extends ChangeNotifier {
     }
   }
 
+  /// A card that may no longer be read is not shown offline either.
+  static void _forgetOffline(String ownerUid) {
+    final Set<String> owners = OfflineCache.verifiedCardOwners;
+    if (owners.remove(ownerUid)) {
+      OfflineCache.saveVerifiedCardOwners(owners);
+    }
+  }
+
   /// Disconnects and forgets, for a sign-out.
   Future<void> stop() async {
     matchmakerAccessVerified = false;
@@ -486,6 +504,7 @@ class CardAccessProvider extends ChangeNotifier {
             if (data == null || data['deleted'] == true) {
               _verifiedCards.remove(ownerUid);
               _people.setVerifiedCardOwners(_verifiedCards);
+              _forgetOffline(ownerUid);
               unawaited(_unlink(ownerUid));
               return;
             }
@@ -498,6 +517,7 @@ class CardAccessProvider extends ChangeNotifier {
                 error.code == 'permission-denied') {
               _verifiedCards.remove(ownerUid);
               _people.setVerifiedCardOwners(_verifiedCards);
+              _forgetOffline(ownerUid);
               unawaited(_cardSubscriptions.remove(ownerUid)?.cancel());
               unawaited(_unlink(ownerUid));
             } else {
@@ -714,6 +734,10 @@ class CardAccessProvider extends ChangeNotifier {
     if (_asMatchmaker[ownerUid]?.canReadCard != true) return;
     _verifiedCards.add(ownerUid);
     _people.setVerifiedCardOwners(_verifiedCards);
+    OfflineCache.saveVerifiedCardOwners(<String>{
+      ...OfflineCache.verifiedCardOwners,
+      ownerUid,
+    });
     if (result.changed || created) {
       await _people.saveSynced(person);
     }

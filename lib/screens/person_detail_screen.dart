@@ -1,3 +1,4 @@
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/widgets/private_looking.dart';
 import 'dart:async';
@@ -76,6 +77,9 @@ Future<bool> openExtendedPersonEditor(
   String personId, {
   bool isNewFriend = false,
 }) async {
+  if (!OfflineGuard.allow(context)) {
+    return false;
+  }
   final Person? person = context.read<PersonRepository>().getById(personId);
   if (person != null && !await confirmEditSyncedCard(context, person)) {
     return true;

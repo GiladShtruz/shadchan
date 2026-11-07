@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -112,6 +113,9 @@ abstract final class HomeBoardActions {
     VoidCallback? onHandled,
     bool removable = false,
   }) async {
+    if (!OfflineGuard.allow(anchor)) {
+      return;
+    }
     final ThemeData theme = Theme.of(anchor);
     final RenderBox? box = anchor.findRenderObject() as RenderBox?;
     final OverlayState overlayState = Overlay.of(anchor);

@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
@@ -288,6 +289,9 @@ Future<void> openPrivateLookingEditor(
   Future<void> Function()? onSaved,
   LookingEditorStart start = LookingEditorStart.edit,
 }) async {
+  if (!OfflineGuard.allow(context)) {
+    return;
+  }
   bool changed = false;
   try {
     if (data == null) {

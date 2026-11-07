@@ -258,7 +258,7 @@ class HomeGreeting extends StatelessWidget {
   final String? line;
 
   /// Something small at the other end of the greeting's first line — the far
-  /// top corner, left in RTL. Holds "ניהול הכרטיס שלי" for a matchmaker who
+  /// top corner, left in RTL. Holds "למעבר לאזור האישי" for a matchmaker who
   /// keeps a card of their own, so it costs the page no row of its own.
   final Widget? trailing;
 

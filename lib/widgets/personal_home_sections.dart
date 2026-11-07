@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/widgets/area_switch_button.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/dialogs/access_permissions_dialog.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
@@ -89,28 +90,20 @@ class PersonalSectionTitle extends StatelessWidget {
   }
 }
 
-/// "לאזור השדכן" — the small way across, beside the greeting, for an owner
-/// who also matchmakes. The mirror of the matchmaker home's way into here.
+/// "למעבר לאזור השדכן" — the small way across, beside the greeting, for an
+/// owner who also matchmakes. The mirror of the matchmaker home's "למעבר לאזור
+/// האישי", and drawn by the same [AreaSwitchButton].
 class SwitchToMatchmakerButton extends StatelessWidget {
   const SwitchToMatchmakerButton({super.key, required this.onTap});
   final VoidCallback onTap;
 
+  static const String labelTemplate = 'למעבר לאזור {השדכן|השדכנית}';
+
   @override
-  Widget build(BuildContext context) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Color ink = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: ink,
-        side: BorderSide(color: ink.withValues(alpha: 0.45)),
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-      ),
-      icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-      label: Text('לאזור {השדכן|השדכנית}'.forGender(context.userGender)),
-    );
-  }
+  Widget build(BuildContext context) => AreaSwitchButton(
+    label: labelTemplate.forGender(context.userGender),
+    onTap: onTap,
+  );
 }
 
 /// The two figures under the greeting, as two short lines rather than two

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/confirm_dialog.dart';
 import 'package:shadchan/dialogs/engagement_dialogs.dart';
 import 'package:shadchan/dialogs/match_outcome_dialog.dart';
@@ -112,6 +113,9 @@ abstract final class MatchQuickActions {
     Person? female,
     Person? male,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final MatchRepository repository = context.read<MatchRepository>();
     switch (action) {
       case MatchQuickAction.waiting:
@@ -152,6 +156,9 @@ abstract final class MatchQuickActions {
     required Person? female,
     required Person? male,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final MatchRepository repository = context.read<MatchRepository>();
     final OverlayState? notices = AppNotice.capture(context);
     final MatchShareResult result = await MatchWhatsAppSheet.open(
@@ -186,6 +193,9 @@ abstract final class MatchQuickActions {
     required Person? first,
     required Person? second,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final OverlayState? notices = AppNotice.capture(context);
     final MatchShareResult result = await MatchWhatsAppSheet.chooseCard(
       context,
@@ -260,6 +270,9 @@ abstract final class MatchQuickActions {
     required Person? female,
     required Person? male,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final MatchRepository repository = context.read<MatchRepository>();
     final OverlayState? notices = AppNotice.capture(context);
 
@@ -321,6 +334,9 @@ abstract final class MatchQuickActions {
     Person? female,
     Person? male,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     if (stage == MatchStage.dating) {
       await run(
         context,
@@ -379,6 +395,9 @@ abstract final class MatchQuickActions {
     required Person person,
     required DateTime startedAt,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final MatchRepository repository = context.read<MatchRepository>();
     final OverlayState? notices = AppNotice.capture(context);
     final bool opened = await WhatsAppUtils.openChat(person);
@@ -408,6 +427,9 @@ abstract final class MatchQuickActions {
     ProfileStatus status, {
     String? preferMatchId,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     if (person.profileStatus == status) {
       return;
     }
@@ -509,6 +531,9 @@ abstract final class MatchQuickActions {
     MatchRepository repository,
     MatchIdea match,
   ) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final ReminderChoice? choice = await ReminderPickerSheet.show(
       context,
       title: 'מתי לחזור לרעיון?',
@@ -544,6 +569,9 @@ abstract final class MatchQuickActions {
     MatchRepository repository,
     MatchIdea match,
   ) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final DeviceContactChoice? choice = await DeviceContactPickerSheet.show(
       context,
     );
