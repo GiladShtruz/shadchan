@@ -1,3 +1,4 @@
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -253,7 +254,7 @@ class _MatchJournalViewState extends State<MatchJournalView> {
 
   Future<void> _send(MatchRepository repository) async {
     final String text = _controller.text.trim();
-    if (text.isEmpty) {
+    if (text.isEmpty || !OfflineGuard.allow(context)) {
       return;
     }
     _controller.clear();
@@ -406,7 +407,7 @@ class _MatchJournalState extends State<_MatchJournal> {
 
   Future<void> _send(MatchRepository repository) async {
     final String text = _controller.text.trim();
-    if (text.isEmpty) {
+    if (text.isEmpty || !OfflineGuard.allow(context)) {
       return;
     }
     _controller.clear();

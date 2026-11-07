@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -46,6 +47,9 @@ abstract final class PersonalAreaService {
     BuildContext context,
     ProfileStatus status,
   ) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final cards = context.read<PersonalCardProvider>();
     if (cards.card == null || cards.card!.profileStatus == status) return;
     try {
@@ -71,6 +75,9 @@ abstract final class PersonalAreaService {
   }
 
   static Future<void> editCard(BuildContext context) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     await context.push('/me/card');
   }
 

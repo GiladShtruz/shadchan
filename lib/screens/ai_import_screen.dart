@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/import_file_kind_dialog.dart';
 import 'package:shadchan/dialogs/import_problem_dialog.dart';
 import 'package:shadchan/services/ai_card_parser.dart';
@@ -57,6 +58,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
   @override
   void initState() {
     super.initState();
+    OfflineGuard.leaveIfOffline(this);
     // First point in the app that needs Firebase, so this is where it comes
     // up. The cards enable themselves through the listenable when it lands.
     unawaited(FirebaseBootstrap.ensureReady());
@@ -178,10 +180,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
     await _run(path, source);
   }
 
-  Future<void> _run(
-    String path,
-    AiImportSource source,
-  ) async {
+  Future<void> _run(String path, AiImportSource source) async {
     if (_isWorking) {
       return;
     }

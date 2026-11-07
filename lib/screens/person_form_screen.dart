@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/card_text_field.dart';
@@ -103,6 +104,9 @@ class _PersonFormScreenState extends State<PersonFormScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.incomingDraft == null) {
+      OfflineGuard.leaveIfOffline(this);
+    }
     // Watching the controller rather than the onChanged callback catches every
     // way the card text arrives — typed, loaded from an existing person, or
     // filled from an incoming share — so the AI button's visibility can never

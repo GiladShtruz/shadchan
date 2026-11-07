@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/theme_mode_provider.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/widgets/achievement_watcher.dart';
 import 'package:shadchan/widgets/own_card_mirror_watcher.dart';
@@ -11,6 +12,7 @@ import 'package:shadchan/widgets/app_update_prompt.dart';
 import 'package:shadchan/widgets/cloud_sync_scheduler.dart';
 import 'package:shadchan/widgets/incoming_backup_import_listener.dart';
 import 'package:shadchan/widgets/incoming_shared_profile_listener.dart';
+import 'package:shadchan/widgets/offline_banner.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/utils/back_interceptor.dart';
 
@@ -43,6 +45,10 @@ class App extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       builder: (BuildContext context, Widget? child) {
+        // A repository that refuses an edit offline has no context of its own
+        // to say so in; it uses the router's navigator.
+        OfflineGuard.navigatorKey =
+            AppRouter.router.routerDelegate.navigatorKey;
         return Directionality(
           textDirection: TextDirection.rtl,
           // Above the router rather than on any one screen: every field in the
@@ -63,7 +69,11 @@ class App extends StatelessWidget {
                     child: AppBadgeSync(
                       child: IncomingBackupImportListener(
                         child: IncomingSharedProfileListener(
-                          child: child ?? const SizedBox.shrink(),
+                          // The line that says the app is offline, above
+                          // every screen. See [OfflineBanner].
+                          child: OfflineBanner(
+                            child: child ?? const SizedBox.shrink(),
+                          ),
                         ),
                       ),
                     ),

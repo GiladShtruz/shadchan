@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/suggested_matches_sheet.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -41,6 +42,12 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   Person? _personA;
   Person? _personB;
   bool _didApplyPreSelection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    OfflineGuard.leaveIfOffline(this);
+  }
 
   /// True from the moment "הוספת רעיון" is tapped until this screen is gone.
   ///

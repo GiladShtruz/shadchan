@@ -280,6 +280,10 @@ class CommunityProvider extends ChangeNotifier {
   /// this landed — usually before there was even an account — so without this
   /// the landing page keeps yesterday's answer, or no answer at all, for the
   /// rest of the session.
+  /// The connection came back after the app was offline: the figures on
+  /// screen were the device's last copy, so whoever drew them reads again.
+  void noteReconnected() => _notePublished();
+
   void _notePublished() {
     CommunityService.invalidate();
     _publishRevision++;

@@ -1,3 +1,5 @@
+import 'package:shadchan/services/community_service.dart';
+import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'dart:async';
@@ -118,8 +120,33 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
         // that only runs once it is up gets its turn here.
         FirebaseBootstrap.readyListenable.addListener(_onFirebaseReady);
         _onFirebaseReady();
+        // Coming back online is the moment everything that was shown from
+        // the device's last copy gets brought up to date.
+        ConnectivityStatus.offline.addListener(_onConnectivityChanged);
       }
     });
+  }
+
+  bool _wasOffline = ConnectivityStatus.isOffline;
+
+  /// The connection came back: everything the app does on resume, at once,
+  /// plus a fresh read of the community figures that were shown from the
+  /// device's last copy. Firestore's own listeners reconnect by themselves;
+  /// this is for everything that is asked rather than listened to.
+  void _onConnectivityChanged() {
+    final bool offline = ConnectivityStatus.isOffline;
+    final bool reconnected = _wasOffline && !offline;
+    _wasOffline = offline;
+    if (!reconnected || !mounted) {
+      return;
+    }
+    CommunityService.invalidate();
+    unawaited(context.read<SyncProvider>().resume());
+    _sync();
+    if (FirebaseBootstrap.isReady) {
+      unawaited(context.read<CardAccessProvider>().resume());
+    }
+    context.read<CommunityProvider>().noteReconnected();
   }
 
   /// Something changed on another phone signed in to the same account. The
@@ -261,6 +288,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     _cards?.removeListener(_noteCardChange);
     _profile?.removeListener(_noteCardChange);
     FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
+    ConnectivityStatus.offline.removeListener(_onConnectivityChanged);
     _activityTimer?.cancel();
     _cardTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -318,6 +346,8 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       _sync(includeDatabase: false);
     }
     if (state == AppLifecycleState.resumed) {
+      // The phone may have found (or lost) its connection while away.
+      unawaited(ConnectivityStatus.check());
       unawaited(context.read<SyncProvider>().resume());
       _sync(includeDatabase: false);
     }

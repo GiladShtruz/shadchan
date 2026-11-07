@@ -7,7 +7,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/models/community_profile.dart';
 import 'package:shadchan/services/community_profile_store.dart';
+import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/community_period.dart';
 
@@ -128,6 +130,35 @@ class CommunityTotals {
 
   /// Whether there is anything here worth drawing at all.
   bool get isEmpty => points == 0 && activeMatchmakers == 0;
+
+  /// For [OfflineCache]: only ever written for a resolved answer.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'points': points,
+    'active': activeMatchmakers,
+    'friends': friends,
+    'ideas': ideas,
+    'couples': couples,
+    'engagements': engagements,
+    'newMatchmakers': newMatchmakers,
+  };
+
+  /// The answer the server last gave, read back from the device. Resolved,
+  /// because it was one.
+  static CommunityTotals? fromJson(Map<String, Object?>? json) {
+    if (json == null) {
+      return null;
+    }
+    int read(String key) => (json[key] as num?)?.toInt() ?? 0;
+    return CommunityTotals(
+      points: read('points'),
+      activeMatchmakers: read('active'),
+      friends: read('friends'),
+      ideas: read('ideas'),
+      couples: read('couples'),
+      engagements: read('engagements'),
+      newMatchmakers: read('newMatchmakers'),
+    );
+  }
 }
 
 /// One row of the leaderboard.
@@ -186,6 +217,53 @@ class CommunityLeaderboard {
   /// reader's own line is read against. Out of the same figure the community
   /// area shows, so the two can never disagree.
   final int activeMatchmakers;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'top': <Map<String, Object?>>[
+      for (final CommunityRankEntry row in top)
+        <String, Object?>{
+          'uid': row.uid,
+          'name': row.name,
+          'points': row.points,
+          'photoUrl': row.photoUrl,
+        },
+    ],
+    'myRank': myRank,
+    'myPoints': myPoints,
+    'active': activeMatchmakers,
+  };
+
+  /// The board the server last gave, read back from the device. The reader's
+  /// own place is kept only while their points are still what they were — a
+  /// rank worked out for another score would be a guess.
+  static CommunityLeaderboard? fromJson(
+    Map<String, Object?>? json, {
+    required int myPoints,
+  }) {
+    if (json == null) {
+      return null;
+    }
+    final Object? rows = json['top'];
+    final int storedPoints = (json['myPoints'] as num?)?.toInt() ?? 0;
+    return CommunityLeaderboard(
+      top: <CommunityRankEntry>[
+        if (rows is List)
+          for (final Object? row in rows)
+            if (row is Map && row['uid'] is String)
+              CommunityRankEntry(
+                uid: row['uid'] as String,
+                name: (row['name'] as String?) ?? 'שדכן',
+                points: (row['points'] as num?)?.toInt() ?? 0,
+                photoUrl: (row['photoUrl'] as String?) ?? '',
+              ),
+      ],
+      myRank: storedPoints == myPoints
+          ? (json['myRank'] as num?)?.toInt()
+          : null,
+      myPoints: myPoints,
+      activeMatchmakers: (json['active'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 /// The community's shared numbers.
@@ -800,6 +878,15 @@ abstract final class CommunityService {
     if (!forceRefresh && cached != null && cached.isFresh) {
       return cached.value;
     }
+    // Offline, the last answer this device got for this same window — never a
+    // wait for a network that is not there, and never last week's figure
+    // passed off as this week's (the window's key is part of the cache key).
+    final CommunityTotals? stored = CommunityTotals.fromJson(
+      OfflineCache.read(_diskTotalsKey(period)),
+    );
+    if (ConnectivityStatus.isOffline) {
+      return cached?.value ?? stored ?? CommunityTotals.empty;
+    }
     if (await _account() == null) {
       return CommunityTotals.empty;
     }
@@ -824,7 +911,7 @@ abstract final class CommunityService {
       }
     }
     if (!anyResolved) {
-      return cached?.value ?? CommunityTotals.empty;
+      return cached?.value ?? stored ?? CommunityTotals.empty;
     }
     // One more count, and it is not part of the sum above: the newcomers are
     // counted by *when they joined*, not by which activity key they carry, so
@@ -834,8 +921,20 @@ abstract final class CommunityService {
       parts,
     ).withNewMatchmakers(await _newMatchmakers(period));
     _totalsCache[cacheKey] = _Cached<CommunityTotals>(merged);
+    OfflineCache.write(_diskTotalsKey(period), merged.toJson());
     return merged;
   }
+
+  /// Where a window's last answer is kept on the device: by the window's own
+  /// key, so a new week starts with nothing rather than with the old one.
+  static String _diskTotalsKey(CommunityPeriod period) =>
+      'community.totals.${period.name}.${CommunityPeriods.keyFor(period)}';
+
+  static String _diskBoardKey(CommunityPeriod period, bool includeMe) =>
+      'community.board.${period.name}.${CommunityPeriods.keyFor(period)}'
+      '.${includeMe ? 'me' : 'hidden'}';
+
+  static const String _diskSinglesKey = 'community.singlesWithCards';
 
   static _Cached<int>? _singlesCache;
 
@@ -855,6 +954,11 @@ abstract final class CommunityService {
     if (!forceRefresh && cached != null && cached.isFresh) {
       return cached.value;
     }
+    final int? stored = (OfflineCache.read(_diskSinglesKey)?['singles'] as num?)
+        ?.toInt();
+    if (ConnectivityStatus.isOffline) {
+      return cached?.value ?? stored;
+    }
     if (await _account() == null) {
       return null;
     }
@@ -864,12 +968,15 @@ abstract final class CommunityService {
           .get();
       final Object? value = doc.data()?['singles'];
       if (value is! num) {
-        return cached?.value;
+        return cached?.value ?? stored;
       }
       _singlesCache = _Cached<int>(value.toInt());
+      OfflineCache.write(_diskSinglesKey, <String, Object?>{
+        'singles': value.toInt(),
+      });
       return value.toInt();
     } catch (_) {
-      return cached?.value;
+      return cached?.value ?? stored;
     }
   }
 
@@ -1111,6 +1218,13 @@ abstract final class CommunityService {
     if (!forceRefresh && cached != null && cached.isFresh) {
       return cached.value;
     }
+    final CommunityLeaderboard? stored = CommunityLeaderboard.fromJson(
+      OfflineCache.read(_diskBoardKey(period, includeMe)),
+      myPoints: myPoints,
+    );
+    if (ConnectivityStatus.isOffline) {
+      return cached?.value ?? stored ?? CommunityLeaderboard.empty;
+    }
     final User? user = await _account();
     if (user == null) {
       return CommunityLeaderboard.empty;
@@ -1198,9 +1312,10 @@ abstract final class CommunityService {
         activeMatchmakers: window.activeMatchmakers,
       );
       _boardCache[cacheKey] = _Cached<CommunityLeaderboard>(result);
+      OfflineCache.write(_diskBoardKey(period, includeMe), result.toJson());
       return result;
     } catch (_) {
-      return cached?.value ?? CommunityLeaderboard.empty;
+      return cached?.value ?? stored ?? CommunityLeaderboard.empty;
     }
   }
 }

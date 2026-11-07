@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/add_contacts_intro_dialog.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
@@ -45,6 +46,7 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
   @override
   void initState() {
     super.initState();
+    OfflineGuard.leaveIfOffline(this);
     if (_showIntro) {
       // After the first frame: the dialog needs a Navigator, and the screen
       // behind it should already be drawn when it opens.

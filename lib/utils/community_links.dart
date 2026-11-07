@@ -128,9 +128,12 @@ abstract final class CommunityLinks {
   /// advertising surface, and a paragraph under it would be read as spam by the
   /// person it was forwarded to — see [shareMessage] for the *invitation*,
   /// which is a different thing said in a different voice.
+  ///
+  /// **One line, link included.** It used to be two — the sentence, then
+  /// "להורדה:" and the link under it — and two lines of footer under a card of
+  /// eight is a footer that competes with the card.
   static String get sharedCardCredit =>
-      'שותף מ"שדכן" - יומן אישי לניהול הצעות.\n'
-      'להורדה: $downloadUrl';
+      'שותף מ"שדכן" – יומן אישי לניהול שידוכים: $downloadUrl';
 
   /// [card] with [sharedCardCredit] under it, separated by a blank line so it
   /// reads as a footer rather than as the last sentence of the card.
@@ -139,14 +142,12 @@ abstract final class CommunityLinks {
   /// photos is still a card being shared, and the photos are the content. It is
   /// the caller's job not to share nothing at all.
   ///
-  /// Never appends twice. A description that already carries the credit is one
-  /// somebody pasted back in after receiving it, and a card ending in two
-  /// identical footers is worse than one ending in none.
+  /// Never appends twice. A description that already carries a credit — this
+  /// one, or the older wording — is one somebody pasted back in after
+  /// receiving it; the old footer comes off and the current one goes on, so a
+  /// card never ends in two.
   static String creditCard(String card) {
-    final String trimmed = card.trim();
-    if (trimmed.contains(sharedCardCredit)) {
-      return trimmed;
-    }
+    final String trimmed = stripCredit(card).trim();
     if (trimmed.isEmpty) {
       return sharedCardCredit;
     }
@@ -158,7 +159,7 @@ abstract final class CommunityLinks {
   static final RegExp _creditLine = RegExp(
     r'(שותף|שותפה|שותפו)\s*(מ|מה)?\s*'
     "[\"״”“']?"
-    r'\s*שדכן|יומן אישי לניהול הצעות',
+    r'\s*שדכן|יומן אישי לניהול (הצעות|שידוכים)',
   );
 
   /// The app's own links: the landing page, the store listings, the site.

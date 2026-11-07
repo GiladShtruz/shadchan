@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
 import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/widgets/card_announce_switch.dart';
@@ -169,6 +170,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
   @override
   void initState() {
     super.initState();
+    OfflineGuard.leaveIfOffline(this);
     for (final FocusNode node in _focusNodes.values) {
       node.addListener(_handleFocusChanged);
     }

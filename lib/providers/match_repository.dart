@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/match_note.dart';
@@ -189,6 +190,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   Future<MatchIdea?> create(String personAId, String personBId) async {
+    OfflineGuard.ensureCanWrite();
     if (isDuplicate(personAId, personBId)) {
       return null;
     }
@@ -252,6 +254,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   Future<void> update(MatchIdea match) async {
+    OfflineGuard.ensureCanWrite();
     match.updatedAt = DateTime.now();
     await match.save();
     notifyListeners();
@@ -306,6 +309,7 @@ class MatchRepository extends ChangeNotifier {
     MatchStatus newStatus, {
     bool journal = true,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -568,6 +572,7 @@ class MatchRepository extends ChangeNotifier {
     required DateTime since,
     String? waitingReason,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -611,6 +616,7 @@ class MatchRepository extends ChangeNotifier {
     String? note,
     bool journal = true,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -670,6 +676,7 @@ class MatchRepository extends ChangeNotifier {
     String label, {
     bool journal = true,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     final String trimmed = label.trim();
     if (match == null || trimmed.isEmpty) {
@@ -718,6 +725,7 @@ class MatchRepository extends ChangeNotifier {
     DateTime? checkAgainOn,
     String? reminderNote,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -777,6 +785,7 @@ class MatchRepository extends ChangeNotifier {
     Gender side, {
     String? note,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null || side == Gender.unknown) {
       return;
@@ -849,6 +858,7 @@ class MatchRepository extends ChangeNotifier {
     required DateTime? askedFemaleAt,
     required String label,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -905,6 +915,7 @@ class MatchRepository extends ChangeNotifier {
     required DateTime startedAt,
     String? note,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -933,6 +944,7 @@ class MatchRepository extends ChangeNotifier {
 
   /// How often to be reminded about a couple who are out. See `DatingCheckIn`.
   Future<void> setCheckInFrequency(String matchId, int days) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null || match.checkInEveryDays == days) {
       return;
@@ -953,6 +965,7 @@ class MatchRepository extends ChangeNotifier {
     MatchProgress progress, {
     String? other,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -984,6 +997,7 @@ class MatchRepository extends ChangeNotifier {
     required MatchOutcomeParty party,
     String? note,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -1183,6 +1197,7 @@ class MatchRepository extends ChangeNotifier {
 
   /// Attaches a contact (from the device address book) to a proposal.
   Future<void> addRelatedContact(String matchId, MatchContact contact) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -1205,6 +1220,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   Future<void> removeRelatedContact(String matchId, int index) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null || index < 0 || index >= match.relatedContacts.length) {
       return;
@@ -1338,6 +1354,7 @@ class MatchRepository extends ChangeNotifier {
     CurrentHandler handler, {
     String? handlerName,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final MatchIdea? match = getById(matchId);
     if (match == null) {
       return;
@@ -1371,6 +1388,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   Future<void> deleteMatch(String matchId, {bool keepInTrash = true}) async {
+    OfflineGuard.ensureCanWrite();
     // A snapshot first, so "ביטול" and "רעיונות שנמחקו" can put the idea back
     // exactly as it was — journal and ledger included.
     final MatchIdea? doomed = getById(matchId);
@@ -1453,6 +1471,7 @@ class MatchRepository extends ChangeNotifier {
     String matchId, {
     bool Function(String personId)? personExists,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final DeletedMatchesStore trash = DeletedMatchesStore.instance;
     final DeletedMatch? peek = trash.all
         .where((DeletedMatch e) => e.matchId == matchId)
@@ -1530,6 +1549,7 @@ class MatchRepository extends ChangeNotifier {
     String text, {
     bool isAutomatic = false,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final DateTime now = DateTime.now();
     await _createNote(
       matchId: matchId,
@@ -1545,6 +1565,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   Future<void> updateNote(String noteId, String text) async {
+    OfflineGuard.ensureCanWrite();
     final MatchNote? note = _noteBox.get(noteId);
     final String trimmed = text.trim();
     if (note == null || trimmed.isEmpty) {
@@ -1557,6 +1578,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   Future<void> deleteNote(String noteId) async {
+    OfflineGuard.ensureCanWrite();
     await _noteBox.delete(noteId);
     notifyListeners();
   }
@@ -1564,6 +1586,7 @@ class MatchRepository extends ChangeNotifier {
   /// Writes a deleted note back exactly as it was, so a delete can be undone
   /// straight from the snackbar instead of asking to confirm beforehand.
   Future<void> restoreNote(MatchNote note) async {
+    OfflineGuard.ensureCanWrite();
     await _noteBox.put(
       note.id,
       MatchNote(
@@ -1581,6 +1604,7 @@ class MatchRepository extends ChangeNotifier {
   }
 
   Future<void> addImportedMatch(MatchIdea match) async {
+    OfflineGuard.ensureCanWrite();
     await _matchBox.put(match.id, match);
   }
 

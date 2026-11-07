@@ -236,7 +236,7 @@ void main() {
       );
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      expect(find.text('לאזור השדכנית'), findsOneWidget);
+      expect(find.text('למעבר לאזור השדכנית'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 5));
     },

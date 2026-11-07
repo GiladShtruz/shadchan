@@ -11,13 +11,36 @@ import 'package:shadchan/widgets/card_text_field.dart';
 void main() {
   test('it names the app, says what it is, and links to it', () {
     expect(CommunityLinks.sharedCardCredit, contains('שדכן'));
-    expect(CommunityLinks.sharedCardCredit, contains('יומן אישי לניהול הצעות'));
-    expect(CommunityLinks.sharedCardCredit, contains('להורדה:'));
+    expect(
+      CommunityLinks.sharedCardCredit,
+      contains('יומן אישי לניהול שידוכים'),
+    );
     expect(
       CommunityLinks.sharedCardCredit,
       contains(CommunityLinks.downloadUrl),
     );
   });
+
+  test('the credit and its link are one line', () {
+    expect(CommunityLinks.sharedCardCredit, isNot(contains('\n')));
+    expect(
+      CommunityLinks.sharedCardCredit,
+      endsWith(CommunityLinks.downloadUrl),
+    );
+  });
+
+  test(
+    'a card forwarded with the old two-line credit gets the new one once',
+    () {
+      const String old =
+          'בן 24, ירושלים.\n\nשותף מ"שדכן" - יומן אישי לניהול הצעות.\n'
+          'להורדה: https://shadchan-app-eosin.vercel.app';
+      expect(
+        CommunityLinks.creditCard(old),
+        'בן 24, ירושלים.\n\n${CommunityLinks.sharedCardCredit}',
+      );
+    },
+  );
 
   test('a card keeps its own text and gains a footer', () {
     final String credited = CommunityLinks.creditCard('בן 24, ירושלים.');
@@ -58,10 +81,7 @@ void main() {
       final String shared = CommunityLinks.creditCard(
         'בן 24, ירושלים.\nדתי לאומי.',
       );
-      expect(
-        CommunityLinks.stripCredit(shared),
-        'בן 24, ירושלים.\nדתי לאומי.',
-      );
+      expect(CommunityLinks.stripCredit(shared), 'בן 24, ירושלים.\nדתי לאומי.');
     });
 
     test('WhatsApp curly quotes and a bare link line are recognised', () {

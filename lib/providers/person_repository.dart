@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/connectivity_status.dart';
+import 'package:shadchan/services/offline_cache.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/own_card_mirror.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/phone_identity.dart';
@@ -19,6 +22,9 @@ import 'package:uuid/uuid.dart';
 
 class PersonRepository extends ChangeNotifier {
   PersonRepository(this._box, [this._noteBox, this._eventBox]) {
+    // Offline, the friends' cards last confirmed by the server are shown as
+    // they were; the line between shown and hidden moves with the connection.
+    ConnectivityStatus.offline.addListener(_onConnectivityChanged);
     // Pending notifications do not survive a reinstall or a device restart on
     // every Android build, so the whole set is re-scheduled on startup.
     _refreshPersonRemindersInBackground();
@@ -34,7 +40,27 @@ class PersonRepository extends ChangeNotifier {
   bool _mayRead(Person person) =>
       person.cardOwnerUid == null ||
       _verifiedCardOwners == null ||
-      _verifiedCardOwners!.contains(person.cardOwnerUid);
+      _verifiedCardOwners!.contains(person.cardOwnerUid) ||
+      // **Offline, the last confirmed answer stands.** Online, a synced card
+      // waits for the server to confirm the grant again before it is drawn
+      // (so a revoked grant never flashes a card). With no connection there is
+      // nobody to ask, and the matchmaker's database would lose every friend
+      // who keeps a card of their own — so the cards confirmed the last time
+      // the app could ask are shown, as last synced, until it can ask again.
+      (ConnectivityStatus.isOffline &&
+          OfflineCache.isVerifiedCardOwner(person.cardOwnerUid));
+
+  void _onConnectivityChanged() {
+    if (_verifiedCardOwners != null) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    ConnectivityStatus.offline.removeListener(_onConnectivityChanged);
+    super.dispose();
+  }
 
   /// Enabled before the app's first frame. Cached grants never unlock a card.
   void requireVerifiedCardAccess() {
@@ -344,6 +370,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> setHidden(String id, bool hidden) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null || person.hidden == hidden) {
       return;
@@ -403,6 +430,7 @@ class PersonRepository extends ChangeNotifier {
   /// Puts a card that was created outside the database into it, on the
   /// matchmaker's say-so rather than because a field was filled in.
   Future<void> admitToDatabase(String id) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null || !person.hidden) {
       return;
@@ -420,6 +448,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> add(Person person) async {
+    OfflineGuard.ensureCanWrite();
     await _box.put(person.id, person);
     _recordActivity(person.id, HomeActivityAction.createdPerson);
     notifyListeners();
@@ -427,10 +456,12 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> addImported(Person person) async {
+    OfflineGuard.ensureCanWrite();
     await _box.put(person.id, person);
   }
 
   Future<void> savePendingContactDraft(Person person) async {
+    OfflineGuard.ensureCanWrite();
     person
       ..hidden = true
       ..needsReview = true
@@ -440,6 +471,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> activatePendingContactDraft(Person person) async {
+    OfflineGuard.ensureCanWrite();
     person
       ..hidden = false
       ..needsReview = false
@@ -457,6 +489,7 @@ class PersonRepository extends ChangeNotifier {
       Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
 
   Future<void> update(Person person) async {
+    OfflineGuard.ensureCanWrite();
     // A matchmaker's edit of a card that follows its owner stays theirs and
     // never detaches it: the owner's own changes keep arriving, field by
     // field, over whatever they did not touch — see `CardSyncEngine.apply`.
@@ -484,6 +517,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> delete(String id) async {
+    OfflineGuard.ensureCanWrite();
     final Box<PersonNote>? noteBox = _noteBox;
     if (noteBox != null) {
       final List<dynamic> noteKeys = noteBox.keys.where((dynamic key) {
@@ -544,6 +578,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> toggleFavorite(String id) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null) {
       return;
@@ -556,6 +591,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> updateManualAge(String id, int? newAge) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null || person.manualAge == newAge) {
       return;
@@ -568,6 +604,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> updateCity(String id, String? newCity) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null) {
       return;
@@ -586,6 +623,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> updateGender(String id, Gender newGender) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null || person.gender == newGender) {
       return;
@@ -598,6 +636,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> updateReligiousLevel(String id, ReligiousLevel? newLevel) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null || person.religiousLevel == newLevel) {
       return;
@@ -622,6 +661,7 @@ class PersonRepository extends ChangeNotifier {
     ProfileStatus newStatus, {
     String? causedByMatchId,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final Person? person = getById(id);
     if (person == null) {
       return;
@@ -709,6 +749,7 @@ class PersonRepository extends ChangeNotifier {
 
   /// Removes one line from a person's history — a long press on it.
   Future<void> deleteEvent(String eventId) async {
+    OfflineGuard.ensureCanWrite();
     final Box<PersonEvent>? eventBox = _eventBox;
     if (eventBox == null || !eventBox.containsKey(eventId)) {
       return;
@@ -853,6 +894,7 @@ class PersonRepository extends ChangeNotifier {
     DateTime date, {
     String? note,
   }) async {
+    OfflineGuard.ensureCanWrite();
     await PersonReminders.set(id, date, note: note);
     final Person? person = getById(id);
     if (person != null) {
@@ -864,6 +906,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> clearPersonReminder(String id) async {
+    OfflineGuard.ensureCanWrite();
     await PersonReminders.clear(id);
     notifyListeners();
     _refreshPersonRemindersInBackground();
@@ -918,6 +961,7 @@ class PersonRepository extends ChangeNotifier {
     String text, {
     bool isAutomatic = false,
   }) async {
+    OfflineGuard.ensureCanWrite();
     final DateTime now = DateTime.now();
     await _createNote(
       personId: personId,
@@ -943,6 +987,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> updateNote(String noteId, String text) async {
+    OfflineGuard.ensureCanWrite();
     final Box<PersonNote>? noteBox = _noteBox;
     final PersonNote? note = noteBox?.get(noteId);
     if (note == null) {
@@ -956,6 +1001,7 @@ class PersonRepository extends ChangeNotifier {
   }
 
   Future<void> deleteNote(String noteId) async {
+    OfflineGuard.ensureCanWrite();
     final Box<PersonNote>? noteBox = _noteBox;
     if (noteBox == null || !noteBox.containsKey(noteId)) {
       return;
@@ -1054,6 +1100,7 @@ class PersonRepository extends ChangeNotifier {
     int? durationMs,
     String text = '',
   }) async {
+    OfflineGuard.ensureCanWrite();
     final Box<PersonNote>? noteBox = _noteBox;
     if (noteBox == null) {
       return;

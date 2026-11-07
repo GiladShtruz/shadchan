@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/push_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_navigation.dart';
@@ -51,6 +53,11 @@ Future<void> main() async {
           // and must not be allowed to stop it appearing. See
           // `_startNotifications`.
           unawaited(_startNotifications());
+          // Whether the server can be reached — after the first frame like
+          // everything else that is not needed to draw it. Offline, the app
+          // shows the last synced copy and refuses edits; see
+          // `ConnectivityStatus` and `OfflineGuard`.
+          unawaited(ConnectivityStatus.start());
         });
       } catch (error, stackTrace) {
         runApp(_StartupErrorApp(error: error, stackTrace: stackTrace));
@@ -103,6 +110,9 @@ Future<void> _bootstrap() async {
   // What this device last agreed with the account. Opened here because the
   // router reads it on the first frame — see `AccountSyncLedger`.
   await Hive.openBox<dynamic>(AccountSyncLedger.boxName);
+  // The server's last answers (community figures, which friends' cards may be
+  // shown), for a launch with no connection. See `OfflineCache`.
+  await Hive.openBox<dynamic>(OfflineCache.boxName);
 
   await optional('migrations', () async {
     await PersonMigrations.convertBirthDatesToAges(

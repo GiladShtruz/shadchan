@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
@@ -15,6 +16,9 @@ enum AddPeopleMethod { fromContacts, manual, ai }
 /// Asks how the user wants to add contacts and routes to the chosen flow.
 abstract final class AddPeopleDialog {
   static Future<void> show(BuildContext context) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     // The seconds spent reading this dialog are seconds the contact cache can
     // be coming off disk in. It touches no permission and no address book —
     // only a Hive box the app wrote itself — so warming it here costs nothing
@@ -296,6 +300,9 @@ class AddDialogCloseButton extends StatelessWidget {
 /// same shape as [AddPeopleDialog], and a friend leads on into that dialog.
 abstract final class AddChoiceDialog {
   static Future<void> show(BuildContext context) async {
+    if (!OfflineGuard.allow(context)) {
+      return;
+    }
     final bool? idea = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {

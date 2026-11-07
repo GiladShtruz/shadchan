@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
@@ -250,6 +251,9 @@ abstract final class CardInviteFlow {
     required String ownerUid,
     required String ownerPhoneHash,
   }) async {
+    if (!OfflineGuard.allow(context)) {
+      return null;
+    }
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
     if (profile.myPhone == null) {

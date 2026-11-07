@@ -1,3 +1,4 @@
+import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/utils/home_next_step.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
@@ -260,6 +261,9 @@ abstract final class AccountSwitch {
   /// Only ever called with the sync stopped: a running sync would read these
   /// deletions as the matchmaker's own and pass them on.
   static Future<void> clearAccountCopy() async {
+    // What the server last told this account — its community figures and
+    // which friends' cards it may show offline — is the account's too.
+    await OfflineCache.clear();
     if (Hive.isBoxOpen('settings')) {
       final Box<dynamic> settings = Hive.box<dynamic>('settings');
       final List<String> synced = settings.keys

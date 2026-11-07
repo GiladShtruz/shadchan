@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/area_switch_button.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/add_fab.dart';
 import 'package:go_router/go_router.dart';
@@ -396,14 +397,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             name: greetingName,
             line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
             trailing: hasOwnCard
-                ? TextButton.icon(
-                    onPressed: () => context.go('/me'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                    ),
-                    icon: const Icon(Icons.badge_outlined, size: 18),
-                    label: const Text('ניהול הכרטיס שלי'),
+                ? AreaSwitchButton(
+                    label: 'למעבר לאזור האישי',
+                    onTap: () => context.go('/me'),
                   )
                 : null,
           ),
