@@ -40,6 +40,8 @@ import {
   onDocumentCreated,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { isSupportAdminEmail, writeAdminStats } from './admin_stats';
 import * as functionsV1 from 'firebase-functions/v1';
 import { logger } from 'firebase-functions';
 import { isHebrewBirthday, israelToday } from './hebrew_birthday';
@@ -929,3 +931,27 @@ export const onMatchmakerActivityWritten = onDocumentWritten('matchmakerActivity
   await refreshContactNeighbours(event.params.uid);
   await refreshPersonalCardCount();
 });
+
+/**
+ * The administrators' dashboard ("נתונים" in the support console): counts
+ * only, every three hours and on demand. See `admin_stats.ts`.
+ */
+export const refreshAdminStats = onSchedule(
+  { schedule: 'every 3 hours', timeoutSeconds: 300, memory: '512MiB' },
+  async () => {
+    await writeAdminStats(db);
+  },
+);
+
+/** "רענון עכשיו" in the dashboard — support administrators only. */
+export const refreshAdminStatsNow = onCall(
+  { timeoutSeconds: 300, memory: '512MiB' },
+  async (request) => {
+    const token = request.auth?.token as { email?: string; email_verified?: boolean } | undefined;
+    if (!token?.email || token.email_verified === false || !(await isSupportAdminEmail(db, token.email))) {
+      throw new HttpsError('permission-denied', 'Administrators only.');
+    }
+    const stats = await writeAdminStats(db);
+    return { computedAt: stats.computedAt };
+  },
+);
