@@ -27,7 +27,7 @@ class AdminStatsTab extends StatefulWidget {
   State<AdminStatsTab> createState() => _AdminStatsTabState();
 }
 
-enum _Window { today, week, month, all }
+enum _Window { today, week, month, all, range }
 
 class _AdminStatsTabState extends State<AdminStatsTab> {
   Map<String, dynamic>? _current;
@@ -38,6 +38,9 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
   bool _refreshing = false;
   String? _error;
   _Window _window = _Window.week;
+
+  /// The administrator's own dates, when [_window] is [_Window.range].
+  DateTimeRange? _range;
 
   @override
   void initState() {
@@ -220,10 +223,28 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
               ),
               ButtonSegment<_Window>(value: _Window.all, label: Text('הכל')),
             ],
-            selected: <_Window>{_window},
+            emptySelectionAllowed: true,
+            selected: _window == _Window.range
+                ? <_Window>{}
+                : <_Window>{_window},
             showSelectedIcon: false,
-            onSelectionChanged: (Set<_Window> s) =>
-                setState(() => _window = s.first),
+            onSelectionChanged: (Set<_Window> s) {
+              if (s.isEmpty) return;
+              setState(() => _window = s.first);
+            },
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              onPressed: _history.isEmpty ? null : _pickRange,
+              icon: const Icon(Icons.date_range_rounded, size: 18),
+              label: Text(
+                _window == _Window.range && _range != null
+                    ? 'טווח: ${_dayLabel(_range!.start)}–${_dayLabel(_range!.end)}'
+                    : 'בחירת טווח תאריכים',
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           _Section(
@@ -376,8 +397,86 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
     );
   }
 
+  static String _dayLabel(DateTime d) => '${d.day}.${d.month}.${d.year % 100}';
+
+  Future<void> _pickRange() async {
+    final DateTime now = DateTime.now();
+    final DateTime first =
+        AdminStatsRange.firstDay(_history) ??
+        now.subtract(const Duration(days: 90));
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: first,
+      lastDate: now,
+      initialDateRange:
+          _range ??
+          DateTimeRange(
+            start: now.subtract(const Duration(days: 14)).isBefore(first)
+                ? first
+                : now.subtract(const Duration(days: 14)),
+            end: now,
+          ),
+      helpText: 'בחירת טווח תאריכים',
+      saveText: 'הצגה',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _range = picked;
+      _window = _Window.range;
+    });
+  }
+
+  List<Widget> _rangeTiles() {
+    final DateTimeRange? range = _range;
+    if (range == null) {
+      return <Widget>[
+        const Text('בוחרים טווח בכפתור "בחירת טווח תאריכים" שלמעלה.'),
+      ];
+    }
+    Widget growth(String label, String block, String key) {
+      final num? value = AdminStatsRange.growth(
+        _history,
+        range.start,
+        range.end,
+        block,
+        key,
+      );
+      return _Tile(label, value ?? 0);
+    }
+
+    Widget level(String label, String block, String key) => _Tile(
+      label,
+      AdminStatsRange.at(_history, range.end, block, key) ?? 0,
+      previous: AdminStatsRange.at(_history, range.start, block, key),
+      changeLabel: 'מתחילת הטווח',
+    );
+
+    Widget average(String label, String block, String key) => _Tile(
+      label,
+      AdminStatsRange.average(_history, range.start, range.end, block, key) ??
+          0,
+    );
+
+    return <Widget>[
+      growth('משתמשים חדשים', 'users', 'total'),
+      average('פעילים ביום (ממוצע)', 'activity', 'dau'),
+      average('פעילים בשבוע (ממוצע)', 'activity', 'wau'),
+      level('רווקים עם כרטיס פעיל', 'singles', 'cardsActive'),
+      growth('כרטיסים חדשים שהתחילו', 'singles', 'cardsStarted'),
+      level('קשרי אמון פעילים', 'access', 'trustLinks'),
+      growth('רעיונות חדשים', 'ideas', 'ideasAll'),
+      growth('זוגות שהתחילו לצאת', 'ideas', 'datingAll'),
+      growth('חתונות', 'ideas', 'weddingsAll'),
+      growth('מאגרים חדשים', 'databases', 'count'),
+      if (AdminStatsRange.daysIn(_history, range.start, range.end) < 2)
+        const Text('יש מעט מדידות יומיות בטווח הזה, ולכן חלק מהמספרים חלקיים.'),
+    ];
+  }
+
   List<Widget> _coreTiles() {
     switch (_window) {
+      case _Window.range:
+        return _rangeTiles();
       case _Window.today:
         return <Widget>[
           _Tile('משתמשים חדשים', _n('users', 'newToday')),
@@ -447,6 +546,117 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
       if (day[block] is Map && (day[block] as Map)[key] is num)
         (day[block] as Map)[key] as num,
   ];
+}
+
+/// Figures for a range of dates the administrator picks, read from the daily
+/// snapshots (`adminStats/history/days`, oldest first, each with its `day`).
+///
+/// A snapshot is a day's *totals*, so what happened inside a range is the
+/// difference between the last snapshot on or before its end and the last one
+/// on or before its start; a level ("cards active") is read at the end and
+/// compared with the start; a daily figure (DAU) is averaged over the days in
+/// the range.
+abstract final class AdminStatsRange {
+  static DateTime? _dayOf(Map<String, dynamic> snapshot) =>
+      DateTime.tryParse(snapshot['day'] as String? ?? '');
+
+  static DateTime _date(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  static num? _value(Map<String, dynamic>? snapshot, String block, String key) {
+    final Object? section = snapshot?[block];
+    if (section is Map && section[key] is num) return section[key] as num;
+    return null;
+  }
+
+  /// The first day measured, or null with no history.
+  static DateTime? firstDay(List<Map<String, dynamic>> history) {
+    for (final Map<String, dynamic> day in history) {
+      final DateTime? d = _dayOf(day);
+      if (d != null) return d;
+    }
+    return null;
+  }
+
+  /// The figure as it stood at the end of [day]: the last snapshot on or
+  /// before it, or — for a day before measuring began — the first one.
+  static num? at(
+    List<Map<String, dynamic>> history,
+    DateTime day,
+    String block,
+    String key,
+  ) {
+    final DateTime target = _date(day);
+    Map<String, dynamic>? best;
+    for (final Map<String, dynamic> snapshot in history) {
+      final DateTime? d = _dayOf(snapshot);
+      if (d == null) continue;
+      if (!d.isAfter(target)) {
+        best = snapshot;
+      } else {
+        best ??= snapshot;
+        break;
+      }
+    }
+    return _value(best, block, key);
+  }
+
+  /// How much a running total grew between the two dates.
+  static num? growth(
+    List<Map<String, dynamic>> history,
+    DateTime start,
+    DateTime end,
+    String block,
+    String key,
+  ) {
+    final num? to = at(history, end, block, key);
+    // The day before the range: what the range itself added starts there.
+    final num? from = at(
+      history,
+      _date(start).subtract(const Duration(days: 1)),
+      block,
+      key,
+    );
+    if (to == null || from == null) return null;
+    final num diff = to - from;
+    return diff < 0 ? 0 : diff;
+  }
+
+  /// The average of a daily figure over the days measured in the range.
+  static num? average(
+    List<Map<String, dynamic>> history,
+    DateTime start,
+    DateTime end,
+    String block,
+    String key,
+  ) {
+    final List<num> values = <num>[
+      for (final Map<String, dynamic> s in _within(history, start, end))
+        if (_value(s, block, key) case final num v) v,
+    ];
+    if (values.isEmpty) return null;
+    final num total = values.fold<num>(0, (num a, num b) => a + b);
+    return (total / values.length * 10).round() / 10;
+  }
+
+  /// How many days in the range have a snapshot.
+  static int daysIn(
+    List<Map<String, dynamic>> history,
+    DateTime start,
+    DateTime end,
+  ) => _within(history, start, end).length;
+
+  static Iterable<Map<String, dynamic>> _within(
+    List<Map<String, dynamic>> history,
+    DateTime start,
+    DateTime end,
+  ) {
+    final DateTime from = _date(start);
+    final DateTime to = _date(end);
+    return history.where((Map<String, dynamic> s) {
+      final DateTime? d = _dayOf(s);
+      return d != null && !d.isBefore(from) && !d.isAfter(to);
+    });
+  }
 }
 
 /// The CSV the export writes: one row per day, counts only.
@@ -527,12 +737,19 @@ class _Section extends StatelessWidget {
 
 /// One figure, with its change against the previous period when known.
 class _Tile extends StatelessWidget {
-  const _Tile(this.label, this.value, {this.previous, this.suffix = ''});
+  const _Tile(
+    this.label,
+    this.value, {
+    this.previous,
+    this.suffix = '',
+    this.changeLabel = 'מול התקופה הקודמת',
+  });
 
   final String label;
   final num value;
   final num? previous;
   final String suffix;
+  final String changeLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -572,7 +789,7 @@ class _Tile extends StatelessWidget {
           Text(label, style: theme.textTheme.bodySmall, maxLines: 2),
           if (change != null)
             Text(
-              '$change מול התקופה הקודמת',
+              '$change $changeLabel',
               style: theme.textTheme.labelSmall?.copyWith(color: changeColor),
             ),
         ],
