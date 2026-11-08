@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -58,6 +59,7 @@ class _AiImportScreenState extends State<AiImportScreen> {
   @override
   void initState() {
     super.initState();
+    Analytics.feature(AnalyticsFeature.ai_import);
     OfflineGuard.leaveIfOffline(this);
     // First point in the app that needs Firebase, so this is where it comes
     // up. The cards enable themselves through the listenable when it lands.

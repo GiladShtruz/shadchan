@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
@@ -354,6 +355,12 @@ class ShadchanSearchField extends StatelessWidget {
               textInputAction: TextInputAction.search,
               onSubmitted: onSubmitted,
               onTap: onTap,
+              // One count per search, on its first letter — never the text.
+              onChanged: (String value) {
+                if (value.length == 1) {
+                  Analytics.feature(AnalyticsFeature.search);
+                }
+              },
               // **A touch anywhere else lets go of the field.** Hiding the
               // keyboard with the phone's Back key leaves the field focused,
               // and the next menu or sheet that closed handed the focus back

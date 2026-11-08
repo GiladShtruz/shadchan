@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/idea_actions.dart';
 import 'package:provider/provider.dart';
@@ -65,6 +66,7 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
   @override
   void initState() {
     super.initState();
+    Analytics.feature(AnalyticsFeature.new_ideas);
     // Recorded on the way in rather than on the way out: a matchmaker who
     // closes the app from this screen has still seen this round.
     NewIdeaRotation.setCursor(_batch + 1);

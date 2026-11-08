@@ -1,3 +1,4 @@
+import 'package:shadchan/widgets/usage_data_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
@@ -161,6 +162,7 @@ class PrivacyOverviewScreen extends StatelessWidget {
             const LeaderboardNameTile(),
             const SizedBox(height: 4),
             const PrivateModeTile(),
+            const UsageDataTile(),
             const SizedBox(height: 4),
             const DeleteCommunityDataTile(),
             const SizedBox(height: 14),

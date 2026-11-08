@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -268,6 +269,9 @@ abstract final class NotificationCenter {
     NotificationGroup group,
   ) async {
     final AppNotification line = group.latest;
+    Analytics.log(AnalyticsEvent.notification_opened, <String, Object?>{
+      'source': line.source.name,
+    });
     markRead(context, group);
     final SupportReport? report = line.report;
     if (report != null) {

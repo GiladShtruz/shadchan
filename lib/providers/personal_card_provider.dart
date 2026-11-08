@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -180,6 +181,19 @@ class PersonalCardProvider extends ChangeNotifier {
     if (_lastSavedPrint == print) return;
     _lastSavedPrint = print;
     editRevision++;
+    // The singles' funnel: a first save starts the card, the first time it
+    // meets the live rule (a photo and 20 words) completes it, and anything
+    // after that is an update.
+    final Person? before = _card;
+    final bool wasActive = before != null && PersonalCardCodec.isActive(before);
+    if (before == null) {
+      Analytics.milestone(AnalyticsEvent.personal_card_started);
+    }
+    if (!wasActive && PersonalCardCodec.isActive(person)) {
+      Analytics.milestone(AnalyticsEvent.personal_card_completed);
+    } else if (wasActive) {
+      Analytics.log(AnalyticsEvent.personal_card_updated);
+    }
     final Person saved = person.copyWith(
       id: cardId,
       updatedAt: DateTime.now(),

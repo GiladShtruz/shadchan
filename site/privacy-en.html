@@ -157,10 +157,10 @@ footer.site {
   </header>
   <main>
 <h1>Privacy Policy — Shadchan</h1>
-<p>Last updated: November 1, 2026</p>
+<p>Last updated: November 8, 2026</p>
 <p>This policy applies to the <strong>Shadchan</strong> application and its information website. The Application is developed and operated by Gilad Shtruzman ("we"), the controller of the processing described here. Privacy contact: <strong>giladsh22@gmail.com</strong>.</p>
 <h2>In brief</h2>
-<p>An account is required, and the database belongs to the account: it is stored in Firebase under the account's identifier, opens on every device signed in to that account and stays in sync between them. A copy is also kept on the device so the Application keeps working offline. The Application contains no advertising, analytics SDK, crash-reporting SDK, cookies or behavioural tracking, and we do not sell personal information.</p>
+<p>An account is required, and the database belongs to the account: it is stored in Firebase under the account's identifier, opens on every device signed in to that account and stays in sync between them. A copy is also kept on the device so the Application keeps working offline. The Application contains no advertising, cookies or advertising tracking, and we do not sell personal information. To improve the Application we measure <em>what</em> is done in it (for example how many friends were added or ideas opened), never <em>about whom</em> — see section 9A; this can be switched off in the settings.</p>
 <h2>1. Information processed</h2>
 <h3>Your account</h3>
 <p>You can sign in with Google, with Apple on supported Apple devices, or with an email address and password. Firebase Authentication processes the account identifier, sign-in provider, email address and basic profile details supplied by the provider. Passwords for email accounts are handled by Firebase and are not visible to us. For security and abuse prevention, Firebase may also process IP addresses, user-agent strings and sign-in logs. Before sign-in or after sign-out, the Application may create a temporary technical anonymous Firebase identifier; it holds no database and cannot pass the sign-in gate.</p>
@@ -217,13 +217,24 @@ footer.site {
 <p>Support correspondence is retained while needed to handle the request, document a defect, secure the service and prevent abuse. It is not deleted automatically with the account; this is also stated in the deletion confirmation. You may request earlier deletion at <strong>giladsh22@gmail.com</strong>, subject to any legal retention requirement.</p>
 <h2>9. App Check and service security</h2>
 <p>Firebase App Check sends attestation material and tokens to Google or Apple to verify genuine installations. Firebase states that App Check does not retain attestation material; tokens are time-limited, and tokens used with replay protection may be kept for up to 30 days. App Check is not used to identify database content.</p>
+<h2>9A. Usage measurement to improve the Application</h2>
+<p>The Application uses Google Analytics for Firebase to understand how it is used — for example where people get stuck adding friends, how many come back after a week, and which features are barely used.</p>
+<ul>
+<li><strong>What is sent:</strong> the name of the action taken (e.g. "friend added", "idea opened", "contacts permission granted"), general codes (which screen, which source), counts in bands (e.g. "10–24 friends in the database"), the type of user (matchmaker/single), the app version, general device data (operating system, model, language, approximate country) and the type of an error that occurred (without its message).</li>
+<li><strong>What is never sent:</strong> names, phone numbers, email addresses, card text, notes, recordings, photos, messages, religious style, age or any other detail about the people in the database. The rule is enforced in code: a parameter that is not a number or a short English code never leaves the device.</li>
+<li><strong>Identification:</strong> measurement is tied to the account's internal identifier (not its email), so use can be understood over time and across devices. The device advertising identifier (Advertising ID / IDFA), Google Signals and ad personalisation are switched off, and the data is not used for advertising.</li>
+<li><strong>Retention:</strong> user-level event data is kept for the shortest period the service allows (two months); after that only aggregate reports remain.</li>
+<li><strong>Access:</strong> only the Application's administrators, and only as aggregate figures — counts, percentages and trends.</li>
+<li><strong>Opting out:</strong> Settings → Privacy, the switch "שליחת נתוני שימוש לשיפור האפליקציה" (send usage data to improve the app). Turning it off stops sending from every device on the account and resets the measurement identifier on the device; signing out resets it too.</li>
+<li>Nothing is sent from development and test builds, and administrators' accounts are marked and excluded.</li>
+</ul>
 <h2>10. Information website</h2>
 <p>The static website on Firebase Hosting has no accounts, forms, cookies, advertising or analytics. Firebase Hosting and Google may process technical connection information, such as IP address and user-agent, to deliver pages, secure the service and prevent abuse under Google's terms.</p>
 <p><strong>Tags:</strong> tags you put on friends are an internal tool — they stay in your account's database and are not part of any card. For "community inspiration" only the list of general tag <em>words</em> in use is sent (not linked to any person, and excluding tags that look like the name of a place, institution, unit or group). Nobody but you can read your list; the service counts how many different matchmakers use each word and shows a word to others only once at least three use it — without revealing who. Nothing is sent in private mode, and the list is deleted with the account.</p>
 <h2>11. Permissions</h2>
 <p>The Application may request contacts, photos/media, the microphone and notifications only when the related feature is used. The microphone is used for voice notes about a friend or a recording in "what I am looking for"; recordings (including ones shared into the Application from WhatsApp) are kept in the account's database like other notes and are shared only according to the couple-workspace and private-content permissions described above; they are deleted with the note or removal of the private recording. For the personal card, contacts are needed only to find friends who match and to give or request access; the rest of the Application works without that permission. You may revoke a permission in device settings, although the dependent feature may stop working.</p>
 <h2>12. Providers and international transfers</h2>
-<p>The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Firebase Cloud Messaging, Firebase App Check, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.</p>
+<p>The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Firebase Cloud Messaging, Firebase App Check, Google Analytics for Firebase, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.</p>
 <p>Information may be processed outside your country. Firebase Authentication operates from US data centres; global and AI services may process data in other locations. Where required, we rely on Google data-processing agreements and transfer mechanisms and other lawful safeguards.</p>
 <h2>13. Retention and erasure</h2>
 <ul>
@@ -235,6 +246,7 @@ footer.site {
 <li>Your tips are erased with the account.</li>
 <li>A deleted personal card is kept flagged as deleted until restored or until account deletion. Contact and database hashes are replaced on every update and erased with the account. Notices in the account remain until you remove them or the account.</li>
 <li>Support correspondence follows section 8.</li>
+<li>Usage-measurement data is kept as described in section 9A.</li>
 <li>Firebase Authentication may keep logged IP addresses for a few weeks. Firebase states that after user deletion, Authentication data is removed from live and backup systems within 180 days.</li>
 </ul>
 <h2>14. Account deletion</h2>

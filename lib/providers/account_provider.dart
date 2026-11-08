@@ -47,6 +47,9 @@ class AccountProvider extends ChangeNotifier {
   /// Whether a real, durable account is connected. An anonymous user is not
   /// one: it is a device identity that dies with the install, which is the
   /// whole reason signing in exists.
+  /// The durable account's uid — null while signed out or anonymous.
+  String? get uid => isSignedIn ? _user?.uid : null;
+
   bool get isSignedIn {
     final User? user = _user;
     return user != null && !user.isAnonymous;

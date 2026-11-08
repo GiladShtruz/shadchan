@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -320,6 +321,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         // whatever the profile already has.
         photoPath: _photoPath,
       );
+      Analytics.log(AnalyticsEvent.signup_completed, <String, Object?>{
+        'user_type': 'matchmaker',
+      });
       if (!mounted) {
         return;
       }
@@ -380,6 +384,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       gender: card.gender,
       isSingle: true,
     );
+    Analytics.log(AnalyticsEvent.signup_completed, <String, Object?>{
+      'user_type': 'single',
+    });
     WorkspaceStore.setMatchmakerEnabled(false);
     WorkspaceStore.setLastArea(WorkArea.personal);
     if (!mounted) {

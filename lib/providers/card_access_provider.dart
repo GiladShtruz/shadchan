@@ -2,6 +2,7 @@ import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -937,6 +938,12 @@ class CardAccessProvider extends ChangeNotifier {
     bool lookingGranted = false,
   }) {
     return _run('access:${access.id}', () async {
+      if (status == CardAccessStatus.approved &&
+          access.status == CardAccessStatus.pending) {
+        Analytics.log(AnalyticsEvent.access_request_approved);
+      } else if (status == CardAccessStatus.declined) {
+        Analytics.log(AnalyticsEvent.access_request_declined);
+      }
       await _accessDoc(access.ownerUid, access.matchmakerUid).set(
         _accessData(
           ownerUid: access.ownerUid,
@@ -978,6 +985,7 @@ class CardAccessProvider extends ChangeNotifier {
         throw StateError('המאגר השתנה. יש לבחור הרשאות מחדש.');
       }
       final target = recipient['uid'] as String;
+      Analytics.log(AnalyticsEvent.access_granted);
       await _accessDoc(uid!, target).set(
         _accessData(
           ownerUid: uid,

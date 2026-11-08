@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -98,6 +99,7 @@ abstract final class ShareUtils {
     if (card.isEmpty && photos.isEmpty) {
       return false;
     }
+    Analytics.feature(AnalyticsFeature.share_card);
     final String shareText = CommunityLinks.creditCard(card);
     if (!kIsWeb && Platform.isAndroid) {
       try {

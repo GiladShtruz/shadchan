@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -92,6 +93,9 @@ class MatchRepository extends ChangeNotifier {
     required DateTime at,
     bool automatic = false,
   }) async {
+    if (from != to && !automatic) {
+      _measureStatusChange(from, to);
+    }
     final Box<MatchStatusEvent>? box = _statusEventBox;
     if (box == null || from == to) {
       return;
@@ -105,6 +109,32 @@ class MatchRepository extends ChangeNotifier {
       automatic: automatic,
     );
     await box.put(event.id, event);
+  }
+
+  /// The idea funnel, by status names only — never by who.
+  void _measureStatusChange(MatchStatus? from, MatchStatus to) {
+    if (from == null) {
+      Analytics.log(AnalyticsEvent.idea_created);
+      Analytics.milestone(AnalyticsEvent.first_idea_created);
+      return;
+    }
+    Analytics.log(AnalyticsEvent.idea_status_changed, <String, Object?>{
+      'from_status': from.name,
+      'to_status': to.name,
+    });
+    switch (to) {
+      case MatchStatus.dating:
+        Analytics.log(AnalyticsEvent.couple_started_dating);
+        Analytics.milestone(AnalyticsEvent.first_couple_dating);
+      case MatchStatus.married:
+        Analytics.log(AnalyticsEvent.wedding_marked);
+      case MatchStatus.dated:
+        Analytics.log(AnalyticsEvent.couple_broke_up);
+      case MatchStatus.rejected:
+        Analytics.log(AnalyticsEvent.idea_closed);
+      default:
+        break;
+    }
   }
 
   int get count => _matchBox.length;
@@ -212,6 +242,7 @@ class MatchRepository extends ChangeNotifier {
       ..reminderNote = defaultReminderNote;
 
     await _matchBox.put(match.id, match);
+    _measureStatusChange(null, MatchStatus.idea);
     // The journal opens with the proposal. It used to start empty on purpose,
     // back when it was only a place for the matchmaker's own free notes; it is
     // now the proposal's whole record — every status move, reminder, contact
@@ -639,6 +670,12 @@ class MatchRepository extends ChangeNotifier {
     // one. Clearing it is the same decision in reverse and is worth a line for
     // the same reason: six months on, "handled it" and "gave up on it" look
     // identical unless the journal says which.
+    if (journal && date != null && date != previous) {
+      Analytics.log(AnalyticsEvent.reminder_created, <String, Object?>{
+        'target': 'idea',
+        'has_note': trimmedNote.isNotEmpty,
+      });
+    }
     if (journal && date != previous) {
       await _createNote(
         matchId: matchId,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:flutter/widgets.dart';
@@ -334,9 +335,18 @@ class AddContactsSession extends ChangeNotifier {
     _loadingMessage = 'מבקשים גישה לאנשי קשר...';
     _notify();
 
+    Analytics.log(AnalyticsEvent.contacts_permission_requested);
     final ContactsPermissionState permissionState = await _safePermission(
       ContactsImportService.requestPermission,
     );
+    Analytics.log(switch (permissionState) {
+      ContactsPermissionState.granted =>
+        AnalyticsEvent.contacts_permission_granted,
+      ContactsPermissionState.denied =>
+        AnalyticsEvent.contacts_permission_denied,
+      ContactsPermissionState.permanentlyDenied =>
+        AnalyticsEvent.contacts_permission_blocked,
+    });
     if (_disposed) {
       return;
     }
@@ -461,9 +471,22 @@ class AddContactsSession extends ChangeNotifier {
             onProgress: onProgress,
           );
       _lastDeviceReadAt = DateTime.now();
+      // How many, as bands — never who. A sudden drop after a release is the
+      // "contacts went missing" signal.
+      Analytics.log(AnalyticsEvent.contacts_sync_completed, <String, Object?>{
+        'device_band': Analytics.band(
+          ContactsImportService.lastDeviceContactCount ?? 0,
+        ),
+        'usable_band': Analytics.band(
+          fresh.where((ContactImportCandidate c) => !c.isLandline).length,
+        ),
+      });
       return fresh;
     } catch (error, stack) {
       debugPrint('CONTACTS device read failed: $error\n$stack');
+      Analytics.log(AnalyticsEvent.contacts_sync_failed, <String, Object?>{
+        'error_type': Analytics.errorCode(error),
+      });
       return null;
     }
   }

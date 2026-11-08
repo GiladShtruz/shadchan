@@ -1,3 +1,4 @@
+import 'package:shadchan/widgets/usage_data_tile.dart';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -61,6 +62,10 @@ class _SettingsDataScreenState extends State<SettingsDataScreen> {
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: PrivateModeTile(),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: UsageDataTile(),
                 ),
                 SettingsRow(
                   icon: Icons.people_outline,

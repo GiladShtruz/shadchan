@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/widgets/private_looking.dart';
@@ -129,6 +130,7 @@ Future<bool> openExtendedPersonEditor(
 /// opened from inside it (an idea, a profile, a card) lands on top of it and
 /// a back press comes back to it.
 Future<void> openSuggestionsSheet(BuildContext context, String personId) {
+  Analytics.log(AnalyticsEvent.match_suggestions_opened);
   final ThemeData theme = Theme.of(context);
   final Gender gender =
       context.read<PersonRepository>().getById(personId)?.gender ??

@@ -1,3 +1,5 @@
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/workspace_store.dart';
@@ -224,7 +226,35 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       unawaited(ContactHashUpload.run());
       _publishTags();
       _publishActivity();
+      unawaited(_identifyAnalytics());
     }
+  }
+
+  /// Tells measurement who this is: the account's uid only, the kind of user,
+  /// and whether it is one of us (administrators are filtered out of every
+  /// product figure). Re-run whenever the account changes.
+  Future<void> _identifyAnalytics() async {
+    if (!mounted || !FirebaseBootstrap.isReady) {
+      return;
+    }
+    final AccountProvider account = context.read<AccountProvider>();
+    final bool matchmaker = WorkspaceStore.matchmakerEnabled;
+    final bool single = context.read<PersonalCardProvider>().hasCard;
+    final String userType = matchmaker && single
+        ? 'both'
+        : (single ? 'single' : 'matchmaker');
+    String? build;
+    try {
+      build = (await PackageInfo.fromPlatform()).buildNumber;
+    } catch (_) {
+      build = null;
+    }
+    await Analytics.identify(
+      uid: account.uid,
+      userType: userType,
+      internal: account.isSupportAdmin,
+      buildNumber: build,
+    );
   }
 
   /// The general tag words in use, for "השראה מהקהילה" — see
@@ -325,6 +355,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     if (!mounted) {
       return;
     }
+    unawaited(_identifyAnalytics());
     unawaited(
       context.read<SupportInboxProvider>().refresh(
         isAdmin: context.read<AccountProvider>().isSupportAdmin,
