@@ -1,3 +1,6 @@
+import 'package:shadchan/services/notification_service.dart';
+import 'package:shadchan/services/couple_workspace_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/community_service.dart';
@@ -218,7 +221,7 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
   void _onFirebaseReady() {
     if (FirebaseBootstrap.isReady) {
       _syncPersonalCard();
-      unawaited(PushService.start());
+      unawaited(_startPushAndReminders());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());
       // Reciprocal discovery needs both roles' address books. This checks
@@ -228,6 +231,36 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       _publishActivity();
       unawaited(_identifyAnalytics());
     }
+  }
+
+  /// Starts push, then decides who reminds: the server (once per account) when
+  /// this phone can receive pushes and the server's reminder job has run in
+  /// the last few hours; otherwise this phone keeps scheduling its own.
+  Future<void> _startPushAndReminders() async {
+    await PushService.start();
+    bool server = false;
+    if (PushService.hasToken && !CoupleWorkspaceService.isCouple) {
+      try {
+        final DocumentSnapshot<Map<String, dynamic>> doc =
+            await FirebaseFirestore.instance
+                .doc('publicStats/serverReminders')
+                .get();
+        final Object? lastRun = doc.data()?['lastRunAt'];
+        server =
+            doc.data()?['active'] == true &&
+            lastRun is num &&
+            DateTime.now().millisecondsSinceEpoch - lastRun <
+                const Duration(hours: 6).inMilliseconds;
+      } catch (_) {
+        server = false;
+      }
+    }
+    if (!mounted || server == NotificationService.serverDelivers) {
+      return;
+    }
+    NotificationService.serverDelivers = server;
+    context.read<MatchRepository>().refreshReminderNotifications();
+    context.read<PersonRepository>().refreshReminderNotifications();
   }
 
   /// Tells measurement who this is: the account's uid only, the kind of user,

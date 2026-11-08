@@ -1837,6 +1837,10 @@ class MatchRepository extends ChangeNotifier {
     return b.updatedAt.compareTo(a.updatedAt);
   }
 
+  /// Reschedules this phone's idea reminders — after the server took them
+  /// over or handed them back.
+  void refreshReminderNotifications() => _refreshNotifications();
+
   void _refreshNotifications() {
     final List<MatchIdea> allMatches = _matchBox.values.toList();
     final Person? Function(String)? resolve = resolvePerson;

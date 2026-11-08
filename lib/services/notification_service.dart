@@ -535,6 +535,13 @@ class NotificationService {
     }
   }
 
+  /// The server pushes this account's reminders (`sendReminders` in
+  /// functions/), once per account rather than once per phone — so this
+  /// phone schedules none of its own and only clears what it scheduled before.
+  /// Set by `CloudSyncScheduler` when this device has a push token and the
+  /// server has run; off otherwise, so a phone without push keeps reminding.
+  static bool serverDelivers = false;
+
   static Future<void> _scheduleMatchRemindersInternal(
     List<MatchIdea> matches, {
     MatchReminderText Function(MatchIdea match)? describe,
@@ -547,6 +554,9 @@ class NotificationService {
         if (req.id >= 20000 && req.id < 30000) {
           await _plugin.cancel(req.id);
         }
+      }
+      if (serverDelivers) {
+        return;
       }
 
       final List<PlannedReminder<MatchIdea>> due =
@@ -625,6 +635,9 @@ class NotificationService {
         if (req.id >= 30000 && req.id < 40000) {
           await _plugin.cancel(req.id);
         }
+      }
+      if (serverDelivers) {
+        return;
       }
 
       final List<PlannedReminder<PersonReminderNotification>> due =

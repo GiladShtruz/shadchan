@@ -42,6 +42,7 @@ import {
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { isSupportAdminEmail, writeAdminStats } from './admin_stats';
+import { sendDueReminders } from './reminders';
 import * as functionsV1 from 'firebase-functions/v1';
 import { logger } from 'firebase-functions';
 import { isHebrewBirthday, israelToday } from './hebrew_birthday';
@@ -953,5 +954,13 @@ export const refreshAdminStatsNow = onCall(
     }
     const stats = await writeAdminStats(db);
     return { computedAt: stats.computedAt };
+  },
+);
+
+/** Reminders pushed once per account rather than by every phone. */
+export const sendReminders = onSchedule(
+  { schedule: 'every 60 minutes', timeoutSeconds: 300, memory: '512MiB' },
+  async () => {
+    await sendDueReminders(db);
   },
 );

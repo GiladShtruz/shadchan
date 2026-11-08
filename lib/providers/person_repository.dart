@@ -1111,6 +1111,10 @@ class PersonRepository extends ChangeNotifier {
     await NotificationService.schedulePersonReminders(reminders);
   }
 
+  /// Reschedules this phone's friend reminders — see
+  /// `MatchRepository.refreshReminderNotifications`.
+  void refreshReminderNotifications() => _refreshPersonRemindersInBackground();
+
   void _refreshPersonRemindersInBackground() {
     unawaited(_refreshPersonReminders());
   }
