@@ -109,9 +109,9 @@ void main() {
       final List<NotificationGroup> groups = NotificationFeed.group(
         build(
           inbox: <InboxItem>[
-            notice('a', 'cardCreated', const Duration(hours: 2)),
+            notice('a', 'cardUpdated', const Duration(hours: 2)),
             notice('b', 'accessApproved', const Duration(hours: 1)),
-            notice('c', 'cardCreated', const Duration(days: 3)),
+            notice('c', 'cardUpdated', const Duration(days: 3)),
             notice('d', 'birthday', const Duration(hours: 1), owner: 'other'),
           ],
         ),
@@ -120,6 +120,26 @@ void main() {
       expect(groups.first.count, 2);
       expect(groups.first.latest.inbox!.id, 'b');
       expect(NotificationFeed.unreadRows(groups), 3);
+    });
+
+    test('friends who added a card the same day are one summary row', () {
+      final List<NotificationGroup> groups = NotificationFeed.group(
+        build(
+          inbox: <InboxItem>[
+            notice('a', 'cardCreated', const Duration(hours: 1), owner: 'o1'),
+            notice('b', 'cardCreated', const Duration(hours: 5), owner: 'o2'),
+            notice('c', 'cardCreated', const Duration(hours: 20), owner: 'o3'),
+            notice('d', 'cardCreated', const Duration(days: 4), owner: 'o4'),
+          ],
+        ),
+      );
+      expect(groups, hasLength(2));
+      expect(groups.first.count, 3);
+      expect(groups.first.isNewCardsSummary, isTrue);
+      expect(groups.first.title, '3 חברים שלך הוסיפו כרטיס אישי');
+      // One alone is its own ordinary line.
+      expect(groups.last.isNewCardsSummary, isFalse);
+      expect(groups.last.title, 'יעל ברק cardCreated');
     });
 
     test('a reminder due later today shows as now, not in the future', () {

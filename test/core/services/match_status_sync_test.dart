@@ -8,6 +8,8 @@ import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/notification_feed.dart';
+import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/utils/enums.dart';
 
 void main() {
@@ -44,6 +46,7 @@ void main() {
     await matches.clear();
     await notes.clear();
     await Hive.box<dynamic>('settings').clear();
+    ReminderLog.instance.resetForTest();
 
     personRepository = PersonRepository(people);
     matchRepository = MatchRepository(matches, notes)
@@ -101,6 +104,77 @@ void main() {
 
       expect(before, isEmpty);
       expect(after.difference(before), <String>{'open'});
+    },
+  );
+
+  test(
+    'a friend changing their own card status leaves a line for the matchmaker',
+    () async {
+      final DateTime now = DateTime(2026, 11, 8);
+      final Person male = _person('male', 'הלל', Gender.male, now);
+      final Person female = _person('female', 'כרמל', Gender.female, now);
+      final Person other = _person('other', 'יואב', Gender.male, now);
+      for (final Person p in <Person>[male, female, other]) {
+        await people.put(p.id, p);
+      }
+      await matches.put(
+        'open',
+        MatchIdea(
+          id: 'open',
+          personAId: male.id,
+          personBId: female.id,
+          status: MatchStatus.idea,
+          currentHandler: CurrentHandler.me,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await matches.put(
+        'dating',
+        MatchIdea(
+          id: 'dating',
+          personAId: other.id,
+          personBId: female.id,
+          status: MatchStatus.dating,
+          currentHandler: CurrentHandler.me,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      // The matchmaker's own change: nothing to tell them.
+      await personRepository.updateProfileStatus(female.id, ProfileStatus.busy);
+      expect(ReminderLog.instance.visible, isEmpty);
+      await personRepository.updateProfileStatus(
+        female.id,
+        ProfileStatus.available,
+      );
+
+      // The owner's change, arriving with their card.
+      female.profileStatus = ProfileStatus.onBreak;
+      await personRepository.saveSynced(female, ownerStatusChanged: true);
+      female.profileStatus = ProfileStatus.available;
+      await personRepository.saveSynced(female, ownerStatusChanged: true);
+
+      final List<AppNotification> lines = NotificationFeed.build(
+        inbox: const [],
+        support: const [],
+        reminders: ReminderLog.instance.visible,
+        supportAdmin: false,
+        personById: personRepository.getById,
+        matchById: matchRepository.getById,
+        personOfNotice: (_) => null,
+      );
+      final Set<String> titles = lines
+          .map((AppNotification n) => n.title)
+          .toSet();
+      expect(titles, contains('כרמל עדכנה שהיא בהפסקה'));
+      expect(titles, contains('כרמל שוב פנויה'));
+      expect(titles, contains('לבדוק מה קורה עם יואב וכרמל'));
+      final AppNotification paused = lines.firstWhere(
+        (AppNotification n) => n.title.contains('בהפסקה'),
+      );
+      expect(paused.subtitle, 'רעיון אחד הועבר להמתנה');
     },
   );
 

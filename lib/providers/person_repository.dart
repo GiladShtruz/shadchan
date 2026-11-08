@@ -88,7 +88,8 @@ class PersonRepository extends ChangeNotifier {
   /// or back to "רעיון" (once both sides are free again). Wired to
   /// [MatchRepository] in `main.dart` to avoid a hard dependency between the
   /// two repositories.
-  Future<void> Function(String personId)? onPersonStatusChanged;
+  Future<void> Function(String personId, {bool fromOwner})?
+  onPersonStatusChanged;
 
   int get count => _readableValues.length;
 
@@ -214,7 +215,13 @@ class PersonRepository extends ChangeNotifier {
   /// Not [update]: that is the matchmaker editing, and an owner's change must
   /// neither stamp the record as edited here nor count as the matchmaker's
   /// activity. It still refreshes whatever depends on the status.
-  Future<void> saveSynced(Person person) async {
+  ///
+  /// [ownerStatusChanged] — the owner changed their own status on the card;
+  /// passed on so the ideas it moved are announced to the matchmaker.
+  Future<void> saveSynced(
+    Person person, {
+    bool ownerStatusChanged = false,
+  }) async {
     if (!_box.containsKey(person.id)) {
       await _box.put(person.id, person);
     } else {
@@ -225,7 +232,7 @@ class PersonRepository extends ChangeNotifier {
       CardSyncEngine.printOf(person),
     );
     notifyListeners();
-    await onPersonStatusChanged?.call(person.id);
+    await onPersonStatusChanged?.call(person.id, fromOwner: ownerStatusChanged);
     _refreshPersonRemindersInBackground();
   }
 

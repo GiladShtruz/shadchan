@@ -273,6 +273,12 @@ abstract final class NotificationCenter {
       'source': line.source.name,
     });
     markRead(context, group);
+    if (group.isNewCardsSummary) {
+      // Several friends at once: the list of friends with a card, where each
+      // one can be asked from.
+      AppNavigation.open(context, '/card-friends');
+      return;
+    }
     final SupportReport? report = line.report;
     if (report != null) {
       final bool admin =

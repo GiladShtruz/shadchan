@@ -740,7 +740,11 @@ class CardAccessProvider extends ChangeNotifier {
       ownerUid,
     });
     if (result.changed || created) {
-      await _people.saveSynced(person);
+      // A first link is not news; a later change of the owner's own status is.
+      await _people.saveSynced(
+        person,
+        ownerStatusChanged: result.statusChanged && wasLinked,
+      );
     }
     _setBaseline(person.id, CardSyncEngine.baselineOf(data));
     if (!wasLinked) {

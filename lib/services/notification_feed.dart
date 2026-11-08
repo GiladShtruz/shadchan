@@ -7,6 +7,7 @@ import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// Where a notification came from.
 enum NotificationSource { inbox, reminder, support }
@@ -70,6 +71,30 @@ class NotificationGroup {
   bool get read => items.every((AppNotification n) => n.read);
   int get count => items.length;
   String get id => latest.id;
+
+  /// Several friends who added a personal card close together — one row,
+  /// "4 חברים שלך הוסיפו כרטיס אישי", that opens the list of them.
+  bool get isNewCardsSummary =>
+      count > 1 && latest.groupKey == NotificationFeed.newCardsGroup;
+
+  /// The row's main line.
+  String get title =>
+      isNewCardsSummary ? '$count חברים שלך הוסיפו כרטיס אישי' : latest.title;
+
+  /// The row's second line, or null.
+  String? get subtitle {
+    if (isNewCardsSummary) {
+      return 'אפשר לבקש גישה לכרטיסים שלהם';
+    }
+    final int more = count - 1;
+    if (more <= 0) {
+      return latest.subtitle;
+    }
+    return <String>[
+      if (latest.subtitle case final String s when s.isNotEmpty) s,
+      more == 1 ? 'ועוד עדכון אחד' : 'ועוד $more עדכונים',
+    ].join(' · ');
+  }
 }
 
 /// The notifications page's list: card notices from the server, reminders
@@ -77,6 +102,11 @@ class NotificationGroup {
 abstract final class NotificationFeed {
   /// Lines about one subject this close together are one row.
   static const Duration groupWindow = Duration(hours: 6);
+
+  /// "X הוסיף/ה כרטיס אישי" from different friends share one group key, and
+  /// a day's worth of them are one row.
+  static const String newCardsGroup = 'kind:cardCreated';
+  static const Duration newCardsWindow = Duration(hours: 24);
 
   /// Every reminder that is due right now, in the shape [ReminderLog.sync]
   /// takes. Due means from the start of its day, as everywhere in the app.
@@ -141,8 +171,9 @@ abstract final class NotificationFeed {
           source: NotificationSource.inbox,
           time: item.createdAt ?? clock,
           read: item.read,
-          groupKey:
-              'who:${item.ownerUid ?? item.ownerPhoneHash ?? 'inbox:${item.id}'}',
+          groupKey: item.kind == 'cardCreated'
+              ? newCardsGroup
+              : 'who:${item.ownerUid ?? item.ownerPhoneHash ?? 'inbox:${item.id}'}',
           title: item.title.trim(),
           subtitle: item.body.trim().isEmpty ? null : item.body.trim(),
           person: person,
@@ -209,6 +240,14 @@ abstract final class NotificationFeed {
     // in the future.
     final DateTime time = entry.dueAt.isAfter(now) ? now : entry.dueAt;
     final String note = entry.note.trim();
+    if (entry.event != null) {
+      return _eventLine(
+        entry,
+        time: time,
+        personById: personById,
+        matchById: matchById,
+      );
+    }
     if (entry.kind == HomeItemKind.person) {
       final Person? person = personById(entry.targetId);
       if (person == null) {
@@ -250,6 +289,80 @@ abstract final class NotificationFeed {
     );
   }
 
+  /// A friend's own change that moved this matchmaker's ideas.
+  static AppNotification? _eventLine(
+    ReminderLogEntry entry, {
+    required DateTime time,
+    required Person? Function(String id) personById,
+    required MatchIdea? Function(String id) matchById,
+  }) {
+    final String ideas = entry.count == 1
+        ? 'רעיון אחד'
+        : '${entry.count} רעיונות';
+    switch (entry.event!) {
+      case ReminderLogEvent.paused:
+      case ReminderLogEvent.reopened:
+        final Person? person = personById(entry.targetId);
+        if (person == null) {
+          return null;
+        }
+        final bool paused = entry.event == ReminderLogEvent.paused;
+        final ProfileStatus status = paused
+            ? ProfileStatus.values.firstWhere(
+                (ProfileStatus s) => s.name == entry.note,
+                orElse: () => ProfileStatus.busy,
+              )
+            : ProfileStatus.available;
+        final String word = status.displayNameFor(person.gender);
+        return AppNotification(
+          id: 'reminder:${entry.key}',
+          source: NotificationSource.reminder,
+          time: time,
+          read: entry.read,
+          groupKey: 'person:${person.id}',
+          title: paused
+              ? '${_name(person)} {עדכן שהוא|עדכנה שהיא} $word'.forGender(
+                  person.gender,
+                )
+              : '${_name(person)} שוב $word',
+          subtitle: paused
+              ? (entry.count == 1
+                    ? 'רעיון אחד הועבר להמתנה'
+                    : '$ideas הועברו להמתנה')
+              : (entry.count == 1
+                    ? 'רעיון אחד חזר לפתוחים'
+                    : '$ideas חזרו לפתוחים'),
+          person: person,
+          reminder: entry,
+        );
+      case ReminderLogEvent.freeWhileDating:
+        final MatchIdea? match = matchById(entry.targetId);
+        if (match == null || match.status != MatchStatus.dating) {
+          return null;
+        }
+        final (Person?, Person?) couple = boyFirst(
+          personById(match.personAId),
+          personById(match.personBId),
+        );
+        return AppNotification(
+          id: 'reminder:${entry.key}',
+          source: NotificationSource.reminder,
+          time: time,
+          read: entry.read,
+          groupKey: 'idea:${match.id}',
+          title: 'לבדוק מה קורה עם ${pairName(couple.$1, couple.$2)}',
+          subtitle: switch (personById(entry.note)) {
+            final Person who =>
+              '${_name(who)} {עדכן בכרטיס שהוא פנוי|עדכנה בכרטיס שהיא פנויה}'
+                  .forGender(who.gender),
+            null => 'עדכון בכרטיס: פנוי',
+          },
+          couple: couple,
+          reminder: entry,
+        );
+    }
+  }
+
   /// Merges lines about the same subject that arrived within [groupWindow]
   /// of each other into one row. [lines] newest first, as [build] returns.
   static List<NotificationGroup> group(List<AppNotification> lines) {
@@ -257,8 +370,11 @@ abstract final class NotificationFeed {
     final Map<String, NotificationGroup> open = <String, NotificationGroup>{};
     for (final AppNotification line in lines) {
       final NotificationGroup? current = open[line.groupKey];
+      final Duration window = line.groupKey == newCardsGroup
+          ? newCardsWindow
+          : groupWindow;
       if (current != null &&
-          current.items.last.time.difference(line.time) <= groupWindow) {
+          current.items.last.time.difference(line.time) <= window) {
         current.items.add(line);
         continue;
       }

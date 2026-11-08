@@ -22,6 +22,7 @@ import 'package:shadchan/services/dating_status_memory.dart';
 import 'package:shadchan/services/notification_feed.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
+import 'package:shadchan/services/reminder_log.dart';
 import 'package:uuid/uuid.dart';
 
 /// Which side (if any) ended a proposal, used to phrase the journal and both
@@ -1289,7 +1290,15 @@ class MatchRepository extends ChangeNotifier {
   /// other side's status without depending on [PersonRepository].
   Person? Function(String personId)? resolvePerson;
 
-  Future<void> syncMatchesForPerson(String personId) async {
+  ///
+  /// [fromOwner] — the change came from the friend's own personal card, not
+  /// from the matchmaker. Then the matchmaker did not see it happen, so when
+  /// it moves their ideas (or leaves a couple who are out looking odd) a line
+  /// is left on the notifications page saying so ([ReminderLogEvent]).
+  Future<void> syncMatchesForPerson(
+    String personId, {
+    bool fromOwner = false,
+  }) async {
     // **"מזל טוב" closes everything.** A friend who is getting married is not a
     // candidate any more, and their open ideas are not ideas — they were
     // already invisible on רעיונות (see `matchProposalTabFor`, which drops a
@@ -1320,6 +1329,8 @@ class MatchRepository extends ChangeNotifier {
 
     final DateTime now = DateTime.now();
     bool changed = false;
+    int paused = 0;
+    int reopened = 0;
 
     for (final MatchIdea match in _matchBox.values) {
       final bool involvesPerson =
@@ -1347,12 +1358,66 @@ class MatchRepository extends ChangeNotifier {
         at: now,
         automatic: true,
       );
+      if (target == MatchStatus.unavailable) {
+        paused++;
+      } else if (target == MatchStatus.idea) {
+        reopened++;
+      }
       changed = true;
     }
 
     if (changed) {
       notifyListeners();
       _refreshNotifications();
+    }
+    if (fromOwner) {
+      _noteOwnerStatusChange(personId, paused: paused, reopened: reopened);
+    }
+  }
+
+  /// The notifications-page line for a friend's own status change — only
+  /// when it asks something of the matchmaker.
+  void _noteOwnerStatusChange(
+    String personId, {
+    required int paused,
+    required int reopened,
+  }) {
+    final Person? person = resolvePerson?.call(personId);
+    if (person == null) {
+      return;
+    }
+    final ReminderLog log = ReminderLog.instance;
+    if (paused > 0) {
+      log.logEvent(
+        event: ReminderLogEvent.paused,
+        kind: HomeItemKind.person,
+        targetId: personId,
+        count: paused,
+        note: person.profileStatus.name,
+      );
+    }
+    if (reopened > 0) {
+      log.logEvent(
+        event: ReminderLogEvent.reopened,
+        kind: HomeItemKind.person,
+        targetId: personId,
+        count: reopened,
+      );
+    }
+    if (person.profileStatus == ProfileStatus.available) {
+      // Free, while this matchmaker has them going out with somebody: maybe
+      // the couple stopped and nobody said.
+      for (final MatchIdea match in _matchBox.values) {
+        if (match.status == MatchStatus.dating &&
+            (match.personAId == personId || match.personBId == personId)) {
+          log.logEvent(
+            event: ReminderLogEvent.freeWhileDating,
+            kind: HomeItemKind.idea,
+            targetId: match.id,
+            note: personId,
+          );
+        }
+      }
     }
   }
 

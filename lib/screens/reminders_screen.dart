@@ -172,14 +172,7 @@ class NotificationRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final AppNotification line = group.latest;
-    final int more = group.count - 1;
-    final String? second = more > 0
-        ? <String>[
-            if (line.subtitle case final String s when s.isNotEmpty) s,
-            more == 1 ? 'ועוד עדכון אחד' : 'ועוד $more עדכונים',
-          ].join(' · ')
-        : line.subtitle;
+    final String? second = group.subtitle;
     final Color tint = (dark ? AppColors.primaryDarkDm : AppColors.primary)
         .withValues(alpha: dark ? 0.16 : 0.10);
 
@@ -193,7 +186,7 @@ class NotificationRow extends StatelessWidget {
             children: <Widget>[
               SizedBox(
                 width: 46,
-                child: Center(child: _Face(line: line)),
+                child: Center(child: _Face(group: group)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -202,7 +195,7 @@ class NotificationRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
-                      line.title,
+                      group.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -266,12 +259,26 @@ class NotificationRow extends StatelessWidget {
 
 /// The face on a row: the friend, the couple, or a plain disc.
 class _Face extends StatelessWidget {
-  const _Face({required this.line});
+  const _Face({required this.group});
 
-  final AppNotification line;
+  final NotificationGroup group;
 
   @override
   Widget build(BuildContext context) {
+    final AppNotification line = group.latest;
+    if (group.isNewCardsSummary) {
+      final List<Person> faces = <Person>[
+        for (final AppNotification item in group.items)
+          if (item.person case final Person p) p,
+      ];
+      if (faces.length >= 2) {
+        return HomeCardCoupleAvatars(
+          personA: faces[0],
+          personB: faces[1],
+          radius: 15,
+        );
+      }
+    }
     final (Person?, Person?)? couple = line.couple;
     if (couple != null) {
       return HomeCardCoupleAvatars(
