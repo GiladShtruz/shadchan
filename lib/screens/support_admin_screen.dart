@@ -1,3 +1,4 @@
+import 'package:shadchan/widgets/admin_stats_tab.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -24,7 +25,7 @@ import 'package:shadchan/widgets/community_goal_editor.dart';
 /// the tips queue moved in here beside the reports, and the whole thing is
 /// reached from the app's overflow menu.
 ///
-/// Seven tabs:
+/// Eight tabs — "נתונים" (the dashboard, `AdminStatsTab`) first, then:
 /// * **פידבק** — every report, grouped by what it is about: המלצות ורעיונות,
 ///   הערות ותיקונים, תקלות ובאגים.
 /// * **טיפים** — the approval queue. A tip reaches other matchmakers only from
@@ -73,7 +74,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
     final int waitingTips = context.watch<TipsProvider>().pending.length;
 
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('מרכז הפידבק'),
@@ -81,6 +82,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: <Widget>[
+              const Tab(text: 'נתונים'),
               const Tab(text: 'פידבק'),
               Tab(text: waitingTips == 0 ? 'טיפים' : 'טיפים ($waitingTips)'),
               const Tab(text: 'מה חדש'),
@@ -94,6 +96,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
         body: const SafeArea(
           child: TabBarView(
             children: <Widget>[
+              AdminStatsTab(),
               _ReportsTab(),
               PendingTipsReview(),
               _AnnouncementsTab(),

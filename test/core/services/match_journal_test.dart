@@ -118,6 +118,42 @@ void main() {
       .map((MatchNote note) => note.text)
       .toList();
 
+  test(
+    'working on an idea moves its monthly look to a month from now',
+    () async {
+      final MatchIdea match = await openProposal();
+      // Opened three weeks ago: the default look is a week away.
+      final DateTime opened = DateTime.now().subtract(const Duration(days: 21));
+      match.reminderDate = MatchRepository.defaultReminderFrom(opened);
+      await match.save();
+
+      await matchRepository.addNote(match.id, 'דיברתי עם אמא שלה');
+
+      final DateTime moved = matchRepository.getById(match.id)!.reminderDate!;
+      expect(
+        moved.isAfter(DateTime.now().add(const Duration(days: 27))),
+        isTrue,
+      );
+      expect(
+        matchRepository.getById(match.id)!.reminderNote,
+        MatchRepository.defaultReminderNote,
+      );
+    },
+  );
+
+  test('a reminder set by hand keeps its date whatever happens', () async {
+    final MatchIdea match = await openProposal();
+    final DateTime chosen = DateTime.now().add(const Duration(days: 3));
+    match
+      ..reminderDate = chosen
+      ..reminderNote = 'להתקשר לאמא של דוד';
+    await match.save();
+
+    await matchRepository.addNote(match.id, 'עדכון');
+
+    expect(matchRepository.getById(match.id)!.reminderDate, chosen);
+  });
+
   test('the journal opens with the proposal', () async {
     final MatchIdea match = await openProposal();
     // It used to start empty on purpose, back when it was only a place for

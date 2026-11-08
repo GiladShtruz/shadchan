@@ -213,6 +213,8 @@ abstract final class AccountSyncCodec {
     // Which home recommendation this phone showed last — written on every
     // visit, and meaningless on another phone.
     'home.nextStep',
+    // How this phone's address book read went (`ContactsHealth`).
+    'contacts.health',
   ];
 
   static bool isSyncedSetting(String key) {

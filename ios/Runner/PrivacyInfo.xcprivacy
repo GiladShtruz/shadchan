@@ -200,6 +200,23 @@
 				<key>NSPrivacyCollectedDataTypePurposes</key>
 				<array>
 					<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+					<string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+				</array>
+			</dict>
+			<!-- Product measurement (Firebase Analytics, AnalyticsService): which
+			     actions were taken and how often, linked to the account's uid.
+			     Never contents, never anybody in the database; can be switched
+			     off in the privacy settings. -->
+			<dict>
+				<key>NSPrivacyCollectedDataType</key>
+				<string>NSPrivacyCollectedDataTypeProductInteraction</string>
+				<key>NSPrivacyCollectedDataTypeLinked</key>
+				<true/>
+				<key>NSPrivacyCollectedDataTypeTracking</key>
+				<false/>
+				<key>NSPrivacyCollectedDataTypePurposes</key>
+				<array>
+					<string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
 				</array>
 			</dict>
 		</array>

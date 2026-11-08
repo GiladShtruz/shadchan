@@ -9,13 +9,13 @@ abstract final class PrivacyPolicyText {
   static const String hebrew = '''
 מדיניות פרטיות — שדכן
 
-עודכן לאחרונה: 1 בנובמבר 2026
+עודכן לאחרונה: 8 בנובמבר 2026
 
 מדיניות זו חלה על אפליקציית שדכן ועל אתר המידע שלה. האפליקציה פותחה ומופעלת בידי גלעד שטרוזמן ("אנחנו"), והוא בעל השליטה במידע המתואר כאן. לשאלות ולבקשות פרטיות: giladsh22@gmail.com.
 
 בקצרה
 
-חשבון משתמש הוא חובה, והמאגר שייך לחשבון: הוא נשמר ב-Firebase תחת מזהה החשבון, נפתח בכל מכשיר שמחובר לאותו חשבון ומסתנכרן ביניהם. עותק נשמר גם במכשיר, כדי שהאפליקציה תמשיך לעבוד בלי אינטרנט. אין באפליקציה פרסומות, SDK של אנליטיקה, SDK לדיווח קריסות, עוגיות או מעקב התנהגותי, ואיננו מוכרים מידע אישי.
+חשבון משתמש הוא חובה, והמאגר שייך לחשבון: הוא נשמר ב-Firebase תחת מזהה החשבון, נפתח בכל מכשיר שמחובר לאותו חשבון ומסתנכרן ביניהם. עותק נשמר גם במכשיר, כדי שהאפליקציה תמשיך לעבוד בלי אינטרנט. אין באפליקציה פרסומות, עוגיות או מעקב לצורכי פרסום, ואיננו מוכרים מידע אישי. כדי לשפר את האפליקציה נמדד בה *מה* נעשה (למשל כמה חברים נוספו או כמה רעיונות נפתחו), אך לעולם לא *על מי* — ראו סעיף 9א; אפשר לכבות זאת בהגדרות.
 
 1. המידע שהאפליקציה מעבדת
 
@@ -44,7 +44,7 @@ abstract final class PrivacyPolicyText {
 
 3. המאגר בחשבון ובמכשיר
 
-המאגר שייך לחשבון. תחת users/{uid} ב-Cloud Firestore וב-Cloud Storage נשמרים האנשים, הרעיונות, ההערות וההקלטות הקוליות, היסטוריית הפעילות והסטטוסים, התגיות, התזכורות וההתראות, הפרופיל, ההגדרות והתמונות. כל מכשיר שמחובר לאותו חשבון מציג את אותו מאגר, ושינוי במכשיר אחד מתעדכן בשאר. כללי אבטחה בצד השרת מגבילים את המאגר לחשבון עצמו, או לשני בני הזוג לאחר חיבור מפורש למאגר זוגי; אין באפליקציה מסך מנהל או חיפוש שחושף מאגר של משתמש אחר. לצורך תמיכה טכנית בלבד, כל מכשיר מדווח בנפרד (accountHealth/{uid}) את מזהה החשבון, כתובת המייל, דרכי ההתחברות, מספרי הרשומות במכשיר, האם העברת המאגר לחשבון הושלמה ואומתה, מועדי הסנכרון האחרונים וקודי שגיאה — בלי תוכן של אף רשומה. הדיווח גלוי לחשבון עצמו ולמנהלי התמיכה בלבד ונמחק עם החשבון. כששני מכשירים עורכים את אותה רשומה כמעט בו־זמנית, הגרסה שלא נבחרה נשמרת בחשבון עצמו (syncConflicts) ולא נמחקת. לפני העברה ראשונה של מאגר מקומי לחשבון נשמר עותק זמני במכשיר בלבד, שנמחק לאחר אימות ההעברה או לאחר 30 יום.
+המאגר שייך לחשבון. תחת users/{uid} ב-Cloud Firestore וב-Cloud Storage נשמרים האנשים, הרעיונות, ההערות וההקלטות הקוליות, היסטוריית הפעילות והסטטוסים, התגיות, התזכורות וההתראות, הפרופיל, ההגדרות והתמונות. כל מכשיר שמחובר לאותו חשבון מציג את אותו מאגר, ושינוי במכשיר אחד מתעדכן בשאר. כללי אבטחה בצד השרת מגבילים את המאגר לחשבון עצמו, או לשני בני הזוג לאחר חיבור מפורש למאגר זוגי; אין באפליקציה מסך מנהל או חיפוש שחושף מאגר של משתמש אחר. לצורך תמיכה טכנית בלבד, כל מכשיר מדווח בנפרד (accountHealth/{uid}) את מזהה החשבון, כתובת המייל, דרכי ההתחברות, מספרי הרשומות במכשיר, האם העברת המאגר לחשבון הושלמה ואומתה, מועדי הסנכרון האחרונים וקודי שגיאה, ולגבי אנשי הקשר בטלפון רק מספרים (כמה אנשי קשר נקראו וכמה מהם מתאימים), מצב ההרשאה וסוג השגיאה אם הקריאה נכשלה — בלי תוכן של אף רשומה ובלי אף איש קשר. מנהלי התמיכה רואים גם סיכום מצטבר של נתונים אלה מכל המכשירים, כדי לזהות תקלה בגרסה חדשה. הדיווח גלוי לחשבון עצמו ולמנהלי התמיכה בלבד ונמחק עם החשבון. כששני מכשירים עורכים את אותה רשומה כמעט בו־זמנית, הגרסה שלא נבחרה נשמרת בחשבון עצמו (syncConflicts) ולא נמחקת. לפני העברה ראשונה של מאגר מקומי לחשבון נשמר עותק זמני במכשיר בלבד, שנמחק לאחר אימות ההעברה או לאחר 30 יום.
 
 עותק של המאגר נשמר גם במכשיר (Hive וקבצים מקומיים), כדי שאפשר יהיה לעבוד בלי רשת; שינויים שנעשו בלי חיבור נשלחים לחשבון כשהחיבור חוזר. מאגר שהיה שמור רק במכשיר עובר פעם אחת, אוטומטית, לחשבון שאליו המכשיר מחובר.
 
@@ -107,6 +107,18 @@ abstract final class PrivacyPolicyText {
 
 Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואסימונים כדי לבדוק שהבקשה מגיעה מהתקנה אמיתית. לפי Firebase, חומר ה-attestation אינו נשמר ב-App Check; אסימונים מוגבלים בזמן, ואסימונים שמופעלת עליהם הגנת replay עשויים להישמר עד 30 יום. אין להשתמש ב-App Check כדי לזהות את תוכן המאגר.
 
+9א. מדידת שימוש לשיפור האפליקציה
+
+האפליקציה משתמשת ב-Google Analytics for Firebase כדי להבין איך משתמשים בה — למשל באיזה שלב נתקעים בהוספת חברים, כמה משתמשים חוזרים אחרי שבוע, ואילו תכונות כמעט לא בשימוש.
+
+- מה נשלח: שם הפעולה שבוצעה (למשל "חבר נוסף", "רעיון נפתח", "התקבלה הרשאת אנשי קשר"), קודים כלליים (מאיזה מסך, מאיזה מקור), כמויות בטווחים (למשל "10–24 חברים במאגר"), סוג המשתמש (שדכן/רווק), גרסת האפליקציה, נתוני מכשיר כלליים (מערכת הפעלה, דגם, שפה, מדינה משוערת) וסוג של שגיאה שאירעה (בלי תוכן ההודעה).
+- מה לעולם לא נשלח: שמות, טלפונים, כתובות מייל, טקסט כרטיסים, הערות, הקלטות, תמונות, הודעות, סגנון דתי, גיל או כל פרט אחר על החברים שבמאגר. הכלל נאכף בקוד: פרמטר שאינו מספר או קוד קצר באנגלית לא יוצא מהמכשיר.
+- זיהוי: המדידה משויכת למזהה הפנימי של החשבון (לא לכתובת המייל), כדי שאפשר יהיה להבין שימוש לאורך זמן ובין מכשירים. מזהה הפרסום של המכשיר (Advertising ID / IDFA), Google Signals והתאמה אישית של מודעות כבויים, והמידע אינו משמש לפרסום.
+- שמירה: נתוני אירועים ברמת המשתמש נשמרים לתקופה הקצרה שמאפשר השירות (חודשיים), ולאחר מכן נשארים רק דוחות מצרפיים.
+- צפייה: רק מנהלי האפליקציה, ורק כנתונים מצרפיים — ספירות, אחוזים ומגמות.
+- ביטול: בהגדרות ← פרטיות, המתג "שליחת נתוני שימוש לשיפור האפליקציה". כיבוי מפסיק את השליחה מכל המכשירים של החשבון ומאפס את מזהה המדידה במכשיר. גם התנתקות מאפסת אותו.
+- בגרסאות פיתוח ובדיקה לא נשלח דבר, וחשבונות של מנהלים מסומנים ואינם נספרים.
+
 10. אתר המידע
 
 האתר הסטטי ב-Firebase Hosting אינו כולל חשבון, טפסים, עוגיות, פרסומות או כלי אנליטיקה. Firebase Hosting ו-Google עשויים לעבד נתוני חיבור טכניים, כגון כתובת IP ו-user-agent, כדי למסור את הדפים, לאבטח את השירות ולמנוע שימוש לרעה, בהתאם לתנאי Google.
@@ -119,7 +131,7 @@ Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואס�
 
 12. שירותים חיצוניים והעברות בינלאומיות
 
-האפליקציה משתמשת ב-Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Firebase Cloud Messaging, Firebase App Check, Firebase AI Logic/Vertex AI ו-Firebase Hosting של Google; ב-Google Sign-In, Google ML Kit ושירותי החנות; וב-Sign in with Apple במכשירי Apple. לכל ספק מדיניות ותנאים משלו.
+האפליקציה משתמשת ב-Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Firebase Cloud Messaging, Firebase App Check, Google Analytics for Firebase, Firebase AI Logic/Vertex AI ו-Firebase Hosting של Google; ב-Google Sign-In, Google ML Kit ושירותי החנות; וב-Sign in with Apple במכשירי Apple. לכל ספק מדיניות ותנאים משלו.
 
 המידע עשוי להיות מעובד מחוץ למדינת מגוריכם. Firebase Authentication מופעל ממרכזי נתונים בארצות הברית; שירותים גלובליים ושירותי AI עשויים לעבד מידע במיקומים נוספים. במקום שנדרש אנו מסתמכים על הסכמי עיבוד הנתונים ומנגנוני ההעברה של Google ועל מנגנונים חוקיים אחרים.
 
@@ -133,6 +145,7 @@ Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואס�
 - טיפים שלכם נמחקים עם החשבון.
 - כרטיס אישי שנמחק נשמר מסומן כמחוק עד שחזורו או עד מחיקת החשבון. גיבוב אנשי הקשר וגיבוב המאגר מוחלפים בכל עדכון ונמחקים עם החשבון. התראות בחשבון נשמרות עד שמוחקים אותן או את החשבון.
 - פניות תמיכה נשמרות לפי סעיף 8.
+- נתוני מדידת השימוש נשמרים לפי סעיף 9א.
 - Firebase Authentication עשוי לשמור יומני IP במשך כמה שבועות. לאחר מחיקת משתמש, Firebase מציינת שמידע Authentication מוסר ממערכות פעילות וגיבוי בתוך עד 180 יום.
 
 14. מחיקת החשבון
@@ -167,13 +180,13 @@ Firebase App Check שולח ל-Google או ל-Apple חומר attestation ואס�
   static const String english = '''
 Privacy Policy — Shadchan
 
-Last updated: November 1, 2026
+Last updated: November 8, 2026
 
 This policy applies to the Shadchan application and its information website. The Application is developed and operated by Gilad Shtruzman ("we"), the controller of the processing described here. Privacy contact: giladsh22@gmail.com.
 
 In brief
 
-An account is required, and the database belongs to the account: it is stored in Firebase under the account's identifier, opens on every device signed in to that account and stays in sync between them. A copy is also kept on the device so the Application keeps working offline. The Application contains no advertising, analytics SDK, crash-reporting SDK, cookies or behavioural tracking, and we do not sell personal information.
+An account is required, and the database belongs to the account: it is stored in Firebase under the account's identifier, opens on every device signed in to that account and stays in sync between them. A copy is also kept on the device so the Application keeps working offline. The Application contains no advertising, cookies or advertising tracking, and we do not sell personal information. To improve the Application we measure *what* is done in it (for example how many friends were added or ideas opened), never *about whom* — see section 9A; this can be switched off in the settings.
 
 1. Information processed
 
@@ -202,7 +215,7 @@ Information is used to operate the Application: database management, match ideas
 
 3. The database in the account and on the device
 
-The database belongs to the account. Under users/{uid} in Cloud Firestore and Cloud Storage the Application stores people, ideas, notes and voice recordings, activity and status history, tags, reminders and notices, the profile, settings and photographs. Every device signed in to the same account shows the same database, and a change on one device reaches the others. Server-side rules restrict the database to the account itself, or both spouses after an explicit couple connection; the Application has no administrator screen or cross-account database search. For technical support only, each device reports separately (accountHealth/{uid}) the account identifier, email address, sign-in methods, record counts on the device, whether moving the database into the account completed and was verified, the latest sync times and error codes — never the contents of any record. The report is visible only to the account itself and to support administrators, and is deleted with the account. When two devices edit the same record at almost the same moment, the version not chosen is kept in the account itself (syncConflicts) rather than discarded. Before a local database is first moved into an account, a temporary copy is kept on the device only, and deleted once the move is verified or after 30 days.
+The database belongs to the account. Under users/{uid} in Cloud Firestore and Cloud Storage the Application stores people, ideas, notes and voice recordings, activity and status history, tags, reminders and notices, the profile, settings and photographs. Every device signed in to the same account shows the same database, and a change on one device reaches the others. Server-side rules restrict the database to the account itself, or both spouses after an explicit couple connection; the Application has no administrator screen or cross-account database search. For technical support only, each device reports separately (accountHealth/{uid}) the account identifier, email address, sign-in methods, record counts on the device, whether moving the database into the account completed and was verified, the latest sync times and error codes, and for the phone's contacts only numbers (how many contacts were read and how many were suitable), the permission state and the error type if a read failed — never the contents of any record and never a contact. Support administrators also see an aggregate of these figures across devices, to spot a fault in a new version. The report is visible only to the account itself and to support administrators, and is deleted with the account. When two devices edit the same record at almost the same moment, the version not chosen is kept in the account itself (syncConflicts) rather than discarded. Before a local database is first moved into an account, a temporary copy is kept on the device only, and deleted once the move is verified or after 30 days.
 
 A copy of the database is also kept on the device (Hive and local files) so the Application works offline; changes made offline are sent to the account when the connection returns. A database that previously existed only on a device is moved once, automatically, into the account the device is signed in to.
 
@@ -265,6 +278,18 @@ Support correspondence is retained while needed to handle the request, document 
 
 Firebase App Check sends attestation material and tokens to Google or Apple to verify genuine installations. Firebase states that App Check does not retain attestation material; tokens are time-limited, and tokens used with replay protection may be kept for up to 30 days. App Check is not used to identify database content.
 
+9A. Usage measurement to improve the Application
+
+The Application uses Google Analytics for Firebase to understand how it is used — for example where people get stuck adding friends, how many come back after a week, and which features are barely used.
+
+- What is sent: the name of the action taken (e.g. "friend added", "idea opened", "contacts permission granted"), general codes (which screen, which source), counts in bands (e.g. "10–24 friends in the database"), the type of user (matchmaker/single), the app version, general device data (operating system, model, language, approximate country) and the type of an error that occurred (without its message).
+- What is never sent: names, phone numbers, email addresses, card text, notes, recordings, photos, messages, religious style, age or any other detail about the people in the database. The rule is enforced in code: a parameter that is not a number or a short English code never leaves the device.
+- Identification: measurement is tied to the account's internal identifier (not its email), so use can be understood over time and across devices. The device advertising identifier (Advertising ID / IDFA), Google Signals and ad personalisation are switched off, and the data is not used for advertising.
+- Retention: user-level event data is kept for the shortest period the service allows (two months); after that only aggregate reports remain.
+- Access: only the Application's administrators, and only as aggregate figures — counts, percentages and trends.
+- Opting out: Settings → Privacy, the switch "שליחת נתוני שימוש לשיפור האפליקציה" (send usage data to improve the app). Turning it off stops sending from every device on the account and resets the measurement identifier on the device; signing out resets it too.
+- Nothing is sent from development and test builds, and administrators' accounts are marked and excluded.
+
 10. Information website
 
 The static website on Firebase Hosting has no accounts, forms, cookies, advertising or analytics. Firebase Hosting and Google may process technical connection information, such as IP address and user-agent, to deliver pages, secure the service and prevent abuse under Google's terms.
@@ -277,7 +302,7 @@ The Application may request contacts, photos/media, the microphone and notificat
 
 12. Providers and international transfers
 
-The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Firebase Cloud Messaging, Firebase App Check, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.
+The Application uses Google's Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Firebase Cloud Messaging, Firebase App Check, Google Analytics for Firebase, Firebase AI Logic/Vertex AI and Firebase Hosting; Google Sign-In, Google ML Kit and store services; and Sign in with Apple on Apple devices. Each provider has its own terms and privacy policy.
 
 Information may be processed outside your country. Firebase Authentication operates from US data centres; global and AI services may process data in other locations. Where required, we rely on Google data-processing agreements and transfer mechanisms and other lawful safeguards.
 
@@ -291,6 +316,7 @@ Information may be processed outside your country. Firebase Authentication opera
 - Your tips are erased with the account.
 - A deleted personal card is kept flagged as deleted until restored or until account deletion. Contact and database hashes are replaced on every update and erased with the account. Notices in the account remain until you remove them or the account.
 - Support correspondence follows section 8.
+- Usage-measurement data is kept as described in section 9A.
 - Firebase Authentication may keep logged IP addresses for a few weeks. Firebase states that after user deletion, Authentication data is removed from live and backup systems within 180 days.
 
 14. Account deletion

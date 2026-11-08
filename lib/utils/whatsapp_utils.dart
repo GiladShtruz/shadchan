@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -117,6 +118,9 @@ abstract final class WhatsAppUtils {
     if (uri == null) {
       return false;
     }
+    Analytics.log(AnalyticsEvent.whatsapp_opened, <String, Object?>{
+      'kind': message == null ? 'chat' : 'details_request',
+    });
 
     return launchUrl(uri, mode: LaunchMode.externalApplication);
   }
@@ -173,6 +177,9 @@ abstract final class WhatsAppUtils {
     if (text.isEmpty && photos.isEmpty) {
       return false;
     }
+    Analytics.log(AnalyticsEvent.whatsapp_opened, <String, Object?>{
+      'kind': 'send_card',
+    });
     final String? phone = PhoneUtils.toWhatsAppNumber(recipient.phone);
     if (phone == null) {
       return false;

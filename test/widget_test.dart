@@ -1072,7 +1072,7 @@ void main() {
     await tester.pump();
     expect(find.text('דני לוי לא אישר גישה'), findsOneWidget);
 
-    // The bell opens the page; opening it is reading it.
+    // The bell opens the notifications; opening them is reading them.
     await tester.tap(find.byTooltip('התראות').first);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -1081,8 +1081,9 @@ void main() {
     // The row that was new keeps its tint for this visit.
     expect(find.text('סמן הכל כנקרא'), findsOneWidget);
 
-    // Back home, the read notice has left the board.
-    await tester.tap(find.byType(BackButton));
+    // The bell opens a sheet over home; closing it lands back on home, where
+    // the read notice has left the board.
+    await tester.tap(find.byTooltip('סגירה'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 400));

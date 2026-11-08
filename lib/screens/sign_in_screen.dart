@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -147,6 +148,9 @@ class _SignInScreenState extends State<SignInScreen> {
         return;
       case AccountSignInOutcome.success:
         SignInPromptStore.markSignedIn();
+        Analytics.log(AnalyticsEvent.login_completed, <String, Object?>{
+          'register': _mode == _EmailMode.register,
+        });
         final String? linked = await AccountService.linkPendingCredential();
         if (linked != null) {
           AppNotice.showOn(notices, linked);

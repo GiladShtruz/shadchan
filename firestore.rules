@@ -437,6 +437,13 @@ service cloud.firestore {
     // candidate: no person, no proposal, no note, no photo, no phone number —
     // those never leave `users/{uid}`.
     //
+    // The administrators' dashboard: counts only, written by the server
+    // (`refreshAdminStats`), read by support administrators and nobody else.
+    match /adminStats/{document=**} {
+      allow read: if isSupportAdmin();
+      allow write: if false;
+    }
+
     // Shared home-page goal. A verified administrator chooses the public
     // heading, metric and target; every signed-in member observes this one doc.
     match /communityGoals/weekly {

@@ -87,6 +87,8 @@ dependencies:
   # 16.3.0 is what resolves against firebase_core 4.10.0 and platform
   # interface 7.0.1; a newer one expects the core that crashes iOS.
   firebase_messaging: 16.3.0
+  # Same release train as core 4.10.0 (2026-06-01) — move it with the family.
+  firebase_analytics: 12.4.2
   crypto: ^3.0.7
   upgrader: ^13.6.0
 

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
+import 'package:shadchan/dialogs/live_card_offer.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
@@ -11,8 +12,10 @@ import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/widgets/add_contacts_common.dart';
 import 'package:shadchan/widgets/app_notice.dart';
+import 'package:shadchan/widgets/contacts_access_state.dart';
 import 'package:shadchan/widgets/empty_state.dart';
 import 'package:shadchan/widgets/initials_avatar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
@@ -124,26 +127,13 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       );
     }
 
-    final ContactsPermissionState? permissionState = session.permissionState;
-    if (permissionState == ContactsPermissionState.denied ||
-        permissionState == ContactsPermissionState.permanentlyDenied) {
-      return _PermissionStateView(
-        isPermanentlyDenied:
-            permissionState == ContactsPermissionState.permanentlyDenied,
-        onRetry: session.load,
-        onOpenSettings: session.openSettingsAndRecheck,
-      );
-    }
-
-    if (!session.hasAnyCandidate) {
-      return const EmptyState(
-        icon: Icons.contact_phone_outlined,
-        title: 'לא נמצאו אנשי קשר מתאימים',
-        subtitle: 'מוצגים רק אנשי קשר חדשים עם שם ומספר טלפון',
-      );
+    final Widget? stateView = ContactsAccessState.viewFor(session);
+    if (stateView != null) {
+      return stateView;
     }
 
     final List<ContactCandidateEntry> rows = _rowsFor(session);
+    final Set<String> liveCards = LiveCardOffer.knownCardHashes(context);
     // The selection lives on the session, not here, so the screen around this
     // one can answer a back press with "clear the ticks" instead of leaving.
     final int selectedCount = session.selectedContactIds.length;
@@ -151,6 +141,8 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     return Column(
       children: <Widget>[
         if (session.isRefreshing) const LinearProgressIndicator(minHeight: 3),
+        if (session.loadFailed)
+          ContactsRefreshFailedBanner(onRetry: session.refresh),
         // The banner is the only part that leaves on scroll; the search field
         // below it is outside the scroll view, which is what keeps it sticky.
         AnimatedSize(
@@ -181,9 +173,28 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                 highlighted: !_filterSuggestedNames,
                 onPressed: () => _openFilterSortSheet(session),
               ),
+              const Spacer(),
+              // Contacts added to the phone while this screen is open show up
+              // on return to the app by themselves; this is for anyone who
+              // does not want to wait for that.
+              IconButton(
+                tooltip: 'רענון אנשי הקשר',
+                visualDensity: VisualDensity.compact,
+                onPressed: session.isRefreshing ? null : session.refresh,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
             ],
           ),
         ),
+        // Nothing disappears without a word: the contacts kept off this list
+        // (landlines, businesses) are counted here, one tap from being shown.
+        if (!_isSearching &&
+            _filterSuggestedNames &&
+            session.nameFilteredCandidates.isNotEmpty)
+          _HiddenContactsLine(
+            count: session.nameFilteredCandidates.length,
+            onShow: () => setState(() => _filterSuggestedNames = false),
+          ),
         // The explanation is only ever needed before the first pick; once the
         // bottom banner is up it would just repeat what the banner says.
         if (selectedCount == 0)
@@ -217,6 +228,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                     return _ContactRow(
                       key: ValueKey<String>(entry.candidate.deviceContactId),
                       entry: entry,
+                      liveCard: liveCards.contains(
+                        PhoneIdentity.hash(entry.candidate.phone),
+                      ),
                       busy: _importingIds.contains(
                         entry.candidate.deviceContactId,
                       ),
@@ -583,6 +597,16 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
         return;
       }
 
+      // A friend who keeps their own card: ask for it rather than copy it.
+      final LiveCardChoice live = await LiveCardOffer.ask(
+        context,
+        staged.person,
+      );
+      if (live != LiveCardChoice.manual || !mounted) {
+        await ContactsImportService.discardStagedCandidate(staged, repository);
+        return;
+      }
+
       final QuickUpdateOutcome outcome = await QuickUpdateDialog.show(
         context,
         staged.person,
@@ -647,6 +671,18 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       // A null result means the contact was already in the database — there is
       // nothing to fill in, so the run moves on.
       if (staged == null) {
+        continue;
+      }
+
+      final LiveCardChoice live = await LiveCardOffer.ask(
+        context,
+        staged.person,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (live != LiveCardChoice.manual) {
+        await ContactsImportService.discardStagedCandidate(staged, repository);
         continue;
       }
 
@@ -879,9 +915,14 @@ class _ContactRow extends StatelessWidget {
     required this.busy,
     required this.selected,
     required this.onTap,
+    this.liveCard = false,
   });
 
   final ContactCandidateEntry entry;
+
+  /// The contact keeps a personal card in שדכן — known from the server's
+  /// list of mutual friends, so it costs nothing to show.
+  final bool liveCard;
   final bool busy;
   final bool selected;
   final VoidCallback onTap;
@@ -935,7 +976,11 @@ class _ContactRow extends StatelessWidget {
                     ),
                   )
                 else
-                  _StatusTag(status: entry.status),
+                  _StatusTag(
+                    status: entry.status,
+                    landline: entry.candidate.isLandline,
+                    liveCard: liveCard,
+                  ),
               ],
             ),
           ),
@@ -948,9 +993,19 @@ class _ContactRow extends StatelessWidget {
 /// Says why a searched contact is not in the regular list. Nothing is drawn for
 /// a contact that simply hasn't been decided on yet.
 class _StatusTag extends StatelessWidget {
-  const _StatusTag({required this.status});
+  const _StatusTag({
+    required this.status,
+    this.landline = false,
+    this.liveCard = false,
+  });
 
   final ContactCandidateStatus status;
+
+  /// Has a personal card of their own — worth asking for, not copying.
+  final bool liveCard;
+
+  /// Hidden because the contact has no mobile number, rather than by name.
+  final bool landline;
 
   @override
   Widget build(BuildContext context) {
@@ -966,9 +1021,17 @@ class _StatusTag extends StatelessWidget {
       case ContactCandidateStatus.removedFromList:
         label = 'הוסר מהרשימה';
         color = theme.colorScheme.onSurfaceVariant;
-      case ContactCandidateStatus.available:
       case ContactCandidateStatus.hiddenByFilter:
-        return const SizedBox.shrink();
+        label = landline ? 'מספר קווי' : 'מוסתר מהרשימה';
+        color = theme.colorScheme.onSurfaceVariant;
+      case ContactCandidateStatus.available:
+        if (!liveCard) {
+          return const SizedBox.shrink();
+        }
+        label = 'כרטיס אישי בשדכן';
+        color = theme.brightness == Brightness.dark
+            ? theme.colorScheme.primary
+            : AppColors.primaryDark;
     }
 
     return Container(
@@ -1121,38 +1184,46 @@ class _LoadingContactsView extends StatelessWidget {
   }
 }
 
-class _PermissionStateView extends StatelessWidget {
-  const _PermissionStateView({
-    required this.isPermanentlyDenied,
-    required this.onRetry,
-    required this.onOpenSettings,
-  });
+/// "מוסתרים 340 אנשי קשר (מספר קווי או עסק) · הצגה" — the one line that keeps
+/// the automatic filter honest. Without it a contact the filter hid looks
+/// exactly like one the app failed to read.
+class _HiddenContactsLine extends StatelessWidget {
+  const _HiddenContactsLine({required this.count, required this.onShow});
 
-  final bool isPermanentlyDenied;
-  final Future<void> Function() onRetry;
-  final Future<void> Function() onOpenSettings;
+  final int count;
+  final VoidCallback onShow;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            EmptyState(
-              icon: Icons.contact_phone_outlined,
-              title: 'אין גישה לאנשי הקשר',
-              subtitle: isPermanentlyDenied
-                  ? 'כדי לייבא אנשי קשר צריך לאשר גישה בהגדרות המכשיר'
-                  : 'כדי לייבא אנשי קשר צריך לאשר גישה לספר הטלפונים',
-              buttonText: isPermanentlyDenied ? 'פתיחת הגדרות' : 'לנסות שוב',
-              onButtonPressed: isPermanentlyDenied ? onOpenSettings : onRetry,
+    final ThemeData theme = Theme.of(context);
+    final String people = count == 1 ? 'איש קשר אחד' : '$count אנשי קשר';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 12, 0),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.visibility_off_outlined,
+            size: 16,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'מוסתרים $people (מספר קווי או עסק)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-            if (isPermanentlyDenied)
-              TextButton(onPressed: onRetry, child: const Text('בדיקה מחדש')),
-          ],
-        ),
+          ),
+          TextButton(
+            onPressed: onShow,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: const Text('הצגה'),
+          ),
+        ],
       ),
     );
   }

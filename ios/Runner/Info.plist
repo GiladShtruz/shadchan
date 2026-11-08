@@ -170,6 +170,10 @@
 		<!-- Lets a push that carries data wake the app to deliver it; the
 		     personal card's pushes are drawn by iOS from their notification
 		     payload either way. -->
+		<key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS</key>
+		<false/>
+		<key>GOOGLE_ANALYTICS_IDFV_COLLECTION_ENABLED</key>
+		<false/>
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>remote-notification</string>

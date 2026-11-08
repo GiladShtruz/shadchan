@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
@@ -55,6 +56,9 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
 
   void _toggle(String tag) {
     final String value = PersonTags.normalize(tag);
+    if (!_has(value)) {
+      Analytics.feature(AnalyticsFeature.tags);
+    }
     final List<String> next = _has(value)
         ? widget.selected
               .where((String t) => !PersonTags.sameTag(t, value))

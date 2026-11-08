@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -180,6 +181,7 @@ Future<PeopleFilterState?> showPeopleFiltersSheet(
   required PersonRepository repository,
   PeopleFilterState? initial,
 }) {
+  Analytics.feature(AnalyticsFeature.filter);
   return showModalBottomSheet<PeopleFilterState>(
     context: context,
     isScrollControlled: true,

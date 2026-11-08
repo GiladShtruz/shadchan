@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/utils/home_next_step.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
@@ -261,6 +262,8 @@ abstract final class AccountSwitch {
   /// Only ever called with the sync stopped: a running sync would read these
   /// deletions as the matchmaker's own and pass them on.
   static Future<void> clearAccountCopy() async {
+    // Measurement forgets the account and this device's measurement id.
+    await Analytics.forget();
     // What the server last told this account — its community figures and
     // which friends' cards it may show offline — is the account's too.
     await OfflineCache.clear();

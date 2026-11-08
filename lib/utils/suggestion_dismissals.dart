@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/services/home_board_store.dart';
 
@@ -28,6 +29,7 @@ abstract final class SuggestionDismissals {
   /// "לא מתאים" moves a candidate to the end again — the matches list sorts
   /// its last tier by this order, so the one just dismissed is always last.
   static Future<void> dismiss(String personId, String candidateId) async {
+    Analytics.log(AnalyticsEvent.match_rejected);
     final List<String> ids = dismissedFor(personId).toList()
       ..remove(candidateId)
       ..add(candidateId);

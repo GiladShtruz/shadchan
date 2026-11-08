@@ -17,6 +17,10 @@ import 'package:shadchan/services/personal_card_service.dart';
 abstract final class PushService {
   static bool _started = false;
   static String? _token;
+
+  /// This device can receive pushes — the condition for leaving reminders to
+  /// the server (`NotificationService.serverDelivers`).
+  static bool get hasToken => _token != null;
   static final List<StreamSubscription<Object?>> _subscriptions =
       <StreamSubscription<Object?>>[];
 
@@ -131,6 +135,8 @@ abstract final class PushService {
     _subscriptions.clear();
     final String? token = _token;
     _token = null;
+    // No pushes here any more: this phone reminds by itself again.
+    NotificationService.serverDelivers = false;
     _started = false;
     if (token == null) {
       return;

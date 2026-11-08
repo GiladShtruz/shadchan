@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/offline_guard.dart';
@@ -87,7 +88,8 @@ class PersonRepository extends ChangeNotifier {
   /// or back to "רעיון" (once both sides are free again). Wired to
   /// [MatchRepository] in `main.dart` to avoid a hard dependency between the
   /// two repositories.
-  Future<void> Function(String personId)? onPersonStatusChanged;
+  Future<void> Function(String personId, {bool fromOwner})?
+  onPersonStatusChanged;
 
   int get count => _readableValues.length;
 
@@ -213,7 +215,13 @@ class PersonRepository extends ChangeNotifier {
   /// Not [update]: that is the matchmaker editing, and an owner's change must
   /// neither stamp the record as edited here nor count as the matchmaker's
   /// activity. It still refreshes whatever depends on the status.
-  Future<void> saveSynced(Person person) async {
+  ///
+  /// [ownerStatusChanged] — the owner changed their own status on the card;
+  /// passed on so the ideas it moved are announced to the matchmaker.
+  Future<void> saveSynced(
+    Person person, {
+    bool ownerStatusChanged = false,
+  }) async {
     if (!_box.containsKey(person.id)) {
       await _box.put(person.id, person);
     } else {
@@ -224,7 +232,7 @@ class PersonRepository extends ChangeNotifier {
       CardSyncEngine.printOf(person),
     );
     notifyListeners();
-    await onPersonStatusChanged?.call(person.id);
+    await onPersonStatusChanged?.call(person.id, fromOwner: ownerStatusChanged);
     _refreshPersonRemindersInBackground();
   }
 
@@ -442,6 +450,7 @@ class PersonRepository extends ChangeNotifier {
       ..updatedAt = DateTime.now();
     await person.save();
     _recordActivity(person.id, HomeActivityAction.createdPerson);
+    _measureFriendAdded(person, sourceOverride: 'manual');
     notifyListeners();
     await onPersonStatusChanged?.call(person.id);
     _refreshBirthdayNotificationsInBackground();
@@ -451,6 +460,9 @@ class PersonRepository extends ChangeNotifier {
     OfflineGuard.ensureCanWrite();
     await _box.put(person.id, person);
     _recordActivity(person.id, HomeActivityAction.createdPerson);
+    if (!person.hidden) {
+      _measureFriendAdded(person);
+    }
     notifyListeners();
     _refreshBirthdayNotificationsInBackground();
   }
@@ -478,9 +490,31 @@ class PersonRepository extends ChangeNotifier {
       ..updatedAt = DateTime.now();
     await person.save();
     _recordActivity(person.id, HomeActivityAction.createdPerson);
+    _measureFriendAdded(person, sourceOverride: 'contacts');
     notifyListeners();
     await onPersonStatusChanged?.call(person.id);
     _refreshBirthdayNotificationsInBackground();
+  }
+
+  /// "friend_added", with where the friend came from and the database size as
+  /// a band — never who. Also moves the "5 / 10 friends" funnel steps.
+  void _measureFriendAdded(Person person, {String? sourceOverride}) {
+    final String raw = person.source ?? '';
+    final String source =
+        sourceOverride ??
+        (raw.contains('AI')
+            ? 'ai'
+            : raw.contains('כרטיס')
+            ? 'card_access'
+            : raw.contains('סריקה') || raw.contains('אנשי')
+            ? 'contacts'
+            : 'manual');
+    final int count = databaseCount;
+    Analytics.log(AnalyticsEvent.friend_added, <String, Object?>{
+      'source': source,
+      'friends_band': Analytics.band(count),
+    });
+    Analytics.friendCountReached(count);
   }
 
   static const String _syncPrintPrefix = 'cardSyncPrint.';
@@ -896,6 +930,10 @@ class PersonRepository extends ChangeNotifier {
   }) async {
     OfflineGuard.ensureCanWrite();
     await PersonReminders.set(id, date, note: note);
+    Analytics.log(AnalyticsEvent.reminder_created, <String, Object?>{
+      'target': 'friend',
+      'has_note': (note ?? '').trim().isNotEmpty,
+    });
     final Person? person = getById(id);
     if (person != null) {
       person.updatedAt = DateTime.now();
@@ -962,6 +1000,9 @@ class PersonRepository extends ChangeNotifier {
     bool isAutomatic = false,
   }) async {
     OfflineGuard.ensureCanWrite();
+    if (!isAutomatic) {
+      Analytics.feature(AnalyticsFeature.notes);
+    }
     final DateTime now = DateTime.now();
     await _createNote(
       personId: personId,
@@ -1077,6 +1118,10 @@ class PersonRepository extends ChangeNotifier {
     await NotificationService.schedulePersonReminders(reminders);
   }
 
+  /// Reschedules this phone's friend reminders — see
+  /// `MatchRepository.refreshReminderNotifications`.
+  void refreshReminderNotifications() => _refreshPersonRemindersInBackground();
+
   void _refreshPersonRemindersInBackground() {
     unawaited(_refreshPersonReminders());
   }
@@ -1101,6 +1146,7 @@ class PersonRepository extends ChangeNotifier {
     String text = '',
   }) async {
     OfflineGuard.ensureCanWrite();
+    Analytics.feature(AnalyticsFeature.voice_note);
     final Box<PersonNote>? noteBox = _noteBox;
     if (noteBox == null) {
       return;

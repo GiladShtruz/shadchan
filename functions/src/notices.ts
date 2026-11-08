@@ -24,7 +24,7 @@ export function g(template: string, gender: Gender | undefined): string {
 /**
  * The notices worth a push to the phone: the personal card's own events. The
  * rest (a decline, a wedding, a birthday, a status report) wait quietly on the
- * notifications page. Reminders are pushed by the phone itself.
+ * notifications page. Reminders are pushed by `sendReminders` (reminders.ts).
  */
 const PUSHED_KINDS = new Set([
   'cardCreated',
@@ -33,6 +33,7 @@ const PUSHED_KINDS = new Set([
   'friendJoined',
   'cardUpdated',
   'personalNews',
+  'adminAlert',
 ]);
 
 /** Writes the inbox row and pushes to every device of [uid]. */

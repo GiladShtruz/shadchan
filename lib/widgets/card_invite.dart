@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/analytics_service.dart';
+import 'package:shadchan/utils/app_router.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -244,6 +246,19 @@ abstract final class CardInviteFlow {
     await _deliver(context, person, message);
   }
 
+  /// Where an access request was sent from, as a code — the screen, never the
+  /// person: a profile, "חברים שהוסיפו כרטיס", the home board or elsewhere.
+  static String _requestOrigin() {
+    final String path =
+        AppRouter.router.routeInformationProvider.value.uri.path;
+    if (path.startsWith('/card-friends')) return 'friends_with_cards';
+    if (path.startsWith('/people/')) return 'profile';
+    if (path.startsWith('/board')) return 'board';
+    if (path.startsWith('/home')) return 'home';
+    if (path.startsWith('/me')) return 'personal_area';
+    return 'other';
+  }
+
   /// Asks for access to [person]'s card, then offers to tell them.
   static Future<CardRequestOutcome?> requestAccess(
     BuildContext context,
@@ -286,6 +301,11 @@ abstract final class CardInviteFlow {
         _ => null,
       },
     );
+    if (outcome == CardRequestOutcome.sent) {
+      Analytics.log(AnalyticsEvent.access_request_sent, <String, Object?>{
+        'origin': _requestOrigin(),
+      });
+    }
     if (!context.mounted) {
       return outcome;
     }

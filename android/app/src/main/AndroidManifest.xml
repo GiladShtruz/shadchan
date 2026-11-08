@@ -1,4 +1,10 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Product measurement never uses the advertising id: Firebase Analytics
+         brings this permission with it, and it is removed here. -->
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <!-- Voice notes recorded on a friend's profile. Asked for only when the
          microphone button is pressed. -->
@@ -13,6 +19,17 @@
              plain square; ic_notification is the mark in white on
              transparency. The local notifications use the same drawable
              (NotificationService). -->
+        <!-- Measurement without advertising: no ad id, no Android id, no ad
+             personalisation signals (see AnalyticsService). -->
+        <meta-data
+            android:name="google_analytics_adid_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_ssaid_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_personalization_signals"
+            android:value="false" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />

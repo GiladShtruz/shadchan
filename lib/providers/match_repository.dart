@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/models/match_contact.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -21,6 +22,7 @@ import 'package:shadchan/services/dating_status_memory.dart';
 import 'package:shadchan/services/notification_feed.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
+import 'package:shadchan/services/reminder_log.dart';
 import 'package:uuid/uuid.dart';
 
 /// Which side (if any) ended a proposal, used to phrase the journal and both
@@ -92,6 +94,9 @@ class MatchRepository extends ChangeNotifier {
     required DateTime at,
     bool automatic = false,
   }) async {
+    if (from != to && !automatic) {
+      _measureStatusChange(from, to);
+    }
     final Box<MatchStatusEvent>? box = _statusEventBox;
     if (box == null || from == to) {
       return;
@@ -105,6 +110,32 @@ class MatchRepository extends ChangeNotifier {
       automatic: automatic,
     );
     await box.put(event.id, event);
+  }
+
+  /// The idea funnel, by status names only — never by who.
+  void _measureStatusChange(MatchStatus? from, MatchStatus to) {
+    if (from == null) {
+      Analytics.log(AnalyticsEvent.idea_created);
+      Analytics.milestone(AnalyticsEvent.first_idea_created);
+      return;
+    }
+    Analytics.log(AnalyticsEvent.idea_status_changed, <String, Object?>{
+      'from_status': from.name,
+      'to_status': to.name,
+    });
+    switch (to) {
+      case MatchStatus.dating:
+        Analytics.log(AnalyticsEvent.couple_started_dating);
+        Analytics.milestone(AnalyticsEvent.first_couple_dating);
+      case MatchStatus.married:
+        Analytics.log(AnalyticsEvent.wedding_marked);
+      case MatchStatus.dated:
+        Analytics.log(AnalyticsEvent.couple_broke_up);
+      case MatchStatus.rejected:
+        Analytics.log(AnalyticsEvent.idea_closed);
+      default:
+        break;
+    }
   }
 
   int get count => _matchBox.length;
@@ -212,6 +243,7 @@ class MatchRepository extends ChangeNotifier {
       ..reminderNote = defaultReminderNote;
 
     await _matchBox.put(match.id, match);
+    _measureStatusChange(null, MatchStatus.idea);
     // The journal opens with the proposal. It used to start empty on purpose,
     // back when it was only a place for the matchmaker's own free notes; it is
     // now the proposal's whole record — every status move, reminder, contact
@@ -639,6 +671,12 @@ class MatchRepository extends ChangeNotifier {
     // one. Clearing it is the same decision in reverse and is worth a line for
     // the same reason: six months on, "handled it" and "gave up on it" look
     // identical unless the journal says which.
+    if (journal && date != null && date != previous) {
+      Analytics.log(AnalyticsEvent.reminder_created, <String, Object?>{
+        'target': 'idea',
+        'has_note': trimmedNote.isNotEmpty,
+      });
+    }
     if (journal && date != previous) {
       await _createNote(
         matchId: matchId,
@@ -1252,7 +1290,15 @@ class MatchRepository extends ChangeNotifier {
   /// other side's status without depending on [PersonRepository].
   Person? Function(String personId)? resolvePerson;
 
-  Future<void> syncMatchesForPerson(String personId) async {
+  ///
+  /// [fromOwner] — the change came from the friend's own personal card, not
+  /// from the matchmaker. Then the matchmaker did not see it happen, so when
+  /// it moves their ideas (or leaves a couple who are out looking odd) a line
+  /// is left on the notifications page saying so ([ReminderLogEvent]).
+  Future<void> syncMatchesForPerson(
+    String personId, {
+    bool fromOwner = false,
+  }) async {
     // **"מזל טוב" closes everything.** A friend who is getting married is not a
     // candidate any more, and their open ideas are not ideas — they were
     // already invisible on רעיונות (see `matchProposalTabFor`, which drops a
@@ -1283,6 +1329,8 @@ class MatchRepository extends ChangeNotifier {
 
     final DateTime now = DateTime.now();
     bool changed = false;
+    int paused = 0;
+    int reopened = 0;
 
     for (final MatchIdea match in _matchBox.values) {
       final bool involvesPerson =
@@ -1310,12 +1358,66 @@ class MatchRepository extends ChangeNotifier {
         at: now,
         automatic: true,
       );
+      if (target == MatchStatus.unavailable) {
+        paused++;
+      } else if (target == MatchStatus.idea) {
+        reopened++;
+      }
       changed = true;
     }
 
     if (changed) {
       notifyListeners();
       _refreshNotifications();
+    }
+    if (fromOwner) {
+      _noteOwnerStatusChange(personId, paused: paused, reopened: reopened);
+    }
+  }
+
+  /// The notifications-page line for a friend's own status change — only
+  /// when it asks something of the matchmaker.
+  void _noteOwnerStatusChange(
+    String personId, {
+    required int paused,
+    required int reopened,
+  }) {
+    final Person? person = resolvePerson?.call(personId);
+    if (person == null) {
+      return;
+    }
+    final ReminderLog log = ReminderLog.instance;
+    if (paused > 0) {
+      log.logEvent(
+        event: ReminderLogEvent.paused,
+        kind: HomeItemKind.person,
+        targetId: personId,
+        count: paused,
+        note: person.profileStatus.name,
+      );
+    }
+    if (reopened > 0) {
+      log.logEvent(
+        event: ReminderLogEvent.reopened,
+        kind: HomeItemKind.person,
+        targetId: personId,
+        count: reopened,
+      );
+    }
+    if (person.profileStatus == ProfileStatus.available) {
+      // Free, while this matchmaker has them going out with somebody: maybe
+      // the couple stopped and nobody said.
+      for (final MatchIdea match in _matchBox.values) {
+        if (match.status == MatchStatus.dating &&
+            (match.personAId == personId || match.personBId == personId)) {
+          log.logEvent(
+            event: ReminderLogEvent.freeWhileDating,
+            kind: HomeItemKind.idea,
+            targetId: match.id,
+            note: personId,
+          );
+        }
+      }
     }
   }
 
@@ -1700,6 +1802,37 @@ class MatchRepository extends ChangeNotifier {
       mazelTovFrom: mazelTovFrom,
     );
     await _noteBox.put(note.id, note);
+    if (mazelTovFrom == null) {
+      await _restartDefaultReminder(matchId, createdAt);
+    }
+  }
+
+  /// **The monthly look counts from the last thing that happened.** Every
+  /// line in the journal is a meaningful act on the idea — a status move, a
+  /// card sent, a note, a contact — so the default "לבדוק מה קורה עם הרעיון"
+  /// reminder is moved to a month after it. An idea somebody is working on is
+  /// not chased; one left alone is asked about a month after it was last
+  /// touched, once, and never twice for the same stretch of silence.
+  ///
+  /// Only the app's own default moves. A reminder the matchmaker set by hand
+  /// (any other note, or any custom date) is a decision and keeps its date; so
+  /// does the "going out" check-in, which has its own cadence.
+  Future<void> _restartDefaultReminder(String matchId, DateTime at) async {
+    final MatchIdea? match = getById(matchId);
+    if (match == null ||
+        match.status.isArchived ||
+        match.status == MatchStatus.dating ||
+        match.reminderDate == null ||
+        match.reminderNote != defaultReminderNote) {
+      return;
+    }
+    final DateTime next = defaultReminderFrom(at);
+    if (!next.isAfter(match.reminderDate!)) {
+      return;
+    }
+    match.reminderDate = next;
+    await match.save();
+    _refreshNotifications();
   }
 
   /// Files a "מזל טוב" from another matchmaker into this proposal's journal.
@@ -1768,6 +1901,10 @@ class MatchRepository extends ChangeNotifier {
   int _sortByUpdatedAtDesc(MatchIdea a, MatchIdea b) {
     return b.updatedAt.compareTo(a.updatedAt);
   }
+
+  /// Reschedules this phone's idea reminders — after the server took them
+  /// over or handed them back.
+  void refreshReminderNotifications() => _refreshNotifications();
 
   void _refreshNotifications() {
     final List<MatchIdea> allMatches = _matchBox.values.toList();

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/analytics_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -44,6 +45,16 @@ Future<void> main() async {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // Error measurement: the type of what went wrong and nothing else — no
+      // message, no stack, nothing a name or a number could hide in.
+      final void Function(FlutterErrorDetails)? previous = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        Analytics.log(AnalyticsEvent.app_error, <String, Object?>{
+          'kind': 'flutter',
+          'error_type': Analytics.errorCode(details.exception),
+        });
+        (previous ?? FlutterError.presentError)(details);
+      };
 
       try {
         await _bootstrap();
@@ -65,6 +76,10 @@ Future<void> main() async {
     },
     (Object error, StackTrace stackTrace) {
       debugPrint('Uncaught zone error: $error\n$stackTrace');
+      Analytics.log(AnalyticsEvent.app_error, <String, Object?>{
+        'kind': 'async',
+        'error_type': Analytics.errorCode(error),
+      });
     },
   );
 }

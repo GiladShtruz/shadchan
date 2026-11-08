@@ -37,6 +37,7 @@ class ContactImportCandidate {
     required this.hasAdditionalPhones,
     required this.isFilteredByName,
     this.isFavorite = false,
+    this.isLandline = false,
   });
 
   final String deviceContactId;
@@ -52,6 +53,12 @@ class ContactImportCandidate {
   /// about who matters to the matchmaker that the address book itself gives
   /// us, so it is what the "favourites first" ordering sorts on.
   final bool isFavorite;
+
+  /// The contact has a phone but no mobile number — a landline, an office, a
+  /// short foreign number. Kept so search can still find them and the screen
+  /// can say how many are tucked away, but never in the regular list or the
+  /// deck: matchmaking happens on WhatsApp, and WhatsApp needs a mobile.
+  final bool isLandline;
 
   bool matchesQuery(String query) {
     final String normalizedQuery = _normalizeSearchText(query);
@@ -138,6 +145,14 @@ abstract final class ContactsImportService {
     return FlutterContacts.permissions.openSettings();
   }
 
+  /// How many contacts the address book handed over on the last device read,
+  /// before any filtering — null until one has run.
+  ///
+  /// It is what tells "this phone has no contacts" apart from "none of your
+  /// contacts has a mobile number": two empty lists that need two different
+  /// sentences.
+  static int? lastDeviceContactCount;
+
   /// The last decoded cache, held for the life of the process.
   ///
   /// Re-opening the Hive box and re-reading a few thousand maps is not free,
@@ -210,7 +225,12 @@ abstract final class ContactsImportService {
       },
     );
 
+    lastDeviceContactCount = contacts.length;
     final List<ContactImportCandidate> candidates = <ContactImportCandidate>[];
+    // One row per number. The same person saved twice — on the phone and in
+    // Google, or once per account — arrives as two contacts the OS did not
+    // merge; showing both is a duplicate the matchmaker can add twice.
+    final Map<String, int> indexByPhone = <String, int>{};
     for (int index = 0; index < contacts.length; index++) {
       final Contact contact = contacts[index];
       final ContactImportCandidate? candidate = buildCandidate(
@@ -220,13 +240,21 @@ abstract final class ContactsImportService {
         existingPhones: existingPhones,
         hiddenPhones: hiddenPhones,
         isFavorite: contact.android?.isFavorite ?? false,
+        includeLandlines: true,
       );
 
       // Contacts already in the database are kept rather than dropped: the
       // add-friends search reaches past the regular list and tags them
       // `במאגר`, which it can only do if they are still here.
       if (candidate != null) {
-        candidates.add(candidate);
+        final int? seenAt = indexByPhone[candidate.normalizedPhone];
+        if (seenAt == null) {
+          indexByPhone[candidate.normalizedPhone] = candidates.length;
+          candidates.add(candidate);
+        } else if (candidate.isFavorite && !candidates[seenAt].isFavorite) {
+          // Starred in either copy means starred.
+          candidates[seenAt] = candidate;
+        }
       }
 
       if (index % _processingBatchSize == 0 || index == contacts.length - 1) {
@@ -253,6 +281,7 @@ abstract final class ContactsImportService {
     required Set<String> existingPhones,
     Set<String> hiddenPhones = const <String>{},
     bool isFavorite = false,
+    bool includeLandlines = false,
   }) {
     final String trimmedName = displayName.trim();
     if (trimmedName.isEmpty) {
@@ -284,8 +313,23 @@ abstract final class ContactsImportService {
       break;
     }
 
+    bool isLandline = false;
     if (selectedPhone == null || normalizedPhone == null) {
-      return null;
+      if (!includeLandlines) {
+        return null;
+      }
+      for (final String phone in cleanedPhones) {
+        final String? normalized = PhoneUtils.normalizeForComparison(phone);
+        if (normalized != null && normalized.length >= 7) {
+          selectedPhone = phone;
+          normalizedPhone = normalized;
+          isLandline = true;
+          break;
+        }
+      }
+      if (selectedPhone == null || normalizedPhone == null) {
+        return null;
+      }
     }
 
     return ContactImportCandidate(
@@ -299,16 +343,26 @@ abstract final class ContactsImportService {
           isFilteredByName(trimmedName) ||
           hiddenPhones.contains(normalizedPhone),
       isFavorite: isFavorite,
+      isLandline: isLandline,
     );
   }
 
+  /// Whether [phone] is an Israeli mobile number, however the address book
+  /// happens to have written it.
+  ///
+  /// This used to look at the raw string's first characters, accepting only
+  /// `05…` and `+9725…`. Address books write the same number many other ways —
+  /// `972 54…` without the plus, `00972…`, `+972 (0)54…`, and very often (on
+  /// Samsung especially) wrapped in invisible direction marks such as U+202A —
+  /// and every one of those contacts silently vanished from the list. That is
+  /// what "some contacts are missing on some phones" was. The test is now made
+  /// on the normalised number, which is the same form duplicates are matched
+  /// on: ten digits starting with `05`.
   static bool isSuggestedMobilePhone(String phone) {
-    final String compactPhone = phone
-        .trim()
-        .replaceAll(RegExp(r'[\s\-().]'), '')
-        .replaceAll('־', '');
-
-    return compactPhone.startsWith('05') || compactPhone.startsWith('+9725');
+    final String? normalized = PhoneUtils.normalizeForComparison(phone);
+    return normalized != null &&
+        normalized.length == 10 &&
+        normalized.startsWith('05');
   }
 
   static bool isFilteredByName(String displayName) {
@@ -499,6 +553,7 @@ abstract final class ContactsImportService {
       'hasAdditionalPhones': candidate.hasAdditionalPhones,
       'isFilteredByName': candidate.isFilteredByName,
       'isFavorite': candidate.isFavorite,
+      'isLandline': candidate.isLandline,
     };
   }
 
@@ -536,6 +591,7 @@ abstract final class ContactsImportService {
           isFilteredByName(displayName) ||
           hiddenPhones.contains(normalizedPhone),
       isFavorite: rawCandidate['isFavorite'] == true,
+      isLandline: rawCandidate['isLandline'] == true,
     );
   }
 }

@@ -13,7 +13,18 @@ class ReminderLogEntry {
     required this.note,
     this.read = false,
     this.removed = false,
+    this.event,
+    this.count = 0,
   });
+
+  /// Null for a reminder that came due. Otherwise a change a friend made to
+  /// their own personal card that touches this matchmaker's ideas — see
+  /// [ReminderLogEvent]. Kept in the same log so it is read, removed and
+  /// synced exactly like a reminder.
+  final ReminderLogEvent? event;
+
+  /// How many ideas the [event] moved.
+  final int count;
 
   /// A friend or an idea.
   final HomeItemKind kind;
@@ -32,7 +43,9 @@ class ReminderLogEntry {
 
   /// One reminder date of one record: a reminder set again for another day is
   /// a new notification.
-  String get key => '${kind.name}:$targetId:${dueAt.millisecondsSinceEpoch}';
+  String get key =>
+      '${event == null ? kind.name : 'event_${event!.name}'}:$targetId:'
+      '${dueAt.millisecondsSinceEpoch}';
 
   ReminderLogEntry copyWith({bool? read, bool? removed}) => ReminderLogEntry(
     kind: kind,
@@ -41,6 +54,8 @@ class ReminderLogEntry {
     note: note,
     read: read ?? this.read,
     removed: removed ?? this.removed,
+    event: event,
+    count: count,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -50,6 +65,8 @@ class ReminderLogEntry {
     'n': note,
     if (read) 'r': true,
     if (removed) 'x': true,
+    if (event != null) 'e': event!.name,
+    if (count != 0) 'c': count,
   };
 
   static ReminderLogEntry? fromJson(Object? raw) {
@@ -69,8 +86,27 @@ class ReminderLogEntry {
       note: (raw['n'] as String?) ?? '',
       read: raw['r'] == true,
       removed: raw['x'] == true,
+      event: ReminderLogEvent.values
+          .where((ReminderLogEvent e) => e.name == raw['e'])
+          .firstOrNull,
+      count: raw['c'] is int ? raw['c'] as int : 0,
     );
   }
+}
+
+/// A friend's own change that asks something of the matchmaker.
+enum ReminderLogEvent {
+  /// They marked themselves taken or on a break, and open ideas of theirs
+  /// moved to "בהמתנה". Target: the friend; note: the new status's name.
+  paused,
+
+  /// They are free again, and waiting ideas went back to open. Target: the
+  /// friend.
+  reopened,
+
+  /// They marked themselves free while an idea of this matchmaker has them
+  /// going out — worth asking whether the couple stopped. Target: the idea.
+  freeWhileDating,
 }
 
 /// A reminder about to be logged: whatever record carries a due date now.
@@ -285,6 +321,33 @@ class ReminderLog extends ChangeNotifier {
       ]);
     }
     markRead(<String>[key]);
+  }
+
+  /// Logs a friend's change that asks something of the matchmaker (see
+  /// [ReminderLogEvent]). Unread, and drawn on the notifications page at
+  /// once.
+  void logEvent({
+    required ReminderLogEvent event,
+    required HomeItemKind kind,
+    required String targetId,
+    int count = 0,
+    String note = '',
+    DateTime? at,
+  }) {
+    final ReminderLogEntry entry = ReminderLogEntry(
+      kind: kind,
+      targetId: targetId,
+      dueAt: at ?? DateTime.now(),
+      note: note,
+      event: event,
+      count: count,
+    );
+    if (byKey(entry.key) != null) {
+      return;
+    }
+    _entries.add(entry);
+    _write();
+    notifyListeners();
   }
 
   /// Something else the notifications page draws changed locally — redraw.

@@ -1,3 +1,4 @@
+import 'package:shadchan/services/analytics_service.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -52,6 +53,7 @@ class ThinkScreen extends StatefulWidget {
   const ThinkScreen({super.key});
 
   static Future<void> open(BuildContext context) {
+    Analytics.feature(AnalyticsFeature.think);
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => const ThinkScreen(),

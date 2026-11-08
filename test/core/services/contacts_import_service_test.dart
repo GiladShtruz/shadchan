@@ -100,6 +100,79 @@ void main() {
     expect(mobileCandidate, isNotNull);
   });
 
+  test('buildCandidate recognises every way a mobile number is written', () {
+    // Each of these used to be dropped from the list without a word.
+    const List<String> spellings = <String>[
+      '\u202a+972 54-123-4567\u202c', // Samsung wraps numbers in bidi marks
+      '\u200e054-1234567',
+      '972541234567', // no plus
+      '00972 54 123 4567',
+      '+972 (0)54 123 4567',
+      '054 123 4567',
+    ];
+    for (final String phone in spellings) {
+      final ContactImportCandidate? candidate =
+          ContactsImportService.buildCandidate(
+            deviceContactId: 'c',
+            displayName: 'יוסי כהן',
+            phones: <String>[phone],
+            existingPhones: const <String>{},
+          );
+      expect(candidate, isNotNull, reason: phone);
+      expect(candidate!.normalizedPhone, '0541234567', reason: phone);
+    }
+  });
+
+  test(
+    'a landline-only contact is kept for search, marked, never a mobile',
+    () {
+      final ContactImportCandidate? landline =
+          ContactsImportService.buildCandidate(
+            deviceContactId: 'c',
+            displayName: 'משה לוי',
+            phones: const <String>['02-6751234'],
+            existingPhones: const <String>{},
+            includeLandlines: true,
+          );
+      expect(landline, isNotNull);
+      expect(landline!.isLandline, isTrue);
+      expect(landline.normalizedPhone, '026751234');
+
+      // A mobile wins over a landline on the same contact.
+      final ContactImportCandidate? both = ContactsImportService.buildCandidate(
+        deviceContactId: 'c',
+        displayName: 'משה לוי',
+        phones: const <String>['02-6751234', '054-1234567'],
+        existingPhones: const <String>{},
+        includeLandlines: true,
+      );
+      expect(both!.isLandline, isFalse);
+      expect(both.normalizedPhone, '0541234567');
+
+      // Short codes stay out either way.
+      expect(
+        ContactsImportService.buildCandidate(
+          deviceContactId: 'c',
+          displayName: 'מוקד',
+          phones: const <String>['*2700'],
+          existingPhones: const <String>{},
+          includeLandlines: true,
+        ),
+        isNull,
+      );
+    },
+  );
+
+  test('isSuggestedMobilePhone still refuses landlines and short codes', () {
+    expect(ContactsImportService.isSuggestedMobilePhone('03-5555555'), isFalse);
+    expect(ContactsImportService.isSuggestedMobilePhone('*2700'), isFalse);
+    expect(ContactsImportService.isSuggestedMobilePhone('054-12345'), isFalse);
+    expect(
+      ContactsImportService.isSuggestedMobilePhone('+1 415 555 0100'),
+      isFalse,
+    );
+  });
+
   test('buildCandidate marks names that match blocked keywords', () {
     final ContactImportCandidate? candidate =
         ContactsImportService.buildCandidate(
