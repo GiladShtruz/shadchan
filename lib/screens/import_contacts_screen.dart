@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
+import 'package:shadchan/dialogs/live_card_offer.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/add_contacts_session.dart';
@@ -11,6 +12,7 @@ import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/widgets/add_contacts_common.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/contacts_access_state.dart';
@@ -131,6 +133,7 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
     }
 
     final List<ContactCandidateEntry> rows = _rowsFor(session);
+    final Set<String> liveCards = LiveCardOffer.knownCardHashes(context);
     // The selection lives on the session, not here, so the screen around this
     // one can answer a back press with "clear the ticks" instead of leaving.
     final int selectedCount = session.selectedContactIds.length;
@@ -225,6 +228,9 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
                     return _ContactRow(
                       key: ValueKey<String>(entry.candidate.deviceContactId),
                       entry: entry,
+                      liveCard: liveCards.contains(
+                        PhoneIdentity.hash(entry.candidate.phone),
+                      ),
                       busy: _importingIds.contains(
                         entry.candidate.deviceContactId,
                       ),
@@ -591,6 +597,16 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
         return;
       }
 
+      // A friend who keeps their own card: ask for it rather than copy it.
+      final LiveCardChoice live = await LiveCardOffer.ask(
+        context,
+        staged.person,
+      );
+      if (live != LiveCardChoice.manual || !mounted) {
+        await ContactsImportService.discardStagedCandidate(staged, repository);
+        return;
+      }
+
       final QuickUpdateOutcome outcome = await QuickUpdateDialog.show(
         context,
         staged.person,
@@ -655,6 +671,18 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
       // A null result means the contact was already in the database — there is
       // nothing to fill in, so the run moves on.
       if (staged == null) {
+        continue;
+      }
+
+      final LiveCardChoice live = await LiveCardOffer.ask(
+        context,
+        staged.person,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (live != LiveCardChoice.manual) {
+        await ContactsImportService.discardStagedCandidate(staged, repository);
         continue;
       }
 
@@ -887,9 +915,14 @@ class _ContactRow extends StatelessWidget {
     required this.busy,
     required this.selected,
     required this.onTap,
+    this.liveCard = false,
   });
 
   final ContactCandidateEntry entry;
+
+  /// The contact keeps a personal card in שדכן — known from the server's
+  /// list of mutual friends, so it costs nothing to show.
+  final bool liveCard;
   final bool busy;
   final bool selected;
   final VoidCallback onTap;
@@ -946,6 +979,7 @@ class _ContactRow extends StatelessWidget {
                   _StatusTag(
                     status: entry.status,
                     landline: entry.candidate.isLandline,
+                    liveCard: liveCard,
                   ),
               ],
             ),
@@ -959,9 +993,16 @@ class _ContactRow extends StatelessWidget {
 /// Says why a searched contact is not in the regular list. Nothing is drawn for
 /// a contact that simply hasn't been decided on yet.
 class _StatusTag extends StatelessWidget {
-  const _StatusTag({required this.status, this.landline = false});
+  const _StatusTag({
+    required this.status,
+    this.landline = false,
+    this.liveCard = false,
+  });
 
   final ContactCandidateStatus status;
+
+  /// Has a personal card of their own — worth asking for, not copying.
+  final bool liveCard;
 
   /// Hidden because the contact has no mobile number, rather than by name.
   final bool landline;
@@ -984,7 +1025,13 @@ class _StatusTag extends StatelessWidget {
         label = landline ? 'מספר קווי' : 'מוסתר מהרשימה';
         color = theme.colorScheme.onSurfaceVariant;
       case ContactCandidateStatus.available:
-        return const SizedBox.shrink();
+        if (!liveCard) {
+          return const SizedBox.shrink();
+        }
+        label = 'כרטיס אישי בשדכן';
+        color = theme.brightness == Brightness.dark
+            ? theme.colorScheme.primary
+            : AppColors.primaryDark;
     }
 
     return Container(

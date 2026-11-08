@@ -6,6 +6,7 @@ import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/contacts_added_celebration.dart';
+import 'package:shadchan/dialogs/live_card_offer.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -227,6 +228,18 @@ class _SwipeImportScreenState extends State<SwipeImportScreen> {
 
       if (!mounted) {
         await ContactsImportService.discardStagedCandidate(staged, repo);
+        return;
+      }
+
+      // A friend who keeps their own card: asked for, not copied. Either way
+      // the swipe moves on — nothing was added by hand.
+      final LiveCardChoice live = await LiveCardOffer.ask(
+        context,
+        staged.person,
+      );
+      if (live != LiveCardChoice.manual || !mounted || entry.wasUndone) {
+        await ContactsImportService.discardStagedCandidate(staged, repo);
+        _revertPendingAddedCount(entry);
         return;
       }
 
