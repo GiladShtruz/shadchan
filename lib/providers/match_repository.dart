@@ -1700,6 +1700,37 @@ class MatchRepository extends ChangeNotifier {
       mazelTovFrom: mazelTovFrom,
     );
     await _noteBox.put(note.id, note);
+    if (mazelTovFrom == null) {
+      await _restartDefaultReminder(matchId, createdAt);
+    }
+  }
+
+  /// **The monthly look counts from the last thing that happened.** Every
+  /// line in the journal is a meaningful act on the idea — a status move, a
+  /// card sent, a note, a contact — so the default "לבדוק מה קורה עם הרעיון"
+  /// reminder is moved to a month after it. An idea somebody is working on is
+  /// not chased; one left alone is asked about a month after it was last
+  /// touched, once, and never twice for the same stretch of silence.
+  ///
+  /// Only the app's own default moves. A reminder the matchmaker set by hand
+  /// (any other note, or any custom date) is a decision and keeps its date; so
+  /// does the "going out" check-in, which has its own cadence.
+  Future<void> _restartDefaultReminder(String matchId, DateTime at) async {
+    final MatchIdea? match = getById(matchId);
+    if (match == null ||
+        match.status.isArchived ||
+        match.status == MatchStatus.dating ||
+        match.reminderDate == null ||
+        match.reminderNote != defaultReminderNote) {
+      return;
+    }
+    final DateTime next = defaultReminderFrom(at);
+    if (!next.isAfter(match.reminderDate!)) {
+      return;
+    }
+    match.reminderDate = next;
+    await match.save();
+    _refreshNotifications();
   }
 
   /// Files a "מזל טוב" from another matchmaker into this proposal's journal.
