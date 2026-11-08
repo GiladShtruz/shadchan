@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/account_sync_codec.dart';
 import 'package:shadchan/services/account_sync_engine.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
+import 'package:shadchan/services/contacts_health.dart';
 import 'package:shadchan/services/device_facts.dart';
 
 /// What support needs to answer "I don't see my database", and nothing more.
@@ -64,6 +65,7 @@ abstract final class AccountHealthService {
           ? null
           : AccountSyncEngine.errorCode(lastError),
       'log': log.length > logLines ? log.sublist(log.length - logLines) : log,
+      'contacts': ContactsHealth.snapshot(),
       'reportedAt': DateTime.now().toUtc().toIso8601String(),
     };
   }

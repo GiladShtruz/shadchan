@@ -247,6 +247,7 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
             ),
           ),
           const SizedBox(height: 12),
+          _AlertsCard(alerts: AdminAlertView.listFrom(_current)),
           _Section(
             title: 'מדדי ליבה',
             accent: AppColors.primaryDark,
@@ -346,6 +347,23 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
               ),
             ],
           ),
+          _Section(
+            title: 'טעינת אנשי קשר',
+            accent: AppColors.femaleAccent,
+            children: <Widget>[
+              _Tile('מכשירים שדיווחו (30 ימים)', _n('contacts', 'devices')),
+              _Tile('קראו בהצלחה השבוע', _n('contacts', 'readers7')),
+              _Tile('נכשלו השבוע', _n('contacts', 'failing7')),
+              _Tile(
+                'אחוז כישלון',
+                _n('contacts', 'failurePercent'),
+                suffix: '%',
+              ),
+              _Tile('הרשאה חסומה', _n('contacts', 'blocked')),
+              _Tile('סירבו להרשאה', _n('contacts', 'denied')),
+              ..._versionLines(theme),
+            ],
+          ),
           if (_history.length >= 2)
             _Section(
               title: 'מגמות (90 ימים)',
@@ -395,6 +413,34 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
         ],
       ),
     );
+  }
+
+  /// "גרסה X · N מכשירים · חציון Y אנשי קשר מתאימים", newest first.
+  List<Widget> _versionLines(ThemeData theme) {
+    final Object? block = _current?['contacts'];
+    final Object? versions = block is Map ? block['versions'] : null;
+    if (versions is! List || versions.isEmpty) return const <Widget>[];
+    return <Widget>[
+      SizedBox(
+        width: double.infinity,
+        child: Text(
+          'לפי גרסה (חציון אנשי קשר מתאימים):',
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      for (final Object? v in versions)
+        if (v is Map)
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              '${v['version']} · ${v['devices']} מכשירים · '
+              '${(v['medianSuitable'] as num? ?? 0).round()}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+    ];
   }
 
   static String _dayLabel(DateTime d) => '${d.day}.${d.month}.${d.year % 100}';
@@ -548,6 +594,100 @@ class _AdminStatsTabState extends State<AdminStatsTab> {
   ];
 }
 
+/// One alert as the server wrote it (`functions/src/admin_alerts.ts`).
+class AdminAlertView {
+  const AdminAlertView({
+    required this.code,
+    required this.high,
+    required this.title,
+    required this.detail,
+  });
+
+  final String code;
+  final bool high;
+  final String title;
+  final String detail;
+
+  static List<AdminAlertView> listFrom(Map<String, dynamic>? current) {
+    final Object? raw = current?['alerts'];
+    if (raw is! List) return const <AdminAlertView>[];
+    return <AdminAlertView>[
+      for (final Object? a in raw)
+        if (a is Map && a['title'] is String)
+          AdminAlertView(
+            code: '${a['code'] ?? ''}',
+            high: a['severity'] == 'high',
+            title: a['title'] as String,
+            detail: '${a['detail'] ?? ''}',
+          ),
+    ];
+  }
+}
+
+/// "בעיות בולטות" — drawn only when there is one.
+class _AlertsCard extends StatelessWidget {
+  const _AlertsCard({required this.alerts});
+
+  final List<AdminAlertView> alerts;
+
+  @override
+  Widget build(BuildContext context) {
+    if (alerts.isEmpty) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: HomePaperCard(
+        stripe: theme.colorScheme.error,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'בעיות בולטות',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.error,
+              ),
+            ),
+            for (final AdminAlertView alert in alerts)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      alert.high
+                          ? Icons.error_outline_rounded
+                          : Icons.warning_amber_rounded,
+                      size: 18,
+                      color: alert.high
+                          ? theme.colorScheme.error
+                          : AppColors.secondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            alert.title,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(alert.detail, style: theme.textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Figures for a range of dates the administrator picks, read from the daily
 /// snapshots (`adminStats/history/days`, oldest first, each with its `day`).
 ///
@@ -681,6 +821,8 @@ abstract final class AdminStatsCsv {
         ('databases', 'count', 'מאגרים'),
         ('databases', 'average', 'ממוצע חברים למאגר'),
         ('databases', 'median', 'חציון חברים למאגר'),
+        ('contacts', 'failing7', 'כשלי טעינת אנשי קשר בשבוע'),
+        ('contacts', 'failurePercent', 'אחוז כשלי טעינת אנשי קשר'),
       ];
 
   static String build(List<Map<String, dynamic>> days) {

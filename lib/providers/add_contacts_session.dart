@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:shadchan/services/analytics_service.dart';
+import 'package:shadchan/services/contacts_health.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:flutter/widgets.dart';
@@ -315,6 +316,7 @@ class AddContactsSession extends ChangeNotifier {
       return;
     }
     _permissionState = permissionState;
+    ContactsHealth.recordPermission(_permissionWord(permissionState));
     if (permissionState == ContactsPermissionState.granted) {
       await _loadGranted();
       return;
@@ -326,6 +328,13 @@ class AddContactsSession extends ChangeNotifier {
     _isLoading = false;
     _notify();
   }
+
+  static String _permissionWord(ContactsPermissionState state) =>
+      switch (state) {
+        ContactsPermissionState.granted => 'granted',
+        ContactsPermissionState.denied => 'denied',
+        ContactsPermissionState.permanentlyDenied => 'blocked',
+      };
 
   /// Raises the system permission dialog, after the explanation was read.
   Future<void> requestAccess() async {
@@ -351,6 +360,7 @@ class AddContactsSession extends ChangeNotifier {
       return;
     }
     _permissionState = permissionState;
+    ContactsHealth.recordPermission(_permissionWord(permissionState));
     if (permissionState != ContactsPermissionState.granted) {
       _isLoading = false;
       _notify();
@@ -383,6 +393,7 @@ class AddContactsSession extends ChangeNotifier {
     }
     if (state != ContactsPermissionState.granted) {
       _permissionState = state;
+      ContactsHealth.recordPermission(_permissionWord(state));
       _awaitingPermissionRequest = state == ContactsPermissionState.denied;
       _isRefreshing = false;
       _notify();
@@ -471,6 +482,12 @@ class AddContactsSession extends ChangeNotifier {
             onProgress: onProgress,
           );
       _lastDeviceReadAt = DateTime.now();
+      ContactsHealth.recordRead(
+        deviceCount: ContactsImportService.lastDeviceContactCount ?? 0,
+        suitable: fresh
+            .where((ContactImportCandidate c) => !c.isLandline)
+            .length,
+      );
       // How many, as bands — never who. A sudden drop after a release is the
       // "contacts went missing" signal.
       Analytics.log(AnalyticsEvent.contacts_sync_completed, <String, Object?>{
@@ -487,6 +504,7 @@ class AddContactsSession extends ChangeNotifier {
       Analytics.log(AnalyticsEvent.contacts_sync_failed, <String, Object?>{
         'error_type': Analytics.errorCode(error),
       });
+      ContactsHealth.recordFailure(Analytics.errorCode(error));
       return null;
     }
   }
@@ -552,6 +570,7 @@ class AddContactsSession extends ChangeNotifier {
     }
     if (state == ContactsPermissionState.granted) {
       _permissionState = state;
+      ContactsHealth.recordPermission(_permissionWord(state));
       _isLoading = true;
       _loadingMessage = 'טוענים אנשי קשר...';
       _notify();

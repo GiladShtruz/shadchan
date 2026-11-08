@@ -15,6 +15,15 @@
 import { getAuth, UserRecord } from 'firebase-admin/auth';
 import { Firestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { isActiveCard } from './card_activity';
+import {
+  AdminAlert,
+  ContactsBlock,
+  ContactsDevice,
+  computeAlerts,
+  contactsBlock,
+  newAlerts,
+} from './admin_alerts';
+import { notify } from './notices';
 
 const ROOT_ADMIN = 'yitz292@gmail.com';
 const DAY = 24 * 60 * 60 * 1000;
@@ -27,6 +36,42 @@ export interface AdminStats {
   access: Record<string, number>;
   ideas: Record<string, number>;
   databases: Record<string, number>;
+  contacts: ContactsBlock;
+  alerts: AdminAlert[];
+}
+
+function isoMillis(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? undefined : t;
+}
+
+/** Every device's address-book report, from `accountHealth` (no contacts). */
+async function contactDevices(db: Firestore, internal: Set<string>): Promise<ContactsDevice[]> {
+  const out: ContactsDevice[] = [];
+  const docs = await db.collection('accountHealth').select('devices').get();
+  for (const doc of docs.docs) {
+    if (internal.has(doc.id)) continue;
+    const devices = doc.get('devices');
+    if (!devices || typeof devices !== 'object') continue;
+    for (const device of Object.values(devices as Record<string, unknown>)) {
+      if (!device || typeof device !== 'object') continue;
+      const d = device as Record<string, unknown>;
+      const c = d.contacts as Record<string, unknown> | undefined;
+      if (!c || typeof c !== 'object') continue;
+      const version = typeof d.appVersion === 'string' && /\d/.test(d.appVersion) ? d.appVersion : undefined;
+      out.push({
+        appVersion: version,
+        readAt: isoMillis(c.readAt),
+        failedAt: isoMillis(c.failedAt),
+        failure: typeof c.failure === 'string' ? c.failure : undefined,
+        permission: typeof c.permission === 'string' ? c.permission : undefined,
+        suitable: typeof c.suitable === 'number' ? c.suitable : undefined,
+        deviceCount: typeof c.deviceCount === 'number' ? c.deviceCount : undefined,
+      });
+    }
+  }
+  return out;
 }
 
 function millis(value: unknown): number | null {
@@ -195,6 +240,37 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
     reached10: sizes.filter((n) => n >= 10).length,
   };
 
+  // ---- address-book reads, and the early warnings
+  const devices = await contactDevices(db, internal);
+  const contacts = contactsBlock(devices, now);
+  const history = (
+    await db
+      .collection('adminStats/history/days')
+      .orderBy('computedAt', 'desc')
+      .limit(8)
+      .get()
+  ).docs
+    .map((d) => d.data())
+    .reverse();
+  const weekAgo = history.find((h) => typeof h.computedAt === 'number' && h.computedAt <= now - 6.5 * DAY);
+  const reminders = await db.doc('publicStats/serverReminders').get();
+  const alerts = computeAlerts({
+    now,
+    contacts,
+    contactDevices: devices,
+    dau,
+    dauHistory: history
+      .filter((h) => typeof h.computedAt === 'number' && h.computedAt < now - 12 * 60 * 60 * 1000)
+      .map((h) => h.activity?.dau)
+      .filter((n): n is number => typeof n === 'number')
+      .slice(-7),
+    new7: usersBlock.new7,
+    newPrev7: usersBlock.newPrev7,
+    pending: accessBlock.pending,
+    pendingWeekAgo: typeof weekAgo?.access?.pending === 'number' ? weekAgo.access.pending : null,
+    remindersLastRunAt: millis(reminders.get('lastRunAt')),
+  });
+
   return {
     computedAt: now,
     users: usersBlock,
@@ -203,7 +279,26 @@ export async function computeAdminStats(db: Firestore, now = Date.now()): Promis
     access: accessBlock,
     ideas: ideasBlock,
     databases: databasesBlock,
+    contacts,
+    alerts,
   };
+}
+
+/** Tells every administrator about alerts that were not raised last time. */
+async function announceAlerts(db: Firestore, fresh: AdminAlert[]): Promise<void> {
+  if (fresh.length === 0) return;
+  const admins = await db.collection('supportAdmins').get();
+  const emails = [ROOT_ADMIN, ...admins.docs.map((d) => d.id.toLowerCase())];
+  const title = fresh.length === 1 ? fresh[0].title : `${fresh.length} בעיות בולטות בנתונים`;
+  const body = fresh.length === 1 ? fresh[0].detail : fresh.map((a) => a.title).join(' · ');
+  for (const email of emails) {
+    try {
+      const user = await getAuth().getUserByEmail(email);
+      await notify(user.uid, { kind: 'adminAlert', title, body, route: '/profile/admin' });
+    } catch (error) {
+      console.warn('announceAlerts: could not tell an administrator', error);
+    }
+  }
 }
 
 /** Israel's calendar day, for the history document's id. */
@@ -212,7 +307,9 @@ function israelDay(now: number): string {
 }
 
 export async function writeAdminStats(db: Firestore): Promise<AdminStats> {
+  const previous = await db.doc('adminStats/current').get();
   const stats = await computeAdminStats(db);
+  await announceAlerts(db, newAlerts(previous.get('alerts') as AdminAlert[] | undefined, stats.alerts));
   const payload = { ...stats, updatedAt: FieldValue.serverTimestamp() };
   await db.doc('adminStats/current').set(payload);
   await db.doc(`adminStats/history/days/${israelDay(stats.computedAt)}`).set(payload);

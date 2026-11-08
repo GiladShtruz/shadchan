@@ -33,6 +33,7 @@ const PUSHED_KINDS = new Set([
   'friendJoined',
   'cardUpdated',
   'personalNews',
+  'adminAlert',
 ]);
 
 /** Writes the inbox row and pushes to every device of [uid]. */
