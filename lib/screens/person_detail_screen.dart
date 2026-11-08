@@ -826,8 +826,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 }
 
-const Color _profileCanvasLight = AppColors.background;
-const Color _profileSurfaceLight = AppColors.surface;
+const Color _profileCanvasLight = AppColors.page;
+const Color _profileSurfaceLight = AppColors.cardCream;
 const Color _profileSurfaceWarmLight = AppColors.secondaryLight;
 // The page's one accent — what used to be a pale blue on every card, whoever
 // it belonged to — is picked per person now. See [ProfilePersonAccent].

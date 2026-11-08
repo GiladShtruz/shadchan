@@ -26,6 +26,7 @@ class BoardRow extends StatelessWidget {
     this.centerText = false,
     this.boldTitle = true,
     this.fresh = false,
+    this.flat = false,
   });
 
   final Widget leading;
@@ -60,8 +61,18 @@ class BoardRow extends StatelessWidget {
   /// dot before the name. Nothing else about the row changes.
   final bool fresh;
 
+  /// The home screen's list of what to do next: drawn the way a chat list is —
+  /// on the bare page, no frame, no coloured bars, the face at the start, two
+  /// short lines and a small arrow at the end. The list draws the hairline
+  /// between rows. [menu] is drawn before the arrow when it is not just the
+  /// row's "⋯" (a direct action such as "בקשת גישה").
+  final bool flat;
+
   @override
   Widget build(BuildContext context) {
+    if (flat) {
+      return _buildFlat(context);
+    }
     final ThemeData theme = Theme.of(context);
     final String? sub = subtitle?.trim();
     final Color? end = endAccent;
@@ -171,6 +182,83 @@ class BoardRow extends StatelessWidget {
                     const SizedBox(width: 8),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlat(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String? sub = subtitle?.trim();
+    final ValueChanged<BuildContext>? longPress = onLongPress;
+    return Builder(
+      builder: (BuildContext rowContext) => InkWell(
+        onTap: onTap,
+        onLongPress: longPress == null ? null : () => longPress(rowContext),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: <Widget>[
+                leading,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          if (fresh) ...<Widget>[
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: theme.colorScheme.secondary,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Flexible(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: titleColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (sub != null && sub.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 2),
+                        Text(
+                          sub,
+                          maxLines: subtitleMaxLines ?? 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: subtitleColor,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                menu,
+                Icon(
+                  // Material's chevrons mirror themselves in RTL: this one
+                  // points left, into the item.
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
             ),
           ),
         ),

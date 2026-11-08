@@ -11,13 +11,13 @@ abstract final class ProfilePalette {
   static Color canvas(ThemeData theme) {
     return theme.brightness == Brightness.dark
         ? theme.scaffoldBackgroundColor
-        : AppColors.background;
+        : AppColors.page;
   }
 
   static Color surface(ThemeData theme) {
     return theme.brightness == Brightness.dark
         ? theme.colorScheme.surface
-        : AppColors.surface;
+        : AppColors.cardCream;
   }
 
   static Color warmSurface(ThemeData theme) {

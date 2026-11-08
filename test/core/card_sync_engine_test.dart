@@ -343,6 +343,63 @@ void main() {
     ]);
   });
 
+  test('the same photos under a moved folder are saved, quietly', () {
+    // iOS moves the app's folder on an update: the file is the same, its
+    // stored path is dead. Compared by name only, this used to be "no
+    // change", and the matchmaker kept a card with no pictures.
+    final Person person = _local(withOwnContent: false);
+    final Map<String, dynamic> first = _remote(
+      photos: const <String>['personalCards/owner/a.jpg'],
+    );
+    CardSyncEngine.apply(
+      person,
+      first,
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>['/old/photos/card_owner_a.jpg'],
+    );
+    final CardSyncResult result = CardSyncEngine.apply(
+      person,
+      first,
+      ownerUid: 'owner',
+      localPhotoPaths: const <String>['/new/photos/card_owner_a.jpg'],
+      previousRemote: CardSyncEngine.baselineOf(first),
+    );
+    expect(result.changed, isTrue);
+    expect(person.photosPaths, const <String>['/new/photos/card_owner_a.jpg']);
+    // Not news: no line in the friend's history.
+    expect(result.updates, isEmpty);
+    expect(result.minorUpdates, isEmpty);
+  });
+
+  test(
+    'a photo added to a long-standing card arrives without a new friend',
+    () {
+      final Person person = _local(withOwnContent: false);
+      final Map<String, dynamic> first = _remote();
+      CardSyncEngine.apply(
+        person,
+        first,
+        ownerUid: 'owner',
+        localPhotoPaths: const <String>[],
+      );
+      final DateTime createdAt = person.createdAt;
+      final Map<String, dynamic> second = _remote(
+        photos: const <String>['personalCards/owner/late.jpg'],
+      );
+      final CardSyncResult result = CardSyncEngine.apply(
+        person,
+        second,
+        ownerUid: 'owner',
+        localPhotoPaths: const <String>['/x/card_owner_late.jpg'],
+        previousRemote: CardSyncEngine.baselineOf(first),
+      );
+      expect(result.changed, isTrue);
+      expect(person.photosPaths, const <String>['/x/card_owner_late.jpg']);
+      expect(person.createdAt, createdAt);
+      expect(person.id, 'p1');
+    },
+  );
+
   test('a record detached by an older version follows the card again', () {
     final Person person = _local();
     CardSyncEngine.apply(

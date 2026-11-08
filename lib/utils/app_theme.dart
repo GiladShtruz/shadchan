@@ -17,7 +17,8 @@ abstract final class AppTheme {
       onSecondary: AppColors.onSecondary,
       secondaryContainer: AppColors.secondaryLight,
       onSecondaryContainer: AppColors.headingInk,
-      surface: AppColors.surface,
+      // Cards, sheets, menus and tiles are cream on the white page.
+      surface: AppColors.cardCream,
       onSurface: AppColors.headingInk,
       error: AppColors.error,
       onError: AppColors.surface,
@@ -31,19 +32,20 @@ abstract final class AppTheme {
         onSurfaceVariant: AppColors.mutedInk,
         outlineVariant: AppColors.divider,
       ),
-      scaffoldBackgroundColor: AppColors.background,
+      // The page is white; see [AppColors.page].
+      scaffoldBackgroundColor: AppColors.page,
       // Every bar is the page itself — cream paper, the heading ink — the way
       // the three tabs' own banner is drawn. The wide blue-grey band this used
       // to paint across the top of every pushed screen was the last of the
       // old design.
-      appBarBackgroundColor: AppColors.background,
+      appBarBackgroundColor: AppColors.page,
       appBarForegroundColor: AppColors.headingInk,
-      cardColor: AppColors.surface,
+      cardColor: AppColors.cardCream,
       chipBackgroundColor: AppColors.primaryLight,
       chipLabelColor: AppColors.primary,
       inputFillColor: AppColors.surface,
       dividerColor: AppColors.divider,
-      bottomNavigationBackgroundColor: AppColors.surface,
+      bottomNavigationBackgroundColor: AppColors.page,
       bottomNavigationSelectedColor: AppColors.primary,
       bottomNavigationUnselectedColor: AppColors.mutedInk,
       textColor: AppColors.headingInk,

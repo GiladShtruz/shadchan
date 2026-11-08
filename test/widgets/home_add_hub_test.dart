@@ -47,8 +47,8 @@ void main() {
     int people = 0;
     int ideas = 0;
     await tester.pumpWidget(wrap(people: () => people++, idea: () => ideas++));
-    await tester.tap(find.text('הוסף חברים'));
-    await tester.tap(find.text('הוסף רעיון'));
+    await tester.tap(find.text('הוספת חברים'));
+    await tester.tap(find.text('הוספת רעיון'));
     expect(people, 1);
     expect(ideas, 1);
 
@@ -56,7 +56,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('מה נוסיף היום?'), findsOneWidget);
-    await tester.tap(find.text('הוסף רעיון').last);
+    await tester.tap(find.text('הוספת רעיון').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(ideas, 2);
@@ -65,12 +65,20 @@ void main() {
   });
 
   testWidgets(
-    'the labels follow the user gender, carry no captions, keep both drawings',
+    'the two actions are named plainly, carry no captions, keep both drawings',
     (tester) async {
       await tester.pumpWidget(wrap(gender: Gender.female, reducedMotion: true));
       await tester.pumpAndSettle();
-      expect(find.text('הוסיפי חברים'), findsOneWidget);
-      expect(find.text('הוסיפי רעיון'), findsOneWidget);
+      expect(find.text('הוספת חברים'), findsOneWidget);
+      expect(find.text('הוספת רעיון'), findsOneWidget);
+      // On the bare page: no card is drawn around the row.
+      expect(
+        find.descendant(
+          of: find.byType(HomeAddHub),
+          matching: find.byType(Card),
+        ),
+        findsNothing,
+      );
       // No "צבור נקודות" on the buttons: what to do, nothing about scoring.
       expect(find.textContaining('נקודות'), findsNothing);
       expect(
@@ -117,11 +125,11 @@ void main() {
         final Offset plus = tester.getCenter(find.byIcon(Icons.add_rounded));
         expect(plus.dx, closeTo(width / 2, 1));
         expect(
-          tester.getCenter(find.text('הוסיפי חברים')).dx,
+          tester.getCenter(find.text('הוספת חברים')).dx,
           greaterThan(plus.dx),
         );
         expect(
-          tester.getCenter(find.text('הוסיפי רעיון')).dx,
+          tester.getCenter(find.text('הוספת רעיון')).dx,
           lessThan(plus.dx),
         );
         await tester.pumpWidget(const SizedBox.shrink());

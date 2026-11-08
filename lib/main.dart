@@ -17,6 +17,7 @@ import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/services/match_migrations.dart';
 import 'package:shadchan/services/person_migrations.dart';
+import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/models/hive_adapters.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:shadchan/models/match_idea.dart';
@@ -141,6 +142,13 @@ Future<void> _bootstrap() async {
     );
     await MatchMigrations.giveLiveIdeasMonthlyReminder(
       Hive.box<MatchIdea>('matches'),
+    );
+  });
+  await optional('photo paths', () async {
+    await PersonMigrations.repairPhotoPaths(
+      people: Hive.box<Person>('people'),
+      settings: Hive.box<dynamic>('settings'),
+      photosDirectory: (await PhotoPickerService.ensurePhotosDirectory()).path,
     );
   });
 }

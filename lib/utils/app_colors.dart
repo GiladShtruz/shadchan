@@ -19,6 +19,15 @@ abstract final class AppColors {
 
   static const Color surface = Color(0xFFFFFDF8);
   static const Color background = Color(0xFFF7F0E4);
+
+  /// **The page is white; what sits on it is cream.** The whole screen behind
+  /// everything — every scaffold, every bar — is plain white, the way a chat
+  /// list reads clean in daylight. A bounded thing on it — a card, a tile, a
+  /// sheet, a figure square — is the app's own cream, lifted towards white
+  /// ([background] mixed about halfway with the page) so it separates from
+  /// the page softly rather than as a block of colour.
+  static const Color page = Color(0xFFFFFFFF);
+  static const Color cardCream = Color(0xFFFBF6EE);
   static const Color onPrimary = Color(0xFFFFFDF8);
   static const Color onSecondary = Color(0xFF211D17);
   static const Color onSurface = Color(0xFF211D17);

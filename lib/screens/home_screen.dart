@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/area_switch_button.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
-import 'package:shadchan/widgets/add_fab.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/dialogs/app_menu.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/account_provider.dart';
@@ -74,10 +72,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Bumped by a tap on the wordmark, which deals the board again.
   int _boardRefresh = 0;
 
-  /// One per visit — arrival, coming back to the app, a tap on the wordmark.
-  /// The recommendation is chosen once per visit (see [HomeActionArea]).
-  int _visit = 0;
-
   /// The single vertical gap between every block on the page.
   static const double _blockGap = 14;
 
@@ -103,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
-      setState(() => _visit++);
+      setState(() {});
     }
   }
 
@@ -200,12 +194,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Builder(
         builder: (BuildContext context) => Scaffold(
           appBar: _buildGreetingAppBar(),
-          // The same "+" as המאגר שלי, in the same corner; here it asks which
-          // of the two is meant.
-          floatingActionButton: AddFab(
-            tooltip: 'הוספה',
-            onPressed: () => AddChoiceDialog.show(context),
-          ),
+          // No floating "+" here: the page's own plus, between "הוספת
+          // חברים" and "הוספת רעיון", is the one add button on בית.
           body: SafeArea(
             child: Stack(
               children: <Widget>[
@@ -291,10 +281,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else {
       FocusScope.of(context).unfocus();
     }
-    setState(() {
-      _boardRefresh++;
-      _visit++;
-    });
+    setState(() => _boardRefresh++);
     if (_homeScrollController.hasClients) {
       _homeScrollController.animateTo(
         0,
@@ -370,17 +357,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    // **An action screen, not a dashboard.** Somebody who opens the app for
-    // five seconds should know what can be done now without reading the page:
-    // the greeting, the four figures as one quiet line, then "מה עושים
-    // עכשיו?" — one recommendation chosen for this matchmaker at this moment
-    // (see [HomeNextSteps]) over the main "+" and the two standing actions —
-    // a small weekly pace, the few board rows that matter most, and only then
-    // the week in the community and a tip.
-    //
-    // **One page for everybody.** A new matchmaker, a busy one and a veteran
-    // with nothing urgent all see these same blocks in this same order; what
-    // changes is what the recommendation says and what the board holds.
+    // **An action screen, not a dashboard.** In a few seconds somebody who
+    // opens the app should see where they stand (the four squares), what can
+    // be added now (the "+" between the two standing actions), how this week
+    // compares with their own weeks before (the small progress line), and
+    // what is worth moving forward (the list). From "מה עושים עכשיו?" down to
+    // "הצג עוד" it is one open area on the white page — no frame around the
+    // add actions, no card around the progress, no title over the list.
     final String greetingName =
         userProfile.firstName ?? '{שדכן|שדכנית}'.forGender(userGender);
 
@@ -406,28 +389,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           top: 8,
         ),
 
-        // 2. The four all-time figures, as one line under the greeting —
-        // still a tap into each list, no longer competing with the action.
+        // 2. The four all-time figures, back in their squares — smaller and
+        // closer together than they once were, each still a tap into its list.
         if (friends > 0)
           block(
-            ActivityFigureLine(
+            ActivityFigureRow(
               people: personRepository,
               matches: matchRepository,
+              compact: true,
             ),
-            top: 4,
+            top: 8,
           ),
 
-        // 3. "מה עושים עכשיו?" — the one recommendation, the "+" and the two
-        // standing actions.
-        block(HomeActionArea(openIdeas: openIdeas, visit: _visit), top: 10),
+        // 3. "מה עושים עכשיו?" on the bare page, and under it "הוספת חברים"
+        // – "+" – "הוספת רעיון".
+        block(const HomeActionArea(), top: 18),
 
-        // 4. The week's pace, small, never a task.
-        block(const HomeWeeklyProgress(), top: 10),
+        // 4. The progress line: the milestones up to a hundred friends, the
+        // matchmaker's own weekly record from there.
+        block(const HomeWeeklyProgress(), top: 14),
 
-        // 5. הלוח שלי — only the few rows that matter most, and "לכל הלוח".
+        // 5. What to do next — about five rows, then "הצג עוד".
+        const SliverToBoxAdapter(child: SizedBox(height: 8)),
         HomeBoardSection(
           focusKey: _boardSectionKey,
-          mode: HomeBoardMode.home,
+          mode: HomeBoardMode.actions,
           entries: board.entries,
           openIdeas: openIdeas,
           personRepository: personRepository,

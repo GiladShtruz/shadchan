@@ -85,7 +85,20 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
               itemCount: photos.length,
               onPageChanged: (int index) => setState(() => _index = index),
               itemBuilder: (BuildContext context, int index) {
-                return Image.file(File(photos[index]), fit: widget.fit);
+                // A photo that cannot be read leaves a quiet frame, never a
+                // broken card: the rest of the photos and the text stay.
+                return Image.file(
+                  File(photos[index]),
+                  fit: widget.fit,
+                  errorBuilder: (BuildContext context, Object error, _) =>
+                      Center(
+                        child: Icon(
+                          Icons.image_not_supported_outlined,
+                          size: 36,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                );
               },
             ),
           ),
