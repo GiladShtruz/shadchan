@@ -52,13 +52,16 @@ class PersonAvatar extends StatelessWidget {
     );
   }
 
+  /// The first photo that is actually on the device. One missing file — a
+  /// card photo still downloading, say — never costs the person their face
+  /// when another of their photos is there.
   String? _firstExistingPhotoPath() {
-    if (person.photosPaths.isEmpty) {
-      return null;
+    for (final String path in person.photosPaths) {
+      if (File(path).existsSync()) {
+        return path;
+      }
     }
-
-    final String path = person.photosPaths.first;
-    return File(path).existsSync() ? path : null;
+    return null;
   }
 }
 

@@ -745,32 +745,29 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The four all-time figures are one quiet line now, above "מה עושים
+    // The four all-time figures are back in their squares, above "מה עושים
     // עכשיו?" and its two add buttons.
-    final Finder figures = find.byType(ActivityFigureLine);
+    final Finder figures = find.byType(ActivityFigureRow);
     expect(figures, findsOneWidget);
-    expect(find.textContaining('חתונות', findRichText: true), findsOneWidget);
-    expect(find.text('חברים שהוספת'), findsNothing);
+    expect(find.text('חתונות'), findsOneWidget);
     expect(find.text('מה עושים עכשיו?'), findsOneWidget);
     expect(
       tester.getCenter(figures).dy,
-      lessThan(tester.getCenter(find.text('הוסף חברים')).dy),
+      lessThan(tester.getCenter(find.text('הוספת חברים')).dy),
     );
-    // One recommendation inside the action area. A database of one friend is
-    // still being built, so it is about growing it.
-    expect(
-      find.text('כל חבר שמצטרף למאגר הוא עוד סיכוי להתאמה'),
-      findsOneWidget,
-    );
-    // The week's pace, small; the one friend was added back in August.
-    expect(find.text('השבוע 0/5 פעולות'), findsOneWidget);
+    // No standing recommendation in the action area any more.
+    expect(find.text('כל חבר שמצטרף למאגר הוא עוד סיכוי להתאמה'), findsNothing);
+    // Under a hundred friends: the milestone, as it always was.
+    expect(find.text('1/10'), findsOneWidget);
+    expect(find.text('עוד 9 חברים ליעד של 10.'), findsOneWidget);
 
-    // At home the board is only its first rows and "לכל הלוח" — no shelves.
-    expect(find.text('הלוח שלי'), findsOneWidget);
+    // The list of what to do next has no title and no shelves; with nothing
+    // to do it says so, and the whole board is one tap away.
+    expect(find.text('הלוח שלי'), findsNothing);
     await tester.ensureVisible(find.text('לכל הלוח'));
     await tester.pump();
     expect(find.text('כרטיסים וגישה'), findsNothing);
-    expect(find.text('אין כרגע משהו שמחכה לך בלוח'), findsOneWidget);
+    expect(find.text('אין כרגע משהו שמחכה לך'), findsOneWidget);
     expect(find.text('הוספה ללוח'), findsNothing);
 
     await tester.tap(find.text('לכל הלוח'));
@@ -827,7 +824,9 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(390, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final DateTime now = DateTime(2026, 8, 15);
+    // Fresh, so the line under it is the next step rather than "עבר זמן
+    // בלי עדכון".
+    final DateTime now = DateTime.now();
     final Person male = Person(
       id: 'board-open-male',
       firstName: 'דוד',
@@ -870,11 +869,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.ensureVisible(find.text('הלוח שלי'));
+    await tester.ensureVisible(find.text('דוד & שרה'));
     await tester.pump();
 
-    // Nobody pinned this proposal: it is on the board because it is open, which
-    // is what replaced "רעיונות פתוחים" as a strip of its own.
+    // Nobody pinned this proposal: it is on the list because it is open.
     expect(
       HomeBoardStore.instance.contains(HomeItemKind.idea, idea.id),
       isFalse,
@@ -885,29 +883,17 @@ void main() {
     // a brand-new proposal, so the boy is asked first.
     expect(find.text('השלב הבא: לשאול את דוד'), findsOneWidget);
 
-    // **It is a row, not a pinned paper note.** A proposal has two sides, so
-    // it carries the app's one accent bar on each edge — the man's blue at
-    // the reading start, the woman's pink at the other end, in the same order
-    // as the names. See [AccentStripe].
-    final Finder stripes = find.descendant(
-      of: find.ancestor(of: find.text('דוד & שרה'), matching: find.byType(Row)),
-      matching: find.byType(AccentStripe),
-    );
-    expect(stripes, findsNWidgets(2));
+    // **On the home screen it is a line of a chat-like list**: no frame and
+    // no coloured bars — those stay on the whole board.
     expect(
-      tester
-          .widgetList<AccentStripe>(stripes)
-          .map((AccentStripe s) => (s.color, s.atStart)),
-      <(Color, bool)>[
-        (AppColors.genderAccent(Gender.male), true),
-        (AppColors.genderAccent(Gender.female), false),
-      ],
-    );
-
-    // The names keep their size but not the weight.
-    expect(
-      tester.widget<Text>(find.text('דוד & שרה')).style?.fontWeight,
-      isNot(FontWeight.bold),
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('דוד & שרה'),
+          matching: find.byType(Row),
+        ),
+        matching: find.byType(AccentStripe),
+      ),
+      findsNothing,
     );
 
     // On the whole board, its own chip shows it; the database's suggestions
@@ -1067,8 +1053,8 @@ void main() {
     ]);
     await tester.pump();
 
-    // Unread, it is on the board.
-    await tester.ensureVisible(find.text('הלוח שלי'));
+    // Unread, it is first on the list of what to do now.
+    await tester.ensureVisible(find.text('דני לוי לא אישר גישה'));
     await tester.pump();
     expect(find.text('דני לוי לא אישר גישה'), findsOneWidget);
 
@@ -1146,9 +1132,8 @@ void main() {
       AppRouter.router.routeInformationProvider.value.uri.queryParameters,
       containsPair('section', 'board'),
     );
-    expect(find.text('הלוח שלי'), findsOneWidget);
     expect(find.text('אבישי הלוי'), findsWidgets);
-    expect(tester.getTopLeft(find.text('הלוח שלי')).dy, lessThan(260));
+    expect(tester.getTopLeft(find.text('אבישי הלוי').first).dy, lessThan(300));
   });
 
   testWidgets('A friend in "חברים שהוספת" opens their profile, not a blank', (
@@ -2719,8 +2704,8 @@ void main() {
       final Finder hub = find.byType(HomeAddHub);
       await tester.ensureVisible(hub);
       await tester.pumpAndSettle();
-      expect(find.text('הוסף חברים'), findsOneWidget);
-      expect(find.text('הוסף רעיון'), findsOneWidget);
+      expect(find.text('הוספת חברים'), findsOneWidget);
+      expect(find.text('הוספת רעיון'), findsOneWidget);
       expect(
         find.byTooltip('הוספת חברים או רעיון').hitTestable(),
         findsOneWidget,

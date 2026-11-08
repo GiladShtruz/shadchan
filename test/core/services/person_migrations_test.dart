@@ -150,4 +150,61 @@ void main() {
 
     expect(people.get('d')!.legacyBirthDate, isNotNull);
   });
+
+  group('repairPhotoPaths', () {
+    test('a photo whose folder moved is pointed at the new folder', () async {
+      final (Box<Person> people, Box<dynamic> settings) = await openBoxes();
+      final Directory photos = await Directory.systemTemp.createTemp(
+        'shadchan_photos_',
+      );
+      addTearDown(() => photos.delete(recursive: true));
+      final String moved =
+          '${photos.path}${Platform.pathSeparator}card_o_a.jpg';
+      await File(moved).writeAsBytes(<int>[1, 2, 3]);
+      final DateTime now = DateTime(2026, 1, 1);
+      await people.put(
+        'p1',
+        Person(
+          id: 'p1',
+          firstName: 'דניאל',
+          lastName: 'לוי',
+          gender: Gender.male,
+          photosPaths: <String>[
+            '/var/old-sandbox/Documents/photos/card_o_a.jpg',
+            // Gone everywhere: left exactly as it is.
+            '/var/old-sandbox/Documents/photos/lost.jpg',
+          ],
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await settings.put(
+        'userPhotoPath',
+        '/var/old-sandbox/Documents/photos/card_o_a.jpg',
+      );
+
+      final int repaired = await PersonMigrations.repairPhotoPaths(
+        people: people,
+        settings: settings,
+        photosDirectory: photos.path,
+      );
+      expect(repaired, 2);
+      expect(people.get('p1')!.photosPaths, <String>[
+        moved,
+        '/var/old-sandbox/Documents/photos/lost.jpg',
+      ]);
+      expect(settings.get('userPhotoPath'), moved);
+      expect(people.get('p1')!.updatedAt, now);
+
+      // The same folder next launch: nothing is walked again.
+      expect(
+        await PersonMigrations.repairPhotoPaths(
+          people: people,
+          settings: settings,
+          photosDirectory: photos.path,
+        ),
+        0,
+      );
+    });
+  });
 }

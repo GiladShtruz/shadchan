@@ -4,17 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/art_tint.dart';
 import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/gender_text.dart';
-import 'package:shadchan/widgets/home_section.dart';
 
-/// "מה עושים עכשיו?" — the home's action area: a header (the title and the
-/// one recommendation, see [HomeNextSteps]) over the main add button with the
-/// two standing actions on either side of it.
+/// The row under "מה עושים עכשיו?": "הוספת חברים", the main "+" and
+/// "הוספת רעיון", side by side on the bare page.
 ///
-/// **Two words on each side, and nothing else.** The actions used to carry
-/// "וצבור נקודות" under them, which made the most important controls on the
-/// landing page read as a scoring mechanic. Points are acknowledged *after* an
-/// action, briefly (see `PointsReward`); here there is only what to do.
+/// **No card around it.** The home screen is read as one continuous area from
+/// the title down to the list of what to do next; a frame round the two
+/// actions cut it into boxes again. The row is open, with two hairlines
+/// either side of the plus to hold it together.
+///
+/// The plus still opens the same small sheet with the same two choices.
 class HomeAddHub extends StatelessWidget {
   const HomeAddHub({
     super.key,
@@ -24,11 +23,15 @@ class HomeAddHub extends StatelessWidget {
     this.header,
   });
 
+  /// The two standing actions' names — the same words on every phone.
+  static const String addPeopleLabel = 'הוספת חברים';
+  static const String addIdeaLabel = 'הוספת רעיון';
+
   final VoidCallback onAddPeople;
   final VoidCallback onAddIdea;
   final Gender? gender;
 
-  /// Drawn above the actions inside the same card.
+  /// Drawn above the row, when a caller has something to say there.
   final Widget? header;
 
   void _choose(BuildContext context) {
@@ -73,9 +76,7 @@ class HomeAddHub extends StatelessWidget {
 
   Widget _action({required bool people, required VoidCallback onTap}) {
     return _AddAction(
-      title: (people ? '{הוסף|הוסיפי} חברים' : '{הוסף|הוסיפי} רעיון').forGender(
-        gender,
-      ),
+      title: people ? addPeopleLabel : addIdeaLabel,
       people: people,
       onTap: onTap,
     );
@@ -83,32 +84,28 @@ class HomeAddHub extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    return HomePaperCard(
-      stripe: dark ? AppColors.secondaryDarkDm : AppColors.secondary,
-      padding: const EdgeInsets.fromLTRB(8, 14, 8, 14),
-      elevation: 4,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (header != null)
+    final ThemeData theme = Theme.of(context);
+    final Color rule = theme.colorScheme.outlineVariant;
+    Widget hairline() => Container(width: 1, height: 48, color: rule);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (header != null)
+          Padding(padding: const EdgeInsets.only(bottom: 10), child: header!),
+        Row(
+          children: <Widget>[
+            Expanded(child: _action(people: true, onTap: onAddPeople)),
+            hairline(),
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-              child: header!,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: _PulsingAddButton(onPressed: () => _choose(context)),
             ),
-          Row(
-            children: <Widget>[
-              Expanded(child: _action(people: true, onTap: onAddPeople)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: _PulsingAddButton(onPressed: () => _choose(context)),
-              ),
-              Expanded(child: _action(people: false, onTap: onAddIdea)),
-            ],
-          ),
-        ],
-      ),
+            hairline(),
+            Expanded(child: _action(people: false, onTap: onAddIdea)),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -154,19 +151,19 @@ class _AddAction extends StatelessWidget {
                     people
                         ? 'assets/add_friends_art.png'
                         : 'assets/add_idea_art.png',
-                    width: 44,
-                    height: 44,
+                    width: 38,
+                    height: 38,
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               // **One line.** On a narrow phone, or with larger system text,
               // "הוסיפי חברים" is scaled down rather than broken in two.
               _OneLine(
                 title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  height: 1.35,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
                 ),
               ),
             ],
@@ -270,7 +267,7 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
     // something alive to be pressed rather than as a large static badge. It
     // follows the same controller, so it rests when the pulse rests.
     return SizedBox.square(
-      dimension: 88,
+      dimension: 74,
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
@@ -279,8 +276,8 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
             builder: (BuildContext context, Widget? child) {
               final double t = _pulse.value;
               return Container(
-                width: 76 + 12 * t,
-                height: 76 + 12 * t,
+                width: 62 + 10 * t,
+                height: 62 + 10 * t,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: copper.withValues(alpha: 0.16 * t),
@@ -291,11 +288,11 @@ class _PulsingAddButtonState extends State<_PulsingAddButton>
           ScaleTransition(
             scale: _scale,
             child: SizedBox.square(
-              dimension: 76,
+              dimension: 62,
               child: IconButton.filled(
                 onPressed: widget.onPressed,
                 tooltip: 'הוספת חברים או רעיון',
-                iconSize: 44,
+                iconSize: 36,
                 style: IconButton.styleFrom(
                   backgroundColor: copper,
                   foregroundColor: AppColors.surface,

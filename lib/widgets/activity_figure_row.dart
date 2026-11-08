@@ -28,11 +28,16 @@ class ActivityFigureRow extends StatelessWidget {
     required this.people,
     required this.matches,
     this.padding = EdgeInsets.zero,
+    this.compact = false,
   });
 
   final PersonRepository people;
   final MatchRepository matches;
   final EdgeInsetsGeometry padding;
+
+  /// The home screen's version: the same four squares, smaller and closer
+  /// together, so the row costs little height at the head of the page.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +55,7 @@ class ActivityFigureRow extends StatelessWidget {
           value: value,
           label: label,
           accent: accent,
+          compact: compact,
           // Friends and ideas are a tab each: the figure is a shortcut to the
           // list itself. The other two open the records behind them.
           onTap: switch (m) {
@@ -68,27 +74,28 @@ class ActivityFigureRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            // Reading order in RTL: friends at the start (the right).
             tile(
               all.friends,
               'חברים',
               MonthlyStatMetric.people,
               AppColors.metric(MetricKind.friends, dark: dark),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: compact ? 6 : 8),
             tile(
               all.ideas,
               'רעיונות',
               MonthlyStatMetric.ideas,
               AppColors.metric(MetricKind.ideas, dark: dark),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: compact ? 6 : 8),
             tile(
               all.couples,
               'זוגות שיצאו',
               MonthlyStatMetric.dating,
               AppColors.metric(MetricKind.couples, dark: dark),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: compact ? 6 : 8),
             tile(
               all.engagements,
               'חתונות',
@@ -117,10 +124,12 @@ class _FigureTile extends StatelessWidget {
     required this.label,
     required this.accent,
     required this.onTap,
+    this.compact = false,
   });
 
   final int value;
   final String label;
+  final bool compact;
 
   /// The rule under this figure. See [AppColors.metricFriends] and friends.
   final Color accent;
@@ -133,8 +142,8 @@ class _FigureTile extends StatelessWidget {
 
     return Material(
       color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(14),
-      elevation: 2,
+      borderRadius: BorderRadius.circular(compact ? 12 : 14),
+      elevation: compact ? 1 : 2,
       shadowColor: AppColors.onSurface.withValues(alpha: 0.18),
       surfaceTintColor: Colors.transparent,
       // The rule is flush to the bottom edge; this clip is what rounds it.
@@ -150,7 +159,9 @@ class _FigureTile extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 9, 4, 8),
+                padding: compact
+                    ? const EdgeInsets.fromLTRB(4, 6, 4, 5)
+                    : const EdgeInsets.fromLTRB(4, 9, 4, 8),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
@@ -165,7 +176,9 @@ class _FigureTile extends StatelessWidget {
                         // page's title size four of them in a row disappear
                         // into the nouns under them.
                         style: theme.textTheme.titleMedium?.copyWith(
-                          fontSize: HomeTypography.lead,
+                          fontSize: compact
+                              ? HomeTypography.lead - 2
+                              : HomeTypography.lead,
                           fontWeight: FontWeight.w900,
                           height: 1.05,
                         ),

@@ -579,6 +579,34 @@ class CardAccessProvider extends ChangeNotifier {
     return local;
   }
 
+  /// The card photos already on this device that a partial download leaves
+  /// in place: every earlier copy that is still there (found under the
+  /// current photos folder if its stored path went stale), and not already
+  /// among [downloaded].
+  Future<List<String>> _keptCardPhotos(
+    List<String> previous,
+    List<String> downloaded,
+  ) async {
+    final Set<String> have = <String>{
+      for (final String p in downloaded) PhotoPickerService.basenameOf(p),
+    };
+    final List<String> kept = <String>[];
+    for (final String old in previous) {
+      final String name = PhotoPickerService.basenameOf(old);
+      if (!have.add(name)) {
+        continue;
+      }
+      File file = File(old);
+      if (!file.existsSync()) {
+        file = await PhotoPickerService.fileFor(name);
+      }
+      if (file.existsSync() && file.lengthSync() > 0) {
+        kept.add(file.path);
+      }
+    }
+    return kept;
+  }
+
   static const String _baselinePrefix = 'cardSyncRemote.';
 
   static Box<dynamic>? get _settings =>
@@ -706,11 +734,14 @@ class CardAccessProvider extends ChangeNotifier {
           ownerUid,
           remotePhotos,
         );
-    final List<String>? localPhotos = legacyDetached || !photosMoved
+    final List<String>? downloaded = legacyDetached || !photosMoved
         ? null
         : await _downloadPhotos(ownerUid, remotePhotos);
-    if (localPhotos != null) {
-      if (localPhotos.length < remotePhotos.whereType<String>().length) {
+    final bool photosComplete =
+        downloaded != null &&
+        downloaded.length >= remotePhotos.whereType<String>().length;
+    if (downloaded != null) {
+      if (!photosComplete) {
         _photosIncomplete.add(ownerUid);
         _schedulePhotoRetry(ownerUid);
       } else {
@@ -718,6 +749,16 @@ class CardAccessProvider extends ChangeNotifier {
         _photoRetries.remove(ownerUid);
       }
     }
+    // **Nothing already on this device is let go before the new set has
+    // fully arrived.** Offline, or with a photo that did not come down this
+    // time, the card keeps the pictures it had — the ones that did arrive
+    // first, then the earlier copies — and the next read finishes the job.
+    final List<String>? localPhotos = downloaded == null || photosComplete
+        ? downloaded
+        : <String>[
+            ...downloaded,
+            ...await _keptCardPhotos(oldCardPhotos, downloaded),
+          ];
 
     if (_disposed || _asMatchmaker[ownerUid]?.canReadCard != true) return;
     final CardSyncResult result = CardSyncEngine.apply(
@@ -727,9 +768,14 @@ class CardAccessProvider extends ChangeNotifier {
       localPhotoPaths: localPhotos,
       previousRemote: previous,
     );
-    if (localPhotos != null) {
+    if (localPhotos != null && photosComplete) {
+      final Set<String> kept = <String>{
+        for (final String p in localPhotos) PhotoPickerService.basenameOf(p),
+      };
       PhotoPickerService.deletePhotoFiles(
-        oldCardPhotos.where((String p) => !localPhotos.contains(p)),
+        oldCardPhotos.where(
+          (String p) => !kept.contains(PhotoPickerService.basenameOf(p)),
+        ),
       );
     }
     if (_asMatchmaker[ownerUid]?.canReadCard != true) return;

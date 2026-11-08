@@ -284,7 +284,15 @@ abstract final class CardSyncEngine {
       }
       final bool photosChanged = !_samePhotos(photosBefore, person.photosPaths);
       final bool detailsChanged = before != _cardPrint(person);
-      if (photosChanged || detailsChanged) {
+      // **The same photos under a new folder are still a change to save.**
+      // iOS moves the app's sandbox on an update, so a stored absolute path
+      // can point at nothing while the very same file sits under the new
+      // prefix. Compared by name alone that is "no change", the record kept
+      // its dead paths, and the matchmaker saw the card's text with no
+      // pictures. Saved quietly — it is not news, so nothing is logged.
+      final bool pathsMoved =
+          !photosChanged && !_samePaths(photosBefore, person.photosPaths);
+      if (photosChanged || detailsChanged || pathsMoved) {
         changed = true;
       }
       if (!firstLink) {
@@ -494,6 +502,18 @@ abstract final class CardSyncEngine {
       lines.add('{עדכן|עדכנה} את מה {שהוא מחפש|שהיא מחפשת}');
     }
     return lines;
+  }
+
+  static bool _samePaths(List<String> a, List<String> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   static bool _samePhotos(List<String> a, List<String> b) {

@@ -77,6 +77,39 @@ class HomeBoardSection extends StatefulWidget {
   /// How many rows the home screen shows before "לכל הלוח".
   static const int homeRows = 4;
 
+  /// How many rows the action list opens with, and how many more each
+  /// "הצג עוד" adds.
+  static const int actionRows = 5;
+
+  /// Where a row of the action list stands, first to last:
+  ///
+  ///  0. something that needs handling now — a reminder that came due, an
+  ///     unread notice, a support answer;
+  ///  1. an open idea with a next step waiting on the matchmaker;
+  ///  2. a friend who keeps a personal card and has not been handled yet
+  ///     (or whose card just changed);
+  ///  3. a live idea nothing has happened in for a while, and anything else
+  ///     pinned;
+  ///  4. a pair the database suggests.
+  ///
+  /// Null leaves the row out: a card already shared and unchanged, or an
+  /// access request still waiting on the friend, is nothing to do now.
+  static int? actionTier({
+    required bool dueReminder,
+    required bool isIdea,
+    required bool ideaStale,
+    required bool isNotice,
+    required bool isCardFriend,
+    required bool cardHandled,
+    required bool isPair,
+  }) {
+    if (dueReminder || isNotice) return 0;
+    if (isCardFriend) return cardHandled ? null : 2;
+    if (isPair) return 4;
+    if (isIdea) return ideaStale ? 3 : 1;
+    return 3;
+  }
+
   /// The route of the whole board.
   static const String route = '/board';
 
@@ -113,6 +146,11 @@ enum HomeBoardMode {
 
   /// The whole board on its own screen: chips, every row, no inner scroll.
   screen,
+
+  /// The home screen's list of what to do next, straight under "מה עושים
+  /// עכשיו?": no title, no frame, a chat-list of about five rows ordered by
+  /// what needs doing first, and "הצג עוד" for the next ones.
+  actions,
 }
 
 /// Every proposal that is open right now, the way the board reads them —
@@ -158,11 +196,18 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
   String? _pairsKey;
   List<NewIdeaSuggestion> _pairs = const <NewIdeaSuggestion>[];
 
+  /// How many rows of the action list are open — five, then five more per
+  /// "הצג עוד".
+  int _actionsShown = HomeBoardSection.actionRows;
+
   @override
   void didUpdateWidget(covariant HomeBoardSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.refresh != oldWidget.refresh && _listScroll.hasClients) {
-      _listScroll.jumpTo(0);
+    if (widget.refresh != oldWidget.refresh) {
+      _actionsShown = HomeBoardSection.actionRows;
+      if (_listScroll.hasClients) {
+        _listScroll.jumpTo(0);
+      }
     }
   }
 
@@ -677,6 +722,121 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     );
   }
 
+  /// The tier of [entry] on the action list. See
+  /// [HomeBoardSection.actionTier].
+  int? _tierOf(BoardFeedEntry<_BoardItem> entry) {
+    final _BoardItem item = entry.value;
+    final MatchIdea? match =
+        item.type == _ItemType.record && item.kind == HomeItemKind.idea
+        ? widget.matchRepository.getById(item.targetId!)
+        : null;
+    return HomeBoardSection.actionTier(
+      dueReminder: item.type == _ItemType.record && item.reminder != null,
+      isIdea: match != null,
+      ideaStale: match != null && MatchStaleness.isStale(match),
+      isNotice: item.type == _ItemType.notice || item.type == _ItemType.support,
+      isCardFriend:
+          item.type == _ItemType.newCard || item.type == _ItemType.sharedCard,
+      cardHandled: item.type == _ItemType.newCard ? item.asked : !item.fresh,
+      isPair: item.type == _ItemType.pair,
+    );
+  }
+
+  /// The list under "מה עושים עכשיו?". See [HomeBoardMode.actions].
+  Widget _buildActions(
+    BuildContext context,
+    List<BoardFeedEntry<_BoardItem>> collected,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final double inset = homeHorizontalInset(context);
+
+    final List<(int, int, BoardFeedEntry<_BoardItem>)> ranked =
+        <(int, int, BoardFeedEntry<_BoardItem>)>[];
+    for (int i = 0; i < collected.length; i++) {
+      final int? tier = _tierOf(collected[i]);
+      if (tier != null) {
+        ranked.add((tier, i, collected[i]));
+      }
+    }
+    ranked.sort((a, b) {
+      final int byTier = a.$1.compareTo(b.$1);
+      if (byTier != 0) return byTier;
+      // The database's pairs keep the order they were suggested in.
+      if (a.$1 == 4) return a.$2.compareTo(b.$2);
+      // An idea untouched for a while: the longest-untouched first.
+      final int byTime = a.$1 == 3
+          ? a.$3.activityAt.compareTo(b.$3.activityAt)
+          : b.$3.activityAt.compareTo(a.$3.activityAt);
+      return byTime != 0 ? byTime : a.$2.compareTo(b.$2);
+    });
+    final List<BoardFeedEntry<_BoardItem>> rows = <BoardFeedEntry<_BoardItem>>[
+      for (final (int, int, BoardFeedEntry<_BoardItem>) r in ranked) r.$3,
+    ];
+    final int shown = rows.length < _actionsShown ? rows.length : _actionsShown;
+    final bool more = rows.length > shown;
+    final Color link = dark
+        ? AppColors.secondaryDarkDm
+        : AppColors.secondaryInk;
+    final Divider hairline = Divider(
+      height: 1,
+      thickness: 0.6,
+      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+    );
+
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: inset),
+      sliver: SliverToBoxAdapter(
+        child: Column(
+          key: widget.focusKey,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (rows.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Text(
+                  'אין כרגע משהו שמחכה לך',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              )
+            else
+              for (int i = 0; i < shown; i++) ...<Widget>[
+                _BoardRow(
+                  key: ValueKey<String>(rows[i].value.key),
+                  item: rows[i].value,
+                  personRepository: widget.personRepository,
+                  matchRepository: widget.matchRepository,
+                  onChanged: () => setState(() {}),
+                  flat: true,
+                ),
+                hairline,
+              ],
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: more
+                    ? () => setState(
+                        () => _actionsShown += HomeBoardSection.actionRows,
+                      )
+                    : () => AppNavigation.open(context, HomeBoardSection.route),
+                style: TextButton.styleFrom(
+                  foregroundColor: link,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  textStyle: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                child: Text(more ? 'הצג עוד' : 'לכל הלוח'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -684,6 +844,9 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     // Nothing to put on a board before the first friend.
     if (widget.personRepository.databaseCount == 0 && widget.entries.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    if (widget.mode == HomeBoardMode.actions) {
+      return _buildActions(context, _collect(context));
     }
     final List<BoardFeedEntry<_BoardItem>> arranged = HomeBoardFeed.arrange(
       _collect(context),
@@ -1140,9 +1303,18 @@ class _BoardRow extends StatelessWidget {
     required this.personRepository,
     required this.matchRepository,
     required this.onChanged,
+    this.flat = false,
   });
 
   final _BoardItem item;
+
+  /// Drawn as a line of the home screen's list of what to do next — see
+  /// [BoardRow.flat].
+  final bool flat;
+
+  /// A single face, and each of a couple's two.
+  double get _r => flat ? 22 : 18;
+  double get _r2 => flat ? 17 : 15;
   final PersonRepository personRepository;
   final MatchRepository matchRepository;
 
@@ -1200,6 +1372,19 @@ class _BoardRow extends StatelessWidget {
     Widget? action,
   }) {
     final Widget menuButton = _MenuButton(choices: menu);
+    if (flat) {
+      return BoardRow(
+        flat: true,
+        leading: leading,
+        title: title,
+        startAccent: startAccent,
+        subtitle: subtitle,
+        fresh: item.fresh,
+        onTap: onTap,
+        onLongPress: (BuildContext anchor) => _MenuButton.open(anchor, menu),
+        menu: action ?? const SizedBox.shrink(),
+      );
+    }
     return BoardRow(
       leading: leading,
       title: title,
@@ -1331,7 +1516,7 @@ class _BoardRow extends StatelessWidget {
       }
       return _row(
         context,
-        leading: HomeCardAvatar(person: person, radius: 18),
+        leading: HomeCardAvatar(person: person, radius: _r),
         title: person.fullName.trim(),
         subtitle: (note != null && note.isNotEmpty) ? note : reminderLine,
         mark: mark,
@@ -1363,14 +1548,16 @@ class _BoardRow extends StatelessWidget {
       leading: HomeCardCoupleAvatars(
         personA: male,
         personB: female,
-        radius: 15,
+        radius: _r2,
       ),
       title: '${_firstName(male)} & ${_firstName(female)}',
       // What the matchmaker wrote wins the line, then the reminder, then the
       // next step the ideas page would offer.
       subtitle: (note != null && note.isNotEmpty)
           ? note
-          : reminderLine ?? stepLine,
+          : reminderLine ??
+                (flat ? MatchStaleness.nudge(match) : null) ??
+                stepLine,
       mark: mark,
       startAccent: AppColors.genderAccent(Gender.male, dark: dark),
       endAccent: AppColors.genderAccent(Gender.female, dark: dark),
@@ -1389,7 +1576,7 @@ class _BoardRow extends StatelessWidget {
     final Person person = item.person!;
     return _row(
       context,
-      leading: HomeCardAvatar(person: person, radius: 18),
+      leading: HomeCardAvatar(person: person, radius: _r),
       title: person.fullName.trim(),
       subtitle: item.line,
       mark: Icons.badge_outlined,
@@ -1413,6 +1600,8 @@ class _BoardRow extends StatelessWidget {
         ? 'הבקשה לגישה נשלחה · ממתינה לאישור'
         : person == null
         ? notice.body
+        : flat
+        ? '{הוסיף|הוסיפה} כרטיס אישי · אפשר לבקש גישה'.forGender(gender)
         : '{יצר|יצרה} כרטיס אישי · אפשר לבקש גישה'.forGender(gender);
     final String? ownerUid = notice.ownerUid;
     final String? hash = notice.ownerPhoneHash;
@@ -1441,9 +1630,9 @@ class _BoardRow extends StatelessWidget {
     return _row(
       context,
       leading: person != null
-          ? HomeCardAvatar(person: person, radius: 18)
+          ? HomeCardAvatar(person: person, radius: _r)
           : CircleAvatar(
-              radius: 18,
+              radius: _r,
               backgroundColor: theme.colorScheme.surfaceContainerHighest,
               child: const Icon(Icons.badge_outlined, size: 18),
             ),
@@ -1490,9 +1679,9 @@ class _BoardRow extends StatelessWidget {
     return _row(
       context,
       leading: person != null
-          ? HomeCardAvatar(person: person, radius: 18)
+          ? HomeCardAvatar(person: person, radius: _r)
           : CircleAvatar(
-              radius: 18,
+              radius: _r,
               backgroundColor: theme.colorScheme.surfaceContainerHighest,
               child: Icon(
                 notice.kind == 'birthday'
@@ -1540,7 +1729,7 @@ class _BoardRow extends StatelessWidget {
     return _row(
       context,
       leading: CircleAvatar(
-        radius: 18,
+        radius: _r,
         backgroundColor: theme.colorScheme.surfaceContainerHighest,
         child: const Icon(Icons.forum_outlined, size: 18),
       ),
@@ -1566,7 +1755,7 @@ class _BoardRow extends StatelessWidget {
       leading: HomeCardCoupleAvatars(
         personA: pair.male,
         personB: pair.female,
-        radius: 15,
+        radius: _r2,
       ),
       title: '${_firstName(pair.male)} & ${_firstName(pair.female)}',
       subtitle: pair.reasons.isEmpty

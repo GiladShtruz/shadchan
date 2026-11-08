@@ -2106,7 +2106,7 @@ class _PrimaryPhoto extends StatelessWidget {
 
 /// The colour the areas sit on. Exported for the profile page, which draws the
 /// same paper behind its own cards.
-const Color extendedEditorCanvas = AppColors.background;
+const Color extendedEditorCanvas = AppColors.page;
 
 /// The owner's date of birth: a tappable field that opens the date picker.
 ///
