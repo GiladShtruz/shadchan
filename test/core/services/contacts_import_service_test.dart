@@ -123,6 +123,46 @@ void main() {
     }
   });
 
+  test(
+    'a landline-only contact is kept for search, marked, never a mobile',
+    () {
+      final ContactImportCandidate? landline =
+          ContactsImportService.buildCandidate(
+            deviceContactId: 'c',
+            displayName: 'משה לוי',
+            phones: const <String>['02-6751234'],
+            existingPhones: const <String>{},
+            includeLandlines: true,
+          );
+      expect(landline, isNotNull);
+      expect(landline!.isLandline, isTrue);
+      expect(landline.normalizedPhone, '026751234');
+
+      // A mobile wins over a landline on the same contact.
+      final ContactImportCandidate? both = ContactsImportService.buildCandidate(
+        deviceContactId: 'c',
+        displayName: 'משה לוי',
+        phones: const <String>['02-6751234', '054-1234567'],
+        existingPhones: const <String>{},
+        includeLandlines: true,
+      );
+      expect(both!.isLandline, isFalse);
+      expect(both.normalizedPhone, '0541234567');
+
+      // Short codes stay out either way.
+      expect(
+        ContactsImportService.buildCandidate(
+          deviceContactId: 'c',
+          displayName: 'מוקד',
+          phones: const <String>['*2700'],
+          existingPhones: const <String>{},
+          includeLandlines: true,
+        ),
+        isNull,
+      );
+    },
+  );
+
   test('isSuggestedMobilePhone still refuses landlines and short codes', () {
     expect(ContactsImportService.isSuggestedMobilePhone('03-5555555'), isFalse);
     expect(ContactsImportService.isSuggestedMobilePhone('*2700'), isFalse);

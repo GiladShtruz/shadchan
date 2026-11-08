@@ -142,8 +142,9 @@ class AddContactsSession extends ChangeNotifier {
 
   int get remainingCount => availableCandidates.length;
 
-  /// Contacts hidden only by the automatic name filter, so they can be reviewed
-  /// and put back one by one.
+  /// Contacts kept off the regular list automatically — by the name filter
+  /// (businesses, titles…) or because they have no mobile number — so they
+  /// can be reviewed and put back one by one.
   List<ContactImportCandidate> get nameFilteredCandidates {
     final Set<String> existingPhones = _repository.getNormalizedPhones();
     return _allCandidates
@@ -198,7 +199,7 @@ class AddContactsSession extends ChangeNotifier {
     if (_skippedPhones.contains(candidate.normalizedPhone)) {
       return ContactCandidateStatus.removedFromList;
     }
-    if (candidate.isFilteredByName &&
+    if ((candidate.isFilteredByName || candidate.isLandline) &&
         !_revealedFilteredPhones.contains(candidate.normalizedPhone)) {
       return ContactCandidateStatus.hiddenByFilter;
     }
@@ -222,7 +223,7 @@ class AddContactsSession extends ChangeNotifier {
     _skippedPhones.remove(candidate.normalizedPhone);
     // A contact that the name filter would swallow again is revealed too,
     // otherwise "החזר לרשימה" would appear to do nothing.
-    if (candidate.isFilteredByName) {
+    if (candidate.isFilteredByName || candidate.isLandline) {
       _revealedFilteredPhones.add(candidate.normalizedPhone);
     }
     _notify();

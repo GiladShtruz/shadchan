@@ -183,6 +183,15 @@ class _ImportContactsScreenState extends State<ImportContactsScreen> {
             ],
           ),
         ),
+        // Nothing disappears without a word: the contacts kept off this list
+        // (landlines, businesses) are counted here, one tap from being shown.
+        if (!_isSearching &&
+            _filterSuggestedNames &&
+            session.nameFilteredCandidates.isNotEmpty)
+          _HiddenContactsLine(
+            count: session.nameFilteredCandidates.length,
+            onShow: () => setState(() => _filterSuggestedNames = false),
+          ),
         // The explanation is only ever needed before the first pick; once the
         // bottom banner is up it would just repeat what the banner says.
         if (selectedCount == 0)
@@ -934,7 +943,10 @@ class _ContactRow extends StatelessWidget {
                     ),
                   )
                 else
-                  _StatusTag(status: entry.status),
+                  _StatusTag(
+                    status: entry.status,
+                    landline: entry.candidate.isLandline,
+                  ),
               ],
             ),
           ),
@@ -947,9 +959,12 @@ class _ContactRow extends StatelessWidget {
 /// Says why a searched contact is not in the regular list. Nothing is drawn for
 /// a contact that simply hasn't been decided on yet.
 class _StatusTag extends StatelessWidget {
-  const _StatusTag({required this.status});
+  const _StatusTag({required this.status, this.landline = false});
 
   final ContactCandidateStatus status;
+
+  /// Hidden because the contact has no mobile number, rather than by name.
+  final bool landline;
 
   @override
   Widget build(BuildContext context) {
@@ -965,8 +980,10 @@ class _StatusTag extends StatelessWidget {
       case ContactCandidateStatus.removedFromList:
         label = 'הוסר מהרשימה';
         color = theme.colorScheme.onSurfaceVariant;
-      case ContactCandidateStatus.available:
       case ContactCandidateStatus.hiddenByFilter:
+        label = landline ? 'מספר קווי' : 'מוסתר מהרשימה';
+        color = theme.colorScheme.onSurfaceVariant;
+      case ContactCandidateStatus.available:
         return const SizedBox.shrink();
     }
 
@@ -1115,6 +1132,51 @@ class _LoadingContactsView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "מוסתרים 340 אנשי קשר (מספר קווי או עסק) · הצגה" — the one line that keeps
+/// the automatic filter honest. Without it a contact the filter hid looks
+/// exactly like one the app failed to read.
+class _HiddenContactsLine extends StatelessWidget {
+  const _HiddenContactsLine({required this.count, required this.onShow});
+
+  final int count;
+  final VoidCallback onShow;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String people = count == 1 ? 'איש קשר אחד' : '$count אנשי קשר';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 12, 0),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.visibility_off_outlined,
+            size: 16,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'מוסתרים $people (מספר קווי או עסק)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onShow,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: const Text('הצגה'),
+          ),
+        ],
       ),
     );
   }

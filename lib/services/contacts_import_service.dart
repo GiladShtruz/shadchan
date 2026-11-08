@@ -37,6 +37,7 @@ class ContactImportCandidate {
     required this.hasAdditionalPhones,
     required this.isFilteredByName,
     this.isFavorite = false,
+    this.isLandline = false,
   });
 
   final String deviceContactId;
@@ -52,6 +53,12 @@ class ContactImportCandidate {
   /// about who matters to the matchmaker that the address book itself gives
   /// us, so it is what the "favourites first" ordering sorts on.
   final bool isFavorite;
+
+  /// The contact has a phone but no mobile number — a landline, an office, a
+  /// short foreign number. Kept so search can still find them and the screen
+  /// can say how many are tucked away, but never in the regular list or the
+  /// deck: matchmaking happens on WhatsApp, and WhatsApp needs a mobile.
+  final bool isLandline;
 
   bool matchesQuery(String query) {
     final String normalizedQuery = _normalizeSearchText(query);
@@ -233,6 +240,7 @@ abstract final class ContactsImportService {
         existingPhones: existingPhones,
         hiddenPhones: hiddenPhones,
         isFavorite: contact.android?.isFavorite ?? false,
+        includeLandlines: true,
       );
 
       // Contacts already in the database are kept rather than dropped: the
@@ -273,6 +281,7 @@ abstract final class ContactsImportService {
     required Set<String> existingPhones,
     Set<String> hiddenPhones = const <String>{},
     bool isFavorite = false,
+    bool includeLandlines = false,
   }) {
     final String trimmedName = displayName.trim();
     if (trimmedName.isEmpty) {
@@ -304,8 +313,23 @@ abstract final class ContactsImportService {
       break;
     }
 
+    bool isLandline = false;
     if (selectedPhone == null || normalizedPhone == null) {
-      return null;
+      if (!includeLandlines) {
+        return null;
+      }
+      for (final String phone in cleanedPhones) {
+        final String? normalized = PhoneUtils.normalizeForComparison(phone);
+        if (normalized != null && normalized.length >= 7) {
+          selectedPhone = phone;
+          normalizedPhone = normalized;
+          isLandline = true;
+          break;
+        }
+      }
+      if (selectedPhone == null || normalizedPhone == null) {
+        return null;
+      }
     }
 
     return ContactImportCandidate(
@@ -319,6 +343,7 @@ abstract final class ContactsImportService {
           isFilteredByName(trimmedName) ||
           hiddenPhones.contains(normalizedPhone),
       isFavorite: isFavorite,
+      isLandline: isLandline,
     );
   }
 
@@ -528,6 +553,7 @@ abstract final class ContactsImportService {
       'hasAdditionalPhones': candidate.hasAdditionalPhones,
       'isFilteredByName': candidate.isFilteredByName,
       'isFavorite': candidate.isFavorite,
+      'isLandline': candidate.isLandline,
     };
   }
 
@@ -565,6 +591,7 @@ abstract final class ContactsImportService {
           isFilteredByName(displayName) ||
           hiddenPhones.contains(normalizedPhone),
       isFavorite: rawCandidate['isFavorite'] == true,
+      isLandline: rawCandidate['isLandline'] == true,
     );
   }
 }

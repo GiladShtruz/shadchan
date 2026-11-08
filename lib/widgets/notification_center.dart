@@ -202,6 +202,24 @@ abstract final class NotificationCenter {
     }
   }
 
+  static bool _reminderTargetExists(
+    BuildContext context,
+    ReminderLogEntry reminder,
+  ) {
+    if (reminder.kind == HomeItemKind.idea) {
+      final MatchRepository? matches = _maybe<MatchRepository>(
+        context,
+        listen: false,
+      );
+      return matches == null || matches.getById(reminder.targetId) != null;
+    }
+    final PersonRepository? people = _maybe<PersonRepository>(
+      context,
+      listen: false,
+    );
+    return people == null || people.getById(reminder.targetId) != null;
+  }
+
   /// Where a row goes: exactly the thing it is about.
   static String? routeFor(BuildContext context, AppNotification line) {
     final ReminderLogEntry? reminder = line.reminder;
@@ -267,6 +285,12 @@ abstract final class NotificationCenter {
         // otherwise.
         _maybe<CardAccessProvider>(context, listen: false)?.forgetLookup(hash);
       }
+    }
+    final ReminderLogEntry? reminder = line.reminder;
+    if (reminder != null && !_reminderTargetExists(context, reminder)) {
+      // The idea or the friend was deleted since: never open a broken page.
+      AppNotice.show(context, 'הפריט הזה כבר לא זמין');
+      return;
     }
     final String? route = routeFor(context, line);
     if (route == null) {

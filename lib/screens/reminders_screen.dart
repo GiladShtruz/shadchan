@@ -23,7 +23,14 @@ import 'package:shadchan/widgets/notification_center.dart';
 /// **Nothing leaves by age.** A row goes when it is swiped away or its ✕ is
 /// tapped, and only then.
 class RemindersScreen extends StatefulWidget {
-  const RemindersScreen({super.key});
+  const RemindersScreen({super.key, this.host});
+
+  /// When set, the page is drawn as the bell's sheet over the screen the
+  /// matchmaker was on, and [host] is that screen: a tap on a row closes the
+  /// sheet and opens the row from there, so Back returns to it.
+  final BuildContext? host;
+
+  bool get asSheet => host != null;
 
   @override
   State<RemindersScreen> createState() => _RemindersScreenState();
@@ -55,6 +62,18 @@ class _RemindersScreenState extends State<RemindersScreen> {
     });
   }
 
+  void _open(NotificationGroup group) {
+    final BuildContext? host = widget.host;
+    if (host == null) {
+      NotificationCenter.open(context, group);
+      return;
+    }
+    Navigator.of(context).pop();
+    if (host.mounted) {
+      NotificationCenter.open(host, group);
+    }
+  }
+
   void _markAll() {
     setState(() => _wasNew = <String>{});
     NotificationCenter.markAllRead(context);
@@ -76,13 +95,22 @@ class _RemindersScreenState extends State<RemindersScreen> {
             if (!g.read) g.id,
         };
         return Scaffold(
+          backgroundColor: widget.asSheet ? Colors.transparent : null,
           appBar: AppBar(
+            automaticallyImplyLeading: !widget.asSheet,
+            backgroundColor: widget.asSheet ? Colors.transparent : null,
             title: const Text('התראות'),
             actions: <Widget>[
               if (highlighted.isNotEmpty)
                 TextButton(
                   onPressed: _markAll,
                   child: const Text('סמן הכל כנקרא'),
+                ),
+              if (widget.asSheet)
+                IconButton(
+                  tooltip: 'סגירה',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
             ],
           ),
@@ -109,7 +137,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
                       child: NotificationRow(
                         group: group,
                         highlighted: highlighted.contains(group.id),
-                        onTap: () => NotificationCenter.open(context, group),
+                        onTap: () => _open(group),
                         onRemove: () =>
                             NotificationCenter.remove(context, group),
                       ),
@@ -324,6 +352,28 @@ class _EmptyNotifications extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The bell's sheet: the notifications page raised over whatever screen is
+/// open, so a glance at them never loses the place. It scrolls, drags away
+/// downwards and closes on a tap outside it; `/reminders` stays a page for the
+/// links that arrive from outside (a push, a home recommendation).
+abstract final class NotificationsSheet {
+  static Future<void> show(BuildContext context) {
+    final MediaQueryData media = MediaQuery.of(context);
+    return showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      constraints: BoxConstraints(maxHeight: media.size.height * 0.85),
+      builder: (BuildContext sheetContext) => SizedBox(
+        height: media.size.height * 0.85,
+        child: RemindersScreen(host: context),
       ),
     );
   }
