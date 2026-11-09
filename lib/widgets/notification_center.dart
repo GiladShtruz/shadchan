@@ -11,6 +11,7 @@ import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
+import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/notification_feed.dart';
 import 'package:shadchan/services/reminder_log.dart';
@@ -236,17 +237,28 @@ abstract final class NotificationCenter {
     final Person? person = line.person;
     switch (item.kind) {
       case 'cardCreated':
-        if (person == null) return null;
-        final granted =
-            person.cardOwnerUid == item.ownerUid &&
-            _maybe<CardAccessProvider>(
-                  context,
-                  listen: false,
-                )?.accessTo(item.ownerUid ?? '')?.canReadCard ==
-                true;
-        // An authorized reader opens the whole card, including its photos.
-        // Everyone else still lands on the access request, never a preview.
-        return '/people/${person.id}?focus=${granted ? 'card' : 'request'}';
+        final String? owner = item.ownerUid;
+        final CardAccessProvider? access = _maybe<CardAccessProvider>(
+          context,
+          listen: false,
+        );
+        final bool granted =
+            person != null &&
+            owner != null &&
+            person.cardOwnerUid == owner &&
+            access?.accessTo(owner)?.canReadCard == true;
+        // With access, the friend's own profile — the whole card, every
+        // photo. Without it, straight to asking for access (or, when access
+        // came and the card waits on the friend already kept by hand, to the
+        // sync question) — never a preview.
+        if (granted) return '/people/${person.id}?focus=card';
+        if (owner == null) {
+          return person == null ? null : '/people/${person.id}?focus=request';
+        }
+        return FriendsWithCardsScreen.requestRoute(
+          owner,
+          phoneHash: item.ownerPhoneHash,
+        );
       case 'accessApproved':
         // Straight to the card itself, whole and up to date.
         if (person != null) {
@@ -304,9 +316,6 @@ abstract final class NotificationCenter {
     }
     final String? route = routeFor(context, line);
     if (route == null) {
-      if (item != null && item.kind == 'cardCreated') {
-        AppNotice.show(context, 'החבר הזה עוד לא במאגר שלך');
-      }
       return;
     }
     AppNavigation.open(context, route);

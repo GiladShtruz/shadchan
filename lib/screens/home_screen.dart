@@ -11,6 +11,7 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/home_search_filter_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -420,6 +421,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           matchRepository: matchRepository,
           refresh: _boardRefresh,
         ),
+
+        // The friends who keep a personal card of their own — one plain row,
+        // a way in and not a figure.
+        block(const FriendsWithCardsLink(), top: 12),
 
         // 6. השבוע בשדכן — my activity, the community's, the weekly target
         // and one live line, in one card.

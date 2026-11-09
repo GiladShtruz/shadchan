@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/widgets/private_looking.dart';
 
 /// A grant/invitation can arrive before the local copy. Wait for an authorized
@@ -82,6 +83,27 @@ class _CardFriendScreenState extends State<CardFriendScreen> {
         access.matchmakerAccessVerified &&
         grant?.canReadCard != true &&
         grant?.canReadLooking != true;
+    // A new-card notice for a friend whose card this matchmaker cannot read:
+    // straight to asking for it — the request is what the notice offers.
+    // Likewise when access came and the card waits on the friend already
+    // kept by hand: the sync question, on the same screen.
+    if (widget.focus == 'request' &&
+        !_opening &&
+        (denied ||
+            (grant?.canReadCard == true &&
+                access.awaitingLinkFor(widget.ownerUid) != null))) {
+      _opening = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.go(
+            FriendsWithCardsScreen.requestRoute(
+              widget.ownerUid,
+              phoneHash: widget.phoneHash,
+            ),
+          );
+        }
+      });
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('הכרטיס של החבר')),
       body: Center(
