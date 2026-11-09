@@ -13,6 +13,7 @@ import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/utils/card_updates_seen.dart';
 import 'package:shadchan/utils/home_board_feed.dart';
+import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/utils/think_rotation.dart';
 import 'package:shadchan/widgets/first_visit_tip.dart';
@@ -48,5 +49,6 @@ abstract final class LocalSettingCaches {
     DeletedMatchesStore.instance.forgetCache();
     AutoMatchRules.forgetCache();
     OwnCardMirror.forgetCache();
+    CardLinkConsent.forgetCache();
   }
 }

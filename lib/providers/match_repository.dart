@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/utils/sync_quiet.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/models/match_contact.dart';
@@ -54,7 +55,7 @@ class MatchRepository extends ChangeNotifier {
   /// change made on another phone. The boxes already hold them; this redraws
   /// whoever reads them and re-books the reminders they carry.
   void notifySyncChange() {
-    notifyListeners();
+    SyncQuiet.run(notifyListeners);
     _refreshNotifications();
   }
 

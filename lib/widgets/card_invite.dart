@@ -5,12 +5,15 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/services/offline_guard.dart';
+import 'package:shadchan/dialogs/card_link_dialog.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
@@ -271,6 +274,24 @@ abstract final class CardInviteFlow {
     }
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final UserProfileProvider profile = context.read<UserProfileProvider>();
+    // **A friend already kept by hand is told what the request means for
+    // their record, before it is sent.** Once access is given the card joins
+    // that same record — said here, and agreed to here, so the card arrives
+    // without a second question.
+    final Person? existing = _existingRecord(context, person);
+    final bool linking =
+        existing != null && existing.cardOwnerUid != ownerUid;
+    if (linking) {
+      final bool go = await CardLinkDialog.ask(
+        context,
+        existing,
+        title: 'בקשת גישה לכרטיס של ${existing.fullName.trim()}',
+        confirmLabel: 'בקשת גישה וסנכרון',
+      );
+      if (!go || !context.mounted) {
+        return null;
+      }
+    }
     if (profile.myPhone == null) {
       final String? phone = await MyPhoneDialog.show(
         context,
@@ -301,6 +322,9 @@ abstract final class CardInviteFlow {
         _ => null,
       },
     );
+    if (outcome == CardRequestOutcome.sent && linking) {
+      CardLinkConsent.confirm(ownerUid);
+    }
     if (outcome == CardRequestOutcome.sent) {
       Analytics.log(AnalyticsEvent.access_request_sent, <String, Object?>{
         'origin': _requestOrigin(),
@@ -324,6 +348,24 @@ abstract final class CardInviteFlow {
         AppNotice.show(context, 'לא הצלחנו לשלוח את הבקשה. אפשר לנסות שוב.');
     }
     return outcome;
+  }
+
+  /// [person] as the matchmaker keeps them in the database — a visible
+  /// record, not a name on an idea and not a stand-in made for a friend the
+  /// database does not hold — or null.
+  static Person? _existingRecord(BuildContext context, Person person) {
+    final PersonRepository? people = _maybeRead<PersonRepository>(context);
+    final Person? record = people?.getById(person.id);
+    if (record == null || record.hidden) return null;
+    return record;
+  }
+
+  static T? _maybeRead<T>(BuildContext context) {
+    try {
+      return Provider.of<T>(context, listen: false);
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 
   static Future<void> _offerRequestMessage(

@@ -727,7 +727,10 @@ abstract final class AppRouter {
       GoRoute(
         path: FriendsWithCardsScreen.route,
         builder: (BuildContext context, GoRouterState state) {
-          return const FriendsWithCardsScreen();
+          return FriendsWithCardsScreen(
+            requestOwnerUid: state.uri.queryParameters['request'],
+            requestPhoneHash: state.uri.queryParameters['h'],
+          );
         },
       ),
       GoRoute(

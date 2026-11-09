@@ -222,12 +222,24 @@ async function announceOnce(
     return false;
   }
   const gender = card.get('gender') as Gender | undefined;
+  // A friend the matchmaker already keeps by hand: the notice asks the one
+  // question that matters to them — join the card to the record they have.
+  const kept = phoneHash
+    ? (((await db.collection('databaseHashes').doc(recipient).get()).get(
+        'hashes',
+      ) as string[] | undefined) ?? []).includes(phoneHash)
+    : false;
   await notify(
     matchmakerUid,
     {
       kind: 'cardCreated',
-      title: g(`${fullName(card)} {הוסיף|הוסיפה} כרטיס אישי`, gender),
-      body: 'אפשר לבקש גישה לפרטים',
+      title: kept
+        ? g(
+            `${fullName(card)} {הוסיף|הוסיפה} כרטיס אישי. רוצה לסנכרן עם הכרטיס הקיים?`,
+            gender,
+          )
+        : g(`${fullName(card)} {הוסיף|הוסיפה} כרטיס אישי`, gender),
+      body: kept ? '' : 'אפשר לבקש גישה לפרטים',
       route: '/reminders',
       ownerUid,
       ownerPhoneHash,

@@ -45,7 +45,22 @@ class _Data extends PersonalAreaProvider {
 }
 
 class _Access extends CardAccessProvider {
-  _Access(PersonRepository people) : super(people: people, enabled: false);
+  _Access(this._repo) : super(people: _repo, enabled: false);
+  final PersonRepository _repo;
+
+  /// Cards waiting for the matchmaker's "סנכרון", owner → record id.
+  final awaiting = <String, String>{};
+  final linked = <String>[];
+  @override
+  Person? awaitingLinkFor(String ownerUid) =>
+      awaiting[ownerUid] == null ? null : _repo.getById(awaiting[ownerUid]!);
+  @override
+  Future<bool> confirmLink(String ownerUid) async {
+    linked.add(ownerUid);
+    awaiting.remove(ownerUid);
+    notifyListeners();
+    return true;
+  }
   final candidates = <CardHelper>[
     const CardHelper(
       uid: 'friend123',
@@ -565,7 +580,8 @@ void main() {
         ),
       );
       await tester.pumpWidget(route());
-      expect(find.text('/people/${friend.id}?focus=request'), findsOneWidget);
+      // Without access: straight to asking for it.
+      expect(find.text('/card-friends?request=owner123'), findsOneWidget);
       access.grants.add(
         const CardAccess(
           ownerUid: 'owner123',
@@ -578,7 +594,7 @@ void main() {
       expect(find.text('/people/${friend.id}?focus=card'), findsOneWidget);
       access.grants.clear();
       await tester.pumpWidget(route());
-      expect(find.text('/people/${friend.id}?focus=request'), findsOneWidget);
+      expect(find.text('/card-friends?request=owner123'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -597,18 +613,76 @@ void main() {
       );
       await tester.pumpWidget(app(home: const FriendsWithCardsScreen()));
       await tester.pumpAndSettle();
-      expect(find.text('חברים שלי שהוסיפו כרטיס אישי'), findsOneWidget);
+      expect(find.text('חברים שהוסיפו כרטיס אישי'), findsOneWidget);
+      expect(find.text('להזמין חברים להוסיף כרטיס אישי'), findsOneWidget);
+      expect(find.text('אישרו לי גישה'), findsOneWidget);
+      expect(find.text('עדיין לא אישרו גישה'), findsOneWidget);
       expect(find.text('נועה'), findsOneWidget);
-      expect(find.text('אפשר לבקש גישה'), findsOneWidget);
       expect(find.text('בקשת גישה'), findsOneWidget);
       expect(find.text('דנה כהן'), findsOneWidget);
-      expect(find.text('יש לך גישה לכרטיס'), findsOneWidget);
-      // Those still to ask lead the list.
+      // Approved first, then the ones still to ask.
       expect(
-        tester.getTopLeft(find.text('נועה')).dy,
-        lessThan(tester.getTopLeft(find.text('דנה כהן')).dy),
+        tester.getTopLeft(find.text('דנה כהן')).dy,
+        lessThan(tester.getTopLeft(find.text('עדיין לא אישרו גישה')).dy),
+      );
+      expect(
+        tester.getTopLeft(find.text('עדיין לא אישרו גישה')).dy,
+        lessThan(tester.getTopLeft(find.text('נועה')).dy),
+      );
+      // A friend who has not given access is a name and a button: the row
+      // opens nothing.
+      expect(
+        find.ancestor(of: find.text('נועה'), matching: find.byType(InkWell)),
+        findsNothing,
       );
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'a friend kept by hand who added a card waits for "סנכרון" and keeps the same record',
+    (tester) async {
+      final DateTime now = DateTime.now();
+      final Person yossi = Person(
+        id: 'yossi-manual',
+        firstName: 'יוסי',
+        lastName: 'לוי',
+        gender: Gender.male,
+        phone: '0521111111',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await tester.runAsync(() => peopleBox.put(yossi.id, yossi));
+      access.grants.add(
+        const CardAccess(
+          ownerUid: 'owner-yossi',
+          matchmakerUid: 'me',
+          status: CardAccessStatus.approved,
+          requestedBy: 'owner',
+          ownerName: 'יוסי לוי',
+        ),
+      );
+      access.awaiting['owner-yossi'] = yossi.id;
+      await tester.pumpWidget(app(home: const FriendsWithCardsScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text('יוסי לוי'), findsOneWidget);
+      expect(find.text('סנכרון עם הכרטיס הקיים'), findsOneWidget);
+      await tester.tap(find.text('סנכרון עם הכרטיס הקיים'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('יוסי לוי הוסיף כרטיס אישי. רוצה לסנכרן עם הכרטיס הקיים?'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('לא ימחק הערות, תגיות, היסטוריה'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('סנכרון'));
+      await tester.pumpAndSettle();
+      expect(access.linked, ['owner-yossi']);
+      expect(find.text('סנכרון עם הכרטיס הקיים'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
     },
   );
 

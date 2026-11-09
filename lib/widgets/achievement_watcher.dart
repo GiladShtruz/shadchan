@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/sync_quiet.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/community_profile_store.dart';
@@ -91,7 +92,15 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
     super.dispose();
   }
 
+  /// Whether the burst being settled carried a change that arrived by sync —
+  /// the account catching up after a reconnect, a friend's card following
+  /// itself in. Such a burst moves the baseline and says nothing.
+  bool _burstFromSync = false;
+
   void _onChanged() {
+    if (SyncQuiet.active) {
+      _burstFromSync = true;
+    }
     _debounce?.cancel();
     _debounce = Timer(_settleAfter, _check);
   }
@@ -109,6 +118,13 @@ class _AchievementWatcherState extends State<AchievementWatcher> {
     final _Reached reached = _reached();
     final ActivityBreakdown? before = _last;
     _last = reached.breakdown;
+    if (_burstFromSync) {
+      // Nothing was just done here: no "+1", no milestone, no toast. What the
+      // sync brought is counted from now on like everything else.
+      _burstFromSync = false;
+      _baselineQuietly();
+      return;
+    }
 
     // A large import says one thing about the import, and the milestones it
     // crossed are marked as told rather than queued behind it. Being handed

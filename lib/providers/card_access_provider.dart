@@ -14,6 +14,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
+import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
@@ -157,6 +158,37 @@ class CardAccessProvider extends ChangeNotifier {
 
   bool get isConnected => _uid != null;
   String? get uid => _uid;
+
+  /// Cards the matchmaker may read whose owner is already in the database as
+  /// a friend kept by hand, by owner uid → that friend's record id. Nothing
+  /// is written onto the record until the matchmaker says yes — see
+  /// [CardLinkConsent] and [confirmLink].
+  final Map<String, String> _awaitingLink = <String, String>{};
+
+  /// The friend in the database that [ownerUid]'s card is waiting to be
+  /// joined to, or null when nothing waits.
+  Person? awaitingLinkFor(String ownerUid) {
+    final String? id = _awaitingLink[ownerUid];
+    if (id == null) return null;
+    if (_asMatchmaker[ownerUid]?.canReadCard != true) return null;
+    return _people.getById(id);
+  }
+
+  /// Every card waiting for the matchmaker's "yes", by owner uid.
+  Map<String, String> get awaitingLinks => Map.unmodifiable(_awaitingLink);
+
+  /// The matchmaker said yes: [ownerUid]'s card joins the friend already in
+  /// the database — the same record, the same id, with every note, tag, idea,
+  /// reminder and line of history it had. Returns false when the card could
+  /// not be read just now (it is applied on the next read regardless).
+  Future<bool> confirmLink(String ownerUid) async {
+    CardLinkConsent.confirm(ownerUid);
+    notifyListeners();
+    final CardAccess? access = _asMatchmaker[ownerUid];
+    if (access == null || !access.canReadCard) return false;
+    await resync(ownerUid);
+    return _awaitingLink[ownerUid] == null;
+  }
 
   // --- As the card owner ----------------------------------------------------
 
@@ -326,6 +358,18 @@ class CardAccessProvider extends ChangeNotifier {
                   _verifiedCards.removeWhere(
                     (owner) => _asMatchmaker[owner]?.canReadCard != true,
                   );
+                  // **A card already on this device stays on screen through a
+                  // reconnect.** The server has just confirmed the grant
+                  // afresh; the copy here (text and photos) is the last one
+                  // synced, and is drawn at once instead of vanishing until
+                  // the card document is read again. Only real changes then
+                  // arrive. A grant that ended is not in this set, and a card
+                  // that was deleted unlinks as soon as it is read.
+                  _verifiedCards.addAll(
+                    OfflineCache.verifiedCardOwners.where(
+                      (owner) => _asMatchmaker[owner]?.canReadCard == true,
+                    ),
+                  );
                   _people.setVerifiedCardOwners(_verifiedCards);
                   // What an offline launch may go on showing: the cards this
                   // answer still allows, out of those confirmed before, plus
@@ -451,6 +495,7 @@ class CardAccessProvider extends ChangeNotifier {
     _lookups.clear();
     _applying.clear();
     _photosIncomplete.clear();
+    _awaitingLink.clear();
     _cancelPhotoRetries();
     notifyListeners();
   }
@@ -676,6 +721,23 @@ class CardAccessProvider extends ChangeNotifier {
       lastName: (data['lastName'] as String?) ?? '',
     );
     final bool created = person == null;
+    // **A friend already kept by hand is asked about first.** The card would
+    // rewrite their details and their filter; until the matchmaker says yes
+    // the record stays exactly as they left it, and the friend waits under
+    // "חברים שהוסיפו כרטיס אישי" with "סנכרון עם הכרטיס הקיים". A name kept
+    // out of the database (on an idea, a draft) has nothing to lose, and a
+    // brand-new record nothing to collide with — both link at once.
+    if (person != null &&
+        person.cardOwnerUid != ownerUid &&
+        !person.hidden &&
+        !CardLinkConsent.isConfirmed(ownerUid)) {
+      if (_awaitingLink[ownerUid] != person.id) {
+        _awaitingLink[ownerUid] = person.id;
+        notifyListeners();
+      }
+      return;
+    }
+    if (_awaitingLink.remove(ownerUid) != null) notifyListeners();
     final DateTime now = DateTime.now();
     person ??= Person(
       id: const Uuid().v4(),
@@ -813,6 +875,7 @@ class CardAccessProvider extends ChangeNotifier {
   }
 
   Future<void> _unlinkNow(String ownerUid) async {
+    if (_awaitingLink.remove(ownerUid) != null) notifyListeners();
     final Person? person = _people.findByCardOwner(ownerUid, forCardSync: true);
     if (person == null) {
       return;

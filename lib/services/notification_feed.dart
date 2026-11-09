@@ -106,6 +106,20 @@ abstract final class NotificationFeed {
   /// "X הוסיף/ה כרטיס אישי" from different friends share one group key, and
   /// a day's worth of them are one row.
   static const String newCardsGroup = 'kind:cardCreated';
+
+  /// A friend the matchmaker already keeps by hand wrote a personal card:
+  /// "[שם] הוסיף כרטיס אישי. רוצה לסנכרן עם הכרטיס הקיים?" — the one
+  /// question the notice is about. Null for anybody else (not in the
+  /// database, or the card already follows them).
+  static String? newCardSyncQuestion(Person? person, String? ownerUid) {
+    if (person == null || person.hidden || person.cardOwnerUid == ownerUid) {
+      return null;
+    }
+    final String name = person.fullName.trim();
+    if (name.isEmpty) return null;
+    return '$name {הוסיף|הוסיפה} כרטיס אישי. רוצה לסנכרן עם הכרטיס הקיים?'
+        .forGender(person.gender == Gender.female ? Gender.female : Gender.male);
+  }
   static const Duration newCardsWindow = Duration(hours: 24);
 
   /// Every reminder that is due right now, in the shape [ReminderLog.sync]
@@ -165,6 +179,9 @@ abstract final class NotificationFeed {
 
     for (final InboxItem item in inbox) {
       final Person? person = personOfNotice(item);
+      final String? syncQuestion = item.kind == 'cardCreated'
+          ? newCardSyncQuestion(person, item.ownerUid)
+          : null;
       out.add(
         AppNotification(
           id: 'inbox:${item.id}',
@@ -174,8 +191,10 @@ abstract final class NotificationFeed {
           groupKey: item.kind == 'cardCreated'
               ? newCardsGroup
               : 'who:${item.ownerUid ?? item.ownerPhoneHash ?? 'inbox:${item.id}'}',
-          title: item.title.trim(),
-          subtitle: item.body.trim().isEmpty ? null : item.body.trim(),
+          title: syncQuestion ?? item.title.trim(),
+          subtitle: syncQuestion != null || item.body.trim().isEmpty
+              ? null
+              : item.body.trim(),
           person: person,
           inbox: item,
         ),

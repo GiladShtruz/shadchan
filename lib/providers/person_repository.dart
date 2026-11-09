@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:shadchan/utils/sync_quiet.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/services/offline_cache.dart';
@@ -79,7 +80,7 @@ class PersonRepository extends ChangeNotifier {
   /// Records changed underneath this repository because the account did — a
   /// change made on another phone. See `MatchRepository.notifySyncChange`.
   void notifySyncChange() {
-    notifyListeners();
+    SyncQuiet.run(notifyListeners);
     _refreshPersonRemindersInBackground();
   }
 
@@ -231,7 +232,9 @@ class PersonRepository extends ChangeNotifier {
       '$_syncPrintPrefix${person.id}',
       CardSyncEngine.printOf(person),
     );
-    notifyListeners();
+    // A card following itself here is sync, not something just done: drawn,
+    // never celebrated. See [SyncQuiet].
+    SyncQuiet.run(notifyListeners);
     await onPersonStatusChanged?.call(person.id, fromOwner: ownerStatusChanged);
     _refreshPersonRemindersInBackground();
   }

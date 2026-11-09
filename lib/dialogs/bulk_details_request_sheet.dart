@@ -25,7 +25,15 @@ import 'package:shadchan/widgets/person_avatar.dart';
 /// reached and who has not.
 abstract final class BulkDetailsRequestSheet {
   /// Walks [people] one chat at a time. Returns how many chats were opened.
-  static Future<int> show(BuildContext context, List<Person> people) async {
+  ///
+  /// [title] and [send] make the same queue walk another message — the
+  /// invitation to write a personal card ("להזמין חברים להוסיף כרטיס אישי").
+  static Future<int> show(
+    BuildContext context,
+    List<Person> people, {
+    String title = 'בקשת פרטים בוואטסאפ',
+    Future<bool> Function(Person person)? send,
+  }) async {
     final int? sent = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -38,16 +46,22 @@ abstract final class BulkDetailsRequestSheet {
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       builder: (BuildContext sheetContext) =>
-          _BulkDetailsRequestView(people: people),
+          _BulkDetailsRequestView(people: people, title: title, send: send),
     );
     return sent ?? 0;
   }
 }
 
 class _BulkDetailsRequestView extends StatefulWidget {
-  const _BulkDetailsRequestView({required this.people});
+  const _BulkDetailsRequestView({
+    required this.people,
+    required this.title,
+    this.send,
+  });
 
   final List<Person> people;
+  final String title;
+  final Future<bool> Function(Person person)? send;
 
   @override
   State<_BulkDetailsRequestView> createState() =>
@@ -80,7 +94,8 @@ class _BulkDetailsRequestViewState extends State<_BulkDetailsRequestView> {
       return;
     }
     setState(() => _opening = true);
-    final bool launched = await WhatsAppUtils.openDetailsRequest(person);
+    final bool launched =
+        await (widget.send ?? WhatsAppUtils.openDetailsRequest)(person);
     if (!mounted) {
       return;
     }
@@ -110,7 +125,7 @@ class _BulkDetailsRequestViewState extends State<_BulkDetailsRequestView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Text(
-              'בקשת פרטים בוואטסאפ',
+              widget.title,
               textAlign: TextAlign.center,
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w900,

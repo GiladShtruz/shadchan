@@ -156,15 +156,41 @@ service firebase.storage {
             && request.auth.token.firebase.sign_in_provider != 'anonymous';
       }
 
-      function approved() {
-        return request.auth != null && grantIncludesMe(ownerUid)
-            && firestore.exists(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid()))
-            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data.status == 'approved'
-            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data.get('cardGranted', true) == true
-            && firestore.get(/databases/(default)/documents/personalCards/$(ownerUid)).data.deleted == false;
+      function cardLive() {
+        return firestore.get(/databases/(default)/documents/personalCards/$(ownerUid)).data.deleted == false;
       }
 
-      allow read: if isOwner() || approved();
+      // **A matchmaker on their own is checked against two documents, not
+      // four.** Their grant is the row under their own uid, and the card's
+      // own document says whether it is live — nothing else is read. The
+      // older form went through `databaseUid()`/`grantIncludesMe()` first,
+      // which reads the memberships document as well, for every matchmaker,
+      // paired or not: three documents per photo, against a cross-service
+      // budget documented (in the 2022 announcement) as two per evaluation.
+      // A refused read is exactly the symptom matchmakers kept reporting —
+      // the card's text arrives, its photos never do.
+      //
+      // The row is the matchmaker's own: matchmakerUid is them and nobody
+      // else is on it, so it grants exactly what the owner granted them.
+      function soloApproved() {
+        let grant = firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + request.auth.uid)).data;
+        return grant.matchmakerUid == request.auth.uid
+            && grant.get('granteeUids', [request.auth.uid]).size() == 1
+            && grant.status == 'approved'
+            && grant.get('cardGranted', true) == true;
+      }
+
+      // A couple's shared database: the grant is under the database's uid
+      // and names both members. Unchanged.
+      function coupleApproved() {
+        return grantIncludesMe(ownerUid)
+            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data.status == 'approved'
+            && firestore.get(/databases/(default)/documents/cardAccess/$(ownerUid + '_' + databaseUid())).data.get('cardGranted', true) == true;
+      }
+
+      allow read: if isOwner()
+                  || (request.auth != null && soloApproved() && cardLive())
+                  || (request.auth != null && coupleApproved() && cardLive());
       allow delete: if isOwner();
       allow write: if isOwner()
                    && request.resource.size < 12 * 1024 * 1024

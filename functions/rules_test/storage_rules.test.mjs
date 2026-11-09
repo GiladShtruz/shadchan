@@ -51,6 +51,44 @@ async function audio() {
   });
   return path;
 }
+test('an approved matchmaker downloads every card photo; nobody else does', async () => {
+  const photo = `personalCards/${owner}/photo-${++serial}.jpg`;
+  const bucket = 'gs://demo-shadchan.appspot.com';
+  await assertSucceeds(
+    uploadBytes(ref(as(owner).storage(bucket), photo), new Uint8Array([1, 2, 3]), {
+      contentType: 'image/jpeg',
+    }),
+  );
+  await seed(async (db) => {
+    await setDoc(doc(db, 'personalCards', owner), { deleted: false });
+    await setDoc(doc(db, 'cardAccess', `${owner}_${mm}`), {
+      ownerUid: owner,
+      matchmakerUid: mm,
+      granteeUids: [mm],
+      status: 'pending',
+      cardGranted: false,
+    });
+  });
+  await assertFails(getBytes(ref(as(mm).storage(bucket), photo)));
+  await seed((db) =>
+    updateDoc(doc(db, 'cardAccess', `${owner}_${mm}`), {
+      status: 'approved',
+      cardGranted: true,
+    }),
+  );
+  await assertSucceeds(getBytes(ref(as(mm).storage(bucket), photo)));
+  await assertFails(getBytes(ref(as(spouse).storage(bucket), photo)));
+  await seed((db) => updateDoc(doc(db, 'personalCards', owner), { deleted: true }));
+  await assertFails(getBytes(ref(as(mm).storage(bucket), photo)));
+  await seed(async (db) => {
+    await updateDoc(doc(db, 'personalCards', owner), { deleted: false });
+    await updateDoc(doc(db, 'cardAccess', `${owner}_${mm}`), {
+      status: 'revoked',
+      cardGranted: false,
+    });
+  });
+  await assertFails(getBytes(ref(as(mm).storage(bucket), photo)));
+});
 test('a card grant cannot download private audio; private revocation is immediate', async () => {
   const path = await audio();
   await assertFails(getBytes(ref(as(mm).storage('gs://demo-shadchan.appspot.com'), path)));
