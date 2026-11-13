@@ -1,14 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useStore } from '@/data/store';
+import { usePersonal, useStore } from '@/data/store';
 import { AccessRow, detailsLine } from '@/components/access';
 import { PageHeader } from '@/components/shell';
 import { Button, Empty, InitialAvatar, cx } from '@/components/ui';
 import { useToast } from '@/components/toast';
 
 export default function MyMatchmakers() {
-  const { personal, setAccess, updatePersonal } = useStore();
+  const { setAccess, updatePersonal } = useStore();
+  const personal = usePersonal();
   const toast = useToast();
   const approved = personal.access.filter((a) => a.status === 'approved');
   const others = personal.access.filter((a) => a.status === 'pending' || a.status === 'declined');

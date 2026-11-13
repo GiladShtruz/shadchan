@@ -4,16 +4,21 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { MatchStatus, ProfileStatus } from '@/domain/enums';
 import type { AccessState, AppNotification, Database, MatchIdea, Person, PersonalArea } from '@/domain/types';
 import { demoDatabase, demoNotifications, demoPersonal } from './demo';
+import { onAuthStateChanged } from 'firebase/auth';
+import { useToast } from '@/components/toast';
+import { fb, firebaseConfigured, signOutFirebase } from './firebase';
+import { subscribeAccount, type LiveSnapshot, type LiveStatus } from './live';
 
 /**
  * The one place the screens read and write.
  *
- * In this prototype it holds the demo database in memory: edits work and are
- * visible everywhere at once, and a refresh puts the demo back. The next phase
- * keeps this exact API and swaps what is behind it: a Firestore listener on
- * `users/{uid}/*` fills the state, and every write goes to Firestore with
- * `_w: serverTimestamp()` (and tombstones, never hard deletes), which is what
- * the phones' `AccountSyncEngine` listens for.
+ * Two sources behind one API:
+ * - **demo** — a made-up database in memory; edits work and a refresh resets it.
+ * - **live** — the signed-in account, read from Firestore by `subscribeAccount`.
+ *   This phase is read-only: every mutator answers with a notice instead of
+ *   writing. Writes come next, and must set `_w: serverTimestamp()` and write
+ *   tombstones rather than delete — that is what the phones' `AccountSyncEngine`
+ *   listens for.
  */
 
 export type Area = 'matchmaker' | 'personal';
@@ -22,28 +27,41 @@ interface Session {
   signedIn: boolean;
   method: 'demo' | 'google' | 'apple' | 'email' | null;
   email: string | null;
+  uid?: string | null;
 }
+
+export type DataMode = 'demo' | 'live';
 
 interface Store {
   session: Session;
+  mode: DataMode;
+  /** True while the current data cannot be edited from the web. */
+  readOnly: boolean;
+  liveStatus: LiveStatus | null;
+  liveError: string | null;
+  /** Storage folder for this database's photos (live only). */
+  photoRoot: string | null;
+  isCouple: boolean;
+  /** Firebase is still telling us whether somebody is signed in. */
+  authPending: boolean;
   signIn: (method: Session['method'], email?: string) => void;
   signOut: () => void;
 
   db: Database;
   byId: Map<string, Person>;
   visiblePeople: Person[];
-  personal: PersonalArea;
+  personal: PersonalArea | null;
   notifications: AppNotification[];
   unreadCount: number;
 
   updatePerson: (id: string, patch: Partial<Person>) => void;
-  addPerson: (p: Partial<Person> & Pick<Person, 'firstName' | 'gender'>) => Person;
+  addPerson: (p: Partial<Person> & Pick<Person, 'firstName' | 'gender'>) => Person | null;
   deletePerson: (id: string) => void;
   setProfileStatus: (id: string, status: ProfileStatus) => void;
   toggleFavorite: (id: string) => void;
   addPersonNote: (personId: string, text: string) => void;
 
-  createMatch: (aId: string, bId: string) => MatchIdea;
+  createMatch: (aId: string, bId: string) => MatchIdea | null;
   setMatchStatus: (id: string, status: MatchStatus, reason?: string) => void;
   markAsked: (id: string, side: 'male' | 'female') => void;
   setReminder: (id: string, iso: string | null, note?: string | null) => void;
@@ -67,9 +85,17 @@ const SESSION_KEY = 'shadchan.web.session';
 const nowIso = () => new Date().toISOString();
 const newId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Math.random()).slice(2));
 
+const demoEmpty: Database = { ...demoDatabase, people: [], personNotes: [], matches: [], matchNotes: [], personEvents: [], matchStatusEvents: [] };
+
+const READ_ONLY_NOTICE = 'בשלב הזה האתר מציג את המאגר האמיתי לקריאה בלבד. עריכה — דרך האפליקציה, ובקרוב גם כאן.';
+
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const toast = useToast();
   const [session, setSession] = useState<Session>({ signedIn: false, method: null, email: null });
   const [hydrated, setHydrated] = useState(false);
+  const [authPending, setAuthPending] = useState(firebaseConfigured);
+  const [live, setLive] = useState<LiveSnapshot | null>(null);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [db, setDb] = useState<Database>(demoDatabase);
   const [personal, setPersonal] = useState<PersonalArea>(demoPersonal);
   const [notifications, setNotifications] = useState<AppNotification[]>(() => demoNotifications(demoDatabase));
@@ -84,6 +110,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, []);
 
+  // The real account: Firebase decides who is signed in, and a signed-in,
+  // non-anonymous user replaces any demo session.
+  useEffect(() => {
+    if (!firebaseConfigured) return;
+    let stopLive: (() => void) | null = null;
+    const stopAuth = onAuthStateChanged(fb().auth, (user) => {
+      stopLive?.();
+      stopLive = null;
+      setAuthPending(false);
+      if (user && !user.isAnonymous) {
+        const provider = user.providerData[0]?.providerId ?? '';
+        setSession({
+          signedIn: true,
+          method: provider.includes('google') ? 'google' : provider.includes('apple') ? 'apple' : 'email',
+          email: user.email,
+          uid: user.uid,
+        });
+        setLive(null);
+        stopLive = subscribeAccount(user.uid, user.displayName, setLive);
+      } else {
+        setLive(null);
+        setSession((s) => (s.method === 'demo' ? s : { signedIn: false, method: null, email: null }));
+      }
+    });
+    return () => {
+      stopAuth();
+      stopLive?.();
+    };
+  }, []);
+
   const signIn = useCallback((method: Session['method'], email?: string) => {
     const s: Session = { signedIn: true, method, email: email ?? null };
     setSession(s);
@@ -95,6 +151,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(() => {
+    void signOutFirebase();
+    setLive(null);
     setSession({ signedIn: false, method: null, email: null });
     try {
       sessionStorage.removeItem(SESSION_KEY);
@@ -103,8 +161,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const byId = useMemo(() => new Map(db.people.map((p) => [p.id, p])), [db.people]);
-  const visiblePeople = useMemo(() => db.people.filter((p) => !p.hidden), [db.people]);
+  const mode: DataMode = session.signedIn && session.method !== 'demo' ? 'live' : 'demo';
+  const activeDb = mode === 'live' ? live?.db ?? demoEmpty : db;
+  const byId = useMemo(() => new Map(activeDb.people.map((p) => [p.id, p])), [activeDb.people]);
+  const visiblePeople = useMemo(() => activeDb.people.filter((p) => !p.hidden), [activeDb.people]);
 
   const patchPerson = useCallback((id: string, fn: (p: Person) => Person) => {
     setDb((d) => ({ ...d, people: d.people.map((p) => (p.id === id ? { ...fn(p), updatedAt: nowIso() } : p)) }));
@@ -121,8 +181,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const store: Store = {
+  const demoStore: Store = {
     session,
+    mode,
+    readOnly: false,
+    liveStatus: null,
+    liveError: null,
+    photoRoot: null,
+    isCouple: false,
+    authPending,
     signIn,
     signOut,
     db,
@@ -281,8 +348,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updatePersonalCard: (patch) => setPersonal((pa) => ({ ...pa, card: { ...pa.card, ...patch, updatedAt: nowIso() } })),
   };
 
+  let store: Store = demoStore;
+  if (mode === 'live') {
+    const blocked = () => toast(READ_ONLY_NOTICE, undefined, { priority: true });
+    const liveNotifications = (live?.notifications ?? []).map((n) => (readIds.has(n.id) ? { ...n, read: true } : n));
+    store = {
+      ...demoStore,
+      readOnly: true,
+      liveStatus: live?.status ?? 'connecting',
+      liveError: live?.error ?? null,
+      photoRoot: live?.photoRoot ?? null,
+      isCouple: live?.isCouple ?? false,
+      db: activeDb,
+      personal: live?.personal ?? null,
+      notifications: liveNotifications,
+      unreadCount: liveNotifications.filter((n) => !n.read).length,
+      updatePerson: blocked,
+      addPerson: () => (blocked(), null),
+      deletePerson: blocked,
+      setProfileStatus: blocked,
+      toggleFavorite: blocked,
+      addPersonNote: blocked,
+      createMatch: () => (blocked(), null),
+      setMatchStatus: blocked,
+      markAsked: blocked,
+      setReminder: blocked,
+      addMatchNote: blocked,
+      deleteMatch: blocked,
+      // Read state is kept in this tab only until writes arrive.
+      markAllRead: () => setReadIds(new Set(liveNotifications.map((n) => n.id))),
+      markRead: (id) => setReadIds((s) => new Set(s).add(id)),
+      setAccess: blocked,
+      togglePrivateFor: blocked,
+      setPersonalStatus: blocked,
+      updatePersonal: blocked,
+      updatePersonalCard: blocked,
+    };
+  }
+
   if (!hydrated) return null;
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
+}
+
+/** The personal area; `/me` pages render only when it exists (see me/layout). */
+export function usePersonal(): PersonalArea {
+  const p = useStore().personal;
+  if (!p) throw new Error('usePersonal without a personal card');
+  return p;
 }
 
 export function useStore(): Store {

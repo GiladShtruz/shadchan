@@ -22,10 +22,23 @@ const SCORING = [
 ] as const;
 
 export default function CommunityPage() {
-  const { db } = useStore();
+  const { db, mode } = useStore();
   const [win, setWin] = useState<CommunityWindow>('all');
   const data = demoCommunity[win];
   const t = data.totals;
+  if (mode === 'live') {
+    return (
+      <div className="mx-auto max-w-[760px]">
+        <PageHeader title="פעילות וקהילה" />
+        <div className="px-8">
+          <PaperCard accent="var(--c-copper)" className="p-6">
+            <p className="text-[16px] font-bold text-heading">נתוני הקהילה יתחברו בשלב הבא</p>
+            <p className="mt-1 text-[14px] text-muted">בינתיים אפשר לראות את הדירוג ואת פעילות הקהילה באפליקציה.</p>
+          </PaperCard>
+        </div>
+      </div>
+    );
+  }
 
   const figures = [
     ['נקודות פעילות', t.points, 'var(--c-copper)'],

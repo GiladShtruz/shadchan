@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { PenLine } from 'lucide-react';
-import { useStore } from '@/data/store';
+import { usePersonal, useStore } from '@/data/store';
 import { REGION_LABEL, maritalLabel } from '@/domain/enums';
 import { ageOf, fullName, religiousLabel } from '@/domain/logic';
 import { PersonForm } from '@/components/person-form';
@@ -12,7 +12,8 @@ import { Avatar, Button, PaperCard } from '@/components/ui';
 import { useToast } from '@/components/toast';
 
 function CardScreen() {
-  const { personal, updatePersonalCard } = useStore();
+  const { updatePersonalCard } = useStore();
+  const personal = usePersonal();
   const toast = useToast();
   const router = useRouter();
   const editing = useSearchParams().get('edit') === '1';

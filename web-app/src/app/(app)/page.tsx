@@ -28,7 +28,7 @@ interface Row {
 }
 
 export default function HomePage() {
-  const { db, byId, visiblePeople, notifications } = useStore();
+  const { db, byId, visiblePeople, notifications, mode } = useStore();
   const gender = db.profile.gender;
 
   const figures = useMemo(() => {
@@ -94,7 +94,15 @@ export default function HomePage() {
   }, [db.matches, byId, visiblePeople]);
 
   const week = demoCommunity.week;
-  const actionsThisWeek = 3;
+  // Actions since Sunday: friends added and ideas opened this week.
+  const actionsThisWeek = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - start.getDay());
+    const since = start.toISOString();
+    return visiblePeople.filter((p) => p.createdAt >= since).length + db.matches.filter((m) => m.createdAt >= since).length;
+  }, [visiblePeople, db.matches]);
+  const weeklyGoal = 5;
   const tip = demoTips[new Date().getDate() % demoTips.length];
   const unread = notifications.filter((n) => !n.read).length;
 
@@ -183,14 +191,23 @@ export default function HomePage() {
           <PaperCard accent="var(--c-primary)" className="p-5">
             <div className="flex items-baseline justify-between">
               <span className="text-[15px] font-extrabold text-heading">השבוע</span>
-              <span className="text-[14px] font-bold text-male">{actionsThisWeek}/5 פעולות</span>
+              <span className="text-[14px] font-bold text-male">
+                {actionsThisWeek}/{weeklyGoal} פעולות
+              </span>
             </div>
             <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-sand">
-              <div className="h-full rounded-full bg-male" style={{ width: `${(actionsThisWeek / 5) * 100}%` }} />
+              <div className="h-full rounded-full bg-male" style={{ width: `${Math.min(1, actionsThisWeek / weeklyGoal) * 100}%` }} />
             </div>
-            <p className="mt-2 text-[13px] text-muted">עוד שתי פעולות ליעד השבועי</p>
+            <p className="mt-2 text-[13px] text-muted">
+              {actionsThisWeek >= weeklyGoal
+                ? 'הגעת ליעד השבועי. כל הכבוד!'
+                : weeklyGoal - actionsThisWeek === 1
+                  ? 'עוד פעולה אחת ליעד השבועי'
+                  : `עוד ${weeklyGoal - actionsThisWeek} פעולות ליעד השבועי`}
+            </p>
           </PaperCard>
 
+          {mode === 'demo' && (
           <PaperCard accent="var(--c-copper)" className="p-5">
             <div className="text-[15px] font-extrabold text-heading">השבוע בשדכן</div>
             <div className="mt-3 grid grid-cols-2 gap-3">
@@ -211,6 +228,7 @@ export default function HomePage() {
               לפעילות הקהילה
             </Link>
           </PaperCard>
+          )}
 
           <PaperCard accent="var(--c-female)" className="p-5">
             <div className="text-[13px] font-bold text-muted">{g('טיפ ל{שדכן|שדכנית}', gender)}</div>

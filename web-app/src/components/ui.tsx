@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from 'react';
+import { useStore } from '@/data/store';
+import { usePhotoUrl } from '@/data/photos';
 import { X } from 'lucide-react';
 import { profileStatusLabel, type Gender, type ProfileStatus } from '@/domain/enums';
 import type { Person } from '@/domain/types';
@@ -28,13 +30,44 @@ function pastel(seed: string) {
   return PASTELS[h % PASTELS.length];
 }
 
-/** A face: the fixed default per gender, ringed in the person's own colour. */
-export function Avatar({ person, size = 40, ring = true }: { person: Pick<Person, 'id' | 'firstName' | 'gender'>; size?: number; ring?: boolean }) {
-  const src = person.gender === 'female' ? '/avatar-female.webp' : person.gender === 'male' ? '/avatar-male.webp' : null;
+/** True once [ref] has scrolled into view (and stays true). */
+function useSeen<T extends Element>(): [RefObject<T | null>, boolean] {
+  const ref = useRef<T>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || seen) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setSeen(true);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setSeen(true);
+        io.disconnect();
+      }
+    }, { rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [seen]);
+  return [ref, seen];
+}
+
+/**
+ * A face: the person's first photo when there is one (live data only), else
+ * the fixed default per gender, ringed in the person's own colour.
+ */
+export function Avatar({ person, size = 40, ring = true }: { person: Pick<Person, 'id' | 'firstName' | 'gender'> & { photos?: string[] }; size?: number; ring?: boolean }) {
+  const { photoRoot } = useStore();
+  const [ref, seen] = useSeen<HTMLSpanElement>();
+  const photo = usePhotoUrl(photoRoot, person.photos?.[0], seen);
+  const fallback = person.gender === 'female' ? '/avatar-female.webp' : person.gender === 'male' ? '/avatar-male.webp' : null;
+  const src = photo ?? fallback;
   if (!src) {
     const p = pastel(person.id);
     return (
       <span
+        ref={ref}
         className="inline-flex shrink-0 items-center justify-center rounded-full font-bold"
         style={{ width: size, height: size, background: p.bg, color: p.ink, fontSize: size * 0.42 }}
       >
@@ -43,15 +76,17 @@ export function Avatar({ person, size = 40, ring = true }: { person: Pick<Person
     );
   }
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt=""
-      width={size}
-      height={size}
-      className="shrink-0 rounded-full bg-oat object-cover"
-      style={{ width: size, height: size, boxShadow: ring ? `0 0 0 2px var(--c-page), 0 0 0 3.5px ${genderColor(person.gender)}` : undefined }}
-    />
+    <span ref={ref} className="inline-flex shrink-0">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        className="shrink-0 rounded-full bg-oat object-cover"
+        style={{ width: size, height: size, boxShadow: ring ? `0 0 0 2px var(--c-page), 0 0 0 3.5px ${genderColor(person.gender)}` : undefined }}
+      />
+    </span>
   );
 }
 

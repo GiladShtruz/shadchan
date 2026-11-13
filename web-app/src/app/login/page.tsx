@@ -1,8 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '@/data/store';
+import { AUTH_ERROR_TEXT, authErrorCode, firebaseConfigured, resetPassword, signInApple, signInEmail, signInGoogle } from '@/data/firebase';
 import { Button } from '@/components/ui';
 
 function GoogleMark() {
@@ -25,19 +26,50 @@ function AppleMark() {
 }
 
 export default function LoginPage() {
-  const { signIn } = useStore();
+  const { signIn, session } = useStore();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // A real sign-in lands here through Firebase's listener; go in as soon as it does.
+  useEffect(() => {
+    if (session.signedIn) router.replace('/');
+  }, [session.signedIn, router]);
 
   const enterDemo = () => {
     signIn('demo');
     router.replace('/');
   };
 
-  const comingSoon = () =>
-    setNotice('ההתחברות לחשבון האמיתי תיפתח בשלב הבא. בינתיים אפשר להיכנס עם נתוני הדוגמה.');
+  const run = async (fn: () => Promise<unknown>) => {
+    if (!firebaseConfigured) {
+      setNotice('ההתחברות לחשבון האמיתי עוד לא הוגדרה באתר הזה. בינתיים אפשר להיכנס עם נתוני הדוגמה.');
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      await fn();
+    } catch (e) {
+      const code = authErrorCode(e);
+      if (code !== 'popup-closed') setNotice(AUTH_ERROR_TEXT[code]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const forgot = () => {
+    if (!email.trim()) {
+      setNotice('כתבו קודם את כתובת המייל, ונשלח אליה קישור לאיפוס.');
+      return;
+    }
+    void run(async () => {
+      await resetPassword(email);
+      setNotice('שלחנו קישור לאיפוס הסיסמה לכתובת המייל.');
+    });
+  };
 
   return (
     <div className="grid min-h-dvh grid-cols-1 bg-page lg:grid-cols-[1fr_1.1fr]">
@@ -58,10 +90,10 @@ export default function LoginPage() {
           <p className="mt-1 mb-6 text-[15px] text-muted">אותו חשבון כמו באפליקציה — אותו מאגר, מסונכרן בין הטלפון למחשב.</p>
 
           <div className="flex flex-col gap-2.5">
-            <Button className="h-12 w-full" onClick={comingSoon}>
+            <Button className="h-12 w-full" disabled={busy} onClick={() => run(signInGoogle)}>
               <GoogleMark /> המשך עם Google
             </Button>
-            <Button className="h-12 w-full !bg-black !text-white hover:!brightness-125" onClick={comingSoon}>
+            <Button className="h-12 w-full !bg-black !text-white hover:!brightness-125" disabled={busy} onClick={() => run(signInApple)}>
               <AppleMark /> המשך עם Apple
             </Button>
           </div>
@@ -76,7 +108,11 @@ export default function LoginPage() {
             className="flex flex-col gap-2.5"
             onSubmit={(e) => {
               e.preventDefault();
-              comingSoon();
+              if (!email.trim() || !password) {
+                setNotice('צריך כתובת מייל וסיסמה');
+                return;
+              }
+              void run(() => signInEmail(email, password));
             }}
           >
             <input
@@ -95,12 +131,13 @@ export default function LoginPage() {
               placeholder="סיסמה"
               className="h-12 rounded-xl border border-outline bg-page px-4 text-[15px] outline-none focus:border-primary"
             />
-            <Button variant="primary" className="h-12 w-full" type="submit">
+            <Button variant="primary" className="h-12 w-full" type="submit" disabled={busy}>
               כניסה
             </Button>
-            <button type="button" className="text-[13px] text-muted hover:underline" onClick={comingSoon}>
+            <button type="button" className="text-[13px] text-muted hover:underline" onClick={forgot}>
               שכחתי סיסמה
             </button>
+            <p className="text-center text-[13px] text-muted">אין לך חשבון? פותחים אותו באפליקציה, ואז נכנסים כאן עם אותם פרטים.</p>
           </form>
 
           {notice && <p className="mt-4 rounded-xl bg-soft-yellow/60 px-4 py-3 text-[14px] text-copper-ink">{notice}</p>}

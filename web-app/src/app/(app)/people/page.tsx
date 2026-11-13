@@ -242,6 +242,7 @@ function PeopleScreen() {
           onSave={(d) => {
             const p = store.addPerson({ ...d, manualAgeUpdatedAt: new Date().toISOString() });
             setAdding(false);
+            if (!p) return;
             setParam({ new: null, id: p.id, view: null });
             toast(g('{נוסף|נוספה} למאגר!', p.gender), { label: 'לראות התאמות', run: () => setParam({ id: p.id, tab: 'suggestions', new: null }) });
           }}

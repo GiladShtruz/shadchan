@@ -11,16 +11,23 @@ interface ToastState {
   key: number;
 }
 
-const Ctx = createContext<(text: string, action?: { label: string; run: () => void }) => void>(() => {});
+type Show = (text: string, action?: { label: string; run: () => void }, options?: { priority?: boolean }) => void;
+
+const Ctx = createContext<Show>(() => {});
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A priority message (e.g. "this is read-only") is not replaced by the
+  // success message the same click goes on to show.
+  const lockedUntil = useRef(0);
 
-  const show = useCallback((text: string, action?: { label: string; run: () => void }) => {
+  const show = useCallback<Show>((text, action, options) => {
+    if (!options?.priority && Date.now() < lockedUntil.current) return;
+    if (options?.priority) lockedUntil.current = Date.now() + 1500;
     if (timer.current) clearTimeout(timer.current);
     setToast({ text, actionLabel: action?.label, onAction: action?.run, key: Date.now() });
-    timer.current = setTimeout(() => setToast(null), action ? 4000 : 2600);
+    timer.current = setTimeout(() => setToast(null), action ? 4000 : options?.priority ? 4500 : 2600);
   }, []);
 
   return (

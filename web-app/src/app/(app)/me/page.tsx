@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Eye, Mic, PenLine, Share2 } from 'lucide-react';
-import { useStore } from '@/data/store';
+import { usePersonal, useStore } from '@/data/store';
 import { PROFILE_STATUSES, profileStatusLabel } from '@/domain/enums';
 import { fullName, g, longDate, summaryLine } from '@/domain/logic';
 import { AccessRow, detailsLine } from '@/components/access';
@@ -10,7 +10,8 @@ import { Avatar, Button, InitialAvatar, PaperCard, SectionTitle, cx } from '@/co
 import { useToast } from '@/components/toast';
 
 export default function PersonalHome() {
-  const { personal, setPersonalStatus, setAccess } = useStore();
+  const { setPersonalStatus, setAccess } = useStore();
+  const personal = usePersonal();
   const toast = useToast();
   const card = personal.card;
   const gender = card.gender;

@@ -31,15 +31,15 @@ interface NavItem {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { session, db, unreadCount, signOut, personal } = useStore();
+  const { session, db, unreadCount, signOut, personal, authPending, mode, liveStatus, liveError, isCouple } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const personalArea = pathname.startsWith('/me');
 
   useEffect(() => {
-    if (!session.signedIn) router.replace('/login');
-  }, [session.signedIn, router]);
+    if (!authPending && !session.signedIn) router.replace('/login');
+  }, [authPending, session.signedIn, router]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,8 +53,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   if (!session.signedIn) return null;
+  const liveProblem = mode === 'live' && (liveStatus === 'denied' || liveStatus === 'error');
 
-  const pending = personal.access.filter((a) => a.status === 'pending').length;
+  const pending = (personal?.access ?? []).filter((a) => a.status === 'pending').length;
   const nav: NavItem[] = personalArea
     ? [
         { href: '/me', label: 'בית', icon: <Home size={19} />, exact: true },
@@ -154,12 +155,41 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="mt-3 flex items-center gap-1.5 text-[12px] text-muted">
             <span className="h-2 w-2 rounded-full bg-[#5f9a5b]" />
-            {session.method === 'demo' ? 'נתוני דוגמה · השינויים לא נשמרים' : 'מסונכרן עם האפליקציה'}
+            {mode === 'demo'
+              ? 'נתוני דוגמה · השינויים לא נשמרים'
+              : liveStatus === 'ready'
+                ? `המאגר האמיתי${isCouple ? ' המשותף' : ''} · קריאה בלבד`
+                : liveProblem
+                  ? 'אין גישה למאגר'
+                  : 'מתחבר למאגר…'}
           </div>
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto scroll-thin">{children}</main>
+      <main className="min-w-0 flex-1 overflow-y-auto scroll-thin">
+        {mode === 'live' && liveStatus === 'connecting' ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-muted">
+            <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-outline border-t-male" />
+            <p className="text-[15px]">טוען את המאגר שלך…</p>
+          </div>
+        ) : liveProblem ? (
+          <div className="mx-auto mt-24 max-w-[520px] px-6 text-center">
+            <p className="text-[20px] font-extrabold text-heading">לא הצלחנו לקרוא את המאגר</p>
+            <p className="mt-2 text-[15px] text-muted">
+              {liveStatus === 'denied'
+                ? 'השרת סירב לבקשה מהאתר. זה קורה כשהגנת App Check לאתר עוד לא הוגדרה, או כשהחשבון הזה לא מורשה לקרוא את המאגר.'
+                : 'משהו השתבש בחיבור. כדאי לרענן את הדף ולנסות שוב.'}
+            </p>
+            {liveError && (
+              <p dir="ltr" className="mt-3 text-[12px] text-muted">
+                {liveError}
+              </p>
+            )}
+          </div>
+        ) : (
+          children
+        )}
+      </main>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>

@@ -549,6 +549,7 @@ function SuggestedPairs() {
                 variant="primary"
                 onClick={() => {
                   const m = store.createMatch(a.id, b.id);
+                  if (!m) return;
                   toast(`נפתח רעיון: ${a.firstName} & ${b.firstName}`, { label: 'לרעיון', run: () => router.replace(`/ideas?id=${m.id}`) });
                 }}
               >

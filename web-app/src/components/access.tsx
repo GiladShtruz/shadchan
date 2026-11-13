@@ -1,6 +1,6 @@
 'use client';
 
-import { useStore } from '@/data/store';
+import { usePersonal, useStore } from '@/data/store';
 import type { CardAccessRow } from '@/domain/types';
 import { daysBetween, g } from '@/domain/logic';
 import { Button, InitialAvatar } from './ui';
@@ -22,7 +22,8 @@ export function detailsLine(count: number | null, last: string | null): string {
 
 /** One matchmaker, one action — `MatchmakerFriendRow`. */
 export function AccessRow({ row }: { row: CardAccessRow }) {
-  const { setAccess, togglePrivateFor, personal } = useStore();
+  const { setAccess, togglePrivateFor } = useStore();
+  const personal = usePersonal();
   const toast = useToast();
   const hasLooking = !!personal.privateLooking?.trim();
   return (

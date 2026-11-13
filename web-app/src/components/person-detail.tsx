@@ -386,6 +386,7 @@ export function PersonSidePane({ person, tab, onTab }: { person: Person; tab: 'i
                         className="rounded-lg bg-primary-light p-2 text-male hover:brightness-95"
                         onClick={() => {
                           const m = store.createMatch(person.id, c.id);
+                          if (!m) return;
                           toast(`נפתח רעיון: ${person.firstName} & ${c.firstName}`, { label: 'לרעיון', run: () => (window.location.href = `/ideas?id=${m.id}`) });
                         }}
                       >
