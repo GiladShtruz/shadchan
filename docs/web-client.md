@@ -3,6 +3,13 @@
 Written before any web code exists, so that the session that writes it does not
 have to re-derive any of this. Read it end to end before starting.
 
+> **Status, 2026-11-13 — restarted in this repository.** The earlier client at
+> `C:\Users\97250\WebstormProjects\shadchan-web` was set aside by the user's
+> decision, and a new one was started from scratch in `web-app/` here (the
+> layout this document originally proposed below). Phase 1 is a full-scope
+> prototype over demo data, deployed to Vercel; see `web-app/README.md` for the
+> phase 2 checklist. The note below is kept for history.
+>
 > **Status, 2026-09-02.** The client was built and it is *not* in this repository.
 > It has its own git repo at `C:\Users\97250\WebstormProjects\shadchan-web` —
 > which supersedes the `web-app/` directory proposed under *Repository layout and

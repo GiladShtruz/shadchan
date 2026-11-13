@@ -1,0 +1,116 @@
+@import 'tailwindcss';
+
+/*
+ * The app's own palette (lib/utils/app_colors.dart), one name per role.
+ * White page, cream cards, two inks: headingInk for what titles/names/counts,
+ * mutedInk for what explains/dates/qualifies.
+ */
+:root {
+  --c-page: #ffffff;
+  --c-cream: #fbf6ee;
+  --c-oat: #f7f0e4;
+  --c-sand: #efe4d4;
+  --c-outline: #e2d7c8;
+  --c-heading: #3f5a66;
+  --c-muted: #5e5c58;
+  --c-body: #211d17;
+  --c-primary: #7f9eaa;
+  --c-primary-light: #d7e4ea;
+  --c-male: #5f7f8c;
+  --c-female: #a9748a;
+  --c-female-soft: #efdde4;
+  --c-copper: #c1845b;
+  --c-copper-ink: #8f5f3d;
+  --c-dating: #6f7a55;
+  --c-soft-green: #dde3cf;
+  --c-soft-yellow: #efe0b8;
+  --c-error: #d32f2f;
+  --c-whatsapp: #25d366;
+}
+
+@theme inline {
+  --color-page: var(--c-page);
+  --color-cream: var(--c-cream);
+  --color-oat: var(--c-oat);
+  --color-sand: var(--c-sand);
+  --color-outline: var(--c-outline);
+  --color-heading: var(--c-heading);
+  --color-muted: var(--c-muted);
+  --color-body: var(--c-body);
+  --color-primary: var(--c-primary);
+  --color-primary-light: var(--c-primary-light);
+  --color-male: var(--c-male);
+  --color-female: var(--c-female);
+  --color-female-soft: var(--c-female-soft);
+  --color-copper: var(--c-copper);
+  --color-copper-ink: var(--c-copper-ink);
+  --color-dating: var(--c-dating);
+  --color-soft-green: var(--c-soft-green);
+  --color-soft-yellow: var(--c-soft-yellow);
+  --font-sans: 'Assistant', 'Segoe UI', system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--c-page);
+  color: var(--c-body);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hebrew reads badly with letter spacing; the app sets it to 0 everywhere. */
+* {
+  letter-spacing: 0;
+}
+
+.card {
+  background: var(--c-cream);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgb(33 29 23 / 0.05), 0 4px 14px rgb(33 29 23 / 0.04);
+}
+
+.hairline {
+  border-color: var(--c-outline);
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-outline) transparent;
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--c-outline);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--c-page);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-muted);
+  direction: ltr;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-up {
+  animation: fade-up 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up {
+    animation: none;
+  }
+}
