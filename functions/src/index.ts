@@ -24,6 +24,7 @@ export {
  * a courtesy.
  */
 export { savePrivateLooking } from './private_looking';
+export { cardPhoto } from './card_photos';
 import { isActiveCard } from './card_activity';
 import { initializeApp } from 'firebase-admin/app';
 import {

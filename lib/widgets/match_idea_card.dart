@@ -382,7 +382,7 @@ class _CardTone {
     // reading one colour per card at its edge.
     final Color ground = dark
         ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.03), paper)
-        : Color.alphaBlend(AppColors.background.withValues(alpha: 0.55), paper);
+        : AppColors.cardCream;
     final Color insidePaper = dark
         ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.05), paper)
         : AppColors.surface;

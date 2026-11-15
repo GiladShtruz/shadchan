@@ -197,6 +197,7 @@ abstract final class AccountSyncCodec {
     'personalCard.identityPrint',
     'personalCard.identityHash',
     'personalCard.uploadedPhotos',
+    'personalCard.photosCheckedAt',
     'community.publishedFingerprint',
     'community.avatarLocalPath',
     'community.avatarUrl',

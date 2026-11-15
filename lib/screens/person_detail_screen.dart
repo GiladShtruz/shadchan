@@ -828,7 +828,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
 const Color _profileCanvasLight = AppColors.page;
 const Color _profileSurfaceLight = AppColors.cardCream;
-const Color _profileSurfaceWarmLight = AppColors.secondaryLight;
+const Color _profileSurfaceWarmLight = AppColors.cardCream;
 // The page's one accent — what used to be a pale blue on every card, whoever
 // it belonged to — is picked per person now. See [ProfilePersonAccent].
 const Color _profileTextLight = AppColors.headingInk;
@@ -1135,7 +1135,7 @@ class _FriendCardTileState extends State<_FriendCardTile> {
                 borderRadius: BorderRadius.circular(16),
                 backgroundColor: dark
                     ? theme.colorScheme.surfaceContainerHighest
-                    : AppColors.secondaryLight,
+                    : AppColors.cardCream,
                 onTapIndex: (int index) => widget.onOpenCard(
                   person.photosPaths.indexOf(photos[index]),
                 ),

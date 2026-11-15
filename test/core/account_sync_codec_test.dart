@@ -125,6 +125,9 @@ void main() {
         'invite.from',
         'contactHashes.print',
         'home.nextStep',
+        // When this phone last verified its card's photos in Storage.
+        'personalCard.photosCheckedAt',
+        'personalCard.uploadedPhotos',
       ]) {
         expect(AccountSyncCodec.isSyncedSetting(key), isFalse, reason: key);
       }

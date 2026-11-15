@@ -399,7 +399,7 @@ class SuggestionFrame extends StatelessWidget {
     // The ground live idea cards share (`MatchIdeaCard`'s `_CardTone`).
     final Color ground = dark
         ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.03), paper)
-        : Color.alphaBlend(AppColors.background.withValues(alpha: 0.55), paper);
+        : AppColors.cardCream;
     return Material(
       color: ground,
       elevation: 2,

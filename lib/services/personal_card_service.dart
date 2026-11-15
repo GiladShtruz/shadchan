@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -292,6 +294,106 @@ abstract final class PersonalCardService {
     return raw is List ? raw.whereType<String>().toSet() : <String>{};
   }
 
+  static Future<bool> _existsInStorage(Reference ref) async {
+    try {
+      await ref.getMetadata();
+      return true;
+    } on FirebaseException catch (error) {
+      if (error.code == 'object-not-found') {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  /// Downloads one photo of [ownerUid]'s card into [target], through
+  /// [partial] so a cut-off write never leaves a file that looks like a
+  /// cached photo. True when [target] now holds it.
+  ///
+  /// **Storage first, then the server.** The direct read is decided by the
+  /// Storage rule, which has to consult Firestore across services — an IAM
+  /// grant and a per-request read budget that, when either is missing,
+  /// refuse every matchmaker and leave them with a card's text and none of
+  /// its photos. When the direct read is refused the `cardPhoto` function is
+  /// asked instead: it checks the same grant the card's text is read under,
+  /// with no cross-service dependency, and returns the bytes.
+  static Future<bool> fetchCardPhoto({
+    required String ownerUid,
+    required String remotePath,
+    required File partial,
+    required File target,
+    void Function(Object error)? log,
+  }) async {
+    Future<void> settle() async {
+      if (await partial.length() == 0) {
+        throw StateError('Empty card photo');
+      }
+      await partial.rename(target.path);
+    }
+
+    Future<void> discard() async {
+      if (await partial.exists()) await partial.delete();
+    }
+
+    bool tryServer = true;
+    // Twice, a moment apart: a cut-off mobile connection is the common
+    // reason a card arrives with its text and without its pictures.
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (attempt > 0) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
+        await FirebaseStorage.instance.ref(remotePath).writeToFile(partial);
+        await settle();
+        return true;
+      } catch (error) {
+        await discard();
+        log?.call(error);
+        if (error is FirebaseException) {
+          // Not in Storage at all: the server has nothing better to offer.
+          if (error.code == 'object-not-found') {
+            tryServer = false;
+            break;
+          }
+          // Refused is refused; trying again a second later changes nothing.
+          if (error.code == 'unauthorized' ||
+              error.code == 'permission-denied') {
+            break;
+          }
+        }
+      }
+    }
+    if (!tryServer) {
+      return false;
+    }
+    try {
+      final HttpsCallableResult<dynamic> result =
+          await FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable(
+                'cardPhoto',
+                options: HttpsCallableOptions(
+                  timeout: const Duration(seconds: 60),
+                ),
+              )
+              .call(<String, Object?>{
+                'ownerUid': ownerUid,
+                'path': remotePath,
+              });
+      final Object? data = result.data;
+      final Object? encoded = data is Map ? data['data'] : null;
+      if (encoded is! String || encoded.isEmpty) {
+        return false;
+      }
+      await partial.writeAsBytes(base64Decode(encoded), flush: true);
+      await settle();
+      return true;
+    } catch (error) {
+      await discard();
+      log?.call(error);
+      return false;
+    }
+  }
+
   /// Uploads the card's photos and writes the card document.
   ///
   /// [CardPublish.complete] when the server now holds exactly this card,
@@ -330,16 +432,24 @@ abstract final class PersonalCardService {
         if (!file.existsSync()) {
           file = await PhotoPickerService.fileFor(name);
         }
-        if (!uploaded.contains(name)) {
+        // **What is in Storage is checked, never assumed.** The ledger of
+        // what this phone uploaded said "done" for photos that were not
+        // there — uploaded under an account since signed out of, removed by
+        // another phone, lost to a failed write — and the card then listed
+        // photos no matchmaker could ever fetch. One metadata read per photo
+        // per publish costs little; a card without its face costs the card.
+        // It also lets a phone that has not received a photo file yet keep
+        // it on the card when Storage already holds it.
+        final Reference ref = root.child(name);
+        final bool onServer = await _existsInStorage(ref);
+        if (!onServer) {
           if (!file.existsSync() || file.lengthSync() == 0) {
             missing = true;
             continue;
           }
-          await root
-              .child(name)
-              .putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-          uploaded.add(name);
+          await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
         }
+        uploaded.add(name);
         remotePaths.add('$cardsCollection/$uid/$name');
       }
       // A photo the owner took off the card comes down from Storage too — it

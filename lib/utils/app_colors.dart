@@ -17,18 +17,30 @@ abstract final class AppColors {
   static const Color primaryInk = Color(0xFF3F5A66);
   static const Color secondaryInk = Color(0xFF8F5F3D);
 
-  static const Color surface = Color(0xFFFFFDF8);
-  static const Color background = Color(0xFFF7F0E4);
+  /// What is drawn *on* a colour or on cream — a button's label, a ring
+  /// around a face, the inside of a framed box. Plain white: the near-white
+  /// "warm" shade this used to be was one more cream beside [cardCream].
+  static const Color surface = page;
+
+  /// The palette's one cream. Kept as a name of its own for the places that
+  /// read "the background tone", and the same colour as [cardCream].
+  static const Color background = cardCream;
 
   /// **The page is white; what sits on it is cream.** The whole screen behind
   /// everything — every scaffold, every bar — is plain white, the way a chat
   /// list reads clean in daylight. A bounded thing on it — a card, a tile, a
-  /// sheet, a figure square — is the app's own cream, lifted towards white
-  /// ([background] mixed about halfway with the page) so it separates from
-  /// the page softly rather than as a block of colour.
+  /// sheet, a figure square — is the app's own cream.
+  ///
+  /// **One cream, `#F7F4EE`, everywhere.** It is light and nearly neutral, so
+  /// a card separates from the white page softly rather than as a block of
+  /// colour, and it is the only cream in the palette: cards, tiles, content
+  /// areas and secondary grounds all use it. There used to be four
+  /// (`#FBF6EE`, `#F7F0E4`, `#FFFDF8`, `#FCFAF5`) a few points apart, which
+  /// read as dirt rather than design wherever two of them met. Do not add a
+  /// second; a quieter or warmer ground is a wash of a brand colour instead.
   static const Color page = Color(0xFFFFFFFF);
-  static const Color cardCream = Color(0xFFFBF6EE);
-  static const Color onPrimary = Color(0xFFFFFDF8);
+  static const Color cardCream = Color(0xFFF7F4EE);
+  static const Color onPrimary = page;
   static const Color onSecondary = Color(0xFF211D17);
   static const Color onSurface = Color(0xFF211D17);
   static const Color onSurfaceVariant = Color(0xFF7C7468);

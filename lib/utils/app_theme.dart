@@ -28,7 +28,8 @@ abstract final class AppTheme {
     return _buildTheme(
       colorScheme: colorScheme.copyWith(
         surfaceContainerHighest: AppColors.primaryLight,
-        surfaceContainerLow: AppColors.secondaryLight,
+        // A secondary ground is the same one cream, not a beige of its own.
+        surfaceContainerLow: AppColors.cardCream,
         onSurfaceVariant: AppColors.mutedInk,
         outlineVariant: AppColors.divider,
       ),
