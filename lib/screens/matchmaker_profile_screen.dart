@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:shadchan/models/community_profile.dart';
+import 'package:shadchan/providers/account_provider.dart';
+import 'package:shadchan/services/account_health_service.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/phone_utils.dart';
@@ -160,6 +164,10 @@ class _MatchmakerProfileScreenState extends State<MatchmakerProfileScreen> {
               const SizedBox(height: 14),
               _BenefitCard(text: profile!.benefit),
             ],
+            if (_isAdmin(context)) ...<Widget>[
+              const SizedBox(height: 20),
+              _AdminAccountCard(uid: widget.uid),
+            ],
             if (!_loading &&
                 (profile == null || !profile.hasDetails)) ...<Widget>[
               const SizedBox(height: 24),
@@ -175,6 +183,161 @@ class _MatchmakerProfileScreenState extends State<MatchmakerProfileScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Whether the reader is a support administrator. Read defensively: a screen
+/// pumped without the provider (a test) is simply not an admin.
+bool _isAdmin(BuildContext context) {
+  try {
+    return context.watch<AccountProvider>().isSupportAdmin;
+  } on ProviderNotFoundException {
+    return false;
+  }
+}
+
+/// Administrators only: which account stands behind a name on the board.
+///
+/// **Read from `accountHealth/{uid}`, never from `communityMembers`.** The
+/// community row is readable by every installed copy of the app, so an email
+/// written there would be public; the health report is readable by its owner
+/// and by support administrators only (`firestore.rules`), which is exactly
+/// the audience this card is for. A version of the app older than the health
+/// report, or one that has not reported yet, leaves no document — the card
+/// then says so and still offers the uid for the Firebase console.
+class _AdminAccountCard extends StatefulWidget {
+  const _AdminAccountCard({required this.uid});
+
+  final String uid;
+
+  @override
+  State<_AdminAccountCard> createState() => _AdminAccountCardState();
+}
+
+class _AdminAccountCardState extends State<_AdminAccountCard> {
+  late final Future<AccountHealth?> _health = AccountHealthService.find(
+    widget.uid,
+  ).catchError((Object _) => null);
+
+  void _copy(String value) {
+    Clipboard.setData(ClipboardData(text: value));
+    AppNotice.show(context, 'הועתק');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.5)),
+      ),
+      child: FutureBuilder<AccountHealth?>(
+        future: _health,
+        builder: (BuildContext context, AsyncSnapshot<AccountHealth?> snap) {
+          final AccountHealth? health = snap.data;
+          final bool waiting = snap.connectionState != ConnectionState.done;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.admin_panel_settings_outlined,
+                    size: 18,
+                    color: AppColors.secondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'פרטי חשבון · למנהלים בלבד',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (waiting)
+                const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (health == null || health.email.isEmpty)
+                Text(
+                  'לא נמצא מייל לחשבון הזה (גרסה ישנה או שעוד לא דיווח).',
+                  style: theme.textTheme.bodySmall,
+                )
+              else ...<Widget>[
+                _AdminLine(
+                  label: 'מייל',
+                  value: health.email,
+                  onCopy: () => _copy(health.email),
+                ),
+                if (health.providers.isNotEmpty)
+                  _AdminLine(
+                    label: 'התחברות',
+                    value: health.providers.join(', '),
+                  ),
+              ],
+              _AdminLine(
+                label: 'uid',
+                value: widget.uid,
+                onCopy: () => _copy(widget.uid),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AdminLine extends StatelessWidget {
+  const _AdminLine({required this.label, required this.value, this.onCopy});
+
+  final String label;
+  final String value;
+  final VoidCallback? onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 64,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: ProfilePalette.muted(theme),
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              textDirection: TextDirection.ltr,
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          if (onCopy != null)
+            IconButton(
+              tooltip: 'העתקה',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              onPressed: onCopy,
+            ),
+        ],
       ),
     );
   }
