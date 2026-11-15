@@ -164,7 +164,7 @@ class AddMethodCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Material(
-      color: dark ? theme.colorScheme.surface : const Color(0xFFFCFAF5),
+      color: dark ? theme.colorScheme.surface : AppColors.cardCream,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,

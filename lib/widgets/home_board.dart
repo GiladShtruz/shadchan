@@ -86,8 +86,9 @@ class HomeBoardSection extends StatefulWidget {
   ///  0. something that needs handling now — a reminder that came due, an
   ///     unread notice, a support answer;
   ///  1. an open idea with a next step waiting on the matchmaker;
-  ///  2. a friend who keeps a personal card and has not been handled yet
-  ///     (or whose card just changed);
+  ///  2. an access request or a card notice ([isCardNotice]), or a friend who
+  ///     keeps a personal card and has not been handled yet (or whose card
+  ///     just changed);
   ///  3. a live idea nothing has happened in for a while, and anything else
   ///     pinned;
   ///  4. a pair the database suggests.
@@ -102,8 +103,13 @@ class HomeBoardSection extends StatefulWidget {
     required bool isCardFriend,
     required bool cardHandled,
     required bool isPair,
+    bool isCardNotice = false,
   }) {
-    if (dueReminder || isNotice) return 0;
+    if (dueReminder) return 0;
+    // Access to a card — asked, given, or a friend who wrote one — is the
+    // third thing to handle, after due reminders and open ideas.
+    if (isNotice && isCardNotice) return 2;
+    if (isNotice) return 0;
     if (isCardFriend) return cardHandled ? null : 2;
     if (isPair) return 4;
     if (isIdea) return ideaStale ? 3 : 1;
@@ -147,9 +153,9 @@ enum HomeBoardMode {
   /// The whole board on its own screen: chips, every row, no inner scroll.
   screen,
 
-  /// The home screen's list of what to do next, straight under "מה עושים
-  /// עכשיו?": no title, no frame, a chat-list of about five rows ordered by
-  /// what needs doing first, and "הצג עוד" for the next ones.
+  /// The home screen's list of what to do next, under "מה השלב הבא שלך?":
+  /// no frame, a chat-list of about five rows ordered by what needs doing
+  /// first, and "הצג עוד" for the next ones.
   actions,
 }
 
@@ -735,6 +741,8 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
       isIdea: match != null,
       ideaStale: match != null && MatchStaleness.isStale(match),
       isNotice: item.type == _ItemType.notice || item.type == _ItemType.support,
+      isCardNotice:
+          item.type == _ItemType.notice && _isCardKind(item.notice?.kind),
       isCardFriend:
           item.type == _ItemType.newCard || item.type == _ItemType.sharedCard,
       cardHandled: item.type == _ItemType.newCard ? item.asked : !item.fresh,
@@ -742,7 +750,14 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     );
   }
 
-  /// The list under "מה עושים עכשיו?". See [HomeBoardMode.actions].
+  /// The inbox kinds that are about a personal card or access to one.
+  static bool _isCardKind(String? kind) =>
+      kind != null &&
+      (kind.startsWith('access') ||
+          kind.startsWith('card') ||
+          kind == 'friendJoined');
+
+  /// The list under "מה השלב הבא שלך?". See [HomeBoardMode.actions].
   Widget _buildActions(
     BuildContext context,
     List<BoardFeedEntry<_BoardItem>> collected,

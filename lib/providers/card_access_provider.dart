@@ -6,7 +6,6 @@ import 'package:shadchan/services/analytics_service.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -590,31 +589,13 @@ class CardAccessProvider extends ChangeNotifier {
       if (!file.existsSync() || file.lengthSync() == 0) {
         // A failed write must never leave a file that looks like a cached photo.
         final partial = File('${file.path}.part');
-        bool fetched = false;
-        // Twice, a moment apart: a cut-off mobile connection is the common
-        // reason a card arrives with its text and without its pictures.
-        for (int attempt = 0; attempt < 2 && !fetched; attempt++) {
-          try {
-            if (attempt > 0) {
-              await Future<void>.delayed(const Duration(seconds: 2));
-            }
-            await FirebaseStorage.instance.ref(remote).writeToFile(partial);
-            if (await partial.length() == 0) {
-              throw StateError('Empty card photo');
-            }
-            await partial.rename(file.path);
-            fetched = true;
-          } catch (error) {
-            if (await partial.exists()) await partial.delete();
-            _log(error);
-            // Refused is refused; trying again a second later changes nothing.
-            if (error is FirebaseException &&
-                (error.code == 'unauthorized' ||
-                    error.code == 'object-not-found')) {
-              break;
-            }
-          }
-        }
+        final bool fetched = await PersonalCardService.fetchCardPhoto(
+          ownerUid: ownerUid,
+          remotePath: remote,
+          partial: partial,
+          target: file,
+          log: _log,
+        );
         if (!fetched) {
           continue;
         }

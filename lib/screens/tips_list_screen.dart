@@ -154,7 +154,7 @@ enum _TipTone {
       };
     }
     return switch (this) {
-      _TipTone.sand => const Color(0xFFFBF2E6),
+      _TipTone.sand => AppColors.cardCream,
       _TipTone.sky => const Color(0xFFF0F5F7),
       _TipTone.olive => const Color(0xFFF2F4EA),
     };

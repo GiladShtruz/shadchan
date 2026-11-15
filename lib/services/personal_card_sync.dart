@@ -24,6 +24,11 @@ abstract final class PersonalCardSync {
   static const String _identityPrintKey = 'personalCard.identityPrint';
   static const String _identityHashKey = 'personalCard.identityHash';
 
+  /// When this device last confirmed the published card's photos are really
+  /// in Storage. See [_publishCard].
+  static const String _photosCheckedKey = 'personalCard.photosCheckedAt';
+  static const Duration _photosCheckEvery = Duration(hours: 24);
+
   static bool _running = false;
   static bool _again = false;
 
@@ -103,7 +108,18 @@ abstract final class PersonalCardSync {
     final String print = SyncStateStore.fingerprint(
       BackupService.personToJson(card),
     );
-    if (_settings?.get(_cardPrintKey) == print) {
+    // **An unchanged card is still checked once a day.** A card published by
+    // an older version could carry photo paths Storage never held — the
+    // upload ledger said "done" without asking — and nothing re-sent it,
+    // because the card itself had not changed; its matchmakers kept the text
+    // and never the face. Re-publishing verifies every photo against Storage
+    // and uploads any that is missing, so old cards repair themselves too.
+    final int? checkedAt = _settings?.get(_photosCheckedKey) as int?;
+    final bool checkDue =
+        checkedAt == null ||
+        DateTime.now().millisecondsSinceEpoch - checkedAt >=
+            _photosCheckEvery.inMilliseconds;
+    if (_settings?.get(_cardPrintKey) == print && !checkDue) {
       return;
     }
     // Only a complete publish is remembered. One that went up without a photo
@@ -111,6 +127,12 @@ abstract final class PersonalCardSync {
     // open, resume, any card change), until every photo is there.
     if (await PersonalCardService.publishCard(card) == CardPublish.complete) {
       await _settings?.put(_cardPrintKey, print);
+      await _settings?.put(
+        _photosCheckedKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } else {
+      await _settings?.delete(_cardPrintKey);
     }
   }
 
@@ -156,6 +178,7 @@ abstract final class PersonalCardSync {
       _identityPrintKey,
       _identityHashKey,
       'personalCard.uploadedPhotos',
+      _photosCheckedKey,
     ]);
   }
 }

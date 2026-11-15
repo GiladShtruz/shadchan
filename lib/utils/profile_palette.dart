@@ -23,7 +23,7 @@ abstract final class ProfilePalette {
   static Color warmSurface(ThemeData theme) {
     return theme.brightness == Brightness.dark
         ? theme.colorScheme.surfaceContainerHighest
-        : AppColors.secondaryLight;
+        : AppColors.cardCream;
   }
 
   static Color text(ThemeData theme) {

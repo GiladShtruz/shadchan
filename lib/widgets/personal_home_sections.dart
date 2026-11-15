@@ -260,7 +260,7 @@ class PersonalMyCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               backgroundColor: dark
                   ? theme.colorScheme.surfaceContainerHighest
-                  : AppColors.secondaryLight,
+                  : AppColors.cardCream,
               onTapIndex: (int index) =>
                   PersonCardViewer.openOwnCard(context, initialIndex: index),
             ),

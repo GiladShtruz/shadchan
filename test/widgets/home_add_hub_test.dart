@@ -11,7 +11,6 @@ void main() {
     VoidCallback? people,
     VoidCallback? idea,
     double textScale = 1,
-    bool reducedMotion = false,
     bool dark = false,
   }) {
     final ThemeData base = dark ? AppTheme.darkTheme() : AppTheme.lightTheme();
@@ -22,10 +21,7 @@ void main() {
       home: Directionality(
         textDirection: TextDirection.rtl,
         child: MediaQuery(
-          data: MediaQueryData(
-            textScaler: TextScaler.linear(textScale),
-            disableAnimations: reducedMotion,
-          ),
+          data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
           child: Scaffold(
             body: SingleChildScrollView(
               padding: const EdgeInsets.all(10),
@@ -41,7 +37,7 @@ void main() {
     );
   }
 
-  testWidgets('both side actions work and the central plus offers both flows', (
+  testWidgets('two buttons, each starting its own flow, and no "+"', (
     tester,
   ) async {
     int people = 0;
@@ -51,89 +47,57 @@ void main() {
     await tester.tap(find.text('הוספת רעיון'));
     expect(people, 1);
     expect(ideas, 1);
-
-    await tester.tap(find.byTooltip('הוספת חברים או רעיון'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('מה נוסיף היום?'), findsOneWidget);
-    await tester.tap(find.text('הוספת רעיון').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(ideas, 2);
-    expect(find.text('מה נוסיף היום?'), findsNothing);
+    expect(find.byIcon(Icons.add_rounded), findsNothing);
+    expect(find.byTooltip('הוספת חברים או רעיון'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets(
-    'the two actions are named plainly, carry no captions, keep both drawings',
-    (tester) async {
-      await tester.pumpWidget(wrap(gender: Gender.female, reducedMotion: true));
-      await tester.pumpAndSettle();
-      expect(find.text('הוספת חברים'), findsOneWidget);
-      expect(find.text('הוספת רעיון'), findsOneWidget);
-      // On the bare page: no card is drawn around the row.
-      expect(
-        find.descendant(
-          of: find.byType(HomeAddHub),
-          matching: find.byType(Card),
-        ),
-        findsNothing,
-      );
-      // No "צבור נקודות" on the buttons: what to do, nothing about scoring.
-      expect(find.textContaining('נקודות'), findsNothing);
-      expect(
-        tester
-            .widgetList<Image>(find.byType(Image))
-            .map((image) => (image.image as AssetImage).assetName),
-        <String>['assets/add_friends_art.png', 'assets/add_idea_art.png'],
-      );
-    },
-  );
-
-  testWidgets(
-    'the plus pulses gently and stops when reduced motion is enabled',
-    (tester) async {
-      await tester.pumpWidget(wrap());
-      final Finder pulse = find.descendant(
-        of: find.byType(HomeAddHub),
-        matching: find.byType(ScaleTransition),
-      );
-      final Animation<double> scale = tester
-          .widget<ScaleTransition>(pulse)
-          .scale;
-      await tester.pump(const Duration(milliseconds: 900));
-      expect(scale.value, greaterThan(1));
-      expect(scale.value, lessThanOrEqualTo(1.045));
-      await tester.pumpWidget(wrap(reducedMotion: true));
-      await tester.pumpAndSettle();
-      expect(tester.widget<ScaleTransition>(pulse).scale.value, 1);
-    },
-  );
+  testWidgets('both buttons keep their drawings and say nothing about points', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(gender: Gender.female));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('נקודות'), findsNothing);
+    expect(
+      tester
+          .widgetList<Image>(find.byType(Image))
+          .map((image) => (image.image as AssetImage).assetName),
+      <String>['assets/add_friends_art.png', 'assets/add_idea_art.png'],
+    );
+  });
 
   for (final double width in <double>[320, 390, 600]) {
     for (final bool dark in <bool>[false, true]) {
-      testWidgets('fits ${width}px, large Hebrew type, dark=$dark', (
-        tester,
-      ) async {
-        await tester.binding.setSurfaceSize(Size(width, 900));
-        addTearDown(() => tester.binding.setSurfaceSize(null));
-        await tester.pumpWidget(
-          wrap(gender: Gender.female, textScale: 1.5, dark: dark),
-        );
-        await tester.pump(const Duration(milliseconds: 500));
-        expect(tester.takeException(), isNull);
-        final Offset plus = tester.getCenter(find.byIcon(Icons.add_rounded));
-        expect(plus.dx, closeTo(width / 2, 1));
-        expect(
-          tester.getCenter(find.text('הוספת חברים')).dx,
-          greaterThan(plus.dx),
-        );
-        expect(
-          tester.getCenter(find.text('הוספת רעיון')).dx,
-          lessThan(plus.dx),
-        );
-        await tester.pumpWidget(const SizedBox.shrink());
-      });
+      for (final double scale in <double>[1, 1.5]) {
+        testWidgets('fits ${width}px @$scale, dark=$dark — large, equal, '
+            'friends at the start', (tester) async {
+          await tester.binding.setSurfaceSize(Size(width, 900));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          await tester.pumpWidget(
+            wrap(gender: Gender.female, textScale: scale, dark: dark),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          final Rect people = tester.getRect(
+            find.ancestor(
+              of: find.text('הוספת חברים'),
+              matching: find.byType(InkWell),
+            ),
+          );
+          final Rect idea = tester.getRect(
+            find.ancestor(
+              of: find.text('הוספת רעיון'),
+              matching: find.byType(InkWell),
+            ),
+          );
+          // RTL: friends on the right, the idea on the left.
+          expect(people.center.dx, greaterThan(idea.center.dx));
+          expect(people.width, closeTo(idea.width, 1));
+          expect(people.height, greaterThanOrEqualTo(58));
+          expect(people.width, greaterThan((width - 20) / 2 - 10));
+          await tester.pumpWidget(const SizedBox.shrink());
+        });
+      }
     }
   }
 }

@@ -493,7 +493,7 @@ class _MyCardSummary extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               backgroundColor: dark
                   ? theme.colorScheme.surfaceContainerHighest
-                  : AppColors.secondaryLight,
+                  : AppColors.cardCream,
             )
           else
             Center(child: PersonAvatar(person: card, radius: 44)),
