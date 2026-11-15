@@ -29,11 +29,28 @@ subprojects {
 // library plugin that has Kotlin sources (a no-op for those that apply it
 // already), and keep each one's Kotlin JVM target equal to its Java target,
 // since the plugins only set `kotlinOptions` on AGP < 9.
+// Older plugins (file_picker 8.x builds against android-34) fail AGP 9's
+// checkReleaseAarMetadata, because flutter_plugin_android_lifecycle now
+// requires compileSdk 36 from everything that depends on it. Raise any
+// plugin below that floor to it in finalizeDsl, the hook AGP provides for
+// changing a project's DSL after its own build script has run. compileSdk
+// only decides which API stubs a library compiles against; minSdk,
+// targetSdk and runtime behaviour are untouched.
+val pluginCompileSdkFloor = 36
+
 subprojects {
     pluginManager.withPlugin("com.android.library") {
         if (file("src/main/kotlin").isDirectory) {
             pluginManager.apply("org.jetbrains.kotlin.android")
         }
+        extensions
+            .getByType(com.android.build.api.variant.LibraryAndroidComponentsExtension::class.java)
+            .finalizeDsl { dsl ->
+                val current = dsl.compileSdk
+                if (current == null || current < pluginCompileSdkFloor) {
+                    dsl.compileSdk = pluginCompileSdkFloor
+                }
+            }
     }
     pluginManager.withPlugin("org.jetbrains.kotlin.android") {
         tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
