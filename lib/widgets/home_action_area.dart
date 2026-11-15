@@ -21,41 +21,106 @@ T? _maybeWatch<T>(BuildContext context) {
   }
 }
 
-/// "מה עושים עכשיו?" — the title on the bare page, and under it "הוספת
-/// חברים", the main "+" and "הוספת רעיון".
+/// "הוספת חברים" | "הוספת רעיון" — the home page's two main buttons.
 ///
-/// **No standing recommendation any more.** The line that used to sit here
-/// ("3 חברים שלך הוסיפו כרטיס אישי…", "עוד לא פתחת רעיון השבוע…") was one more
-/// box between the title and the work. What is worth doing now is the list a
-/// little further down, built from this matchmaker's own records; here there
-/// are only the two ways to add.
+/// **No title over them any more.** "מה עושים עכשיו?" was one more line
+/// between the figures and the buttons; the buttons say what they do. What is
+/// worth doing next is the list under them, headed [nextStepTitle].
+///
+/// On the home page the row is pinned ([pinnedSliver]): the figures above it
+/// scroll away, the search bar and these two buttons stay at the top.
 class HomeActionArea extends StatelessWidget {
   const HomeActionArea({super.key});
 
-  static const String title = 'מה עושים עכשיו?';
+  /// The heading over the list of what to do next, under the two buttons.
+  static const String nextStepTitle = 'מה השלב הבא שלך?';
+
+  /// The space above and below the row inside its pinned band.
+  static const double _bandPadding = 8;
+
+  /// The two buttons as a pinned sliver, [inset] from the page's edges.
+  static Widget pinnedSliver(BuildContext context, {required double inset}) {
+    final double height =
+        HomeAddHub.heightFor(MediaQuery.textScalerOf(context)) +
+        _bandPadding * 2;
+    return SliverPersistentHeader(
+      pinned: true,
+      delegate: _PinnedActionsDelegate(height: height, inset: inset),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final Gender? gender = _maybeWatch<UserProfileProvider>(context)?.gender;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        // Free text on the page: it opens the area, it does not frame it.
-        Text(
-          title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w900,
-          ),
+    return HomeAddHub(
+      gender: gender,
+      onAddPeople: () => AddPeopleDialog.show(context),
+      onAddIdea: () => context.push('/matches/add'),
+    );
+  }
+}
+
+class _PinnedActionsDelegate extends SliverPersistentHeaderDelegate {
+  _PinnedActionsDelegate({required this.height, required this.inset});
+
+  final double height;
+  final double inset;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    // The page's own ground, so what scrolls under the band is hidden; and
+    // a hairline under it once something does, so the band reads as the top
+    // of the page rather than as one more row.
+    final bool covering = overlapsContent || shrinkOffset > 0;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: covering
+            ? Border(
+                bottom: BorderSide(
+                  color: theme.colorScheme.outlineVariant,
+                  width: 0.6,
+                ),
+              )
+            : null,
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: inset,
+          vertical: HomeActionArea._bandPadding,
         ),
-        const SizedBox(height: 10),
-        HomeAddHub(
-          gender: gender,
-          onAddPeople: () => AddPeopleDialog.show(context),
-          onAddIdea: () => context.push('/matches/add'),
-        ),
-      ],
+        child: const HomeActionArea(),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_PinnedActionsDelegate oldDelegate) =>
+      oldDelegate.height != height || oldDelegate.inset != inset;
+}
+
+/// The heading over the list of what to do next.
+class HomeNextStepTitle extends StatelessWidget {
+  const HomeNextStepTitle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      HomeActionArea.nextStepTitle,
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
     );
   }
 }

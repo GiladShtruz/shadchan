@@ -359,12 +359,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     // **An action screen, not a dashboard.** In a few seconds somebody who
-    // opens the app should see where they stand (the four squares), what can
-    // be added now (the "+" between the two standing actions), how this week
-    // compares with their own weeks before (the small progress line), and
-    // what is worth moving forward (the list). From "מה עושים עכשיו?" down to
-    // "הצג עוד" it is one open area on the white page — no frame around the
-    // add actions, no card around the progress, no title over the list.
+    // opens the app should see where they stand (the four squares), the two
+    // things they can add (two large buttons, pinned under the search bar),
+    // and what is worth moving forward ("מה השלב הבא שלך?" — a chat-list of
+    // rows with hairlines between them, no card per row, then "הצג עוד").
     final String greetingName =
         userProfile.firstName ?? '{שדכן|שדכנית}'.forGender(userGender);
 
@@ -402,16 +400,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             top: 8,
           ),
 
-        // 3. "מה עושים עכשיו?" on the bare page, and under it "הוספת חברים"
-        // – "+" – "הוספת רעיון".
-        block(const HomeActionArea(), top: 18),
+        // 3. "הוספת חברים" | "הוספת רעיון" — the page's two main buttons.
+        // Pinned: the greeting and the figures scroll away, the search bar
+        // and these two stay at the top of the page.
+        const SliverToBoxAdapter(child: SizedBox(height: 10)),
+        HomeActionArea.pinnedSliver(context, inset: inset()),
 
-        // 4. The progress line: the milestones up to a hundred friends, the
-        // matchmaker's own weekly record from there.
-        block(const HomeWeeklyProgress(), top: 14),
-
-        // 5. What to do next — about five rows, then "הצג עוד".
-        const SliverToBoxAdapter(child: SizedBox(height: 8)),
+        // 4. "מה השלב הבא שלך?" — what to do next, in order: reminders that
+        // came due, open ideas waiting on a step, access requests and friends
+        // with a new card, ideas left still, then the database's pairs. About
+        // five rows, then "הצג עוד".
+        block(const HomeNextStepTitle(), top: 14),
+        const SliverToBoxAdapter(child: SizedBox(height: 4)),
         HomeBoardSection(
           focusKey: _boardSectionKey,
           mode: HomeBoardMode.actions,
@@ -421,6 +421,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           matchRepository: matchRepository,
           refresh: _boardRefresh,
         ),
+
+        // 5. The progress line: the milestones up to a hundred friends, the
+        // matchmaker's own weekly record from there.
+        block(const HomeWeeklyProgress(), top: 14),
 
         // The friends who keep a personal card of their own — one plain row,
         // a way in and not a figure.

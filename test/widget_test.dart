@@ -745,12 +745,18 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // The four all-time figures are back in their squares, above "מה עושים
-    // עכשיו?" and its two add buttons.
+    // The four all-time figures are back in their squares, above the two
+    // add buttons; "מה עושים עכשיו?" is gone and "מה השלב הבא שלך?" heads
+    // the list under them.
     final Finder figures = find.byType(ActivityFigureRow);
     expect(figures, findsOneWidget);
     expect(find.text('חתונות'), findsOneWidget);
-    expect(find.text('מה עושים עכשיו?'), findsOneWidget);
+    expect(find.text('מה עושים עכשיו?'), findsNothing);
+    expect(find.text('מה השלב הבא שלך?'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('הוספת חברים')).dy,
+      lessThan(tester.getCenter(find.text('מה השלב הבא שלך?')).dy),
+    );
     expect(
       tester.getCenter(figures).dy,
       lessThan(tester.getCenter(find.text('הוספת חברים')).dy),
@@ -2694,7 +2700,7 @@ void main() {
   });
 
   testWidgets(
-    'The home add hub follows the greeting and scrolls with the board',
+    'The home add buttons stay pinned under the search bar on scroll',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -2702,26 +2708,25 @@ void main() {
       await tester.pumpAndSettle();
 
       final Finder hub = find.byType(HomeAddHub);
-      await tester.ensureVisible(hub);
-      await tester.pumpAndSettle();
       expect(find.text('הוספת חברים'), findsOneWidget);
       expect(find.text('הוספת רעיון'), findsOneWidget);
-      expect(
-        find.byTooltip('הוספת חברים או רעיון').hitTestable(),
-        findsOneWidget,
-      );
+      expect(find.byTooltip('הוספת חברים או רעיון'), findsNothing);
 
       await tester.drag(
         find.byType(CustomScrollView).first,
-        const Offset(0, -400),
+        const Offset(0, -600),
       );
       await tester.pumpAndSettle();
-      if (hub.evaluate().isEmpty) {
-        expect(find.byTooltip('הוספת חברים או רעיון'), findsNothing);
-      } else {
-        expect(hub.hitTestable(), findsNothing);
-      }
+      // The figures scrolled away; the search bar and the two buttons stay.
+      expect(find.text('הוספת חברים').hitTestable(), findsOneWidget);
+      expect(find.text('הוספת רעיון').hitTestable(), findsOneWidget);
       expect(find.byType(ShadchanAppBar).hitTestable(), findsOneWidget);
+      expect(
+        tester.getTopLeft(hub).dy,
+        greaterThanOrEqualTo(
+          tester.getBottomLeft(find.byType(ShadchanAppBar)).dy - 1,
+        ),
+      );
       expect(tester.takeException(), isNull);
     },
   );

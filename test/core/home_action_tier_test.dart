@@ -9,6 +9,7 @@ int? tier({
   bool isCardFriend = false,
   bool cardHandled = false,
   bool isPair = false,
+  bool isCardNotice = false,
 }) => HomeBoardSection.actionTier(
   dueReminder: dueReminder,
   isIdea: isIdea,
@@ -17,6 +18,7 @@ int? tier({
   isCardFriend: isCardFriend,
   cardHandled: cardHandled,
   isPair: isPair,
+  isCardNotice: isCardNotice,
 );
 
 void main() {
@@ -32,6 +34,9 @@ void main() {
     expect(order, <int>[0, 1, 2, 3, 4]);
     // An unread notice needs handling now, like a reminder.
     expect(tier(isNotice: true), 0);
+    // An access request or a new-card notice is the third thing: after due
+    // reminders and open ideas, with the friends who wrote a card.
+    expect(tier(isNotice: true, isCardNotice: true), 2);
     // A due reminder outranks the idea being stale.
     expect(tier(dueReminder: true, isIdea: true, ideaStale: true), 0);
   });
