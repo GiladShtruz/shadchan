@@ -28,10 +28,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.gilad.shadchan"
@@ -69,6 +65,12 @@ dependencies {
     implementation("com.android.installreferrer:installreferrer:2.2")
     // FileProvider, for handing a card's photos straight to one WhatsApp chat.
     implementation("androidx.core:core-ktx:1.13.1")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
 }
 
 flutter {
