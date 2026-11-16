@@ -110,24 +110,49 @@ function decodeSetting(value: string): { value: any; nested: boolean } {
   return { value: result, nested };
 }
 
+/**
+ * One shared database out of two, without renaming what already exists.
+ *
+ * **Ids are kept.** The first source (the inviting account, whose tree becomes
+ * the shared one) keeps every id it has; the second keeps its ids too, and
+ * only an id that is already taken in the merged collection — a fixed id such
+ * as `own-personal-card`, or a retry's leftovers — gets the `${uid}__` prefix.
+ * So "one side already has a database and the other has none" really is
+ * "that database becomes the shared one": the same records, the same ids,
+ * and every link, reminder, notice and board pin that points at them still
+ * points at them. Ids are random uuids, so a real collision is rare.
+ *
+ * **Nothing is overwritten.** The same person (same normalised phone) on both
+ * sides becomes one record whose `_sources` names both, with conflicting
+ * values kept in `_mergeConflicts` (`mergeRecord`). Names without a phone are
+ * never joined automatically — they are listed in `possibleDuplicates`.
+ */
 export function mergeDatabases(sources: { uid: string; data: Database }[]): {
   data: Database;
   ids: Record<string, Record<string, string>>;
+  recordIds: Record<string, Record<string, Record<string, string>>>;
   possibleDuplicates: string[][];
 } {
   const data: Database = Object.fromEntries(
     [...recordCollections, 'settings'].map((c) => [c, {}]),
   );
   const ids: Record<string, Record<string, string>> = {};
+  const recordIds: Record<string, Record<string, Record<string, string>>> = {};
   const phones = new Map<string, string>();
   const possibleDuplicates: string[][] = [];
   const names = new Map<string, string>();
+  /** The id [oldId] keeps in [collection], unless another source has it. */
+  const freeId = (collection: string, uid: string, oldId: string) =>
+    data[collection][oldId] && !data[collection][oldId]._sources?.includes(uid)
+      ? `${uid}__${oldId}`
+      : oldId;
   for (const { uid, data: source } of sources) {
     ids[uid] = {};
+    recordIds[uid] = {};
     for (const [oldId, raw] of Object.entries(source.people ?? {})) {
       if (raw._deleted) continue;
       const phone = normalizedPhone(raw.phone);
-      const id = (phone && phones.get(phone)) || `${uid}__${oldId}`;
+      const id = (phone && phones.get(phone)) || freeId('people', uid, oldId);
       ids[uid][oldId] = id;
       const person = {
         ...raw,
@@ -152,15 +177,21 @@ export function mergeDatabases(sources: { uid: string; data: Database }[]): {
       }
       if (name) names.set(name, id);
     }
+    recordIds[uid].people = ids[uid];
   }
   for (const { uid, data: source } of sources) {
     const matches: Record<string, string> = {};
     for (const oldId of Object.keys(source.matches ?? {}))
-      matches[oldId] = `${uid}__${oldId}`;
+      if (!source.matches[oldId]._deleted)
+        matches[oldId] = freeId('matches', uid, oldId);
+    recordIds[uid].matches = matches;
     for (const collection of recordCollections.filter((c) => c !== 'people')) {
+      const mapped: Record<string, string> =
+        collection === 'matches' ? matches : {};
       for (const [oldId, raw] of Object.entries(source[collection] ?? {})) {
         if (raw._deleted) continue;
-        const id = `${uid}__${oldId}`;
+        const id = mapped[oldId] ?? freeId(collection, uid, oldId);
+        mapped[oldId] = id;
         const value: RecordData = {
           ...raw,
           id,
@@ -186,10 +217,14 @@ export function mergeDatabases(sources: { uid: string; data: Database }[]): {
         }
         data[collection][id] = value;
       }
+      recordIds[uid][collection] = mapped;
     }
+    // Only ids that actually changed are rewritten inside shared settings.
+    const mapping = Object.fromEntries(
+      Object.entries({ ...ids[uid], ...matches }).filter(([a, b]) => a !== b),
+    );
     for (const [oldId, value] of Object.entries(source.settings ?? {})) {
       if (!sharedSetting(value.k ?? '')) continue;
-      const mapping = { ...ids[uid], ...matches };
       const key = remapValue(value.k, mapping);
       const id = encodeURIComponent(key);
       try {
@@ -208,7 +243,7 @@ export function mergeDatabases(sources: { uid: string; data: Database }[]): {
       }
     }
   }
-  return { data, ids, possibleDuplicates };
+  return { data, ids, recordIds, possibleDuplicates };
 }
 export function splitDatabase(data: Database, uid: string): Database {
   const out: Database = Object.fromEntries(

@@ -156,6 +156,22 @@ test('separate accounts merge losslessly, preserve consent, deduplicate phones, 
     (await db.doc(`memberships/${b.uid}`).get()).get('databaseUid'),
     a.uid,
   );
+  // Both sides land on the very same shared database, at once: same
+  // databaseUid, same workspace revision, both active. One side seeing an
+  // empty database or only its own records is a fault, never a state.
+  const [ma, mb] = await Promise.all([
+    db.doc(`memberships/${a.uid}`).get(),
+    db.doc(`memberships/${b.uid}`).get(),
+  ]);
+  for (const m of [ma, mb]) assert.equal(m.get('state'), 'active');
+  assert.equal(ma.get('databaseUid'), mb.get('databaseUid'));
+  assert.equal(ma.get('revision'), mb.get('revision'));
+  assert.equal(ma.get('operation'), mb.get('operation'));
+  // The inviting account's records keep their ids — its database became the
+  // shared one, it was not renamed.
+  const kept = await db.doc(`users/${a.uid}/matches/m`).get();
+  assert.notEqual(kept.get('_deleted'), true);
+  assert.equal(kept.get('personAId'), 'p');
   await assert.rejects(b.call('createCoupleInvite', { married: true }));
   // A retry of the completed invitation must not remigrate or duplicate data.
   await b.call('acceptCoupleInvite', {
@@ -257,12 +273,12 @@ test('separate accounts merge losslessly, preserve consent, deduplicate phones, 
     false,
   );
   assert.equal(
-    (await db.doc(`users/${a.uid}/settings/couple.reminder.${a.uid}__m`).get())
+    (await db.doc(`users/${a.uid}/settings/couple.reminder.m`).get())
       .exists,
     true,
   );
   assert.equal(
-    (await db.doc(`users/${b.uid}/settings/couple.reminder.${a.uid}__m`).get())
+    (await db.doc(`users/${b.uid}/settings/couple.reminder.m`).get())
       .exists,
     false,
   );

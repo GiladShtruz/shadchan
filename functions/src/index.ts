@@ -77,6 +77,37 @@ function firstName(card: DocumentSnapshot | undefined): string {
 // Access requests and their answers.
 // ---------------------------------------------------------------------------
 
+/**
+ * Who is asking, said so the owner cannot mistake it: a couple's shared
+ * database asks as both of them — "משה ורחל מבקשים גישה לכרטיס שלך" — and
+ * approving gives both of them access, never one quietly.
+ */
+async function requesterLine(row: DocumentSnapshot): Promise<{
+  title: string; body: string; who: string; pair: boolean; gender?: Gender;
+}> {
+  const name = ((row.get('matchmakerName') as string | undefined) ?? '').trim() || 'שדכן/ית';
+  const grantees = (row.get('granteeUids') as string[] | undefined) ?? [];
+  if (grantees.length === 2) {
+    const membership = await db.doc(`memberships/${row.get('matchmakerUid')}`).get();
+    const names = (membership.get('names') ?? {}) as Record<string, string>;
+    const first = grantees
+      .map((uid) => (names[uid] ?? '').trim().split(/\s+/)[0])
+      .filter(Boolean);
+    const who = first.length === 2 ? `${first[0]} ו${first[1]}` : name;
+    return {
+      who, pair: true,
+      title: `${who} מבקשים גישה לכרטיס שלך`,
+      body: 'בקשה משותפת של שני בני הזוג. אישור ייתן גישה לשניהם, למאגר הזוגי שלהם.',
+    };
+  }
+  const gender = row.get('matchmakerGender') as Gender | undefined;
+  return {
+    who: name, pair: false, gender,
+    title: 'בקשת גישה לכרטיס שלך',
+    body: g(`${name} {ביקש|ביקשה} גישה לכרטיס שלך`, gender),
+  };
+}
+
 export const onCardAccessWritten = onDocumentWritten(
   'cardAccess/{accessId}',
   async (event) => {
@@ -87,18 +118,25 @@ export const onCardAccessWritten = onDocumentWritten(
     }
     const was = before?.exists ? (before.get('status') as string) : null;
     const now = after.get('status') as string;
+    // Read only when a request is actually being told about.
+    let line: Awaited<ReturnType<typeof requesterLine>> | undefined;
+    const asking = async () => (line ??= await requesterLine(after));
     if (after.get('cardRequested') === true && before?.get('cardRequested') !== true) {
-      await notify(after.get('ownerUid'), {kind: 'accessRequest', title: 'בקשת גישה לכרטיס שלך',
-        body: `${after.get('matchmakerName')} ביקשו גישה לכרטיס שלך`, route: '/me?section=requests'});
+      const asker = await asking();
+      await notify(after.get('ownerUid'), {kind: 'accessRequest', title: asker.title,
+        body: asker.body, route: '/me?section=requests'});
     }
     if (
       after.get('lookingRequested') === true &&
       before?.get('lookingRequested') !== true
     ) {
+      const asker = await asking();
       await notify(after.get('ownerUid'), {
         kind: 'accessRequest',
         title: 'בקשת גישה ל״מה אני מחפש/ת״',
-        body: `${after.get('matchmakerName')} ביקשו גישה למידע הפרטי שלך`,
+        body: asker.pair
+          ? `${asker.who} מבקשים גישה למידע הפרטי שלך, בשם שניהם`
+          : g(`${asker.who} {ביקש|ביקשה} גישה למידע הפרטי שלך`, asker.gender),
         route: '/me?section=requests',
       });
     }
@@ -110,17 +148,13 @@ export const onCardAccessWritten = onDocumentWritten(
     const ownerUid = after.get('ownerUid') as string;
     const matchmakerUid = after.get('matchmakerUid') as string;
     const ownerName = (after.get('ownerName') as string | undefined) ?? '';
-    const matchmakerName =
-      (after.get('matchmakerName') as string | undefined) ?? '';
 
     if (now === 'pending' && after.get('requestedBy') === 'matchmaker') {
+      const asker = await asking();
       await notify(ownerUid, {
         kind: 'accessRequest',
-        title: 'בקשת גישה לכרטיס שלך',
-        body:
-          after.get('granteeUids')?.length === 2
-            ? `${matchmakerName} ביקשו ממך גישה לכרטיס שלך`
-            : `${matchmakerName} רוצה לקבל גישה לכרטיס שלך`,
+        title: asker.title,
+        body: asker.body,
         // Straight to the requests on the personal area, not its top.
         route: '/me?section=requests',
       });

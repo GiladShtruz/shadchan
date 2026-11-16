@@ -13,6 +13,7 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/community_service.dart';
 import 'package:shadchan/services/connectivity_status.dart';
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/utils/community_period.dart';
@@ -74,6 +75,27 @@ void main() {
   });
 
   group('the guard', () {
+    test('a couple\'s database being merged or split refuses edits, '
+        'online or not', () {
+      CoupleWorkspaceService.membership.value = <String, dynamic>{
+        'databaseUid': 'inviter',
+        'state': 'merging',
+      };
+      addTearDown(() => CoupleWorkspaceService.membership.value = null);
+      expect(OfflineGuard.blocking, isTrue);
+      expect(OfflineGuard.reasonTemplate, OfflineGuard.changingMessage);
+      expect(
+        () => OfflineGuard.ensureCanWrite(),
+        throwsA(isA<OfflineWriteBlocked>()),
+      );
+
+      CoupleWorkspaceService.membership.value = <String, dynamic>{
+        'databaseUid': 'inviter',
+        'state': 'active',
+      };
+      expect(OfflineGuard.blocking, isFalse);
+    });
+
     test('online, writes go ahead', () {
       expect(OfflineGuard.blocking, isFalse);
       expect(OfflineGuard.ensureCanWrite, returnsNormally);

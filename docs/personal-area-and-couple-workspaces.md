@@ -122,6 +122,24 @@ requested again as a named pair; a blocked recipient remains blocked.
 
 ## Migration and split
 
+**The inviting account's database becomes the shared one, ids and all.**
+`mergeDatabases` keeps every id of the first source and of the second, and
+prefixes (`${uid}__`) only an id already taken in the merged collection — a
+fixed id such as `own-personal-card`, or a leftover from a retry. So a
+database joining an empty one is that same database (links, notices, board
+pins and reminders still point at the same records), and only ids folded into
+the other side's person get tombstones. Each side's personal
+`personalCard.mirrorId` is pointed at its own card's merged record.
+
+**A phone never shows a half-loaded shared database.** Joining moves the
+phone's sync binding to `{uid}@{databaseUid}:{revision}`; the local copy is
+emptied and `AccountSyncLedger.awaitingFirstReadHere` holds the router on the
+loading screen ("טוענים את המאגר הזוגי") until the server's copy has arrived.
+"להמשיך לצפייה בלבד" lets the phone in read-only. `OfflineGuard` refuses
+every edit while that read is pending and while the membership is `merging`
+or `splitting`, so nothing is ever written to a local database the spouse
+cannot see. The membership falls back to the Firestore cache offline.
+
 Merge/split writes are frozen by membership state. Each operation keeps immutable
 source snapshots before writing destination records. Bulk writes flush before
 awaiting their results. Processing leases prevent concurrent retries, and either
