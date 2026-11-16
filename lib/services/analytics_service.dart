@@ -264,6 +264,11 @@ enum AnalyticsEvent {
   access_request_approved,
   access_request_declined,
   access_granted,
+  // Matchmakers who know each other ("שדכנים שאני מכיר")
+  matchmaker_contact_found,
+  connection_request_sent,
+  connection_request_approved,
+  connection_request_declined,
   // Ideas
   match_suggestions_opened,
   match_rejected,

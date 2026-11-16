@@ -15,6 +15,7 @@ import 'package:shadchan/utils/app_navigation.dart';
 
 /// What the overflow menu can do.
 enum AppMenuAction {
+  knownMatchmakers,
   marriedFriends,
   deletedIdeas,
   profile,
@@ -162,6 +163,12 @@ class AppMenuButton extends StatelessWidget {
       ),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.profile, Icons.person_outline, 'הפרופיל שלי'),
+      // Matchmakers among the contacts, and the connections with them.
+      _item(
+        AppMenuAction.knownMatchmakers,
+        Icons.handshake_outlined,
+        'שדכנים שאני מכיר',
+      ),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
@@ -209,6 +216,8 @@ class AppMenuButton extends StatelessWidget {
 
   static void _run(BuildContext context, AppMenuAction action) {
     switch (action) {
+      case AppMenuAction.knownMatchmakers:
+        AppNavigation.open(context, '/known-matchmakers');
       case AppMenuAction.marriedFriends:
         AppNavigation.open(context, '/married');
       case AppMenuAction.deletedIdeas:

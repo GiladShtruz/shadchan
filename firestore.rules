@@ -412,8 +412,13 @@ service cloud.firestore {
       allow delete: if isSupportAdmin();
     }
     match /matchmakerActivity/{uid} {
+      // Yourself; a card owner who gave this matchmaker access; and, for
+      // "שדכנים שאני מכיר", a matchmaker who has [uid] saved in their phone
+      // or who is connected with them (or asked / was asked).
       allow get: if durable() && (uid == request.auth.uid ||
-        (exists(accessPath(request.auth.uid, uid)) && get(accessPath(request.auth.uid, uid)).data.status == 'approved' && get(accessPath(request.auth.uid, uid)).data.get('cardGranted', true) == true));
+        (exists(accessPath(request.auth.uid, uid)) && get(accessPath(request.auth.uid, uid)).data.status == 'approved' && get(accessPath(request.auth.uid, uid)).data.get('cardGranted', true) == true) ||
+        exists(connectionPath(request.auth.uid, uid)) ||
+        knownPhoneInContacts(request.auth.uid, uid));
       allow list: if false;
       allow create, update: if durable() && uid == request.auth.uid
         && request.resource.data.keys().hasOnly(['databaseCount', 'lastActiveAt'])
@@ -801,6 +806,9 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/phoneDirectory/$(get(path).data.phoneHash)).data.uid == uid
         && get(/databases/$(database)/documents/contactHashes/$(ownerUid)).data.hashes.hasAny([get(path).data.phoneHash]);
     }
+    function connectionPath(a, b) {
+      return /databases/$(database)/documents/matchmakerConnections/$(a < b ? a + '_' + b : b + '_' + a);
+    }
     function inOwnersContacts(ownerUid) {
       return paired() ?
         (knownPhoneInContacts(ownerUid, get(membershipPath(request.auth.uid)).data.members[0]) ||
@@ -1044,6 +1052,75 @@ service cloud.firestore {
       allow delete: if durable()
                     && (isOwner()
                         || (isMatchmaker() && resource.data.status != 'blocked'));
+    }
+
+    // --- "שדכנים שאני מכיר": matchmakers who already know each other -----
+    //
+    // One document per pair, `{a}_{b}` with the two uids sorted. One side asks
+    // (pending), the other approves or declines. **Contacts are the layer of
+    // trust**: a matchmaker may ask only somebody saved in their own phone who
+    // matchmakes here — checked against the hashes they published and the
+    // directory entry the other account wrote as its own. A connection shares
+    // nothing: no card, no friend and no figure of either database lives here.
+    match /matchmakerConnections/{pairId} {
+      function wellFormed(d) {
+        return d.keys().hasOnly(['uids', 'fromUid', 'toUid', 'status', 'names', 'createdAt', 'updatedAt'])
+          && d.uids is list && d.uids.size() == 2 && d.uids[0] < d.uids[1]
+          && pairId == d.uids[0] + '_' + d.uids[1]
+          && d.fromUid in d.uids && d.toUid in d.uids && d.fromUid != d.toUid
+          && d.status in ['pending', 'approved', 'declined']
+          && d.names is map && d.names.keys().hasOnly([d.fromUid, d.toUid])
+          && d.names.get(d.fromUid, '') is string && d.names.get(d.fromUid, '').size() <= 80
+          && d.names.get(d.toUid, '') is string && d.names.get(d.toUid, '').size() <= 80
+          && d.createdAt is timestamp
+          && d.updatedAt == request.time;
+      }
+      // [uid] is a matchmaker saved in the caller's phone.
+      function matchmakerInMyContacts(uid) {
+        return knownPhoneInContacts(request.auth.uid, uid)
+          && get(/databases/$(database)/documents/phoneDirectory/$(get(/databases/$(database)/documents/userPhones/$(uid)).data.phoneHash)).data.matchmaker == true;
+      }
+      // A fresh request from the caller.
+      function asking(d) {
+        return d.fromUid == request.auth.uid && d.status == 'pending'
+          && d.createdAt == request.time
+          && matchmakerInMyContacts(d.toUid);
+      }
+
+      allow read: if durable() && request.auth.uid in resource.data.uids;
+
+      allow create: if durable() && wellFormed(request.resource.data)
+                    && asking(request.resource.data);
+
+      allow update: if durable() && wellFormed(request.resource.data)
+                    && request.auth.uid in resource.data.uids
+                    && request.resource.data.uids == resource.data.uids
+                    && (
+                      // The side asked answers: approve or "לא עכשיו".
+                      (resource.data.status == 'pending'
+                       && resource.data.toUid == request.auth.uid
+                       && request.resource.data.fromUid == resource.data.fromUid
+                       && request.resource.data.toUid == resource.data.toUid
+                       && request.resource.data.createdAt == resource.data.createdAt
+                       && request.resource.data.status in ['approved', 'declined']
+                       && request.resource.data.names.get(resource.data.fromUid, '') == resource.data.names.get(resource.data.fromUid, ''))
+                      ||
+                      // Asking after a "לא עכשיו": at once when it was the
+                      // caller who said it, after thirty days when it was said
+                      // to the caller — never a stream of requests.
+                      (resource.data.status == 'declined'
+                       && asking(request.resource.data)
+                       && (resource.data.toUid == request.auth.uid
+                           || resource.data.updatedAt < request.time - duration.value(30, 'd')))
+                    );
+
+      // Leaving a connection, or withdrawing one's own request. A request
+      // declined *to* the caller stays until its thirty days are up — deleting
+      // it would be a way round them.
+      allow delete: if durable() && request.auth.uid in resource.data.uids
+                    && (resource.data.status == 'approved'
+                        || (resource.data.status == 'pending' && resource.data.fromUid == request.auth.uid)
+                        || (resource.data.status == 'declined' && resource.data.toUid == request.auth.uid));
     }
 
     // "Yitzchak marked you as 'busy' on his phone — is that right?" A

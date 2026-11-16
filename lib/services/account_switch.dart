@@ -1,3 +1,4 @@
+import 'package:shadchan/services/matchmaker_connections.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/utils/home_next_step.dart';
@@ -77,6 +78,7 @@ abstract final class AccountSwitch {
     // the next person on this phone must not receive this one's news.
     await PushService.stop();
     await cardAccess?.stop();
+    await MatchmakerConnections.stop();
     await inbox?.stop();
     await account.signOut();
     // Once more, now that nobody is signed in: anything that started the sync
@@ -150,6 +152,7 @@ abstract final class AccountSwitch {
     await sync.forget();
     await PushService.stop();
     await cardAccess?.stop();
+    await MatchmakerConnections.stop();
     await inbox?.stop();
     await account.signOut();
     // Once more, now that nobody is signed in: anything that started the sync

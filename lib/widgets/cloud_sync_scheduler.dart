@@ -1,3 +1,4 @@
+import 'package:shadchan/services/matchmaker_connections.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -224,6 +225,10 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       unawaited(_startPushAndReminders());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());
+      // "שדכנים שאני מכיר": the connections this account is part of.
+      if (WorkspaceStore.matchmakerEnabled) {
+        unawaited(MatchmakerConnections.start());
+      }
       // Reciprocal discovery needs both roles' address books. This checks
       // existing permission only and never opens a permission prompt.
       unawaited(ContactHashUpload.run());

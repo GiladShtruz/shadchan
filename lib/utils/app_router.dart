@@ -17,6 +17,7 @@ import 'package:shadchan/screens/incoming_shared_profile_screen.dart';
 import 'package:shadchan/screens/incoming_voice_note_screen.dart';
 import 'package:shadchan/screens/matches_screen.dart';
 import 'package:shadchan/screens/matchmaker_profile_screen.dart';
+import 'package:shadchan/screens/known_matchmakers_screen.dart';
 import 'package:shadchan/screens/people_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/screens/person_form_screen.dart';
@@ -758,6 +759,25 @@ abstract final class AppRouter {
             fallbackPhotoUrl: state.uri.queryParameters['photo'] ?? '',
           );
         },
+      ),
+      // "שדכנים שאני מכיר": matchmakers among this phone's contacts, the
+      // connections between them, and one matchmaker's basic profile (where a
+      // "[שם] הצטרף לשדכן" notice and a connection request lead).
+      GoRoute(
+        path: KnownMatchmakersScreen.route,
+        builder: (BuildContext context, GoRouterState state) {
+          return const KnownMatchmakersScreen();
+        },
+        routes: <RouteBase>[
+          GoRoute(
+            path: ':uid',
+            builder: (BuildContext context, GoRouterState state) {
+              return KnownMatchmakerProfileScreen(
+                uid: state.pathParameters['uid'] ?? '',
+              );
+            },
+          ),
+        ],
       ),
       // "הלוח שלי" in full; the home screen shows only its first rows.
       GoRoute(

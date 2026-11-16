@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/dialogs/account_dialogs.dart';
 import 'package:provider/provider.dart';
@@ -202,6 +203,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // the page that other people read, and it is drawn as a group of its own
       // so that is never in doubt: a few rows, each saying what is currently
       // filled in, and the whole of the public page behind them.
+      // Matchmakers among the contacts — the colleagues already known.
+      if (matchmaker)
+        SettingsGroup(
+          title: 'שדכנים',
+          accent: sky,
+          children: <Widget>[
+            SettingsRow(
+              icon: Icons.handshake_outlined,
+              title: 'שדכנים שאני מכיר',
+              subtitle: 'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן',
+              onTap: () => AppNavigation.open(context, '/known-matchmakers'),
+            ),
+          ],
+        ),
       if (matchmaker)
         SettingsGroup(
           title: 'מה שדכנים אחרים רואים',
