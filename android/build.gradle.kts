@@ -66,6 +66,12 @@ subprojects {
     }
 }
 
+// Belt and braces for the lint-vital crash on Java 17 (see app/build.gradle.kts):
+// no project, app or plugin, runs the release lint tasks.
+subprojects {
+    tasks.matching { it.name.startsWith("lintVital") }.configureEach { enabled = false }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
