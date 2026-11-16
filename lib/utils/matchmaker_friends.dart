@@ -220,6 +220,69 @@ abstract final class MatchmakerFriends {
     return 'לפני יותר משנה';
   }
 
+  /// Recently active matchmakers count back this far; older is not "recent".
+  static const Duration recentWindow = Duration(days: 30);
+
+  /// "השדכנים שלי שהיו פעילים לאחרונה": friends active in [recentWindow],
+  /// most recent first, at most [limit]. A friend put away from the list is
+  /// left out — unless they are asking for something.
+  static List<MatchmakerFriend> recentlyActive(
+    Iterable<MatchmakerFriend> friends, {
+    Set<String> hidden = const <String>{},
+    int limit = 3,
+    DateTime? now,
+  }) {
+    final DateTime at = now ?? DateTime.now();
+    final List<MatchmakerFriend> list =
+        friends
+            .where(
+              (MatchmakerFriend f) =>
+                  f.lastActiveAt != null &&
+                  at.difference(f.lastActiveAt!) < recentWindow &&
+                  (f.canReadCard ||
+                      f.state == MatchmakerFriendState.requested ||
+                      !isHidden(f, hidden)),
+            )
+            .toList()
+          ..sort(
+            (MatchmakerFriend a, MatchmakerFriend b) =>
+                b.lastActiveAt!.compareTo(a.lastActiveAt!),
+          );
+    return list.take(limit).toList();
+  }
+
+  /// "פעיל לפני 20 דקות" / "פעילה לפני 3 שעות" today, "פעיל אתמול" /
+  /// "פעיל לפני 4 ימים" before — said the way a person would.
+  static String recentActivityLabel(
+    DateTime at, {
+    DateTime? now,
+    bool female = false,
+  }) {
+    final String active = female ? 'פעילה' : 'פעיל';
+    final DateTime today = now ?? DateTime.now();
+    final DateTime a = DateTime(at.year, at.month, at.day);
+    final DateTime b = DateTime(today.year, today.month, today.day);
+    final int days = b.difference(a).inDays;
+    if (days <= 0) {
+      final Duration ago = today.difference(at);
+      final int minutes = ago.inMinutes;
+      if (minutes < 1) return '$active ממש עכשיו';
+      if (minutes == 1) return '$active לפני דקה';
+      if (minutes < 60) return '$active לפני $minutes דקות';
+      final int hours = ago.inHours;
+      if (hours == 1) return '$active לפני שעה';
+      if (hours == 2) return '$active לפני שעתיים';
+      return '$active לפני $hours שעות';
+    }
+    if (days == 1) return '$active אתמול';
+    if (days == 2) return '$active לפני יומיים';
+    return '$active לפני $days ימים';
+  }
+
+  /// "12 חברים במאגר".
+  static String databaseLabel(int count) =>
+      count == 1 ? 'חבר אחד במאגר' : '$count חברים במאגר';
+
   /// The short line beside a friend's name.
   static String stateLabel(MatchmakerFriend f) {
     if (f.state == MatchmakerFriendState.requested) {

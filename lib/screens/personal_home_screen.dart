@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
@@ -17,6 +19,7 @@ import 'package:shadchan/screens/my_matchmakers_screen.dart';
 import 'package:shadchan/screens/personal_area_screen.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/services/personal_area_service.dart';
+import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
@@ -50,6 +53,11 @@ class _PersonalShell extends StatefulWidget {
 
 class _PersonalShellState extends State<_PersonalShell> {
   int _tab = 0;
+
+  /// Counts arrivals at the home, so each one can show a different
+  /// community figure. Starts anywhere, so a fresh launch does not always
+  /// open on the same one.
+  static int _visit = Random().nextInt(1 << 16);
   int _tabFor(String? section) => switch (section) {
     'profile' => 2,
     'helpers' || 'approved' || 'requests' => 1,
@@ -59,6 +67,7 @@ class _PersonalShellState extends State<_PersonalShell> {
   void initState() {
     super.initState();
     _tab = _tabFor(widget.section);
+    _visit++;
     WorkspaceStore.setLastArea(WorkArea.personal);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) CommunityPromptGate.maybeAskHomeAreaOnly(context);
@@ -69,12 +78,17 @@ class _PersonalShellState extends State<_PersonalShell> {
   void didUpdateWidget(covariant _PersonalShell old) {
     super.didUpdateWidget(old);
     if (old.section != widget.section || old.friendUid != widget.friendUid) {
-      _tab = _tabFor(widget.section);
+      final int next = _tabFor(widget.section);
+      if (next == 0 && _tab != 0) _visit++;
+      _tab = next;
     }
   }
 
   void _select(int index) {
-    setState(() => _tab = index);
+    setState(() {
+      if (index == 0 && _tab != 0) _visit++;
+      _tab = index;
+    });
     final router = GoRouter.maybeOf(context);
     router?.go(
       index == 0
@@ -104,7 +118,10 @@ class _PersonalShellState extends State<_PersonalShell> {
           child: IndexedStack(
             index: _tab,
             children: [
-              TickerMode(enabled: _tab == 0, child: const _PersonalHome()),
+              TickerMode(
+                enabled: _tab == 0,
+                child: _PersonalHome(onSelectTab: _select, visit: _visit),
+              ),
               TickerMode(
                 enabled: _tab == 1,
                 child: MyMatchmakersScreen(
@@ -156,16 +173,24 @@ class _PersonalShellState extends State<_PersonalShell> {
   }
 }
 
-/// The personal home: the owner's card in their own hands, who can think
-/// about them, and the friends around them who matchmake here.
+/// The personal home — light, alive, and inviting rather than a management
+/// page. The order is the design: the greeting → two shortcuts (the card,
+/// the matchmakers) → the matchmakers who were active lately → the one thing
+/// worth doing now → one community figure, a different one each visit → the
+/// secondary links. The card in full, the status and "מה אני מחפש/ת" live on
+/// "פרופיל"; every matchmaker friend lives on "השדכנים שלי".
 ///
-/// The order is the design — greeting, the two access figures, the card,
-/// the status, "מה אני מחפש/ת", the friends who matchmake, who sees the
-/// card, "מה חדש אצלי" (only when there is), the community, and the
-/// secondary actions at the foot. Nothing here shows what any matchmaker
-/// does with the card: not views, not ideas, not notes.
+/// The card itself is drawn here once only — on the first visit after it was
+/// written, so the owner sees what they made. From then on it is a shortcut.
+/// Nothing here shows what any matchmaker does with the card.
 class _PersonalHome extends StatefulWidget {
-  const _PersonalHome();
+  const _PersonalHome({required this.onSelectTab, required this.visit});
+
+  /// Moves the shell to one of its tabs: 1 "השדכנים שלי", 2 "פרופיל".
+  final ValueChanged<int> onSelectTab;
+
+  /// Turned over on every arrival at the home; picks the community figure.
+  final int visit;
 
   @override
   State<_PersonalHome> createState() => _PersonalHomeState();
@@ -178,6 +203,25 @@ class _PersonalHomeState extends State<_PersonalHome> {
   /// question comes back on the next visit — the card goes on carrying its
   /// first four photos meanwhile, and nothing is deleted.
   bool _photoChoiceAsked = false;
+
+  /// Whether this visit draws the card itself — decided once, the first time
+  /// a card is there to decide about.
+  bool? _showCard;
+
+  /// Set once the owner has seen their new card on the home.
+  static const String cardShownKey = 'personalHome.cardShown';
+
+  /// A card younger than this counts as just made.
+  static const Duration _newCard = Duration(days: 1);
+
+  bool _decideShowCard(Person card) {
+    final bool seen =
+        Hive.isBoxOpen('settings') &&
+        Hive.box<dynamic>('settings').get(cardShownKey) == 'true';
+    final bool fresh = DateTime.now().difference(card.createdAt) < _newCard;
+    if (!seen) persistHomeSetting(cardShownKey, 'true');
+    return !seen && fresh;
+  }
 
   void _maybeAskPhotoChoice(PersonalCardProvider cards) {
     if (_photoChoiceAsked || !cards.needsPhotoChoice || cards.isDeleted) {
@@ -224,10 +268,11 @@ class _PersonalHomeState extends State<_PersonalHome> {
     final UserProfileProvider profile = context.watch<UserProfileProvider>();
     final PersonalCardProvider cards = context.watch<PersonalCardProvider>();
     final Person? card = cards.card;
+    final bool hasCard = card != null && !cards.isDeleted;
     _maybeAskPhotoChoice(cards);
+    if (hasCard) _showCard ??= _decideShowCard(card);
     final String first = (profile.firstName ?? '').trim();
-    const SizedBox gap = SizedBox(height: 22);
-    const Divider rule = Divider(height: 1);
+    void toMatchmakers() => widget.onSelectTab(1);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
@@ -239,36 +284,38 @@ class _PersonalHomeState extends State<_PersonalHome> {
               ? SwitchToMatchmakerButton(onTap: _toMatchmaker)
               : null,
         ),
-        const SizedBox(height: 8),
-        const PersonalAccessFigures(),
         const SizedBox(height: 14),
-        if (card == null || cards.isDeleted)
+        PersonalShortcuts(
+          onCard: () => widget.onSelectTab(2),
+          onMatchmakers: toMatchmakers,
+        ),
+        if (hasCard && (_showCard ?? false)) ...<Widget>[
+          const SizedBox(height: 14),
+          PersonalMyCard(card: card, active: cards.hasCard),
+        ],
+        PersonalRecentMatchmakers(onSeeAll: toMatchmakers),
+        const SizedBox(height: 22),
+        if (hasCard)
+          PersonalNextAction(
+            card: card,
+            live: cards.hasCard,
+            onMatchmakers: toMatchmakers,
+          )
+        else ...<Widget>[
+          const PersonalSectionTitle(PersonalNextAction.title),
           PersonalCardPrompt(
             deleted: cards.isDeleted,
             busy: _restoring,
             onAction: cards.isDeleted
                 ? _restore
                 : () => PersonalAreaService.editCard(context),
-          )
-        else ...<Widget>[
-          PersonalMyCard(card: card, active: cards.hasCard),
-          const SizedBox(height: 14),
-          PersonalStatusRow(card: card),
+          ),
         ],
-        if (!cards.isDeleted) ...<Widget>[gap, const PersonalLookingSection()],
-        gap,
-        rule,
-        const SizedBox(height: 14),
-        const PersonalMatchmakersStrip(),
-        const SizedBox(height: 10),
-        const PersonalWhoSees(),
-        const PersonalWhatsNew(),
-        gap,
-        rule,
-        const SizedBox(height: 14),
-        const PersonalCommunityLine(),
+        PersonalCommunityFigure(visit: widget.visit),
         const PersonalCommunityNews(includeStats: false),
-        const SizedBox(height: 18),
+        const SizedBox(height: 22),
+        const Divider(height: 1),
+        const SizedBox(height: 10),
         _PersonalFooter(gender: profile.gender),
       ],
     );
