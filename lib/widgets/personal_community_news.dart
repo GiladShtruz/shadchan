@@ -14,7 +14,7 @@ class PersonalCommunityNews extends StatefulWidget {
   const PersonalCommunityNews({super.key, this.includeStats = true});
 
   /// False where the community's figures are already said on their own line
-  /// (the personal home's [PersonalCommunityLine]) — then only the
+  /// (the personal home's [PersonalCommunityFigure]) — then only the
   /// administrator's published news turn over here.
   final bool includeStats;
   @override
