@@ -28,6 +28,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // AGP 9's release lint ("lint vital") calls List.removeLast(), a Java 21
+    // API, and crashes with NoSuchMethodError when Gradle runs on Java 17
+    // (Codemagic's default). It only re-checks for fatal lint issues; skip it.
+    lint {
+        checkReleaseBuilds = false
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.gilad.shadchan"
