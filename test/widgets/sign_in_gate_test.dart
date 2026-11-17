@@ -350,6 +350,42 @@ void main() {
     }
   });
 
+  testWidgets('a matchmaker whose own database is on the phone is never held '
+      'or locked out while the first comparison with the account is pending', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    late Box<dynamic> ledgerBox;
+    await tester.runAsync(() async {
+      await settings.put('signIn.hasAccount', 'true');
+      ledgerBox = await Hive.openBox<dynamic>(AccountSyncLedger.boxName);
+      // Bound to their own account, read not finished — and nothing was
+      // emptied: the records on this phone are theirs.
+      await AccountSyncLedger(ledgerBox).bindTo('me');
+    });
+    try {
+      expect(AccountSyncLedger.awaitingFirstReadHere, isFalse);
+      expect(OfflineGuard.blocking, isFalse);
+
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+      expect(find.text('לא הצלחנו לטעון את המאגר'), findsNothing);
+
+      // Emptied for this database (moved off a couple's one): held again.
+      await tester.runAsync(
+        () => AccountSyncLedger(ledgerBox).markEmptiedForRead(),
+      );
+      expect(AccountSyncLedger.awaitingFirstReadHere, isTrue);
+      expect(OfflineGuard.blocking, isTrue);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() async {
+        await ledgerBox.clear();
+        await ledgerBox.close();
+      });
+    }
+  });
+
   testWidgets('an address not yet verified opens on the verification page', (
     WidgetTester tester,
   ) async {

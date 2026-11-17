@@ -78,6 +78,22 @@ class SyncProvider extends ChangeNotifier {
 
   Object? get lastError => _engine?.lastError;
 
+  /// Why the last start did not end with the account read, as a short code
+  /// for the loading screen and for support — never a record's content.
+  String? get failureCode {
+    final Object? error = _startError ?? _engine?.lastError;
+    if (error is FirebaseException) {
+      return '${error.plugin}/${error.code}';
+    }
+    if (error != null) {
+      return error.runtimeType.toString();
+    }
+    return _startStop;
+  }
+
+  Object? _startError;
+  String? _startStop;
+
   /// Starts (or retries) the sync for whoever is signed in, and completes once
   /// the account has been read — or the attempt failed.
   ///
@@ -86,10 +102,15 @@ class SyncProvider extends ChangeNotifier {
   /// engines on one database would each think the other's writes were news.
   Future<void> start() {
     final Future<void> next = _startChain
-        .then((_) => _start())
-        .catchError(
-          (Object error) => debugPrint('ACCOUNT_SYNC start failed: $error'),
-        );
+        .then((_) {
+          _startError = null;
+          _startStop = null;
+          return _start();
+        })
+        .catchError((Object error) {
+          _startError = error;
+          debugPrint('ACCOUNT_SYNC start failed: $error');
+        });
     _startChain = next;
     return next;
   }
@@ -102,10 +123,12 @@ class SyncProvider extends ChangeNotifier {
     }
     await FirebaseBootstrap.ensureReady();
     if (!FirebaseBootstrap.isReady) {
+      _startStop = 'firebase-not-ready';
       return;
     }
     final User? user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) {
+      _startStop = 'no-account';
       await stop();
       return;
     }
@@ -127,6 +150,8 @@ class SyncProvider extends ChangeNotifier {
     final revision =
         '${user.uid}:${membership?['databaseUid'] ?? user.uid}:${membership?['revision'] ?? 'personal'}';
     if (!CoupleWorkspaceService.ready) {
+      _startStop =
+          'couple-${CoupleWorkspaceService.membership.value?['state'] ?? 'unknown'}';
       await stop();
       return;
     }
@@ -175,6 +200,7 @@ class SyncProvider extends ChangeNotifier {
         // database (whose copy is in the cloud), and must not be merged into
         // this one.
         await _clearSyncedBoxes();
+        await ledger.markEmptiedForRead();
       }
       await _adoptOldBackupLedger(ledger, uid);
       // The router holds this phone on the loading screen until the new
