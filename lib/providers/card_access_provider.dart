@@ -17,6 +17,8 @@ import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -258,6 +260,14 @@ class CardAccessProvider extends ChangeNotifier {
 
   bool get helpersLoaded => _helpersLoaded;
 
+  /// Test seam: the server's list of matchmakers in this phone's contacts.
+  @visibleForTesting
+  void debugSetHelpers(List<CardHelper> helpers) {
+    _helpers = List<CardHelper>.of(helpers);
+    _helpersLoaded = true;
+    notifyListeners();
+  }
+
   List<StatusReport> get statusReports => _reports;
 
   /// Every row this owner has written or been asked through — blocked ones
@@ -438,8 +448,17 @@ class CardAccessProvider extends ChangeNotifier {
                           granteeUids:
                               (item['granteeUids'] as List?)?.cast<String>() ??
                               const [],
+                          mutual: item['mutual'] == true,
+                          publicFigures: item['publicFigures'] == true,
                         ),
                 ];
+                // "matchmaker_contact_found": counted for a matchmaker only,
+                // as a band of how many are new — never who.
+                if (WorkspaceStore.matchmakerEnabled && snap.exists) {
+                  MatchmakerConnections.noteContactsFound(
+                    _helpers.map((CardHelper h) => h.uid),
+                  );
+                }
                 final friends = snap.data()?['friends'];
                 _friends = <CardHelper>[
                   if (friends is List)

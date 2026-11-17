@@ -220,11 +220,16 @@ async function mergeCouple(
       sources.push({ uid: member, data: await readDatabase(archive) });
     }
     const merged = mergeDatabases(sources);
-    // Avoid old IDs reappearing. Tombstones keep old/offline clients from recreating records.
+    // The inviting account's tree becomes the shared one, ids and all. Only an
+    // id that did not survive the merge (folded into the same person on the
+    // other side) gets a tombstone, so an old or offline phone cannot bring
+    // it back. Ids that survive are simply rewritten with the merged record.
     const tombstones: Database = {};
     for (const c of recordCollections)
       tombstones[c] = Object.fromEntries(
-        Object.keys(sources[0].data[c]).map((id) => [id, { _deleted: true }]),
+        Object.keys(sources[0].data[c])
+          .filter((id) => !merged.data[c][id])
+          .map((id) => [id, { _deleted: true }]),
       );
     await writeDatabase(db.doc(`users/${primary}`), tombstones);
     const sharedSettings = merged.data.settings;
@@ -254,9 +259,10 @@ async function mergeCouple(
       );
       // Preserve personal reminder ownership while remapping the idea/person IDs.
       const settings: Database = { settings: {} };
+      const matchIds = merged.recordIds[source.uid].matches ?? {};
       for (const [oldId, idea] of Object.entries(source.data.matches ?? {}))
-        if (idea.reminderDate) {
-          const key = `couple.reminder.${source.uid}__${oldId}`;
+        if (idea.reminderDate && matchIds[oldId]) {
+          const key = `couple.reminder.${matchIds[oldId]}`;
           settings.settings[encodeURIComponent(key)] = {
             k: key,
             v: JSON.stringify(
@@ -267,6 +273,27 @@ async function mergeCouple(
             ),
           };
         }
+      // The account's own card in the database ("own-personal-card"): its
+      // record may have been renamed for the other side's, so the personal
+      // pointer moves with it — otherwise this phone would adopt the spouse's
+      // card record as its own and overwrite it.
+      let mirror = 'own-personal-card';
+      for (const value of Object.values(source.data.settings ?? {}))
+        if (value.k === 'personalCard.mirrorId') {
+          try {
+            const id = JSON.parse(value.v);
+            if (typeof id === 'string' && id) mirror = id;
+          } catch {
+            /* keep the default */
+          }
+        }
+      const mirrorTo = merged.ids[source.uid][mirror];
+      if (mirrorTo) {
+        settings.settings[encodeURIComponent('personalCard.mirrorId')] = {
+          k: 'personalCard.mirrorId',
+          v: JSON.stringify(mirrorTo),
+        };
+      }
       for (const value of Object.values(source.data.settings ?? {}))
         if ((value.k ?? '').startsWith('personReminder')) {
           let key = value.k;

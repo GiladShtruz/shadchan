@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/account_dialogs.dart';
@@ -98,8 +99,15 @@ Widget _quiet(BuildContext context, String label, VoidCallback? onPressed) {
 class AccountLoadingScreen extends StatefulWidget {
   const AccountLoadingScreen({super.key});
 
-  /// Set when the matchmaker chose to go on without waiting, for this launch.
-  static bool skipped = false;
+  /// Set when the matchmaker chose to go on without waiting — for this launch
+  /// and this database only. Moving onto another database (joining a couple)
+  /// asks again, because what is on this phone is no longer that database.
+  static bool get skipped =>
+      _skippedFor != null &&
+      _skippedFor == (AccountSyncLedger.maybeInstance?.uid ?? '');
+  static set skipped(bool value) =>
+      _skippedFor = value ? (AccountSyncLedger.maybeInstance?.uid ?? '') : null;
+  static String? _skippedFor;
 
   @override
   State<AccountLoadingScreen> createState() => _AccountLoadingScreenState();
@@ -133,12 +141,15 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool shared = AccountSyncLedger.boundToSharedHere;
     if (!_failed) {
-      return const _GateScaffold(
+      return _GateScaffold(
         icon: Icons.cloud_download_outlined,
-        title: 'טוענים את המאגר שלך',
-        body: 'רק בפעם הראשונה במכשיר הזה. אחר כך הכול נפתח מיד, גם בלי חיבור.',
-        children: <Widget>[Center(child: CircularProgressIndicator())],
+        title: shared ? 'טוענים את המאגר הזוגי' : 'טוענים את המאגר שלך',
+        body: shared
+            ? 'המאגר המשותף נטען מהשרת, כדי ששניכם תראו בדיוק את אותו מאגר. זה קורה פעם אחת במכשיר הזה.'
+            : 'רק בפעם הראשונה במכשיר הזה. אחר כך הכול נפתח מיד, גם בלי חיבור.',
+        children: const <Widget>[Center(child: CircularProgressIndicator())],
       );
     }
     return _GateScaffold(
@@ -152,7 +163,9 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
           child: const Text('ניסיון חוזר'),
         ),
         const SizedBox(height: 6),
-        _quiet(context, 'להמשיך בלי לחכות', () {
+        // Read-only until the read completes (`OfflineGuard`): nothing can be
+        // added to a database this phone has not loaded.
+        _quiet(context, 'להמשיך לצפייה בלבד', () {
           AccountLoadingScreen.skipped = true;
           context.go('/home');
         }),

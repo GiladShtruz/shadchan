@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/account_sync_ledger.dart';
 import 'package:shadchan/services/connectivity_status.dart';
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
@@ -46,17 +48,49 @@ abstract final class OfflineGuard {
   /// so has no context of its own. Set once by `App`.
   static GlobalKey<NavigatorState>? navigatorKey;
 
+  /// While the couple's shared database is being merged or split.
+  static const String changingMessage =
+      'המאגר הזוגי מתעדכן עכשיו בשרת. אפשר יהיה לערוך בעוד רגע.';
+
+  /// While this phone has not yet read the database it now belongs to.
+  static const String loadingMessage =
+      'המאגר נטען מהשרת. אפשר יהיה לערוך ברגע שהטעינה תסתיים.';
+
+  /// Why edits are refused right now, or null when they are not.
+  ///
+  /// Offline is one reason. The other two exist for a couple's shared
+  /// database, which has exactly one copy that counts — the server's: while a
+  /// merge or split runs it is frozen, and a phone that has just been moved
+  /// onto it has an emptied local copy until it has read it. An edit made in
+  /// either window would land in a local database nobody else sees, which is
+  /// the "two copies of one database" this design exists to rule out.
+  static String? get reasonTemplate {
+    if (Zone.current[_exemptKey] == true) {
+      return null;
+    }
+    if (ConnectivityStatus.isOffline) {
+      return messageTemplate;
+    }
+    if (CoupleWorkspaceService.changing) {
+      return changingMessage;
+    }
+    if (AccountSyncLedger.awaitingFirstReadHere) {
+      return loadingMessage;
+    }
+    return null;
+  }
+
   /// True while user edits are refused.
-  static bool get blocking =>
-      ConnectivityStatus.isOffline && Zone.current[_exemptKey] != true;
+  static bool get blocking => reasonTemplate != null;
 
   /// For a button that is about to start an edit: true when it may go ahead.
   /// Offline, it says why not and answers false.
   static bool allow(BuildContext context) {
-    if (!blocking) {
+    final String? reason = reasonTemplate;
+    if (reason == null) {
       return true;
     }
-    _notify(AppNotice.capture(context), _genderOf(context));
+    _notify(AppNotice.capture(context), _genderOf(context), reason);
     return false;
   }
 
@@ -83,13 +117,15 @@ abstract final class OfflineGuard {
   /// For a repository about to write: throws [OfflineWriteBlocked] (after
   /// saying why) when the write must not happen.
   static void ensureCanWrite() {
-    if (!blocking) {
+    final String? reason = reasonTemplate;
+    if (reason == null) {
       return;
     }
     final BuildContext? context = navigatorKey?.currentContext;
     _notify(
       navigatorKey?.currentState?.overlay,
       context == null ? null : _genderOf(context),
+      reason,
     );
     throw const OfflineWriteBlocked();
   }
@@ -108,14 +144,14 @@ abstract final class OfflineGuard {
 
   /// One notice per moment: a screen that tries three writes in a row (an
   /// editor saving every field as focus leaves it) says it once.
-  static void _notify(OverlayState? overlay, Gender? gender) {
+  static void _notify(OverlayState? overlay, Gender? gender, String template) {
     final DateTime now = DateTime.now();
     final DateTime? last = _lastShown;
     if (last != null && now.difference(last) < const Duration(seconds: 3)) {
       return;
     }
     _lastShown = now;
-    AppNotice.showOn(overlay, messageTemplate.forGender(gender), isError: true);
+    AppNotice.showOn(overlay, template.forGender(gender), isError: true);
   }
 
   @visibleForTesting

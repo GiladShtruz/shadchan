@@ -24,6 +24,8 @@ import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/sign_in_screen.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
+import 'package:shadchan/services/account_sync_ledger.dart';
+import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/app_router.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -284,7 +286,7 @@ void main() {
       expect(find.text('לא הצלחנו לטעון את המאגר'), findsOneWidget);
       expect(find.text('ברוך הבא!'), findsNothing);
 
-      await tester.tap(find.text('להמשיך בלי לחכות'));
+      await tester.tap(find.text('להמשיך לצפייה בלבד'));
       await tester.pumpAndSettle();
       expect(find.text('לא הצלחנו לטעון את המאגר'), findsNothing);
     } finally {
@@ -292,6 +294,58 @@ void main() {
       await tester.runAsync(() async {
         await settings.put('userName', 'בודק');
         await settings.put('userGender', 'male');
+      });
+    }
+  });
+
+  testWidgets('a phone just moved onto a couple\'s shared database waits for '
+      'it, and stays read-only if the matchmaker goes on without it', (
+    WidgetTester tester,
+  ) async {
+    final Box<dynamic> settings = Hive.box<dynamic>('settings');
+    late Box<dynamic> ledgerBox;
+    await tester.runAsync(() async {
+      await settings.put('signIn.hasAccount', 'true');
+      ledgerBox = await Hive.openBox<dynamic>(AccountSyncLedger.boxName);
+      // Bound to the shared database, not read yet: what a phone looks like
+      // the moment after the couple was joined.
+      await AccountSyncLedger(ledgerBox).bindTo('me@inviter:op1');
+    });
+    try {
+      expect(AccountSyncLedger.awaitingFirstReadHere, isTrue);
+      expect(AccountSyncLedger.boundToSharedHere, isTrue);
+      expect(OfflineGuard.reasonTemplate, OfflineGuard.loadingMessage);
+
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+
+      // An onboarded matchmaker is held too — never shown an empty database.
+      expect(find.text('לא הצלחנו לטעון את המאגר'), findsOneWidget);
+      expect(find.text('המאגר שלי'), findsNothing);
+
+      await tester.tap(find.text('להמשיך לצפייה בלבד'));
+      await tester.pumpAndSettle();
+      expect(find.text('לא הצלחנו לטעון את המאגר'), findsNothing);
+      // Still nothing can be created locally before the read.
+      expect(OfflineGuard.blocking, isTrue);
+
+      // Moved onto another database: the earlier "go on" does not carry over.
+      await tester.runAsync(
+        () => AccountSyncLedger(ledgerBox).bindTo('me@other:op2'),
+      );
+      expect(AccountLoadingScreen.skipped, isFalse);
+
+      // Read: the guard lets edits through again.
+      await tester.runAsync(
+        () => AccountSyncLedger(ledgerBox).markInitialPullDone(),
+      );
+      expect(AccountSyncLedger.awaitingFirstReadHere, isFalse);
+      expect(OfflineGuard.blocking, isFalse);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() async {
+        await ledgerBox.clear();
+        await ledgerBox.close();
       });
     }
   });

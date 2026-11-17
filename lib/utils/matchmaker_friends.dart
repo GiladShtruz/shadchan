@@ -286,7 +286,12 @@ abstract final class MatchmakerFriends {
   /// The short line beside a friend's name.
   static String stateLabel(MatchmakerFriend f) {
     if (f.state == MatchmakerFriendState.requested) {
-      final String asked = f.row?.matchmakerGender == 'female'
+      // A couple's shared database asks as both of them, and approving gives
+      // both of them access — said plainly, never left to be guessed.
+      final bool pair = (f.row?.granteeUids.length ?? 0) == 2;
+      final String asked = pair
+          ? 'מבקשים יחד'
+          : f.row?.matchmakerGender == 'female'
           ? 'ביקשה'
           : 'ביקש';
       return f.asksForCard ? '$asked גישה' : '$asked גישה ל״מה אני מחפש/ת״';

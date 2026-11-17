@@ -34,6 +34,10 @@ const PUSHED_KINDS = new Set([
   'cardUpdated',
   'personalNews',
   'adminAlert',
+  // Matchmakers who know each other ("שדכנים שאני מכיר").
+  'matchmakerJoined',
+  'connectionRequest',
+  'connectionApproved',
 ]);
 
 /** Writes the inbox row and pushes to every device of [uid]. */

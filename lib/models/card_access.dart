@@ -110,8 +110,19 @@ class CardHelper {
     this.joinedAt,
     this.recipientUid,
     this.granteeUids = const <String>[],
+    this.mutual = false,
+    this.publicFigures = false,
   });
   final String? photoUrl;
+
+  /// Saved in each other's phones — the strongest sign two matchmakers know
+  /// each other, so "שדכנים שאני מכיר" lists them first. Never a reason to
+  /// connect them without both saying yes.
+  final bool mutual;
+
+  /// Whether they appear in the community figures under their own name —
+  /// their couples are shown on the basic profile only then.
+  final bool publicFigures;
   final int? databaseCount;
   final DateTime? lastActiveAt;
 

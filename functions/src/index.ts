@@ -56,6 +56,8 @@ const REGION = 'europe-west1';
 setGlobalOptions({ region: REGION, maxInstances: 5 });
 
 import {notify, g, Gender} from './notices';
+import { connectionId, joinedRecently, deleteConnectionsOf } from './matchmaker_connections';
+export { onMatchmakerConnectionWritten } from './matchmaker_connections';
 export { createPersonalInvite, redeemPersonalInvite, revokePersonalInvite, confirmPersonalCardCurrent, remindMyMatchmakers, onPersonalNudgeCreated, onPersonalNewsWritten } from './personal_area';
 /** Every matchmaker the owner has approved. */
 async function approvedMatchmakers(ownerUid: string): Promise<string[]> {
@@ -75,6 +77,37 @@ function firstName(card: DocumentSnapshot | undefined): string {
 // Access requests and their answers.
 // ---------------------------------------------------------------------------
 
+/**
+ * Who is asking, said so the owner cannot mistake it: a couple's shared
+ * database asks as both of them — "משה ורחל מבקשים גישה לכרטיס שלך" — and
+ * approving gives both of them access, never one quietly.
+ */
+async function requesterLine(row: DocumentSnapshot): Promise<{
+  title: string; body: string; who: string; pair: boolean; gender?: Gender;
+}> {
+  const name = ((row.get('matchmakerName') as string | undefined) ?? '').trim() || 'שדכן/ית';
+  const grantees = (row.get('granteeUids') as string[] | undefined) ?? [];
+  if (grantees.length === 2) {
+    const membership = await db.doc(`memberships/${row.get('matchmakerUid')}`).get();
+    const names = (membership.get('names') ?? {}) as Record<string, string>;
+    const first = grantees
+      .map((uid) => (names[uid] ?? '').trim().split(/\s+/)[0])
+      .filter(Boolean);
+    const who = first.length === 2 ? `${first[0]} ו${first[1]}` : name;
+    return {
+      who, pair: true,
+      title: `${who} מבקשים גישה לכרטיס שלך`,
+      body: 'בקשה משותפת של שני בני הזוג. אישור ייתן גישה לשניהם, למאגר הזוגי שלהם.',
+    };
+  }
+  const gender = row.get('matchmakerGender') as Gender | undefined;
+  return {
+    who: name, pair: false, gender,
+    title: 'בקשת גישה לכרטיס שלך',
+    body: g(`${name} {ביקש|ביקשה} גישה לכרטיס שלך`, gender),
+  };
+}
+
 export const onCardAccessWritten = onDocumentWritten(
   'cardAccess/{accessId}',
   async (event) => {
@@ -85,18 +118,25 @@ export const onCardAccessWritten = onDocumentWritten(
     }
     const was = before?.exists ? (before.get('status') as string) : null;
     const now = after.get('status') as string;
+    // Read only when a request is actually being told about.
+    let line: Awaited<ReturnType<typeof requesterLine>> | undefined;
+    const asking = async () => (line ??= await requesterLine(after));
     if (after.get('cardRequested') === true && before?.get('cardRequested') !== true) {
-      await notify(after.get('ownerUid'), {kind: 'accessRequest', title: 'בקשת גישה לכרטיס שלך',
-        body: `${after.get('matchmakerName')} ביקשו גישה לכרטיס שלך`, route: '/me?section=requests'});
+      const asker = await asking();
+      await notify(after.get('ownerUid'), {kind: 'accessRequest', title: asker.title,
+        body: asker.body, route: '/me?section=requests'});
     }
     if (
       after.get('lookingRequested') === true &&
       before?.get('lookingRequested') !== true
     ) {
+      const asker = await asking();
       await notify(after.get('ownerUid'), {
         kind: 'accessRequest',
         title: 'בקשת גישה ל״מה אני מחפש/ת״',
-        body: `${after.get('matchmakerName')} ביקשו גישה למידע הפרטי שלך`,
+        body: asker.pair
+          ? `${asker.who} מבקשים גישה למידע הפרטי שלך, בשם שניהם`
+          : g(`${asker.who} {ביקש|ביקשה} גישה למידע הפרטי שלך`, asker.gender),
         route: '/me?section=requests',
       });
     }
@@ -108,17 +148,13 @@ export const onCardAccessWritten = onDocumentWritten(
     const ownerUid = after.get('ownerUid') as string;
     const matchmakerUid = after.get('matchmakerUid') as string;
     const ownerName = (after.get('ownerName') as string | undefined) ?? '';
-    const matchmakerName =
-      (after.get('matchmakerName') as string | undefined) ?? '';
 
     if (now === 'pending' && after.get('requestedBy') === 'matchmaker') {
+      const asker = await asking();
       await notify(ownerUid, {
         kind: 'accessRequest',
-        title: 'בקשת גישה לכרטיס שלך',
-        body:
-          after.get('granteeUids')?.length === 2
-            ? `${matchmakerName} ביקשו ממך גישה לכרטיס שלך`
-            : `${matchmakerName} רוצה לקבל גישה לכרטיס שלך`,
+        title: asker.title,
+        body: asker.body,
         // Straight to the requests on the personal area, not its top.
         route: '/me?section=requests',
       });
@@ -472,7 +508,14 @@ async function findHelpers(ownerUid: string): Promise<void> {
         const membership = await db.doc(`memberships/${uid}`).get();
         helpers.push({...row, name: membership.get('state') === 'active' ? membership.get('name') : row.name,
           recipientUid: membership.get('state') === 'active' ? membership.get('databaseUid') : uid,
-          granteeUids: membership.get('state') === 'active' ? membership.get('members') : [uid]});
+          granteeUids: membership.get('state') === 'active' ? membership.get('members') : [uid],
+          // Saved in each other's phones — "שדכנים שאני מכיר" puts them first.
+          // A flag only: neither side learns anything about the other's
+          // address book beyond the one number they already have.
+          mutual: await mutualContacts(ownerUid, uid),
+          // Whether they still make the community figures public — their
+          // couples are shown on the basic profile only then.
+          publicFigures: member.exists && member.get('hidden') === false});
       }
       if (mutual && isActiveCard((await db.doc(`personalCards/${uid}`).get()).data())) {
         // Presence only. No candidate details or personal-card photograph.
@@ -482,6 +525,7 @@ async function findHelpers(ownerUid: string): Promise<void> {
   }
   const ref = db.doc(`users/${ownerUid}/private/helpers`);
   await ref.set({helpers, friends, updatedAt: FieldValue.serverTimestamp()});
+  await announceJoinedMatchmakers(ownerUid, helpers);
   const card = await db.doc(`personalCards/${ownerUid}`).get();
   if (isActiveCard(card.data())) {
     for (const helper of helpers) {
@@ -495,6 +539,47 @@ async function findHelpers(ownerUid: string): Promise<void> {
         body: g('רוצה לתת גישה לכרטיס שלך, כדי שיוכלו לחשוב {עליך|עלייך}? ❤️', card.get('gender') as Gender),
         route: `/me?section=helpers&friend=${uid}`}, true, `friendJoined_${uid}`);
     }
+  }
+}
+
+/**
+ * "[שם] הצטרף/ה לשדכן. רוצה להתחבר?" — to a matchmaker, about a contact of
+ * theirs who has just joined as a matchmaker too.
+ *
+ * Only about somebody who **joined** recently ([joinedRecently]): a colleague
+ * of years whom the owner only now saved in their phone did not join
+ * anything, and the first run after this shipped must not announce everybody
+ * already there. Once per pair, ever (the inbox row's id), and never when the
+ * two are already connected or one has already asked.
+ */
+async function announceJoinedMatchmakers(
+  ownerUid: string,
+  helpers: Record<string, unknown>[],
+): Promise<void> {
+  if (helpers.length === 0) return;
+  const ownerIsMatchmaker = (await db.doc(`matchmakerActivity/${ownerUid}`).get()).exists ||
+    await (async () => {
+      const hash = await ownerPhoneHashOf(ownerUid);
+      if (!hash) return false;
+      const entry = await db.doc(`phoneDirectory/${hash}`).get();
+      return entry.get('uid') === ownerUid && entry.get('matchmaker') === true;
+    })();
+  if (!ownerIsMatchmaker) return;
+  const now = Date.now();
+  const ownerJoined = (await db.doc(`communityMembers/${ownerUid}`).get()).get('joinedAt');
+  let pushed = 0;
+  for (const helper of helpers) {
+    const uid = helper.uid as string;
+    const joinedAt = helper.joinedAt instanceof Timestamp ? helper.joinedAt.toMillis() : null;
+    if (!joinedRecently(joinedAt, now)) continue;
+    // Somebody who joined *before* the owner is not news to them.
+    if (ownerJoined instanceof Timestamp && joinedAt !== null && ownerJoined.toMillis() > joinedAt) continue;
+    if ((await db.doc(`matchmakerConnections/${connectionId(ownerUid, uid)}`).get()).exists) continue;
+    const name = ((helper.name as string | undefined) ?? '').trim() || 'חבר/ה מאנשי הקשר';
+    await notify(ownerUid, {kind: 'matchmakerJoined', title: `${name} הצטרף/ה לשדכן. רוצה להתחבר?`,
+      body: 'שדכנים שמכירים מתחברים — בלי לשתף את המאגר',
+      route: `/known-matchmakers/${uid}`}, pushed < 3, `matchmakerJoined_${uid}`);
+    pushed++;
   }
 }
 
@@ -783,6 +868,8 @@ export const onAccountDeleted = functionsV1
     await db.collection('databaseHashes').doc(uid).delete();
     await db.collection('fcmTokens').doc(uid).delete();
     await db.doc(`matchmakerActivity/${uid}`).delete();
+    // Every connection with another matchmaker, from either side.
+    await deleteConnectionsOf(uid);
     // Deleting it counts this matchmaker out of every tag word they used.
     await db.collection('tagUsage').doc(uid).delete();
     // The support view of this account's sync (counts and error codes).

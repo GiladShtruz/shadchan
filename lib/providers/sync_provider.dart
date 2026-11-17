@@ -7,6 +7,7 @@ import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/match_status_event.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
+import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/couple_sync_remote.dart';
 import 'dart:async';
 import 'dart:io';
@@ -168,12 +169,17 @@ class SyncProvider extends ChangeNotifier {
     }
     if (await ledger.bindTo(binding)) {
       if (previous != null && previous != binding) {
-        // This device was last in step with a different account and was not
-        // cleared on the way out. Its records belong to that account (whose
-        // copy is in the cloud), and must not be merged into this one.
+        // This device was last in step with a different account — or with
+        // this account's personal database before it joined a couple's shared
+        // one — and was not cleared on the way out. Its records belong to that
+        // database (whose copy is in the cloud), and must not be merged into
+        // this one.
         await _clearSyncedBoxes();
       }
       await _adoptOldBackupLedger(ledger, uid);
+      // The router holds this phone on the loading screen until the new
+      // database has been read (`AccountSyncLedger.awaitingFirstReadHere`).
+      SignInPromptStore.gate.value++;
     }
 
     final Directory photos = await PhotoPickerService.ensurePhotosDirectory();
@@ -211,6 +217,8 @@ class SyncProvider extends ChangeNotifier {
     _ledger = ledger;
     _boxes = boxes;
     await engine.start();
+    // Read: the loading screen (if it is up) can let the phone in.
+    SignInPromptStore.gate.value++;
     unawaited(_afterPull(engine, ledger, uid));
     await _membershipChanges?.cancel();
     _membershipChanges = FirebaseFirestore.instance

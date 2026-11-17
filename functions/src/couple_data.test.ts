@@ -72,10 +72,16 @@ test('merge preserves both sources, text conflicts, tags, note authors and idea 
   );
   assert.deepEqual(p.tags, ['א', 'ב']);
   assert.equal(Object.keys(result.data.personNotes).length, 2);
-  assert.equal(result.data.matches.a__m.personAId, result.ids.a.p);
-  assert.equal(result.data.matches.a__m.personBId, result.ids.a.x);
-  assert.equal(result.data.matchNotes.a__n.matchId, 'a__m');
-  assert.equal(result.data.matches.a__m.reminderDate, undefined);
+  // The inviting side keeps its ids; the joining side only where they collide.
+  assert.equal(result.ids.a.p, 'p');
+  assert.equal(result.ids.b.p, 'p');
+  assert.equal(result.ids.b.x, 'b__x');
+  assert.equal(result.data.matches.m.personAId, result.ids.a.p);
+  assert.equal(result.data.matches.m.personBId, result.ids.a.x);
+  assert.equal(result.data.matchNotes.n.matchId, 'm');
+  assert.equal(result.data.matches.m.reminderDate, undefined);
+  assert.ok(result.data.personNotes.n && result.data.personNotes.b__n);
+  assert.equal(result.data.personNotes.b__n.personId, 'p');
   assert.equal(result.possibleDuplicates.length, 1);
   assert.deepEqual(a.people.p.tags, ['א']);
 });
@@ -105,4 +111,55 @@ test('split keeps full cross-source ideas without copying unrelated people', () 
       right.matchNotes.n,
   );
   assert.equal(left.personNotes.n.text, 'שמור');
+});
+
+test('a database joining an empty one becomes the shared database unchanged', () => {
+  const joining = {
+    people: { p1: { firstName: 'דוד', phone: '0501111111' }, p2: { firstName: 'שרה' } },
+    matches: { m1: { personAId: 'p1', personBId: 'p2' } },
+    matchNotes: { j1: { matchId: 'm1', text: 'שורה' } },
+    personNotes: { n1: { personId: 'p1', text: 'הערה' } },
+    settings: {
+      [encodeURIComponent('home.board')]: {
+        k: 'home.board',
+        v: JSON.stringify(JSON.stringify([{ kind: 'person', id: 'p1' }])),
+      },
+    },
+  };
+  const result = mergeDatabases([
+    { uid: 'inviter', data: {} },
+    { uid: 'joiner', data: joining },
+  ]);
+  assert.deepEqual(Object.keys(result.data.people).sort(), ['p1', 'p2']);
+  assert.deepEqual(Object.keys(result.data.matches), ['m1']);
+  assert.equal(result.data.matchNotes.j1.matchId, 'm1');
+  assert.equal(result.data.personNotes.n1.personId, 'p1');
+  assert.deepEqual(result.data.people.p1._sources, ['joiner']);
+  // A board pin still points at the same friend.
+  const board = Object.values(result.data.settings)[0];
+  assert.ok(String(board.v).includes('p1'));
+});
+
+test('the same friend added on both sides is one record from both, nothing lost', () => {
+  const result = mergeDatabases([
+    { uid: 'a', data: { people: { x: { firstName: 'נועה', phone: '052-7654321', city: 'חיפה' } } } },
+    { uid: 'b', data: { people: { y: { firstName: 'נועה', phone: '+972527654321', city: 'ירושלים', heightCm: 165 } } } },
+  ]);
+  assert.deepEqual(Object.keys(result.data.people), ['x']);
+  const p = result.data.people.x;
+  assert.deepEqual(p._sources, ['a', 'b']);
+  assert.equal(p.city, 'חיפה');
+  assert.equal(p.heightCm, 165);
+  assert.deepEqual(p._mergeConflicts.city, ['חיפה', 'ירושלים']);
+  assert.equal(result.ids.b.y, 'x');
+});
+
+test('a fixed id on both sides (the own card) is kept apart, never merged', () => {
+  const result = mergeDatabases([
+    { uid: 'a', data: { people: { 'own-personal-card': { firstName: 'משה' } } } },
+    { uid: 'b', data: { people: { 'own-personal-card': { firstName: 'רחל' } } } },
+  ]);
+  assert.equal(result.data.people['own-personal-card'].firstName, 'משה');
+  assert.equal(result.data.people['b__own-personal-card'].firstName, 'רחל');
+  assert.equal(result.ids.b['own-personal-card'], 'b__own-personal-card');
 });

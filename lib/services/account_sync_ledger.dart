@@ -57,6 +57,22 @@ class AccountSyncLedger {
   static bool get initialPullDoneHere =>
       maybeInstance?.initialPullDone ?? false;
 
+  /// Bound to a database this device has not read yet — a phone that just
+  /// joined a couple's shared database, or met its account for the first
+  /// time. Its local copy was emptied for the new database, so until the
+  /// read completes it would show an empty database (or only its own old
+  /// records) as if that were the database. The router holds such a phone on
+  /// the loading screen, and edits are refused (`OfflineGuard`), so nothing
+  /// is ever created in a local database of its own.
+  static bool get awaitingFirstReadHere {
+    final AccountSyncLedger? ledger = maybeInstance;
+    return ledger != null && ledger.uid != null && !ledger.initialPullDone;
+  }
+
+  /// Whether the database this device is bound to is a couple's shared one.
+  static bool get boundToSharedHere =>
+      maybeInstance?.uid?.contains('@') ?? false;
+
   String? get uid => _box.get(_uidKey) as String?;
 
   bool get initialPullDone =>

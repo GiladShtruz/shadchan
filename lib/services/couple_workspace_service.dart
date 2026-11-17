@@ -17,6 +17,10 @@ abstract final class CoupleWorkspaceService {
   static String? get workspaceId => membership.value?['operation'] as String?;
   static bool get isCouple => databaseUid != null;
   static bool get ready => !isCouple || membership.value?['state'] == 'active';
+
+  /// A merge or a split is running on the server: the shared database is
+  /// frozen until it finishes, and nothing may be edited meanwhile.
+  static bool get changing => isCouple && !ready;
   static String? get name => membership.value?['name'] as String?;
   static List<String> get members =>
       (membership.value?['members'] as List?)?.cast<String>() ?? [];
@@ -59,11 +63,18 @@ abstract final class CoupleWorkspaceService {
   static Future<Map<String, dynamic>?> refresh() async {
     final uid = currentUid;
     if (uid.isEmpty) return null;
-    final data =
-        (await FirebaseFirestore.instance
-                .doc('memberships/$uid')
-                .get(const GetOptions(source: Source.server)))
-            .data();
+    final DocumentReference<Map<String, dynamic>> ref = FirebaseFirestore
+        .instance
+        .doc('memberships/$uid');
+    Map<String, dynamic>? data;
+    try {
+      data = (await ref.get(const GetOptions(source: Source.server))).data();
+    } on Object {
+      // Offline: the last membership this phone saw, so a couple's member is
+      // still shown the shared database (read-only) rather than treated as
+      // a personal account until the network returns.
+      data = (await ref.get(const GetOptions(source: Source.cache))).data();
+    }
     if (data?['operation'] != membership.value?['operation']) {
       metadata.clear();
       recordsRevision.value++;
