@@ -115,6 +115,7 @@ class AccountLoadingScreen extends StatefulWidget {
 
 class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
   bool _failed = false;
+  String? _code;
 
   @override
   void initState() {
@@ -135,7 +136,10 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
     if (sync.initialPullDone) {
       context.go('/home');
     } else {
-      setState(() => _failed = true);
+      setState(() {
+        _failed = true;
+        _code = sync.failureCode;
+      });
     }
   }
 
@@ -174,6 +178,19 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
           'התנתקות',
           () => AccountDialogs.confirmSignOut(context),
         ),
+        if (_code != null) ...<Widget>[
+          const SizedBox(height: 12),
+          // For a screenshot sent to support: what failed, never what is in
+          // the database.
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SelectableText(
+              _code!,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
       ],
     );
   }

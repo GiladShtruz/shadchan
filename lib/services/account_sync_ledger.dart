@@ -36,6 +36,7 @@ class AccountSyncLedger {
   static const String _logKey = 'meta.log';
   static const String _statsKey = 'meta.stats';
   static const String _migrationKey = 'meta.migration';
+  static const String _emptiedKey = 'meta.emptiedForRead';
 
   /// How many lines of the sync log are kept. Enough to see what happened
   /// around a complaint, small enough to publish beside the account's health.
@@ -57,16 +58,26 @@ class AccountSyncLedger {
   static bool get initialPullDoneHere =>
       maybeInstance?.initialPullDone ?? false;
 
-  /// Bound to a database this device has not read yet — a phone that just
-  /// joined a couple's shared database, or met its account for the first
-  /// time. Its local copy was emptied for the new database, so until the
-  /// read completes it would show an empty database (or only its own old
-  /// records) as if that were the database. The router holds such a phone on
-  /// the loading screen, and edits are refused (`OfflineGuard`), so nothing
-  /// is ever created in a local database of its own.
+  /// Bound to a database whose local copy is not that database yet — a phone
+  /// that just joined a couple's shared database (or left one), whose local
+  /// boxes were emptied for it. Until the read completes it would show an
+  /// empty database (or a stale half of one) as if that were the database.
+  /// The router holds such a phone on the loading screen, and edits are
+  /// refused (`OfflineGuard`), so nothing is ever created in a local database
+  /// of its own.
+  ///
+  /// **Only then.** A phone whose own database is on it and whose first
+  /// comparison with the account has simply not finished yet (an older
+  /// install, a read that keeps failing) is *not* held: what it shows is
+  /// the matchmaker's real database, it worked that way before, and locking
+  /// a matchmaker out of their own records over a sync problem is worse than
+  /// the sync problem.
   static bool get awaitingFirstReadHere {
     final AccountSyncLedger? ledger = maybeInstance;
-    return ledger != null && ledger.uid != null && !ledger.initialPullDone;
+    if (ledger == null || ledger.uid == null || ledger.initialPullDone) {
+      return false;
+    }
+    return ledger.uid!.contains('@') || ledger.emptiedForRead;
   }
 
   /// Whether the database this device is bound to is a couple's shared one.
@@ -106,6 +117,12 @@ class AccountSyncLedger {
   }
 
   Future<void> markInitialPullDone() => _box.put(_pulledKey, true);
+
+  /// Whether this device's local copy was emptied when it was bound here, so
+  /// that until the first read it holds nothing of this database.
+  bool get emptiedForRead => _box.get(_emptiedKey) == true;
+
+  Future<void> markEmptiedForRead() => _box.put(_emptiedKey, true);
 
   /// Forgets everything except the device id.
   Future<void> clear() async {
