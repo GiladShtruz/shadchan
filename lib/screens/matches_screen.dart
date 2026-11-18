@@ -530,35 +530,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
     PersonRepository personRepository, {
     required bool searching,
   }) {
-    // "רעיונות שהמאגר מציע לך" is an invitation into this page, so it sits at
-    // its head. (The couples-who-are-out strip moved to הלוח שלי on the home
-    // screen.) It folds away with the category row while a proposal's actions
-    // are open — see [_headerHidden].
-    //
-    // Not drawn during a search: what somebody typing a name wants is the
-    // proposals that match it, not a banner above them.
-    final List<Widget> banners = <Widget>[
-      // Held back until the database is big enough to keep producing pairs —
-      // below fifty friends the well runs dry and the row becomes a promise
-      // the app cannot keep.
-      if (!searching &&
-          !_headerHidden &&
-          personRepository.databaseCount > HomeConfig.databaseIdeasMinFriends)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: HomeHeroBand(
-            onShowIdeas: () => AppNavigation.open(context, '/ideas/new'),
-          ),
-        ),
-    ];
-
     return CustomScrollView(
       controller: _listScroll,
       slivers: <Widget>[
-        if (banners.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Column(mainAxisSize: MainAxisSize.min, children: banners),
-          ),
         // Drawn during a search too. Which kinds of proposal a person has —
         // two open, one closed — is exactly what somebody typing their name
         // wants to know, and hiding the split at the moment they ask was the
@@ -842,8 +816,29 @@ class _MatchesScreenState extends State<MatchesScreen> {
               .toList()
         : groups[_category]!;
 
+    // "רעיונות שהמאגר מציע לך": a push toward the database's own pairs,
+    // drawn inside the list of live ideas. Held back during a search, while a
+    // proposal's actions are open, and until the database is big enough to
+    // keep producing pairs (below fifty friends the well runs dry).
+    final bool showCta =
+        !searching &&
+        !_headerHidden &&
+        (_category == MatchCategory.all || _category == MatchCategory.open) &&
+        personRepository.databaseCount > HomeConfig.databaseIdeasMinFriends;
+    final Widget cta = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: DatabaseIdeasCta(
+        onTap: () => AppNavigation.open(context, '/ideas/new'),
+      ),
+    );
+
     if (matches.isEmpty && !showReminders) {
       return <Widget>[
+        if (showCta)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(child: cta),
+          ),
         SliverFillRemaining(
           hasScrollBody: false,
           child: searching
@@ -886,13 +881,20 @@ class _MatchesScreenState extends State<MatchesScreen> {
               ),
               const SizedBox(height: 8),
             ],
-            for (final MatchIdea match in matches)
-              _card(match, personRepository),
+            for (int i = 0; i < matches.length; i++) ...<Widget>[
+              _card(matches[i], personRepository),
+              if (showCta && i == _ctaAfter - 1) cta,
+            ],
+            if (showCta && matches.length < _ctaAfter) cta,
           ],
         ),
       ),
     ];
   }
+
+  /// "רעיונות שהמאגר מציע לך" is met after this many of the matchmaker's own
+  /// ideas — in the flow of the list, not in front of it.
+  static const int _ctaAfter = 2;
 
   List<Widget> _closedSlivers(
     List<MatchIdea> closed,

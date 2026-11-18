@@ -18,7 +18,7 @@ JOIN_CSS = """
 @font-face { font-family: 'Google Sans'; font-weight: 700;
   src: url('fonts/GoogleSans-Bold.woff') format('woff'); font-display: swap; }
 :root {
-  --paper: #F7F4EE; --card: #FFFFFF; --ink: #3F5A66; --body: #211D17;
+  --paper: #FAF8F3; --card: #FFFFFF; --ink: #3F5A66; --body: #211D17;
   --muted: #5E5C58; --copper: #C1845B; --copper-ink: #211D17;
   --line: #E2D7C8; --wash: #EFE4D4; --blue-wash: #D7E4EA;
   --shadow: 0 6px 22px rgba(33, 29, 23, 0.10), 0 1px 3px rgba(33, 29, 23, 0.06);
@@ -105,7 +105,7 @@ _TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#F7F4EE">
+<meta name="theme-color" content="#FAF8F3">
 <title>הוזמנת לשדכן</title>
 <meta name="description" content="שדכן — יומן אישי לניהול שידוכים בין חברים, עם אזור אישי לניהול כרטיס השידוכים שלך.">
 <link rel="icon" href="icon.png">

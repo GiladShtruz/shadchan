@@ -5,6 +5,7 @@ import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/tag_catalog.dart';
 import 'package:shadchan/utils/person_tags.dart';
 
 /// "השראה מהקהילה" — tag words other matchmakers use, and nothing else.
@@ -39,7 +40,10 @@ abstract final class CommunityTagsService {
     final Map<String, String> byKey = <String, String>{};
     for (final Person person in all) {
       for (final String tag in person.tags) {
-        if (PersonTags.isCommunityShareable(tag, knownPlaces: places)) {
+        // A word from the shared list is general by definition (the
+        // administrator chose it), place names included.
+        if (TagCatalog.contains(tag) ||
+            PersonTags.isCommunityShareable(tag, knownPlaces: places)) {
           byKey.putIfAbsent(
             PersonTags.keyOf(tag),
             () => PersonTags.normalize(tag),

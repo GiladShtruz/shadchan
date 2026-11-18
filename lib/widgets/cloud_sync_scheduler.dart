@@ -29,6 +29,7 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/account_sync_codec.dart';
 import 'package:shadchan/services/account_sync_engine.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/tag_catalog.dart';
 import 'package:shadchan/services/local_setting_caches.dart';
 import 'package:shadchan/services/profile_backup.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
@@ -222,6 +223,8 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
   void _onFirebaseReady() {
     if (FirebaseBootstrap.isReady) {
       _syncPersonalCard();
+      // The shared list of tags — the administrator may have edited it.
+      unawaited(TagCatalog.refresh());
       unawaited(_startPushAndReminders());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());

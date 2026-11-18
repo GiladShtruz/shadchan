@@ -309,6 +309,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       return;
     }
 
+    // **A clear step for the photo.** It is still optional, but a matchmaker
+    // with a face is somebody other matchmakers recognise — on the profile,
+    // in the community, on the leaderboard and when connecting — so the
+    // question is asked once, plainly, rather than left to a small circle at
+    // the top of the form.
+    if (_photoPath == null && !_photoAsked) {
+      _photoAsked = true;
+      final bool add = await _askForPhoto();
+      if (!mounted) return;
+      if (add) {
+        await _pickPhoto();
+        if (!mounted) return;
+      }
+    }
+
     setState(() => _saving = true);
     try {
       final UserProfileProvider profile = context.read<UserProfileProvider>();
@@ -445,6 +460,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       notices,
       'אפשר להתחבר עכשיו לחשבון הקיים, באותה דרך שבה נרשמת אליו.',
     );
+  }
+
+  bool _photoAsked = false;
+
+  /// "רוצה להוסיף תמונת פרופיל?" — answers whether to open the gallery.
+  Future<bool> _askForPhoto() async {
+    final bool? add = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        icon: const Icon(Icons.add_a_photo_outlined),
+        title: const Text('להוסיף תמונת פרופיל?'),
+        content: const Text(
+          'התמונה תופיע בפרופיל שלך, בקהילה, בדירוג ובחיבורים עם שדכנים '
+          'אחרים — כך קל יותר לזהות אותך. אפשר גם להוסיף אחר כך.',
+        ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('דילוג'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('הוספת תמונה'),
+          ),
+        ],
+      ),
+    );
+    return add ?? false;
   }
 
   Future<void> _pickPhoto() async {
@@ -597,12 +641,23 @@ class _PhotoPicker extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Text(
-          path != null ? 'תמונה נבחרה' : 'הוספת תמונה (אופציונלי)',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        if (path == null)
+          TextButton(onPressed: onTap, child: const Text('הוספת תמונת פרופיל'))
+        else
+          Text(
+            'תמונה נבחרה',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
+        if (path == null)
+          Text(
+            'תופיע בפרופיל, בקהילה ובחיבורים עם שדכנים',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
       ],
     );
   }

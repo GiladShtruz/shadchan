@@ -180,6 +180,7 @@ abstract final class CardSyncEngine {
         for (final Object? path in (data['photoPaths'] as List?) ?? const [])
           if (path is String) path,
       ],
+      'tags': PersonalCardCodec.tagsOf(data),
     };
   }
 
@@ -257,6 +258,28 @@ abstract final class CardSyncEngine {
         person,
         previous == null ? data : _changedOver(person, data, previous),
       );
+      // The owner's tags join the matchmaker's own on this friend: what the
+      // owner removed goes, what they added arrives, and the matchmaker's
+      // private tags stay.
+      final List<String> mergedTags = PersonalCardCodec.mergeTags(
+        local: person.tags,
+        previousRemote: previous == null
+            ? const <String>[]
+            : PersonalCardCodec.tagsOf(previous),
+        remote: PersonalCardCodec.tagsOf(data),
+      );
+      final bool tagsChanged = !_same(person.tags, mergedTags);
+      if (tagsChanged) {
+        person.tags = mergedTags;
+        changed = true;
+        if (!firstLink) {
+          minorUpdates.add(
+            '${person.firstName.trim()} {עדכן|עדכנה} את התגיות'.forGender(
+              person.gender,
+            ),
+          );
+        }
+      }
       if (previous != null &&
           _same(data['dateOfBirth'], previous['dateOfBirth'])) {
         // The owner did not touch the birth date: an age the matchmaker
@@ -609,6 +632,15 @@ abstract final class CardSyncEngine {
         if (!person.photosPaths.contains(path)) {
           person.photosPaths = <String>[...person.photosPaths, path];
         }
+      }
+      // The tags that came with the card go with it; the matchmaker's own
+      // stay.
+      if (lastRemote != null) {
+        person.tags = PersonalCardCodec.mergeTags(
+          local: person.tags,
+          previousRemote: PersonalCardCodec.tagsOf(lastRemote),
+          remote: const <String>[],
+        );
       }
     }
     person

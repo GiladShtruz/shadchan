@@ -135,9 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           hasCard: hasCard,
           deleted: cards.isDeleted,
           gender: profile.gender,
-          onTap: () => hasCard || cards.isDeleted
-              ? context.go('/me')
-              : context.push('/me/card'),
+          onTap: () => context.go('/me'),
         ),
         const SizedBox(height: 16),
       ],
@@ -890,7 +888,7 @@ class _MyCardEntry extends StatelessWidget {
 
   final bool hasCard;
 
-  /// A card that was deleted: the entry offers to restore it.
+  /// A card that was deleted: the personal area offers to restore it.
   final bool deleted;
   final Gender? gender;
   final VoidCallback onTap;
@@ -898,54 +896,43 @@ class _MyCardEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return HomePaperCard(
-      stripe: AppColors.secondary,
-      onTap: onTap,
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.secondary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(14),
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
+    // **One central button, not one more row.** For a single who is also a
+    // matchmaker the personal area is the other half of the app, and the way
+    // there has to be the first thing on this page that looks like a door.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FilledButton.icon(
+          onPressed: onTap,
+          style: FilledButton.styleFrom(
+            backgroundColor: blue,
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(54),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(
-              hasCard ? Icons.badge_outlined : Icons.add_card_outlined,
-              color: AppColors.secondary,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  deleted
-                      ? 'שחזור הכרטיס שלי'
-                      : hasCard
-                      ? 'האזור האישי'
-                      : 'יצירת הכרטיס שלי',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  deleted
-                      ? 'הכרטיס שמור, ואפשר להחזיר אותו'
-                      : hasCard
-                      ? 'ניהול כרטיס השידוכים האישי, הסטטוס ומי רואה אותו'
-                      : 'כרטיס אחד שרק {אתה מעדכן|את מעדכנת}, לחברים שמשדכים'
-                            .forGender(gender),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
+            textStyle: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w900,
             ),
           ),
-          const Icon(Icons.chevron_right_rounded),
-        ],
-      ),
+          icon: const Icon(Icons.swap_horiz_rounded),
+          label: const Text('למעבר לאזור האישי'),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          deleted
+              ? 'הכרטיס שמור שם, ואפשר להחזיר אותו'
+              : hasCard
+              ? 'הכרטיס האישי שלך, הסטטוס ומי רואה אותו'
+              : 'שם אפשר ליצור כרטיס אישי שרק {אתה מעדכן|את מעדכנת}'.forGender(
+                  gender,
+                ),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
     );
   }
 }

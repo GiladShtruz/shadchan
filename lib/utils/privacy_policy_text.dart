@@ -58,7 +58,7 @@ abstract final class PrivacyPolicyText {
 
 4א. הכרטיס האישי וגישה של חברים
 
-מי שנכנס כרווק/ה יכול למלא כרטיס אישי על עצמו ולנהל אותו בעצמו. הכרטיס נשמר ב-Cloud Firestore תחת personalCards/{uid} והתמונות שלו ב-Cloud Storage. הוא כולל את מה שבעל הכרטיס מילא: שם, מגדר, תאריך לידה, סגנון דתי, עיר, אזור, מצב משפחתי, גובה, הכרטיסייה לשליחה, עד ארבע תמונות וסטטוס. כל תוכן בכרטיס זה מיועד לשיתוף במסגרת שידוכים. מספר הטלפון אינו חלק מהכרטיס.
+מי שנכנס כרווק/ה יכול למלא כרטיס אישי על עצמו ולנהל אותו בעצמו. הכרטיס נשמר ב-Cloud Firestore תחת personalCards/{uid} והתמונות שלו ב-Cloud Storage. הוא כולל את מה שבעל הכרטיס מילא: שם, מגדר, תאריך לידה, סגנון דתי, עיר, אזור, מצב משפחתי, גובה, הכרטיסייה לשליחה, עד ארבע תמונות, תגיות שבחר מתוך הרשימה המשותפת (עד 12) וסטטוס. לצורך שיפור רשימת התגיות נספר בשרת כמה כרטיסים בחרו כל תגית — מספר בלבד, בלי לדעת מי בחר בה. כל תוכן בכרטיס זה מיועד לשיתוף במסגרת שידוכים. מספר הטלפון אינו חלק מהכרטיס.
 
 - מידע פרטי נפרד: באזור "מה אני מחפש/ת" אפשר לשמור טקסט והקלטה אחת עד עשר דקות, גם יחד. הקלטה מיובאת מועתקת לשדכן ונשמרת בחשבון, בנפרד מהכרטיס לשליחה. בעל הכרטיס שולט בנפרד בהרשאת הגישה לחלק זה; הרשאת כרטיס אינה מעניקה אותה אוטומטית. שדכן מאושר רואה את הגרסה המעודכנת, ובאפליקציה אין לו כלי שיתוף או ייצוא לתוכן הזה. בעל ההקלטה יכול לשתף אותה בעצמו. ביטול ההרשאה מסיר את התצוגה אצל השדכן ואינו משנה את הערותיו.
 - מי רואה את הכרטיס: רק בעל הכרטיס ושדכנים שהוא אישר. ההרשאה נבדקת בשרת, בכללי האבטחה של Firebase, ולא רק באפליקציה. אישור ניתן לכל הכרטיס, ואפשר להסיר אותו או להסתיר את הכרטיס משדכן מסוים בכל עת — מבחינתו ייראה כאילו אין לך כרטיס. אפשר גם לכבות לגמרי את האפשרות של שדכנים לבקש גישה; גם אז אפשר לתת גישה לחברים ביוזמתך.
@@ -84,7 +84,7 @@ abstract final class PrivacyPolicyText {
 
 לכל חשבון עשויה להישמר רשומת קהילה הכוללת מוני פעילות לתקופות שונות: נקודות, חברים, רעיונות, זוגות שיצאו ואירוסין. שאר המשתמשים המחוברים קוראים את המונים לצורך סכומי הקהילה והדירוג.
 
-אם בחרתם להופיע בשם, יכולים להופיע גם פרטי הפרופיל שלכם בלבד: שם, תמונת פרופיל, משפט קצר, תשובות שבחרתם לשתף, הטבה לקהילה ומספר WhatsApp שהזנתם מרצונכם. יש להתייחס אליהם כמידע הגלוי לכל משתמש מחובר. אפשר להסתיר את השם והפרופיל, לעצור פרסום לקהילה או למחוק את רשומת הקהילה ממסך "פרטיות והמאגר שלי".
+אם בחרתם להופיע בשם, יכולים להופיע גם פרטי הפרופיל שלכם בלבד: שם, תמונת פרופיל, משפט קצר, תשובות שבחרתם לשתף, הטבה לקהילה ומספר WhatsApp שהזנתם מרצונכם. יש להתייחס אליהם כמידע הגלוי לכל משתמש מחובר. אפשר להסתיר את השם והפרופיל, לעצור פרסום לקהילה או למחוק את רשומת הקהילה ממסך "פרטיות והמאגר שלי". ההסתרה הדדית: מי שהסתיר את עצמו מהקהילה אינו רואה באפליקציה את נתוני הפעילות של הקהילה ושל שדכנים אחרים.
 
 שום שם, טלפון, הערה או תמונה של אדם ממאגר השידוכים אינו נכתב ברשומת הקהילה.
 
@@ -230,7 +230,7 @@ Use is governed by the Google Cloud and Generative AI service terms. Google stat
 
 4A. The personal card and access by friends
 
-Someone who signs in as a single person may write a personal card about themselves and manage it themselves. The card is stored in Cloud Firestore under personalCards/{uid} and its photographs in Cloud Storage. It contains what the owner filled in: name, gender, date of birth, religious style, city, region, marital status, height, the card text, up to four photographs and a status. All content in this card is intended for sharing for matchmaking. The phone number is not part of the card.
+Someone who signs in as a single person may write a personal card about themselves and manage it themselves. The card is stored in Cloud Firestore under personalCards/{uid} and its photographs in Cloud Storage. It contains what the owner filled in: name, gender, date of birth, religious style, city, region, marital status, height, the card text, up to four photographs, tags chosen from the shared list (up to 12) and a status. To improve the list of tags, the server counts how many cards chose each tag — a number only, without knowing who chose it. All content in this card is intended for sharing for matchmaking. The phone number is not part of the card.
 
 - Separate private content: "What I am looking for" may contain free text and one recording up to ten minutes, together or separately. Imported audio is copied into Shadchan and stored in the account separately from the shareable card. Its permission is independent and is never granted automatically with card access. Approved matchmakers see the current version; the Application offers them no sharing or export tool for this content. Owners may share their own recording. Revocation removes the private block without changing the matchmaker’s notes.
 - Who sees the card: only its owner and matchmakers the owner approved. Access is checked on the server, in Firebase Security Rules, not only in the Application. Access covers the whole card and can be withdrawn, or the card hidden from a particular matchmaker, at any time — to them it looks as if there is no card. Access requests can also be switched off altogether; the owner can still give friends access on their own initiative.
@@ -256,7 +256,7 @@ Merging retains provenance and a server recovery archive inaccessible to other u
 
 An account may have a community document with period activity counters: points, friends, ideas, couples dating and engagements. Other signed-in users read those counters to produce community totals and the leaderboard.
 
-If you choose to appear by name, the following details about you only may also be visible: profile name, profile picture, short introduction, answers you chose to share, a community benefit and a WhatsApp number you entered voluntarily. Treat them as visible to every signed-in user. You can hide the named profile, stop community publishing or erase the community document from "Privacy and my database".
+If you choose to appear by name, the following details about you only may also be visible: profile name, profile picture, short introduction, answers you chose to share, a community benefit and a WhatsApp number you entered voluntarily. Treat them as visible to every signed-in user. You can hide the named profile, stop community publishing or erase the community document from "Privacy and my database". Hiding is mutual: whoever hides themselves from the community is not shown the activity of the community or of other matchmakers in the app.
 
 No name, phone number, note or photograph of a person in your matchmaking database is written to the community member document.
 

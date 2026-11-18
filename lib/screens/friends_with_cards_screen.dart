@@ -44,11 +44,22 @@ class FriendWithCard {
     required this.state,
     this.phoneHash,
     this.person,
+    this.cardCreatedAt,
   });
   final String ownerUid;
   final String name;
   final FriendCardState state;
   final String? phoneHash;
+
+  /// When the friend's card was announced to this matchmaker, when known
+  /// (the "cardCreated" notice).
+  final DateTime? cardCreatedAt;
+
+  /// A card made in the last week leads the home screen's three faces.
+  bool isNew(DateTime now) {
+    final DateTime? at = cardCreatedAt;
+    return at != null && now.difference(at) < const Duration(days: 7);
+  }
 
   /// Their record in the matchmaker's database, when there is one.
   final Person? person;
@@ -130,11 +141,32 @@ abstract final class FriendsWithCards {
         if (record != null) add(owner, record.fullName, hash, record);
       }
     }
-    final List<FriendWithCard> list = byOwner.values.toList()
-      ..sort((FriendWithCard a, FriendWithCard b) {
-        final int byState = b.state.index.compareTo(a.state.index);
-        return byState != 0 ? byState : a.name.compareTo(b.name);
-      });
+    final Map<String, DateTime> created = <String, DateTime>{};
+    for (final InboxItem item in inbox?.items ?? const <InboxItem>[]) {
+      final String? owner = item.ownerUid;
+      final DateTime? at = item.createdAt;
+      if (item.kind == 'cardCreated' && owner != null && at != null) {
+        final DateTime? known = created[owner];
+        if (known == null || at.isAfter(known)) created[owner] = at;
+      }
+    }
+    final List<FriendWithCard> list =
+        <FriendWithCard>[
+          for (final FriendWithCard f in byOwner.values)
+            created[f.ownerUid] == null
+                ? f
+                : FriendWithCard(
+                    ownerUid: f.ownerUid,
+                    name: f.name,
+                    state: f.state,
+                    phoneHash: f.phoneHash,
+                    person: f.person,
+                    cardCreatedAt: created[f.ownerUid],
+                  ),
+        ]..sort((FriendWithCard a, FriendWithCard b) {
+          final int byState = b.state.index.compareTo(a.state.index);
+          return byState != 0 ? byState : a.name.compareTo(b.name);
+        });
     return list;
   }
 }
@@ -267,7 +299,7 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
         .toList();
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('חברים שהוסיפו כרטיס אישי')),
+      appBar: AppBar(title: const Text('חברים שמנהלים כרטיס אישי בשדכן')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 32),
         children: <Widget>[
@@ -514,9 +546,10 @@ class _InitialAvatar extends StatelessWidget {
   }
 }
 
-/// "חברים שהוסיפו כרטיס אישי" — the way into [FriendsWithCardsScreen], one
-/// plain row with no figure on it: it is a way in, not a statistic. The same
-/// on בית and on המאגר שלי.
+/// "חברים שמנהלים כרטיס אישי בשדכן" — the way into [FriendsWithCardsScreen]
+/// from המאגר שלי: a clear tile, not a plain row, because asking these
+/// friends for access is how their cards start updating themselves in the
+/// database.
 class FriendsWithCardsLink extends StatelessWidget {
   const FriendsWithCardsLink({super.key});
 
@@ -525,25 +558,54 @@ class FriendsWithCardsLink extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color ink = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () => context.push(FriendsWithCardsScreen.route),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        child: Row(
-          children: <Widget>[
-            Icon(Icons.badge_outlined, size: 20, color: ink),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'חברים שהוסיפו כרטיס אישי',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+    return Material(
+      color: dark ? AppColors.surfaceDm : AppColors.cardCream,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.push(FriendsWithCardsScreen.route),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: ink.withValues(alpha: 0.35), width: 1.2),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ink.withValues(alpha: dark ? 0.22 : 0.12),
+                ),
+                child: Icon(Icons.badge_outlined, size: 22, color: ink),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      'חברים שמנהלים כרטיס אישי בשדכן',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'בקשת גישה, והכרטיס שלהם יתעדכן אצלך מעצמו',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                 ),
               ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: ink),
-          ],
+              Icon(Icons.chevron_right_rounded, color: ink),
+            ],
+          ),
         ),
       ),
     );

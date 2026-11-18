@@ -310,14 +310,16 @@ void main() {
     expect(find.textContaining('· שינוי'), findsOneWidget);
     // A married user has no card to create or manage.
     expect(find.text('יצירת הכרטיס שלי'), findsNothing);
+    expect(find.text('למעבר לאזור האישי'), findsNothing);
     expect(find.text('הכרטיס שלי'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userIsSingle', true));
     await tester.pumpWidget(_buildProfileTestApp());
     await tester.pumpAndSettle();
-    // Near the top of the page, not a row among the settings.
-    expect(find.text('יצירת הכרטיס שלי'), findsOneWidget);
+    // One central button near the top of the page, not a row among the
+    // settings.
+    expect(find.text('למעבר לאזור האישי'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => settings.put('userIsSingle', false));
   });
@@ -746,16 +748,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // The four all-time figures are back in their squares, above the two
-    // add buttons; "מה עושים עכשיו?" is gone and "מה השלב הבא שלך?" heads
+    // add buttons; "מה עושים עכשיו?" is gone and "הפעולה הבאה שלך" heads
     // the list under them.
     final Finder figures = find.byType(ActivityFigureRow);
     expect(figures, findsOneWidget);
     expect(find.text('חתונות'), findsOneWidget);
     expect(find.text('מה עושים עכשיו?'), findsNothing);
-    expect(find.text('מה השלב הבא שלך?'), findsOneWidget);
+    expect(find.text('הפעולה הבאה שלך'), findsOneWidget);
     expect(
       tester.getCenter(find.text('הוספת חברים')).dy,
-      lessThan(tester.getCenter(find.text('מה השלב הבא שלך?')).dy),
+      lessThan(tester.getCenter(find.text('הפעולה הבאה שלך')).dy),
     );
     expect(
       tester.getCenter(figures).dy,
@@ -763,9 +765,15 @@ void main() {
     );
     // No standing recommendation in the action area any more.
     expect(find.text('כל חבר שמצטרף למאגר הוא עוד סיכוי להתאמה'), findsNothing);
-    // Under a hundred friends: the milestone, as it always was.
-    expect(find.text('1/10'), findsOneWidget);
-    expect(find.text('עוד 9 חברים ליעד של 10.'), findsOneWidget);
+    // Under a hundred friends: the milestone, as one compact line between
+    // the heading and the list.
+    expect(find.text('יש לך חבר אחד · עוד 9 ליעד הבא: 10'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('הפעולה הבאה שלך')).dy,
+      lessThan(
+        tester.getCenter(find.text('יש לך חבר אחד · עוד 9 ליעד הבא: 10')).dy,
+      ),
+    );
 
     // The list of what to do next has no title and no shelves; with nothing
     // to do it says so, and the whole board is one tap away.
@@ -1059,10 +1067,8 @@ void main() {
     ]);
     await tester.pump();
 
-    // Unread, it is first on the list of what to do now.
-    await tester.ensureVisible(find.text('דני לוי לא אישר גישה'));
-    await tester.pump();
-    expect(find.text('דני לוי לא אישר גישה'), findsOneWidget);
+    // A notice is the bell's, not one of "הפעולה הבאה שלך".
+    expect(find.text('דני לוי לא אישר גישה'), findsNothing);
 
     // The bell opens the notifications; opening them is reading them.
     await tester.tap(find.byTooltip('התראות').first);
@@ -1073,8 +1079,7 @@ void main() {
     // The row that was new keeps its tint for this visit.
     expect(find.text('סמן הכל כנקרא'), findsOneWidget);
 
-    // The bell opens a sheet over home; closing it lands back on home, where
-    // the read notice has left the board.
+    // The bell opens a sheet over home; closing it lands back on home.
     await tester.tap(find.byTooltip('סגירה'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -1094,7 +1099,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('Pinning a person opens home directly at the board', (
+  testWidgets('Pinning a person opens the board with them on it', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 760));
@@ -1133,13 +1138,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(AppRouter.router.routeInformationProvider.value.uri.path, '/home');
-    expect(
-      AppRouter.router.routeInformationProvider.value.uri.queryParameters,
-      containsPair('section', 'board'),
-    );
+    // A pin opens the whole board, where pins live — the home screen's list
+    // is "הפעולה הבאה שלך", and a pin is not an action by itself.
+    expect(find.byType(BoardScreen), findsOneWidget);
     expect(find.text('אבישי הלוי'), findsWidgets);
-    expect(tester.getTopLeft(find.text('אבישי הלוי').first).dy, lessThan(300));
   });
 
   testWidgets('A friend in "חברים שהוספת" opens their profile, not a blank', (

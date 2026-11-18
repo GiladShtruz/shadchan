@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shadchan/screens/account_gate_screens.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/app.dart';
@@ -90,7 +89,6 @@ void main() {
       'signIn.mustVerifyEmail',
       'signIn.deletionPending',
     ]);
-    AccountLoadingScreen.skipped = false;
     // The store's write-through cache is static and outlives the box, so a
     // test that wants a fresh install has to drop it as well as the key.
     SignInPromptStore.resetForTest();
@@ -279,16 +277,16 @@ void main() {
     });
     try {
       await tester.pumpWidget(_buildTestApp());
-      await tester.pumpAndSettle();
+      // Not `pumpAndSettle`: the screen keeps a spinner up while it retries.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
 
       // The sync is off in tests, so the read "fails" — which is the screen
-      // that offers to try again or to go on.
-      expect(find.text('לא הצלחנו לטעון את המאגר'), findsOneWidget);
+      // that keeps trying (and offers to try now, or to sign out). There is
+      // no way past it into an account that was never read.
+      expect(find.text('המאגר עדיין לא נטען'), findsOneWidget);
       expect(find.text('ברוך הבא!'), findsNothing);
-
-      await tester.tap(find.text('להמשיך לצפייה בלבד'));
-      await tester.pumpAndSettle();
-      expect(find.text('לא הצלחנו לטעון את המאגר'), findsNothing);
+      expect(find.text('להמשיך לצפייה בלבד'), findsNothing);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(() async {
@@ -299,9 +297,7 @@ void main() {
   });
 
   testWidgets('a phone just moved onto a couple\'s shared database waits for '
-      'it, and stays read-only if the matchmaker goes on without it', (
-    WidgetTester tester,
-  ) async {
+      'it, with no way past the loading screen', (WidgetTester tester) async {
     final Box<dynamic> settings = Hive.box<dynamic>('settings');
     late Box<dynamic> ledgerBox;
     await tester.runAsync(() async {
@@ -317,23 +313,17 @@ void main() {
       expect(OfflineGuard.reasonTemplate, OfflineGuard.loadingMessage);
 
       await tester.pumpWidget(_buildTestApp());
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
 
-      // An onboarded matchmaker is held too — never shown an empty database.
-      expect(find.text('לא הצלחנו לטעון את המאגר'), findsOneWidget);
+      // An onboarded matchmaker is held too — never shown an empty database,
+      // and never offered a "view only" way past a database that did not
+      // load: it keeps loading, with a retry and a sign-out.
+      expect(find.text('המאגר עדיין לא נטען'), findsOneWidget);
+      expect(find.text('ניסיון חוזר'), findsOneWidget);
+      expect(find.text('להמשיך לצפייה בלבד'), findsNothing);
       expect(find.text('המאגר שלי'), findsNothing);
-
-      await tester.tap(find.text('להמשיך לצפייה בלבד'));
-      await tester.pumpAndSettle();
-      expect(find.text('לא הצלחנו לטעון את המאגר'), findsNothing);
-      // Still nothing can be created locally before the read.
       expect(OfflineGuard.blocking, isTrue);
-
-      // Moved onto another database: the earlier "go on" does not carry over.
-      await tester.runAsync(
-        () => AccountSyncLedger(ledgerBox).bindTo('me@other:op2'),
-      );
-      expect(AccountLoadingScreen.skipped, isFalse);
 
       // Read: the guard lets edits through again.
       await tester.runAsync(
@@ -369,7 +359,7 @@ void main() {
 
       await tester.pumpWidget(_buildTestApp());
       await tester.pumpAndSettle();
-      expect(find.text('לא הצלחנו לטעון את המאגר'), findsNothing);
+      expect(find.text('המאגר עדיין לא נטען'), findsNothing);
 
       // Emptied for this database (moved off a couple's one): held again.
       await tester.runAsync(

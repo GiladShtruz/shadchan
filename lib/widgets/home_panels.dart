@@ -50,14 +50,136 @@ class HomeHeroBand extends StatelessWidget {
 
   final VoidCallback onShowIdeas;
 
+  static const String title = 'רעיונות שהמאגר מציע לך';
+
   @override
   Widget build(BuildContext context) {
-    // The envelope and one line beside it, drawn exactly like the home
-    // page's two add cards — see [HomeArtTile].
-    return HomeArtTile(
-      art: 'assets/idea_envelope_art.png',
-      label: 'רעיונות שהמאגר מציע לך',
-      onTap: onShowIdeas,
+    return DatabaseIdeasCta(onTap: onShowIdeas);
+  }
+}
+
+/// "רעיונות שהמאגר מציע לך" as a card in the flow of the ideas list — a push
+/// toward the pairs the database suggests, not a fixed row above everything.
+///
+/// **Inviting, not insistent.** A soft wash of the palette's copper into its
+/// blue, the envelope drawing in a white disc, one line saying why it is
+/// worth a look, and a small pill that says what a tap does. It sits between
+/// the matchmaker's own ideas (after the second), so it is met while
+/// scrolling them rather than standing in front of them.
+class DatabaseIdeasCta extends StatelessWidget {
+  const DatabaseIdeasCta({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color copper = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
+    final Color paper = dark ? AppColors.surfaceDm : AppColors.page;
+    return Semantics(
+      button: true,
+      label: '${HomeHeroBand.title}. לצפייה ברעיונות',
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                begin: AlignmentDirectional.centerStart,
+                end: AlignmentDirectional.centerEnd,
+                colors: <Color>[
+                  Color.alphaBlend(
+                    copper.withValues(alpha: dark ? 0.22 : 0.14),
+                    paper,
+                  ),
+                  Color.alphaBlend(
+                    blue.withValues(alpha: dark ? 0.20 : 0.12),
+                    paper,
+                  ),
+                ],
+              ),
+              border: Border.all(color: copper.withValues(alpha: 0.35)),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: copper.withValues(alpha: dark ? 0.10 : 0.14),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 50,
+                    height: 50,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: paper,
+                    ),
+                    child: ColorFiltered(
+                      colorFilter: ColorFilter.mode(copper, BlendMode.srcIn),
+                      child: Image.asset(
+                        'assets/idea_envelope_art.png',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          HomeHeroBand.title,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.heading(dark: dark),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'זוגות מתוך המאגר שלך שאולי כדאי להכיר',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: copper,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'להצצה',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

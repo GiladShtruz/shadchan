@@ -101,6 +101,8 @@ class SyncProvider extends ChangeNotifier {
   /// listener and the app's own first frame can all ask at once, and two
   /// engines on one database would each think the other's writes were news.
   Future<void> start() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
     final Future<void> next = _startChain
         .then((_) {
           _startError = null;
@@ -110,9 +112,51 @@ class SyncProvider extends ChangeNotifier {
         .catchError((Object error) {
           _startError = error;
           debugPrint('ACCOUNT_SYNC start failed: $error');
-        });
+        })
+        .whenComplete(_retryIfNotRead);
     _startChain = next;
     return next;
+  }
+
+  /// A start that did not get as far as a running engine (Firebase not up
+  /// yet, the couple's membership unreadable, an error) is tried again by
+  /// itself — the loading screen and an unsynced phone must not depend on
+  /// somebody reopening the app. The engine retries its own failed reads.
+  Timer? _retryTimer;
+  int _retryAttempt = 0;
+
+  void _retryIfNotRead() {
+    if (!_enabled || _disposed) {
+      return;
+    }
+    final bool running = _engine != null;
+    if (running || _startStop == 'no-account') {
+      _retryAttempt = 0;
+      return;
+    }
+    if (_retryTimer != null) {
+      return;
+    }
+    final Duration delay = AccountSyncEngine.retryDelay(_retryAttempt);
+    _retryAttempt++;
+    _retryTimer = Timer(delay, () {
+      _retryTimer = null;
+      if (!_disposed) {
+        unawaited(start());
+      }
+    });
+  }
+
+  bool _disposed = false;
+  bool _announcedPull = false;
+
+  /// Retries right away — the loading screen's button, a reconnect.
+  Future<void> retryNow() {
+    _retryAttempt = 0;
+    if (_engine != null) {
+      return resume();
+    }
+    return start();
   }
 
   Future<void> _startChain = Future<void>.value();
@@ -242,10 +286,23 @@ class SyncProvider extends ChangeNotifier {
     _uid = uid;
     _ledger = ledger;
     _boxes = boxes;
+    _announcedPull = false;
+    // A first read that only succeeds on a later automatic retry must still
+    // let the loading screen go, and redraw whoever shows the sync's state.
+    engine.revision.addListener(() {
+      if (identical(engine, _engine) && engine.isPulled && !_announcedPull) {
+        _announcedPull = true;
+        SignInPromptStore.gate.value++;
+        notifyListeners();
+        unawaited(_afterPull(engine, ledger, uid));
+      }
+    });
     await engine.start();
     // Read: the loading screen (if it is up) can let the phone in.
     SignInPromptStore.gate.value++;
-    unawaited(_afterPull(engine, ledger, uid));
+    if (!engine.isPulled) {
+      unawaited(_afterPull(engine, ledger, uid));
+    }
     await _membershipChanges?.cancel();
     _membershipChanges = FirebaseFirestore.instance
         .doc('memberships/$uid')
@@ -562,6 +619,9 @@ class SyncProvider extends ChangeNotifier {
   /// Stops and drops this device's ledger. Called on sign-out, before the
   /// local copy is cleared.
   Future<void> forget() async {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retryAttempt = 0;
     await _membershipChanges?.cancel();
     _membershipChanges = null;
     CoupleWorkspaceService.clear();
@@ -577,6 +637,8 @@ class SyncProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _retryTimer?.cancel();
     FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
     _authChanges?.cancel();
     _membershipChanges?.cancel();

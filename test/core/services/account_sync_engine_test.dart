@@ -427,6 +427,26 @@ void main() {
     await a.engine!.stop();
   });
 
+  test('a first read that failed is retried by itself, without the app '
+      'being reopened', () async {
+    final FakeAccount account = FakeAccount()..offline = true;
+    final Device a = await Device.open('a', root);
+    await a.people.put('p1', person('p1', 'דוד'));
+    await a.connect(account);
+    expect(a.engine!.isPulled, isFalse);
+
+    account.offline = false;
+    // No resume(): the engine's own retry (first after 5s) reads it.
+    await Future<void>.delayed(
+      AccountSyncEngine.retryDelay(0) + const Duration(seconds: 1),
+    );
+    await a.settle();
+    expect(a.engine!.isPulled, isTrue);
+    expect(account.of(SyncCollection.people)['p1']!.data, isNotNull);
+
+    await a.engine!.stop();
+  });
+
   test('photos go up as files and come down on the other phone', () async {
     final FakeAccount account = FakeAccount();
     final Device a = await Device.open('a', root);

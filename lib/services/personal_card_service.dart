@@ -11,6 +11,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/person_tags.dart';
 
 /// How far [PersonalCardService.publishCard] got.
 enum CardPublish {
@@ -117,6 +118,11 @@ abstract final class PersonalCardCodec {
       'ownerUid': ownerUid,
       ...cardValues(card),
       'photoPaths': photoPaths,
+      // The tags the owner chose to describe themselves, from the shared
+      // list (`TagCatalog`). Kept apart from [cardFields]: on a matchmaker's
+      // copy they are merged with the matchmaker's own private tags rather
+      // than replacing them — see [mergeTags].
+      'tags': tagsOf(<String, Object?>{'tags': card.tags}),
       // Kept apart from the card's fields because it behaves differently: a
       // matchmaker's own status for the friend stands until the owner's
       // status actually changes.
@@ -240,6 +246,53 @@ abstract final class PersonalCardCodec {
       // only disagree with it.
       target.setManualAge(null);
     }
+  }
+
+  /// The most tags a card carries.
+  static const int maxTags = 12;
+
+  /// The tags in a card document (or a baseline of one), cleaned.
+  static List<String> tagsOf(Map<String, dynamic> data) {
+    final Object? raw = data['tags'];
+    if (raw is! List) {
+      return <String>[];
+    }
+    final Set<String> seen = <String>{};
+    final List<String> tags = <String>[];
+    for (final Object? item in raw) {
+      if (item is! String) continue;
+      final String tag = PersonTags.normalize(item);
+      if (tag.isEmpty ||
+          tag.length > PersonTags.maxLength ||
+          !seen.add(PersonTags.keyOf(tag))) {
+        continue;
+      }
+      tags.add(tag);
+      if (tags.length >= maxTags) break;
+    }
+    return tags;
+  }
+
+  /// The matchmaker's tags on a friend after the owner's card moved from
+  /// [previousRemote] to [remote]: the matchmaker's own private tags stay,
+  /// tags the owner removed go, tags the owner added arrive.
+  static List<String> mergeTags({
+    required List<String> local,
+    required List<String> previousRemote,
+    required List<String> remote,
+  }) {
+    final Set<String> removed = <String>{
+      for (final String tag in previousRemote) PersonTags.keyOf(tag),
+    }..removeAll(remote.map(PersonTags.keyOf));
+    final Set<String> seen = <String>{};
+    return <String>[
+      for (final String tag in local)
+        if (!removed.contains(PersonTags.keyOf(tag)) &&
+            seen.add(PersonTags.keyOf(tag)))
+          tag,
+      for (final String tag in remote)
+        if (seen.add(PersonTags.keyOf(tag))) tag,
+    ];
   }
 
   /// The owner's own status, read on its own — it keeps arriving even after
@@ -367,18 +420,13 @@ abstract final class PersonalCardService {
       return false;
     }
     try {
-      final HttpsCallableResult<dynamic> result =
-          await FirebaseFunctions.instanceFor(region: 'europe-west1')
-              .httpsCallable(
-                'cardPhoto',
-                options: HttpsCallableOptions(
-                  timeout: const Duration(seconds: 60),
-                ),
-              )
-              .call(<String, Object?>{
-                'ownerUid': ownerUid,
-                'path': remotePath,
-              });
+      final HttpsCallableResult<dynamic>
+      result = await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable(
+            'cardPhoto',
+            options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+          )
+          .call(<String, Object?>{'ownerUid': ownerUid, 'path': remotePath});
       final Object? data = result.data;
       final Object? encoded = data is Map ? data['data'] : null;
       if (encoded is! String || encoded.isEmpty) {

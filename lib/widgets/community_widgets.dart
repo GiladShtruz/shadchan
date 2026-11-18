@@ -946,3 +946,45 @@ class DeleteCommunityDataTile extends StatelessWidget {
     );
   }
 }
+
+/// What a matchmaker who hid themselves from the community sees where the
+/// community's activity would be.
+///
+/// **Hiding is mutual.** Whoever keeps themselves out of the other
+/// matchmakers' view is not shown theirs either; the sentence says so and
+/// points at the one switch that changes it.
+class CommunityHiddenNotice extends StatelessWidget {
+  const CommunityHiddenNotice({super.key, this.compact = false});
+
+  final bool compact;
+
+  static const String text =
+      'בחרת להסתתר מהקהילה, ולכן גם הפעילות של שדכנים אחרים לא מוצגת לך.';
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color lead = communityLead(theme);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          text,
+          style:
+              (compact ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
+                  ?.copyWith(height: 1.4),
+        ),
+        TextButton(
+          onPressed: () => context.push('/profile/settings/data'),
+          style: TextButton.styleFrom(
+            foregroundColor: lead,
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            visualDensity: VisualDensity.compact,
+          ),
+          child: const Text('לשינוי בהגדרות הפרטיות'),
+        ),
+      ],
+    );
+  }
+}

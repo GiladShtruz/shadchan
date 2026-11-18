@@ -11,7 +11,6 @@ import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
-import 'package:shadchan/widgets/home_stage_panels.dart';
 
 /// The redesigned home page is a hierarchy of differently shaped blocks. These
 /// cover the two things that can silently break on a phone: a block that does
@@ -493,56 +492,6 @@ void main() {
         reason: '$chrome',
       );
     }
-  });
-
-  testWidgets('the think block is a tile: the coffee cup and its line', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(390, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    int opened = 0;
-    await tester.pumpWidget(
-      wrap(HomeThinkBanner(onTap: () => opened++), width: 390),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('עוצרים רגע לחשוב על החברים'), findsOneWidget);
-    // Drawn like the home page's add cards: the drawing beside the words,
-    // no button of its own.
-    expect(find.byType(FilledButton), findsNothing);
-    final Finder art = find.descendant(
-      of: find.byType(HomeThinkBanner),
-      matching: find.byType(Image),
-    );
-    expect(art, findsOneWidget);
-    expect(
-      (tester.widget<Image>(art).image as AssetImage).assetName,
-      'assets/think_coffee_art.png',
-    );
-
-    await tester.tap(find.text('עוצרים רגע לחשוב על החברים'));
-    await tester.pump();
-    expect(opened, 1);
-  });
-
-  testWidgets('the think tile keeps its line on one row at large text', (
-    WidgetTester tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(320, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(
-      wrap(HomeThinkBanner(onTap: () {}), width: 320, textScale: 1.5),
-    );
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
-      find.text('עוצרים רגע לחשוב על החברים'),
-    );
-    expect(paragraph.didExceedMaxLines, isFalse);
   });
 
   testWidgets('an open idea reads as a bubble on the wave, not a white box', (

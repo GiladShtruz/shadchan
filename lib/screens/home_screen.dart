@@ -11,7 +11,6 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
-import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/home_search_filter_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
@@ -37,6 +36,11 @@ import 'package:shadchan/widgets/home_engagement_card.dart';
 import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:shadchan/widgets/home_action_area.dart';
 import 'package:shadchan/widgets/home_week_block.dart';
+import 'package:shadchan/widgets/home_card_friends.dart';
+import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
+import 'package:shadchan/widgets/home_photo_nudge.dart';
+import 'package:shadchan/dialogs/add_people_dialog.dart';
+import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/home_search_results.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
@@ -92,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _searchController.addListener(() => setState(() {}));
     _scheduleBoardFocus();
     _scheduleCommunityPrompts();
+    _schedulePhotoChoice();
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -100,6 +105,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && mounted) {
       setState(() {});
     }
+  }
+
+  /// Asked once per launch on this home too, not only on the personal one: a
+  /// single who works in the matchmaker area may never open their own. An
+  /// older card with more than four photos shows its matchmakers the first
+  /// four until the owner chooses; nothing is deleted before that.
+  static bool _photoChoiceAsked = false;
+
+  void _schedulePhotoChoice() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _photoChoiceAsked) return;
+      final PersonalCardProvider cards = context.read<PersonalCardProvider>();
+      final Person? card = cards.card;
+      if (card == null || cards.isDeleted || !cards.needsPhotoChoice) return;
+      _photoChoiceAsked = true;
+      final List<String>? keep = await CardPhotoChoiceDialog.show(
+        context,
+        card.photosPaths,
+        gender: card.gender == Gender.unknown
+            ? context.read<UserProfileProvider>().gender
+            : card.gender,
+      );
+      if (keep != null && mounted) {
+        await cards.keepPhotos(keep);
+      }
+    });
   }
 
   /// The one moment per launch when the app is allowed to say something of its
@@ -195,8 +226,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Builder(
         builder: (BuildContext context) => Scaffold(
           appBar: _buildGreetingAppBar(),
-          // No floating "+" here: the page's own plus, between "הוספת
-          // חברים" and "הוספת רעיון", is the one add button on בית.
+          // The same floating "+" as המאגר שלי and הרעיונות שלי, in the same
+          // corner; here it asks which of the two is meant.
+          floatingActionButton: AddFab(
+            tooltip: 'הוספה',
+            onPressed: () => AddChoiceDialog.show(context),
+          ),
           body: SafeArea(
             child: Stack(
               children: <Widget>[
@@ -406,12 +441,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const SliverToBoxAdapter(child: SizedBox(height: 10)),
         HomeActionArea.pinnedSliver(context, inset: inset()),
 
-        // 4. "מה השלב הבא שלך?" — what to do next, in order: reminders that
-        // came due, open ideas waiting on a step, access requests and friends
-        // with a new card, ideas left still, then the database's pairs. About
-        // five rows, then "הצג עוד".
+        // 4. "הפעולה הבאה שלך" — what to do next, in order: reminders that
+        // came due, open ideas waiting on a step, ideas left still, the
+        // database's pairs, and — secondary — a friend whose card arrived and
+        // has no idea yet. Five rows, then "הצג עוד".
         block(const HomeNextStepTitle(), top: 14),
-        const SliverToBoxAdapter(child: SizedBox(height: 4)),
+        // The compact progress line: the milestones up to a hundred friends,
+        // the matchmaker's own weekly record of ideas from there.
+        block(const HomeWeeklyProgress(), top: 6),
+        const SliverToBoxAdapter(child: SizedBox(height: 6)),
         HomeBoardSection(
           focusKey: _boardSectionKey,
           mode: HomeBoardMode.actions,
@@ -422,16 +460,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           refresh: _boardRefresh,
         ),
 
-        // 5. The progress line: the milestones up to a hundred friends, the
-        // matchmaker's own weekly record from there.
-        block(const HomeWeeklyProgress(), top: 14),
+        // 5. Three friends who keep a personal card, and the way to the rest.
+        block(HomeCardFriendsSection(key: ValueKey<int>(_boardRefresh))),
 
-        // The friends who keep a personal card of their own — one plain row,
-        // a way in and not a figure.
-        block(const FriendsWithCardsLink(), top: 12),
+        // A matchmaker who skipped the profile photo at sign-up: one quiet
+        // line, until it is added or put away for a month.
+        block(const HomePhotoNudge(), top: 10),
 
-        // 6. השבוע בשדכן — my activity, the community's, the weekly target
-        // and one live line, in one card.
+        // 6. The community's weekly target, with the two activity figures in
+        // small type beside it. No heading of its own.
         block(
           HomeWeekBlock(onOpen: () => AppNavigation.open(context, '/activity')),
         ),

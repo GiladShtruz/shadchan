@@ -5,9 +5,9 @@ import 'package:shadchan/utils/app_theme.dart';
 import 'package:shadchan/utils/profile_palette.dart';
 
 void main() {
-  test('the palette has exactly one cream, #F7F4EE, on a white page', () {
+  test('the palette has exactly one cream, #FAF8F3, on a white page', () {
     expect(AppColors.page, const Color(0xFFFFFFFF));
-    expect(AppColors.cardCream, const Color(0xFFF7F4EE));
+    expect(AppColors.cardCream, const Color(0xFFFAF8F3));
     expect(AppColors.background, AppColors.cardCream);
     // The near-white "warm" shade is white now, not a second cream.
     expect(AppColors.surface, AppColors.page);

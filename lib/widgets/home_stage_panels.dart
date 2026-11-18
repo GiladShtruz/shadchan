@@ -3,7 +3,6 @@ import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_stage.dart';
-import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 Color _lead(ThemeData theme) => theme.brightness == Brightness.dark
@@ -237,25 +236,6 @@ class HomeImportInvite extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// "עוצרים רגע לחשוב על החברים" at the head of המאגר שלי: the cup of coffee
-/// and the line beside it, as one tile in the home page's add-card style.
-class HomeThinkBanner extends StatelessWidget {
-  const HomeThinkBanner({super.key, required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    // The cup of coffee and one line beside it, drawn exactly like the home
-    // page's two add cards — see [HomeArtTile].
-    return HomeArtTile(
-      art: 'assets/think_coffee_art.png',
-      label: 'עוצרים רגע לחשוב על החברים',
-      onTap: onTap,
     );
   }
 }

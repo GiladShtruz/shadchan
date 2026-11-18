@@ -857,6 +857,14 @@ abstract final class CommunityService {
   @visibleForTesting
   static void resetAggregateTrust() => _aggregatesTrusted.clear();
 
+  /// Whether this matchmaker chose to stay out of the community's view
+  /// ("להופיע בקהילה בשם שלי" off, or "שמור על הפרטיות שלי"). Such a
+  /// matchmaker is not shown the other matchmakers' activity either: the
+  /// community is something you take part in, not something to watch from
+  /// behind glass.
+  static bool get hidesFromCommunity =>
+      CommunityProfileStore.isHidden || CommunityProfileStore.isPrivate;
+
   /// One window's community figures.
   ///
   /// **Two aggregate round trips rather than one, because Firestore allows at
@@ -873,6 +881,11 @@ abstract final class CommunityService {
     CommunityPeriod period, {
     bool forceRefresh = false,
   }) async {
+    // **Hiding is mutual.** A matchmaker who keeps themselves out of the
+    // community's view does not see the community's activity either.
+    if (hidesFromCommunity) {
+      return CommunityTotals.empty;
+    }
     final String cacheKey = period.name;
     final _Cached<CommunityTotals>? cached = _totalsCache[cacheKey];
     if (!forceRefresh && cached != null && cached.isFresh) {
@@ -1213,6 +1226,9 @@ abstract final class CommunityService {
     required int myPoints,
     bool forceRefresh = false,
   }) async {
+    if (hidesFromCommunity) {
+      return CommunityLeaderboard.empty;
+    }
     final String cacheKey = '${period.name}:$includeMe:$myPoints';
     final _Cached<CommunityLeaderboard>? cached = _boardCache[cacheKey];
     if (!forceRefresh && cached != null && cached.isFresh) {

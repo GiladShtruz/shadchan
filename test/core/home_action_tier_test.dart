@@ -5,43 +5,33 @@ int? tier({
   bool dueReminder = false,
   bool isIdea = false,
   bool ideaStale = false,
-  bool isNotice = false,
-  bool isCardFriend = false,
-  bool cardHandled = false,
   bool isPair = false,
-  bool isCardNotice = false,
+  bool isCardFriendWithoutIdea = false,
 }) => HomeBoardSection.actionTier(
   dueReminder: dueReminder,
   isIdea: isIdea,
   ideaStale: ideaStale,
-  isNotice: isNotice,
-  isCardFriend: isCardFriend,
-  cardHandled: cardHandled,
   isPair: isPair,
-  isCardNotice: isCardNotice,
+  isCardFriendWithoutIdea: isCardFriendWithoutIdea,
 );
 
 void main() {
-  test('the order on the home list: due → open idea → card friend → '
-      'stale idea → database suggestion', () {
+  test('the order of "הפעולה הבאה שלך": due → open idea → stale idea → '
+      'database suggestion → (secondary) a card friend with no idea yet', () {
     final List<int?> order = <int?>[
       tier(dueReminder: true, isIdea: true),
       tier(isIdea: true),
-      tier(isCardFriend: true),
       tier(isIdea: true, ideaStale: true),
       tier(isPair: true),
+      tier(isCardFriendWithoutIdea: true),
     ];
     expect(order, <int>[0, 1, 2, 3, 4]);
-    // An unread notice needs handling now, like a reminder.
-    expect(tier(isNotice: true), 0);
-    // An access request or a new-card notice is the third thing: after due
-    // reminders and open ideas, with the friends who wrote a card.
-    expect(tier(isNotice: true, isCardNotice: true), 2);
     // A due reminder outranks the idea being stale.
     expect(tier(dueReminder: true, isIdea: true, ideaStale: true), 0);
   });
 
-  test('a card already handled is nothing to do now', () {
-    expect(tier(isCardFriend: true, cardHandled: true), isNull);
+  test('nothing without a clear action is on the list', () {
+    // A friend with a card, a notice or a pin: not "the next action".
+    expect(tier(), isNull);
   });
 }

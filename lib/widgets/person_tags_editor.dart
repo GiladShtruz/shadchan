@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/community_tags_service.dart';
+import 'package:shadchan/services/tag_catalog.dart';
 import 'package:shadchan/services/tag_library.dart';
+import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/person_tags.dart';
 
@@ -12,7 +14,7 @@ import 'package:shadchan/utils/person_tags.dart';
 ///
 /// **One fixed order, always the same three shelves:**
 ///
-/// 1. the app's default tags ([PersonTags.starters]) — **always** drawn, picked
+/// 1. the shared list ([TagCatalog]) — **always** drawn, picked
 ///    or not. They used to be offered only until the matchmaker had a tag of
 ///    their own, so the first tap on one made the whole row disappear;
 /// 2. the tags this matchmaker made (or took from the community), recently
@@ -28,10 +30,16 @@ class PersonTagsEditor extends StatefulWidget {
     super.key,
     required this.selected,
     required this.onChanged,
+    this.ownCard = false,
   });
 
   final List<String> selected;
   final ValueChanged<List<String>> onChanged;
+
+  /// A single choosing tags for their own personal card: only the shared
+  /// list ([TagCatalog]), every word of it, up to [TagCatalog.maxChosen] —
+  /// no private library, no new words, no community shelf.
+  final bool ownCard;
 
   @override
   State<PersonTagsEditor> createState() => _PersonTagsEditorState();
@@ -42,7 +50,11 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
   final FocusNode _focus = FocusNode();
   bool _typing = false;
   bool _communityOpen = false;
+  bool _allDefaults = false;
   Future<List<String>>? _community;
+
+  /// How many of the shared list's words are shown before "כל התגיות".
+  static const int _defaultsShown = 14;
 
   @override
   void dispose() {
@@ -56,6 +68,12 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
 
   void _toggle(String tag) {
     final String value = PersonTags.normalize(tag);
+    if (widget.ownCard &&
+        !_has(value) &&
+        widget.selected.length >= TagCatalog.maxChosen) {
+      AppNotice.show(context, 'אפשר לבחור עד ${TagCatalog.maxChosen} תגיות');
+      return;
+    }
     if (!_has(value)) {
       Analytics.feature(AnalyticsFeature.tags);
     }
@@ -64,7 +82,7 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
               .where((String t) => !PersonTags.sameTag(t, value))
               .toList()
         : <String>[...widget.selected, value];
-    if (!_has(value)) {
+    if (!_has(value) && !widget.ownCard) {
       // Chosen from a suggestion or the community: it is theirs from now on.
       TagLibrary.remember(value);
     }
@@ -96,13 +114,25 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final List<String> catalog = TagCatalog.current;
+    if (widget.ownCard) {
+      return _TagWrap(tags: catalog, isSelected: _has, onTap: _toggle);
+    }
     final List<Person> people = context.watch<PersonRepository>().getAll();
 
     bool isDefault(String tag) =>
-        PersonTags.starters.any((String s) => PersonTags.sameTag(s, tag));
+        catalog.any((String s) => PersonTags.sameTag(s, tag));
 
-    // 1. The defaults, in their own fixed order, whatever has been picked.
-    final List<String> defaults = PersonTags.starters;
+    // 1. The shared list, in its own fixed order, whatever has been picked:
+    // the words singles choose for themselves, so a tag here means the same
+    // thing on both sides. The first few, then the rest behind one tap —
+    // the ones already on this friend are always shown.
+    final List<String> defaults = _allDefaults || _query.text.isNotEmpty
+        ? catalog
+        : <String>[
+            for (int i = 0; i < catalog.length; i++)
+              if (i < _defaultsShown || _has(catalog[i])) catalog[i],
+          ];
 
     // 2. The matchmaker's own — this friend's first, then the library.
     final List<String> personal = <String>[];
@@ -182,6 +212,17 @@ class _PersonTagsEditorState extends State<PersonTagsEditor> {
           _ShelfLabel('תגיות מוכנות'),
           const SizedBox(height: 6),
           _TagWrap(tags: shownDefaults, isSelected: _has, onTap: _toggle),
+          if (!_allDefaults &&
+              _query.text.isEmpty &&
+              defaults.length < catalog.length)
+            TextButton(
+              onPressed: () => setState(() => _allDefaults = true),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                textStyle: theme.textTheme.labelMedium,
+              ),
+              child: Text('כל התגיות המוכנות (${catalog.length})'),
+            ),
         ],
 
         // 2. Mine.

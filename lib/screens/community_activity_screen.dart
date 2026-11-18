@@ -203,7 +203,12 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (signedIn) ...<Widget>[
+                  if (signedIn && community.isHidden)
+                    const CommunityCard(
+                      title: 'פעילות הקהילה',
+                      child: CommunityHiddenNotice(),
+                    )
+                  else if (signedIn) ...<Widget>[
                     _CommunityActivityCard(
                       key: ValueKey<int>(_liveGeneration),
                       private: community.isPrivate,

@@ -8,6 +8,7 @@ import 'package:shadchan/dialogs/account_dialogs.dart';
 import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/services/account_service.dart';
+import 'package:shadchan/services/connectivity_status.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
@@ -96,18 +97,17 @@ Widget _quiet(BuildContext context, String label, VoidCallback? onPressed) {
 /// and a request to introduce yourself — the profile is part of the account
 /// too, and it had not arrived yet. It waits for the account to be read once;
 /// after that every launch opens straight away, offline included.
+///
+/// **There is no "go on without it".** A phone that reaches this screen holds
+/// nothing of this database yet (a new phone, or one just moved onto a
+/// couple's shared database), so there is nothing to look at offline, and a
+/// way past it only produced a phone that looked like it was in the account
+/// while nothing synced. Offline viewing is for a phone that has read the
+/// account before — which never comes here. The read is retried by itself
+/// (`SyncProvider`, `AccountSyncEngine`), and at once when the connection
+/// returns.
 class AccountLoadingScreen extends StatefulWidget {
   const AccountLoadingScreen({super.key});
-
-  /// Set when the matchmaker chose to go on without waiting — for this launch
-  /// and this database only. Moving onto another database (joining a couple)
-  /// asks again, because what is on this phone is no longer that database.
-  static bool get skipped =>
-      _skippedFor != null &&
-      _skippedFor == (AccountSyncLedger.maybeInstance?.uid ?? '');
-  static set skipped(bool value) =>
-      _skippedFor = value ? (AccountSyncLedger.maybeInstance?.uid ?? '') : null;
-  static String? _skippedFor;
 
   @override
   State<AccountLoadingScreen> createState() => _AccountLoadingScreenState();
@@ -115,24 +115,64 @@ class AccountLoadingScreen extends StatefulWidget {
 
 class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
   bool _failed = false;
+  bool _loading = false;
   String? _code;
+  SyncProvider? _sync;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    ConnectivityStatus.offline.addListener(_onConnectivity);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _sync = context.read<SyncProvider>()..addListener(_onSync);
+      unawaited(_load(first: true));
+    });
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    ConnectivityStatus.offline.removeListener(_onConnectivity);
+    _sync?.removeListener(_onSync);
+    super.dispose();
+  }
+
+  /// The read finished on an automatic retry.
+  void _onSync() {
     if (!mounted) {
       return;
     }
-    setState(() => _failed = false);
+    if (_sync?.initialPullDone ?? false) {
+      context.go('/home');
+    }
+  }
+
+  void _onConnectivity() {
+    if (!ConnectivityStatus.isOffline && mounted && _failed) {
+      unawaited(_load());
+    } else if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _load({bool first = false}) async {
+    if (!mounted || _loading) {
+      return;
+    }
+    setState(() {
+      _loading = true;
+      if (!first) {
+        _failed = false;
+      }
+    });
     final SyncProvider sync = context.read<SyncProvider>();
-    await sync.start();
+    await (first ? sync.start() : sync.retryNow());
     if (!mounted) {
       return;
     }
+    _loading = false;
     if (sync.initialPullDone) {
       context.go('/home');
     } else {
@@ -146,7 +186,8 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
   @override
   Widget build(BuildContext context) {
     final bool shared = AccountSyncLedger.boundToSharedHere;
-    if (!_failed) {
+    final bool offline = ConnectivityStatus.isOffline;
+    if (!_failed && !offline) {
       return _GateScaffold(
         icon: Icons.cloud_download_outlined,
         title: shared ? 'טוענים את המאגר הזוגי' : 'טוענים את המאגר שלך',
@@ -158,27 +199,32 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
     }
     return _GateScaffold(
       icon: Icons.cloud_off_outlined,
-      title: 'לא הצלחנו לטעון את המאגר',
-      body: 'כדאי לוודא שיש חיבור לאינטרנט ולנסות שוב.',
+      title: offline ? 'אין חיבור לאינטרנט' : 'המאגר עדיין לא נטען',
+      body: offline
+          ? 'המאגר נטען מהשרת בפעם הראשונה במכשיר הזה, ולכן צריך חיבור. ברגע שהחיבור יחזור הוא ייטען מעצמו.'
+          : 'ממשיכים לנסות לטעון אותו מהשרת. אפשר גם לנסות שוב עכשיו.',
       children: <Widget>[
+        if (!offline) ...<Widget>[
+          const Center(
+            child: SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
         FilledButton(
-          onPressed: _load,
+          onPressed: _loading ? null : _load,
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
           child: const Text('ניסיון חוזר'),
         ),
         const SizedBox(height: 6),
-        // Read-only until the read completes (`OfflineGuard`): nothing can be
-        // added to a database this phone has not loaded.
-        _quiet(context, 'להמשיך לצפייה בלבד', () {
-          AccountLoadingScreen.skipped = true;
-          context.go('/home');
-        }),
         _quiet(
           context,
           'התנתקות',
           () => AccountDialogs.confirmSignOut(context),
         ),
-        if (_code != null) ...<Widget>[
+        if (_code != null && !offline) ...<Widget>[
           const SizedBox(height: 12),
           // For a screenshot sent to support: what failed, never what is in
           // the database.
