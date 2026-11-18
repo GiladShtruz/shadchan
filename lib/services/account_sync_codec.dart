@@ -216,6 +216,8 @@ abstract final class AccountSyncCodec {
     'home.nextStep',
     // How this phone's address book read went (`ContactsHealth`).
     'contacts.health',
+    // The day this phone started logging notifications (`ReminderLog.since`).
+    'notifications.since',
   ];
 
   static bool isSyncedSetting(String key) {

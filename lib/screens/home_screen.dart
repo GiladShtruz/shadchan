@@ -29,7 +29,6 @@ import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
-import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_board.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
@@ -74,8 +73,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final ScrollController _homeScrollController = ScrollController();
   final GlobalKey _boardSectionKey = GlobalKey();
 
-  /// Bumped by a tap on the wordmark, which deals the board again.
+  /// Bumped when the user comes back to the app after a while, which deals
+  /// the friends with a card and the action list again.
   int _boardRefresh = 0;
+  DateTime _pausedAt = DateTime.now();
 
   /// The single vertical gap between every block on the page.
   static const double _blockGap = 14;
@@ -102,8 +103,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pausedAt = DateTime.now();
+    }
     if (state == AppLifecycleState.resumed && mounted) {
-      setState(() {});
+      setState(() {
+        // Away for a while: a fresh deal. A glance at another app is not.
+        if (DateTime.now().difference(_pausedAt) > const Duration(hours: 1)) {
+          _boardRefresh++;
+        }
+      });
     }
   }
 
@@ -277,7 +286,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // see [ShadchanTabActions]. Only the "+" differs: this page is above both
     // of the other two, so its "+" asks which of them is meant.
     return ShadchanAppBar(
-      onTitleTap: _backToTop,
+      // The logo opens the user's own profile.
+      onTitleTap: () => context.go('/profile'),
       actions: const <Widget>[
         // בית keeps its own overflow menu — the app itself, the community
         // group, the guide, the privacy policy. המאגר שלי and הרעיונות שלי
@@ -307,24 +317,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ),
     );
-  }
-
-  /// The wordmark's tap: home, as if it had just been opened — search closed,
-  /// the page back at its top, and the board dealt again.
-  void _backToTop() {
-    if (_searchController.text.isNotEmpty) {
-      _closeSearch();
-    } else {
-      FocusScope.of(context).unfocus();
-    }
-    setState(() => _boardRefresh++);
-    if (_homeScrollController.hasClients) {
-      _homeScrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
-    }
   }
 
   /// Leaves search: the results and the keyboard.
@@ -413,9 +405,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             name: greetingName,
             line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
+            // Small and quiet: findable, never in the way of the greeting.
             trailing: hasOwnCard
                 ? AreaSwitchButton(
                     label: 'למעבר לאזור האישי',
+                    compact: true,
                     onTap: () => context.go('/me'),
                   )
                 : null,
@@ -441,13 +435,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const SliverToBoxAdapter(child: SizedBox(height: 10)),
         HomeActionArea.pinnedSliver(context, inset: inset()),
 
-        // 4. "הפעולה הבאה שלך" — what to do next, in order: reminders that
-        // came due, open ideas waiting on a step, ideas left still, the
-        // database's pairs, and — secondary — a friend whose card arrived and
-        // has no idea yet. Five rows, then "הצג עוד".
-        block(const HomeNextStepTitle(), top: 14),
-        // The compact progress line: the milestones up to a hundred friends,
-        // the matchmaker's own weekly record of ideas from there.
+        // 4. Three friends who keep a personal card, and the way to the rest.
+        block(HomeCardFriendsSection(key: ValueKey<int>(_boardRefresh))),
+
+        // A matchmaker who skipped the profile photo at sign-up: one quiet
+        // line, until it is added or put away for a month.
+        block(const HomePhotoNudge(), top: 10),
+
+        // 5. "הפעילות שלי" | "פעילות הקהילה", large, under השבוע | החודש |
+        // כל הזמנים — and the community's weekly target under them. No
+        // heading of its own.
+        block(
+          HomeWeekBlock(onOpen: () => AppNavigation.open(context, '/activity')),
+        ),
+
+        // Somebody else's good news, for one launch. It draws nothing at all
+        // when there is none, which is nearly always.
+        block(const HomeEngagementCard()),
+
+        // 6. The tip.
+        block(
+          HomeTipCarousel(
+            tips: _tips(context),
+            userGender: userGender,
+            onAddTip: () => context.push('/profile/tips'),
+          ),
+        ),
+
+        // 7. Last on the page and open-ended: "הפעולה הבאה שלך" — the
+        // progress line, then what to do next, ten more at a time, and under
+        // "הצג עוד" the quiet WhatsApp / share line.
+        block(const HomeNextStepTitle(), top: 22),
         block(const HomeWeeklyProgress(), top: 6),
         const SliverToBoxAdapter(child: SizedBox(height: 6)),
         HomeBoardSection(
@@ -459,36 +477,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           matchRepository: matchRepository,
           refresh: _boardRefresh,
         ),
-
-        // 5. Three friends who keep a personal card, and the way to the rest.
-        block(HomeCardFriendsSection(key: ValueKey<int>(_boardRefresh))),
-
-        // A matchmaker who skipped the profile photo at sign-up: one quiet
-        // line, until it is added or put away for a month.
-        block(const HomePhotoNudge(), top: 10),
-
-        // 6. The community's weekly target, with the two activity figures in
-        // small type beside it. No heading of its own.
-        block(
-          HomeWeekBlock(onOpen: () => AppNavigation.open(context, '/activity')),
-        ),
-
-        // Somebody else's good news, for one launch. It draws nothing at all
-        // when there is none, which is nearly always.
-        block(const HomeEngagementCard()),
-
-        // 7. The tip, last and secondary.
-        block(
-          HomeTipCarousel(
-            tips: _tips(context),
-            userGender: userGender,
-            onAddTip: () => context.push('/profile/tips'),
-          ),
-        ),
-
-        // Last on the page, under everything, where an invitation belongs when
-        // it is not urgent and must never be in the way.
-        block(const HomeCommunityLink()),
 
         SliverToBoxAdapter(
           child: SizedBox(

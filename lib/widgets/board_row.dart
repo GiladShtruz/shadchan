@@ -223,13 +223,14 @@ class BoardRow extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                           ],
+                          // The whole sentence, always: an action cut off
+                          // with "…" is an action nobody can read. It wraps.
                           Flexible(
                             child: Text(
                               title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
+                                height: 1.3,
                                 color: titleColor,
                               ),
                             ),
@@ -240,8 +241,6 @@ class BoardRow extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           sub,
-                          maxLines: subtitleMaxLines ?? 2,
-                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: subtitleColor,
                           ),

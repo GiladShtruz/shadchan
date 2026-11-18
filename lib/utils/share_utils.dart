@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/utils/community_links.dart';
 
 /// Everything that leaves the app as a *card*.
@@ -49,7 +50,9 @@ abstract final class ShareUtils {
   static Future<void> sharePerson(Person person, {Rect? origin}) async {
     await shareCard(
       text: _shareText(person),
-      photoPaths: person.photosPaths,
+      // A friend who said their photos are not for sharing: their own photos
+      // stay in the app. See [CardPhotoPrivacy].
+      photoPaths: CardPhotoPrivacy.shareable(person),
       origin: origin,
     );
   }
@@ -182,14 +185,14 @@ abstract final class ShareUtils {
     return shareCard(
       text: text,
       photoPaths: <String>[
-        for (final Person side in sides) ...side.photosPaths,
+        for (final Person side in sides) ...CardPhotoPrivacy.shareable(side),
       ],
       origin: origin,
     );
   }
 
   static List<String> _existingPhotoPaths(Person person) =>
-      existingPhotos(person.photosPaths);
+      existingPhotos(CardPhotoPrivacy.shareable(person));
 
   /// Shares only the card text: the contact's own details are shared
   /// separately, on purpose, through [shareInquiryContact].

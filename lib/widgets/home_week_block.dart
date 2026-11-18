@@ -13,13 +13,16 @@ import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
-/// The community card on בית — no heading of its own any more.
+/// The activity card on בית — "הפעילות שלי" beside "פעילות הקהילה", large,
+/// under one window switch (השבוע | החודש | כל הזמנים), and the community's
+/// weekly target under them. No heading of its own: the two captions say
+/// what it is.
 ///
-/// **Less text, more air.** The community's weekly target is the centre of
-/// it — one sentence, one bar, one figure — and the matchmaker's own activity
-/// and the community's sit under it in small type on a single line. The whole
-/// card opens the activity screen, which has everything else (the windows,
-/// the live lines, the leaderboard).
+/// **The figures are the centre again.** For a few days the target stood in
+/// the middle and the two figures were a footnote under it; the figures are
+/// what a matchmaker looks for, so they are back as they were — two equal
+/// halves, the number large — and the shared target follows, with last week's
+/// result beside it in small type.
 ///
 /// **What it does not know it does not say.** Without an account the
 /// community half is an invitation; before the server has answered it is a
@@ -27,8 +30,9 @@ import 'package:shadchan/widgets/home_section.dart';
 /// resolved. A matchmaker hidden from the community sees a sentence saying
 /// that hiding is mutual instead of the community's figures.
 ///
-/// The goal is the administrator's `communityGoals/weekly`, edited from the
-/// console.
+/// The reads go through [CommunityService]'s process cache, shared with the
+/// activity screen. The goal is the administrator's `communityGoals/weekly`,
+/// edited from the console.
 class HomeWeekBlock extends StatefulWidget {
   const HomeWeekBlock({
     super.key,
@@ -36,6 +40,12 @@ class HomeWeekBlock extends StatefulWidget {
     this.watchGoal = CommunityGoalService.watch,
     this.loadTotals = CommunityService.totals,
   });
+
+  static const List<CommunityPeriod> periods = <CommunityPeriod>[
+    CommunityPeriod.week,
+    CommunityPeriod.month,
+    CommunityPeriod.allTime,
+  ];
 
   /// The activity screen — the long form of everything summarised here.
   final VoidCallback onOpen;
@@ -53,12 +63,15 @@ class HomeWeekBlock extends StatefulWidget {
 
 class _HomeWeekBlockState extends State<HomeWeekBlock>
     with WidgetsBindingObserver {
-  /// The week's community figures, with the week key they were read under —
-  /// kept only while that key is still the current one (a phone left open
+  CommunityPeriod _period = CommunityPeriod.week;
+
+  /// Per window, with the period key each was read under — a resolved window
+  /// is kept only while its key is still the current one (a phone left open
   /// over Saturday night must not carry last week into this one).
-  CommunityTotals? _week;
-  String? _weekKey;
-  int _request = 0;
+  final Map<CommunityPeriod, CommunityTotals> _totals =
+      <CommunityPeriod, CommunityTotals>{};
+  final Map<CommunityPeriod, String> _keys = <CommunityPeriod, String>{};
+  final Map<CommunityPeriod, int> _requests = <CommunityPeriod, int>{};
   int _generation = 0;
 
   WeeklyCommunityGoal? _goal;
@@ -71,7 +84,7 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadWeek();
+    _loadAll();
   }
 
   @override
@@ -84,7 +97,7 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _loadWeek();
+      _loadAll();
     }
   }
 
@@ -99,43 +112,57 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
     );
   }
 
-  Future<void> _loadWeek() async {
-    final String key = CommunityPeriods.keyFor(CommunityPeriod.week);
-    final bool rolledOver = _weekKey != null && _weekKey != key;
-    if (!rolledOver && (_week?.resolved ?? false)) {
+  /// The week (always — the target needs it) and the window on show.
+  Future<void> _loadAll() async {
+    await Future.wait(<Future<void>>[
+      _load(CommunityPeriod.week),
+      if (_period != CommunityPeriod.week) _load(_period),
+    ]);
+    final CommunityTotals? week = _totals[CommunityPeriod.week];
+    if (week != null && week.resolved) {
+      // The only place this is written. Next week it is what "בשבוע שעבר"
+      // reads — see [CommunityProfileStore.recordCommunityWeek].
+      CommunityProfileStore.recordCommunityWeek(
+        weekKey: CommunityPeriods.weekKey(),
+        friends: week.friends,
+        ideas: week.ideas,
+        couples: week.couples,
+      );
+    }
+  }
+
+  Future<void> _load(CommunityPeriod period) async {
+    final String key = CommunityPeriods.keyFor(period);
+    final bool rolledOver = _keys[period] != null && _keys[period] != key;
+    if (!rolledOver && (_totals[period]?.resolved ?? false)) {
       return;
     }
     final int generation = _generation;
-    final int request = ++_request;
+    final int request = (_requests[period] ?? 0) + 1;
+    _requests[period] = request;
     CommunityTotals totals;
     try {
-      totals = await widget.loadTotals(
-        CommunityPeriod.week,
-        forceRefresh: rolledOver,
-      );
+      totals = await widget.loadTotals(period, forceRefresh: rolledOver);
     } catch (_) {
       return; // Keep the last verified value; an unavailable total is not zero.
     }
-    if (!mounted ||
-        generation != _generation ||
-        request != _request ||
-        key != CommunityPeriods.keyFor(CommunityPeriod.week)) {
+    if (mounted &&
+        generation == _generation &&
+        _requests[period] == request &&
+        key == CommunityPeriods.keyFor(period)) {
+      setState(() {
+        _totals[period] = totals;
+        _keys[period] = key;
+      });
+    }
+  }
+
+  void _select(CommunityPeriod period) {
+    if (period == _period) {
       return;
     }
-    setState(() {
-      _week = totals;
-      _weekKey = key;
-    });
-    if (totals.resolved) {
-      // The only place this is written. Next week it is what "בשבוע שעבר
-      // הגענו ל־X" reads — see [CommunityProfileStore.recordCommunityWeek].
-      CommunityProfileStore.recordCommunityWeek(
-        weekKey: CommunityPeriods.weekKey(),
-        friends: totals.friends,
-        ideas: totals.ideas,
-        couples: totals.couples,
-      );
-    }
+    setState(() => _period = period);
+    _load(period);
   }
 
   @override
@@ -145,19 +172,19 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
     final bool signedIn = context.watch<AccountProvider>().isSignedIn;
     final CommunityProvider community = context.watch<CommunityProvider>();
 
-    // Firebase resolves the session a moment after launch, so the read fired
+    // Firebase resolves the session a moment after launch, so the reads fired
     // from `initState` usually came back unresolved; this is the rebuild that
     // follows, and the one after the first publish of the session.
     if (signedIn != _wasSignedIn) {
       _wasSignedIn = signedIn;
       _generation++;
-      _week = null;
-      _weekKey = null;
+      _totals.clear();
+      _keys.clear();
       if (signedIn) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _listenGoal();
-          _loadWeek();
+          _loadAll();
         });
       } else {
         _goalSubscription?.cancel();
@@ -170,16 +197,18 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
       _revision = revision;
       if (revision > 0) {
         _generation++;
-        _week = null;
+        _totals.clear();
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _loadWeek();
+          if (mounted) _loadAll();
         });
       }
     }
 
-    final CommunityTotals? week = _week;
+    final CommunityTotals? totals = _totals[_period];
+    final CommunityTotals? week = _totals[CommunityPeriod.week];
+    final bool hidden = community.isHidden;
     final CommunityChallenge? challenge =
-        signedIn && week != null && week.resolved
+        signedIn && !hidden && week != null && week.resolved
         ? CommunityChallenge.build(
             weekKey: CommunityPeriods.weekKey(),
             week: week,
@@ -188,36 +217,129 @@ class _HomeWeekBlockState extends State<HomeWeekBlock>
           )
         : null;
     final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
-    final bool hidden = community.isHidden;
-    final CommunityTotals? weekTotals = week;
 
-    // **Less text, more air.** The community's weekly target is the one thing
-    // this card is about; the two activity figures sit beside it in small
-    // type on one line, and the card opens the activity screen for the rest.
     return HomePaperCard(
       stripe: dark ? AppColors.primaryDarkDm : AppColors.primary,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: InkWell(
-        onTap: widget.onOpen,
-        borderRadius: BorderRadius.circular(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          CommunityPeriodTabs(
+            selected: _period,
+            onChanged: _select,
+            periods: HomeWeekBlock.periods,
+          ),
+          const SizedBox(height: 10),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: _Figure(
+                    label: 'הפעילות שלי',
+                    value: community.myPoints(_period),
+                    period: _period,
+                    color: warm,
+                    onTap: widget.onOpen,
+                  ),
+                ),
+                VerticalDivider(
+                  width: 20,
+                  thickness: 0.6,
+                  color: theme.colorScheme.outlineVariant,
+                ),
+                Expanded(
+                  child: !signedIn
+                      ? _JoinFigure(onTap: widget.onOpen)
+                      : hidden
+                      ? const Center(
+                          child: CommunityHiddenNotice(compact: true),
+                        )
+                      : _Figure(
+                          label: 'פעילות הקהילה',
+                          value: totals?.resolved == true
+                              ? totals!.points
+                              : null,
+                          period: _period,
+                          color: communityLead(theme),
+                          onTap: widget.onOpen,
+                        ),
+                ),
+              ],
+            ),
+          ),
+          if (challenge != null) ...<Widget>[
+            const SizedBox(height: 14),
+            _ChallengeBar(challenge: challenge),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One of the two figures: a caption over the number, "נקודות" under it.
+class _Figure extends StatelessWidget {
+  const _Figure({
+    required this.label,
+    required this.value,
+    required this.period,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+
+  /// Null when the figure is not known yet — drawn as a dash, never a zero.
+  final int? value;
+  final CommunityPeriod period;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            if (signedIn && hidden)
-              const CommunityHiddenNotice(compact: true)
-            else if (challenge != null)
-              _ChallengeBar(challenge: challenge)
-            else if (!signedIn)
-              _JoinFigure(onTap: widget.onOpen),
-            const SizedBox(height: 10),
-            _FiguresLine(
-              mine: community.myPoints(CommunityPeriod.week),
-              community: signedIn && !hidden && weekTotals?.resolved == true
-                  ? weekTotals!.points
-                  : null,
-              showCommunity: signedIn && !hidden,
-              mineColor: warm,
-              communityColor: communityLead(theme),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              child: FittedBox(
+                key: ValueKey<String>('${period.name}:$value'),
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value == null ? '—' : CommunityFigure.format(value!),
+                  maxLines: 1,
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    height: 1.05,
+                    color: color,
+                  ),
+                ),
+              ),
+            ),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value == null ? 'עדיין לא זמין' : 'נקודות',
+                maxLines: 1,
+                style: theme.textTheme.labelSmall,
+              ),
             ),
           ],
         ),
@@ -262,7 +384,8 @@ class _JoinFigure extends StatelessWidget {
   }
 }
 
-/// The week's shared target, as one bar.
+/// The week's shared target: one sentence, one bar, how far it got — and,
+/// compact beside it, what the community reached last week.
 class _ChallengeBar extends StatelessWidget {
   const _ChallengeBar({required this.challenge});
 
@@ -280,19 +403,32 @@ class _ChallengeBar extends StatelessWidget {
     final Color lead = communityLead(theme);
     final bool won = challenge.reachedTarget || challenge.beatsRecord;
     final Color fill = won ? (dark ? AppColors.statusDatingDm : _done) : lead;
+    final String? lastWeek = challenge.lastWeekLabel;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
-          challenge.headline,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            height: 1.35,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(
+              won ? Icons.emoji_events_outlined : Icons.flag_outlined,
+              size: 15,
+              color: fill,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                challenge.headline,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
           child: TweenAnimationBuilder<double>(
@@ -302,7 +438,7 @@ class _ChallengeBar extends StatelessWidget {
             builder: (BuildContext context, double value, _) {
               return LinearProgressIndicator(
                 value: value,
-                minHeight: 10,
+                minHeight: 9,
                 backgroundColor: dark
                     ? AppColors.dividerDm
                     : AppColors.primaryLight,
@@ -312,76 +448,33 @@ class _ChallengeBar extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        Text(
-          challenge.progressLabel,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.labelSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: fill,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// "השבוע · שלי 12 · הקהילה 340 ›" — the two activity figures, small, on
-/// one line under the target.
-class _FiguresLine extends StatelessWidget {
-  const _FiguresLine({
-    required this.mine,
-    required this.community,
-    required this.showCommunity,
-    required this.mineColor,
-    required this.communityColor,
-  });
-
-  final int mine;
-  final int? community;
-  final bool showCommunity;
-  final Color mineColor;
-  final Color communityColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final TextStyle? base = theme.textTheme.labelSmall;
-    final TextStyle? figure = base?.copyWith(fontWeight: FontWeight.w900);
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: AlignmentDirectional.centerStart,
-            child: Text.rich(
-              TextSpan(
-                style: base,
-                children: <InlineSpan>[
-                  const TextSpan(text: 'השבוע · הפעילות שלי '),
-                  TextSpan(
-                    text: CommunityFigure.format(mine),
-                    style: figure?.copyWith(color: mineColor),
-                  ),
-                  if (showCommunity) ...<InlineSpan>[
-                    const TextSpan(text: '  ·  הקהילה '),
-                    TextSpan(
-                      text: community == null
-                          ? '—'
-                          : CommunityFigure.format(community!),
-                      style: figure?.copyWith(color: communityColor),
-                    ),
-                  ],
-                ],
+        // Both halves give way: at 1.5x text neither may push the other off.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Flexible(
+              flex: 4,
+              child: Text(
+                challenge.progressLabel,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  height: 1.4,
+                  color: fill,
+                ),
               ),
-              maxLines: 1,
             ),
-          ),
-        ),
-        Icon(
-          Icons.chevron_right_rounded,
-          size: 18,
-          color: AppColors.muted(dark: dark),
+            if (lastWeek != null) ...<Widget>[
+              const SizedBox(width: 10),
+              Flexible(
+                flex: 5,
+                child: Text(
+                  lastWeek,
+                  textAlign: TextAlign.end,
+                  style: theme.textTheme.labelSmall?.copyWith(height: 1.4),
+                ),
+              ),
+            ],
+          ],
         ),
       ],
     );

@@ -1,23 +1,66 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_progress.dart';
 
 void main() {
   group('under a hundred friends: the staged milestones', () {
     test('the friends there are and how many to the next target', () {
       final HomeProgress p = HomeProgress.milestone(37);
-      expect(p.line, 'יש לך 37 חברים · עוד 13 ליעד הבא: 50');
+      expect(p.line, 'עוד 13 חברים ליעד הבא – 50');
       expect(p.progress, greaterThan(0));
       expect(p.progress, lessThan(1));
     });
 
     test('one friend and none', () {
-      expect(
-        HomeProgress.milestone(1).line,
-        'יש לך חבר אחד · עוד 9 ליעד הבא: 10',
+      expect(HomeProgress.milestone(1).line, 'עוד 9 חברים ליעד הבא – 10');
+      expect(HomeProgress.milestone(0).line, 'עוד 10 חברים ליעד הבא – 10');
+    });
+  });
+
+  test('one friend short says so in words', () {
+    expect(HomeProgress.milestone(24).line, 'עוד חבר אחד ליעד הבא – 25');
+  });
+
+  group('from a hundred: a real figure of the matchmaker\'s own', () {
+    test('the ideas line, with the scale towards the next round figure', () {
+      final HomeProgress p = HomeProgress.personal(
+        ideas: 24,
+        couples: 0,
+        weddings: 0,
+        gender: Gender.male,
       );
+      expect(p.line, 'הוסף את הרעיון הבא שלך · כבר פתחת 24 רעיונות');
+      expect(p.progress, closeTo(0.8, 1e-9));
+    });
+
+    test('a figure at zero is never said; the true ones take turns', () {
+      final Set<String> lines = <String>{
+        for (int day = 0; day < 6; day++)
+          HomeProgress.personal(
+            ideas: 40,
+            couples: 3,
+            weddings: 0,
+            gender: Gender.female,
+            day: day,
+          ).line,
+      };
+      expect(lines, <String>{
+        'הוסיפי את הרעיון הבא שלך · כבר פתחת 40 רעיונות',
+        '6 חברים יצאו לדייט בזכותך',
+      });
+    });
+
+    test('weddings, counted in friends', () {
       expect(
-        HomeProgress.milestone(0).line,
-        'עוד אין לך חברים במאגר · עוד 10 ליעד הבא: 10',
+        HomeProgress.personal(ideas: 10, couples: 0, weddings: 2, day: 1).line,
+        '4 חברים התחתנו בזכותך',
+      );
+    });
+
+    test('no idea yet', () {
+      expect(
+        HomeProgress.personal(ideas: 0, couples: 0, weddings: 0).line,
+        'הוסף את הרעיון הראשון שלך',
       );
     });
   });

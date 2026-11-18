@@ -23,14 +23,24 @@ import 'package:shadchan/utils/share_utils.dart';
 /// [CommunityLinks.hasUpdatesGroup]. A row that opens nothing is worse than no
 /// row. The share row is always there: the phone always has a share sheet.
 class HomeCommunityLink extends StatelessWidget {
-  const HomeCommunityLink({super.key});
+  const HomeCommunityLink({super.key, this.compact = false});
 
   static const String label = 'הצטרפו לקהילת הוואטסאפ של שדכן';
   static const String shareLabel = 'שתפו את שדכן עם חברים';
 
+  static const String compactLabel = 'הצטרפות לוואטסאפ';
+  static const String compactShareLabel = 'שיתוף עם חברים';
+
+  /// One line, light grey, nothing coloured — the foot of the action list on
+  /// בית, where it must not compete with the actions above it.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    if (compact) {
+      return _buildCompact(context, theme);
+    }
 
     return Center(
       // Side by side while both fit, stacked when the phone is too narrow for
@@ -61,6 +71,54 @@ class HomeCommunityLink extends StatelessWidget {
             label: shareLabel,
             onTap: () => shareTheApp(origin: ShareUtils.originOf(context)),
             theme: theme,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+extension on HomeCommunityLink {
+  Widget _buildCompact(BuildContext context, ThemeData theme) {
+    final Color grey = theme.colorScheme.onSurfaceVariant.withValues(
+      alpha: 0.6,
+    );
+    final TextStyle? style = theme.textTheme.labelSmall?.copyWith(
+      color: grey,
+      fontWeight: FontWeight.w600,
+    );
+    Widget link(Widget icon, String text, VoidCallback onTap) => InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            icon,
+            const SizedBox(width: 5),
+            Text(text, maxLines: 1, style: style),
+          ],
+        ),
+      ),
+    );
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (CommunityLinks.hasUpdatesGroup) ...<Widget>[
+            link(
+              FaIcon(FontAwesomeIcons.whatsapp, size: 13, color: grey),
+              HomeCommunityLink.compactLabel,
+              () => CommunityLinks.openLink(CommunityLinks.updatesGroupUrl),
+            ),
+            Text('·', style: style),
+          ],
+          link(
+            Icon(Icons.share_outlined, size: 13, color: grey),
+            HomeCommunityLink.compactShareLabel,
+            () => shareTheApp(origin: ShareUtils.originOf(context)),
           ),
         ],
       ),

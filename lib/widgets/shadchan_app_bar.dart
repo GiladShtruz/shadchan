@@ -33,6 +33,7 @@ class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.bottom,
     this.title,
     this.onTitleTap,
+    this.titleTapLabel = 'הפרופיל שלי',
   });
 
   /// The page's own controls, at the far end of the bar.
@@ -54,9 +55,12 @@ class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
   /// hold it is gone.
   final String? title;
 
-  /// What a tap on the wordmark does. On בית it is the way home from anywhere
-  /// down the page: back to the top, search closed, the board re-read.
+  /// What a tap on the wordmark does. On בית it opens the user's own profile
+  /// ("הפרופיל שלי") — the logo is where a phone's own page is looked for.
   final VoidCallback? onTitleTap;
+
+  /// What a screen reader says the wordmark does.
+  final String titleTapLabel;
 
   /// Deliberately shorter than Material's 56. The three tabs each hang a search
   /// row off the bottom of this bar, and the pair has to stay out of the way of
@@ -95,7 +99,7 @@ class ShadchanAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ? const ShadchanWordmark()
                 : Semantics(
                     button: true,
-                    label: 'חזרה לראש עמוד הבית',
+                    label: titleTapLabel,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: onTitleTap,

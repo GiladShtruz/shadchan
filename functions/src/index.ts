@@ -297,9 +297,24 @@ async function ownerPhoneHashOf(ownerUid: string): Promise<string | undefined> {
  * the hash of the owner's number, from `databaseHashes`), and every
  * matchmaker saved in the owner's own address book.
  */
+/**
+ * A card that became live recently ([joinedRecently] — the same window as a
+ * matchmaker who joined). Only such a card is announced to the owner's
+ * contacts: an owner's first contacts upload, or their number arriving,
+ * after this shipped must not tell everybody about a card written months ago.
+ * A card with no `joinedAt` predates the field, and is old by definition.
+ */
+function cardIsNews(card: DocumentSnapshot): boolean {
+  const joinedAt = card.get('joinedAt');
+  return (
+    joinedAt instanceof Timestamp &&
+    joinedRecently(joinedAt.toMillis(), Date.now())
+  );
+}
+
 async function announceCard(ownerUid: string): Promise<void> {
   const card = await db.collection('personalCards').doc(ownerUid).get();
-  if (!isActiveCard(card.data())) {
+  if (!isActiveCard(card.data()) || !cardIsNews(card)) {
     return;
   }
   const ownerPhoneHash = await ownerPhoneHashOf(ownerUid);
@@ -344,6 +359,11 @@ export const onDatabaseHashesWritten = onDocumentWritten(
   async (event) => {
     const after = event.data?.after;
     if (!after?.exists) {
+      return;
+    }
+    // The first list a database ever publishes is where it stands, not news:
+    // friends already kept before the update must not raise a notice each.
+    if (!event.data?.before?.exists) {
       return;
     }
     const matchmakerUid = event.params.matchmakerUid;
@@ -530,6 +550,11 @@ async function findHelpers(ownerUid: string): Promise<void> {
   if (isActiveCard(card.data())) {
     for (const helper of helpers) {
       const uid = helper.uid as string;
+      // Only a friend who has just joined: everybody who was already here
+      // when this shipped is not news, and is on "השדכנים שלי" anyway.
+      const joinedAt =
+        helper.joinedAt instanceof Timestamp ? helper.joinedAt.toMillis() : null;
+      if (!joinedRecently(joinedAt, Date.now())) continue;
       const grant = await db.doc(`cardAccess/${ownerUid}_${uid}`).get();
       if (grant.get('status') === 'approved' || grant.get('status') === 'blocked') continue;
       // Asked as the question it is, in the owner's own grammatical gender.

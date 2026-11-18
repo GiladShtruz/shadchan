@@ -1,3 +1,4 @@
+import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
@@ -855,6 +856,8 @@ class CardAccessProvider extends ChangeNotifier {
       );
     }
     _setBaseline(person.id, CardSyncEngine.baselineOf(data));
+    // "התמונה שלי לא ניתנת לשיתוף": seen here, never shared out.
+    CardPhotoPrivacy.set(person.id, private: CardPhotoPrivacy.privateIn(data));
     if (!wasLinked) {
       await _people.logEvent(
         person.id,
@@ -886,6 +889,7 @@ class CardAccessProvider extends ChangeNotifier {
       lastRemote: _baselineFor(person.id),
     );
     _setBaseline(person.id, null);
+    CardPhotoPrivacy.set(person.id, private: false);
     await _people.forgetPersonalCardHistory(person.id);
     await _people.saveSynced(person);
     PhotoPickerService.deletePhotoFiles(toDelete);

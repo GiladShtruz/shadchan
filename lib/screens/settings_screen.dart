@@ -152,6 +152,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: () => context.push('/profile/auto-match'),
                   ),
                 SettingsRow(
+                  icon: Icons.notifications_none_rounded,
+                  title: 'התראות',
+                  subtitle: 'בחירה אילו סוגי התראות לקבל',
+                  onTap: () => context.push('/profile/notifications'),
+                ),
+                SettingsRow(
                   icon: Icons.palette_outlined,
                   title: 'תצוגה בהירה או כהה',
                   subtitle: 'ברירת המחדל היא תצוגה בהירה',

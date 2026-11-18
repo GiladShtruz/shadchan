@@ -866,7 +866,9 @@ service cloud.firestore {
                                  'preferredRegions', 'preferredMaritalStatuses',
                                  'preferredReligiousLevels',
                                  'preferredReligiousLevelOtherLabels',
-                                 'photoPaths', 'tags', 'status', 'deleted', 'updatedAt', 'joinedAt', 'statusUpdatedAt'])
+                                 'photoPaths', 'tags', 'status', 'deleted', 'updatedAt', 'joinedAt', 'statusUpdatedAt',
+                                 'photosShareable'])
+                            && (request.resource.data.get('photosShareable', true) is bool)
                             && request.resource.data.get('joinedAt', null) == (resource == null ? null : resource.data.get('joinedAt', null))
                             && request.resource.data.get('statusUpdatedAt', null) == (resource == null ? null : resource.data.get('statusUpdatedAt', null))
                             && request.resource.data.photoPaths is list

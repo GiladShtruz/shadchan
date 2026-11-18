@@ -19,6 +19,8 @@ import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/home_action_phrases.dart';
+import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 import 'package:shadchan/utils/card_updates_seen.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -77,9 +79,11 @@ class HomeBoardSection extends StatefulWidget {
   /// How many rows the home screen shows before "לכל הלוח".
   static const int homeRows = 4;
 
-  /// How many rows the action list opens with, and how many more each
-  /// "הצג עוד" adds.
+  /// How many rows the action list opens with.
   static const int actionRows = 5;
+
+  /// How many more each "הצג עוד" adds — as many times as there are more.
+  static const int actionMoreRows = 10;
 
   /// Where a row of the action list ("הפעולה הבאה שלך") stands, first to
   /// last:
@@ -194,9 +198,23 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
   String? _pairsKey;
   List<NewIdeaSuggestion> _pairs = const <NewIdeaSuggestion>[];
 
-  /// How many rows of the action list are open — five, then five more per
+  /// How many rows of the action list are open — five, then ten more per
   /// "הצג עוד".
   int _actionsShown = HomeBoardSection.actionRows;
+
+  /// The quiet WhatsApp/share line under "הצג עוד" steps aside while the next
+  /// ten rows arrive, then comes back at the new bottom.
+  bool _footerShown = true;
+
+  void _showMoreActions() {
+    setState(() {
+      _footerShown = false;
+      _actionsShown += HomeBoardSection.actionMoreRows;
+    });
+    Future<void>.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) setState(() => _footerShown = true);
+    });
+  }
 
   @override
   void didUpdateWidget(covariant HomeBoardSection oldWidget) {
@@ -749,8 +767,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
       value: _BoardItem.sharedCard(
         key: entry.value.key,
         person: person,
-        line: '{הוסיף|הוסיפה} כרטיס אישי · עדיין לא פתחת {לו|לה} רעיון'
-            .forGender(person.gender),
+        line: HomeActionPhrases.cardFriend(person),
         fresh: false,
       ),
       category: entry.category,
@@ -834,9 +851,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
               alignment: AlignmentDirectional.centerStart,
               child: TextButton(
                 onPressed: more
-                    ? () => setState(
-                        () => _actionsShown += HomeBoardSection.actionRows,
-                      )
+                    ? _showMoreActions
                     : () => AppNavigation.open(context, HomeBoardSection.route),
                 style: TextButton.styleFrom(
                   foregroundColor: link,
@@ -849,6 +864,31 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
                 child: Text(more ? 'הצג עוד' : 'לכל הלוח'),
               ),
             ),
+            // The page's last line: joining the WhatsApp group and sharing
+            // the app, light grey, under a faint rule.
+            if (_footerShown)
+              TweenAnimationBuilder<double>(
+                key: ValueKey<int>(_actionsShown),
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 300),
+                builder: (BuildContext context, double t, Widget? child) =>
+                    Opacity(opacity: t, child: child),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const SizedBox(height: 6),
+                    Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const HomeCommunityLink(compact: true),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -1532,6 +1572,27 @@ class _BoardRow extends StatelessWidget {
       if (person == null) {
         return const SizedBox.shrink();
       }
+      if (flat) {
+        // The action list: what to do, as a sentence — the matchmaker's own
+        // words on the reminder when there are some.
+        final bool wrote = reminder != null && reminder.isNotEmpty;
+        return _row(
+          context,
+          leading: HomeCardAvatar(person: person, radius: _r),
+          title: wrote ? reminder : HomeActionPhrases.personReminder(person),
+          subtitle: hasNote
+              ? note
+              : wrote
+              ? 'תזכורת · ${person.fullName.trim()}'
+              : null,
+          startAccent: AppColors.genderAccent(person.gender, dark: dark),
+          onTap: () {
+            _seen();
+            AppNavigation.open(context, '/people/${person.id}');
+          },
+          menu: menu,
+        );
+      }
       return _row(
         context,
         leading: HomeCardAvatar(person: person, radius: _r),
@@ -1561,6 +1622,44 @@ class _BoardRow extends StatelessWidget {
     final String? stepLine = step == null
         ? null
         : MatchStages.shortLabel(step, male: male, female: female);
+    if (flat) {
+      // The action list: the next thing to do with this couple, said whole.
+      final bool wrote =
+          reminder != null &&
+          reminder.isNotEmpty &&
+          reminder != MatchRepository.defaultReminderNote;
+      final String title = wrote
+          ? reminder
+          : reminder != null || step == null
+          ? HomeActionPhrases.ideaReminder(
+              status: match.status,
+              step: step,
+              male: male,
+              female: female,
+            )
+          : HomeActionPhrases.ideaStep(step, male: male, female: female);
+      return _row(
+        context,
+        leading: HomeCardCoupleAvatars(
+          personA: male,
+          personB: female,
+          radius: _r2,
+        ),
+        title: title,
+        subtitle: hasNote
+            ? note
+            : wrote
+            ? 'תזכורת · ${_firstName(male)} ו${_firstName(female)}'
+            : MatchStaleness.nudge(match),
+        startAccent: AppColors.genderAccent(Gender.male, dark: dark),
+        endAccent: AppColors.genderAccent(Gender.female, dark: dark),
+        onTap: () {
+          _seen();
+          AppNavigation.open(context, '/matches/${match.id}');
+        },
+        menu: menu,
+      );
+    }
     return _row(
       context,
       leading: HomeCardCoupleAvatars(
@@ -1595,8 +1694,9 @@ class _BoardRow extends StatelessWidget {
     return _row(
       context,
       leading: HomeCardAvatar(person: person, radius: _r),
-      title: person.fullName.trim(),
-      subtitle: item.line,
+      // On the action list the line is the action itself.
+      title: flat ? (item.line ?? '') : person.fullName.trim(),
+      subtitle: flat ? null : item.line,
       mark: Icons.badge_outlined,
       startAccent: AppColors.genderAccent(person.gender, dark: dark),
       onTap: () {
@@ -1775,8 +1875,12 @@ class _BoardRow extends StatelessWidget {
         personB: pair.female,
         radius: _r2,
       ),
-      title: '${_firstName(pair.male)} & ${_firstName(pair.female)}',
-      subtitle: pair.reasons.isEmpty
+      title: flat
+          ? HomeActionPhrases.pair(male: pair.male, female: pair.female)
+          : '${_firstName(pair.male)} & ${_firstName(pair.female)}',
+      subtitle: flat
+          ? (pair.reasons.isEmpty ? null : pair.reasons.join(' · '))
+          : pair.reasons.isEmpty
           ? 'רעיון שהמאגר מציע לך'
           : 'הצעה מהמאגר · ${pair.reasons.join(' · ')}',
       startAccent: AppColors.genderAccent(Gender.male, dark: dark),

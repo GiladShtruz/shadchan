@@ -6,10 +6,10 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/community_period.dart';
+import 'package:shadchan/utils/activity_stats.dart';
+import 'package:shadchan/utils/dating_history.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/home_progress.dart';
-import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/utils/weekly_pace.dart';
 import 'package:shadchan/widgets/home_add_hub.dart';
 
@@ -128,35 +128,46 @@ class HomeNextStepTitle extends StatelessWidget {
 /// The compact progress line between "הפעולה הבאה שלך" and its list.
 ///
 /// **Up to a hundred friends, building the database is the goal**: the staged
-/// milestones 10 → 25 → 50 → 100 ("יש לך 37 חברים · עוד 13 ליעד הבא: 50").
+/// milestones 10 → 25 → 50 → 100 ("עוד 7 חברים ליעד הבא – 50").
 ///
-/// **From a hundred, the matchmaker races their own record** — the most ideas
-/// opened in one week ("השיא שלך: 6 רעיונות · עוד 2 לשבור אותו השבוע"). The
-/// switch is made once, when the database first reaches a hundred
-/// ([WeeklyPaces.unlocked]), and is not undone by a clean-up that takes it
-/// back under. See [HomeProgress].
+/// **From a hundred, a real figure of the matchmaker's own** — the ideas they
+/// opened, the friends who went out or married thanks to them — as the next
+/// step ("הוסף את הרעיון הבא שלך · כבר פתחת 24 רעיונות"). The switch is made
+/// once, when the database first reaches a hundred ([WeeklyPaces.unlocked]),
+/// and is not undone by a clean-up that takes it back under. See
+/// [HomeProgress].
 class HomeWeeklyProgress extends StatelessWidget {
   const HomeWeeklyProgress({super.key});
 
-  /// This week's line, read from the repositories.
+  /// The line, read from the repositories.
   static HomeProgress progressFor({
     required PersonRepository people,
     required MatchRepository matches,
+    Gender? gender,
     DateTime? now,
   }) {
     final int friends = people.databaseCount;
     if (!WeeklyPaces.unlocked(friends)) {
       return HomeProgress.milestone(friends);
     }
+    final ActivityBreakdown all = ActivityStats.allTime(
+      people: people.getAll(),
+      matches: matches.getAll(),
+      matchStatusEvents: matches.getAllStatusEvents(),
+      excludedFromDating: DatingCountExclusions.all(),
+    );
     final DateTime at = now ?? DateTime.now();
-    final DateTime weekStart =
-        CommunityPeriods.startOf(CommunityPeriod.week, at) ??
-        DateTime(at.year, at.month, at.day);
-    return HomeProgress.record(
-      IdeaWeekRecord.from(
-        openedAt: matches.getAll().map((MatchIdea m) => m.createdAt),
-        weekStart: weekStart,
-      ),
+    return HomeProgress.personal(
+      ideas: all.ideas,
+      couples: all.couples,
+      weddings: all.engagements,
+      gender: gender,
+      // One line a day, so the figure changes without flickering on a visit.
+      day: DateTime.utc(
+        at.year,
+        at.month,
+        at.day,
+      ).difference(DateTime.utc(2026)).inDays,
     );
   }
 
@@ -165,6 +176,7 @@ class HomeWeeklyProgress extends StatelessWidget {
     final HomeProgress progress = progressFor(
       people: context.watch<PersonRepository>(),
       matches: context.watch<MatchRepository>(),
+      gender: _maybeWatch<UserProfileProvider>(context)?.gender,
     );
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;

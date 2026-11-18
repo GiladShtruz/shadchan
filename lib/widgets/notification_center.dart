@@ -14,6 +14,7 @@ import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/notification_feed.dart';
+import 'package:shadchan/services/notification_preferences.dart';
 import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/utils/app_navigation.dart';
@@ -109,18 +110,26 @@ abstract final class NotificationCenter {
     );
 
     final Map<String, int> hiddenSupport = _hiddenSupport;
+    // The kinds switched off in the settings are not drawn and not counted.
+    final NotificationPreferences wanted = NotificationPreferences.instance;
     return NotificationFeed.group(
       NotificationFeed.build(
-        inbox: inbox?.items ?? const <InboxItem>[],
-        support: <SupportThread>[
-          for (final SupportThread t
-              in support?.threads ?? const <SupportThread>[])
-            if ((hiddenSupport[t.report.id] ?? -1) <
-                (t.report.lastMessageAt ?? t.report.createdAt)
-                    .millisecondsSinceEpoch)
-              t,
+        inbox: <InboxItem>[
+          for (final InboxItem item in inbox?.items ?? const <InboxItem>[])
+            if (wanted.wantsKind(item.kind)) item,
         ],
-        reminders: log.visible,
+        support: <SupportThread>[
+          if (wanted.wants(NotificationCategory.support))
+            for (final SupportThread t
+                in support?.threads ?? const <SupportThread>[])
+              if ((hiddenSupport[t.report.id] ?? -1) <
+                  (t.report.lastMessageAt ?? t.report.createdAt)
+                      .millisecondsSinceEpoch)
+                t,
+        ],
+        reminders: wanted.wants(NotificationCategory.ideas)
+            ? log.visible
+            : const <ReminderLogEntry>[],
         supportAdmin: admin,
         personById: people.getById,
         matchById: matches.getById,

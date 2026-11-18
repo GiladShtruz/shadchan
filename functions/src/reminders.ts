@@ -29,6 +29,7 @@
  */
 import { Firestore, FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { mutes } from './notices';
 
 export const WINDOW_HOURS = 3;
 const SUMMARY_ABOVE = 3;
@@ -159,6 +160,8 @@ async function remindAccount(
     const uid = tokenDoc.id;
     const tokens: string[] = tokenDoc.get('tokens') ?? [];
     if (tokens.length === 0) return 0;
+    // "רעיונות ותזכורות" switched off in the app's notification settings.
+    if (mutes(tokenDoc, 'reminder')) return 0;
     // Couple databases are not under users/{uid}; their phones keep their own.
     const membership = await db.doc(`memberships/${uid}`).get();
     if (membership.get('state') === 'active') return 0;

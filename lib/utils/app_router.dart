@@ -44,6 +44,7 @@ import 'package:shadchan/screens/card_friend_screen.dart';
 import 'package:shadchan/services/invite_link_service.dart';
 import 'package:shadchan/screens/profile_screen.dart';
 import 'package:shadchan/screens/settings_appearance_screen.dart';
+import 'package:shadchan/screens/settings_notifications_screen.dart';
 import 'package:shadchan/screens/settings_screen.dart';
 import 'package:shadchan/screens/settings_auto_match_screen.dart';
 import 'package:shadchan/screens/settings_data_screen.dart';
@@ -670,6 +671,13 @@ abstract final class AppRouter {
                     path: 'appearance',
                     builder: (BuildContext context, GoRouterState state) {
                       return const SettingsAppearanceScreen();
+                    },
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: _rootNavigatorKey,
+                    path: 'notifications',
+                    builder: (BuildContext context, GoRouterState state) {
+                      return const SettingsNotificationsScreen();
                     },
                   ),
                   GoRoute(

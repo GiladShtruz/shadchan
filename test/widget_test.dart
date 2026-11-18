@@ -11,6 +11,7 @@ import 'package:shadchan/app.dart';
 import 'package:shadchan/dialogs/details_message_dialog.dart';
 import 'package:shadchan/dialogs/hidden_contacts_dialog.dart';
 import 'package:shadchan/dialogs/person_card_viewer.dart';
+import 'package:shadchan/widgets/home_community_link.dart';
 import 'package:shadchan/widgets/idea_actions.dart';
 import 'package:shadchan/dialogs/person_picker_sheet.dart';
 import 'package:shadchan/dialogs/quick_update_dialog.dart';
@@ -754,11 +755,6 @@ void main() {
     expect(figures, findsOneWidget);
     expect(find.text('חתונות'), findsOneWidget);
     expect(find.text('מה עושים עכשיו?'), findsNothing);
-    expect(find.text('הפעולה הבאה שלך'), findsOneWidget);
-    expect(
-      tester.getCenter(find.text('הוספת חברים')).dy,
-      lessThan(tester.getCenter(find.text('הפעולה הבאה שלך')).dy),
-    );
     expect(
       tester.getCenter(figures).dy,
       lessThan(tester.getCenter(find.text('הוספת חברים')).dy),
@@ -766,20 +762,19 @@ void main() {
     // No standing recommendation in the action area any more.
     expect(find.text('כל חבר שמצטרף למאגר הוא עוד סיכוי להתאמה'), findsNothing);
     // Under a hundred friends: the milestone, as one compact line between
-    // the heading and the list.
-    expect(find.text('יש לך חבר אחד · עוד 9 ליעד הבא: 10'), findsOneWidget);
+    // the heading and the list — at the foot of the page now.
+    await _scrollHomeTo(tester, find.text('עוד 9 חברים ליעד הבא – 10'));
     expect(
       tester.getCenter(find.text('הפעולה הבאה שלך')).dy,
-      lessThan(
-        tester.getCenter(find.text('יש לך חבר אחד · עוד 9 ליעד הבא: 10')).dy,
-      ),
+      lessThan(tester.getCenter(find.text('עוד 9 חברים ליעד הבא – 10')).dy),
     );
 
     // The list of what to do next has no title and no shelves; with nothing
     // to do it says so, and the whole board is one tap away.
     expect(find.text('הלוח שלי'), findsNothing);
-    await tester.ensureVisible(find.text('לכל הלוח'));
-    await tester.pump();
+    await _scrollHomeTo(tester, find.text('לכל הלוח'));
+    // Under it, one quiet line: the WhatsApp group and sharing the app.
+    expect(find.text(HomeCommunityLink.compactShareLabel), findsOneWidget);
     expect(find.text('כרטיסים וגישה'), findsNothing);
     expect(find.text('אין כרגע משהו שמחכה לך'), findsOneWidget);
     expect(find.text('הוספה ללוח'), findsNothing);
@@ -883,28 +878,23 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.ensureVisible(find.text('דוד & שרה'));
-    await tester.pump();
+    // **The row says what to do, as a whole sentence**: a brand-new
+    // proposal, so the boy is asked first — and about whom.
+    const String action = 'לשאול את דוד מה הוא חושב על שרה';
+    await _scrollHomeTo(tester, find.text(action));
 
     // Nobody pinned this proposal: it is on the list because it is open.
     expect(
       HomeBoardStore.instance.contains(HomeItemKind.idea, idea.id),
       isFalse,
     );
-    expect(find.text('דוד & שרה'), findsOneWidget);
-
-    // And it carries the step the ideas page would offer for the same stage —
-    // a brand-new proposal, so the boy is asked first.
-    expect(find.text('השלב הבא: לשאול את דוד'), findsOneWidget);
+    expect(find.text(action), findsOneWidget);
 
     // **On the home screen it is a line of a chat-like list**: no frame and
     // no coloured bars — those stay on the whole board.
     expect(
       find.descendant(
-        of: find.ancestor(
-          of: find.text('דוד & שרה'),
-          matching: find.byType(Row),
-        ),
+        of: find.ancestor(of: find.text(action), matching: find.byType(Row)),
         matching: find.byType(AccentStripe),
       ),
       findsNothing,
@@ -912,8 +902,7 @@ void main() {
 
     // On the whole board, its own chip shows it; the database's suggestions
     // chip says it has nothing, in one short line.
-    await tester.ensureVisible(find.text('לכל הלוח'));
-    await tester.pump();
+    await _scrollHomeTo(tester, find.text('לכל הלוח'));
     await tester.tap(find.text('לכל הלוח'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -987,8 +976,7 @@ void main() {
         ]);
     await tester.pump();
 
-    await tester.ensureVisible(find.text('לכל הלוח'));
-    await tester.pump();
+    await _scrollHomeTo(tester, find.text('לכל הלוח'));
     await tester.tap(find.text('לכל הלוח'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -3077,6 +3065,20 @@ MatchIdea _testMatch({
     updatedAt: now,
     reminderDate: reminderDate,
   );
+}
+
+/// Scrolls the home page down until [target] is built and on screen — the
+/// action list is the last thing on the page, below a lazy list.
+Future<void> _scrollHomeTo(WidgetTester tester, Finder target) async {
+  for (int i = 0; i < 40 && target.evaluate().isEmpty; i++) {
+    await tester.drag(
+      find.byType(CustomScrollView).hitTestable().first,
+      const Offset(0, -300),
+    );
+    await tester.pump();
+  }
+  await tester.ensureVisible(target);
+  await tester.pump();
 }
 
 Widget _buildTestApp() {

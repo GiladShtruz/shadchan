@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
+import 'package:shadchan/services/notification_preferences.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 
@@ -51,6 +52,9 @@ abstract final class PushService {
       if (token != null) {
         _token = token;
         await PersonalCardService.saveDeviceToken(token);
+        await PersonalCardService.saveNotificationMutes(
+          NotificationPreferences.instance.mutedNames,
+        );
       }
       _subscriptions
         ..add(
@@ -80,6 +84,14 @@ abstract final class PushService {
   static void _showInForeground(RemoteMessage message) {
     final RemoteNotification? notification = message.notification;
     if (notification == null) {
+      return;
+    }
+    // A kind switched off in the settings: the server should not have sent
+    // it, but a push already in flight when the switch was turned still may.
+    final Object? kind = message.data['kind'];
+    if (kind is String &&
+        kind.isNotEmpty &&
+        !NotificationPreferences.instance.wantsKind(kind)) {
       return;
     }
     NotificationService.onForegroundNotice?.call(

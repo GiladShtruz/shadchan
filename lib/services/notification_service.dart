@@ -7,6 +7,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:shadchan/utils/reminder_schedule_plan.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/services/notification_preferences.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
@@ -143,7 +144,9 @@ class NotificationService {
     required String body,
     String? route,
   }) async {
-    if (!_isInitialized || title.trim().isEmpty) {
+    if (!_isInitialized ||
+        title.trim().isEmpty ||
+        !NotificationPreferences.instance.wants(NotificationCategory.support)) {
       return;
     }
     try {
@@ -381,6 +384,11 @@ class NotificationService {
 
     try {
       await _plugin.cancel(_returnInvitationId);
+      if (!NotificationPreferences.instance.wants(
+        NotificationCategory.system,
+      )) {
+        return;
+      }
       final tz.TZDateTime when = tz.TZDateTime.from(
         DateTime.now().add(const Duration(days: 7)),
         tz.local,
@@ -426,7 +434,11 @@ class NotificationService {
   /// something that has happened, not a plan to say something later. The caller
   /// ([MazelTovInbox]) owns the "once per proposal" rule.
   static Future<void> showMazelTov(String matchId) async {
-    if (!_isInitialized || matchId.isEmpty) {
+    if (!_isInitialized ||
+        matchId.isEmpty ||
+        !NotificationPreferences.instance.wants(
+          NotificationCategory.celebrations,
+        )) {
       return;
     }
     try {
@@ -466,7 +478,9 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
-    if (!_isInitialized || title.trim().isEmpty) {
+    if (!_isInitialized ||
+        title.trim().isEmpty ||
+        !NotificationPreferences.instance.wants(NotificationCategory.support)) {
       return;
     }
     try {
@@ -542,6 +556,11 @@ class NotificationService {
   /// server has run; off otherwise, so a phone without push keeps reminding.
   static bool serverDelivers = false;
 
+  /// "רעיונות ותזכורות" switched off in the notification settings: no local
+  /// reminder is scheduled (and the ones already scheduled are cleared).
+  static bool get _wantsReminders =>
+      NotificationPreferences.instance.wants(NotificationCategory.ideas);
+
   static Future<void> _scheduleMatchRemindersInternal(
     List<MatchIdea> matches, {
     MatchReminderText Function(MatchIdea match)? describe,
@@ -555,7 +574,7 @@ class NotificationService {
           await _plugin.cancel(req.id);
         }
       }
-      if (serverDelivers) {
+      if (serverDelivers || !_wantsReminders) {
         return;
       }
 
@@ -636,7 +655,7 @@ class NotificationService {
           await _plugin.cancel(req.id);
         }
       }
-      if (serverDelivers) {
+      if (serverDelivers || !_wantsReminders) {
         return;
       }
 

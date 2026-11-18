@@ -152,6 +152,34 @@ class ReminderLog extends ChangeNotifier {
 
   List<ReminderLogEntry>? _cache;
 
+  /// Device-only: the start of the day this phone first ran with this rule.
+  static const String sinceKey = 'notifications.since';
+  DateTime? _since;
+
+  /// **Notifications start from the update, never before it.** A reminder
+  /// that came due on an earlier day than the one this version first ran is
+  /// logged as already removed — otherwise the first launch after updating
+  /// (or on a new phone) would raise every overdue reminder at once. A
+  /// reminder due today still comes through.
+  DateTime get since {
+    final DateTime? cached = _since;
+    if (cached != null) return cached;
+    final Object? raw = Hive.isBoxOpen('settings')
+        ? Hive.box<dynamic>('settings').get(sinceKey)
+        : null;
+    final int? millis = raw is int ? raw : int.tryParse('${raw ?? ''}');
+    if (millis != null) {
+      return _since = DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+    final DateTime now = DateTime.now();
+    final DateTime start = DateTime(now.year, now.month, now.day);
+    persistHomeSetting(sinceKey, '${start.millisecondsSinceEpoch}');
+    return _since = start;
+  }
+
+  @visibleForTesting
+  set debugSince(DateTime? value) => _since = value;
+
   /// The log changed on another phone; read it again.
   void forgetCache() {
     _cache = null;
@@ -211,6 +239,7 @@ class ReminderLog extends ChangeNotifier {
     final Set<String> known = <String>{
       for (final ReminderLogEntry e in _entries) e.key,
     };
+    final DateTime since = this.since;
     bool changed = false;
     for (final DueReminder reminder in due) {
       final ReminderLogEntry entry = ReminderLogEntry(
@@ -220,7 +249,12 @@ class ReminderLog extends ChangeNotifier {
         note: (reminder.note ?? '').trim(),
       );
       if (known.add(entry.key)) {
-        _entries.add(entry);
+        // Due before this phone started keeping notifications this way: not
+        // news. Kept as a tombstone so it is never looked at again — the
+        // update must not open on a page of old reminders.
+        _entries.add(
+          entry.dueAt.isBefore(since) ? entry.copyWith(removed: true) : entry,
+        );
         changed = true;
       }
     }
@@ -360,6 +394,11 @@ class ReminderLog extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Forgets the in-memory log; the baseline is put far back so a test sees
+  /// every reminder it syncs (the baseline has its own test).
   @visibleForTesting
-  void resetForTest() => _cache = null;
+  void resetForTest() {
+    _cache = null;
+    _since = DateTime(2000);
+  }
 }

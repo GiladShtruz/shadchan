@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/photo_share_switch.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
 import 'package:shadchan/services/personal_area_service.dart';
@@ -241,7 +242,14 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
 
   Future<void> _writePerson(Person person) {
     if (_owner) {
-      return context.read<PersonalCardProvider>().save(person);
+      final PersonalCardProvider cards = context.read<PersonalCardProvider>();
+      // **No personal card without a photo.** Until the first one is added,
+      // nothing is written: the page holds the draft, and leaving it creates
+      // no card.
+      if (cards.card == null && person.photosPaths.isEmpty) {
+        return Future<void>.value();
+      }
+      return cards.save(person);
     }
     return context.read<PersonRepository>().update(person);
   }
@@ -469,6 +477,8 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       if (_owner ? _birthDate == null : _number(_age) == null) 'age',
       if (_gender == Gender.unknown) 'gender',
       if (_religiousLevel == null) 'religiousLevel',
+      // A personal card is never made without a face.
+      if (_owner && _photoPaths.isEmpty) 'photo',
     };
   }
 
@@ -485,6 +495,7 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
         setState(() {
           _missing = missing;
           _open.add(_Area.basics);
+          if (missing.contains('photo')) _open.add(_Area.photos);
         });
         // **A new friend's card is never a trap.** Leaving with a required
         // field still empty is allowed — after one clear sentence saying what
@@ -497,9 +508,11 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
         }
         AppNotice.show(
           context,
-          'כדי לשמור את הכרטיס, יש להשלים שם מלא, תאריך לידה, מגדר '
-          'וסגנון דתי.',
-          duration: Duration(seconds: 4),
+          missing.length == 1 && missing.contains('photo')
+              ? 'כדי לשמור את הכרטיס, יש להוסיף לפחות תמונה אחת.'
+              : 'כדי לשמור את הכרטיס, יש להשלים שם מלא, תאריך לידה, מגדר, '
+                    'סגנון דתי ולפחות תמונה אחת.',
+          duration: const Duration(seconds: 4),
         );
         return;
       }
@@ -952,13 +965,35 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
       area: _Area.photos,
       title: 'תמונות',
       icon: Icons.photo_library_outlined,
-      child: _PhotoGallery(
-        paths: _photoPaths,
-        onTapPrimary: _replacePrimary,
-        onAdd: _addPhotos,
-        onOpen: _editPhoto,
-        onLongPress: _confirmRemovePhoto,
-        onReorder: _reorderPhotos,
+      // The owner's card cannot be made without one.
+      subtitle: _owner ? 'לפחות תמונה אחת היא חובה בכרטיס האישי.' : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _PhotoGallery(
+            paths: _photoPaths,
+            onTapPrimary: _replacePrimary,
+            onAdd: _addPhotos,
+            onOpen: _editPhoto,
+            onLongPress: _confirmRemovePhoto,
+            onReorder: _reorderPhotos,
+          ),
+          if (_missing.contains('photo'))
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'יש להוסיף לפחות תמונה אחת',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          if (_owner) ...<Widget>[
+            const SizedBox(height: 8),
+            const PhotoShareSwitch(),
+          ],
+        ],
       ),
     );
   }
