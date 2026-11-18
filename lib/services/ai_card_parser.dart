@@ -101,8 +101,8 @@ abstract final class AiCardParser {
           // model copying what the card says instead of composing a plausible
           // person around it, and thinking buys nothing for the same reason.
           temperature: 0,
-          thinkingConfig: ThinkingConfig.withThinkingBudget(
-            AiConfig.thinkingBudget,
+          thinkingConfig: ThinkingConfig.withThinkingLevel(
+            AiConfig.thinkingLevel,
           ),
         ),
       ).generateContent(<Content>[Content.text(text)]).timeout(AiConfig.requestTimeout);

@@ -1,3 +1,5 @@
+import 'package:firebase_ai/firebase_ai.dart' show ThinkingLevel;
+
 /// Central configuration for every Gemini call the app makes.
 ///
 /// Deliberately one file with no logic in it: swapping the model or moving the
@@ -5,7 +7,11 @@
 /// audit when someone asks where the data goes.
 abstract final class AiConfig {
   /// The Gemini model used for all import parsing — text, tables and images.
-  static const String model = 'gemini-3.6-flash';
+  ///
+  /// `gemini-4-hydrogen` (GA 2026-11-12) is Google's named migration target
+  /// for Gemini 3.6 Flash, which is closed to new projects from 2026-11-19
+  /// and shut down for everybody on 2027-01-28.
+  static const String model = 'gemini-4-hydrogen';
 
   /// The Vertex AI region requests are processed in.
   ///
@@ -29,14 +35,18 @@ abstract final class AiConfig {
   /// screen spinning forever with nothing to report and no way back.
   static const Duration requestTimeout = Duration(minutes: 10);
 
-  /// Thinking is switched off for import parsing.
+  /// Thinking is kept as low as the model allows for import parsing.
   ///
-  /// Measured on one real batch of 25 spreadsheet rows: with the default the
-  /// model spent 22,542 thinking tokens and 119 seconds; with thinking off,
-  /// 37 seconds — and returned the same 78 people. Reading a name out of a
-  /// cell is not a problem that rewards deliberation, and the whole cost of it
-  /// lands on someone watching a progress bar.
-  static const int thinkingBudget = 0;
+  /// Measured on one real batch of 25 spreadsheet rows on the 3.x models: with
+  /// the default the model spent 22,542 thinking tokens and 119 seconds; with
+  /// thinking off, 37 seconds — and returned the same 78 people. Reading a
+  /// name out of a cell is not a problem that rewards deliberation, and the
+  /// whole cost of it lands on someone watching a progress bar.
+  ///
+  /// **Gemini 4 refuses a numeric thinking budget** (HTTP 400, and so does the
+  /// `MINIMAL` level): the lowest it accepts is `LOW`. Its default is `HIGH`,
+  /// so leaving this out would quietly make every import slower.
+  static const ThinkingLevel thinkingLevel = ThinkingLevel.low;
 
   // Client-side safeguards, not an account-wide quota or a billing cap.
   static const int maxWhatsappImportMessages = 200;

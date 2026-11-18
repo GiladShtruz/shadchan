@@ -46,7 +46,7 @@ import { isSupportAdminEmail, writeAdminStats } from './admin_stats';
 import { sendDueReminders } from './reminders';
 import * as functionsV1 from 'firebase-functions/v1';
 import { logger } from 'firebase-functions';
-import { isHebrewBirthday, israelToday } from './hebrew_birthday';
+import { isHebrewBirthday, israelToday, hebrewMonthKey } from './hebrew_birthday';
 
 initializeApp();
 const db = getFirestore();
@@ -1032,12 +1032,20 @@ async function refreshPersonalCardCount(): Promise<void> {
   const monthKey = `M${monthStart.getFullYear()}-${two(monthStart.getMonth()+1)}`;
   const joinedThisMonth = (value: unknown) => value instanceof Timestamp &&
     new Date(value.toDate().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'})) >= monthStart;
+  const hebrewKey = hebrewMonthKey(now);
   const totals = {singles: count, weekKey, monthKey,
     newSinglesWeek: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisWeek(d.get('joinedAt'))).length,
     newSinglesMonth: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisMonth(d.get('joinedAt'))).length,
     newMatchmakersWeek: members.docs.filter(d => joinedThisWeek(d.get('joinedAt'))).length,
     activeMatchmakers: activity.docs.filter(d => joinedThisWeek(d.get('lastActiveAt'))).length,
-    couplesWeek: sum('weekCouples'), engagementsWeek: sum('weekEngagements')};
+    couplesWeek: sum('weekCouples'), engagementsWeek: sum('weekEngagements'),
+    // "186 שדכנים בקהילה" and "3 חתונות נוספו החודש" on the personal home.
+    // The month is the Hebrew one, as the members' own counters are keyed.
+    matchmakers: members.size,
+    hebrewMonthKey: hebrewKey,
+    engagementsMonth: members.docs
+      .filter(d => d.get('monthKey') === hebrewKey)
+      .reduce((n, d) => n + (typeof d.get('monthEngagements') === 'number' ? d.get('monthEngagements') : 0), 0)};
   const ref = db.doc('publicStats/personalCards');
   await db.runTransaction(async (tx) => {
     const previous = await tx.get(ref);
