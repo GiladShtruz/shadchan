@@ -1,4 +1,5 @@
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/utils/person_tags.dart';
 import 'package:shadchan/services/auto_match_rules.dart';
 import 'package:shadchan/services/own_card_mirror.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -246,7 +247,7 @@ abstract final class MatchSuggestionUtils {
     required Iterable<Person> people,
   }) {
     final List<Person> sorted = people.toList()
-      ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
+      ..sort((Person a, Person b) => byTagsThenRecency(source, a, b));
     final List<Person> preferred = <Person>[];
     final List<Person> basic = <Person>[];
     for (final Person candidate in sorted) {
@@ -260,6 +261,35 @@ abstract final class MatchSuggestionUtils {
       }
     }
     return <Person>[...preferred, ...basic];
+  }
+
+  /// The tags [a] and [b] both carry (compared as [PersonTags.sameTag]), in
+  /// [a]'s order.
+  static List<String> sharedTags(Person a, Person b) {
+    if (a.tags.isEmpty || b.tags.isEmpty) {
+      return const <String>[];
+    }
+    final Set<String> other = <String>{
+      for (final String tag in b.tags) PersonTags.keyOf(tag),
+    };
+    final Set<String> seen = <String>{};
+    return <String>[
+      for (final String tag in a.tags)
+        if (other.contains(PersonTags.keyOf(tag)) &&
+            seen.add(PersonTags.keyOf(tag)))
+          tag,
+    ];
+  }
+
+  /// The order candidates for [source] are offered in, inside a tier: more
+  /// tags shared with [source] first — a lift, never a condition — then the
+  /// most recently updated.
+  static int byTagsThenRecency(Person source, Person a, Person b) {
+    final int byTags = sharedTags(
+      source,
+      b,
+    ).length.compareTo(sharedTags(source, a).length);
+    return byTags != 0 ? byTags : b.updatedAt.compareTo(a.updatedAt);
   }
 
   /// Whether [source] has anything recorded beyond the basics — the fields

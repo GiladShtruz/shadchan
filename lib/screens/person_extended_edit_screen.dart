@@ -7,6 +7,7 @@ import 'package:shadchan/services/personal_area_service.dart';
 import 'package:shadchan/widgets/card_announce_switch.dart';
 import 'package:shadchan/widgets/card_text_field.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
+import 'package:shadchan/services/tag_catalog.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/match_contact.dart';
@@ -1178,6 +1179,25 @@ class _PersonExtendedEditScreenState extends State<PersonExtendedEditScreen> {
             ),
             const SizedBox(height: 8),
             PersonTagsEditor(
+              selected: _tags,
+              onChanged: (List<String> tags) => _commit(() => _tags = tags),
+            ),
+          ] else ...<Widget>[
+            // The owner describes themselves in the shared list's words. They
+            // travel with the card to the matchmakers who were given access,
+            // and help the automatic matches find people who share them.
+            const SizedBox(height: 16),
+            _label(theme, 'תגיות שמתארות אותי'),
+            const SizedBox(height: 2),
+            Text(
+              'עד ${TagCatalog.maxChosen} תגיות. יופיעו אצל השדכנים שקיבלו גישה לכרטיס.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.mutedInk,
+              ),
+            ),
+            const SizedBox(height: 8),
+            PersonTagsEditor(
+              ownCard: true,
               selected: _tags,
               onChanged: (List<String> tags) => _commit(() => _tags = tags),
             ),

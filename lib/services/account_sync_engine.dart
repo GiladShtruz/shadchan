@@ -96,6 +96,35 @@ class AccountSyncEngine {
 
   Timer? _flushTimer;
   Timer? _filesTimer;
+
+  /// Retries a first read that failed, or listeners that dropped, without
+  /// waiting for the app to be reopened. A phone left open on the home
+  /// screen must still catch up the moment the server answers again.
+  Timer? _retryTimer;
+  int _retryAttempt = 0;
+
+  /// How long to wait before the next automatic retry: quick at first (a
+  /// blip), then no more than every two minutes for as long as it takes.
+  static Duration retryDelay(int attempt) {
+    const List<int> seconds = <int>[5, 10, 20, 40, 60, 120];
+    return Duration(seconds: seconds[attempt.clamp(0, seconds.length - 1)]);
+  }
+
+  void _scheduleRetry() {
+    if (_stopped || _retryTimer != null) {
+      return;
+    }
+    final Duration delay = retryDelay(_retryAttempt);
+    _retryAttempt++;
+    _retryTimer = Timer(delay, () {
+      _retryTimer = null;
+      if (_stopped) {
+        return;
+      }
+      unawaited(resume());
+    });
+  }
+
   bool _started = false;
   bool _stopped = false;
   bool _pulled = false;
@@ -156,6 +185,8 @@ class AccountSyncEngine {
     _stopped = true;
     _flushTimer?.cancel();
     _filesTimer?.cancel();
+    _retryTimer?.cancel();
+    _retryTimer = null;
     for (final StreamSubscription<dynamic> sub in _localWatches) {
       await sub.cancel();
     }
@@ -203,11 +234,19 @@ class AccountSyncEngine {
       }
       _pulled = true;
       lastError = null;
+      _retryAttempt = 0;
       _bump();
     }).then((_) {
-      if (_pulled && !_stopped) {
+      if (_stopped) {
+        return;
+      }
+      if (_pulled) {
         _startListening();
         _scheduleFlush(Duration.zero);
+      } else {
+        // The read failed (no server, a refused token, a timeout). Nothing
+        // is shown as "synced" until it succeeds, so keep asking.
+        _scheduleRetry();
       }
     });
   }
@@ -587,7 +626,7 @@ class AccountSyncEngine {
                     'listener ${collection.remote} failed: ${errorCode(error)}',
                   ),
                 );
-                unawaited(_stopListening());
+                unawaited(_stopListening().then((_) => _scheduleRetry()));
               },
             ),
       );
@@ -595,6 +634,7 @@ class AccountSyncEngine {
   }
 
   void _onRemote(SyncCollection collection, List<RemoteChange> changes) {
+    _retryAttempt = 0;
     unawaited(
       _serial(() async {
         final List<RemoteWrite> writes = <RemoteWrite>[];

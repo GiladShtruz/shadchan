@@ -674,7 +674,7 @@ void main() {
       );
       await tester.pumpWidget(app(home: const FriendsWithCardsScreen()));
       await tester.pumpAndSettle();
-      expect(find.text('חברים שהוסיפו כרטיס אישי'), findsOneWidget);
+      expect(find.text('חברים שמנהלים כרטיס אישי בשדכן'), findsOneWidget);
       expect(find.text('להזמין חברים להוסיף כרטיס אישי'), findsOneWidget);
       expect(find.text('אישרו לי גישה'), findsOneWidget);
       expect(find.text('עדיין לא אישרו גישה'), findsOneWidget);

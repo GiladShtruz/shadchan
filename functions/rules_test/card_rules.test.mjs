@@ -22,6 +22,8 @@ import {
   getDocs,
   serverTimestamp,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 
 const OWNER = 'owner1';
@@ -606,5 +608,45 @@ test('sync conflicts are kept under the account, readable by it alone', async ()
   );
   await assertFails(
     setDoc(doc(as(OWNER), `users/${OWNER}/syncConflicts/c3`), { ...conflict, extra: 1 }),
+  );
+});
+
+test('a card carries up to twelve tags of the owner’s choosing', async () => {
+  const ref = doc(as(OWNER), 'personalCards', OWNER);
+  await assertSucceeds(setDoc(ref, card({ tags: ['טבע', 'ספרים'] })));
+  await assertSucceeds(
+    setDoc(ref, card({ tags: Array.from({ length: 12 }, (_, i) => `t${i}`) })),
+  );
+  await assertFails(
+    setDoc(ref, card({ tags: Array.from({ length: 13 }, (_, i) => `t${i}`) })),
+  );
+  await assertFails(setDoc(ref, card({ tags: 'טבע' })));
+});
+
+test('the shared tag list: everybody reads, only an administrator writes', async () => {
+  const list = () => ({ tags: ['טבע', 'ספרים'], updatedAt: serverTimestamp() });
+  await assertSucceeds(setDoc(doc(goalAdmin(), 'tagCatalog/base'), list()));
+  await assertSucceeds(getDoc(doc(as(MM), 'tagCatalog/base')));
+  await assertFails(setDoc(doc(as(MM), 'tagCatalog/base'), list()));
+  await assertFails(
+    setDoc(doc(goalAdmin(), 'tagCatalog/base'), { ...list(), extra: 1 }),
+  );
+  await assertFails(deleteDoc(doc(goalAdmin(), 'tagCatalog/base')));
+});
+
+test('tag counts: words three matchmakers use are public, all of them to admins', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'communityTags/common'), { label: 'טבע', users: 4, cards: 1 });
+    await setDoc(doc(db, 'communityTags/rare'), { label: 'נדיר', users: 1, cards: 0 });
+    await setDoc(doc(db, 'communityTags/cardonly'), { label: 'כרטיס', cards: 2 });
+  });
+  await assertSucceeds(getDoc(doc(as(MM), 'communityTags/common')));
+  await assertFails(getDoc(doc(as(MM), 'communityTags/rare')));
+  await assertFails(getDoc(doc(as(MM), 'communityTags/cardonly')));
+  await assertSucceeds(getDocs(collection(goalAdmin(), 'communityTags')));
+  await assertFails(getDocs(collection(as(MM), 'communityTags')));
+  // The "השראה מהקהילה" query members run still works.
+  await assertSucceeds(
+    getDocs(query(collection(as(MM), 'communityTags'), where('users', '>=', 3))),
   );
 });

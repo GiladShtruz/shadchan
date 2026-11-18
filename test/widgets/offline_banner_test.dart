@@ -17,7 +17,10 @@ void main() {
       textDirection: TextDirection.rtl,
       child: OfflineBanner(child: routed!),
     ),
-    home: Scaffold(appBar: AppBar(title: const Text('בית')), body: child),
+    home: Scaffold(
+      appBar: AppBar(title: const Text('בית')),
+      body: child,
+    ),
   );
 
   testWidgets('a small line says so while offline, and only then', (
@@ -114,7 +117,10 @@ void main() {
       tester.getSize(find.byType(AreaSwitchButton).last),
     ];
     expect(sizes.first.height, sizes.last.height);
-    expect(find.byIcon(Icons.swap_horiz_rounded), findsNWidgets(2));
+    // A quiet light-blue link: no frame and no icon, on either side.
+    expect(find.byIcon(Icons.swap_horiz_rounded), findsNothing);
+    expect(find.byType(OutlinedButton), findsNothing);
+    expect(find.byType(TextButton), findsNWidgets(2));
   });
 }
 

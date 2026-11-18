@@ -738,36 +738,68 @@ export const onTagUsageWritten = onDocumentWritten(
   async (event) => {
     const before = tagsOf(event.data?.before);
     const after = tagsOf(event.data?.after);
-    const changes: Array<[string, string, number]> = [];
-    for (const [key, label] of after) {
-      if (!before.has(key)) changes.push([key, label, 1]);
-    }
-    for (const [key, label] of before) {
-      if (!after.has(key)) changes.push([key, label, -1]);
-    }
-    for (const [key, label, delta] of changes) {
-      const ref = db.collection('communityTags').doc(key);
-      await db.runTransaction(async (tx) => {
-        const current = await tx.get(ref);
-        const users =
-          ((current.exists ? current.get('users') : 0) ?? 0) + delta;
-        if (users <= 0) {
-          tx.delete(ref);
-        } else {
-          tx.set(
-            ref,
-            {
-              label: current.exists ? (current.get('label') ?? label) : label,
-              users,
-              updatedAt: FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-        }
-      });
-    }
+    await applyTagDeltas(before, after, 'users');
   },
 );
+
+/**
+ * The tags a single chose on their own personal card, counted into the same
+ * `communityTags/{key}` documents under `cards` — so the console can show how
+ * each word of the shared list is used, by matchmakers and by singles. A
+ * deleted card counts as no tags. Never who chose them.
+ */
+export const onPersonalCardTagsWritten = onDocumentWritten(
+  'personalCards/{uid}',
+  async (event) => {
+    const cardTags = (snapshot: DocumentSnapshot | undefined) =>
+      snapshot?.exists && snapshot.get('deleted') !== true
+        ? tagsOf(snapshot)
+        : new Map<string, string>();
+    const before = cardTags(event.data?.before);
+    const after = cardTags(event.data?.after);
+    await applyTagDeltas(before, after, 'cards');
+  },
+);
+
+/** One more (or one fewer) user of every word that came (or went). */
+async function applyTagDeltas(
+  before: Map<string, string>,
+  after: Map<string, string>,
+  field: 'users' | 'cards',
+): Promise<void> {
+  const changes: Array<[string, string, number]> = [];
+  for (const [key, label] of after) {
+    if (!before.has(key)) changes.push([key, label, 1]);
+  }
+  for (const [key, label] of before) {
+    if (!after.has(key)) changes.push([key, label, -1]);
+  }
+  for (const [key, label, delta] of changes) {
+    const ref = db.collection('communityTags').doc(key);
+    await db.runTransaction(async (tx) => {
+      const current = await tx.get(ref);
+      const counts = {
+        users: (current.exists ? current.get('users') : 0) ?? 0,
+        cards: (current.exists ? current.get('cards') : 0) ?? 0,
+      };
+      counts[field] = Math.max(0, counts[field] + delta);
+      if (counts.users <= 0 && counts.cards <= 0) {
+        tx.delete(ref);
+      } else {
+        tx.set(
+          ref,
+          {
+            label: current.exists ? (current.get('label') ?? label) : label,
+            users: counts.users,
+            cards: counts.cards,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
+    });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // "Yitzchak marked you busy — is that right?"

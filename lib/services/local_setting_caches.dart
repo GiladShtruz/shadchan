@@ -15,7 +15,6 @@ import 'package:shadchan/utils/card_updates_seen.dart';
 import 'package:shadchan/utils/home_board_feed.dart';
 import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
-import 'package:shadchan/utils/think_rotation.dart';
 import 'package:shadchan/widgets/first_visit_tip.dart';
 
 /// The stores that keep a setting in memory, made to read it again.
@@ -34,8 +33,6 @@ abstract final class LocalSettingCaches {
     NewIdeaRotation.forgetCache();
     HomeSearchFilterStore.forgetCache();
     CardUpdatesSeen.forgetCache();
-    ThinkRotation.forgetCache();
-    ThinkLater.forgetCache();
     BoardAllCategories.forgetCache();
     BoardSeen.forgetCache();
     FirstVisitTips.forgetCache();

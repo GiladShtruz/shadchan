@@ -285,6 +285,18 @@ abstract final class NewIdeaSuggestions {
       reasons.add('אותה השקפה · $maleLevel');
     }
 
+    // Shared tags are one more reason to put two people together — never a
+    // condition, and never the only one counted.
+    final List<String> shared = MatchSuggestionUtils.sharedTags(male, female);
+    if (shared.isNotEmpty) {
+      score += 2 * (shared.length > 3 ? 3 : shared.length);
+      reasons.add(
+        shared.length == 1
+            ? 'תגית משותפת · ${shared.first}'
+            : '${shared.length} תגיות משותפות',
+      );
+    }
+
     final String city = (male.city ?? '').trim();
     if (city.isNotEmpty && city == (female.city ?? '').trim()) {
       score += 2;

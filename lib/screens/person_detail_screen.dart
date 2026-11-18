@@ -3334,12 +3334,15 @@ class _SuggestionsPageState extends State<_SuggestionsPage> {
           dismissedOrder.indexOf(a.id).compareTo(dismissedOrder.indexOf(b.id)),
     );
     // Within each tier, candidates that pause matches (תפוס/בהפסקה) drop after
-    // the available ones — and inside each of those two groups the ones whose
-    // card changed most recently come first, so a candidate the matchmaker has
-    // just updated in the app is the first one they are offered.
-    List<Person> byRecency(Iterable<Person> people) =>
-        people.toList()
-          ..sort((Person a, Person b) => b.updatedAt.compareTo(a.updatedAt));
+    // the available ones — and inside each of those two groups a candidate who
+    // shares more tags with this friend comes first (a lift, never a
+    // condition), then the ones whose card changed most recently, so a
+    // candidate the matchmaker has just updated is offered early.
+    List<Person> byRecency(Iterable<Person> people) => people.toList()
+      ..sort(
+        (Person a, Person b) =>
+            MatchSuggestionUtils.byTagsThenRecency(person, a, b),
+      );
     List<Person> availableFirst(List<Person> people) => <Person>[
       ...byRecency(people.where((Person p) => !p.profileStatus.pausesMatches)),
       ...byRecency(people.where((Person p) => p.profileStatus.pausesMatches)),

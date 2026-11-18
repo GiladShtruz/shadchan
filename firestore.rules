@@ -866,11 +866,14 @@ service cloud.firestore {
                                  'preferredRegions', 'preferredMaritalStatuses',
                                  'preferredReligiousLevels',
                                  'preferredReligiousLevelOtherLabels',
-                                 'photoPaths', 'status', 'deleted', 'updatedAt', 'joinedAt', 'statusUpdatedAt'])
+                                 'photoPaths', 'tags', 'status', 'deleted', 'updatedAt', 'joinedAt', 'statusUpdatedAt'])
                             && request.resource.data.get('joinedAt', null) == (resource == null ? null : resource.data.get('joinedAt', null))
                             && request.resource.data.get('statusUpdatedAt', null) == (resource == null ? null : resource.data.get('statusUpdatedAt', null))
                             && request.resource.data.photoPaths is list
                             && request.resource.data.photoPaths.size() <= 4
+                            && (request.resource.data.get('tags', null) == null
+                                || (request.resource.data.tags is list
+                                    && request.resource.data.tags.size() <= 12))
                             && (request.resource.data.get('description', null) == null
                                 || request.resource.data.description.size() <= 4000);
       // Deleting a card is a flag, never an erasure — it has to be
@@ -1165,8 +1168,26 @@ service cloud.firestore {
     // the `onTagUsageWritten` function. A word becomes readable once three or
     // more matchmakers use it, so a query must carry `users >= 3`.
     match /communityTags/{tagKey} {
-      allow read: if durable() && resource.data.users >= 3;
+      // The words matchmakers use, once three of them do — and every word,
+      // with how many matchmakers and how many singles' cards use it, for an
+      // administrator improving the shared list.
+      allow read: if durable()
+                  && (resource.data.users >= 3 || isSupportAdmin());
       allow write: if false;
+    }
+
+    // The shared list of tags singles choose from and matchmakers are
+    // offered. Every signed-in device reads it; only an administrator edits
+    // it (add, delete, rename, reorder — the whole list is written at once).
+    match /tagCatalog/base {
+      allow read: if request.auth != null;
+      allow create, update: if isSupportAdmin()
+        && request.resource.data.keys().hasOnly(['tags', 'updatedAt'])
+        && request.resource.data.tags is list
+        && request.resource.data.tags.size() >= 1
+        && request.resource.data.tags.size() <= 200
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
     }
 
     // Anything not named above is closed. Without this, a path added later

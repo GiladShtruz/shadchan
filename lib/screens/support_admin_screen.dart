@@ -15,6 +15,7 @@ import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/widgets/account_health_lookup.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/community_goal_editor.dart';
+import 'package:shadchan/widgets/tag_catalog_editor.dart';
 
 /// מרכז הפידבק — the one place everything users send arrives.
 ///
@@ -74,7 +75,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
     final int waitingTips = context.watch<TipsProvider>().pending.length;
 
     return DefaultTabController(
-      length: 8,
+      length: 9,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('מרכז הפידבק'),
@@ -88,6 +89,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               const Tab(text: 'מה חדש'),
               const Tab(text: 'עדכונים לרווקים'),
               const Tab(text: 'יעד שבועי'),
+              const Tab(text: 'תגיות'),
               const Tab(text: 'חשבונות'),
               const Tab(text: 'מנהלים'),
             ],
@@ -102,6 +104,7 @@ class _SupportAdminScreenState extends State<SupportAdminScreen> {
               _AnnouncementsTab(),
               PersonalNewsAdminScreen(),
               CommunityGoalEditor(),
+              TagCatalogEditor(),
               AccountHealthLookup(),
               _AdminsTab(),
             ],

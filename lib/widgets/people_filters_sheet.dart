@@ -4,6 +4,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/tag_library.dart';
 import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/services/tag_catalog.dart';
 import 'package:shadchan/utils/person_tags.dart';
 import 'package:shadchan/widgets/person_tags_editor.dart';
 
@@ -207,7 +208,10 @@ Future<PeopleFilterState?> showPeopleFiltersSheet(
         heightBounds: (min: 120, max: 200),
         initialMaritalStatuses: initial?.maritalStatuses ?? const [],
         initialRegions: initial?.regions ?? const [],
-        availableTags: TagLibrary.inUse(repository.getAll()),
+        availableTags: <String>[
+          ...TagLibrary.inUse(repository.getAll()),
+          ...TagLibrary.personal(repository.getAll()),
+        ],
         initialTags: initial?.tags ?? const <String>[],
       );
     },
@@ -323,14 +327,13 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
     _advancedExpanded =
         widget.initialHeightRange != null ||
         widget.initialMaritalStatuses.isNotEmpty ||
-        widget.initialRegions.isNotEmpty ||
-        widget.initialTags.isNotEmpty;
+        widget.initialRegions.isNotEmpty;
   }
 
-  /// The tags offered, in the same order the tag editor uses: the app's
-  /// defaults first, then the matchmaker's own — only those actually on
-  /// somebody, since a tag nobody carries can only empty the list — plus any
-  /// already chosen.
+  /// The tags offered: every tag this matchmaker has — the shared list's
+  /// words that are on somebody first, in the list's order, then the
+  /// matchmaker's own and any synced from a friend's card — plus any already
+  /// chosen. Choosing one shows everybody tagged with it.
   List<String> _tagChoices() {
     final List<String> result = <String>[];
     void add(String tag) {
@@ -339,11 +342,8 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
       }
     }
 
-    bool inUse(String tag) =>
-        widget.availableTags.any((String t) => PersonTags.sameTag(t, tag));
-    for (final String tag in PersonTags.starters) {
-      if (inUse(tag) ||
-          tempTags.any((String t) => PersonTags.sameTag(t, tag))) {
+    for (final String tag in TagCatalog.current) {
+      if (widget.availableTags.any((String t) => PersonTags.sameTag(t, tag))) {
         add(tag);
       }
     }
@@ -552,6 +552,46 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    if (widget.availableTags.isNotEmpty ||
+                        tempTags.isNotEmpty) ...<Widget>[
+                      _FilterSectionCard(
+                        title: 'תגיות',
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          child: SingleChildScrollView(
+                            child: _ChipWrap(
+                              children: <Widget>[
+                                for (final String tag in _tagChoices())
+                                  _FilterPill(
+                                    label: tag,
+                                    selected: tempTags.any(
+                                      (String t) => PersonTags.sameTag(t, tag),
+                                    ),
+                                    onTap: () => setState(() {
+                                      tempTags =
+                                          tempTags.any(
+                                            (String t) =>
+                                                PersonTags.sameTag(t, tag),
+                                          )
+                                          ? tempTags
+                                                .where(
+                                                  (String t) =>
+                                                      !PersonTags.sameTag(
+                                                        t,
+                                                        tag,
+                                                      ),
+                                                )
+                                                .toList()
+                                          : <String>[...tempTags, tag];
+                                    }),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     _AdvancedFilterCard(
                       expanded: _advancedExpanded,
                       onTap: () {
@@ -650,51 +690,6 @@ class _PeopleFiltersSheetState extends State<PeopleFiltersSheet> {
                               );
                             }).toList(),
                           ),
-                          if (widget.availableTags.isNotEmpty ||
-                              tempTags.isNotEmpty) ...<Widget>[
-                            const SizedBox(height: 14),
-                            Text(
-                              'תגיות',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxHeight: 150),
-                              child: SingleChildScrollView(
-                                child: _ChipWrap(
-                                  children: <Widget>[
-                                    for (final String tag in _tagChoices())
-                                      _FilterPill(
-                                        label: tag,
-                                        selected: tempTags.any(
-                                          (String t) =>
-                                              PersonTags.sameTag(t, tag),
-                                        ),
-                                        onTap: () => setState(() {
-                                          tempTags =
-                                              tempTags.any(
-                                                (String t) =>
-                                                    PersonTags.sameTag(t, tag),
-                                              )
-                                              ? tempTags
-                                                    .where(
-                                                      (String t) =>
-                                                          !PersonTags.sameTag(
-                                                            t,
-                                                            tag,
-                                                          ),
-                                                    )
-                                                    .toList()
-                                              : <String>[...tempTags, tag];
-                                        }),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),

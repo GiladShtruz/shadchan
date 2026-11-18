@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shadchan/services/community_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 
@@ -246,6 +247,11 @@ abstract final class CommunityEngagementsService {
   static Future<List<CommunityEngagement>> namedThisWeek({
     DateTime? now,
   }) async {
+    // Hiding from the community is mutual — see
+    // `CommunityService.hidesFromCommunity`.
+    if (CommunityService.hidesFromCommunity) {
+      return const <CommunityEngagement>[];
+    }
     final User? user = await _account();
     if (user == null) {
       return const <CommunityEngagement>[];
@@ -295,6 +301,9 @@ abstract final class CommunityEngagementsService {
     required String seenId,
     DateTime? now,
   }) async {
+    if (CommunityService.hidesFromCommunity) {
+      return null;
+    }
     final User? user = await _account();
     if (user == null) {
       return null;

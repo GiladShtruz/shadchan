@@ -10,6 +10,7 @@ import 'package:shadchan/utils/community_challenge.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/community_widgets.dart';
 
 class _Account extends AccountProvider {
   _Account() : super(connect: () async {});
@@ -18,8 +19,11 @@ class _Account extends AccountProvider {
 }
 
 class _Community extends CommunityProvider {
-  _Community() : super(connect: () async {});
+  _Community({this.hidden = false}) : super(connect: () async {});
+  final bool hidden;
   int revision = 0;
+  @override
+  bool get isHidden => hidden;
   @override
   int get publishRevision => revision;
   @override
@@ -54,43 +58,30 @@ Widget _wrap(Widget child, {_Community? community}) => MultiProvider(
   ),
 );
 
+Finder _figures(String text) => find.textContaining(text, findRichText: true);
+
 void main() {
-  testWidgets('both scores follow the same selected window on one paper card', (
+  testWidgets('the weekly target is the centre; both figures small, one line', (
     tester,
   ) async {
     await tester.pumpWidget(
       _wrap(
         HomeWeekBlock(
           onOpen: () {},
+          watchGoal: () => Stream<WeeklyCommunityGoal?>.value(null),
           loadTotals: (period, {bool forceRefresh = false}) async =>
-              _totals(switch (period) {
-                CommunityPeriod.week => 101,
-                CommunityPeriod.month => 201,
-                _ => 901,
-              }),
+              _totals(101),
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.byType(HomePaperCard), findsOneWidget);
-    expect(find.text(HomeWeekBlock.title), findsOneWidget);
-    // "השבוע בשדכן" opens on the week.
-    expect(find.text('11'), findsOneWidget);
-    expect(find.text('101'), findsOneWidget);
-    await tester.tap(find.text('כל הזמנים'));
-    await tester.pumpAndSettle();
-    expect(find.text('91'), findsOneWidget);
-    expect(find.text('901'), findsOneWidget);
-    expect(find.text('101'), findsNothing);
-    await tester.tap(find.text('החודש'));
-    await tester.pumpAndSettle();
-    expect(find.text('21'), findsOneWidget);
-    expect(find.text('201'), findsOneWidget);
-    // One live line from the selected window's own totals.
-    expect(find.text('זוג אחד התחיל לצאת החודש'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('6 רעיונות נפתחו החודש'), findsOneWidget);
+    // No heading of its own, no window switch, no rotating line.
+    expect(find.text('השבוע בשדכן'), findsNothing);
+    expect(find.text('כל הזמנים'), findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(_figures('הפעילות שלי 11'), findsOneWidget);
+    expect(_figures('הקהילה 101'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -103,10 +94,8 @@ void main() {
       _wrap(
         HomeWeekBlock(
           onOpen: () {},
+          watchGoal: () => Stream<WeeklyCommunityGoal?>.value(null),
           loadTotals: (period, {bool forceRefresh = false}) {
-            if (period != CommunityPeriod.week) {
-              return Future.value(_totals(10));
-            }
             final result = Completer<CommunityTotals>();
             pending.add(result);
             return result.future;
@@ -122,13 +111,13 @@ void main() {
     await tester.pump();
     pending.last.complete(_totals(222));
     await tester.pumpAndSettle();
-    expect(find.text('222'), findsOneWidget);
+    expect(_figures('222'), findsOneWidget);
     for (final request in old) {
       request.complete(_totals(111));
     }
     await tester.pumpAndSettle();
-    expect(find.text('222'), findsOneWidget);
-    expect(find.text('111'), findsNothing);
+    expect(_figures('222'), findsOneWidget);
+    expect(_figures('111'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -139,18 +128,38 @@ void main() {
       _wrap(
         HomeWeekBlock(
           onOpen: () {},
+          watchGoal: () => Stream<WeeklyCommunityGoal?>.value(null),
           loadTotals: (_, {bool forceRefresh = false}) async =>
               CommunityTotals.empty,
         ),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('11'), findsOneWidget);
-    expect(find.text('—'), findsOneWidget);
-    expect(find.text('עדיין לא זמין'), findsOneWidget);
-    expect(find.text('0'), findsNothing);
-    // Nothing about the target or the community is said before it is known.
-    expect(find.text('היעד השבועי של הקהילה'), findsNothing);
+    expect(_figures('הפעילות שלי 11'), findsOneWidget);
+    expect(_figures('הקהילה —'), findsOneWidget);
+    expect(_figures('הקהילה 0'), findsNothing);
+    // Nothing about the target is said before it is known.
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
+
+  testWidgets('hiding from the community is mutual', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        HomeWeekBlock(
+          onOpen: () {},
+          watchGoal: () => Stream<WeeklyCommunityGoal?>.value(null),
+          loadTotals: (_, {bool forceRefresh = false}) async => _totals(500),
+        ),
+        community: _Community(hidden: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(CommunityHiddenNotice.text), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(_figures('הקהילה 500'), findsNothing);
+    expect(_figures('·  הקהילה'), findsNothing);
+    // The matchmaker's own activity is still theirs to see.
+    expect(_figures('הפעילות שלי 11'), findsOneWidget);
   });
 
   testWidgets(
@@ -198,22 +207,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 700));
       expect(find.text('מגדילים את המעגל'), findsOneWidget);
       expect(find.text('4 מתוך 40 חברים'), findsOneWidget);
-      expect(
-        tester
-            .widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator),
-            )
-            .value,
-        closeTo(.1, .001),
-      );
       expect(find.text('יחד פותחים רעיונות'), findsNothing);
-      expect(find.text(HomeWeekBlock.title), findsOneWidget);
-      // The original news still rotates independently of the administrator edit.
-      expect(find.text('6 רעיונות נפתחו היום'), findsOneWidget);
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('6 רעיונות נפתחו היום'), findsNothing);
-      expect(find.text('מגדילים את המעגל'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       unawaited(goals.close());
       await tester.pump();
@@ -221,7 +215,7 @@ void main() {
   );
 
   for (final double width in <double>[320, 390]) {
-    testWidgets('השבוע בשדכן fits ${width.toInt()}px at 1.5x text', (
+    testWidgets('the community card fits ${width.toInt()}px at 1.5x text', (
       tester,
     ) async {
       await tester.binding.setSurfaceSize(Size(width, 1200));
@@ -241,7 +235,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('היעד השבועי של הקהילה'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }

@@ -81,39 +81,31 @@ class HomeBoardSection extends StatefulWidget {
   /// "הצג עוד" adds.
   static const int actionRows = 5;
 
-  /// Where a row of the action list stands, first to last:
+  /// Where a row of the action list ("הפעולה הבאה שלך") stands, first to
+  /// last:
   ///
-  ///  0. something that needs handling now — a reminder that came due, an
-  ///     unread notice, a support answer;
-  ///  1. an open idea with a next step waiting on the matchmaker;
-  ///  2. an access request or a card notice ([isCardNotice]), or a friend who
-  ///     keeps a personal card and has not been handled yet (or whose card
-  ///     just changed);
-  ///  3. a live idea nothing has happened in for a while, and anything else
-  ///     pinned;
-  ///  4. a pair the database suggests.
+  ///  0. a reminder that came due;
+  ///  1. an open idea, with the next step it waits on;
+  ///  2. a live idea nothing has happened in for a while;
+  ///  3. a pair the database suggests;
+  ///  4. secondary: a friend who keeps a personal card, whose card the
+  ///     matchmaker sees, and for whom no idea was opened yet.
   ///
-  /// Null leaves the row out: a card already shared and unchanged, or an
-  /// access request still waiting on the friend, is nothing to do now.
+  /// Null leaves the row out. A friend with a card and nothing clear to do
+  /// about them, a notice (the bell has it), a pin (the whole board has it):
+  /// none of them is "the next action".
   static int? actionTier({
     required bool dueReminder,
     required bool isIdea,
     required bool ideaStale,
-    required bool isNotice,
-    required bool isCardFriend,
-    required bool cardHandled,
     required bool isPair,
-    bool isCardNotice = false,
+    bool isCardFriendWithoutIdea = false,
   }) {
     if (dueReminder) return 0;
-    // Access to a card — asked, given, or a friend who wrote one — is the
-    // third thing to handle, after due reminders and open ideas.
-    if (isNotice && isCardNotice) return 2;
-    if (isNotice) return 0;
-    if (isCardFriend) return cardHandled ? null : 2;
-    if (isPair) return 4;
-    if (isIdea) return ideaStale ? 3 : 1;
-    return 3;
+    if (isIdea) return ideaStale ? 2 : 1;
+    if (isPair) return 3;
+    if (isCardFriendWithoutIdea) return 4;
+    return null;
   }
 
   /// The route of the whole board.
@@ -736,28 +728,38 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
         item.type == _ItemType.record && item.kind == HomeItemKind.idea
         ? widget.matchRepository.getById(item.targetId!)
         : null;
+    final Person? cardFriend = item.type == _ItemType.sharedCard
+        ? item.person
+        : null;
     return HomeBoardSection.actionTier(
       dueReminder: item.type == _ItemType.record && item.reminder != null,
       isIdea: match != null,
       ideaStale: match != null && MatchStaleness.isStale(match),
-      isNotice: item.type == _ItemType.notice || item.type == _ItemType.support,
-      isCardNotice:
-          item.type == _ItemType.notice && _isCardKind(item.notice?.kind),
-      isCardFriend:
-          item.type == _ItemType.newCard || item.type == _ItemType.sharedCard,
-      cardHandled: item.type == _ItemType.newCard ? item.asked : !item.fresh,
       isPair: item.type == _ItemType.pair,
+      isCardFriendWithoutIdea:
+          cardFriend != null &&
+          widget.matchRepository.getByPersonId(cardFriend.id).isEmpty,
     );
   }
 
-  /// The inbox kinds that are about a personal card or access to one.
-  static bool _isCardKind(String? kind) =>
-      kind != null &&
-      (kind.startsWith('access') ||
-          kind.startsWith('card') ||
-          kind == 'friendJoined');
+  /// The row a card friend gets on the action list: what there is to do.
+  BoardFeedEntry<_BoardItem> _asCardAction(BoardFeedEntry<_BoardItem> entry) {
+    final Person person = entry.value.person!;
+    return BoardFeedEntry<_BoardItem>(
+      value: _BoardItem.sharedCard(
+        key: entry.value.key,
+        person: person,
+        line: '{הוסיף|הוסיפה} כרטיס אישי · עדיין לא פתחת {לו|לה} רעיון'
+            .forGender(person.gender),
+        fresh: false,
+      ),
+      category: entry.category,
+      priority: entry.priority,
+      activityAt: entry.activityAt,
+    );
+  }
 
-  /// The list under "מה השלב הבא שלך?". See [HomeBoardMode.actions].
+  /// The list under "הפעולה הבאה שלך". See [HomeBoardMode.actions].
   Widget _buildActions(
     BuildContext context,
     List<BoardFeedEntry<_BoardItem>> collected,
@@ -778,15 +780,16 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
       final int byTier = a.$1.compareTo(b.$1);
       if (byTier != 0) return byTier;
       // The database's pairs keep the order they were suggested in.
-      if (a.$1 == 4) return a.$2.compareTo(b.$2);
+      if (a.$1 == 3) return a.$2.compareTo(b.$2);
       // An idea untouched for a while: the longest-untouched first.
-      final int byTime = a.$1 == 3
+      final int byTime = a.$1 == 2
           ? a.$3.activityAt.compareTo(b.$3.activityAt)
           : b.$3.activityAt.compareTo(a.$3.activityAt);
       return byTime != 0 ? byTime : a.$2.compareTo(b.$2);
     });
     final List<BoardFeedEntry<_BoardItem>> rows = <BoardFeedEntry<_BoardItem>>[
-      for (final (int, int, BoardFeedEntry<_BoardItem>) r in ranked) r.$3,
+      for (final (int, int, BoardFeedEntry<_BoardItem>) r in ranked)
+        r.$1 == 4 ? _asCardAction(r.$3) : r.$3,
     ];
     final int shown = rows.length < _actionsShown ? rows.length : _actionsShown;
     final bool more = rows.length > shown;

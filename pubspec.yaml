@@ -149,12 +149,12 @@ flutter_launcher_icons:
 # at 256/384/512/768/1024 for mdpi…xxxhdpi and 256/512/768 for 1x/2x/3x.
 #
 # flutter_native_splash:
-#   color: "#F7F4EE"
+#   color: "#FAF8F3"
 #   image: "assets/icon/splash_logo.png"
 #   color_dark: "#211D17"
 #   image_dark: "assets/icon/splash_logo.png"
 #   android_12:
-#     color: "#F7F4EE"
+#     color: "#FAF8F3"
 #     color_dark: "#211D17"
 
 flutter:
@@ -190,7 +190,6 @@ flutter:
     # envelope — cut off the black ground of `coffee2.jpeg` / `envelope2.jpeg`
     # (not bundled) and filled with the palette's copper. Tinted again at draw
     # time for the dark theme.
-    - assets/think_coffee_art.png
     - assets/idea_envelope_art.png
     - assets/male_pic/
     - assets/female_pic/

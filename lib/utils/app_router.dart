@@ -213,9 +213,8 @@ abstract final class AppRouter {
       // emptied for the new database, so the home would show an empty
       // database (or a stale half of one) as if that were the shared one.
       // It waits here until the server's copy has arrived.
-      if (((!isOnboarded && !AccountSyncLedger.initialPullDoneHere) ||
-              AccountSyncLedger.awaitingFirstReadHere) &&
-          !AccountLoadingScreen.skipped) {
+      if ((!isOnboarded && !AccountSyncLedger.initialPullDoneHere) ||
+          AccountSyncLedger.awaitingFirstReadHere) {
         return gatePath == '/account-loading' ? null : '/account-loading';
       }
       if (gatePath == '/account-recovery' ||

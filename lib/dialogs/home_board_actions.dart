@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/home_board.dart';
+import 'package:shadchan/utils/app_navigation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/services/offline_guard.dart';
@@ -47,7 +49,7 @@ abstract final class HomeBoardActions {
         Text(label),
         const SizedBox(height: 2),
         Text(
-          'יופיע בלוח המעקב האישי בעמוד הבית.',
+          'יופיע בלוח שלי.',
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -63,13 +65,9 @@ abstract final class HomeBoardActions {
   static bool toggle(BuildContext context, HomeItemKind kind, String targetId) {
     final bool pinned = HomeBoardStore.instance.toggle(kind, targetId);
     if (pinned) {
-      context.go('/home?section=board');
-      // Stateful shell branches keep their root widgets alive. Send a second,
-      // explicit signal after navigation so the existing home scroll view is
-      // focused too, even when the query-string route reuses that widget.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        HomeBoardStore.instance.requestFocus();
-      });
+      // The whole board, where pins live: the home screen's own list is
+      // "הפעולה הבאה שלך", and a pin is not an action by itself.
+      AppNavigation.open(context, HomeBoardSection.route);
     }
     return pinned;
   }
