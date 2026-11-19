@@ -239,9 +239,12 @@ class BoardRow extends StatelessWidget {
                       ),
                       if (sub != null && sub.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 2),
+                        // Always one short line under the action.
                         Text(
                           sub,
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
                             color: subtitleColor,
                           ),
                         ),

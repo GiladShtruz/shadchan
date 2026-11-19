@@ -120,6 +120,7 @@ class CommunityProfile {
     this.shares = const <MatchmakerShare>[],
     this.benefit = '',
     this.contactPhone = '',
+    this.ideas = 0,
   });
 
   /// How long the free-text fields may be.
@@ -148,6 +149,9 @@ class CommunityProfile {
   /// anything: a matchmaker types it into their own profile or there is no
   /// WhatsApp button.
   final String contactPhone;
+
+  /// Ideas opened, all time — only ever drawn as a rank, never as a figure.
+  final int ideas;
 
   /// Whether there is anything here beyond a name and a face.
   bool get hasDetails =>
@@ -179,6 +183,7 @@ class CommunityProfile {
           : const <MatchmakerShare>[],
       benefit: text('benefit', maxBenefitLength),
       contactPhone: text('contactPhone', 24),
+      ideas: data['allIdeas'] is num ? (data['allIdeas'] as num).toInt() : 0,
     );
   }
 }

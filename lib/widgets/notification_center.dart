@@ -213,6 +213,38 @@ abstract final class NotificationCenter {
     }
   }
 
+  /// "מחק הכל": the page goes back to empty — every server notice deleted,
+  /// every reminder tombstoned, every support thread hidden until somebody
+  /// writes in it again. No undo; the page asked first.
+  static Future<void> removeAll(BuildContext context) async {
+    final InboxProvider? inbox = _maybe<InboxProvider>(context, listen: false);
+    final SupportInboxProvider? support = _maybe<SupportInboxProvider>(
+      context,
+      listen: false,
+    );
+    ReminderLog.instance.removeAll();
+    final List<SupportThread> threads =
+        support?.threads ?? const <SupportThread>[];
+    if (threads.isNotEmpty) {
+      final Map<String, int> hidden = _hiddenSupport;
+      for (final SupportThread t in threads) {
+        hidden[t.report.id] = (t.report.lastMessageAt ?? t.report.createdAt)
+            .millisecondsSinceEpoch;
+      }
+      persistHomeSetting(
+        _hiddenSupportKey,
+        hidden.entries
+            .map((MapEntry<String, int> e) => '${e.key}=${e.value}')
+            .join('|'),
+      );
+      ReminderLog.instance.touch();
+    }
+    await Future.wait(<Future<void>>[
+      if (inbox != null) inbox.removeAll(),
+      if (support != null && support.unreadCount > 0) support.markAllSeen(),
+    ]);
+  }
+
   static bool _reminderTargetExists(
     BuildContext context,
     ReminderLogEntry reminder,

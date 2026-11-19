@@ -156,19 +156,8 @@ class HomeWeeklyProgress extends StatelessWidget {
       matchStatusEvents: matches.getAllStatusEvents(),
       excludedFromDating: DatingCountExclusions.all(),
     );
-    final DateTime at = now ?? DateTime.now();
-    return HomeProgress.personal(
-      ideas: all.ideas,
-      couples: all.couples,
-      weddings: all.engagements,
-      gender: gender,
-      // One line a day, so the figure changes without flickering on a visit.
-      day: DateTime.utc(
-        at.year,
-        at.month,
-        at.day,
-      ).difference(DateTime.utc(2026)).inDays,
-    );
+    // From a hundred friends: the way to the next rank, by ideas opened.
+    return HomeProgress.rank(ideas: all.ideas, gender: gender);
   }
 
   @override

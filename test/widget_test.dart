@@ -769,14 +769,16 @@ void main() {
       lessThan(tester.getCenter(find.text('עוד 9 חברים ליעד הבא – 10')).dy),
     );
 
-    // The list of what to do next has no title and no shelves; with nothing
-    // to do it says so, and the whole board is one tap away.
+    // The list of what to do next has no title and no shelves; with no work
+    // waiting it carries the prompts (a photo, invitations, connections), and
+    // the whole board is one tap away.
     expect(find.text('הלוח שלי'), findsNothing);
-    await _scrollHomeTo(tester, find.text('לכל הלוח'));
+    await _showWholeActionList(tester);
     // Under it, one quiet line: the WhatsApp group and sharing the app.
     expect(find.text(HomeCommunityLink.compactShareLabel), findsOneWidget);
     expect(find.text('כרטיסים וגישה'), findsNothing);
-    expect(find.text('אין כרגע משהו שמחכה לך'), findsOneWidget);
+    expect(find.textContaining('תמונת פרופיל'), findsOneWidget);
+    expect(find.textContaining('לשדכנים נוספים'), findsOneWidget);
     expect(find.text('הוספה ללוח'), findsNothing);
 
     await tester.tap(find.text('לכל הלוח'));
@@ -902,7 +904,7 @@ void main() {
 
     // On the whole board, its own chip shows it; the database's suggestions
     // chip says it has nothing, in one short line.
-    await _scrollHomeTo(tester, find.text('לכל הלוח'));
+    await _showWholeActionList(tester);
     await tester.tap(find.text('לכל הלוח'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -976,7 +978,7 @@ void main() {
         ]);
     await tester.pump();
 
-    await _scrollHomeTo(tester, find.text('לכל הלוח'));
+    await _showWholeActionList(tester);
     await tester.tap(find.text('לכל הלוח'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -3065,6 +3067,23 @@ MatchIdea _testMatch({
     updatedAt: now,
     reminderDate: reminderDate,
   );
+}
+
+/// Scrolls to the foot of the action list and taps "עוד" until every row is
+/// shown and the link reads "לכל הלוח".
+Future<void> _showWholeActionList(WidgetTester tester) async {
+  for (int i = 0; i < 10; i++) {
+    await _scrollHomeTo(
+      tester,
+      find.byWidgetPredicate(
+        (Widget w) => w is Text && (w.data == 'לכל הלוח' || w.data == 'עוד'),
+      ),
+    );
+    if (find.text('לכל הלוח').evaluate().isNotEmpty) return;
+    await tester.tap(find.text('עוד'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  }
 }
 
 /// Scrolls the home page down until [target] is built and on screen — the

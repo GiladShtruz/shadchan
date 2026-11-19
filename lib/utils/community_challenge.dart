@@ -152,10 +152,23 @@ class CommunityChallenge {
 
   final String title;
 
-  /// The invitation, in the plural, with no name in it.
-  String get headline => title.isNotEmpty
-      ? title
-      : 'השבוע מנסים להגיע יחד ל־$target ${metric.targetNoun}';
+  /// The invitation, in the plural, with no name in it — short:
+  /// "שבוע שעבר הגענו ל־120 · השבוע שוברים שיא: 132".
+  String get headline {
+    if (title.isNotEmpty) return title;
+    final int? last = record;
+    if (last != null && last > 0) {
+      return 'שבוע שעבר הגענו ל־$last · השבוע שוברים שיא: $recordTarget';
+    }
+    return 'השבוע מנסים להגיע יחד ל־$target ${metric.targetNoun}';
+  }
+
+  /// The figure "שוברים שיא" aims at: the week's target, and never a number
+  /// that is not above last week's.
+  int get recordTarget {
+    final int last = record ?? 0;
+    return target > last ? target : last + 1;
+  }
 
   /// The line under it: what happened last week, or — with nothing to compare
   /// to — why the number is there at all.
@@ -191,7 +204,8 @@ class CommunityChallenge {
   /// when this device saw no completed week.
   String? get lastWeekLabel {
     final int? last = record;
-    if (last == null || last <= 0) return null;
+    // The short headline already says it.
+    if (last == null || last <= 0 || title.isEmpty) return null;
     return 'בשבוע שעבר: $last ${metric.shortNoun}';
   }
 

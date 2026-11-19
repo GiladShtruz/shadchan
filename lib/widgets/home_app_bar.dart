@@ -245,6 +245,7 @@ class HomeGreeting extends StatelessWidget {
     required this.name,
     this.line,
     this.trailing,
+    this.leading,
   });
 
   /// "בוקר טוב" / "צהריים טובים" / "ערב טוב" / "לילה טוב".
@@ -261,6 +262,10 @@ class HomeGreeting extends StatelessWidget {
   /// top corner, left in RTL. Holds "למעבר לאזור האישי" for a matchmaker who
   /// keeps a card of their own, so it costs the page no row of its own.
   final Widget? trailing;
+
+  /// The matchmaker's own small photo at the start of the line — the right,
+  /// in RTL — or the "+" that adds one.
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -311,15 +316,19 @@ class HomeGreeting extends StatelessWidget {
     );
 
     final Widget? corner = trailing;
-    if (corner == null) {
+    final Widget? face = leading;
+    if (corner == null && face == null) {
       return greetingBlock;
     }
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
+        if (face != null) ...<Widget>[face, const SizedBox(width: 12)],
         Expanded(child: greetingBlock),
-        const SizedBox(width: 6),
-        corner,
+        if (corner != null) ...<Widget>[
+          const SizedBox(width: 6),
+          Align(alignment: AlignmentDirectional.topEnd, child: corner),
+        ],
       ],
     );
   }

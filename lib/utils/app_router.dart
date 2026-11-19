@@ -1,5 +1,6 @@
 import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/cream_page.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/screens/account_gate_screens.dart';
 import 'package:shadchan/screens/account_screen.dart';
@@ -397,15 +398,17 @@ abstract final class AppRouter {
                       );
                   final PeopleSortOption? sort = _parsePeopleSort(q['sort']);
                   final String batch = (q['batch'] ?? '').trim();
-                  return PeopleScreen(
-                    key: ValueKey<String>('people:${state.uri}'),
-                    personalCardsOnly: q['personalCards'] == '1',
-                    initialShowArchived: archived,
-                    initialProfileStatuses: statuses,
-                    initialSort: sort,
-                    // Set by the import flow, which lands here on the people it
-                    // has just added. See `PeopleScreen.importBatchId`.
-                    importBatchId: batch.isEmpty ? null : batch,
+                  return CreamPage(
+                    child: PeopleScreen(
+                      key: ValueKey<String>('people:${state.uri}'),
+                      personalCardsOnly: q['personalCards'] == '1',
+                      initialShowArchived: archived,
+                      initialProfileStatuses: statuses,
+                      initialSort: sort,
+                      // Set by the import flow, which lands here on the people
+                      // it has just added. See `PeopleScreen.importBatchId`.
+                      importBatchId: batch.isEmpty ? null : batch,
+                    ),
                   );
                 },
                 routes: <RouteBase>[
@@ -541,14 +544,16 @@ abstract final class AppRouter {
                         q['statuses'],
                         MatchStatus.values,
                       );
-                  return MatchesScreen(
-                    key: ValueKey<String>('matches:${state.uri}'),
-                    initialShowArchived: archived,
-                    initialStatuses: statuses,
-                    focusMatchId: q['focus'],
-                    promptShareForMatchId: q['justCreated'] == 'true'
-                        ? q['focus']
-                        : null,
+                  return CreamPage(
+                    child: MatchesScreen(
+                      key: ValueKey<String>('matches:${state.uri}'),
+                      initialShowArchived: archived,
+                      initialStatuses: statuses,
+                      focusMatchId: q['focus'],
+                      promptShareForMatchId: q['justCreated'] == 'true'
+                          ? q['focus']
+                          : null,
+                    ),
                   );
                 },
                 routes: <RouteBase>[
@@ -595,10 +600,12 @@ abstract final class AppRouter {
                       // list.
                       final bool justCreated =
                           state.uri.queryParameters['justCreated'] == 'true';
-                      return MatchesScreen(
-                        key: ValueKey<String>('match:$matchId'),
-                        focusMatchId: matchId,
-                        promptShareForMatchId: justCreated ? matchId : null,
+                      return CreamPage(
+                        child: MatchesScreen(
+                          key: ValueKey<String>('match:$matchId'),
+                          focusMatchId: matchId,
+                          promptShareForMatchId: justCreated ? matchId : null,
+                        ),
                       );
                     },
                   ),
@@ -1239,7 +1246,9 @@ class _SwipeableBranchesState extends State<_SwipeableBranches>
         enabled: visible,
         child: Transform.translate(
           offset: Offset(dx, 0),
-          child: widget.children[index],
+          // Its own layer: a swipe between tabs moves the page, it does not
+          // repaint it on every frame of the drag.
+          child: RepaintBoundary(child: widget.children[index]),
         ),
       ),
     );

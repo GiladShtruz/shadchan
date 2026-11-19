@@ -31,6 +31,8 @@ abstract final class CommunityPromptsStore {
   static const String _mazelTovDeliveredKey = 'community.mazelTovDelivered';
   static const String _matchmakerPhoneAskedKey =
       'community.matchmakerPhoneAsked';
+  static const String _profileCompletionAskedKey =
+      'community.profileCompletionAsked';
 
   /// How many actions pass between two invitations to the group.
   static const int groupPromptEveryActions = 100;
@@ -164,6 +166,17 @@ abstract final class CommunityPromptsStore {
 
   static void markMatchmakerPhoneAsked() =>
       _write(_matchmakerPhoneAskedKey, true);
+
+  // --- "השלמת הפרופיל", once after the update ------------------------------
+
+  /// Whether a matchmaker without a full profile has already been asked, once,
+  /// to add a photo and their details. Synced with the account, so a second
+  /// phone does not ask again.
+  static bool get wasProfileCompletionAsked =>
+      _readBool(_profileCompletionAskedKey);
+
+  static void markProfileCompletionAsked() =>
+      _write(_profileCompletionAskedKey, true);
 
   // --- "מה חדש?" -----------------------------------------------------------
 

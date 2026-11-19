@@ -41,6 +41,14 @@ import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/home_panels.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/notification_center.dart';
+import 'package:shadchan/dialogs/invite_card_friends_sheet.dart';
+import 'package:shadchan/models/matchmaker_connection.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/friends_with_cards_screen.dart';
+import 'package:shadchan/services/matchmaker_connections.dart';
+import 'package:shadchan/services/photo_picker_service.dart';
+import 'package:shadchan/utils/community_period.dart';
+import 'package:shadchan/utils/home_action_prompts.dart';
 
 /// "הלוח שלי": everything the matchmaker is working on, as one mixed feed.
 ///
@@ -776,6 +784,54 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
     );
   }
 
+  /// The prompts for the action list, without the ones put away this week.
+  List<HomeActionPrompt> _prompts(BuildContext context) {
+    final UserProfileProvider? profile = _maybeWatch<UserProfileProvider>(
+      context,
+    );
+    if (profile == null) return const <HomeActionPrompt>[];
+    final CardAccessProvider? access = _maybeWatch<CardAccessProvider>(context);
+    final PersonRepository people = widget.personRepository;
+    int toAsk = 0;
+    int withoutCard = 0;
+    if (access != null) {
+      final List<FriendWithCard> friends = FriendsWithCards.build(
+        access: access,
+        people: people,
+        inbox: _maybeWatch<InboxProvider>(context),
+      );
+      toAsk = friends
+          .where((FriendWithCard f) => f.state == FriendCardState.requestable)
+          .length;
+      withoutCard = InviteCardFriendsSheet.candidates(
+        people.getAll(),
+        withCard: <String>{
+          for (final FriendWithCard f in friends) ?f.phoneHash,
+        },
+      ).length;
+    }
+    final int connected = MatchmakerConnections.connections.value
+        .where((MatchmakerConnection c) => c.isConnected)
+        .length;
+    final DateTime weekStart =
+        CommunityPeriods.startOf(CommunityPeriod.week) ?? DateTime.now();
+    final HomeBoardStore store = HomeBoardStore.instance;
+    bool blank(String? v) => v == null || v.trim().isEmpty;
+    return <HomeActionPrompt>[
+      for (final HomeActionPrompt p in HomeActionPrompts.build(
+        hasPhoto: profile.photoPath != null,
+        hasAbout: !blank(profile.about),
+        friendsWithoutCard: withoutCard,
+        cardFriendsToAsk: toAsk,
+        connectedMatchmakers: connected,
+        hasFriends: people.databaseCount > 0,
+        gender: profile.gender,
+      ))
+        // Put away with "הסרה מהלוח שלי": back next week.
+        if (!(store.hiddenAt(p.key)?.isAfter(weekStart) ?? false)) p,
+    ].take(HomeActionPrompts.maxShown).toList();
+  }
+
   /// The list under "הפעולה הבאה שלך". See [HomeBoardMode.actions].
   Widget _buildActions(
     BuildContext context,
@@ -804,10 +860,29 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
           : b.$3.activityAt.compareTo(a.$3.activityAt);
       return byTime != 0 ? byTime : a.$2.compareTo(b.$2);
     });
-    final List<BoardFeedEntry<_BoardItem>> rows = <BoardFeedEntry<_BoardItem>>[
+    final List<BoardFeedEntry<_BoardItem>> work = <BoardFeedEntry<_BoardItem>>[
       for (final (int, int, BoardFeedEntry<_BoardItem>) r in ranked)
         r.$1 == 4 ? _asCardAction(r.$3) : r.$3,
     ];
+    // Rows about using the app more — a photo, invitations, connections —
+    // mixed in from the third place on.
+    final List<HomeActionPrompt> prompts = _prompts(context);
+    final List<int> at = HomeActionPrompts.positions(
+      work.length,
+      prompts.length,
+    );
+    final List<Object> rows = <Object>[];
+    for (
+      int slot = 0, w = 0, q = 0;
+      w < work.length || q < prompts.length;
+      slot++
+    ) {
+      if (q < prompts.length && (at[q] == slot || w >= work.length)) {
+        rows.add(prompts[q++]);
+      } else {
+        rows.add(work[w++]);
+      }
+    }
     final int shown = rows.length < _actionsShown ? rows.length : _actionsShown;
     final bool more = rows.length > shown;
     final Color link = dark
@@ -837,18 +912,27 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
               )
             else
               for (int i = 0; i < shown; i++) ...<Widget>[
-                _BoardRow(
-                  key: ValueKey<String>(rows[i].value.key),
-                  item: rows[i].value,
-                  personRepository: widget.personRepository,
-                  matchRepository: widget.matchRepository,
-                  onChanged: () => setState(() {}),
-                  flat: true,
-                ),
+                switch (rows[i]) {
+                  final HomeActionPrompt prompt => _PromptRow(
+                    key: ValueKey<String>(prompt.key),
+                    prompt: prompt,
+                    onChanged: () => setState(() {}),
+                  ),
+                  final BoardFeedEntry<_BoardItem> entry => _BoardRow(
+                    key: ValueKey<String>(entry.value.key),
+                    item: entry.value,
+                    personRepository: widget.personRepository,
+                    matchRepository: widget.matchRepository,
+                    onChanged: () => setState(() {}),
+                    flat: true,
+                  ),
+                  _ => const SizedBox.shrink(),
+                },
                 hairline,
               ],
+            // "עוד", at the left — the end of the line in RTL.
             Align(
-              alignment: AlignmentDirectional.centerStart,
+              alignment: AlignmentDirectional.centerEnd,
               child: TextButton(
                 onPressed: more
                     ? _showMoreActions
@@ -861,7 +945,7 @@ class _HomeBoardSectionState extends State<HomeBoardSection> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                child: Text(more ? 'הצג עוד' : 'לכל הלוח'),
+                child: Text(more ? 'עוד' : 'לכל הלוח'),
               ),
             ),
             // The page's last line: joining the WhatsApp group and sharing
@@ -1650,7 +1734,7 @@ class _BoardRow extends StatelessWidget {
             ? note
             : wrote
             ? 'תזכורת · ${_firstName(male)} ו${_firstName(female)}'
-            : MatchStaleness.nudge(match),
+            : MatchStaleness.shortNudge(match),
         startAccent: AppColors.genderAccent(Gender.male, dark: dark),
         endAccent: AppColors.genderAccent(Gender.female, dark: dark),
         onTap: () {
@@ -1928,6 +2012,68 @@ class _BoardRow extends StatelessWidget {
 }
 
 /// One line of a row's menu.
+/// A prompt on the action list: one icon, the action, one short line.
+class _PromptRow extends StatelessWidget {
+  const _PromptRow({super.key, required this.prompt, required this.onChanged});
+
+  final HomeActionPrompt prompt;
+  final VoidCallback onChanged;
+
+  IconData get _icon => switch (prompt.kind) {
+    HomeActionPromptKind.askCardFriends => Icons.badge_outlined,
+    HomeActionPromptKind.inviteFriends => Icons.person_add_alt_1_outlined,
+    HomeActionPromptKind.addPhoto => Icons.add_a_photo_outlined,
+    HomeActionPromptKind.connectMatchmakers => Icons.handshake_outlined,
+    HomeActionPromptKind.completeProfile => Icons.edit_note_rounded,
+  };
+
+  Future<void> _open(BuildContext context) async {
+    BoardSeen.mark(prompt.key);
+    switch (prompt.kind) {
+      case HomeActionPromptKind.askCardFriends:
+        await context.push(FriendsWithCardsScreen.route);
+      case HomeActionPromptKind.inviteFriends:
+        await InviteCardFriendsSheet.show(context);
+      case HomeActionPromptKind.addPhoto:
+        final UserProfileProvider profile = context.read<UserProfileProvider>();
+        final String? path = await PhotoPickerService.pickSinglePhoto(context);
+        if (path != null) await profile.setPhotoPath(path);
+      case HomeActionPromptKind.connectMatchmakers:
+        await context.push('/known-matchmakers');
+      case HomeActionPromptKind.completeProfile:
+        await context.push('/profile');
+    }
+    onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
+    final List<_MenuChoice> menu = <_MenuChoice>[
+      _MenuChoice('הסרה מהלוח שלי', () {
+        HomeBoardActions.removeFromBoard(context, prompt.key);
+        onChanged();
+      }),
+    ];
+    return BoardRow(
+      flat: true,
+      leading: CircleAvatar(
+        radius: 22,
+        backgroundColor: blue.withValues(alpha: dark ? 0.2 : 0.12),
+        child: Icon(_icon, size: 20, color: blue),
+      ),
+      title: prompt.title,
+      subtitle: prompt.subtitle,
+      startAccent: blue,
+      onTap: () => _open(context),
+      onLongPress: (BuildContext anchor) => _MenuButton.open(anchor, menu),
+      menu: const SizedBox.shrink(),
+    );
+  }
+}
+
 class _MenuChoice {
   const _MenuChoice(this.label, this.run);
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
@@ -118,6 +119,11 @@ class _MatchmakerProfileScreenState extends State<MatchmakerProfileScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: <Widget>[
             _Header(name: name, photoUrl: photoUrl),
+            // The rank alone — never the figure behind it.
+            if ((profile?.ideas ?? 0) > 0) ...<Widget>[
+              const SizedBox(height: 8),
+              Center(child: MatchmakerRankBadge(ideas: profile!.ideas)),
+            ],
             if ((profile?.about ?? '').isNotEmpty) ...<Widget>[
               const SizedBox(height: 14),
               Text(

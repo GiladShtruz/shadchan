@@ -1,4 +1,4 @@
-import 'dart:math';
+import 'package:shadchan/models/card_access.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/person.dart';
@@ -129,33 +129,63 @@ void main() {
     });
   });
 
-  group('three friends with a card on the home screen', () {
-    FriendWithCard friend(String uid, {DateTime? createdAt}) => FriendWithCard(
-      ownerUid: uid,
-      name: uid,
-      state: FriendCardState.requestable,
-      cardCreatedAt: createdAt,
-    );
+  group('"החברים שלך בשדכן" on the home screen', () {
+    Person person(String id, {String? text = 'כרטיס', bool photo = true}) =>
+        Person(
+          id: id,
+          firstName: id,
+          lastName: '',
+          gender: Gender.female,
+          description: text,
+          photosPaths: photo ? <String>['/p/$id.jpg'] : const <String>[],
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        );
+    FriendWithCard friend(
+      String uid,
+      FriendCardState state, {
+      Person? record,
+    }) =>
+        FriendWithCard(ownerUid: uid, name: uid, state: state, person: record);
 
-    test('a card made this week leads, newest first; the rest are drawn', () {
-      final DateTime now = DateTime(2026, 11, 18);
+    test('only approved full cards with a photo, newest activity first', () {
       final List<FriendWithCard> all = <FriendWithCard>[
-        friend('a'),
-        friend('b'),
-        friend('new-old', createdAt: now.subtract(const Duration(days: 6))),
-        friend('c'),
-        friend('new', createdAt: now.subtract(const Duration(days: 1))),
-        friend('stale', createdAt: now.subtract(const Duration(days: 9))),
+        friend('old', FriendCardState.sees, record: person('old')),
+        friend('edited', FriendCardState.sees, record: person('edited')),
+        friend('approved', FriendCardState.sees, record: person('approved')),
+        friend(
+          'no-photo',
+          FriendCardState.sees,
+          record: person('no-photo', photo: false),
+        ),
+        friend(
+          'no-text',
+          FriendCardState.sees,
+          record: person('no-text', text: '  '),
+        ),
+        friend('pending', FriendCardState.pending, record: person('pending')),
+        friend('ask', FriendCardState.requestable, record: person('ask')),
       ];
-      final List<FriendWithCard> picked = HomeCardFriendsSection.pick(
+      final List<CardFriendSlide> slides = HomeCardFriendsSection.slidesFor(
         all,
-        now: now,
-        random: Random(1),
+        latestEventByPerson: <String, DateTime>{
+          'edited': DateTime(2026, 11, 10),
+        },
+        rowOf: (String owner) => owner == 'approved'
+            ? CardAccess(
+                ownerUid: owner,
+                matchmakerUid: 'me',
+                status: CardAccessStatus.approved,
+                requestedBy: 'owner',
+                updatedAt: DateTime(2026, 11, 15),
+              )
+            : null,
       );
-      expect(picked, hasLength(3));
-      expect(picked[0].ownerUid, 'new');
-      expect(picked[1].ownerUid, 'new-old');
-      expect(<String>['a', 'b', 'c', 'stale'], contains(picked[2].ownerUid));
+      expect(slides.map((CardFriendSlide s) => s.person.id), <String>[
+        'approved',
+        'edited',
+        'old',
+      ]);
     });
   });
 

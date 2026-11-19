@@ -271,6 +271,32 @@ class InboxProvider extends ChangeNotifier {
     }
   }
 
+  /// "מחק הכל" on the notifications page: every notice this account holds,
+  /// gone — locally at once, on the server in batches.
+  Future<void> removeAll() async {
+    final List<InboxItem> all = <InboxItem>[..._items, ..._sharedItems];
+    if (all.isEmpty) {
+      return;
+    }
+    _removedLocally.addAll(all.map((InboxItem i) => i.id));
+    notifyListeners();
+    final String? uid = _uid;
+    if (uid == null) {
+      return;
+    }
+    try {
+      for (int start = 0; start < all.length; start += 400) {
+        final WriteBatch batch = FirebaseFirestore.instance.batch();
+        for (final InboxItem item in all.skip(start).take(400)) {
+          batch.delete(_document(uid, item.id));
+        }
+        await batch.commit();
+      }
+    } catch (error) {
+      debugPrint('InboxProvider.removeAll: $error');
+    }
+  }
+
   Future<void> stop() async {
     await _sharedSubscription?.cancel();
     _sharedSubscription = null;

@@ -22,6 +22,12 @@ import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
+import 'package:shadchan/providers/match_repository.dart';
+import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/utils/activity_stats.dart';
+import 'package:shadchan/utils/dating_history.dart';
+import 'package:shadchan/utils/matchmaker_rank.dart';
+import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 
 /// "הפרופיל שלי" — the matchmaker's own page, and the one place the app's
 /// settings live. The home screen used to carry a gear icon; it now carries the
@@ -697,6 +703,7 @@ class _ProfileHeader extends StatelessWidget {
                   ),
           ),
         ),
+        const _OwnRank(),
         const SizedBox(height: 6),
         InkWell(
           onTap: onEditAbout,
@@ -739,6 +746,46 @@ class _ProfileHeader extends StatelessWidget {
         ],
       ],
     );
+  }
+}
+
+/// The matchmaker's own rank under their name, from the ideas they opened.
+class _OwnRank extends StatelessWidget {
+  const _OwnRank();
+
+  @override
+  Widget build(BuildContext context) {
+    final MatchRepository? matches = _maybeWatchRepo<MatchRepository>(context);
+    final PersonRepository? people = _maybeWatchRepo<PersonRepository>(
+      context,
+    );
+    if (matches == null || people == null) {
+      return const SizedBox.shrink();
+    }
+    final int ideas = ActivityStats.allTime(
+      people: people.getAll(),
+      matches: matches.getAll(),
+      matchStatusEvents: matches.getAllStatusEvents(),
+      excludedFromDating: DatingCountExclusions.all(),
+    ).ideas;
+    if (MatchmakerRanks.current(ideas) == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: MatchmakerRankBadge(
+        ideas: ideas,
+        gender: _maybeWatchRepo<UserProfileProvider>(context)?.gender,
+      ),
+    );
+  }
+}
+
+T? _maybeWatchRepo<T>(BuildContext context) {
+  try {
+    return Provider.of<T>(context);
+  } on ProviderNotFoundException {
+    return null;
   }
 }
 

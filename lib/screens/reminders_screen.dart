@@ -37,6 +37,14 @@ class RemindersScreen extends StatefulWidget {
   State<RemindersScreen> createState() => _RemindersScreenState();
 }
 
+/// Two text actions and a close button share the bar with the title, on a
+/// 320px phone too.
+final ButtonStyle _compactAction = TextButton.styleFrom(
+  padding: const EdgeInsets.symmetric(horizontal: 8),
+  minimumSize: const Size(0, 40),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
+
 class _RemindersScreenState extends State<RemindersScreen> {
   /// The rows that were unread when the page opened.
   Set<String> _wasNew = <String>{};
@@ -80,6 +88,32 @@ class _RemindersScreenState extends State<RemindersScreen> {
     NotificationCenter.markAllRead(context);
   }
 
+  /// "מחק הכל" — one short question, then the page is empty.
+  Future<void> _deleteAll() async {
+    final bool? sure = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('למחוק את כל ההתראות?'),
+        content: const Text('עמוד ההתראות יתרוקן לגמרי.'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('ביטול'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('מחיקה'),
+          ),
+        ],
+      ),
+    );
+    if (sure != true || !mounted) {
+      return;
+    }
+    setState(() => _wasNew = <String>{});
+    await NotificationCenter.removeAll(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -104,8 +138,15 @@ class _RemindersScreenState extends State<RemindersScreen> {
             actions: <Widget>[
               if (highlighted.isNotEmpty)
                 TextButton(
+                  style: _compactAction,
                   onPressed: _markAll,
                   child: const Text('סמן הכל כנקרא'),
+                ),
+              if (groups.isNotEmpty)
+                TextButton(
+                  style: _compactAction,
+                  onPressed: _deleteAll,
+                  child: const Text('מחק הכל'),
                 ),
               if (widget.asSheet)
                 IconButton(

@@ -37,7 +37,7 @@ import 'package:shadchan/widgets/home_action_area.dart';
 import 'package:shadchan/widgets/home_week_block.dart';
 import 'package:shadchan/widgets/home_card_friends.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
-import 'package:shadchan/widgets/home_photo_nudge.dart';
+import 'package:shadchan/widgets/home_greeting_avatar.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
 import 'package:shadchan/widgets/add_fab.dart';
 import 'package:shadchan/widgets/home_search_results.dart';
@@ -404,6 +404,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               TimeOfDay.fromDateTime(DateTime.now()),
             ),
             name: greetingName,
+            leading: const HomeGreetingAvatar(),
             line: '{בוא|בואי} ניצור היום חיבורים חדשים'.forGender(userGender),
             // Small and quiet: findable, never in the way of the greeting.
             trailing: hasOwnCard
@@ -435,12 +436,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const SliverToBoxAdapter(child: SizedBox(height: 10)),
         HomeActionArea.pinnedSliver(context, inset: inset()),
 
-        // 4. Three friends who keep a personal card, and the way to the rest.
-        block(HomeCardFriendsSection(key: ValueKey<int>(_boardRefresh))),
-
-        // A matchmaker who skipped the profile photo at sign-up: one quiet
-        // line, until it is added or put away for a month.
-        block(const HomePhotoNudge(), top: 10),
+        // 4. "החברים שלך בשדכן": a carousel of the friends whose card is open
+        // to this matchmaker, newest activity first, and the way to the rest.
+        block(const HomeCardFriendsSection()),
 
         // 5. "הפעילות שלי" | "פעילות הקהילה", large, under השבוע | החודש |
         // כל הזמנים — and the community's weekly target under them. No

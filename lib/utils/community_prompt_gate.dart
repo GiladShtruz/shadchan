@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/community_dialogs.dart';
 import 'package:shadchan/dialogs/home_area_dialog.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
+import 'package:shadchan/dialogs/profile_completion_dialog.dart';
 import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
@@ -74,6 +75,10 @@ abstract final class CommunityPromptGate {
       return;
     }
 
+    if (_maybeAskCompleteProfile(context, people: people)) {
+      return;
+    }
+
     _maybeAsk(
       context,
       people: people,
@@ -129,6 +134,48 @@ abstract final class CommunityPromptGate {
       ).routerDelegate.currentConfiguration.uri.path;
       if (here != target) {
         context.go(target);
+      }
+    });
+    return true;
+  }
+
+  /// Whether the matchmaker's own profile is missing what lets friends
+  /// recognise them: a photo, a surname, or the short line about themselves.
+  static bool profileIncomplete(UserProfileProvider profile) {
+    bool blank(String? v) => v == null || v.trim().isEmpty;
+    return profile.photoPath == null ||
+        blank(profile.lastName) ||
+        blank(profile.about);
+  }
+
+  /// Once, after the update: a matchmaker whose profile is not full is asked
+  /// to add a photo and their details. Not on the first days of a brand-new
+  /// account — sign-up has just asked for the photo — so only a matchmaker who
+  /// already has friends in the database is asked.
+  static bool _maybeAskCompleteProfile(
+    BuildContext context, {
+    required PersonRepository people,
+  }) {
+    if (CommunityPromptsStore.wasProfileCompletionAsked ||
+        !WorkspaceStore.matchmakerEnabled ||
+        people.databaseCount == 0) {
+      return false;
+    }
+    final UserProfileProvider profile;
+    try {
+      profile = context.read<UserProfileProvider>();
+    } on ProviderNotFoundException {
+      return false;
+    }
+    if (!profile.isOnboarded || !profileIncomplete(profile)) {
+      return false;
+    }
+    CommunityPromptsStore.markProfileCompletionAsked();
+    ProfileCompletionDialog.show(context, userGender: profile.gender).then((
+      bool? go,
+    ) {
+      if (go == true && context.mounted) {
+        context.push('/profile');
       }
     });
     return true;

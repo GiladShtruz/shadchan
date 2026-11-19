@@ -36,7 +36,12 @@ class CardAccess {
     this.lookingRequested = false,
     this.shareOnward = false,
     this.shareOnwardRequested = false,
+    this.updatedAt,
   });
+
+  /// When the row last changed — an approval, a widened grant. One of the
+  /// moments that lift a friend to the front of "החברים שלך בשדכן".
+  final DateTime? updatedAt;
 
   /// The single let this matchmaker show the card to the matchmakers they
   /// are connected with — never to anybody else. Only the single sets it.
@@ -105,7 +110,20 @@ class CardAccess {
       lookingRequested: data['lookingRequested'] == true,
       shareOnward: data['shareOnward'] == true,
       shareOnwardRequested: data['shareOnwardRequested'] == true,
+      updatedAt: _dateOf(data['updatedAt']),
     );
+  }
+}
+
+/// A Firestore Timestamp (or a DateTime), without importing Firestore into a
+/// model.
+DateTime? _dateOf(Object? raw) {
+  if (raw is DateTime) return raw;
+  try {
+    final Object? date = (raw as dynamic)?.toDate();
+    return date is DateTime ? date : null;
+  } catch (_) {
+    return null;
   }
 }
 
