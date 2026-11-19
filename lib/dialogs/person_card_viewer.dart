@@ -134,8 +134,19 @@ class _PersonCardViewerState extends State<PersonCardViewer> {
               itemBuilder: (BuildContext context, int index) {
                 return InteractiveViewer(
                   child: Center(
-                    child: Image.file(
-                      File(photoPaths[index]),
+                    // Twice the screen: sharp when pinched, never a whole
+                    // camera frame held per page.
+                    child: Image(
+                      image: ResizeImage(
+                        FileImage(File(photoPaths[index])),
+                        width:
+                            (MediaQuery.sizeOf(context).width *
+                                    MediaQuery.devicePixelRatioOf(context) *
+                                    2)
+                                .ceil(),
+                        policy: ResizeImagePolicy.fit,
+                      ),
+                      gaplessPlayback: true,
                       fit: BoxFit.contain,
                     ),
                   ),

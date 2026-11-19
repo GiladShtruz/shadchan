@@ -322,7 +322,31 @@ abstract final class ActivityStats {
     DateTime? now,
   }) {
     final DateTime at = now ?? DateTime.now();
-    return breakdownBetween(
+    // **Remembered between rebuilds.** The home screen, its figures, its
+    // progress line and the profile all ask for the same all-time count, and
+    // each rebuild of the page used to walk every ledger again — on a large
+    // database that was a dropped frame per notification. The key changes
+    // with anything that can change the answer: a record added or removed, a
+    // record edited (its `updatedAt`), a status event, an exclusion, the day.
+    String? key;
+    if (now == null) {
+      int latest = 0;
+      for (final Person p in people) {
+        final int t = p.updatedAt.millisecondsSinceEpoch;
+        if (t > latest) latest = t;
+      }
+      for (final MatchIdea m in matches) {
+        final int t = m.updatedAt.millisecondsSinceEpoch;
+        if (t > latest) latest = t;
+      }
+      key =
+          '${people.length}|${matches.length}|${matchStatusEvents.length}|'
+          '${excludedFromDating.length}|$latest|'
+          '${at.year}-${at.month}-${at.day}';
+      final (String, ActivityBreakdown)? memo = _allTimeMemo;
+      if (memo != null && memo.$1 == key) return memo.$2;
+    }
+    final ActivityBreakdown result = breakdownBetween(
       start: beginningOfTime,
       end: endOfToday(at),
       people: people,
@@ -331,7 +355,11 @@ abstract final class ActivityStats {
       excludedFromDating: excludedFromDating,
       now: at,
     );
+    if (key != null) _allTimeMemo = (key, result);
+    return result;
   }
+
+  static (String, ActivityBreakdown)? _allTimeMemo;
 
   /// One bar per Hebrew month, oldest first — the same month division the rest
   /// of the app already uses, so the chart and the figures beside it agree.

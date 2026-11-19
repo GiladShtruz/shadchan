@@ -321,6 +321,13 @@ class ReminderLog extends ChangeNotifier {
     );
   }
 
+  /// "מחק הכל": every entry becomes a tombstone, so nothing that already
+  /// came due is ever logged again.
+  void removeAll() => _replace(
+    (ReminderLogEntry e) => !e.removed,
+    (ReminderLogEntry e) => e.copyWith(removed: true, read: true),
+  );
+
   /// Puts removed entries back — the undo of [remove].
   void restore(Iterable<String> keys) {
     final Set<String> wanted = keys.toSet();

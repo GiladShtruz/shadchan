@@ -384,11 +384,18 @@ class _CardTone {
     // light cream from the palette, and blue, orange and pink live only in the
     // border, the bars, the status word and the icons. Scanning a long list is
     // reading one colour per card at its edge.
+    // On a cream page ([CreamPage]) the card itself is white and its inside
+    // boxes cream; elsewhere the other way round.
+    final bool whiteCard = paper.toARGB32() == AppColors.surface.toARGB32();
     final Color ground = dark
         ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.03), paper)
+        : whiteCard
+        ? AppColors.surface
         : AppColors.cardCream;
     final Color insidePaper = dark
         ? Color.alphaBlend(AppColors.onSurfaceDm.withValues(alpha: 0.05), paper)
+        : whiteCard
+        ? AppColors.cardCream
         : AppColors.surface;
 
     _CardTone framed(Color accent) {

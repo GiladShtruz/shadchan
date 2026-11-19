@@ -194,14 +194,24 @@ class CardAccessProvider extends ChangeNotifier {
 
   // --- As the card owner ----------------------------------------------------
 
-  List<CardAccess> get pendingRequests => _asOwner
-      .where(
-        (CardAccess a) =>
-            a.status == CardAccessStatus.pending ||
-            a.lookingRequested ||
-            a.cardRequested,
-      )
-      .toList();
+  List<CardAccess> get pendingRequests {
+    // The people who already see the card. A request from exactly them —
+    // a second row written under a couple's shared database id — is not a
+    // new request: the owner already said yes, and showing it again as
+    // waiting is what made an approval look as if it had been lost.
+    final Set<String> seeing = <String>{
+      for (final CardAccess a in _asOwner)
+        if (a.canReadCard) ...<String>{a.matchmakerUid, ...a.granteeUids},
+    };
+    return _asOwner.where((CardAccess a) {
+      if (a.lookingRequested || a.cardRequested) return true;
+      if (a.status != CardAccessStatus.pending) return false;
+      final List<String> who = a.granteeUids.isEmpty
+          ? <String>[a.matchmakerUid]
+          : a.granteeUids;
+      return !who.every(seeing.contains);
+    }).toList();
+  }
 
   List<CardAccess> get approved => _asOwner
       .where((CardAccess a) => a.status == CardAccessStatus.approved)
@@ -297,6 +307,96 @@ class CardAccessProvider extends ChangeNotifier {
 
   bool isBusy(String key) => _busy.contains(key);
 
+  /// The rows from each of the two matchmaker queries, by document id.
+  final Map<String, CardAccess> _rowsByMatchmakerUid = <String, CardAccess>{};
+  final Map<String, CardAccess> _rowsByGrantee = <String, CardAccess>{};
+  bool _matchmakerQueryVerified = false;
+  bool _granteeQueryVerified = false;
+
+  /// Where a row stands, for choosing between two rows about one owner: a
+  /// block is the owner's word and wins; then a grant that opens the card,
+  /// then any approval, then a request still waiting, then the rest. **A
+  /// pending row never hides an approved one.**
+  static int _rank(CardAccess row) => switch (row.status) {
+    CardAccessStatus.blocked => 5,
+    CardAccessStatus.approved => row.canReadCard ? 4 : 3,
+    CardAccessStatus.pending => 2,
+    CardAccessStatus.declined => 1,
+    CardAccessStatus.revoked => 0,
+  };
+
+  /// One row per owner, out of every row this account can read as a
+  /// matchmaker.
+  @visibleForTesting
+  static Map<String, CardAccess> bestRowPerOwner(Iterable<CardAccess> rows) {
+    final Map<String, CardAccess> best = <String, CardAccess>{};
+    for (final CardAccess row in rows) {
+      final CardAccess? known = best[row.ownerUid];
+      if (known == null || _rank(row) > _rank(known)) {
+        best[row.ownerUid] = row;
+      }
+    }
+    return best;
+  }
+
+  void _onMatchmakerRows(
+    QuerySnapshot<Map<String, dynamic>> snap, {
+    required bool byGrantee,
+  }) {
+    final Map<String, CardAccess> target = byGrantee
+        ? _rowsByGrantee
+        : _rowsByMatchmakerUid;
+    target
+      ..clear()
+      ..addAll(<String, CardAccess>{
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in snap.docs)
+          if (CardAccess.fromMap(doc.data()) case final CardAccess a) doc.id: a,
+      });
+    if (byGrantee) {
+      _granteeQueryVerified = !snap.metadata.isFromCache;
+    } else {
+      _matchmakerQueryVerified = !snap.metadata.isFromCache;
+    }
+    // Authoritative only once both queries have heard from the server: an
+    // unlink decided on half the rows would drop a card that is still
+    // granted through the other half.
+    final bool authoritative =
+        _matchmakerQueryVerified && _granteeQueryVerified;
+    matchmakerAccessVerified = authoritative;
+    _asMatchmaker = bestRowPerOwner(<CardAccess>[
+      ..._rowsByMatchmakerUid.values,
+      ..._rowsByGrantee.values,
+    ]);
+    if (authoritative) {
+      _verifiedCards.removeWhere(
+        (owner) => _asMatchmaker[owner]?.canReadCard != true,
+      );
+      // **A card already on this device stays on screen through a
+      // reconnect.** The server has just confirmed the grant afresh; the copy
+      // here (text and photos) is the last one synced, and is drawn at once
+      // instead of vanishing until the card document is read again. Only real
+      // changes then arrive. A grant that ended is not in this set, and a card
+      // that was deleted unlinks as soon as it is read.
+      _verifiedCards.addAll(
+        OfflineCache.verifiedCardOwners.where(
+          (owner) => _asMatchmaker[owner]?.canReadCard == true,
+        ),
+      );
+      _people.setVerifiedCardOwners(_verifiedCards);
+      // What an offline launch may go on showing: the cards this answer still
+      // allows, out of those confirmed before, plus any confirmed since. A
+      // grant that ended drops out here.
+      OfflineCache.saveVerifiedCardOwners(<String>{
+        ...OfflineCache.verifiedCardOwners.where(
+          (owner) => _asMatchmaker[owner]?.canReadCard == true,
+        ),
+        ..._verifiedCards,
+      });
+    }
+    notifyListeners();
+    unawaited(_reconcile(authoritative: authoritative));
+  }
+
   // --- Lifecycle ------------------------------------------------------------
 
   /// Connects if it can — waiting for Firebase first — and says whether it
@@ -361,50 +461,30 @@ class CardAccessProvider extends ChangeNotifier {
               }, onError: _log),
         )
         ..add(
-          (CoupleWorkspaceService.isCouple
-                  ? access.where('granteeUids', arrayContains: uid)
-                  : access.where('matchmakerUid', isEqualTo: uid))
+          access
+              .where('matchmakerUid', isEqualTo: uid)
               .snapshots(includeMetadataChanges: true)
-              .listen((QuerySnapshot<Map<String, dynamic>> snap) {
-                matchmakerAccessVerified = !snap.metadata.isFromCache;
-                _asMatchmaker = <String, CardAccess>{
-                  for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-                      in snap.docs)
-                    if (CardAccess.fromMap(doc.data()) case final CardAccess a)
-                      a.ownerUid: a,
-                };
-                if (!snap.metadata.isFromCache) {
-                  _verifiedCards.removeWhere(
-                    (owner) => _asMatchmaker[owner]?.canReadCard != true,
-                  );
-                  // **A card already on this device stays on screen through a
-                  // reconnect.** The server has just confirmed the grant
-                  // afresh; the copy here (text and photos) is the last one
-                  // synced, and is drawn at once instead of vanishing until
-                  // the card document is read again. Only real changes then
-                  // arrive. A grant that ended is not in this set, and a card
-                  // that was deleted unlinks as soon as it is read.
-                  _verifiedCards.addAll(
-                    OfflineCache.verifiedCardOwners.where(
-                      (owner) => _asMatchmaker[owner]?.canReadCard == true,
-                    ),
-                  );
-                  _people.setVerifiedCardOwners(_verifiedCards);
-                  // What an offline launch may go on showing: the cards this
-                  // answer still allows, out of those confirmed before, plus
-                  // any confirmed since. A grant that ended drops out here.
-                  OfflineCache.saveVerifiedCardOwners(<String>{
-                    ...OfflineCache.verifiedCardOwners.where(
-                      (owner) => _asMatchmaker[owner]?.canReadCard == true,
-                    ),
-                    ..._verifiedCards,
-                  });
-                }
-                notifyListeners();
-                unawaited(
-                  _reconcile(authoritative: !snap.metadata.isFromCache),
-                );
-              }, onError: _log),
+              .listen(
+                (QuerySnapshot<Map<String, dynamic>> snap) =>
+                    _onMatchmakerRows(snap, byGrantee: false),
+                onError: _log,
+              ),
+        )
+        // **Both queries, always.** A row this account asked for alone has
+        // `matchmakerUid == uid`; a row asked for by a couple's shared
+        // database names it among `granteeUids`. Listening to only one of
+        // them — chosen by whether the membership had been read yet — is how
+        // an approval could vanish after an update and the friend read as
+        // "ממתין לאישור" again.
+        ..add(
+          access
+              .where('granteeUids', arrayContains: uid)
+              .snapshots(includeMetadataChanges: true)
+              .listen(
+                (QuerySnapshot<Map<String, dynamic>> snap) =>
+                    _onMatchmakerRows(snap, byGrantee: true),
+                onError: _log,
+              ),
         )
         ..add(
           db
@@ -515,6 +595,11 @@ class CardAccessProvider extends ChangeNotifier {
     _uid = null;
     _asOwner = <CardAccess>[];
     _asMatchmaker = <String, CardAccess>{};
+    _rowsByMatchmakerUid.clear();
+    _rowsByGrantee.clear();
+    _matchmakerQueryVerified = false;
+    _granteeQueryVerified = false;
+    matchmakerAccessVerified = false;
     _reports = <StatusReport>[];
     _helpers = <CardHelper>[];
     _friends = <CardHelper>[];
@@ -1263,6 +1348,15 @@ class CardAccessProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final existing = _asMatchmaker[ownerUid];
+      // Access already granted: nothing to ask for. Writing a fresh pending
+      // row here (under another id — a couple's shared database) is how an
+      // approval used to look as though it had gone back to waiting.
+      if (existing != null && existing.canReadCard) {
+        return CardRequestOutcome.sent;
+      }
+      if (existing?.status == CardAccessStatus.pending) {
+        return CardRequestOutcome.sent;
+      }
       if (existing?.status == CardAccessStatus.approved &&
           !existing!.canReadCard) {
         await _accessDoc(ownerUid, uid).update({

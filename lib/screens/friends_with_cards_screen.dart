@@ -8,6 +8,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -189,6 +190,9 @@ class FriendsWithCardsScreen extends StatefulWidget {
 
   static const String route = '/card-friends';
 
+  /// Short enough for one line in the bar.
+  static const String title = 'חברים שמנהלים כרטיס אישי';
+
   /// The route that opens the screen straight onto [ownerUid]'s request.
   static String requestRoute(String ownerUid, {String? phoneHash}) => Uri(
     path: route,
@@ -291,22 +295,36 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
       people: people,
       inbox: inbox,
     );
+    final DateTime now = DateTime.now();
     final List<FriendWithCard> approved = friends
         .where((FriendWithCard f) => f.approved)
         .toList();
-    final List<FriendWithCard> waiting = friends
-        .where((FriendWithCard f) => !f.approved)
+    // Two lists, never one: the friends still to ask — a card made this week
+    // leading, newest first — and the requests already sent and waiting for
+    // the friend's yes.
+    final List<FriendWithCard> toAsk =
+        friends
+            .where((FriendWithCard f) => f.state == FriendCardState.requestable)
+            .toList()
+          ..sort((FriendWithCard a, FriendWithCard b) {
+            final bool an = a.isNew(now), bn = b.isNew(now);
+            if (an != bn) return an ? -1 : 1;
+            if (an && bn) return b.cardCreatedAt!.compareTo(a.cardCreatedAt!);
+            return a.name.compareTo(b.name);
+          });
+    final List<FriendWithCard> pending = friends
+        .where((FriendWithCard f) => f.state == FriendCardState.pending)
         .toList();
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('חברים שמנהלים כרטיס אישי בשדכן')),
+      appBar: AppBar(title: const Text(FriendsWithCardsScreen.title)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 32),
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
             child: Text(
-              'חברים שמנהלים כרטיס אישי בשדכן. עם גישה, הכרטיס שלהם מתעדכן אצלך במאגר מעצמו.',
+              'עם גישה, הכרטיס שלהם מתעדכן אצלך במאגר מעצמו.',
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -328,15 +346,22 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
                 style: theme.textTheme.bodyMedium,
               ),
             ),
+          if (toAsk.isNotEmpty) ...<Widget>[
+            const _GroupTitle('בקשות גישה חדשות'),
+            for (final FriendWithCard friend in toAsk)
+              friend.isNew(now)
+                  ? _NewCardRow(friend: friend)
+                  : _WaitingRow(friend: friend),
+          ],
+          if (pending.isNotEmpty) ...<Widget>[
+            const _GroupTitle('ממתינים לאישור שלי'),
+            for (final FriendWithCard friend in pending)
+              _WaitingRow(friend: friend),
+          ],
           if (approved.isNotEmpty) ...<Widget>[
             const _GroupTitle('אישרו לי גישה'),
             for (final FriendWithCard friend in approved)
               _ApprovedRow(friend: friend),
-          ],
-          if (waiting.isNotEmpty) ...<Widget>[
-            const _GroupTitle('עדיין לא אישרו גישה'),
-            for (final FriendWithCard friend in waiting)
-              _WaitingRow(friend: friend),
           ],
         ],
       ),
@@ -524,6 +549,101 @@ class _WaitingRow extends StatelessWidget {
   }
 }
 
+/// A friend whose card was made in the last week, and who has not been asked
+/// yet: drawn ahead of everything, on a warm wash, as one sentence —
+/// "חדש! משה הוסיף כרטיס לשדכן · בקש גישה".
+class _NewCardRow extends StatelessWidget {
+  const _NewCardRow({required this.friend});
+  final FriendWithCard friend;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Color warm = dark ? AppColors.secondaryDarkDm : AppColors.secondary;
+    final CardAccessProvider access = context.watch<CardAccessProvider>();
+    final bool busy = access.isBusy('request:${friend.ownerUid}');
+    final Person? person = friend.person;
+    final String first = friend.name.trim().split(RegExp(r'\s+')).first;
+    final String added = switch (person?.gender) {
+      Gender.female => 'הוסיפה',
+      Gender.male => 'הוסיף',
+      _ => 'הוסיף/ה',
+    };
+    final VoidCallback? ask = friend.phoneHash == null || busy
+        ? null
+        : () => CardInviteFlow.requestAccess(
+            context,
+            person ?? _standIn(friend),
+            ownerUid: friend.ownerUid,
+            ownerPhoneHash: friend.phoneHash!,
+          );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Material(
+        color: warm.withValues(alpha: dark ? 0.16 : 0.08),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: warm.withValues(alpha: 0.45)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: ask,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 12, 10),
+            child: Row(
+              children: <Widget>[
+                ExcludeSemantics(
+                  child: person != null
+                      ? PersonAvatar(person: person, radius: 22)
+                      : _InitialAvatar(name: friend.name),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: <InlineSpan>[
+                        TextSpan(
+                          text: 'חדש! ',
+                          style: TextStyle(
+                            color: warm,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        TextSpan(text: '$first $added כרטיס לשדכן · '),
+                        TextSpan(
+                          text: '{בקש|בקשי} גישה'.forGender(context.userGender),
+                          style: TextStyle(
+                            color: dark
+                                ? AppColors.primaryDarkDm
+                                : AppColors.primaryDark,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+                if (busy) ...<Widget>[
+                  const SizedBox(width: 8),
+                  const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _InitialAvatar extends StatelessWidget {
   const _InitialAvatar({required this.name});
   final String name;
@@ -559,7 +679,7 @@ class FriendsWithCardsLink extends StatelessWidget {
     final bool dark = theme.brightness == Brightness.dark;
     final Color ink = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
     return Material(
-      color: dark ? AppColors.surfaceDm : AppColors.cardCream,
+      color: dark ? AppColors.surfaceDm : theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),

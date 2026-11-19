@@ -1,6 +1,7 @@
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/home_stage.dart';
+import 'package:shadchan/utils/matchmaker_rank.dart';
 
 /// The one compact, game-like line under "הפעולה הבאה שלך", over its scale.
 ///
@@ -71,6 +72,15 @@ class HomeProgress {
     ];
     return lines[day.abs() % lines.length];
   }
+
+  /// The version from a hundred friends on: the way to the next matchmaker
+  /// rank — "עוד 7 רעיונות כדי להפוך ל־שדכן פעיל" — measured against that
+  /// rank's threshold.
+  static HomeProgress rank({required int ideas, Gender? gender}) =>
+      HomeProgress(
+        line: MatchmakerRanks.progressLine(ideas, gender),
+        progress: MatchmakerRanks.progress(ideas),
+      );
 
   /// How far [value] is between the round figure under it and the next one —
   /// 5s under fifty, 10s under two hundred, 25s after: 24 is 0.8 of the way

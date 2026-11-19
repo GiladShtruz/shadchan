@@ -4,6 +4,7 @@ import 'package:shadchan/providers/inbox_provider.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadchan/widgets/home_card_friends.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
@@ -695,21 +696,25 @@ void main() {
       );
       await tester.pumpWidget(app(home: const FriendsWithCardsScreen()));
       await tester.pumpAndSettle();
-      expect(find.text('חברים שמנהלים כרטיס אישי בשדכן'), findsOneWidget);
+      expect(find.text('חברים שמנהלים כרטיס אישי'), findsOneWidget);
       expect(find.text('להזמין חברים להוסיף כרטיס אישי'), findsOneWidget);
       expect(find.text('אישרו לי גישה'), findsOneWidget);
-      expect(find.text('עדיין לא אישרו גישה'), findsOneWidget);
+      expect(find.text('בקשות גישה חדשות'), findsOneWidget);
       expect(find.text('נועה'), findsOneWidget);
       expect(find.text('בקשת גישה'), findsOneWidget);
       expect(find.text('דנה כהן'), findsOneWidget);
-      // Approved first, then the ones still to ask.
+      // The ones still to ask lead, then those who already said yes.
       expect(
-        tester.getTopLeft(find.text('דנה כהן')).dy,
-        lessThan(tester.getTopLeft(find.text('עדיין לא אישרו גישה')).dy),
+        tester.getTopLeft(find.text('בקשות גישה חדשות')).dy,
+        lessThan(tester.getTopLeft(find.text('נועה')).dy),
       );
       expect(
-        tester.getTopLeft(find.text('עדיין לא אישרו גישה')).dy,
-        lessThan(tester.getTopLeft(find.text('נועה')).dy),
+        tester.getTopLeft(find.text('נועה')).dy,
+        lessThan(tester.getTopLeft(find.text('אישרו לי גישה')).dy),
+      );
+      expect(
+        tester.getTopLeft(find.text('אישרו לי גישה')).dy,
+        lessThan(tester.getTopLeft(find.text('דנה כהן')).dy),
       );
       // A friend who has not given access is a name and a button: the row
       // opens nothing.
@@ -718,6 +723,59 @@ void main() {
         findsNothing,
       );
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'home: "החברים שלך בשדכן" shows approved full cards as a carousel, on a narrow phone with large text',
+    (tester) async {
+      final DateTime now = DateTime.now();
+      final Person dana = Person(
+        id: 'dana-card',
+        firstName: 'דנה',
+        lastName: 'כהן',
+        gender: Gender.female,
+        description: 'בת 26, אוהבת טיולים ומוזיקה',
+        photosPaths: const <String>['/missing/dana.jpg'],
+        cardOwnerUid: 'owner-dana',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await tester.runAsync(() => peopleBox.put(dana.id, dana));
+      access.grants.add(
+        const CardAccess(
+          ownerUid: 'owner-dana',
+          matchmakerUid: 'me',
+          status: CardAccessStatus.approved,
+          requestedBy: 'owner',
+          ownerName: 'דנה כהן',
+        ),
+      );
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        app(
+          scale: 1.5,
+          home: const Scaffold(
+            body: Padding(
+              padding: EdgeInsets.all(12),
+              child: HomeCardFriendsSection(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(HomeCardFriendsSection.title), findsOneWidget);
+      expect(find.text('דנה'), findsOneWidget);
+      expect(find.text('דנה כהן'), findsOneWidget);
+      // נועה keeps a card and has not given access: not in the carousel,
+      // counted in the line under it.
+      expect(find.text('נועה'), findsNothing);
+      expect(find.text('עוד חבר אחד מנהל כרטיס אישי'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() => peopleBox.delete(dana.id));
     },
   );
 

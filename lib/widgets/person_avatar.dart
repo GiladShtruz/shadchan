@@ -57,11 +57,25 @@ class PersonAvatar extends StatelessWidget {
   /// when another of their photos is there.
   String? _firstExistingPhotoPath() {
     for (final String path in person.photosPaths) {
-      if (File(path).existsSync()) {
+      if (_exists(path)) {
         return path;
       }
     }
     return null;
+  }
+
+  /// Files found on the device, remembered: every avatar in a scrolling list
+  /// used to ask the disk on every build. A file found once is taken to stay
+  /// (one deleted later falls back through the image's own error builder);
+  /// a missing one is asked again, since a card photo may still be arriving.
+  static final Set<String> _known = <String>{};
+
+  static bool _exists(String path) {
+    if (_known.contains(path)) return true;
+    if (!File(path).existsSync()) return false;
+    if (_known.length > 4000) _known.clear();
+    _known.add(path);
+    return true;
   }
 }
 
@@ -122,13 +136,23 @@ class _FaceCenteredPhotoState extends State<FaceCenteredPhoto> {
 
   @override
   Widget build(BuildContext context) {
+    // Decoded near the size it is drawn — a list of avatars each holding a
+    // full camera photo is what made scrolling stutter. Twice the diameter in
+    // width leaves room for a landscape photo to still cover the circle.
+    final int decodeWidth =
+        (widget.diameter * 2 * MediaQuery.devicePixelRatioOf(context)).ceil();
     return ClipOval(
-      child: Image.file(
-        File(widget.path),
+      child: Image(
+        image: ResizeImage(
+          FileImage(File(widget.path)),
+          width: decodeWidth,
+          policy: ResizeImagePolicy.fit,
+        ),
         width: widget.diameter,
         height: widget.diameter,
         fit: BoxFit.cover,
         alignment: _alignment,
+        gaplessPlayback: true,
         errorBuilder: (BuildContext context, Object error, StackTrace? stack) {
           return Container(
             width: widget.diameter,

@@ -49,7 +49,7 @@ class NetworkLink extends StatelessWidget {
                       'לך עוד $cards'
                   .forGender(context.userGender);
         return Material(
-          color: dark ? AppColors.surfaceDm : AppColors.cardCream,
+          color: dark ? AppColors.surfaceDm : theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
           child: InkWell(
             borderRadius: BorderRadius.circular(16),

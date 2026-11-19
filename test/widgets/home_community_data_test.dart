@@ -96,7 +96,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  test('last week, compact, only when this phone saw one', () {
+  test('last week goes into the short headline', () {
     const CommunityChallenge none = CommunityChallenge(
       metric: ChallengeMetric.ideas,
       target: 100,
@@ -110,7 +110,16 @@ void main() {
       current: 40,
       record: 120,
     );
-    expect(seen.lastWeekLabel, 'בשבוע שעבר: 120 רעיונות');
+    expect(seen.headline, 'שבוע שעבר הגענו ל־120 · השבוע שוברים שיא: 121');
+    expect(seen.lastWeekLabel, isNull);
+    const CommunityChallenge titled = CommunityChallenge(
+      metric: ChallengeMetric.ideas,
+      target: 150,
+      current: 40,
+      record: 120,
+      title: 'מחברים יחד',
+    );
+    expect(titled.lastWeekLabel, 'בשבוע שעבר: 120 רעיונות');
   });
 
   testWidgets('a slower obsolete read cannot overwrite a refreshed score', (

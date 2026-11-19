@@ -87,8 +87,19 @@ class _PersonPhotoCarouselState extends State<PersonPhotoCarousel> {
               itemBuilder: (BuildContext context, int index) {
                 // A photo that cannot be read leaves a quiet frame, never a
                 // broken card: the rest of the photos and the text stay.
-                return Image.file(
-                  File(photos[index]),
+                // Decoded at the screen's width, not the camera's: a page of
+                // full-size photos is what made the swipe stutter.
+                final Size screen = MediaQuery.sizeOf(context);
+                final int decode =
+                    (screen.width * MediaQuery.devicePixelRatioOf(context))
+                        .ceil();
+                return Image(
+                  image: ResizeImage(
+                    FileImage(File(photos[index])),
+                    width: decode,
+                    policy: ResizeImagePolicy.fit,
+                  ),
+                  gaplessPlayback: true,
                   fit: widget.fit,
                   errorBuilder: (BuildContext context, Object error, _) =>
                       Center(

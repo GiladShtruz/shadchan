@@ -246,4 +246,28 @@ abstract final class MatchStaleness {
     }
     return 'עבר שבוע בלי עדכון – שווה לקדם את הרעיון';
   }
+
+  /// The same, said in a few words for one short line under an action:
+  /// "כבר חודשיים בלי עדכון".
+  static String? shortNudge(MatchIdea match, {DateTime? now}) {
+    if (!isStale(match, now: now)) {
+      return null;
+    }
+    return 'כבר ${quietFor((now ?? DateTime.now()).difference(match.updatedAt).inDays)} בלי עדכון';
+  }
+
+  /// "שבוע", "שבועיים", "3 שבועות", "חודש", "חודשיים", "5 חודשים", "שנה".
+  static String quietFor(int days) {
+    if (days >= 365) return days >= 730 ? '${days ~/ 365} שנים' : 'שנה';
+    if (days >= 60) {
+      final int months = days ~/ 30;
+      return months == 2 ? 'חודשיים' : '$months חודשים';
+    }
+    if (days >= 30) return 'חודש';
+    if (days >= 14) {
+      final int weeks = days ~/ 7;
+      return weeks == 2 ? 'שבועיים' : '$weeks שבועות';
+    }
+    return 'שבוע';
+  }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -661,6 +662,7 @@ class _KnownMatchmakerProfileScreenState
   String? _photoUrl;
   int? _couples;
   int? _weddings;
+  int? _ideas;
   bool _extrasRead = false;
 
   @override
@@ -695,6 +697,7 @@ class _KnownMatchmakerProfileScreenState
       if (member != null && member['hidden'] == false) {
         _couples = (member['allCouples'] as num?)?.toInt();
         _weddings = (member['allEngagements'] as num?)?.toInt();
+        _ideas = (member['allIdeas'] as num?)?.toInt();
         final Object? photo = member['photoUrl'];
         if (photo is String && photo.trim().isNotEmpty) _photoUrl = photo;
       }
@@ -783,6 +786,11 @@ class _KnownMatchmakerProfileScreenState
               fontWeight: FontWeight.w900,
             ),
           ),
+          if ((_ideas ?? 0) > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Center(child: MatchmakerRankBadge(ideas: _ideas!)),
+            ),
           if (k.mutual)
             Padding(
               padding: const EdgeInsets.only(top: 4),
