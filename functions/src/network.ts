@@ -10,13 +10,15 @@
  *  - serve a shared card's photos to a connected matchmaker (`sharedCardPhoto`)
  *    — through a callable, never a download URL, so ending the connection
  *    ends the photos;
- *  - tell the other side about an idea offered to them, and its answer;
- *  - push a chat message to the other side's phones;
+ *  - tell the other side about an idea offered to them, and its answer —
+ *    in the inbox and as small system lines in the pair's chat, never as a
+ *    push (only a request to connect is pushed);
+ *  - push a chat message to the other side's phones (never a system line);
  *  - take a single's card out of every shared pool the moment the single
  *    withdraws their consent (`shareOnward`) or the grant itself;
  *  - erase all of it with the account.
  */
-import { getFirestore, DocumentSnapshot } from 'firebase-admin/firestore';
+import { getFirestore, DocumentSnapshot, FieldValue } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { getMessaging } from 'firebase-admin/messaging';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
@@ -143,7 +145,9 @@ export function proposalNotice(
       kind: 'ideaProposal',
       title: `${doc.fromName || 'שדכן/ית'} מציע/ה רעיון`,
       body: `${candidate} ו${target} – לאשר את הרעיון?`,
-      push: true,
+      // The offer is already in the chat between the two; activity in the
+      // network is never pushed — only a request to connect is.
+      push: false,
     };
   }
   if (was === 'pending' && now === 'approved') {
@@ -152,7 +156,7 @@ export function proposalNotice(
       kind: 'ideaProposalApproved',
       title: `${doc.toName || 'השדכן/ית'} אישר/ה את הרעיון`,
       body: `הרעיון ${candidate} ו${target} נפתח אצל שניכם`,
-      push: true,
+      push: false,
     };
   }
   if (was === 'pending' && now === 'declined') {
@@ -168,12 +172,118 @@ export function proposalNotice(
   return null;
 }
 
+/** What a side's own status reads as in the chat — or null for none. */
+export function sideEvent(was: string | undefined, now: string | undefined): string | null {
+  if (!now || was === now) return null;
+  switch (now) {
+    case 'unavailable':
+      return 'עבר להמתנה';
+    case 'dating':
+      return 'יוצאים';
+    case 'dated':
+    case 'rejected':
+      return 'הרעיון נסגר';
+    case 'married':
+      return 'מזל טוב! חתונה';
+    case 'idea':
+    case 'checking':
+      return was === undefined ? null : 'הרעיון חזר להיות פתוח';
+    default:
+      return null;
+  }
+}
+
+/** The small system lines a proposal's moves write into the pair's chat. */
+export function proposalEvents(
+  was: string | null,
+  now: string,
+  sidesBefore: Record<string, { status?: string }>,
+  sidesAfter: Record<string, { status?: string }>,
+  names: Record<string, string>,
+  pair: string,
+): string[] {
+  const events: string[] = [];
+  if (was !== now) {
+    if (was === 'pending' && now === 'approved') events.push(`הרעיון ${pair} אושר ונפתח`);
+    if (was === 'pending' && now === 'declined') events.push(`הרעיון ${pair} לא אושר`);
+    if (was === 'pending' && now === 'withdrawn') events.push(`ההצעה ${pair} בוטלה`);
+  }
+  for (const uid of Object.keys(sidesAfter ?? {})) {
+    const line = sideEvent(sidesBefore?.[uid]?.status, sidesAfter[uid]?.status);
+    if (!line) continue;
+    const who = (names[uid] ?? '').trim().split(/\s+/)[0];
+    events.push(`${pair}: ${line}${who ? ` (אצל ${who})` : ''}`);
+  }
+  return events;
+}
+
+/** Writes [lines] as system events into the one chat of [a] and [b]. */
+async function chatEvents(
+  a: string,
+  b: string,
+  names: Record<string, string>,
+  lines: string[],
+  ref: Record<string, unknown>,
+): Promise<void> {
+  if (lines.length === 0 || !a || !b) return;
+  const db = getFirestore();
+  const members = [a, b].sort();
+  const chat = db.doc(`chats/${members[0]}_${members[1]}`);
+  const snap = await chat.get();
+  if (!snap.exists) {
+    await chat.set({
+      members,
+      type: 'direct',
+      kind: 'matchmakers',
+      names: { [a]: names[a] ?? '', [b]: names[b] ?? '' },
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+  const batch = db.batch();
+  for (const text of lines) {
+    batch.set(chat.collection('messages').doc(), {
+      fromUid: 'system',
+      system: true,
+      text,
+      ref,
+      at: FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
 export const onIdeaProposalWritten = onDocumentWritten('ideaProposals/{id}', async (event) => {
   const before = event.data?.before;
   const after = event.data?.after;
   if (!after?.exists) return;
   const was = before?.exists ? (before.get('status') as string) : null;
   const now = after.get('status') as string;
+  const fromUid = after.get('fromUid') as string;
+  const toUid = after.get('toUid') as string;
+  const names: Record<string, string> = {
+    [fromUid]: (after.get('fromName') as string) ?? '',
+    [toUid]: (after.get('toName') as string) ?? '',
+  };
+  const pair = `${firstOf(after.get('candidate')) || 'מועמד/ת'} ו${firstOf(after.get('target')) || 'מועמד/ת'}`;
+  try {
+    await chatEvents(
+      fromUid,
+      toUid,
+      names,
+      proposalEvents(
+        was,
+        now,
+        (before?.exists ? before.get('sides') : {}) ?? {},
+        after.get('sides') ?? {},
+        names,
+        pair,
+      ),
+      { kind: 'proposal', id: event.params.id, label: pair },
+    );
+  } catch (error) {
+    logger.warn('onIdeaProposalWritten: chat events', { error: String(error) });
+  }
   if (was === now) return;
   const notice = proposalNotice(was, now, {
     fromName: (after.get('fromName') as string) ?? '',
@@ -203,6 +313,8 @@ export const onChatMessageCreated = onDocumentCreated(
   async (event) => {
     const message = event.data;
     if (!message) return;
+    // A system line (an idea approved, moved to waiting…) is never pushed.
+    if (message.get('system') === true) return;
     const db = getFirestore();
     const chat = await db.doc(`chats/${event.params.chatId}`).get();
     if (!chat.exists) return;
@@ -239,6 +351,12 @@ export const onChatMessageCreated = onDocumentCreated(
 export async function unshareCardOf(ownerUid: string, matchmakerUids: string[]): Promise<void> {
   const db = getFirestore();
   for (const uid of new Set(matchmakerUids.filter(Boolean))) {
+    // Cards sent one by one in a chat leave too.
+    const recipients = await db.collection('sentCards').doc(uid).collection('to').listDocuments();
+    for (const to of recipients) {
+      const sent = await to.collection('cards').where('cardOwnerUid', '==', ownerUid).get();
+      for (const doc of sent.docs) await doc.ref.delete();
+    }
     const snap = await db
       .collection('sharedCards')
       .doc(uid)
@@ -301,8 +419,8 @@ export const onCardAccessShareOnward = onDocumentWritten('cardAccess/{accessId}'
       after.get('ownerUid') as string,
       {
         kind: 'shareOnwardRequest',
-        title: `${name} מבקש/ת לשתף את הכרטיס שלך עם שדכנים שהוא/היא מכיר/ה`,
-        body: 'רק עם שדכנים שמחוברים אליו/ה אישית — לא מאגר ציבורי. ההחלטה שלך.',
+        title: `${name} מבקש/ת שתאפשר/י שוב להציג את הכרטיס שלך לשדכנים שהם מכירים`,
+        body: 'לא ציבורי ולא בלתי מוגבל — רק שדכנים שמכירים את השדכנים שאישרת, לצפייה בלבד. ההחלטה שלך.',
         route: '/me?section=approved',
       },
       true,
@@ -327,6 +445,7 @@ export const onPersonalCardDeletedUnshare = onDocumentWritten('personalCards/{ui
 export async function deleteNetworkOf(uid: string): Promise<void> {
   const db = getFirestore();
   await db.recursiveDelete(db.collection('sharedCards').doc(uid));
+  await db.recursiveDelete(db.collection('sentCards').doc(uid));
   try {
     await getStorage().bucket().deleteFiles({ prefix: `sharedCards/${uid}/` });
   } catch (error) {

@@ -68,7 +68,11 @@ abstract final class CoupleWorkspaceService {
         .doc('memberships/$uid');
     Map<String, dynamic>? data;
     try {
-      data = (await ref.get(const GetOptions(source: Source.server))).data();
+      data =
+          (await ref
+                  .get(const GetOptions(source: Source.server))
+                  .timeout(const Duration(seconds: 15)))
+              .data();
     } on Object {
       // Offline: the last membership this phone saw, so a couple's member is
       // still shown the shared database (read-only) rather than treated as

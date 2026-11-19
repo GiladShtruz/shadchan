@@ -42,6 +42,7 @@ class PersonalCardProvider extends ChangeNotifier {
     final Object? announces = _box.get(_announcesKey);
     _announces = !(announces == false || announces == 'false');
     _photosShareable = photosShareableIn(_box);
+    _shareOnward = shareOnwardIn(_box);
   }
 
   /// The card changed on another phone signed in to the same account.
@@ -56,6 +57,15 @@ class PersonalCardProvider extends ChangeNotifier {
   static const String _acceptsRequestsKey = 'personalCard.acceptsRequests';
   static const String _announcesKey = 'personalCard.announces';
   static const String photosShareableKey = 'personalCard.photosShareable';
+  static const String shareOnwardKey = 'personalCard.shareOnward';
+
+  /// The owner's "השדכנים שאישרתי יכולים להציג את הכרטיס לשדכנים שהם
+  /// מכירים" as stored in [box] — **on unless it was turned off**. Read by
+  /// [CardAccessProvider] whenever it writes a grant.
+  static bool shareOnwardIn(Box<dynamic>? box) {
+    final Object? raw = box?.get(shareOnwardKey);
+    return !(raw == false || raw == 'false');
+  }
 
   /// The owner's "התמונה שלי לא ניתנת לשיתוף" as stored in [box] — on unless
   /// it was turned off. Read by the publisher too.
@@ -77,6 +87,25 @@ class PersonalCardProvider extends ChangeNotifier {
   bool _acceptsRequests = true;
   bool _announces = true;
   bool _photosShareable = true;
+  bool _shareOnward = true;
+
+  /// **One general answer, for every matchmaker the owner approved**: may
+  /// they show the card to the matchmakers *they* are connected with? On by
+  /// default. Not public and not unlimited — only matchmakers who know the
+  /// owner's matchmakers, view only, never passed on further. Off, the card
+  /// leaves every one of those pools at once (the grant rows carry the
+  /// answer — see [CardAccessProvider.applyShareOnward]); ideas already
+  /// opened from it stay.
+  bool get shareOnward => _shareOnward;
+
+  Future<void> setShareOnward(bool value) async {
+    if (_shareOnward == value) {
+      return;
+    }
+    _shareOnward = value;
+    persistHomeSetting(shareOnwardKey, value ? 'true' : 'false');
+    notifyListeners();
+  }
 
   /// **"התמונה שלי לא ניתנת לשיתוף"** — off means the matchmakers who have
   /// access see the card's photos inside שדכן, and nothing they share out of
@@ -277,12 +306,14 @@ class PersonalCardProvider extends ChangeNotifier {
     _acceptsRequests = true;
     _announces = true;
     _photosShareable = true;
+    _shareOnward = true;
     await _box.deleteAll(<String>[
       _cardKey,
       _deletedKey,
       _acceptsRequestsKey,
       _announcesKey,
       photosShareableKey,
+      shareOnwardKey,
     ]);
     notifyListeners();
   }

@@ -5,16 +5,22 @@ import 'package:shadchan/utils/person_duplicates.dart';
 /// One person in the pool of the connected matchmakers' shared cards — which
 /// may be held by more than one of them.
 class SharedPoolEntry {
-  SharedPoolEntry(this.cards, {required this.certain});
+  SharedPoolEntry(this.cards, {this.similar = const <SharedCard>[]});
 
-  /// Every shared card that is (or may be) this person, best first.
+  /// Every shared card that is **certainly** this person — the same phone or
+  /// the same personal card — best first: a single's own personal card is
+  /// the source of truth and always leads, so nothing a matchmaker typed by
+  /// hand about them is shown beside it.
   final List<SharedCard> cards;
 
-  /// **True when the cards are certainly one person** — the same phone or
-  /// the same personal card. False when they were joined only because they
-  /// look alike (name, gender, age): the entry then says which matchmakers
-  /// hold *a* card like it, so the reader chooses whom to ask.
-  final bool certain;
+  /// Cards at *other* matchmakers that only look like this person (a similar
+  /// name, the same gender, close ages). **Never joined into the entry** —
+  /// they are listed as sources to check, and become one only once the same
+  /// phone or the same personal card proves it.
+  final List<SharedCard> similar;
+
+  /// Kept for older callers: an entry is always one person for sure now.
+  bool get certain => true;
 
   /// The card drawn for the entry.
   SharedCard get primary => cards.first;
@@ -30,14 +36,14 @@ class SharedPoolEntry {
 
   bool get heldByMany => holders.length > 1;
 
-  /// "מהמאגר של יונתן" / "אצל יונתן ושרה" / "אצל יונתן, שרה ועוד 2".
+  /// "דרך יונתן כהן" / "דרך 3 שדכנים".
   String get sourceLabel {
-    final List<String> names = <String>[
-      for (final SharedCard c in holders) c.ownerFirstName,
-    ];
-    if (names.length == 1) return 'מהמאגר של ${names.first}';
-    if (names.length == 2) return 'אצל ${names[0]} ו${names[1]}';
-    return 'אצל ${names[0]}, ${names[1]} ועוד ${names.length - 2}';
+    final List<SharedCard> h = holders;
+    if (h.length == 1) {
+      final String name = h.first.ownerName.trim();
+      return 'דרך ${name.isEmpty ? h.first.ownerFirstName : name}';
+    }
+    return 'דרך ${h.length} שדכנים';
   }
 }
 
@@ -48,12 +54,13 @@ class SharedPoolEntry {
 /// matchmakers about one. So:
 ///
 ///  - **certainly the same person** — the same phone (hashed: nobody sees the
-///    number) or the same personal card — one entry, one card;
-///  - **probably the same person** — a name that differs by a letter or two,
-///    the same gender, ages a year apart — still one entry, but marked
-///    uncertain and naming every matchmaker holding such a card;
-///  - **somebody already in the reader's own database** — left out: they are
-///    the reader's friend already.
+///    number) or the same personal card — one entry, one card, and the list
+///    of matchmakers who hold it. A personal card the single keeps leads;
+///  - **perhaps the same person** — a name that differs by a letter or two,
+///    the same gender, ages a year apart — **not joined**: each stays its own
+///    entry and points at the other as a possible match, until it is proved;
+///  - **somebody already in the reader's own database** (or the reader's own
+///    personal card) — left out: no duplicate in "המאגר שלי".
 ///
 /// Pure, so the rules are tested.
 abstract final class SharedPool {
@@ -73,7 +80,6 @@ abstract final class SharedPool {
     ];
     final int n = pool.length;
     final List<int> parent = List<int>.generate(n, (int i) => i);
-    final List<bool> rootCertain = List<bool>.filled(n, true);
     int find(int i) {
       while (parent[i] != i) {
         parent[i] = parent[parent[i]];
@@ -82,31 +88,13 @@ abstract final class SharedPool {
       return i;
     }
 
-    void join(int a, int b, {required bool certain}) {
-      final int ra = find(a);
-      final int rb = find(b);
-      if (ra == rb) {
-        if (!certain) rootCertain[ra] = false;
-        return;
-      }
-      parent[rb] = ra;
-      rootCertain[ra] = rootCertain[ra] && rootCertain[rb] && certain;
-    }
-
     for (int i = 0; i < n; i++) {
       for (int j = i + 1; j < n; j++) {
-        final SharedCard a = pool[i];
-        final SharedCard b = pool[j];
-        if (sameForSure(a, b)) {
-          join(i, j, certain: true);
+        if (sameForSure(pool[i], pool[j])) {
+          final int ri = find(i);
+          final int rj = find(j);
+          if (ri != rj) parent[rj] = ri;
         }
-      }
-    }
-    for (int i = 0; i < n; i++) {
-      for (int j = i + 1; j < n; j++) {
-        if (find(i) == find(j)) continue;
-        if (pool[i].ownerUid == pool[j].ownerUid) continue;
-        if (looksAlike(pool[i], pool[j])) join(i, j, certain: false);
       }
     }
 
@@ -114,13 +102,27 @@ abstract final class SharedPool {
     for (int i = 0; i < n; i++) {
       groups.putIfAbsent(find(i), () => <SharedCard>[]).add(pool[i]);
     }
-    final List<SharedPoolEntry> entries = <SharedPoolEntry>[
-      for (final MapEntry<int, List<SharedCard>> g in groups.entries)
-        SharedPoolEntry(
-          g.value..sort(_richestFirst),
-          certain: g.value.length == 1 || rootCertain[g.key],
-        ),
+    final List<List<SharedCard>> lists = <List<SharedCard>>[
+      for (final List<SharedCard> g in groups.values) g..sort(_bestFirst),
     ];
+    final List<SharedPoolEntry> entries = <SharedPoolEntry>[];
+    for (final List<SharedCard> group in lists) {
+      final Set<String> holders = <String>{
+        for (final SharedCard c in group) c.ownerUid,
+      };
+      final List<SharedCard> similar = <SharedCard>[
+        for (final List<SharedCard> other in lists)
+          if (!identical(other, group) &&
+              group.any(
+                (SharedCard a) => other.any(
+                  (SharedCard b) =>
+                      !holders.contains(b.ownerUid) && looksAlike(a, b),
+                ),
+              ))
+            other.first,
+      ];
+      entries.add(SharedPoolEntry(group, similar: similar));
+    }
     entries.sort(
       (SharedPoolEntry a, SharedPoolEntry b) =>
           (b.primary.updatedAt ?? DateTime(2000)).compareTo(
@@ -159,7 +161,13 @@ abstract final class SharedPool {
     return PersonDuplicates.isSimilarName(nameA, nameB);
   }
 
-  static int _richestFirst(SharedCard a, SharedCard b) {
+  /// A personal card first — it is the single's own word — then the
+  /// richest card.
+  static int _bestFirst(SharedCard a, SharedCard b) {
+    final int own = (b.cardOwnerUid != null ? 1 : 0).compareTo(
+      a.cardOwnerUid != null ? 1 : 0,
+    );
+    if (own != 0) return own;
     final int photos = b.photoPaths.length.compareTo(a.photoPaths.length);
     if (photos != 0) return photos;
     final int text = (b.person.description ?? '').length.compareTo(

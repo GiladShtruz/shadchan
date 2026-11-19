@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validSharedPhotoPath, mayReadSharedPhoto, proposalNotice, allowsOnward, granteesOf } from './network';
+import {
+  validSharedPhotoPath,
+  mayReadSharedPhoto,
+  proposalNotice,
+  proposalEvents,
+  sideEvent,
+  allowsOnward,
+  granteesOf,
+} from './network';
 import { categoryOf } from './notices';
 
 const row = (data: Record<string, unknown>) => ({ get: (f: string) => data[f] });
@@ -48,10 +56,29 @@ test('an idea proposal tells the side asked, and the asker of a yes', () => {
   assert.match(asked.body, /נועה ודוד/);
   const yes = proposalNotice('pending', 'approved', doc)!;
   assert.equal(yes.to, 'from');
-  assert.equal(yes.push, true);
+  // Network activity is never pushed — it waits in the chat and the inbox.
+  assert.equal(asked.push, false);
+  assert.equal(yes.push, false);
   const no = proposalNotice('pending', 'declined', doc)!;
   assert.equal(no.push, false);
   assert.equal(proposalNotice('approved', 'approved', doc), null);
+});
+
+test('a proposal writes small system lines into the pair\'s chat', () => {
+  const names = { a: 'יונתן כהן', b: 'שרה לוי' };
+  assert.deepEqual(proposalEvents('pending', 'approved', {}, {}, names, 'נועה ודוד'), [
+    'הרעיון נועה ודוד אושר ונפתח',
+  ]);
+  assert.deepEqual(
+    proposalEvents('approved', 'approved', { a: { status: 'idea' } }, { a: { status: 'unavailable' } }, names, 'נועה ודוד'),
+    ['נועה ודוד: עבר להמתנה (אצל יונתן)'],
+  );
+  assert.deepEqual(
+    proposalEvents('approved', 'approved', {}, { b: { status: 'idea' } }, names, 'נועה ודוד'),
+    [],
+  );
+  assert.equal(sideEvent('dating', 'dated'), 'הרעיון נסגר');
+  assert.equal(sideEvent('unavailable', 'idea'), 'הרעיון חזר להיות פתוח');
 });
 
 test('consent to show a card onward needs an approved grant with shareOnward', () => {

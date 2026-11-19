@@ -4,51 +4,101 @@ import 'package:provider/provider.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/shared_ideas.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/widgets/app_notice.dart';
-import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/network_onboarding.dart';
+import 'package:shadchan/widgets/person_avatar.dart';
 
-/// "שיתוף כרטיסים עם שדכנים מחוברים" — which cards of this database the
+/// "שיתוף כרטיסים עם השדכנים שאני מכיר" — which cards of this database the
 /// matchmakers connected with this one may see.
 ///
-/// Three ways to share — everything, some, everything but some — and never
-/// more than complete cards (a photo and text). A card a single keeps
-/// themselves is shared only after the single says so in their own area.
+/// Private by default. Three ways to share — הכל | אנשים מסוימים | הכל חוץ
+/// מ... — as options of one choice, never separate lists; never more than
+/// complete cards (a photo and text); and **cards already in the database
+/// before sharing started are never opened by themselves** — they are offered
+/// to add, in one go. Every time cards join the share the matchmaker is asked
+/// once, for the whole group ([confirmAdding]).
 class SharingSettingsScreen extends StatelessWidget {
   const SharingSettingsScreen({super.key});
 
-  static const String allConfirmation =
-      'לשתף את כל הכרטיסים המלאים שלך עם השדכנים המחוברים? כדאי לוודא שאין '
-      'חברים שמעדיפים להישאר פרטיים. רק כרטיסים עם תמונה וטקסט יוצגו.';
+  /// The one warning, said once for every group of cards added.
+  static const String addWarning =
+      'הכרטיסים שבחרת יהיו זמינים לשדכנים {שאתה|שאת} {מכיר|מכירה}. '
+      '{ודא|ודאי} שנוח לחברים האלה שהכרטיס שלהם יוצג במסגרת הזו.';
+
+  /// Asks once before [count] cards (or every new card, for "שתף הכל") join
+  /// the share. True when the matchmaker agreed.
+  static Future<bool> confirmAdding(BuildContext context, {int? count}) async {
+    Gender? gender;
+    try {
+      gender = context.read<UserProfileProvider>().gender;
+    } on ProviderNotFoundException {
+      gender = null;
+    }
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(
+          count == null
+              ? 'לשתף כרטיסים חדשים מהמאגר?'
+              : count == 1
+              ? 'להוסיף כרטיס אחד לשיתוף?'
+              : 'להוסיף $count כרטיסים לשיתוף?',
+        ),
+        content: Text(addWarning.forGender(gender)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('ביטול'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('לשתף'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// Picks cards from [people] and adds them to the share — one warning for
+  /// the whole group.
+  static Future<void> addCards(
+    BuildContext context,
+    List<Person> people, {
+    String title = 'הוספת כרטיסים לשיתוף',
+  }) async {
+    if (!OfflineGuard.allow(context)) return;
+    if (people.isEmpty) {
+      AppNotice.show(context, 'אין כרטיסים מלאים שאפשר להוסיף כרגע.');
+      return;
+    }
+    final Set<String>? ids = await ShareCardsPicker.show(
+      context,
+      people: people,
+      title: title,
+    );
+    if (ids == null || ids.isEmpty || !context.mounted) return;
+    if (!await confirmAdding(context, count: ids.length)) return;
+    NetworkSharing.add(ids);
+  }
 
   Future<void> _choose(BuildContext context, ShareMode mode) async {
     if (mode == NetworkSharing.mode) return;
     if (!OfflineGuard.allow(context)) return;
-    if (mode == ShareMode.all) {
-      final bool? ok = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: const Text('שיתוף כל המאגר'),
-          content: const Text(allConfirmation),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('ביטול'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('לשתף'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
+    final bool opening =
+        (mode == ShareMode.all || mode == ShareMode.allExcept) &&
+        NetworkSharing.mode != ShareMode.all &&
+        NetworkSharing.mode != ShareMode.allExcept;
+    if (opening && !await confirmAdding(context)) return;
     NetworkSharing.setMode(mode);
   }
 
@@ -76,21 +126,36 @@ class SharingSettingsScreen extends StatelessWidget {
                 )
                 .add(p);
           }
-          final List<Person> ready =
-              byState[ShareEligibility.ready] ?? const <Person>[];
           final List<Person> awaiting =
               byState[ShareEligibility.awaitingConsent] ?? const <Person>[];
           final int incomplete =
               (byState[ShareEligibility.incomplete] ?? const <Person>[]).length;
-          final int shared = NetworkSharing.sharedNow(
+          final List<Person> shared = NetworkSharing.sharedNow(
             people,
             accessTo: access.accessTo,
-          ).length;
+          );
+          final List<Person> addable = NetworkSharing.addable(
+            people,
+            accessTo: access.accessTo,
+          );
+          final List<Person> earlier = NetworkSharing.earlierNotShared(
+            people,
+            accessTo: access.accessTo,
+          );
+          final List<Person> kept = <Person>[
+            for (final Person p in people)
+              if (NetworkSharing.excluded.contains(p.id)) p,
+          ];
           final ShareMode mode = NetworkSharing.mode;
           final int connected = MatchmakerNetwork.connectedNames.length;
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: <Widget>[
+              if (mode == ShareMode.none && !NetworkSharing.onboardingDone)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: NetworkOnboardingCard(onSharingScreen: true),
+                ),
               HomePaperCard(
                 padding: EdgeInsets.zero,
                 child: Padding(
@@ -142,19 +207,25 @@ class SharingSettingsScreen extends StatelessWidget {
                       RadioListTile<ShareMode>(
                         value: ShareMode.none,
                         title: Text('לא לשתף'),
+                        subtitle: Text('המאגר שלי פרטי'),
                       ),
                       RadioListTile<ShareMode>(
                         value: ShareMode.all,
-                        title: Text('לשתף את כל המאגר'),
-                        subtitle: Text('כל הכרטיסים המלאים'),
+                        title: Text('שתף הכל'),
+                        subtitle: Text(
+                          'כל כרטיס מלא שאוסיף מעכשיו. כרטיסים קודמים — רק '
+                          'אם אבחר להוסיף אותם',
+                        ),
                       ),
                       RadioListTile<ShareMode>(
                         value: ShareMode.selected,
-                        title: Text('לשתף אנשים ספציפיים'),
+                        title: Text('שתף אנשים מסוימים'),
+                        subtitle: Text('רק מי שאבחר'),
                       ),
                       RadioListTile<ShareMode>(
                         value: ShareMode.allExcept,
-                        title: Text('לשתף את כל המאגר חוץ מ...'),
+                        title: Text('שתף הכל חוץ מ...'),
+                        subtitle: Text('כמו "שתף הכל", בלי מי שאחריג'),
                       ),
                     ],
                   ),
@@ -165,34 +236,85 @@ class SharingSettingsScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
                   <String>[
-                    'משותפים עכשיו: $shared',
+                    'משותפים עכשיו: ${shared.length}',
                     if (incomplete > 0)
                       '$incomplete כרטיסים לא מלאים (חסרה תמונה או טקסט) לא ישותפו',
                     if (awaiting.isNotEmpty)
-                      '${awaiting.length} מנהלים כרטיס אישי וממתינים לאישור שלהם',
+                      '${awaiting.length} מנהלים כרטיס אישי וכיבו את השיתוף דרך השדכנים',
                   ].join(' · '),
                   style: theme.textTheme.bodySmall,
                 ),
               ),
-              if (mode == ShareMode.selected ||
-                  mode == ShareMode.allExcept) ...<Widget>[
+              if (earlier.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 12),
+                _ActionTile(
+                  icon: Icons.history_rounded,
+                  title:
+                      '${earlier.length} כרטיסים מלאים מלפני שהתחלת לשתף לא נפתחו אוטומטית',
+                  action: 'בחירה',
+                  onPressed: () => addCards(
+                    context,
+                    earlier,
+                    title: 'כרטיסים מלפני שהתחלת לשתף',
+                  ),
+                ),
+              ],
+              if (mode != ShareMode.none) ...<Widget>[
+                const SizedBox(height: 8),
+                _ActionTile(
+                  icon: Icons.add_circle_outline_rounded,
+                  title: 'הוספת כרטיסים לשיתוף',
+                  action: 'בחירה',
+                  onPressed: () => addCards(context, addable),
+                ),
+              ],
+              if (shared.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 16),
                 Text(
-                  mode == ShareMode.selected ? 'מי ישותף' : 'מי לא ישותף',
+                  mode == ShareMode.allExcept
+                      ? 'משותפים · אפשר להחריג'
+                      : 'משותפים',
                   style: theme.textTheme.titleSmall,
                 ),
-                const SizedBox(height: 4),
-                for (final Person p in ready) _PickRow(person: p, mode: mode),
+                for (final Person p in shared)
+                  _PersonRow(
+                    person: p,
+                    trailing: TextButton(
+                      onPressed: () {
+                        if (!OfflineGuard.allow(context)) return;
+                        NetworkSharing.remove(p);
+                      },
+                      child: Text(
+                        mode == ShareMode.allExcept ? 'להחריג' : 'הסרה',
+                      ),
+                    ),
+                  ),
+              ],
+              if (kept.isNotEmpty && mode != ShareMode.none) ...<Widget>[
+                const SizedBox(height: 16),
+                Text('לא ישותפו', style: theme.textTheme.titleSmall),
+                for (final Person p in kept)
+                  _PersonRow(
+                    person: p,
+                    trailing: TextButton(
+                      onPressed: () async {
+                        if (!OfflineGuard.allow(context)) return;
+                        if (!await confirmAdding(context, count: 1)) return;
+                        NetworkSharing.add(<String>[p.id]);
+                      },
+                      child: const Text('להחזיר'),
+                    ),
+                  ),
               ],
               if (awaiting.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 16),
                 Text(
-                  'ממתינים לאישור החבר/ה',
+                  'מנהלים כרטיס אישי וכיבו את השיתוף',
                   style: theme.textTheme.titleSmall,
                 ),
                 Text(
-                  'חברים שמנהלים כרטיס אישי צריכים לאשר באזור האישי שלהם '
-                  'שמותר לך להציג את הכרטיס גם לשדכנים שאתה מכיר.',
+                  'החברים האלה ביקשו שהשדכנים שלהם לא יציגו את הכרטיס לשדכנים '
+                  'נוספים. אפשר לבקש מהם לשנות זאת באזור האישי שלהם.',
                   style: theme.textTheme.bodySmall,
                 ),
                 for (final Person p in awaiting) _ConsentRow(person: p),
@@ -205,37 +327,178 @@ class SharingSettingsScreen extends StatelessWidget {
   }
 }
 
-class _PickRow extends StatelessWidget {
-  const _PickRow({required this.person, required this.mode});
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.action,
+    required this.onPressed,
+  });
 
-  final Person person;
-  final ShareMode mode;
+  final IconData icon;
+  final String title;
+  final String action;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final bool picked = mode == ShareMode.selected
-        ? NetworkSharing.selected.contains(person.id)
-        : NetworkSharing.excluded.contains(person.id);
-    return CheckboxListTile(
-      value: picked,
-      onChanged: (bool? on) {
-        if (!OfflineGuard.allow(context)) return;
-        final Set<String> set = mode == ShareMode.selected
-            ? NetworkSharing.selected
-            : NetworkSharing.excluded;
-        on == true ? set.add(person.id) : set.remove(person.id);
-        mode == ShareMode.selected
-            ? NetworkSharing.setSelected(set)
-            : NetworkSharing.setExcluded(set);
-      },
-      secondary: PersonAvatar(person: person, radius: 20),
+    final ThemeData theme = Theme.of(context);
+    return HomePaperCard(
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        leading: Icon(icon, color: theme.colorScheme.primary),
+        title: Text(title, style: theme.textTheme.bodyMedium),
+        trailing: TextButton(onPressed: onPressed, child: Text(action)),
+        onTap: onPressed,
+      ),
+    );
+  }
+}
+
+class _PersonRow extends StatelessWidget {
+  const _PersonRow({required this.person, required this.trailing});
+
+  final Person person;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: PersonAvatar(person: person, radius: 20),
       title: Text(
         person.fullName,
         style: TextStyle(color: AppColors.genderAccent(person.gender)),
       ),
-      subtitle: person.age == null ? null : Text('${person.age}'),
-      controlAffinity: ListTileControlAffinity.trailing,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      subtitle: Text(
+        <String>[
+          if (person.age != null) '${person.age}',
+          if ((person.cardOwnerUid ?? '').isNotEmpty) 'כרטיס אישי',
+        ].join(' · '),
+      ),
+      trailing: trailing,
+    );
+  }
+}
+
+/// Several cards at once: a searchable list with a box on each, "בחירת הכל",
+/// and one button that returns the choice.
+class ShareCardsPicker extends StatefulWidget {
+  const ShareCardsPicker({
+    super.key,
+    required this.people,
+    required this.title,
+  });
+
+  final List<Person> people;
+  final String title;
+
+  static Future<Set<String>?> show(
+    BuildContext context, {
+    required List<Person> people,
+    required String title,
+  }) => showModalBottomSheet<Set<String>>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (BuildContext context) => FractionallySizedBox(
+      heightFactor: 0.9,
+      child: ShareCardsPicker(people: people, title: title),
+    ),
+  );
+
+  @override
+  State<ShareCardsPicker> createState() => _ShareCardsPickerState();
+}
+
+class _ShareCardsPickerState extends State<ShareCardsPicker> {
+  final Set<String> _picked = <String>{};
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String q = _query.trim();
+    final List<Person> shown = <Person>[
+      for (final Person p in widget.people)
+        if (q.isEmpty || p.fullName.contains(q)) p,
+    ];
+    final bool all =
+        shown.isNotEmpty && shown.every((Person p) => _picked.contains(p.id));
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(widget.title, style: theme.textTheme.titleMedium),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: TextField(
+                  onChanged: (String v) => setState(() => _query = v),
+                  decoration: const InputDecoration(
+                    hintText: 'חיפוש בשם',
+                    prefixIcon: Icon(Icons.search_rounded),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() {
+                  if (all) {
+                    _picked.removeAll(shown.map((Person p) => p.id));
+                  } else {
+                    _picked.addAll(shown.map((Person p) => p.id));
+                  }
+                }),
+                child: Text(all ? 'ניקוי' : 'בחירת הכל'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: shown.length,
+            itemBuilder: (BuildContext context, int i) {
+              final Person p = shown[i];
+              return CheckboxListTile(
+                value: _picked.contains(p.id),
+                onChanged: (bool? on) => setState(() {
+                  on == true ? _picked.add(p.id) : _picked.remove(p.id);
+                }),
+                secondary: PersonAvatar(person: p, radius: 20),
+                title: Text(
+                  p.fullName,
+                  style: TextStyle(color: AppColors.genderAccent(p.gender)),
+                ),
+                subtitle: p.age == null ? null : Text('${p.age}'),
+                controlAffinity: ListTileControlAffinity.trailing,
+              );
+            },
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _picked.isEmpty
+                    ? null
+                    : () => Navigator.pop(context, Set<String>.of(_picked)),
+                child: Text(
+                  _picked.isEmpty
+                      ? 'בחירת כרטיסים'
+                      : 'הוספה לשיתוף (${_picked.length})',
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -256,7 +519,7 @@ class _ConsentRow extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
       leading: PersonAvatar(person: person, radius: 20),
       title: Text(person.fullName),
-      subtitle: Text(asked ? 'הבקשה נשלחה · ממתין לאישור' : 'טרם אישר/ה'),
+      subtitle: Text(asked ? 'הבקשה נשלחה' : 'השיתוף דרך השדכנים כבוי'),
       trailing: asked || owner == null
           ? null
           : TextButton(
@@ -272,7 +535,7 @@ class _ConsentRow extends StatelessWidget {
                   isError: !ok,
                 );
               },
-              child: const Text('לבקש אישור'),
+              child: const Text('לבקש'),
             ),
     );
   }

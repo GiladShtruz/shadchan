@@ -23,6 +23,7 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/utils/shared_pool.dart';
+import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/people_filters_sheet.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
@@ -60,6 +61,69 @@ class SharedPhoto extends StatelessWidget {
   }
 }
 
+/// "דרך יונתן כהן", with the holder's initial and the way to their chat —
+/// so it is always clear whose card this is and whom to ask.
+class SourceLine extends StatelessWidget {
+  const SourceLine({super.key, required this.card, this.compact = false});
+
+  final SharedCard card;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String name = card.ownerName.trim().isEmpty
+        ? card.ownerFirstName
+        : card.ownerName.trim();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        CircleAvatar(
+          radius: compact ? 9 : 12,
+          backgroundColor: AppColors.softBlue,
+          child: Text(
+            name.characters.first,
+            style: TextStyle(
+              fontSize: compact ? 10 : 12,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primaryDark,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'דרך $name',
+            overflow: TextOverflow.ellipsis,
+            style:
+                (compact
+                        ? theme.textTheme.labelSmall
+                        : theme.textTheme.labelLarge)
+                    ?.copyWith(color: theme.colorScheme.primary),
+          ),
+        ),
+        IconButton(
+          tooltip: 'צ\'אט עם $name',
+          visualDensity: VisualDensity.compact,
+          iconSize: compact ? 16 : 20,
+          onPressed: () => NetworkActions.chatWith(
+            context,
+            otherUid: card.ownerUid,
+            otherName: card.ownerName,
+            ref: ChatRef(
+              kind: 'card',
+              id: card.personId,
+              ownerUid: card.ownerUid,
+              label: card.person.fullName,
+            ),
+          ),
+          icon: const Icon(Icons.chat_bubble_outline_rounded),
+        ),
+      ],
+    );
+  }
+}
+
 /// The everyday words for a card: "25 · דתי לאומי · ירושלים".
 String sharedSummaryOf(Person person) {
   return <String>[
@@ -80,6 +144,7 @@ abstract final class NetworkActions {
     required String otherUid,
     required String otherName,
     ChatRef? ref,
+    String? message,
   }) async {
     if (!OfflineGuard.allow(context)) return;
     final String? id = await ChatService.openDirect(
@@ -96,18 +161,26 @@ abstract final class NetworkActions {
       );
       return;
     }
+    if (message != null && ref != null) {
+      // Sent at once: the card or idea is already in the conversation when
+      // it opens.
+      await ChatService.send(id, message, ref: ref);
+      if (!context.mounted) return;
+      await context.push('/chats/$id');
+      return;
+    }
     await context.push('/chats/$id', extra: ref);
   }
 
   /// "הצעת רעיון": picks a friend from this matchmaker's own database for
   /// [target] and sends the idea to the matchmaker who holds [target]. Every
   /// step goes through that matchmaker — nobody contacts the single directly.
-  static Future<void> propose(
+  static Future<String?> propose(
     BuildContext context,
     SharedCard target, {
     Person? candidate,
   }) async {
-    if (!OfflineGuard.allow(context)) return;
+    if (!OfflineGuard.allow(context)) return null;
     final PersonRepository repo = context.read<PersonRepository>();
     final Gender want = target.person.gender == Gender.male
         ? Gender.female
@@ -121,7 +194,7 @@ abstract final class NetworkActions {
       candidatePredicate: (Person p) =>
           !p.hidden && !SharedIdeas.isPartnersPerson(p.id),
     );
-    if (chosen == null || !context.mounted) return;
+    if (chosen == null || !context.mounted) return null;
     final Person mine = repo.getById(chosen.id) ?? chosen;
     final CardAccessProvider access = context.read<CardAccessProvider>();
     final ShareEligibility eligibility = NetworkSharing.eligibilityOf(
@@ -130,7 +203,7 @@ abstract final class NetworkActions {
     );
     if (eligibility == ShareEligibility.awaitingConsent) {
       await _askConsent(context, mine);
-      return;
+      return null;
     }
     if ((mine.description ?? '').trim().isEmpty) {
       AppNotice.show(
@@ -138,7 +211,7 @@ abstract final class NetworkActions {
         'כדי להציע רעיון צריך כרטיס עם טקסט ל${mine.firstName}.',
         isError: true,
       );
-      return;
+      return null;
     }
     final String? note = await showModalBottomSheet<String>(
       context: context,
@@ -147,21 +220,182 @@ abstract final class NetworkActions {
       builder: (BuildContext context) =>
           _ProposeSheet(target: target, candidate: mine),
     );
-    if (note == null || !context.mounted) return;
+    if (note == null || !context.mounted) return null;
     final String? id = await MatchmakerNetwork.propose(
       target: target,
       candidate: mine,
       myName: _myName(context),
       note: note,
     );
-    if (!context.mounted) return;
+    if (!context.mounted) return null;
     if (id == null) {
       AppNotice.show(context, 'ההצעה לא נשלחה. נסו שוב.', isError: true);
-      return;
+      return null;
     }
+    // Every idea between the two lives in their one chat.
+    final String? chatId = await ChatService.openDirect(
+      otherUid: target.ownerUid,
+      myName: _myName(context),
+      theirName: target.ownerName,
+    );
+    if (chatId != null) {
+      final String pair = '${mine.firstName} ו${target.person.firstName}';
+      await ChatService.send(
+        chatId,
+        note.trim().isEmpty ? 'הצעתי רעיון: $pair' : note.trim(),
+        ref: ChatRef(kind: 'proposal', id: id, label: pair),
+      );
+    }
+    if (!context.mounted) return id;
     AppNotice.show(
       context,
-      'ההצעה נשלחה ל${target.ownerFirstName}. הרעיון ייפתח אצל שניכם אם יאשר/תאשר.',
+      'ההצעה נשלחה ל${target.ownerFirstName}. הרעיון ייפתח כשתחליטו לשאול את שני הצדדים.',
+    );
+    return id;
+  }
+
+  /// "דרך 3 שדכנים": whom to turn to about this card.
+  static Future<void> chooseHolder(
+    BuildContext context,
+    SharedPoolEntry entry,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (BuildContext context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'למי לפנות לגבי ${entry.primary.person.firstName}?',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            for (final SharedCard holder in entry.holders) ...<Widget>[
+              _HolderTile(card: holder),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+
+  /// Sends one of this matchmaker's own friends to one connected
+  /// matchmaker — in the app's chat, even when the card is not in the shared
+  /// pool — or through WhatsApp.
+  static Future<void> sendCard(BuildContext context, Person person) async {
+    if (!OfflineGuard.allow(context)) return;
+    unawaited(MatchmakerNetwork.start());
+    final CardAccessProvider access = context.read<CardAccessProvider>();
+    final ShareEligibility state = NetworkSharing.eligibilityOf(
+      person,
+      accessTo: access.accessTo,
+    );
+    final Map<String, String> connected = MatchmakerNetwork.connectedNames;
+    final String? choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (BuildContext context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                'שליחת הכרטיס של ${person.firstName} לשדכן/ית',
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'הכרטיס יגיע בצ\'אט, לצפייה בלבד — גם אם הוא לא במאגר המשותף.',
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              if (state != ShareEligibility.ready)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    state == ShareEligibility.awaitingConsent
+                        ? '${person.firstName} כיבה/כיבתה את השיתוף דרך השדכנים, '
+                              'אז אפשר לשלוח רק ב־WhatsApp.'
+                        : 'כדי לשלוח בצ\'אט צריך כרטיס מלא — תמונה וטקסט.',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              else if (connected.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'עוד אין שדכנים מחוברים — אפשר לשלוח ב־WhatsApp.',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              else
+                for (final MapEntry<String, String> c in connected.entries)
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: AppColors.softBlue,
+                      child: Text(
+                        c.value.trim().isEmpty
+                            ? '?'
+                            : c.value.trim().characters.first,
+                      ),
+                    ),
+                    title: Text(c.value.isEmpty ? 'שדכן/ית' : c.value),
+                    trailing: const Icon(Icons.send_rounded),
+                    onTap: () => Navigator.pop(context, c.key),
+                  ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.ios_share_rounded),
+                title: const Text('שליחה ב־WhatsApp'),
+                onTap: () => Navigator.pop(context, '__whatsapp'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice == '__whatsapp') {
+      await ShareUtils.sharePerson(
+        person,
+        origin: ShareUtils.originOf(context),
+      );
+      return;
+    }
+    final String name = connected[choice] ?? '';
+    final bool sent = await MatchmakerNetwork.sendCard(
+      person: person,
+      toUid: choice,
+      myName: _myName(context),
+    );
+    if (!context.mounted) return;
+    if (!sent) {
+      AppNotice.show(context, 'הכרטיס לא נשלח. נסו שוב.', isError: true);
+      return;
+    }
+    NetworkSharing.noteSent(person.id);
+    await chatWith(
+      context,
+      otherUid: choice,
+      otherName: name,
+      ref: ChatRef(
+        kind: 'card',
+        id: person.id,
+        ownerUid: MatchmakerNetwork.uid,
+        label: person.fullName,
+      ),
+      message: 'שלחתי לך את הכרטיס של ${person.fullName}',
     );
   }
 
@@ -171,8 +405,8 @@ abstract final class NetworkActions {
       builder: (BuildContext context) => AlertDialog(
         title: Text('${person.firstName} מנהל/ת כרטיס אישי'),
         content: Text(
-          '${person.firstName} צריך/ה לאשר באזור האישי שמותר לך להציג את הכרטיס '
-          'גם לשדכנים שמחוברים אליך. אפשר לבקש ממנו/ה את האישור עכשיו.',
+          '${person.firstName} כיבה/כיבתה באזור האישי את ההצגה של הכרטיס '
+          'לשדכנים שהשדכנים שלו/ה מכירים. אפשר לבקש ממנו/ה להפעיל אותה שוב.',
         ),
         actions: <Widget>[
           TextButton(
@@ -376,6 +610,8 @@ class _NetworkScreenState extends State<NetworkScreen> {
     final Set<String> myCardOwners = <String>{
       for (final Person p in mine)
         if (!p.hidden && p.cardOwnerUid != null) p.cardOwnerUid!,
+      // My own personal card, held by another matchmaker: not a stranger.
+      if (MatchmakerNetwork.uid != null) MatchmakerNetwork.uid!,
     };
     List<SharedPoolEntry> entries = SharedPool.build(
       MatchmakerNetwork.cards.value,
@@ -739,16 +975,26 @@ class _PoolRow extends StatelessWidget {
                         sharedSummaryOf(person),
                         style: theme.textTheme.bodySmall,
                       ),
-                    const SizedBox(height: 2),
-                    Text(
-                      entry.sourceLabel,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    if (!entry.certain)
+                    if (entry.heldByMany)
+                      InkWell(
+                        onTap: () =>
+                            NetworkActions.chooseHolder(context, entry),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            '${entry.sourceLabel} · בחירה למי לפנות',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      SourceLine(card: card, compact: true),
+                    if (entry.similar.isNotEmpty)
                       Text(
-                        'ייתכן שזה אותו אדם אצל כמה שדכנים',
+                        'ייתכן שזה אותו אדם כמו כרטיס דרך '
+                        '${entry.similar.first.ownerFirstName}',
                         style: theme.textTheme.labelSmall,
                       ),
                   ],
@@ -771,10 +1017,40 @@ class SharedCardScreen extends StatelessWidget {
     super.key,
     required this.ownerUid,
     required this.personId,
+    this.inSheet = false,
+    this.controller,
   });
 
   final String ownerUid;
   final String personId;
+
+  /// Drawn inside a sheet over a chat: the same card, no page around it.
+  final bool inSheet;
+  final ScrollController? controller;
+
+  /// Opens the card over whatever is on screen — a chat stays where it was.
+  static Future<void> showSheet(
+    BuildContext context, {
+    required String ownerUid,
+    required String personId,
+  }) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (BuildContext context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.9,
+      minChildSize: 0.5,
+      maxChildSize: 1,
+      builder: (BuildContext context, ScrollController controller) =>
+          SharedCardScreen(
+            ownerUid: ownerUid,
+            personId: personId,
+            inSheet: true,
+            controller: controller,
+          ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -784,142 +1060,178 @@ class SharedCardScreen extends StatelessWidget {
       builder: (BuildContext context, List<SharedCard> cards, _) {
         final SharedCard? card = MatchmakerNetwork.cardOf(ownerUid, personId);
         if (card == null) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'הכרטיס כבר לא משותף איתך.',
-                  textAlign: TextAlign.center,
-                ),
+          const Widget gone = Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'הכרטיס כבר לא משותף איתך.',
+                textAlign: TextAlign.center,
               ),
             ),
           );
+          return inSheet ? gone : Scaffold(appBar: AppBar(), body: gone);
         }
-        final List<SharedPoolEntry> pool = SharedPool.build(cards);
+        final List<SharedPoolEntry> pool = SharedPool.build(<SharedCard>[
+          ...cards,
+          ...MatchmakerNetwork.sentToMe.value,
+        ]);
         final SharedPoolEntry? entry = pool
             .where((SharedPoolEntry e) => e.cards.contains(card))
             .firstOrNull;
         final Person person = card.person;
-        return Scaffold(
-          appBar: AppBar(title: Text(person.fullName)),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-            children: <Widget>[
-              if (card.photoPaths.isNotEmpty)
-                SizedBox(
-                  height: 320,
-                  child: PageView(
-                    children: <Widget>[
-                      for (final String path in card.photoPaths)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: ColoredBox(
-                              color: theme.colorScheme.surface,
-                              child: FutureBuilder<File?>(
-                                future: MatchmakerNetwork.photo(ownerUid, path),
-                                builder: (BuildContext context, snap) {
-                                  final File? f = snap.data;
-                                  if (f == null) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  }
-                                  return Image.file(f, fit: BoxFit.contain);
-                                },
-                              ),
+        final Widget body = ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+          children: <Widget>[
+            if (card.photoPaths.isNotEmpty)
+              SizedBox(
+                height: 320,
+                child: PageView(
+                  children: <Widget>[
+                    for (final String path in card.photoPaths)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: ColoredBox(
+                            color: theme.colorScheme.surface,
+                            child: FutureBuilder<File?>(
+                              future: MatchmakerNetwork.photo(ownerUid, path),
+                              builder: (BuildContext context, snap) {
+                                final File? f = snap.data;
+                                if (f == null) {
+                                  return const Center(
+                                    child: CircularProgressIndicator(),
+                                  );
+                                }
+                                return Image.file(f, fit: BoxFit.contain);
+                              },
                             ),
                           ),
                         ),
-                    ],
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            Text(
+              person.fullName,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: AppColors.genderAccent(person.gender),
+              ),
+            ),
+            if (sharedSummaryOf(person).isNotEmpty)
+              Text(sharedSummaryOf(person), style: theme.textTheme.bodyLarge),
+            const SizedBox(height: 4),
+            if (entry == null || !entry.heldByMany)
+              SourceLine(card: card)
+            else
+              InkWell(
+                onTap: () => NetworkActions.chooseHolder(context, entry),
+                child: Text(
+                  '${entry.sourceLabel} · בחירה למי לפנות',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.primary,
                   ),
                 ),
-              const SizedBox(height: 12),
-              Text(
-                person.fullName,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: AppColors.genderAccent(person.gender),
+              ),
+            const SizedBox(height: 12),
+            HomePaperCard(
+              padding: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  person.description ?? '',
+                  style: theme.textTheme.bodyLarge,
                 ),
               ),
-              if (sharedSummaryOf(person).isNotEmpty)
-                Text(sharedSummaryOf(person), style: theme.textTheme.bodyLarge),
-              Text(
-                'מהמאגר של ${card.ownerName.isEmpty ? card.ownerFirstName : card.ownerName}',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 12),
+            ),
+            if (_lookingLines(person).isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
               HomePaperCard(
                 padding: EdgeInsets.zero,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(
-                    person.description ?? '',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                ),
-              ),
-              if (_lookingLines(person).isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                HomePaperCard(
-                  padding: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          'מה {הוא מחפש|היא מחפשת}'.forGender(person.gender),
-                          style: theme.textTheme.titleSmall,
-                        ),
-                        const SizedBox(height: 6),
-                        for (final String line in _lookingLines(person))
-                          Text('· $line', style: theme.textTheme.bodyMedium),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-              if (person.tags.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    for (final String tag in person.tags)
-                      Chip(
-                        label: Text(tag),
-                        visualDensity: VisualDensity.compact,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'מה {הוא מחפש|היא מחפשת}'.forGender(person.gender),
+                        style: theme.textTheme.titleSmall,
                       ),
-                  ],
+                      const SizedBox(height: 6),
+                      for (final String line in _lookingLines(person))
+                        Text('· $line', style: theme.textTheme.bodyMedium),
+                    ],
+                  ),
                 ),
-              ],
-              const SizedBox(height: 16),
-              if (entry != null && entry.heldByMany) ...<Widget>[
-                Text(
-                  entry.certain
-                      ? 'הכרטיס נמצא אצל כמה שדכנים'
-                      : 'ייתכן שאלה כרטיסים של אותו אדם אצל שדכנים שונים',
-                  style: theme.textTheme.titleSmall,
-                ),
-                const SizedBox(height: 4),
-                for (final SharedCard holder in entry.holders)
-                  _HolderTile(card: holder),
-              ] else
-                _HolderActions(card: card),
-              const SizedBox(height: 16),
-              Text(
-                'צפייה בלבד. אי אפשר לערוך, לשמור או לשתף את הכרטיס הלאה, '
-                'וכל פנייה ל${person.firstName} עוברת דרך ${card.ownerFirstName}.',
-                style: theme.textTheme.bodySmall,
-                textAlign: TextAlign.center,
               ),
             ],
-          ),
+            if (person.tags.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final String tag in person.tags)
+                    Chip(
+                      label: Text(tag),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            if (entry != null && entry.similar.isNotEmpty) ...<Widget>[
+              Text(
+                'ייתכן שזה אותו אדם — כרטיס דומה:',
+                style: theme.textTheme.titleSmall,
+              ),
+              for (final SharedCard other in entry.similar)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: SharedPhoto(
+                    ownerUid: other.ownerUid,
+                    path: other.photoPaths.firstOrNull,
+                    person: other.person,
+                    radius: 18,
+                  ),
+                  title: Text(other.person.fullName),
+                  subtitle: Text(
+                    'דרך ${other.ownerName.isEmpty ? other.ownerFirstName : other.ownerName} · '
+                    'לא אוחדו — אין זיהוי ודאי',
+                  ),
+                  onTap: () => SharedCardScreen.showSheet(
+                    context,
+                    ownerUid: other.ownerUid,
+                    personId: other.personId,
+                  ),
+                ),
+              const SizedBox(height: 12),
+            ],
+            if (entry != null && entry.heldByMany) ...<Widget>[
+              Text(
+                'הכרטיס נמצא אצל ${entry.holders.length} שדכנים',
+                style: theme.textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              for (final SharedCard holder in entry.holders)
+                _HolderTile(card: holder),
+            ] else
+              _HolderActions(card: card),
+            const SizedBox(height: 16),
+            Text(
+              'צפייה בלבד. אי אפשר לערוך, לשמור או לשתף את הכרטיס הלאה, '
+              'וכל פנייה ל${person.firstName} עוברת דרך ${card.ownerFirstName}.',
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        );
+        if (inSheet) return body;
+        return Scaffold(
+          appBar: AppBar(title: Text(person.fullName)),
+          body: body,
         );
       },
     );
@@ -1025,9 +1337,37 @@ class _HolderTile extends StatelessWidget {
 /// One idea offered between two matchmakers: both cards side by side, the
 /// note, and — for the side asked — "אישור" / "דחייה".
 class ProposalScreen extends StatelessWidget {
-  const ProposalScreen({super.key, required this.proposalId});
+  const ProposalScreen({
+    super.key,
+    required this.proposalId,
+    this.inSheet = false,
+    this.controller,
+  });
 
   final String proposalId;
+
+  /// Drawn inside a sheet over a chat.
+  final bool inSheet;
+  final ScrollController? controller;
+
+  static Future<void> showSheet(BuildContext context, String proposalId) =>
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (BuildContext context) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 1,
+          builder: (BuildContext context, ScrollController controller) =>
+              ProposalScreen(
+                proposalId: proposalId,
+                inSheet: true,
+                controller: controller,
+              ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -1039,10 +1379,13 @@ class ProposalScreen extends StatelessWidget {
         final String? me = MatchmakerNetwork.uid;
         if (p == null || me == null) {
           unawaited(MatchmakerNetwork.start());
-          return Scaffold(
-            appBar: AppBar(title: const Text('הצעת רעיון')),
-            body: const Center(child: CircularProgressIndicator()),
-          );
+          const Widget wait = Center(child: CircularProgressIndicator());
+          return inSheet
+              ? wait
+              : Scaffold(
+                  appBar: AppBar(title: const Text('הצעת רעיון')),
+                  body: wait,
+                );
         }
         final bool incoming = p.isIncomingFor(me);
         final Person theirs = p.theirPersonFor(me);
@@ -1052,98 +1395,98 @@ class ProposalScreen extends StatelessWidget {
         final String other = p.otherNameOf(me);
         final List<String> theirPhotos = p.theirPhotoPathsFor(me);
         final SharedIdeaLink? link = SharedIdeas.links[p.id];
-        return Scaffold(
-          appBar: AppBar(title: const Text('הצעת רעיון')),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
-            children: <Widget>[
-              Text(
-                incoming
-                    ? '$other מציע/ה רעיון לחבר/ה שלך'
-                    : 'הצעת ל$other רעיון',
-                style: theme.textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(
-                    child: _MiniPerson(
-                      person: mine ?? theirs,
-                      caption: 'מהמאגר שלך',
-                      avatar: mine == null
-                          ? const CircleAvatar(radius: 34)
-                          : PersonAvatar(person: mine, radius: 34),
-                    ),
+        final Widget body = ListView(
+          controller: controller,
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            Text(
+              incoming
+                  ? '$other מציע/ה רעיון לחבר/ה שלך'
+                  : 'הצעת ל$other רעיון',
+              style: theme.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: _MiniPerson(
+                    person: mine ?? theirs,
+                    caption: 'מהמאגר שלך',
+                    avatar: mine == null
+                        ? const CircleAvatar(radius: 34)
+                        : PersonAvatar(person: mine, radius: 34),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 26),
-                    child: Icon(
-                      Icons.favorite_rounded,
-                      color: AppColors.femaleAccent,
-                    ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 26),
+                  child: Icon(
+                    Icons.favorite_rounded,
+                    color: AppColors.femaleAccent,
                   ),
-                  Expanded(
-                    child: _MiniPerson(
+                ),
+                Expanded(
+                  child: _MiniPerson(
+                    person: theirs,
+                    caption: 'מהמאגר של $other',
+                    avatar: SharedPhoto(
+                      ownerUid: p.otherOf(me),
+                      path: theirPhotos.firstOrNull,
                       person: theirs,
-                      caption: 'מהמאגר של $other',
-                      avatar: SharedPhoto(
-                        ownerUid: p.otherOf(me),
-                        path: theirPhotos.firstOrNull,
-                        person: theirs,
-                        radius: 34,
-                      ),
+                      radius: 34,
                     ),
-                  ),
-                ],
-              ),
-              if (p.note.trim().isNotEmpty) ...<Widget>[
-                const SizedBox(height: 16),
-                HomePaperCard(
-                  padding: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Text('"${p.note.trim()}" — ${p.fromName}'),
                   ),
                 ),
               ],
-              const SizedBox(height: 12),
+            ),
+            if (p.note.trim().isNotEmpty) ...<Widget>[
+              const SizedBox(height: 16),
               HomePaperCard(
                 padding: EdgeInsets.zero,
                 child: Padding(
                   padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        'הכרטיס של ${theirs.firstName}',
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(theirs.description ?? ''),
-                      if (theirPhotos.length > 1) ...<Widget>[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          children: <Widget>[
-                            for (final String path in theirPhotos.skip(1))
-                              SharedPhoto(
-                                ownerUid: p.otherOf(me),
-                                path: path,
-                                person: theirs,
-                                radius: 26,
-                              ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
+                  child: Text('"${p.note.trim()}" — ${p.fromName}'),
                 ),
               ),
-              const SizedBox(height: 16),
-              ..._statusArea(context, p, me, incoming, link),
-              const SizedBox(height: 8),
+            ],
+            const SizedBox(height: 12),
+            HomePaperCard(
+              padding: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'הכרטיס של ${theirs.firstName}',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(theirs.description ?? ''),
+                    if (theirPhotos.length > 1) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: <Widget>[
+                          for (final String path in theirPhotos.skip(1))
+                            SharedPhoto(
+                              ownerUid: p.otherOf(me),
+                              path: path,
+                              person: theirs,
+                              radius: 26,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ..._statusArea(context, p, me, incoming, link),
+            const SizedBox(height: 8),
+            if (!inSheet)
               OutlinedButton.icon(
                 onPressed: () => NetworkActions.chatWith(
                   context,
@@ -1158,8 +1501,12 @@ class ProposalScreen extends StatelessWidget {
                 icon: const Icon(Icons.chat_bubble_outline_rounded),
                 label: Text('צ\'אט עם $other'),
               ),
-            ],
-          ),
+          ],
+        );
+        if (inSheet) return body;
+        return Scaffold(
+          appBar: AppBar(title: const Text('הצעת רעיון')),
+          body: body,
         );
       },
     );
@@ -1193,7 +1540,7 @@ class ProposalScreen extends StatelessWidget {
                 );
               },
               icon: const Icon(Icons.check_rounded),
-              label: const Text('אישור — לפתוח את הרעיון'),
+              label: const Text('פותחים — שואלים את שני הצדדים'),
             ),
             const SizedBox(height: 8),
             OutlinedButton(

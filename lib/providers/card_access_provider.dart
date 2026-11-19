@@ -348,6 +348,15 @@ class CardAccessProvider extends ChangeNotifier {
                       in snap.docs)
                     ?CardAccess.fromMap(doc.data()),
                 ];
+                if (!snap.metadata.isFromCache) {
+                  // A grant written before the general answer existed, or
+                  // the answer changed on another phone: follow it.
+                  unawaited(
+                    applyShareOnward(
+                      PersonalCardProvider.shareOnwardIn(_settingsBox),
+                    ),
+                  );
+                }
                 notifyListeners();
               }, onError: _log),
         )
@@ -1001,6 +1010,39 @@ class CardAccessProvider extends ChangeNotifier {
     }
   }
 
+  static Box<dynamic>? get _settingsBox =>
+      Hive.isBoxOpen('settings') ? Hive.box<dynamic>('settings') : null;
+
+  final Set<String> _onwardInFlight = <String>{};
+
+  /// Brings every approved grant this owner wrote to [allowed] — the owner's
+  /// one general answer ([PersonalCardProvider.shareOnward]). Turning it off
+  /// takes the card out of every shared pool at once (a Function,
+  /// `onCardAccessShareOnward`); ideas already opened from it stay.
+  Future<void> applyShareOnward(bool allowed) async {
+    if (_uid == null) return;
+    for (final CardAccess row in _asOwner) {
+      if (row.status != CardAccessStatus.approved) continue;
+      if (row.shareOnward == allowed) continue;
+      final String key = row.matchmakerUid;
+      if (!_onwardInFlight.add(key)) continue;
+      try {
+        await _accessDoc(
+          row.ownerUid,
+          row.matchmakerUid,
+        ).update(<String, Object?>{
+          'shareOnward': allowed,
+          if (allowed) 'shareOnwardRequested': false,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (error) {
+        _log(error);
+      } finally {
+        _onwardInFlight.remove(key);
+      }
+    }
+  }
+
   /// The single says whether [row]'s matchmaker may show the card to the
   /// matchmakers they are connected with. Turning it off takes the card out
   /// of every shared pool at once (a Function, `onCardAccessShareOnward`).
@@ -1060,6 +1102,11 @@ class CardAccessProvider extends ChangeNotifier {
     'matchmakerUid': matchmakerUid,
     'granteeUids': granteeUids ?? [matchmakerUid],
     'status': status.name,
+    // The owner's one general answer about showing the card onward travels
+    // on every grant they write — a re-written row never loses it.
+    'shareOnward':
+        status == CardAccessStatus.approved &&
+        PersonalCardProvider.shareOnwardIn(_settingsBox),
     'cardGranted': cardGranted ?? (status == CardAccessStatus.approved),
     'lookingGranted': lookingGranted,
     'lookingRequested': lookingRequested,

@@ -38,9 +38,8 @@ const PUSHED_KINDS = new Set([
   'matchmakerJoined',
   'connectionRequest',
   'connectionApproved',
-  // The network between connected matchmakers.
-  'ideaProposal',
-  'ideaProposalApproved',
+  // The network between connected matchmakers: only the single's own
+  // question is pushed — offers and answers wait in the chat.
   'shareOnwardRequest',
 ]);
 

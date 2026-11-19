@@ -219,3 +219,32 @@ test('after a disconnect the chat stays readable but takes no new messages', asy
     }),
   );
 });
+
+test('a card sent in a chat is read only by the matchmaker it was sent to', async () => {
+  const path = `sentCards/${A}/to/${B}/cards/s1`;
+  await assertSucceeds(setDoc(doc(as(A), path), card('s1')));
+  await assertSucceeds(getDoc(doc(as(B), path)));
+  await assertSucceeds(getDocs(collection(as(B), `sentCards/${A}/to/${B}/cards`)));
+  await assertFails(getDoc(doc(as(C), path)));
+  // Never to a matchmaker who is not connected, never written by another.
+  await assertFails(setDoc(doc(as(A), `sentCards/${A}/to/${C}/cards/s2`), card('s2')));
+  await assertFails(setDoc(doc(as(B), `sentCards/${A}/to/${B}/cards/s3`), card('s3')));
+  // The same whitelist as a shared card.
+  await assertFails(
+    setDoc(doc(as(A), `sentCards/${A}/to/${B}/cards/s4`), card('s4', { phone: '0501234567' })),
+  );
+});
+
+test('an idea may be offered for a card that was sent, not only shared', async () => {
+  await assertSucceeds(setDoc(doc(as(A), `sentCards/${A}/to/${B}/cards/s1`), card('s1')));
+  await assertSucceeds(
+    setDoc(doc(as(B), 'ideaProposals/y1'), proposal({ target: { personId: 's1', firstName: 'נועה' } })),
+  );
+  // Sent to B — so C cannot offer anything for it.
+  await assertFails(
+    setDoc(
+      doc(as(C), 'ideaProposals/y2'),
+      proposal({ fromUid: C, uids: [C, A], target: { personId: 's1' } }),
+    ),
+  );
+});

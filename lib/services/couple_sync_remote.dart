@@ -74,7 +74,9 @@ class CoupleSyncRemote implements AccountSyncRemote {
     }
     final personal = await _personal.fetchAll(c);
     personal.removeWhere((id, _) => _isShared(id));
-    final shared = await _settings.get(const GetOptions(source: Source.server));
+    final shared = await _settings
+        .get(const GetOptions(source: Source.server))
+        .timeout(FirestoreAccountSyncRemote.readTimeout);
     return {...personal, for (final d in shared.docs) d.id: _decode(d.data())};
   }
 

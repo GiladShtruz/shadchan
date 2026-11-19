@@ -52,9 +52,14 @@ class ChatMessage {
     this.at,
     this.ref,
     this.pending = false,
+    this.system = false,
   });
 
   final String id;
+
+  /// A small line the server wrote ("הרעיון אושר", "עבר להמתנה") — never a
+  /// message from a person.
+  final bool system;
   final String fromUid;
   final String text;
   final DateTime? at;
@@ -273,6 +278,7 @@ abstract final class ChatService {
                     (d.metadata.hasPendingWrites ? DateTime.now() : null),
                 ref: ChatRef.fromMap(d.data()['ref']),
                 pending: d.metadata.hasPendingWrites,
+                system: d.data()['system'] == true,
               ),
           ];
         });

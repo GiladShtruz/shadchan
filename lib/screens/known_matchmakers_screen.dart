@@ -21,6 +21,11 @@ import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/screens/network_screen.dart';
+import 'package:shadchan/models/shared_card.dart';
+import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/matchmaker_network.dart';
+import 'package:shadchan/services/network_sharing.dart';
+import 'package:shadchan/widgets/network_onboarding.dart';
 
 /// The groups of "שדכנים שאני מכיר", read from the two live sources.
 KnownMatchmakerGroups _groups(BuildContext context, {bool listen = true}) {
@@ -71,6 +76,7 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
   Future<void> _connect() async {
     if (FirebaseBootstrap.isReady) {
       unawaited(MatchmakerConnections.start());
+      unawaited(MatchmakerNetwork.start());
       unawaited(context.read<CardAccessProvider>().ensureConnected());
     }
     ContactsPermissionState state;
@@ -111,6 +117,8 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
         MatchmakerConnections.connections,
         MatchmakerConnections.loaded,
         MatchmakerConnections.busy,
+        MatchmakerNetwork.cards,
+        NetworkSharing.revision,
       ]),
       builder: (BuildContext context, _) => _build(context),
     );
@@ -134,11 +142,19 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
             child: Text(
-              'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. חיבור הוא הדדי — '
-              'צד אחד מבקש והשני מאשר — ולא משתף כרטיסים או מידע מהמאגר.',
+              'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. חיבור הוא הדדי — צד אחד '
+              'מבקש והשני מאשר. מרגע האישור, מה שכל אחד מכם בחר לשתף זמין '
+              'לשני, ואפשר לשוחח בצ\'אט גם בלי לשתף דבר.',
               style: theme.textTheme.bodySmall,
             ),
           ),
+          if (NetworkSharing.mode == ShareMode.none &&
+              !NetworkSharing.onboardingDone)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: NetworkOnboardingCard(),
+            ),
+          const _SharingSummary(),
           if (noContacts)
             _Notice(
               text:
@@ -210,6 +226,70 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Who sees what, in one card: how many cards I share with every matchmaker
+/// I am connected with, and how many the connected matchmakers share with
+/// me — so the connection is understood without reading a settings page.
+class _SharingSummary extends StatelessWidget {
+  const _SharingSummary();
+
+  @override
+  Widget build(BuildContext context) {
+    final PersonRepository repo = context.watch<PersonRepository>();
+    final CardAccessProvider access = context.watch<CardAccessProvider>();
+    final int connected = MatchmakerNetwork.connectedNames.length;
+    final int mine = NetworkSharing.sharedNow(
+      repo.getAll(),
+      accessTo: access.accessTo,
+    ).length;
+    final Map<String, int> theirs = <String, int>{};
+    for (final SharedCard c in MatchmakerNetwork.cards.value) {
+      theirs[c.ownerUid] = (theirs[c.ownerUid] ?? 0) + 1;
+    }
+    final int cards = MatchmakerNetwork.cards.value.length;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: HomePaperCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: <Widget>[
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.ios_share_rounded),
+              title: Text(
+                NetworkSharing.mode == ShareMode.none
+                    ? 'אני לא משתף/ת כרטיסים כרגע'
+                    : 'אני משתף/ת $mine כרטיסים עם כל השדכנים המחוברים',
+              ),
+              trailing: TextButton(
+                onPressed: () => context.push('/network/sharing'),
+                child: const Text('ניהול'),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.diversity_3_outlined),
+              title: Text(
+                connected == 0
+                    ? 'עוד אין שדכנים מחוברים'
+                    : theirs.isEmpty
+                    ? 'השדכנים המחוברים עוד לא שיתפו איתך כרטיסים'
+                    : '${theirs.length} שדכנים משתפים איתך $cards כרטיסים',
+              ),
+              trailing: theirs.isEmpty
+                  ? null
+                  : TextButton(
+                      onPressed: () => context.push('/network'),
+                      child: const Text('למאגר'),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -340,6 +420,9 @@ class KnownMatchmakerRow extends StatelessWidget {
     final String details = m.detailsLine;
     final String? state = KnownMatchmakers.stateLabel(m);
     final String name = m.name.isEmpty ? 'שדכן/ית' : m.name;
+    final int sharesWithMe = MatchmakerNetwork.cards.value
+        .where((SharedCard c) => c.ownerUid == m.uid)
+        .length;
     return InkWell(
       onTap: () => AppNavigation.open(
         context,
@@ -363,11 +446,15 @@ class KnownMatchmakerRow extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  if (details.isNotEmpty || state != null)
+                  if (details.isNotEmpty || state != null || sharesWithMe > 0)
                     Text(
                       <String>[
                         ?state,
                         if (details.isNotEmpty) details,
+                        if (m.state == KnownMatchmakerState.connected)
+                          sharesWithMe == 0
+                              ? 'לא משתף/ת איתך כרטיסים'
+                              : 'משתף/ת איתך $sharesWithMe כרטיסים',
                       ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -417,10 +504,18 @@ class _RowAction extends StatelessWidget {
           child: const Text('אישור'),
         );
       case KnownMatchmakerState.connected:
-        return const Icon(
-          Icons.handshake_outlined,
-          color: AppColors.primaryDark,
-          size: 22,
+        return IconButton(
+          tooltip: 'צ\'אט',
+          onPressed: () => NetworkActions.chatWith(
+            context,
+            otherUid: m.uid,
+            otherName: m.name,
+          ),
+          icon: const Icon(
+            Icons.chat_bubble_outline_rounded,
+            color: AppColors.primaryDark,
+            size: 22,
+          ),
         );
       case KnownMatchmakerState.outgoing:
       case KnownMatchmakerState.declined:
@@ -616,6 +711,8 @@ class _KnownMatchmakerProfileScreenState
         MatchmakerConnections.connections,
         MatchmakerConnections.loaded,
         MatchmakerConnections.busy,
+        MatchmakerNetwork.cards,
+        NetworkSharing.revision,
       ]),
       builder: (BuildContext context, _) => _build(context),
     );
