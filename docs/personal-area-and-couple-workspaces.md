@@ -135,7 +135,11 @@ the other side's person get tombstones. Each side's personal
 phone's sync binding to `{uid}@{databaseUid}:{revision}`; the local copy is
 emptied and `AccountSyncLedger.awaitingFirstReadHere` holds the router on the
 loading screen ("טוענים את המאגר הזוגי") until the server's copy has arrived.
-"להמשיך לצפייה בלבד" lets the phone in read-only. `OfflineGuard` refuses
+It never spins for ever: after 45 seconds of one attempt it says the database
+has not loaded yet and offers "ניסיון חוזר" (the read keeps retrying underneath;
+every full read is bounded to 60 seconds per collection), and while the
+membership is `merging` it says the connection is not finished and offers to
+cancel it. `OfflineGuard` refuses
 every edit while that read is pending and while the membership is `merging`
 or `splitting`, so nothing is ever written to a local database the spouse
 cannot see. The membership falls back to the Firestore cache offline.
@@ -144,6 +148,26 @@ Merge/split writes are frozen by membership state. Each operation keeps immutabl
 source snapshots before writing destination records. Bulk writes flush before
 awaiting their results. Processing leases prevent concurrent retries, and either
 spouse can resume an interrupted merge.
+
+**A merge is never left half-way (2026-11-19).** Every step is written on the
+invite (`coupleInvites/{code}.step`: claimed → archived → merged → files →
+settings → grants → active) and appended to `coupleInvites/{code}/log` with
+the time and, on a failure, the error code — that is where support looks first.
+A merge that fails **before `grants`** is undone in the same call
+(`rollbackMerge`): each account tree is rewritten from its archive
+(`restorePlan`: archived documents back, anything the merge added tombstoned),
+both memberships and the `couples` row are deleted, and the invite is open
+again (`pending`, no `acceptedBy`) — so the couple simply tries again. After
+`grants` (card permissions changed, which the archives do not hold) it is only
+ever completed. A merge killed at the time limit (no `catch` runs) is caught by
+the phones: whenever the sync reads a `merging` membership it calls
+`resumeCoupleMigration` (`CoupleRecovery`), which resumes from the last step,
+and after `MAX_MERGE_ATTEMPTS` (3) starts rolls back instead. Either spouse can
+also cancel (`rollbackCoupleMigration`, "ביטול החיבור וחזרה למאגר שלי"),
+refused while a merge is running (lease). Photos are copied 16 at a time and
+never twice, which is what used to push a large merge past nine minutes. An
+unfinished split is finished the same way (`splitCoupleWorkspace` again —
+both already confirmed it).
 
 Phone normalization merges equal Israeli local/international numbers. Both
 sources, photographs, tags and conflicting text are preserved. Other conflicting

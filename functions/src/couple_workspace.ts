@@ -10,6 +10,7 @@ import {
   HttpsError,
   CallableRequest,
 } from 'firebase-functions/v2/https';
+import { logger } from 'firebase-functions';
 import { randomBytes, createHash } from 'node:crypto';
 import {
   Database,
@@ -88,14 +89,171 @@ function files(data: Database): Set<string> {
       result.add(`voice/${String(n.audioFile).split('/').pop()}`);
   return result;
 }
+/**
+ * Copies a database's photos and recordings between two Storage folders —
+ * sixteen at a time, and never one already there. One at a time, a large
+ * database ran past the function's nine minutes, the merge was killed
+ * halfway, and both accounts were left "merging" with nobody to finish it.
+ */
 async function copyFiles(data: Database, from: string, to: string) {
   const bucket = getStorage().bucket();
-  for (const file of files(data)) {
-    const source = bucket.file(`${from}/${file}`);
-    if ((await source.exists())[0])
-      await source.copy(bucket.file(`${to}/${file}`));
+  const list = [...files(data)];
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < list.length) {
+      const file = list[next++];
+      const target = bucket.file(`${to}/${file}`);
+      if ((await target.exists())[0]) continue;
+      const source = bucket.file(`${from}/${file}`);
+      if ((await source.exists())[0]) await source.copy(target);
+    }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(16, list.length) }, () => worker()),
+  );
 }
+
+// --- Pairing progress, its log, and the way back -----------------------------
+//
+// A couple's merge runs for minutes on the server, and a phone may lose its
+// connection, be closed, or the function itself be stopped at its time limit
+// at any moment in it. So every step is written down on the invite (`step`)
+// and in its log (`coupleInvites/{code}/log`), and **a merge that cannot
+// finish is undone, not left half-way**: both accounts are restored from the
+// immutable archives taken before anything was written, and both go back to
+// their own databases.
+
+/** The steps of a merge, in order. */
+export const MERGE_STEPS = [
+  'claimed',
+  'archived',
+  'merged',
+  'files',
+  'settings',
+  'grants',
+  'active',
+] as const;
+
+export function stepIndex(step: unknown): number {
+  return MERGE_STEPS.indexOf(step as (typeof MERGE_STEPS)[number]);
+}
+
+/**
+ * Whether a merge stopped at [step] can still be undone completely. Until the
+ * card permissions are touched, everything the merge wrote is in the two
+ * account trees, and the archives hold what they were before.
+ */
+export function canRollBack(step: unknown): boolean {
+  return stepIndex(step) < stepIndex('grants');
+}
+
+/** After this many starts of one merge, it is undone rather than retried. */
+export const MAX_MERGE_ATTEMPTS = 3;
+
+/**
+ * What to write so that a tree reads exactly as [archive] did: every archived
+ * document as it was, and a tombstone for every live document the archive
+ * did not have. Pure, so it is tested.
+ */
+export function restorePlan(current: Database, archive: Database): Database {
+  const out: Database = {};
+  for (const c of [...recordCollections, 'settings']) {
+    out[c] = {};
+    for (const [id, record] of Object.entries(archive[c] ?? {}))
+      out[c][id] = record;
+    for (const [id, record] of Object.entries(current[c] ?? {}))
+      if (!archive[c]?.[id] && record?._deleted !== true)
+        out[c][id] = { _deleted: true };
+  }
+  return out;
+}
+
+/** An error reduced to a code and a short line — never a record. */
+function errorLine(error: unknown): string {
+  const e = error as { code?: unknown; message?: unknown };
+  const code = typeof e?.code === 'string' ? e.code : '';
+  const message = typeof e?.message === 'string' ? e.message : String(error);
+  return `${code ? `${code}: ` : ''}${message}`.slice(0, 300);
+}
+
+/** Records [step] on the invite and appends it to the invite's log. */
+async function mark(
+  code: string,
+  step: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  const db = getFirestore();
+  const inviteRef = db.doc(`coupleInvites/${code}`);
+  try {
+    await inviteRef.collection('log').add({
+      step,
+      at: FieldValue.serverTimestamp(),
+      ...extra,
+    });
+    if (stepIndex(step) >= 0)
+      await inviteRef.update({ step, stepAt: FieldValue.serverTimestamp() });
+  } catch (error) {
+    logger.warn('couple: log failed', { code, step, error: String(error) });
+  }
+  logger.info('couple', { code, step, ...extra });
+}
+
+/**
+ * Undoes a merge that did not finish: both account trees as they were in the
+ * archives, both memberships gone, and the invite open again so the couple can
+ * simply try once more. Never after the card permissions were touched.
+ */
+async function rollbackMerge(code: string, reason: string): Promise<void> {
+  const db = getFirestore();
+  const inviteRef = db.doc(`coupleInvites/${code}`);
+  const invite = await inviteRef.get();
+  const step = invite.get('step');
+  if (!canRollBack(step))
+    throw new HttpsError(
+      'failed-precondition',
+      'החיבור כבר הגיע לשלב ההרשאות ואפשר רק להשלים אותו',
+    );
+  await mark(code, 'rollingBack', { reason, fromStep: step ?? null });
+  const members = [invite.get('from'), invite.get('acceptedBy')].filter(
+    (m): m is string => typeof m === 'string' && m.length > 0,
+  );
+  for (const member of members) {
+    const archive = db.doc(`coupleArchives/${code}/accounts/${member}`);
+    // Nothing is written to an account's tree before both archives are
+    // complete, so an account without one was never touched.
+    if (!(await archive.get()).get('complete')) continue;
+    await writeDatabase(
+      db.doc(`users/${member}`),
+      restorePlan(
+        await readDatabase(db.doc(`users/${member}`)),
+        await readDatabase(archive),
+      ),
+    );
+  }
+  const batch = db.batch();
+  for (const member of members) {
+    const membership = await db.doc(`memberships/${member}`).get();
+    if (membership.exists && membership.get('operation') === code)
+      batch.delete(membership.ref);
+  }
+  const primary = invite.get('from');
+  if (typeof primary === 'string') {
+    const couple = await db.doc(`couples/${primary}`).get();
+    if (couple.exists && couple.get('operation') === code)
+      batch.delete(couple.ref);
+  }
+  batch.update(inviteRef, {
+    status: 'pending',
+    acceptedBy: FieldValue.delete(),
+    step: 'rolledBack',
+    attempts: 0,
+    processingUntil: 0,
+    rolledBackAt: FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
+  await mark(code, 'rolledBack');
+}
+
 /** Invitations are bearer codes, expire, require two separate authenticated accounts and explicit married consent. */
 export const createCoupleInvite = onCall(options, async (request) => {
   const uid = requireUser(request);
@@ -198,8 +356,15 @@ async function mergeCouple(
       acceptedBy: uid,
       status: 'merging',
       processingUntil: Date.now() + 10 * 60000,
+      attempts: FieldValue.increment(1),
     });
   });
+  // Where an earlier attempt got to: the steps behind it are not repeated.
+  const done = stepIndex(invite.get('step'));
+  if (done >= 0)
+    await mark(code, 'resumed', { by: uid, from: MERGE_STEPS[done] });
+  else await mark(code, 'claimed', { by: uid });
+  let failedAt: string = done >= 0 ? MERGE_STEPS[done] : 'claimed';
   try {
     // Freeze writes first. Keep immutable source archives for recovery and every conflicting field.
     await db
@@ -219,6 +384,8 @@ async function mergeCouple(
       }
       sources.push({ uid: member, data: await readDatabase(archive) });
     }
+    await mark(code, 'archived');
+    failedAt = 'archived';
     const merged = mergeDatabases(sources);
     // The inviting account's tree becomes the shared one, ids and all. Only an
     // id that did not survive the merge (folded into the same person on the
@@ -251,12 +418,18 @@ async function mergeCouple(
         }),
       ),
     });
+    await mark(code, 'merged');
+    failedAt = 'merged';
+    if (done < stepIndex('files'))
+      for (const source of sources)
+        await copyFiles(
+          source.data,
+          `users/${source.uid}`,
+          `coupleFiles/${code}`,
+        );
+    await mark(code, 'files');
+    failedAt = 'files';
     for (const source of sources) {
-      await copyFiles(
-        source.data,
-        `users/${source.uid}`,
-        `coupleFiles/${code}`,
-      );
       // Preserve personal reminder ownership while remapping the idea/person IDs.
       const settings: Database = { settings: {} };
       const matchIds = merged.recordIds[source.uid].matches ?? {};
@@ -304,6 +477,12 @@ async function mergeCouple(
         }
       await writeDatabase(db.doc(`users/${source.uid}`), settings);
     }
+    await mark(code, 'settings');
+    failedAt = 'settings';
+    // From here on the card permissions change, which the archives do not
+    // hold: a merge that fails after this point is completed, never undone.
+    await mark(code, 'grants');
+    failedAt = 'grants';
     // Individual consent never silently expands to a spouse. Ask again as the named pair.
     const owners = new Map<string, any>();
     for (const member of members) {
@@ -368,28 +547,98 @@ async function mergeCouple(
       { merge: true },
     );
     await batch.commit();
+    await mark(code, 'active');
     return { databaseUid: primary };
+  } catch (error) {
+    await mark(code, 'error', { failedAt, error: errorLine(error) });
+    if (!canRollBack(failedAt)) throw error;
+    // Not finished, and still entirely undoable: both accounts go back to
+    // their own databases, and the invite can be used again.
+    try {
+      await rollbackMerge(code, `failed at ${failedAt}`);
+    } catch (rollbackError) {
+      await mark(code, 'rollbackFailed', { error: errorLine(rollbackError) });
+      throw error;
+    }
+    throw new HttpsError(
+      'aborted',
+      'החיבור הזוגי לא הושלם, ושני החשבונות הוחזרו למאגרים הקודמים. אפשר לנסות שוב.',
+      { rolledBack: true, failedAt },
+    );
   } finally {
     await inviteRef.update({ processingUntil: 0 });
   }
 }
 export const acceptCoupleInvite = onCall(options, mergeCouple);
+/**
+ * Takes the lease on [code]'s invite for a rollback — refused while a merge
+ * of it is still running.
+ */
+async function leaseForRollback(code: string): Promise<void> {
+  const db = getFirestore();
+  const inviteRef = db.doc(`coupleInvites/${code}`);
+  await db.runTransaction(async (tx) => {
+    const invite = await tx.get(inviteRef);
+    if ((invite.get('processingUntil') ?? 0) > Date.now())
+      throw new HttpsError(
+        'aborted',
+        'המיזוג עדיין רץ בשרת. אפשר להמתין כמה דקות ולנסות שוב.',
+      );
+    tx.update(inviteRef, { processingUntil: Date.now() + 10 * 60000 });
+  });
+}
+
 export const resumeCoupleMigration = onCall(options, async (request) => {
   const caller = requireUser(request);
   const membership = await getFirestore().doc(`memberships/${caller}`).get();
   if (membership.get('state') !== 'merging')
     throw new HttpsError('failed-precondition', 'אין מיזוג להשלמה');
   const code = membership.get('operation');
-  const invite = await getFirestore().doc(`coupleInvites/${code}`).get();
+  const inviteRef = getFirestore().doc(`coupleInvites/${code}`);
+  const invite = await inviteRef.get();
   const acceptedBy = invite.get('acceptedBy');
   if (!membership.get('members')?.includes(acceptedBy))
     throw new HttpsError('permission-denied', 'הזמנה לא תקינה');
+  // A merge that was stopped again and again (the function's time limit) is
+  // undone rather than retried for ever.
+  if (
+    (invite.get('attempts') ?? 0) >= MAX_MERGE_ATTEMPTS &&
+    canRollBack(invite.get('step'))
+  ) {
+    await leaseForRollback(code);
+    try {
+      await rollbackMerge(code, 'too many attempts');
+    } finally {
+      await inviteRef.update({ processingUntil: 0 });
+    }
+    return { rolledBack: true };
+  }
   // Either spouse can resume the same already-consented operation, never a different connection.
   return mergeCouple({
     ...request,
     auth: { ...request.auth!, uid: acceptedBy },
     data: { code, married: true, confirmMerge: true },
   });
+});
+
+/**
+ * "ביטול החיבור": either spouse undoes a merge that has not finished — both
+ * accounts back to their own databases, nothing lost.
+ */
+export const rollbackCoupleMigration = onCall(options, async (request) => {
+  const caller = requireUser(request);
+  const membership = await getFirestore().doc(`memberships/${caller}`).get();
+  if (membership.get('state') !== 'merging')
+    throw new HttpsError('failed-precondition', 'אין חיבור שלא הושלם');
+  const code = membership.get('operation');
+  const inviteRef = getFirestore().doc(`coupleInvites/${code}`);
+  await leaseForRollback(code);
+  try {
+    await rollbackMerge(code, `cancelled by ${caller}`);
+  } finally {
+    await inviteRef.update({ processingUntil: 0 });
+  }
+  return { rolledBack: true };
 });
 
 export const previewCoupleSplit = onCall(options, async (request) => {

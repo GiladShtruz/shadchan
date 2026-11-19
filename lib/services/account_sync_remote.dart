@@ -149,13 +149,21 @@ class FirestoreAccountSyncRemote implements AccountSyncRemote {
   DocumentReference<Map<String, dynamic>> get _root =>
       FirebaseFirestore.instance.collection('users').doc(uid);
 
+  /// The longest a full read of one collection may take before it counts as
+  /// failed.
+  static const Duration readTimeout = Duration(seconds: 60);
+
   @override
   Future<Map<String, RemoteDocument>> fetchAll(
     SyncCollection collection,
   ) async {
+    // Bounded: a read that never answers on a weak connection used to hold
+    // the first load (and every retry queued behind it) for good. A timeout
+    // is an ordinary failure, retried like any other.
     final QuerySnapshot<Map<String, dynamic>> snapshot = await _root
         .collection(collection.remote)
-        .get(const GetOptions(source: Source.server));
+        .get(const GetOptions(source: Source.server))
+        .timeout(readTimeout);
     return <String, RemoteDocument>{
       for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
           in snapshot.docs)

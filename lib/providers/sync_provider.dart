@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/couple_sync_remote.dart';
+import 'package:shadchan/services/couple_recovery.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -93,6 +94,7 @@ class SyncProvider extends ChangeNotifier {
 
   Object? _startError;
   String? _startStop;
+  String? _lastCoupleState;
 
   /// Starts (or retries) the sync for whoever is signed in, and completes once
   /// the account has been read — or the attempt failed.
@@ -193,10 +195,20 @@ class SyncProvider extends ChangeNotifier {
     final membership = await CoupleWorkspaceService.refresh();
     final revision =
         '${user.uid}:${membership?['databaseUid'] ?? user.uid}:${membership?['revision'] ?? 'personal'}';
+    final String coupleState = membership == null
+        ? 'personal'
+        : '${membership['state'] ?? 'unknown'}';
+    if (coupleState != _lastCoupleState) {
+      _lastCoupleState = coupleState;
+      await CoupleRecovery.log('membership $coupleState');
+    }
     if (!CoupleWorkspaceService.ready) {
       _startStop =
           'couple-${CoupleWorkspaceService.membership.value?['state'] ?? 'unknown'}';
       await stop();
+      // A merge left half-way is finished — or undone — by the server; never
+      // left for the couple to find stuck.
+      unawaited(CoupleRecovery.check(membership));
       return;
     }
     if (_uid == user.uid && _engine != null && _workspaceRevision == revision) {
@@ -247,6 +259,11 @@ class SyncProvider extends ChangeNotifier {
         await ledger.markEmptiedForRead();
       }
       await _adoptOldBackupLedger(ledger, uid);
+      await CoupleRecovery.log(
+        binding.contains('@')
+            ? 'bound to the shared database, reading it'
+            : 'bound to the personal database, reading it',
+      );
       // The router holds this phone on the loading screen until the new
       // database has been read (`AccountSyncLedger.awaitingFirstReadHere`).
       SignInPromptStore.gate.value++;
@@ -650,6 +667,8 @@ class SyncProvider extends ChangeNotifier {
     await _membershipChanges?.cancel();
     _membershipChanges = null;
     CoupleWorkspaceService.clear();
+    CoupleRecovery.forget();
+    _lastCoupleState = null;
     await stop();
     await AccountSyncLedger.maybeInstance?.clear();
     await _settings.deleteAll(<String>[

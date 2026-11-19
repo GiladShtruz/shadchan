@@ -9,6 +9,8 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/services/account_service.dart';
 import 'package:shadchan/services/connectivity_status.dart';
+import 'package:shadchan/services/couple_recovery.dart';
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 
@@ -109,6 +111,9 @@ Widget _quiet(BuildContext context, String label, VoidCallback? onPressed) {
 class AccountLoadingScreen extends StatefulWidget {
   const AccountLoadingScreen({super.key});
 
+  /// How long the screen waits on one attempt before it offers "ניסיון חוזר".
+  static const Duration firstTimeout = Duration(seconds: 45);
+
   @override
   State<AccountLoadingScreen> createState() => _AccountLoadingScreenState();
 }
@@ -123,6 +128,8 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
   void initState() {
     super.initState();
     ConnectivityStatus.offline.addListener(_onConnectivity);
+    CoupleWorkspaceService.membership.addListener(_onPairing);
+    CoupleRecovery.state.addListener(_onPairing);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -135,8 +142,15 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
   @override
   void dispose() {
     ConnectivityStatus.offline.removeListener(_onConnectivity);
+    CoupleWorkspaceService.membership.removeListener(_onPairing);
+    CoupleRecovery.state.removeListener(_onPairing);
     _sync?.removeListener(_onSync);
     super.dispose();
+  }
+
+  /// The couple's connection moved (finished, undone, or a retry failed).
+  void _onPairing() {
+    if (mounted) setState(() {});
   }
 
   /// The read finished on an automatic retry.
@@ -168,7 +182,22 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
       }
     });
     final SyncProvider sync = context.read<SyncProvider>();
-    await (first ? sync.start() : sync.retryNow());
+    if (!first) {
+      unawaited(
+        CoupleRecovery.check(
+          CoupleWorkspaceService.membership.value,
+          force: true,
+        ),
+      );
+    }
+    // **Never an endless spinner.** The read goes on in the background (and
+    // retries by itself), but after [firstTimeout] the screen says it has not
+    // loaded and offers to try again — a weak connection must not look like
+    // an app that hangs for ever.
+    await (first ? sync.start() : sync.retryNow()).timeout(
+      AccountLoadingScreen.firstTimeout,
+      onTimeout: () {},
+    );
     if (!mounted) {
       return;
     }
@@ -178,8 +207,42 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
     } else {
       setState(() {
         _failed = true;
-        _code = sync.failureCode;
+        _code = CoupleRecovery.lastCode ?? sync.failureCode;
       });
+    }
+  }
+
+  Future<void> _cancelPairing() async {
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('לבטל את החיבור הזוגי?'),
+        content: const Text(
+          'החיבור עוד לא הושלם. שני החשבונות יחזרו למאגרים הקודמים שלהם, '
+          'כפי שהיו לפני החיבור — שום נתון לא נמחק. אפשר לנסות להתחבר שוב '
+          'בהמשך.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('המשך המתנה'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ביטול החיבור'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _loading = true);
+    final bool done = await CoupleRecovery.rollback();
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (done) {
+      await _load();
+    } else {
+      setState(() => _code = CoupleRecovery.lastCode);
     }
   }
 
@@ -187,6 +250,51 @@ class _AccountLoadingScreenState extends State<AccountLoadingScreen> {
   Widget build(BuildContext context) {
     final bool shared = AccountSyncLedger.boundToSharedHere;
     final bool offline = ConnectivityStatus.isOffline;
+    final bool pairing =
+        CoupleWorkspaceService.membership.value?['state'] == 'merging';
+    if (pairing && !offline) {
+      return _GateScaffold(
+        icon: Icons.sync_rounded,
+        title: 'החיבור הזוגי עוד לא הושלם',
+        body:
+            'ממשיכים להשלים אותו מעצמנו. אם לא יצליח, שני החשבונות יחזרו '
+            'למאגרים הקודמים שלהם — שום נתון לא נמחק ולא נוצר מאגר ריק.',
+        children: <Widget>[
+          const Center(
+            child: SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton(
+            onPressed: _loading ? null : _load,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+            ),
+            child: const Text('ניסיון חוזר'),
+          ),
+          const SizedBox(height: 6),
+          _quiet(context, 'ביטול החיבור וחזרה למאגר שלי', _cancelPairing),
+          _quiet(
+            context,
+            'התנתקות',
+            () => AccountDialogs.confirmSignOut(context),
+          ),
+          if (_code != null) ...<Widget>[
+            const SizedBox(height: 12),
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: SelectableText(
+                _code!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ],
+      );
+    }
     if (!_failed && !offline) {
       return _GateScaffold(
         icon: Icons.cloud_download_outlined,

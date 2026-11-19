@@ -1,6 +1,7 @@
 export { reconcileCoupleRecord } from './couple_dedup';
 export {
   resumeCoupleMigration,
+  rollbackCoupleMigration,
   resolveMatchmaker,
   createCoupleInvite,
   previewCoupleInvite,

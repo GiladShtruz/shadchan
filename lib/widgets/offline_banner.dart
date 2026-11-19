@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:shadchan/services/connectivity_status.dart';
+import 'package:shadchan/services/couple_workspace_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// A thin line across the top of every screen while the app is offline.
@@ -23,6 +24,12 @@ class OfflineBanner extends StatefulWidget {
   static const String offlineText = 'מצב לא מקוון · מוצג המידע האחרון שנשמר';
   static const String backOnlineText = 'החיבור חזר · מתעדכן';
 
+  /// A couple's merge (or split) still running: the database is read-only
+  /// until it ends, and the line says why rather than letting every edit
+  /// look broken.
+  static const String pairingText =
+      'החיבור הזוגי בתהליך · אפשר לצפות, העריכה תחזור כשיושלם';
+
   @override
   State<OfflineBanner> createState() => _OfflineBannerState();
 }
@@ -36,11 +43,17 @@ class _OfflineBannerState extends State<OfflineBanner> {
   void initState() {
     super.initState();
     ConnectivityStatus.offline.addListener(_onChanged);
+    CoupleWorkspaceService.membership.addListener(_onPairing);
+  }
+
+  void _onPairing() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     ConnectivityStatus.offline.removeListener(_onChanged);
+    CoupleWorkspaceService.membership.removeListener(_onPairing);
     _backOnlineTimer?.cancel();
     super.dispose();
   }
@@ -66,7 +79,8 @@ class _OfflineBannerState extends State<OfflineBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final bool showing = _offline || _backOnline;
+    final bool pairing = !_offline && CoupleWorkspaceService.changing;
+    final bool showing = _offline || _backOnline || pairing;
     final MediaQueryData media = MediaQuery.of(context);
     return Column(
       children: <Widget>[
@@ -75,7 +89,11 @@ class _OfflineBannerState extends State<OfflineBanner> {
           curve: Curves.easeOut,
           alignment: Alignment.topCenter,
           child: showing
-              ? _Strip(offline: _offline, topInset: media.padding.top)
+              ? _Strip(
+                  offline: _offline,
+                  pairing: pairing && !_backOnline,
+                  topInset: media.padding.top,
+                )
               : const SizedBox(width: double.infinity),
         ),
         // Always the same widget, only its padding changes: swapping the
@@ -95,9 +113,14 @@ class _OfflineBannerState extends State<OfflineBanner> {
 }
 
 class _Strip extends StatelessWidget {
-  const _Strip({required this.offline, required this.topInset});
+  const _Strip({
+    required this.offline,
+    required this.topInset,
+    this.pairing = false,
+  });
 
   final bool offline;
+  final bool pairing;
   final double topInset;
 
   @override
@@ -105,6 +128,8 @@ class _Strip extends StatelessWidget {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color ground = offline
         ? (dark ? AppColors.surfaceDm : AppColors.primaryInk)
+        : pairing
+        ? AppColors.secondary
         : const Color(0xFF5E8C61);
     const Color ink = Colors.white;
     return Semantics(
@@ -118,7 +143,11 @@ class _Strip extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               Icon(
-                offline ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
+                offline
+                    ? Icons.cloud_off_rounded
+                    : pairing
+                    ? Icons.sync_rounded
+                    : Icons.cloud_done_rounded,
                 size: 14,
                 color: ink,
               ),
@@ -127,6 +156,8 @@ class _Strip extends StatelessWidget {
                 child: Text(
                   offline
                       ? OfflineBanner.offlineText
+                      : pairing
+                      ? OfflineBanner.pairingText
                       : OfflineBanner.backOnlineText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

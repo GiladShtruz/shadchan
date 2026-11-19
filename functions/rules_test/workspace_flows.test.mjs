@@ -390,6 +390,108 @@ test('either spouse can resume a partially completed merge from immutable source
   await c.call('splitCoupleWorkspace', { confirmed: true });
 });
 
+async function stuckMerge(label, extra = {}) {
+  const c = await account(`${label}-moshe`),
+    d = await account(`${label}-rachel`);
+  const { code } = await c.call('createCoupleInvite', { married: true });
+  const members = [c.uid, d.uid],
+    names = { [c.uid]: 'משה', [d.uid]: 'רחל' };
+  for (const uid of members)
+    await db.doc(`memberships/${uid}`).set({
+      databaseUid: c.uid,
+      members,
+      names,
+      name: 'משה ורחל',
+      state: 'merging',
+      operation: code,
+    });
+  await db.doc(`couples/${c.uid}`).set({
+    members,
+    names,
+    name: 'משה ורחל',
+    state: 'merging',
+    operation: code,
+  });
+  await db.doc(`coupleInvites/${code}`).update({
+    acceptedBy: d.uid,
+    status: 'merging',
+    processingUntil: 0,
+    step: 'merged',
+    ...extra,
+  });
+  for (const uid of members) {
+    const root = `coupleArchives/${code}/accounts/${uid}`;
+    await db.doc(`${root}/people/own_${uid}`).set({
+      id: `own_${uid}`,
+      firstName: uid === c.uid ? 'של משה' : 'של רחל',
+      photos: [],
+    });
+    await db.doc(root).set({ complete: true });
+  }
+  // What a merge stopped half-way had already written into the inviter's tree.
+  await db.doc(`users/${c.uid}/people/own_${c.uid}`).set({
+    firstName: 'של משה',
+    _sources: members,
+  });
+  await db.doc(`users/${c.uid}/people/own_${d.uid}`).set({
+    firstName: 'של רחל',
+    _sources: [d.uid],
+  });
+  return { c, d, code, members };
+}
+
+test('a merge that did not finish is undone: both back to their own databases', async () => {
+  const { c, d, code, members } = await stuckMerge('rollback');
+  const result = await d.call('rollbackCoupleMigration');
+  assert.equal(result.rolledBack, true);
+  for (const uid of members)
+    assert.equal((await db.doc(`memberships/${uid}`).get()).exists, false);
+  // The inviter's tree reads as it did before: their own friend back, the
+  // spouse's friend gone again.
+  const people = (await db.collection(`users/${c.uid}/people`).get()).docs;
+  const live = people.filter((x) => !x.get('_deleted')).map((x) => x.id);
+  assert.deepEqual(live, [`own_${c.uid}`]);
+  assert.equal(
+    (await db.doc(`users/${c.uid}/people/own_${c.uid}`).get()).get('_sources'),
+    undefined,
+  );
+  const invite = await db.doc(`coupleInvites/${code}`).get();
+  assert.equal(invite.get('status'), 'pending');
+  assert.equal(invite.get('acceptedBy'), undefined);
+  // Every step is in the invite's log, for support.
+  const log = (await db.collection(`coupleInvites/${code}/log`).get()).docs.map(
+    (x) => x.get('step'),
+  );
+  assert.ok(log.includes('rollingBack'));
+  assert.ok(log.includes('rolledBack'));
+  // And the same invite can be used again.
+  await d.call('acceptCoupleInvite', { code, married: true, confirmMerge: true });
+  assert.equal(
+    (await db.doc(`memberships/${d.uid}`).get()).get('state'),
+    'active',
+  );
+  await c.call('splitCoupleWorkspace', { confirmed: true });
+});
+
+test('a merge stopped again and again is undone on the next resume', async () => {
+  const { c, members } = await stuckMerge('attempts', { attempts: 3 });
+  const result = await c.call('resumeCoupleMigration');
+  assert.equal(result.rolledBack, true);
+  for (const uid of members)
+    assert.equal((await db.doc(`memberships/${uid}`).get()).exists, false);
+});
+
+test('nothing is undone while a merge is still running on the server', async () => {
+  const { d, members } = await stuckMerge('lease', {
+    processingUntil: Date.now() + 60000,
+  });
+  await assert.rejects(d.call('rollbackCoupleMigration'), /aborted|המיזוג/);
+  assert.equal(
+    (await db.doc(`memberships/${members[0]}`).get()).get('state'),
+    'merging',
+  );
+});
+
 test('WhatsApp Opus is converted for iOS playback and actual video is rejected', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'shadchan-media-test-'));
   const ffmpeg = require('@ffmpeg-installer/ffmpeg').path;

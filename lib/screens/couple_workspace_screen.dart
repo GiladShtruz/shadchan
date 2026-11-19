@@ -10,6 +10,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
+import 'package:shadchan/services/couple_recovery.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
@@ -37,32 +39,100 @@ class _CoupleWorkspaceScreenState extends State<CoupleWorkspaceScreen> {
     super.dispose();
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(Future<void> Function() action, {String? what}) async {
     setState(() => _busy = true);
+    final sync = context.read<SyncProvider>();
+    if (what != null) await CoupleRecovery.log('$what: started');
     try {
-      final sync = context.read<SyncProvider>();
-      await sync.syncNow();
+      // Whatever is still waiting on this phone goes up first — but never
+      // holds the action for long: the merge works from the server's copy.
+      await sync.syncNow().timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => false,
+      );
       await FirebaseFirestore.instance.waitForPendingWrites().timeout(
         const Duration(seconds: 30),
       );
       await action();
-      await CoupleWorkspaceService.refresh();
-      await sync.start();
-      if (mounted) {
-        final access = context.read<CardAccessProvider>();
-        await access.stop();
-        await access.start();
+      if (what != null) await CoupleRecovery.log('$what: done');
+    } on FirebaseFunctionsException catch (error) {
+      final Object? details = error.details;
+      final bool rolledBack = details is Map && details['rolledBack'] == true;
+      if (what != null) {
+        await CoupleRecovery.log(
+          '$what: failed functions/${error.code}'
+          '${rolledBack ? ' (rolled back at ${details['failedAt']})' : ''}',
+        );
       }
-    } catch (_) {
+      if (mounted) {
+        AppNotice.show(
+          context,
+          rolledBack
+              ? 'החיבור הזוגי לא הושלם, ושני החשבונות חזרו למאגרים הקודמים. שום נתון לא נמחק. אפשר לנסות שוב.'
+              : '${error.message ?? 'הפעולה לא הושלמה.'} (${error.code})',
+          isError: true,
+        );
+      }
+    } on Object catch (error) {
+      if (what != null) {
+        await CoupleRecovery.log('$what: failed ${error.runtimeType}');
+      }
       if (mounted) {
         AppNotice.show(
           context,
           'הפעולה לא הושלמה. יש לוודא חיבור לאינטרנט וקוד תקין ולנסות שוב. הנתונים נשמרו.',
+          isError: true,
         );
       }
     } finally {
+      // Whatever happened, the phone follows where the server says this
+      // account now is — the shared database, or its own one again.
+      try {
+        await CoupleWorkspaceService.refresh();
+        await sync.start().timeout(
+          const Duration(seconds: 45),
+          onTimeout: () {},
+        );
+        if (mounted) {
+          final access = context.read<CardAccessProvider>();
+          await access.stop();
+          await access.start();
+        }
+      } on Object catch (error) {
+        await CoupleRecovery.log(
+          'refresh after action failed ${error.runtimeType}',
+        );
+      }
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _cancelPairing() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('לבטל את החיבור הזוגי?'),
+        content: const Text(
+          'החיבור עוד לא הושלם. שני החשבונות יחזרו למאגרים הקודמים שלהם, כפי שהיו לפני החיבור — שום נתון לא נמחק.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('המשך המתנה'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ביטול החיבור'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _run(() async {
+      if (!await CoupleRecovery.rollback()) {
+        throw StateError(CoupleRecovery.lastCode ?? 'rollback');
+      }
+    }, what: 'cancel pairing');
   }
 
   Future<void> _join() async {
@@ -233,12 +303,17 @@ class _CoupleWorkspaceScreenState extends State<CoupleWorkspaceScreen> {
                         await CoupleWorkspaceService.call(
                           'resumeCoupleMigration',
                         );
-                      }),
+                      }, what: 'resume'),
                 child: const Text('השלמת המיזוג'),
+              ),
+            if (membership['state'] == 'merging')
+              TextButton(
+                onPressed: _busy ? null : _cancelPairing,
+                child: const Text('ביטול החיבור וחזרה למאגר שלי'),
               ),
             if (membership['state'] == 'splitting')
               FilledButton(
-                onPressed: _busy ? null : () => _run(_split),
+                onPressed: _busy ? null : () => _run(_split, what: 'split'),
                 child: const Text('השלמת הפיצול'),
               ),
             HomePaperCard(
@@ -312,7 +387,9 @@ class _CoupleWorkspaceScreenState extends State<CoupleWorkspaceScreen> {
               textDirection: TextDirection.ltr,
             ),
             OutlinedButton(
-              onPressed: !_married || _busy ? null : () => _run(_join),
+              onPressed: !_married || _busy
+                  ? null
+                  : () => _run(_join, what: 'join'),
               child: const Text('בדיקת ההזמנה והצטרפות'),
             ),
           ],
