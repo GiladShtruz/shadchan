@@ -1,13 +1,16 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shadchan/utils/personal_whats_new.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/services/home_board_store.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shadchan/widgets/area_switch_button.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/dialogs/access_permissions_dialog.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
-import 'package:shadchan/dialogs/person_card_viewer.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/personal_area_provider.dart';
@@ -21,9 +24,7 @@ import 'package:shadchan/utils/matchmaker_friends.dart';
 import 'package:shadchan/utils/personal_next_step.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_section.dart';
-import 'package:shadchan/widgets/person_avatar.dart';
-import 'package:shadchan/widgets/person_list_card.dart';
-import 'package:shadchan/widgets/person_photo_carousel.dart';
+import 'package:shadchan/widgets/onward_share_switch.dart';
 
 /// The personal home is drawn from three shapes only: the one central card
 /// (the owner's own), compact rows of action, and horizontal strips of
@@ -94,140 +95,6 @@ class SwitchToMatchmakerButton extends StatelessWidget {
     label: labelTemplate.forGender(context.userGender),
     onTap: onTap,
   );
-}
-
-/// "הכרטיס שלי" — the one central card of the page: the main photo (up to
-/// four, swipeable, a tap opens the card in full), the name and facts, a few
-/// lines of the text, and the way to the whole card.
-class PersonalMyCard extends StatelessWidget {
-  const PersonalMyCard({super.key, required this.card, required this.active});
-
-  final Person card;
-
-  /// False while the card is still a draft nobody can see.
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final Color accent = AppColors.genderAccent(card.gender, dark: dark);
-    final List<String> photos = card.photosPaths
-        .where((String path) => File(path).existsSync())
-        .take(4)
-        .toList();
-    final String description = (card.description ?? '').trim();
-    final List<String> facts = <String>[
-      if (card.age != null) 'גיל ${card.age}',
-      if (card.religiousLevelLabel.isNotEmpty) card.religiousLevelLabel,
-      if ((card.city ?? '').trim().isNotEmpty) card.city!.trim(),
-    ];
-
-    return HomePaperCard(
-      stripe: accent,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'הכרטיס שלי',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: 'עריכת הכרטיס',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => PersonalAreaService.editCard(context),
-                icon: const Icon(Icons.edit_outlined, size: 20),
-              ),
-            ],
-          ),
-          if (photos.isNotEmpty) ...<Widget>[
-            PersonPhotoCarousel(
-              photosPaths: photos,
-              height: 240,
-              fit: BoxFit.contain,
-              borderRadius: BorderRadius.circular(16),
-              backgroundColor: dark
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : AppColors.cardCream,
-              onTapIndex: (int index) =>
-                  PersonCardViewer.openOwnCard(context, initialIndex: index),
-            ),
-            const SizedBox(height: 10),
-          ],
-          Row(
-            children: <Widget>[
-              if (photos.isEmpty) ...<Widget>[
-                GestureDetector(
-                  onTap: () => PersonCardViewer.openOwnCard(context),
-                  child: PersonAvatar(person: card, radius: 28),
-                ),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      card.fullName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: accent,
-                      ),
-                    ),
-                    if (facts.isNotEmpty)
-                      Text(
-                        facts.join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                  ],
-                ),
-              ),
-              ProfileStatusTag(
-                status: card.profileStatus,
-                gender: card.gender,
-                compact: true,
-              ),
-            ],
-          ),
-          if (description.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 8),
-            Text(
-              description,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-            ),
-          ],
-          if (!active) ...<Widget>[
-            const SizedBox(height: 8),
-            Text(
-              PersonalCardCodec.draftHint(card) ?? '',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              onPressed: () => PersonCardViewer.openOwnCard(context),
-              icon: const Icon(Icons.visibility_outlined, size: 18),
-              label: const Text('צפייה בכרטיס המלא'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// No card, or a deleted one: the central card's place, saying what to do.
@@ -400,6 +267,9 @@ abstract final class MatchmakerFriendActions {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
+        if (friend.row != null && friend.row!.canReadCard)
+          OnwardShareSwitch(row: friend.row!, name: friend.name),
+        const SizedBox(height: 4),
         OutlinedButton(
           onPressed: () => run(() => PersonalAccessFlow.edit(context, friend)),
           child: const Text('שינוי הרשאות'),
@@ -441,7 +311,7 @@ class PersonalShortcuts extends StatelessWidget {
   final VoidCallback onCard;
   final VoidCallback onMatchmakers;
 
-  static const String cardLabel = 'לכרטיס האישי שלי';
+  static const String cardLabel = 'הכרטיס שלי';
   static const String matchmakersLabel = 'השדכנים שלי';
 
   @override
@@ -556,7 +426,7 @@ class PersonalRecentMatchmakers extends StatelessWidget {
 
   static const String title = 'השדכנים שלי שהיו פעילים לאחרונה';
   static const String seeAllLabel = 'לכל השדכנים שלי';
-  static const int shown = 3;
+  static const int shown = 4;
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<int>(
@@ -676,9 +546,9 @@ class PersonalNextAction extends StatelessWidget {
     builder: (BuildContext context, _, _) => _build(context),
   );
 
-  Widget _build(BuildContext context) {
-    final CardAccessProvider access = context.watch<CardAccessProvider>();
-    final UserProfileProvider profile = context.watch<UserProfileProvider>();
+  /// Whether the card is due for a look: three months since it was last
+  /// edited or confirmed, on this phone or on the server.
+  static bool reviewDueFor(BuildContext context, Person card) {
     final PersonalAreaProvider? data = maybeWatch<PersonalAreaProvider>(
       context,
     );
@@ -687,8 +557,25 @@ class PersonalNextAction extends StatelessWidget {
     if (remote != null && remote.isAfter(touched)) touched = remote;
     DateTime reviewed = data?.date('reviewedAt') ?? touched;
     if (touched.isAfter(reviewed)) reviewed = touched;
+    return PersonalAreaProvider.reviewDue(reviewed);
+  }
 
-    final PersonalNextStep step = PersonalNextStep.pick(
+  /// The one step this visit offers — shared with "מה חדש אצלי", so the two
+  /// never say the same thing.
+  static PersonalNextStep stepFor(
+    BuildContext context, {
+    required Person card,
+    required bool live,
+  }) {
+    final CardAccessProvider access = context.watch<CardAccessProvider>();
+    final UserProfileProvider profile = context.watch<UserProfileProvider>();
+    final PersonalAreaProvider? data = maybeWatch<PersonalAreaProvider>(
+      context,
+    );
+    DateTime touched = card.updatedAt;
+    final DateTime? remote = data?.date('editedAt');
+    if (remote != null && remote.isAfter(touched)) touched = remote;
+    return PersonalNextStep.pick(
       card: card,
       live: live,
       friends: matchmakerFriendsOf(access),
@@ -696,10 +583,15 @@ class PersonalNextAction extends StatelessWidget {
       hasPhone: profile.myPhone != null,
       friendsLoaded: access.helpersLoaded && access.ownerAccessLoaded,
       lastTouched: touched,
-      reviewDue: PersonalAreaProvider.reviewDue(reviewed),
+      reviewDue: reviewDueFor(context, card),
       gender: context.userGender,
       draftHint: PersonalCardCodec.draftHint(card),
     );
+  }
+
+  Widget _build(BuildContext context) {
+    final UserProfileProvider profile = context.watch<UserProfileProvider>();
+    final PersonalNextStep step = stepFor(context, card: card, live: live);
 
     Future<void> run() async {
       switch (step.kind) {
@@ -797,6 +689,8 @@ class PersonalCommunityFigure extends StatelessWidget {
   /// arrival at the home.
   final int visit;
 
+  static const String title = 'מה קורה בשדכן';
+
   /// The month key the server writes beside its monthly figure.
   static String monthKey([DateTime? at]) {
     final DateTime now = at ?? DateTime.now();
@@ -813,6 +707,7 @@ class PersonalCommunityFigure extends StatelessWidget {
     }
 
     add('singles', (num v) => '$v רווקים ורווקות מנהלים כרטיס אישי בשדכן');
+    add('matchmakers', (num v) => '$v שדכנים בקהילה');
     if (stats['weekKey'] == CommunityPeriods.weekKey(now)) {
       add(
         'newSinglesWeek',
@@ -839,6 +734,14 @@ class PersonalCommunityFigure extends StatelessWidget {
             : 'מזל טוב! $v זוגות מהקהילה התארסו השבוע 🎉',
       );
     }
+    // A Hebrew month, as everywhere the community counts by the month.
+    if (stats['hebrewMonthKey'] == CommunityPeriods.monthKey(now)) {
+      add(
+        'engagementsMonth',
+        (num v) =>
+            v == 1 ? 'חתונה אחת נוספה החודש 🎉' : '$v חתונות נוספו החודש 🎉',
+      );
+    }
     if (stats['monthKey'] == monthKey(now)) {
       add(
         'newSinglesMonth',
@@ -863,24 +766,300 @@ class PersonalCommunityFigure extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 22),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Icon(
-            Icons.favorite_border_rounded,
-            size: 18,
-            color: AppColors.femaleAccent,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: Text(
-                line,
-                key: ValueKey<String>(line),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+          const PersonalSectionTitle(title),
+          PersonalCreamArea(
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.favorite_border_rounded,
+                  size: 18,
+                  color: AppColors.femaleAccent,
                 ),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: Text(
+                      line,
+                      key: ValueKey<String>(line),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A secondary area of the personal home: the light cream on the white page,
+/// no frame, no shadow — one thing per area, with room around it.
+class PersonalCreamArea extends StatelessWidget {
+  const PersonalCreamArea({super.key, required this.child, this.onTap});
+
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    return Material(
+      color: dark
+          ? theme.colorScheme.surfaceContainerHighest
+          : AppColors.cardCream,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// "מה חדש אצלי" — only real news around the owner, and nothing at all when
+/// there is none. See [PersonalWhatsNew].
+class PersonalWhatsNewSection extends StatelessWidget {
+  const PersonalWhatsNewSection({
+    super.key,
+    required this.card,
+    required this.nextStep,
+    required this.onMatchmakers,
+  });
+
+  /// The owner's card, when there is one — the "not updated in a while" line
+  /// is about it.
+  final Person? card;
+
+  /// What the next action below already says.
+  final PersonalNextStepKind? nextStep;
+
+  /// Opens "השדכנים שלי".
+  final VoidCallback onMatchmakers;
+
+  static const String title = 'מה חדש אצלי';
+
+  /// The news posts already opened from here (setting, synced).
+  static const String seenNewsKey = 'personalHome.newsSeen';
+
+  static Set<String> get seenNews {
+    final Object? raw = Hive.isBoxOpen('settings')
+        ? Hive.box<dynamic>('settings').get(seenNewsKey)
+        : null;
+    return raw is String && raw.isNotEmpty
+        ? raw.split(',').toSet()
+        : <String>{};
+  }
+
+  static void markNewsSeen(String id) {
+    final Set<String> seen = seenNews..add(id);
+    persistHomeSetting(seenNewsKey, seen.take(50).join(','));
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+    valueListenable: PersonalHelpersStore.revision,
+    builder: (BuildContext context, _, _) => _build(context),
+  );
+
+  Widget _build(BuildContext context) {
+    final CardAccessProvider access = context.watch<CardAccessProvider>();
+    final PersonalAreaProvider? data = maybeWatch<PersonalAreaProvider>(
+      context,
+    );
+    final List<PersonalNews> news = data?.news ?? const <PersonalNews>[];
+    final Person? own = card;
+    final List<PersonalWhatsNewItem> items = PersonalWhatsNew.build(
+      friends: matchmakerFriendsOf(access),
+      singleFriends: access.mutualFriends,
+      hidden: PersonalHelpersStore.hidden,
+      reviewDue: own != null && PersonalNextAction.reviewDueFor(context, own),
+      nextStep: nextStep,
+      latestNewsId: news.isEmpty ? null : news.first.id,
+      latestNewsTitle: news.isEmpty ? null : news.first.title,
+      seenNews: seenNews,
+    );
+    if (items.isEmpty) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+
+    Future<void> open(PersonalWhatsNewItem item) async {
+      switch (item.kind) {
+        case PersonalWhatsNewKind.request ||
+            PersonalWhatsNewKind.matchmakerJoined:
+          final MatchmakerFriend? friend = item.friend;
+          if (friend != null) {
+            await MatchmakerFriendSheet.show(context, friend);
+          } else {
+            onMatchmakers();
+          }
+        case PersonalWhatsNewKind.friendJoined:
+          onMatchmakers();
+        case PersonalWhatsNewKind.news:
+          markNewsSeen(item.newsId!);
+          if (context.mounted) {
+            await context.push('/me/news/${item.newsId}');
+          }
+        case PersonalWhatsNewKind.review:
+          await PersonalAreaService.editCard(context);
+      }
+    }
+
+    IconData iconOf(PersonalWhatsNewKind kind) => switch (kind) {
+      PersonalWhatsNewKind.request => Icons.mark_email_unread_outlined,
+      PersonalWhatsNewKind.matchmakerJoined => Icons.person_add_alt_outlined,
+      PersonalWhatsNewKind.friendJoined => Icons.waving_hand_outlined,
+      PersonalWhatsNewKind.news => Icons.campaign_outlined,
+      PersonalWhatsNewKind.review => Icons.update_rounded,
+    };
+
+    final Color accent = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
+    return Padding(
+      padding: const EdgeInsets.only(top: 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const PersonalSectionTitle(title),
+          PersonalCreamArea(
+            child: Column(
+              children: <Widget>[
+                for (int i = 0; i < items.length; i++) ...<Widget>[
+                  if (i > 0)
+                    Divider(
+                      height: 14,
+                      thickness: 0.5,
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => open(items[i]),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: <Widget>[
+                          Icon(iconOf(items[i].kind), size: 20, color: accent),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              items[i].text,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "מי רואה אותי" — one compact line: a few small faces of the matchmakers
+/// who can see the card, and how many they are. A tap opens access
+/// management. Not drawn before the server has said who has access.
+class PersonalWhoSees extends StatelessWidget {
+  const PersonalWhoSees({super.key});
+
+  static const String title = 'מי רואה אותי';
+
+  static String lineFor(int count, Gender? gender) => count == 0
+      ? 'כרגע אף שדכן לא רואה את הכרטיס'
+      : count == 1
+      ? 'חבר אחד יכול לחשוב {עליך|עלייך}'.forGender(gender)
+      : '$count חברים יכולים לחשוב {עליך|עלייך}'.forGender(gender);
+
+  @override
+  Widget build(BuildContext context) {
+    final CardAccessProvider access = context.watch<CardAccessProvider>();
+    if (!access.ownerAccessLoaded) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    final List<MatchmakerFriend> approved = MatchmakerFriends.approved(
+      matchmakerFriendsOf(access),
+    );
+    const double face = 15;
+    final List<MatchmakerFriend> faces = approved.take(4).toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const PersonalSectionTitle(title),
+          PersonalCreamArea(
+            onTap: () => context.go('/me?section=approved'),
+            child: Row(
+              children: <Widget>[
+                if (faces.isNotEmpty) ...<Widget>[
+                  SizedBox(
+                    width: face * 2 + (faces.length - 1) * face * 1.2,
+                    height: face * 2,
+                    child: Stack(
+                      children: <Widget>[
+                        for (int i = 0; i < faces.length; i++)
+                          PositionedDirectional(
+                            start: i * face * 1.2,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: theme.brightness == Brightness.dark
+                                      ? theme
+                                            .colorScheme
+                                            .surfaceContainerHighest
+                                      : AppColors.cardCream,
+                                  width: 2,
+                                ),
+                              ),
+                              child: MatchmakerFace(
+                                friend: faces[i],
+                                radius: face - 2,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Text(
+                    lineFor(approved.length, context.userGender),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
             ),
           ),
         ],

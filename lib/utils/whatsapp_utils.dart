@@ -7,6 +7,7 @@ import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/phone_utils.dart';
+import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -173,7 +174,9 @@ abstract final class WhatsAppUtils {
     Rect? origin,
   }) async {
     final String text = (card.description ?? '').trim();
-    final List<String> photos = ShareUtils.existingPhotos(card.photosPaths);
+    final List<String> photos = ShareUtils.existingPhotos(
+      CardPhotoPrivacy.shareable(card),
+    );
     if (text.isEmpty && photos.isEmpty) {
       return false;
     }
@@ -225,7 +228,9 @@ abstract final class WhatsAppUtils {
       return false;
     }
     return (card.description ?? '').trim().isNotEmpty ||
-        card.photosPaths.any((String path) => File(path).existsSync());
+        CardPhotoPrivacy.shareable(
+          card,
+        ).any((String path) => File(path).existsSync());
   }
 
   static String currentOnboardingMessage() {

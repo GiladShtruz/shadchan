@@ -25,6 +25,14 @@ export {
  */
 export { savePrivateLooking } from './private_looking';
 export { cardPhoto } from './card_photos';
+export {
+  sharedCardPhoto,
+  onIdeaProposalWritten,
+  onChatMessageCreated,
+  onCardAccessShareOnward,
+  onPersonalCardDeletedUnshare,
+} from './network';
+import { deleteNetworkOf } from './network';
 import { isActiveCard } from './card_activity';
 import { initializeApp } from 'firebase-admin/app';
 import {
@@ -46,7 +54,7 @@ import { isSupportAdminEmail, writeAdminStats } from './admin_stats';
 import { sendDueReminders } from './reminders';
 import * as functionsV1 from 'firebase-functions/v1';
 import { logger } from 'firebase-functions';
-import { isHebrewBirthday, israelToday } from './hebrew_birthday';
+import { isHebrewBirthday, israelToday, hebrewMonthKey } from './hebrew_birthday';
 
 initializeApp();
 const db = getFirestore();
@@ -297,9 +305,24 @@ async function ownerPhoneHashOf(ownerUid: string): Promise<string | undefined> {
  * the hash of the owner's number, from `databaseHashes`), and every
  * matchmaker saved in the owner's own address book.
  */
+/**
+ * A card that became live recently ([joinedRecently] — the same window as a
+ * matchmaker who joined). Only such a card is announced to the owner's
+ * contacts: an owner's first contacts upload, or their number arriving,
+ * after this shipped must not tell everybody about a card written months ago.
+ * A card with no `joinedAt` predates the field, and is old by definition.
+ */
+function cardIsNews(card: DocumentSnapshot): boolean {
+  const joinedAt = card.get('joinedAt');
+  return (
+    joinedAt instanceof Timestamp &&
+    joinedRecently(joinedAt.toMillis(), Date.now())
+  );
+}
+
 async function announceCard(ownerUid: string): Promise<void> {
   const card = await db.collection('personalCards').doc(ownerUid).get();
-  if (!isActiveCard(card.data())) {
+  if (!isActiveCard(card.data()) || !cardIsNews(card)) {
     return;
   }
   const ownerPhoneHash = await ownerPhoneHashOf(ownerUid);
@@ -344,6 +367,11 @@ export const onDatabaseHashesWritten = onDocumentWritten(
   async (event) => {
     const after = event.data?.after;
     if (!after?.exists) {
+      return;
+    }
+    // The first list a database ever publishes is where it stands, not news:
+    // friends already kept before the update must not raise a notice each.
+    if (!event.data?.before?.exists) {
       return;
     }
     const matchmakerUid = event.params.matchmakerUid;
@@ -530,6 +558,11 @@ async function findHelpers(ownerUid: string): Promise<void> {
   if (isActiveCard(card.data())) {
     for (const helper of helpers) {
       const uid = helper.uid as string;
+      // Only a friend who has just joined: everybody who was already here
+      // when this shipped is not news, and is on "השדכנים שלי" anyway.
+      const joinedAt =
+        helper.joinedAt instanceof Timestamp ? helper.joinedAt.toMillis() : null;
+      if (!joinedRecently(joinedAt, Date.now())) continue;
       const grant = await db.doc(`cardAccess/${ownerUid}_${uid}`).get();
       if (grant.get('status') === 'approved' || grant.get('status') === 'blocked') continue;
       // Asked as the question it is, in the owner's own grammatical gender.
@@ -902,6 +935,8 @@ export const onAccountDeleted = functionsV1
     await db.doc(`matchmakerActivity/${uid}`).delete();
     // Every connection with another matchmaker, from either side.
     await deleteConnectionsOf(uid);
+    // The cards shared with them, ideas offered between them, chats.
+    await deleteNetworkOf(uid);
     // Deleting it counts this matchmaker out of every tag word they used.
     await db.collection('tagUsage').doc(uid).delete();
     // The support view of this account's sync (counts and error codes).
@@ -1007,12 +1042,20 @@ async function refreshPersonalCardCount(): Promise<void> {
   const monthKey = `M${monthStart.getFullYear()}-${two(monthStart.getMonth()+1)}`;
   const joinedThisMonth = (value: unknown) => value instanceof Timestamp &&
     new Date(value.toDate().toLocaleString('en-US', {timeZone: 'Asia/Jerusalem'})) >= monthStart;
+  const hebrewKey = hebrewMonthKey(now);
   const totals = {singles: count, weekKey, monthKey,
     newSinglesWeek: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisWeek(d.get('joinedAt'))).length,
     newSinglesMonth: cards.docs.filter(d => isActiveCard(d.data()) && joinedThisMonth(d.get('joinedAt'))).length,
     newMatchmakersWeek: members.docs.filter(d => joinedThisWeek(d.get('joinedAt'))).length,
     activeMatchmakers: activity.docs.filter(d => joinedThisWeek(d.get('lastActiveAt'))).length,
-    couplesWeek: sum('weekCouples'), engagementsWeek: sum('weekEngagements')};
+    couplesWeek: sum('weekCouples'), engagementsWeek: sum('weekEngagements'),
+    // "186 שדכנים בקהילה" and "3 חתונות נוספו החודש" on the personal home.
+    // The month is the Hebrew one, as the members' own counters are keyed.
+    matchmakers: members.size,
+    hebrewMonthKey: hebrewKey,
+    engagementsMonth: members.docs
+      .filter(d => d.get('monthKey') === hebrewKey)
+      .reduce((n, d) => n + (typeof d.get('monthEngagements') === 'number' ? d.get('monthEngagements') : 0), 0)};
   const ref = db.doc('publicStats/personalCards');
   await db.runTransaction(async (tx) => {
     const previous = await tx.get(ref);

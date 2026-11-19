@@ -7,6 +7,8 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/card_photo_privacy.dart';
+import 'package:shadchan/widgets/photo_not_shareable_note.dart';
 import 'package:shadchan/widgets/card_status_timestamp.dart';
 import 'package:shadchan/dialogs/voice_recorder_sheet.dart';
 import 'package:shadchan/widgets/app_glyphs.dart';
@@ -1150,6 +1152,10 @@ class _FriendCardTileState extends State<_FriendCardTile> {
                   ),
                 ),
               ),
+            // The friend asked that their photos stay inside שדכן: said
+            // quietly, once, under the photos. Sharing leaves them out.
+            if (photos.isNotEmpty && CardPhotoPrivacy.holdsBack(person))
+              const PhotoNotShareableNote(),
             const SizedBox(height: 12),
             if (description.isNotEmpty)
               LayoutBuilder(

@@ -40,6 +40,10 @@ import 'package:shadchan/services/mazel_tov_inbox.dart';
 import 'package:shadchan/services/personal_card_sync.dart';
 import 'package:shadchan/services/personal_card_service.dart';
 import 'package:shadchan/services/push_service.dart';
+import 'package:shadchan/services/chat_service.dart';
+import 'package:shadchan/services/matchmaker_network.dart';
+import 'package:shadchan/services/network_sharing.dart';
+import 'package:shadchan/services/shared_ideas.dart';
 
 /// Starts the account's database sync, and runs everything else that talks to
 /// the server at the edges of a session.
@@ -231,6 +235,9 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       // "שדכנים שאני מכיר": the connections this account is part of.
       if (WorkspaceStore.matchmakerEnabled) {
         unawaited(MatchmakerConnections.start());
+        // The network between connected matchmakers: the cards they share,
+        // ideas offered between them, and the chats.
+        unawaited(_startNetwork());
       }
       // Reciprocal discovery needs both roles' address books. This checks
       // existing permission only and never opens a permission prompt.
@@ -360,6 +367,9 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
     _profile?.removeListener(_noteCardChange);
     FirebaseBootstrap.readyListenable.removeListener(_onFirebaseReady);
     ConnectivityStatus.offline.removeListener(_onConnectivityChanged);
+    MatchmakerNetwork.proposals.removeListener(_reconcileSharedIdeas);
+    NetworkSharing.revision.removeListener(_publishNetwork);
+    _accessForNetwork?.removeListener(_onConsentMaybeChanged);
     _activityTimer?.cancel();
     _cardTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -389,7 +399,77 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       );
       _publishTags();
       _publishActivity();
+      _publishNetwork();
     });
+  }
+
+  bool _networkWired = false;
+
+  Future<void> _startNetwork() async {
+    await MatchmakerNetwork.start();
+    await ChatService.start();
+    if (!mounted || _networkWired) {
+      _publishNetwork();
+      return;
+    }
+    _networkWired = true;
+    MatchmakerNetwork.proposals.addListener(_reconcileSharedIdeas);
+    NetworkSharing.revision.addListener(_publishNetwork);
+    _accessForNetwork = context.read<CardAccessProvider>()
+      ..addListener(_onConsentMaybeChanged);
+    _reconcileSharedIdeas();
+    _publishNetwork();
+  }
+
+  /// Puts the cards this matchmaker chose to share on the server — only the
+  /// difference, and nothing at all while sharing is off and nothing is there.
+  void _publishNetwork() {
+    if (!mounted || !FirebaseBootstrap.isReady) {
+      return;
+    }
+    final CardAccessProvider access = context.read<CardAccessProvider>();
+    unawaited(
+      NetworkSharing.publish(
+        people: context.read<PersonRepository>().getAll(),
+        ownerName: context.read<UserProfileProvider>().fullName ?? '',
+        accessTo: access.accessTo,
+      ),
+    );
+    SharedIdeas.reportStatuses(context.read<MatchRepository>());
+  }
+
+  CardAccessProvider? _accessForNetwork;
+  String _consentPrint = '';
+
+  /// A single said yes (or no) to their card being shown onward: publish —
+  /// only when that set actually moved, the provider notifies often.
+  void _onConsentMaybeChanged() {
+    final CardAccessProvider? access = _accessForNetwork;
+    if (access == null) return;
+    final List<String> owners = <String>[
+      for (final MapEntry<String, dynamic> e in access.matchmakerRows.entries)
+        if (e.value.shareOnward == true && e.value.canReadCard == true) e.key,
+    ]..sort();
+    final String print = owners.join(',');
+    if (print == _consentPrint) return;
+    _consentPrint = print;
+    _publishNetwork();
+  }
+
+  /// An idea another matchmaker approved (or this one did) opens here.
+  void _reconcileSharedIdeas() {
+    final String? me = MatchmakerNetwork.uid;
+    if (!mounted || me == null) {
+      return;
+    }
+    unawaited(
+      SharedIdeas.reconcile(
+        proposals: MatchmakerNetwork.proposals.value,
+        me: me,
+        people: context.read<PersonRepository>(),
+        matches: context.read<MatchRepository>(),
+      ),
+    );
   }
 
   void _refreshSupportInbox() {

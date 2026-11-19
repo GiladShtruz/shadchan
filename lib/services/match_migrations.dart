@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/models/match_idea.dart';
+import 'package:shadchan/models/match_note.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/utils/enums.dart';
 
@@ -77,23 +78,66 @@ abstract final class MatchMigrations {
     await settings.put(availabilityMigrationKey, true);
   }
 
-  /// Gives every idea that is not closed and has no reminder its monthly one.
+  @visibleForTesting
+  static const String unearnedRemindersKey = 'migratedUnearnedMonthlyReminders';
+
+  /// **The monthly reminder belongs to activity, not to an update.**
   ///
-  /// Runs at every launch rather than once: it is idempotent (an idea with a
-  /// date is never touched), and running it again is what covers an idea
-  /// restored from a backup, imported, or left with none by an older build.
-  static Future<void> giveLiveIdeasMonthlyReminder(
-    Box<MatchIdea> matches,
-  ) async {
-    final DateTime now = DateTime.now();
+  /// Older versions gave every live idea without a reminder the app's monthly
+  /// one at each launch — so an update (or a new phone) armed a reminder on
+  /// every old idea at the same moment, and a month later they all came due
+  /// together. That backfill is gone: an idea gets its monthly reminder when it
+  /// is opened, and it moves with every act on it
+  /// (`MatchRepository._restartDefaultReminder`).
+  ///
+  /// This clears, once per device, the default reminders that backfill wrote:
+  /// an app-default reminder (never one the matchmaker set by hand) dated more
+  /// than a month after anything happened on the idea. A reminder that is a
+  /// month after the idea's last act — the ones activity earns — is kept.
+  static Future<void> retireUnearnedMonthlyReminders({
+    required Box<MatchIdea> matches,
+    required Iterable<MatchNote> notes,
+    required Box<dynamic> settings,
+  }) async {
+    if (settings.get(unearnedRemindersKey) == true) {
+      return;
+    }
+    final Map<String, DateTime> lastNote = <String, DateTime>{};
+    for (final MatchNote note in notes) {
+      final DateTime? seen = lastNote[note.matchId];
+      if (seen == null || note.createdAt.isAfter(seen)) {
+        lastNote[note.matchId] = note.createdAt;
+      }
+    }
     for (final MatchIdea match in matches.values.toList()) {
-      if (match.status.isArchived || match.reminderDate != null) {
+      final DateTime? reminder = match.reminderDate;
+      if (reminder == null ||
+          match.reminderNote != MatchRepository.defaultReminderNote) {
         continue;
       }
-      match
-        ..reminderDate = MatchRepository.defaultReminderFrom(now)
-        ..reminderNote = MatchRepository.defaultReminderNote;
-      await match.save();
+      DateTime last = match.createdAt;
+      for (final DateTime? at in <DateTime?>[
+        match.updatedAt,
+        lastNote[match.id],
+      ]) {
+        if (at != null && at.isAfter(last)) last = at;
+      }
+      // A day of slack over the month the repository adds.
+      final DateTime earned = MatchRepository.defaultReminderFrom(
+        last,
+      ).add(const Duration(days: 1));
+      if (!reminder.isAfter(earned)) {
+        continue;
+      }
+      try {
+        match
+          ..reminderDate = null
+          ..reminderNote = null;
+        await match.save();
+      } catch (error) {
+        debugPrint('MatchMigrations: reminder kept on ${match.id}: $error');
+      }
     }
+    await settings.put(unearnedRemindersKey, true);
   }
 }

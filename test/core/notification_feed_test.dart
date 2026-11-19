@@ -222,6 +222,35 @@ void main() {
       expect(log.visible, hasLength(2));
     });
 
+    test('a reminder due before the update is never raised', () {
+      final ReminderLog log = ReminderLog.instance..reset();
+      log.debugSince = DateTime(2026, 11, 18);
+      log.sync(<DueReminder>[
+        DueReminder(
+          kind: HomeItemKind.idea,
+          targetId: 'old',
+          date: DateTime(2026, 11, 10),
+        ),
+        DueReminder(
+          kind: HomeItemKind.idea,
+          targetId: 'today',
+          date: DateTime(2026, 11, 18),
+        ),
+      ]);
+      expect(log.visible.map((ReminderLogEntry e) => e.targetId), <String>[
+        'today',
+      ]);
+      // Seen once, it stays a tombstone — not re-evaluated on the next look.
+      log.sync(<DueReminder>[
+        DueReminder(
+          kind: HomeItemKind.idea,
+          targetId: 'old',
+          date: DateTime(2026, 11, 10),
+        ),
+      ]);
+      expect(log.visible, hasLength(1));
+    });
+
     test('read and removed are remembered; removed is never re-logged', () {
       final ReminderLog log = ReminderLog.instance..reset();
       final DueReminder due = DueReminder(

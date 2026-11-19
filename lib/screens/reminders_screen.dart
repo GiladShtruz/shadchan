@@ -130,8 +130,12 @@ class _RemindersScreenState extends State<RemindersScreen> {
                   ),
                   itemBuilder: (BuildContext context, int index) {
                     final NotificationGroup group = groups[index];
+                    // One direction only — the reading direction, right to
+                    // left — so the bin is drawn once, on the side the swipe
+                    // uncovers.
                     return Dismissible(
                       key: ValueKey<String>(group.id),
+                      direction: DismissDirection.startToEnd,
                       background: const _SwipeBackground(),
                       onDismissed: (_) =>
                           NotificationCenter.remove(context, group),
@@ -311,22 +315,17 @@ class _SwipeBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // The row moves towards the end edge, so it is the start side that shows.
     return ColoredBox(
       color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(
-          children: <Widget>[
-            Icon(
-              Icons.delete_outline,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const Spacer(),
-            Icon(
-              Icons.delete_outline,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Icon(
+            Icons.delete_outline,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

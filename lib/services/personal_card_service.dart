@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/person.dart';
+import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -113,11 +114,15 @@ abstract final class PersonalCardCodec {
     Person card, {
     required String ownerUid,
     required List<String> photoPaths,
+    bool photosShareable = true,
   }) {
     return <String, Object?>{
       'ownerUid': ownerUid,
       ...cardValues(card),
       'photoPaths': photoPaths,
+      // "התמונה שלי לא ניתנת לשיתוף": matchmakers see the photos inside the
+      // app; their app never attaches them to a share. See CardPhotoPrivacy.
+      'photosShareable': photosShareable,
       // The tags the owner chose to describe themselves, from the shared
       // list (`TagCatalog`). Kept apart from [cardFields]: on a matchmaker's
       // copy they are merged with the matchmaker's own private tags rather
@@ -525,6 +530,9 @@ abstract final class PersonalCardService {
               card,
               ownerUid: uid,
               photoPaths: remotePaths,
+              photosShareable: PersonalCardProvider.photosShareableIn(
+                _settings,
+              ),
             ),
             SetOptions(merge: true),
           );
@@ -682,6 +690,25 @@ abstract final class PersonalCardService {
       }, SetOptions(merge: true));
     } catch (error) {
       debugPrint('PersonalCardService.saveDeviceToken failed: $error');
+    }
+  }
+
+  /// The kinds of notification switched off in the settings, published where
+  /// the server reads them before a push (`notify` in functions/notices.ts,
+  /// `sendReminders` in functions/reminders.ts). Pushes only — the inbox row
+  /// is still written, and the app hides it.
+  static Future<void> saveNotificationMutes(List<String> muted) async {
+    final String? uid = await durableUid();
+    if (uid == null) {
+      return;
+    }
+    try {
+      await _db.collection(tokensCollection).doc(uid).set(<String, Object?>{
+        'muted': muted,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (error) {
+      debugPrint('PersonalCardService.saveNotificationMutes failed: $error');
     }
   }
 

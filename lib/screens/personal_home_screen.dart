@@ -1,6 +1,5 @@
 import 'dart:math';
 
-import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/dialogs/card_photo_choice_dialog.dart';
 import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
@@ -19,7 +18,6 @@ import 'package:shadchan/screens/my_matchmakers_screen.dart';
 import 'package:shadchan/screens/personal_area_screen.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
 import 'package:shadchan/services/personal_area_service.dart';
-import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
@@ -173,16 +171,19 @@ class _PersonalShellState extends State<_PersonalShell> {
   }
 }
 
-/// The personal home — light, alive, and inviting rather than a management
-/// page. The order is the design: the greeting → two shortcuts (the card,
-/// the matchmakers) → the matchmakers who were active lately → the one thing
-/// worth doing now → one community figure, a different one each visit → the
-/// secondary links. The card in full, the status and "מה אני מחפש/ת" live on
-/// "פרופיל"; every matchmaker friend lives on "השדכנים שלי".
+/// The personal home — a live, simple screen, like a service app's: less
+/// management, more "what is new around me" and "what is worth doing now".
 ///
-/// The card itself is drawn here once only — on the first visit after it was
-/// written, so the owner sees what they made. From then on it is a shortcut.
-/// Nothing here shows what any matchmaker does with the card.
+/// **The order is the design:** greeting → "הכרטיס שלי" | "השדכנים שלי" →
+/// "מה חדש אצלי" (only when there is something) → the matchmakers active
+/// lately → the one thing worth doing now → one community figure, a different
+/// one each visit → "מי רואה אותי" → the secondary links, quiet, at the foot.
+///
+/// About seventy per cent of the page is what is happening around the owner
+/// and thirty is actions, so it is worth coming back to and never reads as a
+/// form. The card in full, "מה אני מחפש/ת", recordings and settings are not
+/// here — they live on "פרופיל". White page, secondary areas in the light
+/// cream, few frames, one thing per area.
 class _PersonalHome extends StatefulWidget {
   const _PersonalHome({required this.onSelectTab, required this.visit});
 
@@ -203,25 +204,6 @@ class _PersonalHomeState extends State<_PersonalHome> {
   /// question comes back on the next visit — the card goes on carrying its
   /// first four photos meanwhile, and nothing is deleted.
   bool _photoChoiceAsked = false;
-
-  /// Whether this visit draws the card itself — decided once, the first time
-  /// a card is there to decide about.
-  bool? _showCard;
-
-  /// Set once the owner has seen their new card on the home.
-  static const String cardShownKey = 'personalHome.cardShown';
-
-  /// A card younger than this counts as just made.
-  static const Duration _newCard = Duration(days: 1);
-
-  bool _decideShowCard(Person card) {
-    final bool seen =
-        Hive.isBoxOpen('settings') &&
-        Hive.box<dynamic>('settings').get(cardShownKey) == 'true';
-    final bool fresh = DateTime.now().difference(card.createdAt) < _newCard;
-    if (!seen) persistHomeSetting(cardShownKey, 'true');
-    return !seen && fresh;
-  }
 
   void _maybeAskPhotoChoice(PersonalCardProvider cards) {
     if (_photoChoiceAsked || !cards.needsPhotoChoice || cards.isDeleted) {
@@ -270,7 +252,6 @@ class _PersonalHomeState extends State<_PersonalHome> {
     final Person? card = cards.card;
     final bool hasCard = card != null && !cards.isDeleted;
     _maybeAskPhotoChoice(cards);
-    if (hasCard) _showCard ??= _decideShowCard(card);
     final String first = (profile.firstName ?? '').trim();
     void toMatchmakers() => widget.onSelectTab(1);
 
@@ -289,10 +270,18 @@ class _PersonalHomeState extends State<_PersonalHome> {
           onCard: () => widget.onSelectTab(2),
           onMatchmakers: toMatchmakers,
         ),
-        if (hasCard && (_showCard ?? false)) ...<Widget>[
-          const SizedBox(height: 14),
-          PersonalMyCard(card: card, active: cards.hasCard),
-        ],
+        // Only when there is real news around the owner.
+        PersonalWhatsNewSection(
+          card: hasCard ? card : null,
+          nextStep: hasCard
+              ? PersonalNextAction.stepFor(
+                  context,
+                  card: card,
+                  live: cards.hasCard,
+                ).kind
+              : null,
+          onMatchmakers: toMatchmakers,
+        ),
         PersonalRecentMatchmakers(onSeeAll: toMatchmakers),
         const SizedBox(height: 22),
         if (hasCard)
@@ -312,7 +301,7 @@ class _PersonalHomeState extends State<_PersonalHome> {
           ),
         ],
         PersonalCommunityFigure(visit: widget.visit),
-        const PersonalCommunityNews(includeStats: false),
+        if (hasCard) const PersonalWhoSees(),
         const SizedBox(height: 22),
         const Divider(height: 1),
         const SizedBox(height: 10),

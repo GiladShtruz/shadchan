@@ -1,3 +1,4 @@
+import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
 import 'dart:async';
@@ -855,6 +856,8 @@ class CardAccessProvider extends ChangeNotifier {
       );
     }
     _setBaseline(person.id, CardSyncEngine.baselineOf(data));
+    // "התמונה שלי לא ניתנת לשיתוף": seen here, never shared out.
+    CardPhotoPrivacy.set(person.id, private: CardPhotoPrivacy.privateIn(data));
     if (!wasLinked) {
       await _people.logEvent(
         person.id,
@@ -886,6 +889,7 @@ class CardAccessProvider extends ChangeNotifier {
       lastRemote: _baselineFor(person.id),
     );
     _setBaseline(person.id, null);
+    CardPhotoPrivacy.set(person.id, private: false);
     await _people.forgetPersonalCardHistory(person.id);
     await _people.saveSynced(person);
     PhotoPickerService.deletePhotoFiles(toDelete);
@@ -995,6 +999,38 @@ class CardAccessProvider extends ChangeNotifier {
       _busy.remove(key);
       notifyListeners();
     }
+  }
+
+  /// The single says whether [row]'s matchmaker may show the card to the
+  /// matchmakers they are connected with. Turning it off takes the card out
+  /// of every shared pool at once (a Function, `onCardAccessShareOnward`).
+  Future<bool> setShareOnward(CardAccess row, {required bool allowed}) {
+    return _run('onward:${row.matchmakerUid}', () async {
+      await _accessDoc(
+        row.ownerUid,
+        row.matchmakerUid,
+      ).update(<String, Object?>{
+        'shareOnward': allowed,
+        if (allowed) 'shareOnwardRequested': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  /// The matchmaker asks the single behind [ownerUid] for that permission.
+  Future<bool> requestShareOnward(String ownerUid) {
+    final CardAccess? row = _asMatchmaker[ownerUid];
+    if (row == null || !row.canReadCard || row.shareOnward) {
+      return Future<bool>.value(false);
+    }
+    return _run('onwardAsk:$ownerUid', () async {
+      await _accessDoc(row.ownerUid, row.matchmakerUid).update(
+        <String, Object?>{
+          'shareOnwardRequested': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    });
   }
 
   DocumentReference<Map<String, dynamic>> _accessDoc(

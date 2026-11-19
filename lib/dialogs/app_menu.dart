@@ -17,6 +17,8 @@ import 'package:shadchan/utils/app_navigation.dart';
 /// What the overflow menu can do.
 enum AppMenuAction {
   knownMatchmakers,
+  network,
+  chats,
   marriedFriends,
   deletedIdeas,
   profile,
@@ -187,12 +189,15 @@ class AppMenuButton extends StatelessWidget {
       ),
       const PopupMenuDivider(height: 9),
       _profileOrArea(single: single),
-      // Matchmakers among the contacts, and the connections with them.
+      // Matchmakers among the contacts, the connections with them, the cards
+      // they share and the chats with them.
       _item(
         AppMenuAction.knownMatchmakers,
         Icons.handshake_outlined,
         'שדכנים שאני מכיר',
       ),
+      _item(AppMenuAction.network, Icons.diversity_3_outlined, 'המאגר המשותף'),
+      _item(AppMenuAction.chats, Icons.chat_bubble_outline_rounded, 'צ\'אטים'),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
@@ -205,6 +210,7 @@ class AppMenuButton extends StatelessWidget {
   static List<PopupMenuEntry<AppMenuAction>> _homeRows({bool single = false}) {
     return <PopupMenuEntry<AppMenuAction>>[
       _profileOrArea(single: single),
+      _item(AppMenuAction.chats, Icons.chat_bubble_outline_rounded, 'צ\'אטים'),
       _item(AppMenuAction.settings, Icons.settings_outlined, 'הגדרות'),
       const PopupMenuDivider(height: 9),
       _item(AppMenuAction.report, Icons.forum_outlined, 'שליחת תקלה או רעיון'),
@@ -242,6 +248,10 @@ class AppMenuButton extends StatelessWidget {
     switch (action) {
       case AppMenuAction.knownMatchmakers:
         AppNavigation.open(context, '/known-matchmakers');
+      case AppMenuAction.network:
+        AppNavigation.open(context, '/network');
+      case AppMenuAction.chats:
+        AppNavigation.open(context, '/chats');
       case AppMenuAction.marriedFriends:
         AppNavigation.open(context, '/married');
       case AppMenuAction.deletedIdeas:

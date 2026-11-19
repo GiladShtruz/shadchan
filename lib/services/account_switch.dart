@@ -39,6 +39,8 @@ import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/sign_in_prompt_store.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/widgets/notification_center.dart';
+import 'package:shadchan/services/chat_service.dart';
+import 'package:shadchan/services/matchmaker_network.dart';
 
 /// Leaving one account and handing the phone to the next.
 ///
@@ -79,6 +81,8 @@ abstract final class AccountSwitch {
     await PushService.stop();
     await cardAccess?.stop();
     await MatchmakerConnections.stop();
+    await MatchmakerNetwork.stop();
+    await ChatService.stop();
     await inbox?.stop();
     await account.signOut();
     // Once more, now that nobody is signed in: anything that started the sync
@@ -153,6 +157,8 @@ abstract final class AccountSwitch {
     await PushService.stop();
     await cardAccess?.stop();
     await MatchmakerConnections.stop();
+    await MatchmakerNetwork.stop();
+    await ChatService.stop();
     await inbox?.stop();
     await account.signOut();
     // Once more, now that nobody is signed in: anything that started the sync

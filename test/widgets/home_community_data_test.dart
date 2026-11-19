@@ -58,31 +58,59 @@ Widget _wrap(Widget child, {_Community? community}) => MultiProvider(
   ),
 );
 
-Finder _figures(String text) => find.textContaining(text, findRichText: true);
-
 void main() {
-  testWidgets('the weekly target is the centre; both figures small, one line', (
-    tester,
-  ) async {
+  testWidgets('the two figures are large, the window is chosen, the target '
+      'follows with last week beside it', (tester) async {
     await tester.pumpWidget(
       _wrap(
         HomeWeekBlock(
           onOpen: () {},
           watchGoal: () => Stream<WeeklyCommunityGoal?>.value(null),
           loadTotals: (period, {bool forceRefresh = false}) async =>
-              _totals(101),
+              _totals(period == CommunityPeriod.week ? 101 : 707),
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.byType(HomePaperCard), findsOneWidget);
-    // No heading of its own, no window switch, no rotating line.
+    // No heading of its own; the window switch is back.
     expect(find.text('השבוע בשדכן'), findsNothing);
-    expect(find.text('כל הזמנים'), findsNothing);
+    expect(find.text('כל הזמנים'), findsOneWidget);
+    expect(find.text('הפעילות שלי'), findsOneWidget);
+    expect(find.text('פעילות הקהילה'), findsOneWidget);
+    expect(find.text('11'), findsOneWidget);
+    expect(find.text('101'), findsOneWidget);
+    // The weekly target sits under the figures.
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    expect(_figures('הפעילות שלי 11'), findsOneWidget);
-    expect(_figures('הקהילה 101'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('101')).dy,
+      lessThan(tester.getCenter(find.byType(LinearProgressIndicator)).dy),
+    );
+
+    await tester.tap(find.text('כל הזמנים'));
+    await tester.pumpAndSettle();
+    expect(find.text('91'), findsOneWidget);
+    expect(find.text('707'), findsOneWidget);
+    // The target is always the week's.
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test('last week, compact, only when this phone saw one', () {
+    const CommunityChallenge none = CommunityChallenge(
+      metric: ChallengeMetric.ideas,
+      target: 100,
+      current: 40,
+      record: null,
+    );
+    expect(none.lastWeekLabel, isNull);
+    const CommunityChallenge seen = CommunityChallenge(
+      metric: ChallengeMetric.ideas,
+      target: 100,
+      current: 40,
+      record: 120,
+    );
+    expect(seen.lastWeekLabel, 'בשבוע שעבר: 120 רעיונות');
   });
 
   testWidgets('a slower obsolete read cannot overwrite a refreshed score', (
@@ -111,13 +139,13 @@ void main() {
     await tester.pump();
     pending.last.complete(_totals(222));
     await tester.pumpAndSettle();
-    expect(_figures('222'), findsOneWidget);
+    expect(find.text('222'), findsOneWidget);
     for (final request in old) {
       request.complete(_totals(111));
     }
     await tester.pumpAndSettle();
-    expect(_figures('222'), findsOneWidget);
-    expect(_figures('111'), findsNothing);
+    expect(find.text('222'), findsOneWidget);
+    expect(find.text('111'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -135,9 +163,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(_figures('הפעילות שלי 11'), findsOneWidget);
-    expect(_figures('הקהילה —'), findsOneWidget);
-    expect(_figures('הקהילה 0'), findsNothing);
+    expect(find.text('11'), findsOneWidget);
+    expect(find.text('—'), findsOneWidget);
+    expect(find.text('0'), findsNothing);
     // Nothing about the target is said before it is known.
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
@@ -156,10 +184,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(CommunityHiddenNotice.text), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsNothing);
-    expect(_figures('הקהילה 500'), findsNothing);
-    expect(_figures('·  הקהילה'), findsNothing);
+    expect(find.text('500'), findsNothing);
+    expect(find.text('פעילות הקהילה'), findsNothing);
     // The matchmaker's own activity is still theirs to see.
-    expect(_figures('הפעילות שלי 11'), findsOneWidget);
+    expect(find.text('11'), findsOneWidget);
   });
 
   testWidgets(

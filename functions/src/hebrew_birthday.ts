@@ -66,3 +66,15 @@ export function israelToday(now: Date = new Date()): Date {
   }).format(now);
   return parseCivilDate(parts) ?? now;
 }
+
+/**
+ * The community's month key for [israelDate] (a Date whose fields are the
+ * Israel wall clock) — `H<year>-<month>`, Nisan = 1, exactly as the app
+ * writes it (`CommunityPeriods.monthKey`).
+ */
+export function hebrewMonthKey(israelDate: Date): string {
+  const h = new HDate(
+    new Date(israelDate.getFullYear(), israelDate.getMonth(), israelDate.getDate()),
+  );
+  return `H${h.getFullYear()}-${String(h.getMonth()).padStart(2, '0')}`;
+}

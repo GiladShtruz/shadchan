@@ -83,21 +83,23 @@ abstract final class AiPeopleParser {
           responseSchema: _schema,
           temperature: 0,
           maxOutputTokens: isChat ? AiConfig.maxWhatsappOutputTokens : null,
-          thinkingConfig: ThinkingConfig.withThinkingBudget(
-            AiConfig.thinkingBudget,
+          thinkingConfig: ThinkingConfig.withThinkingLevel(
+            AiConfig.thinkingLevel,
           ),
         ),
       );
       final contents = <Content>[Content.text(text)];
       if (isChat) {
         // Count the fully-configured prompt, including system instruction.
-        final counted = await model.countTokens(contents)
+        final counted = await model
+            .countTokens(contents)
             .timeout(AiConfig.requestTimeout);
         if (counted.totalTokens > AiConfig.maxWhatsappPromptTokens) {
           throw const AiParseException(AiParseFailure.tooLarge);
         }
       }
-      response = await model.generateContent(contents)
+      response = await model
+          .generateContent(contents)
           .timeout(AiConfig.requestTimeout);
     } on AiParseException {
       rethrow;

@@ -21,6 +21,7 @@ import 'package:shadchan/utils/gender_text.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 import 'package:shadchan/widgets/person_list_card.dart';
+import 'package:shadchan/widgets/shared_idea_strip.dart';
 
 /// One proposal, as a single shared card rather than two separate squares. The
 /// two sides are told apart only by the ring around each photo — stone blue for
@@ -295,6 +296,9 @@ class _MatchIdeaCardState extends State<MatchIdeaCard> {
                   onSetStage: widget.onSetStage,
                   onAction: widget.onQuickAction,
                 ),
+                // An idea shared with another matchmaker: who holds the other
+                // side, where their half stands, and the chat with them.
+                SharedIdeaStrip(matchId: match.id),
                 _CardActionBar(
                   open: _actionsOpen,
                   tone: tone,

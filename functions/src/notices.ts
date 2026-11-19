@@ -38,7 +38,62 @@ const PUSHED_KINDS = new Set([
   'matchmakerJoined',
   'connectionRequest',
   'connectionApproved',
+  // The network between connected matchmakers.
+  'ideaProposal',
+  'ideaProposalApproved',
+  'shareOnwardRequest',
 ]);
+
+/**
+ * The switch a notice kind sits under in the app's notification settings —
+ * the same mapping as `NotificationPreferences.categoryOf` in the app. A kind
+ * nobody mapped is a system notice, so it never escapes the switches.
+ */
+export function categoryOf(kind: string): string {
+  switch (kind) {
+    case 'reminder':
+    case 'idea':
+    case 'friend':
+      return 'ideas';
+    case 'cardCreated':
+    case 'cardUpdated':
+      return 'cardFriends';
+    case 'matchmakerJoined':
+    case 'friendJoined':
+      return 'newMatchmakers';
+    case 'accessRequest':
+    case 'accessApproved':
+    case 'accessDeclined':
+    case 'connectionRequest':
+    case 'connectionApproved':
+    case 'statusReport':
+      return 'access';
+    case 'birthday':
+    case 'mazelTov':
+      return 'celebrations';
+    case 'shareOnwardRequest':
+      return 'access';
+    case 'ideaProposal':
+    case 'ideaProposalApproved':
+    case 'ideaProposalDeclined':
+      return 'network';
+    case 'chatMessage':
+      return 'chats';
+    case 'support':
+      return 'support';
+    default:
+      return 'system';
+  }
+}
+
+/** Whether the account behind [tokenDoc] switched [kind] off. */
+export function mutes(
+  tokenDoc: { get(field: string): unknown },
+  kind: string,
+): boolean {
+  const muted = tokenDoc.get('muted');
+  return Array.isArray(muted) && muted.includes(categoryOf(kind));
+}
 
 /** Writes the inbox row and pushes to every device of [uid]. */
 export async function notify(
@@ -134,8 +189,14 @@ export async function notify(
   const tokenDocs = await Promise.all(
     recipients.map((id) => db.doc(`fcmTokens/${id}`).get()),
   );
+  // A member who switched this kind off in the settings gets the inbox row
+  // (hidden by the app) and no push.
   const tokens: string[] = [
-    ...new Set(tokenDocs.flatMap((d) => d.get('tokens') ?? [])),
+    ...new Set(
+      tokenDocs
+        .filter((d) => !mutes(d, notice.kind))
+        .flatMap((d) => d.get('tokens') ?? []),
+    ),
   ];
   if (tokens.length === 0) {
     return;

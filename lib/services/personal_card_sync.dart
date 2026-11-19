@@ -105,9 +105,11 @@ abstract final class PersonalCardSync {
     if (card == null) {
       return;
     }
-    final String print = SyncStateStore.fingerprint(
-      BackupService.personToJson(card),
-    );
+    final String print = SyncStateStore.fingerprint(<String, Object?>{
+      ...BackupService.personToJson(card),
+      // A change of "התמונה שלי לא ניתנת לשיתוף" is a change to publish.
+      'photosShareable': PersonalCardProvider.photosShareableIn(_settings),
+    });
     // **An unchanged card is still checked once a day.** A card published by
     // an older version could carry photo paths Storage never held — the
     // upload ledger said "done" without asking — and nothing re-sent it,

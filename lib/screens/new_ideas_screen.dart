@@ -15,6 +15,7 @@ import 'package:shadchan/utils/profile_palette.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/network_ideas_list.dart';
 
 /// "רעיונות שהמאגר מציע לך" — the screen behind the home page's second banner.
 ///
@@ -108,45 +109,68 @@ class _NewIdeasScreenState extends State<NewIdeasScreen> {
           !shownSet.contains(NewIdeaSuggestions.keyOf(idea)),
     );
 
-    return Scaffold(
-      backgroundColor: ProfilePalette.canvas(theme),
-      appBar: AppBar(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
         backgroundColor: ProfilePalette.canvas(theme),
-        foregroundColor: ProfilePalette.text(theme),
-        // The title and the line under it are the palette's dark blue,
-        // centred — the page is an invitation, and says so in one colour.
-        titleTextStyle: ProfilePalette.appBarTitleStyle(
-          theme,
-        )?.copyWith(color: _titleInk(theme)),
-        centerTitle: true,
-        title: const Text('רעיונות שהמאגר מציע לך'),
+        appBar: AppBar(
+          backgroundColor: ProfilePalette.canvas(theme),
+          foregroundColor: ProfilePalette.text(theme),
+          // The title and the line under it are the palette's dark blue,
+          // centred — the page is an invitation, and says so in one colour.
+          titleTextStyle: ProfilePalette.appBarTitleStyle(
+            theme,
+          )?.copyWith(color: _titleInk(theme)),
+          centerTitle: true,
+          title: const Text('רעיונות שהמאגר מציע לך'),
+          // Two sources: the matchmaker's own database, and the cards the
+          // connected matchmakers share.
+          bottom: const TabBar(
+            tabs: <Widget>[
+              Tab(text: 'מהמאגר שלי'),
+              Tab(text: 'מהשדכנים המחוברים'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: <Widget>[
+            _ownIdeas(theme, ideas, hasMoreRounds, ranked),
+            const SafeArea(child: NetworkIdeasList()),
+          ],
+        ),
       ),
-      body: SafeArea(
-        child: ideas.isEmpty
-            ? _EmptyState(theme: theme)
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
-                itemCount: ideas.length + (hasMoreRounds ? 2 : 1),
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (BuildContext context, int index) {
-                  if (index == 0) {
-                    return const _Intro();
-                  }
-                  if (index > ideas.length) {
-                    return _MoreIdeasButton(
-                      onPressed: () => _moreIdeas(ranked),
-                    );
-                  }
-                  final NewIdeaSuggestion idea = ideas[index - 1];
-                  return _IdeaCard(
-                    idea: idea,
-                    onOpen: () => _openIdea(idea),
-                    onSkip: () => _skipIdea(idea),
-                    onComparePair: () => _comparePair(idea),
-                  );
-                },
-              ),
-      ),
+    );
+  }
+
+  Widget _ownIdeas(
+    ThemeData theme,
+    List<NewIdeaSuggestion> ideas,
+    bool hasMoreRounds,
+    List<NewIdeaSuggestion> ranked,
+  ) {
+    return SafeArea(
+      child: ideas.isEmpty
+          ? _EmptyState(theme: theme)
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
+              itemCount: ideas.length + (hasMoreRounds ? 2 : 1),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (BuildContext context, int index) {
+                if (index == 0) {
+                  return const _Intro();
+                }
+                if (index > ideas.length) {
+                  return _MoreIdeasButton(onPressed: () => _moreIdeas(ranked));
+                }
+                final NewIdeaSuggestion idea = ideas[index - 1];
+                return _IdeaCard(
+                  idea: idea,
+                  onOpen: () => _openIdea(idea),
+                  onSkip: () => _skipIdea(idea),
+                  onComparePair: () => _comparePair(idea),
+                );
+              },
+            ),
     );
   }
 

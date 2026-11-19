@@ -1410,13 +1410,12 @@ class _CategoryChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final BorderRadius radius = BorderRadius.circular(12);
 
-    // White inside, every one of them, and the shelf's colour only in the
-    // frame — the same frame on all five, a little firmer on the chosen one.
-    // A tinted fill made five differently coloured blocks of what is one row
-    // of counts.
-    final bool dark = theme.brightness == Brightness.dark;
+    // The app's one cream inside, every one of them — white page, cream
+    // tiles, as on המאגר שלי — and the shelf's colour only in the frame, the
+    // same frame on all five, a little firmer on the chosen one. A tinted
+    // fill made five differently coloured blocks of what is one row of counts.
     return Material(
-      color: dark ? theme.colorScheme.surface : Colors.white,
+      color: theme.colorScheme.surface,
       borderRadius: radius,
       child: InkWell(
         borderRadius: radius,

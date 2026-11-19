@@ -4,6 +4,7 @@ import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/card_access_sections.dart';
+import 'package:shadchan/widgets/photo_share_switch.dart';
 
 /// "ניהול ופרטיות": who may ask, who sees what, who is hidden — and, at the
 /// very foot, deleting the card. Deleting lives here and only here.
@@ -36,6 +37,12 @@ class _PersonalPrivacyScreenState extends State<PersonalPrivacyScreen> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         children: <Widget>[
           CardAccessSections(hasCard: cards.hasCard, management: true),
+          // Who sees the photos is decided above; whether they may leave the
+          // app is decided here.
+          if (cards.card != null && !cards.isDeleted) ...<Widget>[
+            const SizedBox(height: 12),
+            const PhotoShareSwitch(),
+          ],
           if (cards.card != null && !cards.isDeleted) ...<Widget>[
             const SizedBox(height: 20),
             const Divider(height: 1),

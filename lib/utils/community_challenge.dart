@@ -187,6 +187,14 @@ class CommunityChallenge {
   /// "43 מתוך 100 רעיונות".
   String get progressLabel => '$current מתוך $target ${metric.shortNoun}';
 
+  /// "בשבוע שעבר: 120 רעיונות" — the compact line beside the bar, or null
+  /// when this device saw no completed week.
+  String? get lastWeekLabel {
+    final int? last = record;
+    if (last == null || last <= 0) return null;
+    return 'בשבוע שעבר: $last ${metric.shortNoun}';
+  }
+
   /// This week's challenge.
   ///
   /// [weekKey] picks the metric, [week] is the community's running total, and

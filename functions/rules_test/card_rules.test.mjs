@@ -133,6 +133,15 @@ test('the owner writes their card; nobody else can', async () => {
   await assertFails(setDoc(doc(as(MM), 'personalCards', OWNER), card()));
 });
 
+test('"my photo may not be shared" is a yes/no on the card', async () => {
+  await assertSucceeds(
+    setDoc(doc(as(OWNER), 'personalCards', OWNER), card({ photosShareable: false })),
+  );
+  await assertFails(
+    setDoc(doc(as(OWNER), 'personalCards', OWNER), card({ photosShareable: 'no' })),
+  );
+});
+
 test('a field outside the whitelist is refused', async () => {
   await assertFails(
     setDoc(doc(as(OWNER), 'personalCards', OWNER), card({ phone: '0501234567' })),

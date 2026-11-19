@@ -147,9 +147,12 @@ class _HomeCardFriendsSectionState extends State<HomeCardFriendsSection> {
   }
 }
 
-/// One of the three: a photo, a first name, and where access stands.
+/// One of the three: a large photo and the friend's full name under it.
 class _FriendFace extends StatelessWidget {
   const _FriendFace({required this.friend});
+
+  /// Half as large again as the faces it replaced (30).
+  static const double _radius = 45;
 
   final FriendWithCard friend;
 
@@ -172,15 +175,10 @@ class _FriendFace extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Person? person = friend.person;
-    final String first = friend.name.trim().split(RegExp(r'\s+')).first;
+    final String fullName = (person?.fullName.trim().isNotEmpty ?? false)
+        ? person!.fullName.trim()
+        : friend.name.trim();
     final bool isNew = friend.isNew(DateTime.now());
-    final String status = switch (friend.state) {
-      FriendCardState.sees => 'יש לך גישה',
-      FriendCardState.awaitingLink => 'ממתין לסנכרון',
-      FriendCardState.pending => 'הבקשה נשלחה',
-      FriendCardState.requestable => 'בקשת גישה',
-    };
-    final bool action = friend.state == FriendCardState.requestable;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: () => _open(context),
@@ -193,14 +191,14 @@ class _FriendFace extends StatelessWidget {
               clipBehavior: Clip.none,
               children: <Widget>[
                 person != null
-                    ? PersonAvatar(person: person, radius: 30)
+                    ? PersonAvatar(person: person, radius: _radius)
                     : CircleAvatar(
-                        radius: 30,
+                        radius: _radius,
                         backgroundColor: dark
                             ? AppColors.primaryLightDarkDm
                             : AppColors.softBlue,
                         child: Text(
-                          first.isEmpty ? '' : first.characters.first,
+                          fullName.isEmpty ? '' : fullName.characters.first,
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900,
                             color: AppColors.primaryDark,
@@ -234,25 +232,14 @@ class _FriendFace extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
+            // The full name and nothing else: who it is is the whole point.
             Text(
-              first,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              fullName,
+              maxLines: 2,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w800,
-              ),
-            ),
-            Text(
-              status,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: action ? FontWeight.w800 : null,
-                color: action
-                    ? (dark ? AppColors.primaryDarkDm : AppColors.primaryDark)
-                    : null,
+                height: 1.25,
               ),
             ),
           ],

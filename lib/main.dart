@@ -32,6 +32,9 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/services/notification_preferences.dart';
+import 'package:shadchan/services/personal_card_service.dart';
+import 'package:shadchan/services/reminder_log.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/providers/support_inbox_provider.dart';
 import 'package:shadchan/providers/sync_provider.dart';
@@ -140,8 +143,12 @@ Future<void> _bootstrap() async {
       people: Hive.box<Person>('people'),
       settings: Hive.box<dynamic>('settings'),
     );
-    await MatchMigrations.giveLiveIdeasMonthlyReminder(
-      Hive.box<MatchIdea>('matches'),
+    // No monthly reminder is handed to old ideas any more; the ones an
+    // earlier version handed out without any activity are taken back.
+    await MatchMigrations.retireUnearnedMonthlyReminders(
+      matches: Hive.box<MatchIdea>('matches'),
+      notes: Hive.box<MatchNote>('match_notes').values,
+      settings: Hive.box<dynamic>('settings'),
     );
   });
   await optional('photo paths', () async {
@@ -238,6 +245,22 @@ Future<void> _startNotifications() async {
           unawaited(context.read<InboxProvider>().markReadById(inboxId));
         } on ProviderNotFoundException {
           // Nothing to mark in a harness without an inbox.
+        }
+      }
+    };
+    // A kind switched on or off in the notification settings: tell the
+    // server (pushes), redraw the page and the bell, and schedule — or clear —
+    // the local reminders.
+    NotificationPreferences.onChanged = (List<String> muted) {
+      unawaited(PersonalCardService.saveNotificationMutes(muted));
+      ReminderLog.instance.touch();
+      final BuildContext? context = _navigatorContext;
+      if (context != null) {
+        try {
+          context.read<MatchRepository>().refreshReminderNotifications();
+          context.read<PersonRepository>().refreshReminderNotifications();
+        } on ProviderNotFoundException {
+          // No repositories in a harness.
         }
       }
     };

@@ -41,6 +41,7 @@ class PersonalCardProvider extends ChangeNotifier {
     _acceptsRequests = !(accepts == false || accepts == 'false');
     final Object? announces = _box.get(_announcesKey);
     _announces = !(announces == false || announces == 'false');
+    _photosShareable = photosShareableIn(_box);
   }
 
   /// The card changed on another phone signed in to the same account.
@@ -54,6 +55,14 @@ class PersonalCardProvider extends ChangeNotifier {
   static const String _deletedKey = 'personalCard.deleted';
   static const String _acceptsRequestsKey = 'personalCard.acceptsRequests';
   static const String _announcesKey = 'personalCard.announces';
+  static const String photosShareableKey = 'personalCard.photosShareable';
+
+  /// The owner's "התמונה שלי לא ניתנת לשיתוף" as stored in [box] — on unless
+  /// it was turned off. Read by the publisher too.
+  static bool photosShareableIn(Box<dynamic>? box) {
+    final Object? raw = box?.get(photosShareableKey);
+    return !(raw == false || raw == 'false');
+  }
 
   final Box<dynamic> _box;
   Person? _card;
@@ -67,6 +76,23 @@ class PersonalCardProvider extends ChangeNotifier {
   bool _deleted = false;
   bool _acceptsRequests = true;
   bool _announces = true;
+  bool _photosShareable = true;
+
+  /// **"התמונה שלי לא ניתנת לשיתוף"** — off means the matchmakers who have
+  /// access see the card's photos inside שדכן, and nothing they share out of
+  /// the app (WhatsApp or anywhere else) carries them. Published on the card
+  /// document; a change republishes the card.
+  bool get photosShareable => _photosShareable;
+
+  Future<void> setPhotosShareable(bool value) async {
+    if (_photosShareable == value) {
+      return;
+    }
+    _photosShareable = value;
+    persistHomeSetting(photosShareableKey, value ? 'true' : 'false');
+    editRevision++;
+    notifyListeners();
+  }
 
   /// "לעדכן חברים שלך שמשדכים ב׳שדכן׳ שיצרת כרטיס?" — on unless the owner
   /// turned it off. Off, no matchmaker is told that the card exists; they
@@ -250,11 +276,13 @@ class PersonalCardProvider extends ChangeNotifier {
     _deleted = false;
     _acceptsRequests = true;
     _announces = true;
+    _photosShareable = true;
     await _box.deleteAll(<String>[
       _cardKey,
       _deletedKey,
       _acceptsRequestsKey,
       _announcesKey,
+      photosShareableKey,
     ]);
     notifyListeners();
   }

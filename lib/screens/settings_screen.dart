@@ -21,6 +21,7 @@ import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_links.dart';
 import 'package:shadchan/utils/share_utils.dart';
 import 'package:shadchan/widgets/settings_widgets.dart';
+import 'package:shadchan/services/network_sharing.dart';
 
 /// "הגדרות" — a page of its own, at last.
 ///
@@ -151,6 +152,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: 'הפרש גילים וסגנונות דתיים שיוצעו',
                     onTap: () => context.push('/profile/auto-match'),
                   ),
+                // Which cards the connected matchmakers may see.
+                if (WorkspaceStore.matchmakerEnabled)
+                  SettingsRow(
+                    icon: Icons.diversity_3_outlined,
+                    title: 'שיתוף כרטיסים עם שדכנים מחוברים',
+                    subtitle: switch (NetworkSharing.mode) {
+                      ShareMode.none => 'כבוי',
+                      ShareMode.all => 'כל הכרטיסים המלאים',
+                      ShareMode.selected => 'אנשים ספציפיים',
+                      ShareMode.allExcept => 'כל המאגר חוץ מכמה',
+                    },
+                    onTap: () => context.push('/network/sharing'),
+                  ),
+                SettingsRow(
+                  icon: Icons.notifications_none_rounded,
+                  title: 'התראות',
+                  subtitle: 'בחירה אילו סוגי התראות לקבל',
+                  onTap: () => context.push('/profile/notifications'),
+                ),
                 SettingsRow(
                   icon: Icons.palette_outlined,
                   title: 'תצוגה בהירה או כהה',

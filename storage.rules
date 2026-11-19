@@ -149,6 +149,23 @@ service firebase.storage {
     // card document itself is read under, checked in Firestore. The app reads
     // them through the SDK rather than by download URL, so revoking access
     // revokes the photos too.
+    // The photos of the cards a matchmaker shares with the matchmakers they
+    // are connected with, and of a candidate they offer in an idea. Only the
+    // owner reads them here; a connected matchmaker gets them through the
+    // `sharedCardPhoto` callable, which checks the connection — never a
+    // download URL, so ending a connection ends the photos too.
+    match /sharedCards/{ownerUid}/{personId}/{fileName} {
+      function isOwner() {
+        return request.auth != null
+            && request.auth.uid == ownerUid
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+      allow read, delete: if isOwner();
+      allow write: if isOwner()
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
     match /personalCards/{ownerUid}/{fileName} {
       function isOwner() {
         return request.auth != null

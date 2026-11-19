@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HDate } from '@hebcal/core';
-import { isHebrewBirthday, parseCivilDate, israelToday } from './hebrew_birthday';
+import { isHebrewBirthday, parseCivilDate, israelToday, hebrewMonthKey } from './hebrew_birthday';
 
 function civil(hd: HDate): Date {
   return hd.greg();
@@ -39,4 +39,10 @@ test('today is taken in Israel, not in the server’s zone', () => {
   // 22:30 UTC on 1 March is already 2 March in Israel.
   const today = israelToday(new Date(Date.UTC(2026, 2, 1, 22, 30)));
   assert.equal(today.getDate(), 2);
+});
+
+test('the community month key matches the app (Nisan = 1, Adar II = 13)', () => {
+  assert.equal(hebrewMonthKey(new Date(2026, 10, 18)), 'H5787-09');
+  assert.equal(hebrewMonthKey(new Date(2027, 3, 10)), 'H5787-01');
+  assert.equal(hebrewMonthKey(new Date(2027, 2, 10)), 'H5787-13');
 });

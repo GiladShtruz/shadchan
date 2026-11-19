@@ -12,7 +12,13 @@
     <application
         android:label="שדכן"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/launcher_icon"
+        android:enableOnBackInvokedCallback="false">
+        <!-- enableOnBackInvokedCallback=false: the app answers Back itself
+             (lib/app.dart: any tab goes to בית first, only בית leaves).
+             Android 16 turns predictive back on for targetSdk 36, and then
+             a Back press at a tab's root never reaches Flutter at all - the
+             system closes the app from המאגר שלי or הרעיונות שלי. -->
         <!-- What a push drawn by the system (app in the background or closed)
              wears in the status bar. Android draws a notification icon from
              its alpha only, so the full-bleed launcher icon came out as a

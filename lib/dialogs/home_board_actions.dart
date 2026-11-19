@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/home_board.dart';
 import 'package:shadchan/utils/app_navigation.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/reminder_picker_sheet.dart';

@@ -8,6 +8,8 @@ import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/home_search_filter_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
 import 'package:shadchan/services/reminder_log.dart';
+import 'package:shadchan/services/notification_preferences.dart';
+import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/services/tag_library.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/services/personal_helpers_store.dart';
@@ -16,6 +18,8 @@ import 'package:shadchan/utils/home_board_feed.dart';
 import 'package:shadchan/services/card_link_consent.dart';
 import 'package:shadchan/utils/suggestion_dismissals.dart';
 import 'package:shadchan/widgets/first_visit_tip.dart';
+import 'package:shadchan/services/network_sharing.dart';
+import 'package:shadchan/services/shared_ideas.dart';
 
 /// The stores that keep a setting in memory, made to read it again.
 ///
@@ -42,10 +46,14 @@ abstract final class LocalSettingCaches {
     PeopleViewChoice.forgetCache();
     HomeBoardStore.instance.forgetCache();
     ReminderLog.instance.forgetCache();
+    NotificationPreferences.instance.forgetCache();
+    CardPhotoPrivacy.forgetCache();
     RecentActivityStore.instance.forgetCache();
     DeletedMatchesStore.instance.forgetCache();
     AutoMatchRules.forgetCache();
     OwnCardMirror.forgetCache();
     CardLinkConsent.forgetCache();
+    NetworkSharing.forgetCache();
+    SharedIdeas.forgetCache();
   }
 }

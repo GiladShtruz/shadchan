@@ -222,8 +222,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('👋', findRichText: true), findsNothing);
       expect(find.textContaining('יעל', findRichText: true), findsWidgets);
-      expect(find.text('לכרטיס האישי שלי'), findsOneWidget);
+      expect(find.text('הכרטיס שלי'), findsOneWidget);
       expect(find.text('מה כדאי לעשות עכשיו'), findsOneWidget);
+      // "מי רואה אותי": nobody yet, said in one compact line.
+      expect(find.text('מי רואה אותי'), findsOneWidget);
+      expect(find.text('כרגע אף שדכן לא רואה את הכרטיס'), findsOneWidget);
       // The old dashboard blocks are gone from the home.
       expect(find.text('החברים שלי שמשדכים בשדכן'), findsNothing);
       expect(find.text('מי רואה את הכרטיס שלי'), findsNothing);
@@ -259,7 +262,7 @@ void main() {
     await tall(tester);
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('לכרטיס האישי שלי'));
+    await tester.tap(find.text('הכרטיס שלי'));
     await tester.pumpAndSettle();
     expect(find.text('עריכת הכרטיס'), findsOneWidget);
     await tester.tap(find.text('בית').last);
@@ -270,25 +273,18 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 5));
   });
-  testWidgets(
-    'the card itself is on the home only on the first visit after it was made',
-    (tester) async {
-      await tall(tester);
-      await tester.pumpWidget(app());
-      await tester.pumpAndSettle();
-      expect(find.text('צפייה בכרטיס המלא'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(
-        () => settings.put('personalHome.cardShown', 'true'),
-      );
-      await tester.pumpWidget(app());
-      await tester.pumpAndSettle();
-      expect(find.text('צפייה בכרטיס המלא'), findsNothing);
-      expect(find.text('לכרטיס האישי שלי'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(seconds: 5));
-    },
-  );
+  testWidgets('the card itself is never drawn on the home, even when new', (
+    tester,
+  ) async {
+    await tall(tester);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('צפייה בכרטיס המלא'), findsNothing);
+    expect(find.text(cards.card!.description!), findsNothing);
+    expect(find.text('הכרטיס שלי'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
+  });
   testWidgets('an older card is never drawn on the home', (tester) async {
     await tall(tester);
     // A card from before this visit: never "just made".
@@ -353,9 +349,29 @@ void main() {
     ];
     final shown = lines.where((l) => find.text(l).evaluate().isNotEmpty);
     expect(shown, hasLength(1));
-    expect(find.text('מה חדש אצלי'), findsNothing);
+    expect(find.text('מה קורה בשדכן'), findsOneWidget);
+    // The admin's news is not a board on the home any more.
+    expect(find.text('נפגשים לחשוב יחד על רעיונות'), findsNothing);
     expect(find.text('ניהול ופרטיות'), findsOneWidget);
     expect(find.text('מחיקת הכרטיס שלי'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
+  });
+  testWidgets('"מה חדש אצלי" shows only real news, and leaves once read', (
+    tester,
+  ) async {
+    await tall(tester);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    // The unread news post is the one real update.
+    expect(find.text('מה חדש אצלי'), findsOneWidget);
+    expect(find.text('עדכון מהקהילה'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(() => settings.put('personalHome.newsSeen', 'admin'));
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    // Nothing new: the area is not drawn at all.
+    expect(find.text('מה חדש אצלי'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 5));
   });
@@ -418,11 +434,15 @@ void main() {
   testWidgets(
     'own-card preview uses the shared viewer without adding an owner record or private wishes',
     (tester) async {
+      await tall(tester);
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('צפייה בכרטיס המלא'));
+      // The home no longer draws the card; the preview is on פרופיל.
+      await tester.tap(find.text('פרופיל').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('צפייה בכרטיס המלא'));
+      await tester.ensureVisible(find.text('תצוגת הכרטיס לשדכנים'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('תצוגת הכרטיס לשדכנים'));
       await tester.pumpAndSettle();
       expect(find.byType(PersonCardViewer), findsOneWidget);
       expect(find.text(cards.card!.description!), findsOneWidget);
@@ -558,7 +578,7 @@ void main() {
   });
 
   testWidgets(
-    'home shows the three most recently active matchmakers and the full screen has every one',
+    'home shows the four most recently active matchmakers and the full screen has every one',
     (tester) async {
       await tall(tester);
       final now = DateTime.now();
@@ -581,7 +601,8 @@ void main() {
       expect(find.text('חבר 24'), findsOneWidget);
       expect(find.text('חבר 23'), findsOneWidget);
       expect(find.text('חבר 22'), findsOneWidget);
-      expect(find.text('חבר 21'), findsNothing);
+      expect(find.text('חבר 21'), findsOneWidget);
+      expect(find.text('חבר 20'), findsNothing);
       expect(find.text('פעיל לפני 5 דקות · 34 חברים במאגר'), findsOneWidget);
       await tester.tap(find.text('חבר 24'));
       await tester.pumpAndSettle();
