@@ -19,6 +19,8 @@ import 'package:shadchan/utils/known_matchmakers.dart';
 import 'package:shadchan/utils/matchmaker_friends.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:go_router/go_router.dart';
+import 'package:shadchan/screens/network_screen.dart';
 
 /// The groups of "שדכנים שאני מכיר", read from the two live sources.
 KnownMatchmakerGroups _groups(BuildContext context, {bool listen = true}) {
@@ -771,7 +773,8 @@ class _ConnectPanel extends StatelessWidget {
     final String name = m.name.isEmpty ? 'השדכן/ית' : m.name;
     final bool busy = MatchmakerConnections.isBusy(m.uid);
     final Widget note = Text(
-      'החיבור לא משתף כרטיסים או מידע מהמאגר — הוא רק יוצר קשר ביניכם בתוך שדכן.',
+      'החיבור לבדו לא משתף אף כרטיס. כל שדכן/ית בוחר/ת אילו כרטיסים לשתף עם '
+      'המחוברים אליו/ה, ואפשר לשוחח בצ\'אט ולהציע רעיונות.',
       textAlign: TextAlign.center,
       style: theme.textTheme.bodySmall,
     );
@@ -893,6 +896,30 @@ class _ConnectPanel extends StatelessWidget {
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: AppColors.primaryDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => NetworkActions.chatWith(
+                    context,
+                    otherUid: m.uid,
+                    otherName: name,
+                  ),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  label: const Text('צ\'אט'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push('/network'),
+                  icon: const Icon(Icons.diversity_3_outlined),
+                  label: const Text('המאגר המשותף'),
                 ),
               ),
             ],

@@ -24,6 +24,7 @@ import 'package:shadchan/utils/matchmaker_friends.dart';
 import 'package:shadchan/utils/personal_next_step.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 import 'package:shadchan/widgets/home_section.dart';
+import 'package:shadchan/widgets/onward_share_switch.dart';
 
 /// The personal home is drawn from three shapes only: the one central card
 /// (the owner's own), compact rows of action, and horizontal strips of
@@ -266,6 +267,9 @@ abstract final class MatchmakerFriendActions {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
+        if (friend.row != null && friend.row!.canReadCard)
+          OnwardShareSwitch(row: friend.row!, name: friend.name),
+        const SizedBox(height: 4),
         OutlinedButton(
           onPressed: () => run(() => PersonalAccessFlow.edit(context, friend)),
           child: const Text('שינוי הרשאות'),

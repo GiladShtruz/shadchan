@@ -351,7 +351,14 @@ class MatchmakerFriendRow extends StatelessWidget {
     final details = MatchmakerFriends.detailsLine(f);
     final status = f.canReadCard
         ? MatchmakerFriends.permissionsLabel(f) +
-              (f.asksForLooking ? ' · ${MatchmakerFriends.stateLabel(f)}' : '')
+              (f.asksForLooking
+                  ? ' · ${MatchmakerFriends.stateLabel(f)}'
+                  : '') +
+              (f.row?.shareOnward == true
+                  ? ' · משתף/ת עם שדכנים שמכיר/ה'
+                  : f.row?.shareOnwardRequested == true
+                  ? ' · מבקש/ת לשתף עם שדכנים שמכיר/ה'
+                  : '')
         : MatchmakerFriends.stateLabel(f);
     final Widget action = busy
         ? const SizedBox.square(

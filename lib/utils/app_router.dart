@@ -59,6 +59,10 @@ import 'package:shadchan/services/support_service.dart';
 import 'package:shadchan/services/workspace_store.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
+import 'package:shadchan/screens/chats_screen.dart';
+import 'package:shadchan/screens/network_screen.dart';
+import 'package:shadchan/screens/sharing_settings_screen.dart';
+import 'package:shadchan/services/chat_service.dart';
 
 List<T> _parseEnumList<T extends Enum>(String? raw, List<T> values) {
   if (raw == null || raw.isEmpty) {
@@ -732,6 +736,59 @@ abstract final class AppRouter {
       ),
       // The best page in the app: everybody who got married, with the ones the
       // matchmaker's own ideas produced at the top of it.
+      // The network between connected matchmakers: the shared pool, one
+      // shared card (view only), one idea offered between two of them, and
+      // this matchmaker's own sharing choice.
+      GoRoute(
+        path: NetworkScreen.route,
+        builder: (BuildContext context, GoRouterState state) {
+          return NetworkScreen(forPersonId: state.uri.queryParameters['for']);
+        },
+        routes: <RouteBase>[
+          GoRoute(
+            path: 'card/:owner/:person',
+            builder: (BuildContext context, GoRouterState state) {
+              return SharedCardScreen(
+                ownerUid: state.pathParameters['owner'] ?? '',
+                personId: state.pathParameters['person'] ?? '',
+              );
+            },
+          ),
+          GoRoute(
+            path: 'proposals/:id',
+            builder: (BuildContext context, GoRouterState state) {
+              return ProposalScreen(
+                proposalId: state.pathParameters['id'] ?? '',
+              );
+            },
+          ),
+          GoRoute(
+            path: 'sharing',
+            builder: (BuildContext context, GoRouterState state) {
+              return const SharingSettingsScreen();
+            },
+          ),
+        ],
+      ),
+      // Chats: every conversation, and one of them.
+      GoRoute(
+        path: ChatsScreen.route,
+        builder: (BuildContext context, GoRouterState state) {
+          return const ChatsScreen();
+        },
+        routes: <RouteBase>[
+          GoRoute(
+            path: ':id',
+            builder: (BuildContext context, GoRouterState state) {
+              final Object? extra = state.extra;
+              return ChatScreen(
+                chatId: state.pathParameters['id'] ?? '',
+                initialRef: extra is ChatRef ? extra : null,
+              );
+            },
+          ),
+        ],
+      ),
       GoRoute(
         path: '/married',
         builder: (BuildContext context, GoRouterState state) {

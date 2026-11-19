@@ -17,6 +17,8 @@ class SettingsNotificationsScreen extends StatelessWidget {
     NotificationCategory.newMatchmakers => Icons.person_add_alt_outlined,
     NotificationCategory.access => Icons.key_outlined,
     NotificationCategory.celebrations => Icons.celebration_outlined,
+    NotificationCategory.network => Icons.diversity_3_outlined,
+    NotificationCategory.chats => Icons.chat_bubble_outline_rounded,
     NotificationCategory.system => Icons.campaign_outlined,
     NotificationCategory.support => Icons.forum_outlined,
   };

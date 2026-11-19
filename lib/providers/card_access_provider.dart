@@ -1001,6 +1001,38 @@ class CardAccessProvider extends ChangeNotifier {
     }
   }
 
+  /// The single says whether [row]'s matchmaker may show the card to the
+  /// matchmakers they are connected with. Turning it off takes the card out
+  /// of every shared pool at once (a Function, `onCardAccessShareOnward`).
+  Future<bool> setShareOnward(CardAccess row, {required bool allowed}) {
+    return _run('onward:${row.matchmakerUid}', () async {
+      await _accessDoc(
+        row.ownerUid,
+        row.matchmakerUid,
+      ).update(<String, Object?>{
+        'shareOnward': allowed,
+        if (allowed) 'shareOnwardRequested': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  /// The matchmaker asks the single behind [ownerUid] for that permission.
+  Future<bool> requestShareOnward(String ownerUid) {
+    final CardAccess? row = _asMatchmaker[ownerUid];
+    if (row == null || !row.canReadCard || row.shareOnward) {
+      return Future<bool>.value(false);
+    }
+    return _run('onwardAsk:$ownerUid', () async {
+      await _accessDoc(row.ownerUid, row.matchmakerUid).update(
+        <String, Object?>{
+          'shareOnwardRequested': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    });
+  }
+
   DocumentReference<Map<String, dynamic>> _accessDoc(
     String ownerUid,
     String matchmakerUid,

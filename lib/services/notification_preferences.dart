@@ -27,6 +27,11 @@ enum NotificationCategory {
     'שמחות וימי הולדת',
     'מזל טוב וימי הולדת עבריים של חברים שנתנו לך גישה',
   ),
+  network(
+    'רעיונות משדכנים מחוברים',
+    'שדכן/ית שמחובר/ת אליך מציע/ה רעיון, או אישר/ה רעיון שהצעת',
+  ),
+  chats('הודעות בצ\'אט', 'הודעה חדשה משדכן/ית בצ\'אט'),
   system('עדכוני מערכת', 'חדשות מצוות שדכן ועדכונים כלליים'),
   support('תשובות לפניות שלך', 'כשצוות שדכן עונה על פנייה ששלחת');
 
@@ -114,7 +119,12 @@ class NotificationPreferences extends ChangeNotifier {
     'accessDeclined' ||
     'connectionRequest' ||
     'connectionApproved' ||
+    'shareOnwardRequest' ||
     'statusReport' => NotificationCategory.access,
+    'ideaProposal' ||
+    'ideaProposalApproved' ||
+    'ideaProposalDeclined' => NotificationCategory.network,
+    'chatMessage' => NotificationCategory.chats,
     'birthday' || 'mazelTov' => NotificationCategory.celebrations,
     'support' => NotificationCategory.support,
     _ => NotificationCategory.system,

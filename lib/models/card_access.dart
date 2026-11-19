@@ -34,7 +34,16 @@ class CardAccess {
     this.granteeUids = const [],
     this.lookingGranted = false,
     this.lookingRequested = false,
+    this.shareOnward = false,
+    this.shareOnwardRequested = false,
   });
+
+  /// The single let this matchmaker show the card to the matchmakers they
+  /// are connected with — never to anybody else. Only the single sets it.
+  final bool shareOnward;
+
+  /// The matchmaker asked for [shareOnward]; the single has not said yes.
+  final bool shareOnwardRequested;
 
   final List<String> granteeUids;
   final bool? cardGranted;
@@ -94,6 +103,8 @@ class CardAccess {
       invited: data['invited'] == true,
       lookingGranted: data['lookingGranted'] == true,
       lookingRequested: data['lookingRequested'] == true,
+      shareOnward: data['shareOnward'] == true,
+      shareOnwardRequested: data['shareOnwardRequested'] == true,
     );
   }
 }

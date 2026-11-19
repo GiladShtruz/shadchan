@@ -7,6 +7,7 @@ import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/notification_preferences.dart';
 import 'package:shadchan/services/notification_service.dart';
 import 'package:shadchan/services/personal_card_service.dart';
+import 'package:shadchan/services/chat_service.dart';
 
 /// Push notifications from the server: the personal card's news only — an
 /// access request, an answer to one, a friend's new card, a wedding, a Hebrew
@@ -92,6 +93,13 @@ abstract final class PushService {
     if (kind is String &&
         kind.isNotEmpty &&
         !NotificationPreferences.instance.wantsKind(kind)) {
+      return;
+    }
+    // A message in the chat that is open on the screen is already there.
+    final String? route = routeOf(message.data);
+    if (kind == 'chatMessage' &&
+        ChatService.openChatId != null &&
+        route == '/chats/${ChatService.openChatId}') {
       return;
     }
     NotificationService.onForegroundNotice?.call(

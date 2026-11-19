@@ -172,7 +172,7 @@ void main() {
     expect(find.text('40 חברים במאגר'), findsOneWidget);
     expect(find.text('להתחבר'), findsOneWidget);
     expect(
-      find.textContaining('לא משתף כרטיסים או מידע מהמאגר'),
+      find.textContaining('החיבור לבדו לא משתף אף כרטיס'),
       findsOneWidget,
     );
   });

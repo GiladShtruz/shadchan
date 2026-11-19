@@ -29,6 +29,7 @@ import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/search_results_panel.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
+import 'package:shadchan/widgets/network_link.dart';
 
 enum PeopleSortOption { alphabetical, ageAscending, newest, recentlyUpdated }
 
@@ -394,6 +395,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
           child: Padding(
             padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
             child: FriendsWithCardsLink(),
+          ),
+        ),
+        // The cards the connected matchmakers share — or the way to connect.
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: NetworkLink(),
           ),
         ),
         if (pendingContactDrafts.isNotEmpty)
