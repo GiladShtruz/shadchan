@@ -282,6 +282,17 @@ class AccountSyncEngine {
       'local ${_describeCounts(<SyncCollection, int>{for (final c in remoteAll.keys) c: _localIds(c).length})}',
     );
     await _absorbPhoneDuplicates(remoteAll, changes);
+    // A device whose boxes were not emptied for this read holds its owner's
+    // working database: on this first comparison, a record of theirs that the
+    // account also holds keeps this device's version (the account's is kept
+    // beside it as a conflict). Until 2026-11-19 the sync never reached an
+    // engine on a phone, so the account's copy of such a record is an old
+    // backup — or the server's merge of one into a couple's shared database —
+    // and taking it would silently roll the matchmaker's work back weeks.
+    // Settings are left to the ordinary rule: the server rewrites some of them
+    // on purpose when two databases are merged (`personalCard.mirrorId`).
+    final bool workingCopyHere = !ledger.emptiedForRead;
+    final String me = (ledger.uid ?? '').split('@').first;
     for (final MapEntry<SyncCollection, Map<String, RemoteDocument>> entry
         in remoteAll.entries) {
       final SyncCollection collection = entry.key;
@@ -305,7 +316,11 @@ class AccountSyncEngine {
           // A document an older version wrote carries no time, and this
           // device's copy of it is what its owner has been working on: it
           // wins. One an up-to-date device wrote is the account's word.
-          legacyLocalWins: written == null,
+          legacyLocalWins:
+              written == null ||
+              (workingCopyHere &&
+                  collection != SyncCollection.settings &&
+                  _recordOf(document.data, me)),
         );
         if (write != null) {
           writes.add(write);
@@ -331,6 +346,14 @@ class AccountSyncEngine {
     await ledger.addLog('full-read merged, sending ${writes.length}');
     _send(writes);
     _announce(changes);
+  }
+
+  /// Whether a remote record came from [uid]'s own database. A couple's
+  /// shared records name the databases they came from in `_sources`; a
+  /// record without it is a personal account's own.
+  static bool _recordOf(Map<String, Object?>? data, String uid) {
+    final Object? sources = data?['_sources'];
+    return sources is! List || sources.contains(uid);
   }
 
   static String _describeCounts(Map<SyncCollection, int> counts) {
@@ -717,7 +740,9 @@ class AccountSyncEngine {
         localPrint != remotePrint &&
         localPrint != base?.local &&
         remotePrint != base?.remote &&
-        !(base == null && legacyLocalWins) &&
+        // An older version's document is this device's own earlier backup,
+        // not somebody else's edit.
+        !(base == null && document.writtenAtMicros == null) &&
         !_absorbed.contains(path);
     if (bothEdited && decision != SyncDecision.inSync) {
       await _keepConflict(

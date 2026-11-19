@@ -261,7 +261,7 @@ class SyncProvider extends ChangeNotifier {
         <SyncCollection, Box<dynamic>>{
           for (final SyncCollection collection in SyncCollection.values)
             if (Hive.isBoxOpen(collection.box))
-              collection: Hive.box<dynamic>(collection.box),
+              collection: syncedBox(collection),
         };
     await _beginMigration(ledger, uid, boxes);
     if (generation != _generation) {
@@ -498,7 +498,7 @@ class SyncProvider extends ChangeNotifier {
       (c) => c != SyncCollection.settings,
     )) {
       if (!Hive.isBoxOpen(collection.box)) continue;
-      final box = Hive.box<dynamic>(collection.box);
+      final box = syncedBox(collection);
       snapshot[collection.remote] = [
         for (final id in box.keys.whereType<String>())
           if (pending.contains('${collection.remote}/$id'))
@@ -546,9 +546,34 @@ class SyncProvider extends ChangeNotifier {
           !Hive.isBoxOpen(collection.box)) {
         continue;
       }
-      await Hive.box<dynamic>(collection.box).clear();
+      await syncedBox(collection).clear();
     }
   }
+
+  /// The open Hive box behind [collection], asked for by the type it was
+  /// opened with.
+  ///
+  /// `main.dart` opens the record boxes typed (`Box<Person>`, …), and Hive
+  /// refuses to hand an open box out under any other type:
+  /// `Hive.box<dynamic>('people')` throws `HiveError: The box "people" is
+  /// already open and of type Box<Person>`. Asking that way is what kept
+  /// every start of the sync from ever reaching an engine, and held a phone
+  /// that had just joined a couple's database on the loading screen for good.
+  /// A `Box<Person>` *is* a `Box<dynamic>` to Dart, so the engine can still
+  /// take all seven in one map.
+  @visibleForTesting
+  static Box<dynamic> syncedBox(SyncCollection collection) =>
+      switch (collection) {
+        SyncCollection.people => Hive.box<Person>(collection.box),
+        SyncCollection.personNotes => Hive.box<PersonNote>(collection.box),
+        SyncCollection.personEvents => Hive.box<PersonEvent>(collection.box),
+        SyncCollection.matches => Hive.box<MatchIdea>(collection.box),
+        SyncCollection.matchNotes => Hive.box<MatchNote>(collection.box),
+        SyncCollection.matchStatusEvents => Hive.box<MatchStatusEvent>(
+          collection.box,
+        ),
+        SyncCollection.settings => Hive.box<dynamic>(collection.box),
+      };
 
   /// Stops the sync and waits for whatever was in flight. Everything after
   /// this — clearing the device on sign-out above all — reaches nobody.

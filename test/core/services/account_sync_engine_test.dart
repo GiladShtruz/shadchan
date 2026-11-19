@@ -790,4 +790,66 @@ void main() {
     expect(AccountSyncEngine.phoneKey('+972 50-123-4567'), '0501234567');
     expect(AccountSyncEngine.phoneKey('123'), isNull);
   });
+
+  group('a phone that holds its own working database', () {
+    /// A record the account already holds, written by the server (it carries
+    /// a time), from [sources] — the way a couple's merged database holds it.
+    void serverHolds(
+      FakeAccount account,
+      String id,
+      String city,
+      List<String> sources,
+    ) {
+      account.of(SyncCollection.people)[id] = RemoteDocument(
+        data: <String, Object?>{
+          ...AccountSyncCodec.personToRemote(person(id, 'דוד', city: city)),
+          '_sources': sources,
+        },
+        writtenAtMicros: 5000000,
+      );
+    }
+
+    test('keeps its own version of its own record on the first read', () async {
+      final FakeAccount account = FakeAccount();
+      serverHolds(account, 'p1', 'צפת', <String>['uid-1']);
+      final Device a = await Device.open('a', root);
+      await a.people.put('p1', person('p1', 'דוד', city: 'בני ברק'));
+      await a.connect(account);
+
+      expect((a.people.get('p1') as Person).city, 'בני ברק');
+      expect(account.of(SyncCollection.people)['p1']!.data!['city'], 'בני ברק');
+      // The account's older copy is not thrown away.
+      expect(account.conflicts, hasLength(1));
+      expect(account.conflicts.single.lostSide, 'remote');
+      expect(account.conflicts.single.lost['city'], 'צפת');
+
+      await a.engine!.stop();
+    });
+
+    test('takes the partner\'s record from the shared database', () async {
+      final FakeAccount account = FakeAccount();
+      serverHolds(account, 'p1', 'צפת', <String>['partner']);
+      final Device a = await Device.open('a', root);
+      await a.people.put('p1', person('p1', 'דוד', city: 'בני ברק'));
+      await a.connect(account);
+
+      expect((a.people.get('p1') as Person).city, 'צפת');
+
+      await a.engine!.stop();
+    });
+
+    test('a phone emptied for the read takes the account\'s word', () async {
+      final FakeAccount account = FakeAccount();
+      serverHolds(account, 'p1', 'צפת', <String>['uid-1']);
+      final Device a = await Device.open('a', root);
+      await a.ledger.bindTo('uid-1');
+      await a.ledger.markEmptiedForRead();
+      await a.people.put('p1', person('p1', 'דוד', city: 'בני ברק'));
+      await a.connect(account);
+
+      expect((a.people.get('p1') as Person).city, 'צפת');
+
+      await a.engine!.stop();
+    });
+  });
 }
