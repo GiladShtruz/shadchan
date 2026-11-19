@@ -25,6 +25,14 @@ export {
  */
 export { savePrivateLooking } from './private_looking';
 export { cardPhoto } from './card_photos';
+export {
+  sharedCardPhoto,
+  onIdeaProposalWritten,
+  onChatMessageCreated,
+  onCardAccessShareOnward,
+  onPersonalCardDeletedUnshare,
+} from './network';
+import { deleteNetworkOf } from './network';
 import { isActiveCard } from './card_activity';
 import { initializeApp } from 'firebase-admin/app';
 import {
@@ -927,6 +935,8 @@ export const onAccountDeleted = functionsV1
     await db.doc(`matchmakerActivity/${uid}`).delete();
     // Every connection with another matchmaker, from either side.
     await deleteConnectionsOf(uid);
+    // The cards shared with them, ideas offered between them, chats.
+    await deleteNetworkOf(uid);
     // Deleting it counts this matchmaker out of every tag word they used.
     await db.collection('tagUsage').doc(uid).delete();
     // The support view of this account's sync (counts and error codes).

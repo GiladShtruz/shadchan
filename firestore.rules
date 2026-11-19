@@ -979,8 +979,11 @@ service cloud.firestore {
                  'ownerUid', 'matchmakerUid', 'status', 'requestedBy',
                  'ownerName', 'matchmakerName', 'matchmakerGender',
                  'ownerPhoneHash', 'ownerPhone', 'invited', 'updatedAt',
-                 'cardGranted', 'lookingGranted', 'lookingRequested', 'granteeUids', 'cardRequested'])
+                 'cardGranted', 'lookingGranted', 'lookingRequested', 'granteeUids', 'cardRequested',
+                 'shareOnward', 'shareOnwardRequested'])
             && request.resource.data.get('cardGranted', false) is bool
+            && request.resource.data.get('shareOnward', false) is bool
+            && request.resource.data.get('shareOnwardRequested', false) is bool
             && request.resource.data.get('cardRequested', false) is bool
             && request.resource.data.get('lookingGranted', false) is bool
             && request.resource.data.get('lookingRequested', false) is bool
@@ -1026,6 +1029,13 @@ service cloud.firestore {
                     && request.resource.data.matchmakerUid == resource.data.matchmakerUid
                     && (
                       isOwner()
+                      // The matchmaker asks the owner to let the card be shown
+                      // to the matchmakers they are connected with
+                      // (`shareOnward`). Only the owner can say yes.
+                      || (isMatchmaker() && resource.data.status == 'approved'
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shareOnwardRequested', 'updatedAt'])
+                        && request.resource.data.shareOnwardRequested == true
+                        && resource.data.get('shareOnward', false) == false)
                       || (isMatchmaker() && resource.data.status != 'blocked'
                         && activeCard(resource.data.ownerUid) && takesRequests(resource.data.ownerUid) && inOwnersContacts(resource.data.ownerUid)
                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cardRequested', 'updatedAt'])
@@ -1190,6 +1200,188 @@ service cloud.firestore {
         && request.resource.data.tags.size() <= 200
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
+    }
+
+    // --- The network between connected matchmakers ----------------------
+    //
+    // **A trust network, never a public database.** Everything below is
+    // readable only across an *approved* `matchmakerConnections` row — two
+    // matchmakers who have each other in their phones and both said yes.
+    // Removing the connection closes all of it at once: the rules read the
+    // row on every request.
+    function connectedTo(other) {
+      return other != request.auth.uid
+        && exists(connectionPath(request.auth.uid, other))
+        && get(connectionPath(request.auth.uid, other)).data.status == 'approved';
+    }
+
+    // The cards a matchmaker chose to make visible to the matchmakers they
+    // are connected with — `sharedCards/{ownerUid}/cards/{personId}`. View
+    // only: the card's own fields, its photos' paths, "מה מחפש" and tags.
+    // Never a phone number, a note, a go-between or anything the matchmaker
+    // keeps for themselves (`SharedCardCodec.toRemote` is the whitelist).
+    //
+    // A card that is a single's own personal card may be shown only while
+    // the single said so for this matchmaker (`cardAccess.shareOnward`); a
+    // Function removes the copy the moment that answer goes.
+    match /sharedCards/{ownerUid}/cards/{personId} {
+      function cardOk(d) {
+        return d.keys().hasOnly([
+                 'ownerUid', 'ownerName', 'personId', 'firstName', 'lastName',
+                 'gender', 'dateOfBirth', 'age', 'religiousLevel',
+                 'religiousLevelOther', 'city', 'description', 'heightCm',
+                 'maritalStatus', 'region', 'preferredMinAge', 'preferredMaxAge',
+                 'preferredMinHeightCm', 'preferredMaxHeightCm',
+                 'preferredRegions', 'preferredMaritalStatuses',
+                 'preferredReligiousLevels', 'preferredReligiousLevelOtherLabels',
+                 'tags', 'photoPaths', 'identity', 'cardOwnerUid', 'status',
+                 'updatedAt'])
+          && d.ownerUid == ownerUid && d.personId == personId
+          && d.ownerName is string && d.ownerName.size() <= 80
+          && d.gender in ['male', 'female']
+          && d.description is string && d.description.size() > 0
+          && d.description.size() <= 4000
+          && d.photoPaths is list && d.photoPaths.size() > 0
+          && d.photoPaths.size() <= 6
+          && d.tags is list && d.tags.size() <= 40
+          && d.status in ['available', 'busy', 'onBreak']
+          && d.updatedAt == request.time
+          && (d.get('cardOwnerUid', null) == null
+              || (get(accessPath(d.cardOwnerUid, databaseUid())).data.status == 'approved'
+                  && get(accessPath(d.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true));
+      }
+      allow read: if durable() && (request.auth.uid == ownerUid || connectedTo(ownerUid));
+      allow create, update: if durable() && request.auth.uid == ownerUid
+                            && cardOk(request.resource.data);
+      allow delete: if durable() && request.auth.uid == ownerUid;
+    }
+
+    // A matchmaker offering an idea to a connected matchmaker: their own
+    // candidate (a snapshot of the card, same whitelist as a shared card)
+    // with somebody from the other's shared cards. Only the side asked
+    // answers. Once approved, each side keeps its own half of the idea; the
+    // `sides` map is where each writes where *its* half stands, for the other
+    // to see — and nothing else.
+    match /ideaProposals/{proposalId} {
+      function proposalOk(d) {
+        return d.keys().hasOnly([
+                 'fromUid', 'toUid', 'uids', 'fromName', 'toName', 'status',
+                 'target', 'candidate', 'note', 'sides', 'createdAt', 'updatedAt'])
+          && d.uids == [d.fromUid, d.toUid] && d.fromUid != d.toUid
+          && d.fromName is string && d.fromName.size() <= 80
+          && d.toName is string && d.toName.size() <= 80
+          && d.status in ['pending', 'approved', 'declined', 'withdrawn']
+          && d.target is map && d.target.personId is string
+          && d.candidate is map && d.candidate.personId is string
+          && d.candidate.get('description', '') is string
+          && d.candidate.get('description', '').size() <= 4000
+          && d.candidate.get('photoPaths', []) is list
+          && d.candidate.get('photoPaths', []).size() <= 6
+          && d.get('note', '') is string && d.get('note', '').size() <= 500
+          && d.sides is map
+          && d.updatedAt == request.time;
+      }
+      allow read: if durable() && request.auth.uid in resource.data.uids;
+      allow create: if durable() && proposalOk(request.resource.data)
+                    && request.resource.data.fromUid == request.auth.uid
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.sides.size() == 0
+                    && connectedTo(request.resource.data.toUid)
+                    && exists(/databases/$(database)/documents/sharedCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId))
+                    && (request.resource.data.candidate.get('cardOwnerUid', null) == null
+                        || get(accessPath(request.resource.data.candidate.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true);
+      allow update: if durable() && proposalOk(request.resource.data)
+                    && request.auth.uid in resource.data.uids
+                    && request.resource.data.uids == resource.data.uids
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.candidate == resource.data.candidate
+                    && request.resource.data.target == resource.data.target
+                    && (
+                      // The side asked answers.
+                      (resource.data.status == 'pending'
+                       && resource.data.toUid == request.auth.uid
+                       && request.resource.data.status in ['approved', 'declined']
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'toName']))
+                      ||
+                      // The side who asked takes it back.
+                      (resource.data.status == 'pending'
+                       && resource.data.fromUid == request.auth.uid
+                       && request.resource.data.status == 'withdrawn'
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+                      ||
+                      // Each side writes only where its own half stands.
+                      (resource.data.status == 'approved'
+                       && request.resource.data.status == 'approved'
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sides', 'updatedAt'])
+                       && request.resource.data.sides.diff(resource.data.sides).affectedKeys().hasOnly([request.auth.uid]))
+                    );
+      allow delete: if false;
+    }
+
+    // Chats. One continuing chat per pair of matchmakers (`{a}_{b}`, uids
+    // sorted) — every card and idea between them is talked about in the same
+    // thread. `type` leaves room for groups later; only `direct` chats can be
+    // opened today, and only between connected matchmakers.
+    match /chats/{chatId} {
+      function member() {
+        return request.auth.uid in resource.data.members;
+      }
+      function otherOf(d) {
+        return d.members[0] == request.auth.uid ? d.members[1] : d.members[0];
+      }
+      allow read: if durable() && member();
+      allow create: if durable()
+                    && request.resource.data.keys().hasOnly([
+                         'members', 'type', 'kind', 'names', 'createdAt', 'updatedAt',
+                         'lastText', 'lastFromUid', 'lastAt', 'readAt'])
+                    && request.resource.data.type == 'direct'
+                    && request.resource.data.kind == 'matchmakers'
+                    && request.resource.data.members is list
+                    && request.resource.data.members.size() == 2
+                    && request.resource.data.members[0] < request.resource.data.members[1]
+                    && chatId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
+                    && request.auth.uid in request.resource.data.members
+                    && request.resource.data.names is map
+                    && request.resource.data.createdAt == request.time
+                    && connectedTo(otherOf(request.resource.data));
+      allow update: if durable() && member()
+                    && request.resource.data.members == resource.data.members
+                    && request.resource.data.type == resource.data.type
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                         ['lastText', 'lastFromUid', 'lastAt', 'readAt', 'names', 'updatedAt'])
+                    && request.resource.data.get('lastText', '') is string
+                    && request.resource.data.get('lastText', '').size() <= 200
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastText', 'lastFromUid'])
+                        || request.resource.data.lastFromUid == request.auth.uid)
+                    && request.resource.data.get('readAt', {}).diff(resource.data.get('readAt', {})).affectedKeys().hasOnly([request.auth.uid]);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        function chat() {
+          return get(/databases/$(database)/documents/chats/$(chatId)).data;
+        }
+        allow read: if durable() && request.auth.uid in chat().members;
+        allow create: if durable()
+                      && request.auth.uid in chat().members
+                      && (chat().type != 'direct'
+                          || connectedTo(chat().members[0] == request.auth.uid ? chat().members[1] : chat().members[0]))
+                      && request.resource.data.keys().hasOnly(['fromUid', 'text', 'at', 'ref'])
+                      && request.resource.data.fromUid == request.auth.uid
+                      && request.resource.data.at == request.time
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 4000
+                      && (request.resource.data.get('ref', null) == null
+                          || (request.resource.data.ref is map
+                              && request.resource.data.ref.keys().hasOnly(['kind', 'id', 'ownerUid', 'label'])
+                              && request.resource.data.ref.kind in ['card', 'idea', 'proposal']
+                              && request.resource.data.ref.id is string
+                              && request.resource.data.ref.id.size() <= 300
+                              && request.resource.data.ref.label is string
+                              && request.resource.data.ref.label.size() <= 120));
+        allow update, delete: if false;
+      }
     }
 
     // Anything not named above is closed. Without this, a path added later

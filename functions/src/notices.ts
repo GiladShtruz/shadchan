@@ -38,6 +38,10 @@ const PUSHED_KINDS = new Set([
   'matchmakerJoined',
   'connectionRequest',
   'connectionApproved',
+  // The network between connected matchmakers.
+  'ideaProposal',
+  'ideaProposalApproved',
+  'shareOnwardRequest',
 ]);
 
 /**
@@ -67,6 +71,14 @@ export function categoryOf(kind: string): string {
     case 'birthday':
     case 'mazelTov':
       return 'celebrations';
+    case 'shareOnwardRequest':
+      return 'access';
+    case 'ideaProposal':
+    case 'ideaProposalApproved':
+    case 'ideaProposalDeclined':
+      return 'network';
+    case 'chatMessage':
+      return 'chats';
     case 'support':
       return 'support';
     default:
