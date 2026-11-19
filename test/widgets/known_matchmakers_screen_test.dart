@@ -120,7 +120,8 @@ void main() {
   testWidgets('three groups, connected first, compact rows, no numbers', (
     WidgetTester tester,
   ) async {
-    tester.view.physicalSize = const Size(390, 900);
+    // Tall enough for the sharing summary above the three groups.
+    tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     MatchmakerConnections.debugSet('me', <MatchmakerConnection>[
@@ -142,7 +143,13 @@ void main() {
 
     // A compact row: name, then activity and database size.
     expect(find.text('בתיה לוי'), findsOneWidget);
-    expect(find.text('מחוברים · לפני 3 ימים · 12 חברים במאגר'), findsOneWidget);
+    // A connected matchmaker also says how many cards they share with me.
+    expect(
+      find.text(
+        'מחוברים · לפני 3 ימים · 12 חברים במאגר · לא משתף/ת איתך כרטיסים',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('פעיל היום · 40 חברים במאגר'), findsOneWidget);
     // A request from somebody outside the contacts carries their own name.
     expect(find.text('יוסי'), findsOneWidget);
@@ -171,10 +178,7 @@ void main() {
     expect(find.text('פעיל היום'), findsOneWidget);
     expect(find.text('40 חברים במאגר'), findsOneWidget);
     expect(find.text('להתחבר'), findsOneWidget);
-    expect(
-      find.textContaining('החיבור לבדו לא משתף אף כרטיס'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('החיבור לבדו לא משתף אף כרטיס'), findsOneWidget);
   });
 
   testWidgets('a request waiting for me is answered from the profile', (

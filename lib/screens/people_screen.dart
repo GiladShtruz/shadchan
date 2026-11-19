@@ -30,6 +30,11 @@ import 'package:shadchan/widgets/search_results_panel.dart';
 import 'package:shadchan/widgets/shadchan_app_bar.dart';
 import 'package:shadchan/widgets/sort_direction_toggle.dart';
 import 'package:shadchan/widgets/network_link.dart';
+import 'package:shadchan/screens/network_screen.dart';
+import 'package:shadchan/services/matchmaker_network.dart';
+import 'package:shadchan/services/network_sharing.dart';
+import 'package:shadchan/utils/phone_identity.dart';
+import 'package:shadchan/utils/shared_pool.dart';
 
 enum PeopleSortOption { alphabetical, ageAscending, newest, recentlyUpdated }
 
@@ -338,10 +343,27 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
           );
 
+    // "גם אצל השדכנים שלי": the same search over the cards the connected
+    // matchmakers share — view only, each person once, never a friend who is
+    // already in this database.
+    final bool connected = MatchmakerNetwork.connectedNames.isNotEmpty;
+    final bool alsoNetwork = connected && NetworkSharing.alsoSearchNetwork;
+    final List<SharedPoolEntry> external = alsoNetwork
+        ? _networkMatches(repository, query)
+        : const <SharedPoolEntry>[];
+
     return SearchResultsPanel(
       // A tap beside the suggestions shows the results, like the search key.
       onDismiss: _submitSearch,
       rows: <Widget>[
+        if (connected)
+          SwitchListTile(
+            dense: true,
+            value: alsoNetwork,
+            onChanged: (bool on) =>
+                setState(() => NetworkSharing.alsoSearchNetwork = on),
+            title: const Text('גם אצל השדכנים שלי'),
+          ),
         for (final Person person in people)
           SearchResultRow(
             leading: SearchResultRow.avatar(person),
@@ -352,8 +374,57 @@ class _PeopleScreenState extends State<PeopleScreen> {
               pushLeavingSearch(context, '/people/${person.id}');
             },
           ),
+        if (external.isNotEmpty) const SearchSectionTitle('אצל השדכנים שלי'),
+        for (final SharedPoolEntry e in external)
+          SearchResultRow(
+            leading: SharedPhoto(
+              ownerUid: e.primary.ownerUid,
+              path: e.primary.photoPaths.firstOrNull,
+              person: e.primary.person,
+              radius: 20,
+            ),
+            title: e.primary.person.fullName,
+            subtitle: <String>[
+              if (sharedSummaryOf(e.primary.person).isNotEmpty)
+                sharedSummaryOf(e.primary.person),
+              e.sourceLabel,
+            ].join(' · '),
+            onTap: () {
+              _closeSearch();
+              pushLeavingSearch(
+                context,
+                '/network/card/${e.primary.ownerUid}/${e.primary.personId}',
+              );
+            },
+          ),
       ],
     );
+  }
+
+  List<SharedPoolEntry> _networkMatches(
+    PersonRepository repository,
+    String query,
+  ) {
+    final List<Person> mine = repository.getAll();
+    final List<SharedPoolEntry> pool = SharedPool.build(
+      MatchmakerNetwork.cards.value,
+      myIdentities: <String>{
+        for (final Person p in mine)
+          if (!p.hidden && PhoneIdentity.hash(p.phone) != null)
+            PhoneIdentity.hash(p.phone)!,
+      },
+      myCardOwners: <String>{
+        for (final Person p in mine)
+          if (!p.hidden && p.cardOwnerUid != null) p.cardOwnerUid!,
+        if (MatchmakerNetwork.uid != null) MatchmakerNetwork.uid!,
+      },
+    );
+    return <SharedPoolEntry>[
+      for (final SharedPoolEntry e in pool)
+        if (e.primary.person.fullName.toLowerCase().contains(query) ||
+            (e.primary.person.city ?? '').toLowerCase().contains(query))
+          e,
+    ];
   }
 
   /// One quiet line under a name in the results: whatever of age, city and

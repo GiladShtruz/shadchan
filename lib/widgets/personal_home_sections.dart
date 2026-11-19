@@ -267,8 +267,9 @@ abstract final class MatchmakerFriendActions {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
-        if (friend.row != null && friend.row!.canReadCard)
-          OnwardShareSwitch(row: friend.row!, name: friend.name),
+        // One general answer for every matchmaker approved — shown here
+        // too, so it is found where somebody thinks about this matchmaker.
+        const OnwardShareSwitch(),
         const SizedBox(height: 4),
         OutlinedButton(
           onPressed: () => run(() => PersonalAccessFlow.edit(context, friend)),

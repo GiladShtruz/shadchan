@@ -1224,35 +1224,49 @@ service cloud.firestore {
     // A card that is a single's own personal card may be shown only while
     // the single said so for this matchmaker (`cardAccess.shareOnward`); a
     // Function removes the copy the moment that answer goes.
+    function sharedCardOk(d, ownerUid, personId) {
+      return d.keys().hasOnly([
+               'ownerUid', 'ownerName', 'personId', 'firstName', 'lastName',
+               'gender', 'dateOfBirth', 'age', 'religiousLevel',
+               'religiousLevelOther', 'city', 'description', 'heightCm',
+               'maritalStatus', 'region', 'preferredMinAge', 'preferredMaxAge',
+               'preferredMinHeightCm', 'preferredMaxHeightCm',
+               'preferredRegions', 'preferredMaritalStatuses',
+               'preferredReligiousLevels', 'preferredReligiousLevelOtherLabels',
+               'tags', 'photoPaths', 'identity', 'cardOwnerUid', 'status',
+               'updatedAt'])
+        && d.ownerUid == ownerUid && d.personId == personId
+        && d.ownerName is string && d.ownerName.size() <= 80
+        && d.gender in ['male', 'female']
+        && d.description is string && d.description.size() > 0
+        && d.description.size() <= 4000
+        && d.photoPaths is list && d.photoPaths.size() > 0
+        && d.photoPaths.size() <= 6
+        && d.tags is list && d.tags.size() <= 40
+        && d.status in ['available', 'busy', 'onBreak']
+        && d.updatedAt == request.time
+        && (d.get('cardOwnerUid', null) == null
+            || (get(accessPath(d.cardOwnerUid, databaseUid())).data.status == 'approved'
+                && get(accessPath(d.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true));
+    }
     match /sharedCards/{ownerUid}/cards/{personId} {
-      function cardOk(d) {
-        return d.keys().hasOnly([
-                 'ownerUid', 'ownerName', 'personId', 'firstName', 'lastName',
-                 'gender', 'dateOfBirth', 'age', 'religiousLevel',
-                 'religiousLevelOther', 'city', 'description', 'heightCm',
-                 'maritalStatus', 'region', 'preferredMinAge', 'preferredMaxAge',
-                 'preferredMinHeightCm', 'preferredMaxHeightCm',
-                 'preferredRegions', 'preferredMaritalStatuses',
-                 'preferredReligiousLevels', 'preferredReligiousLevelOtherLabels',
-                 'tags', 'photoPaths', 'identity', 'cardOwnerUid', 'status',
-                 'updatedAt'])
-          && d.ownerUid == ownerUid && d.personId == personId
-          && d.ownerName is string && d.ownerName.size() <= 80
-          && d.gender in ['male', 'female']
-          && d.description is string && d.description.size() > 0
-          && d.description.size() <= 4000
-          && d.photoPaths is list && d.photoPaths.size() > 0
-          && d.photoPaths.size() <= 6
-          && d.tags is list && d.tags.size() <= 40
-          && d.status in ['available', 'busy', 'onBreak']
-          && d.updatedAt == request.time
-          && (d.get('cardOwnerUid', null) == null
-              || (get(accessPath(d.cardOwnerUid, databaseUid())).data.status == 'approved'
-                  && get(accessPath(d.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true));
-      }
       allow read: if durable() && (request.auth.uid == ownerUid || connectedTo(ownerUid));
       allow create, update: if durable() && request.auth.uid == ownerUid
-                            && cardOk(request.resource.data);
+                            && sharedCardOk(request.resource.data, ownerUid, personId);
+      allow delete: if durable() && request.auth.uid == ownerUid;
+    }
+
+    // One card sent to one connected matchmaker — from a chat, even when it
+    // is not in the shared pool. The same whitelist as a shared card; only
+    // the matchmaker it was sent to reads it, and only while the two stay
+    // connected. A single's own card needs the same consent as in the pool.
+    match /sentCards/{ownerUid}/to/{toUid}/cards/{personId} {
+      allow read: if durable()
+                  && (request.auth.uid == ownerUid
+                      || (request.auth.uid == toUid && connectedTo(ownerUid)));
+      allow create, update: if durable() && request.auth.uid == ownerUid
+                            && connectedTo(toUid)
+                            && sharedCardOk(request.resource.data, ownerUid, personId);
       allow delete: if durable() && request.auth.uid == ownerUid;
     }
 
@@ -1288,7 +1302,8 @@ service cloud.firestore {
                     && request.resource.data.createdAt == request.time
                     && request.resource.data.sides.size() == 0
                     && connectedTo(request.resource.data.toUid)
-                    && exists(/databases/$(database)/documents/sharedCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId))
+                    && (exists(/databases/$(database)/documents/sharedCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId))
+                        || exists(/databases/$(database)/documents/sentCards/$(request.resource.data.toUid)/to/$(request.auth.uid)/cards/$(request.resource.data.target.personId)))
                     && (request.resource.data.candidate.get('cardOwnerUid', null) == null
                         || get(accessPath(request.resource.data.candidate.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true);
       allow update: if durable() && proposalOk(request.resource.data)

@@ -355,9 +355,7 @@ class MatchmakerFriendRow extends StatelessWidget {
                   ? ' · ${MatchmakerFriends.stateLabel(f)}'
                   : '') +
               (f.row?.shareOnward == true
-                  ? ' · משתף/ת עם שדכנים שמכיר/ה'
-                  : f.row?.shareOnwardRequested == true
-                  ? ' · מבקש/ת לשתף עם שדכנים שמכיר/ה'
+                  ? ' · יכול/ה להציג לשדכנים שמכיר/ה'
                   : '')
         : MatchmakerFriends.stateLabel(f);
     final Widget action = busy

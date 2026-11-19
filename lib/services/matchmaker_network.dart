@@ -33,6 +33,10 @@ abstract final class MatchmakerNetwork {
   static final ValueNotifier<List<SharedCard>> cards =
       ValueNotifier<List<SharedCard>>(const <SharedCard>[]);
 
+  /// Cards sent to this matchmaker one by one, in a chat — not in the pool.
+  static final ValueNotifier<List<SharedCard>> sentToMe =
+      ValueNotifier<List<SharedCard>>(const <SharedCard>[]);
+
   /// Every idea offered to or by this matchmaker.
   static final ValueNotifier<List<IdeaProposal>> proposals =
       ValueNotifier<List<IdeaProposal>>(const <IdeaProposal>[]);
@@ -51,6 +55,14 @@ abstract final class MatchmakerNetwork {
   _cardSubs =
       <String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>{};
   static final Map<String, List<SharedCard>> _byOwner =
+      <String, List<SharedCard>>{};
+  static final Map<
+    String,
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
+  >
+  _sentSubs =
+      <String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>{};
+  static final Map<String, List<SharedCard>> _sentByOwner =
       <String, List<SharedCard>>{};
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _proposalSub;
 
@@ -109,6 +121,13 @@ abstract final class MatchmakerNetwork {
     }
     _cardSubs.clear();
     _byOwner.clear();
+    for (final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> s
+        in _sentSubs.values) {
+      await s.cancel();
+    }
+    _sentSubs.clear();
+    _sentByOwner.clear();
+    sentToMe.value = const <SharedCard>[];
     await _proposalSub?.cancel();
     _proposalSub = null;
     _uid = null;
@@ -128,6 +147,37 @@ abstract final class MatchmakerNetwork {
             .toList()) {
       unawaited(_cardSubs.remove(gone)?.cancel());
       _byOwner.remove(gone);
+    }
+    for (final String gone
+        in _sentSubs.keys
+            .where((String u) => !connected.contains(u))
+            .toList()) {
+      unawaited(_sentSubs.remove(gone)?.cancel());
+      _sentByOwner.remove(gone);
+    }
+    for (final String other in connected) {
+      if (_sentSubs.containsKey(other)) continue;
+      _sentSubs[other] = FirebaseFirestore.instance
+          .collection('sentCards')
+          .doc(other)
+          .collection('to')
+          .doc(me)
+          .collection('cards')
+          .snapshots()
+          .listen(
+            (QuerySnapshot<Map<String, dynamic>> snap) {
+              _sentByOwner[other] = <SharedCard>[
+                for (final QueryDocumentSnapshot<Map<String, dynamic>> d
+                    in snap.docs)
+                  ?SharedCard.fromMap(d.data()),
+              ];
+              _publish();
+            },
+            onError: (Object error) {
+              _sentByOwner.remove(other);
+              _publish();
+            },
+          );
     }
     for (final String other in connected) {
       if (_cardSubs.containsKey(other)) continue;
@@ -162,15 +212,83 @@ abstract final class MatchmakerNetwork {
       for (final MapEntry<String, List<SharedCard>> e in _byOwner.entries)
         if (connected.contains(e.key)) ...e.value,
     ];
+    sentToMe.value = <SharedCard>[
+      for (final MapEntry<String, List<SharedCard>> e in _sentByOwner.entries)
+        if (connected.contains(e.key)) ...e.value,
+    ];
     if (_byOwner.keys.toSet().containsAll(connected)) loaded.value = true;
   }
 
-  /// The shared card [personId] of [ownerUid], if it is in the pool now.
+  /// How many cards [ownerUid] shares with this matchmaker.
+  static int sharedBy(String ownerUid) =>
+      cards.value.where((SharedCard c) => c.ownerUid == ownerUid).length;
+
+  /// The shared card [personId] of [ownerUid], if it is in the pool now —
+  /// or was sent to this matchmaker in a chat.
   static SharedCard? cardOf(String ownerUid, String personId) {
     for (final SharedCard c in cards.value) {
       if (c.ownerUid == ownerUid && c.personId == personId) return c;
     }
+    for (final SharedCard c in sentToMe.value) {
+      if (c.ownerUid == ownerUid && c.personId == personId) return c;
+    }
     return null;
+  }
+
+  /// Uploads [person]'s shareable photos under this matchmaker's
+  /// `sharedCards/` folder and returns their Storage paths.
+  static Future<List<String>> _uploadPhotos(String me, Person person) async {
+    final List<String> paths = <String>[];
+    for (final String local in CardPhotoPrivacy.shareable(person)) {
+      if (paths.length >= SharedCardCodec.maxPhotos) break;
+      final String name = PhotoPickerService.basenameOf(local);
+      final File file = await PhotoPickerService.fileFor(name);
+      if (!await file.exists()) continue;
+      final String remote = SharedCardCodec.photoPath(me, person.id, name);
+      final Reference ref = FirebaseStorage.instance.ref(remote);
+      try {
+        await ref.getMetadata();
+      } catch (_) {
+        await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+      }
+      paths.add(remote);
+    }
+    return paths;
+  }
+
+  /// Sends [person]'s card to one connected matchmaker — from a chat, even
+  /// when it is not in the shared pool. View only, the same fields as a
+  /// shared card; only [toUid] reads it, while the two stay connected.
+  static Future<bool> sendCard({
+    required Person person,
+    required String toUid,
+    required String myName,
+  }) async {
+    final String? me = _uid ?? await PersonalCardService.durableUid();
+    if (me == null || toUid == me) return false;
+    try {
+      final List<String> paths = await _uploadPhotos(me, person);
+      if (paths.isEmpty) return false;
+      await FirebaseFirestore.instance
+          .collection('sentCards')
+          .doc(me)
+          .collection('to')
+          .doc(toUid)
+          .collection('cards')
+          .doc(person.id)
+          .set(
+            SharedCardCodec.toRemote(
+              person,
+              ownerUid: me,
+              ownerName: myName,
+              photoPaths: paths,
+            ),
+          );
+      return true;
+    } catch (error, stackTrace) {
+      _log(error, stackTrace);
+      return false;
+    }
   }
 
   static IdeaProposal? proposal(String id) {
@@ -242,21 +360,7 @@ abstract final class MatchmakerNetwork {
     final String? me = _uid;
     if (me == null) return null;
     try {
-      final List<String> paths = <String>[];
-      for (final String local in CardPhotoPrivacy.shareable(candidate)) {
-        if (paths.length >= SharedCardCodec.maxPhotos) break;
-        final String name = PhotoPickerService.basenameOf(local);
-        final File file = await PhotoPickerService.fileFor(name);
-        if (!await file.exists()) continue;
-        final String remote = SharedCardCodec.photoPath(me, candidate.id, name);
-        final Reference ref = FirebaseStorage.instance.ref(remote);
-        try {
-          await ref.getMetadata();
-        } catch (_) {
-          await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-        }
-        paths.add(remote);
-      }
+      final List<String> paths = await _uploadPhotos(me, candidate);
       final Map<String, Object?> candidateMap = <String, Object?>{
         ...SharedCardCodec.values(candidate, ownerUid: me, ownerName: myName),
         'photoPaths': paths,
@@ -367,9 +471,11 @@ abstract final class MatchmakerNetwork {
     required String uid,
     List<SharedCard> cards = const <SharedCard>[],
     List<IdeaProposal> proposals = const <IdeaProposal>[],
+    List<SharedCard> sent = const <SharedCard>[],
   }) {
     _uid = uid;
     MatchmakerNetwork.cards.value = cards;
+    sentToMe.value = sent;
     MatchmakerNetwork.proposals.value = proposals;
     loaded.value = true;
   }

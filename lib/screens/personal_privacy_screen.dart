@@ -4,6 +4,7 @@ import 'package:shadchan/dialogs/personal_card_lifecycle.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/card_access_sections.dart';
+import 'package:shadchan/widgets/onward_share_switch.dart';
 import 'package:shadchan/widgets/photo_share_switch.dart';
 
 /// "ניהול ופרטיות": who may ask, who sees what, who is hidden — and, at the
@@ -42,6 +43,8 @@ class _PersonalPrivacyScreenState extends State<PersonalPrivacyScreen> {
           if (cards.card != null && !cards.isDeleted) ...<Widget>[
             const SizedBox(height: 12),
             const PhotoShareSwitch(),
+            const SizedBox(height: 12),
+            const OnwardShareSwitch(),
           ],
           if (cards.card != null && !cards.isDeleted) ...<Widget>[
             const SizedBox(height: 20),

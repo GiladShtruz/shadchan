@@ -71,6 +71,10 @@ abstract final class NetworkSharing {
   static const String modeKey = 'network.shareMode';
   static const String selectedKey = 'network.shareSelected';
   static const String excludedKey = 'network.shareExcluded';
+  static const String sinceKey = 'network.shareSince';
+  static const String sentKey = 'network.sentCards';
+  static const String onboardingKey = 'network.onboardingDone';
+  static const String searchNetworkKey = 'people.searchNetwork';
 
   /// Bumped whenever the choice changes, for screens that show it.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
@@ -110,14 +114,89 @@ abstract final class NetworkSharing {
   }
 
   static ShareMode get mode => ShareMode.byName(_read(modeKey));
+
+  /// Friends added to the share by hand — in every mode but [ShareMode.none].
   static Set<String> get selected => _readSet(selectedKey);
+
+  /// Friends kept out by hand — they win over everything else.
   static Set<String> get excluded => _readSet(excludedKey);
 
-  static void setMode(ShareMode mode) => _write(modeKey, mode.name);
+  /// When this matchmaker first opened their database to the network.
+  ///
+  /// **Cards already in the database before that moment are never opened
+  /// automatically**, even under "שתף הכל": they join only when the
+  /// matchmaker adds them ([selected]). "שתף הכל" shares every card added
+  /// from then on — and offers the earlier ones to add in one go.
+  static DateTime? get since => DateTime.tryParse(_read(sinceKey) ?? '');
+
+  /// Friends whose card was sent to a matchmaker one by one (chat) — their
+  /// photos stay in Storage even when they are not in the shared pool.
+  static Set<String> get sent => _readSet(sentKey);
+
+  /// Whether the short "how sharing works" introduction was seen or closed.
+  static bool get onboardingDone => _read(onboardingKey) == 'true';
+
+  static void finishOnboarding() => _write(onboardingKey, 'true');
+
+  /// "גם אצל השדכנים שלי" on the search of המאגר שלי — the last choice is
+  /// kept as the default.
+  static bool get alsoSearchNetwork => _read(searchNetworkKey) == 'true';
+
+  static set alsoSearchNetwork(bool on) =>
+      _write(searchNetworkKey, on ? 'true' : 'false');
+
+  static void setMode(ShareMode mode) {
+    if (mode != ShareMode.none && since == null) {
+      _write(sinceKey, DateTime.now().toIso8601String());
+    }
+    _write(modeKey, mode.name);
+  }
+
   static void setSelected(Set<String> ids) =>
       _write(selectedKey, jsonEncode(ids.toList()..sort()));
   static void setExcluded(Set<String> ids) =>
       _write(excludedKey, jsonEncode(ids.toList()..sort()));
+
+  static void noteSent(String personId) {
+    final Set<String> ids = sent;
+    if (ids.add(personId)) _write(sentKey, jsonEncode(ids.toList()..sort()));
+  }
+
+  /// Adds [ids] to the share, in one go (the caller asked first — see
+  /// `SharingSettingsScreen.confirmAdding`). Sharing that was off becomes
+  /// "אנשים מסוימים".
+  static void add(Iterable<String> ids) {
+    final Set<String> add = ids.toSet();
+    if (add.isEmpty) return;
+    if (mode == ShareMode.none) setMode(ShareMode.selected);
+    setSelected(selected..addAll(add));
+    final Set<String> out = excluded;
+    if (out.intersection(add).isNotEmpty) setExcluded(out..removeAll(add));
+  }
+
+  /// Takes [person] out of the share: whatever put them in.
+  static void remove(Person person) {
+    final Set<String> picked = selected;
+    if (picked.remove(person.id)) setSelected(picked);
+    if (chosen(person)) setExcluded(excluded..add(person.id));
+  }
+
+  /// Test seam: every choice back to its default, and a start of sharing.
+  @visibleForTesting
+  static void debugReset({DateTime? since}) {
+    for (final String key in <String>[
+      modeKey,
+      selectedKey,
+      excludedKey,
+      sinceKey,
+      sentKey,
+      onboardingKey,
+    ]) {
+      _pending[key] = '';
+    }
+    if (since != null) _pending[sinceKey] = since.toIso8601String();
+    revision.value++;
+  }
 
   /// The account changed the settings box.
   static void forgetCache() {
@@ -159,13 +238,26 @@ abstract final class NetworkSharing {
     return hasText && hasPhoto;
   }
 
-  /// Whether the matchmaker's choice includes [personId].
-  static bool chosen(String personId) => switch (mode) {
-    ShareMode.none => false,
-    ShareMode.all => true,
-    ShareMode.selected => selected.contains(personId),
-    ShareMode.allExcept => !excluded.contains(personId),
-  };
+  /// Whether the matchmaker's choice includes [person]:
+  ///
+  ///  - nothing while sharing is off;
+  ///  - never a friend kept out by hand;
+  ///  - always a friend added by hand;
+  ///  - **a single's own personal card, by default** — the single already
+  ///    said their matchmakers may show it (eligibility checks that), and the
+  ///    matchmaker can still keep it out;
+  ///  - under "שתף הכל", every card added since sharing started ([since]) —
+  ///    never the older ones by themselves.
+  static bool chosen(Person person) {
+    final ShareMode current = mode;
+    if (current == ShareMode.none) return false;
+    if (excluded.contains(person.id)) return false;
+    if (selected.contains(person.id)) return true;
+    if ((person.cardOwnerUid ?? '').isNotEmpty) return true;
+    if (current == ShareMode.selected) return false;
+    final DateTime? start = since;
+    return start == null || !person.createdAt.isBefore(start);
+  }
 
   /// The friends shared right now: chosen and [ShareEligibility.ready].
   static List<Person> sharedNow(
@@ -173,10 +265,37 @@ abstract final class NetworkSharing {
     CardAccess? Function(String ownerUid)? accessTo,
   }) => <Person>[
     for (final Person p in people)
-      if (chosen(p.id) &&
+      if (chosen(p) &&
           eligibilityOf(p, accessTo: accessTo) == ShareEligibility.ready)
         p,
   ];
+
+  /// Complete cards that could join the share and have not.
+  static List<Person> addable(
+    Iterable<Person> people, {
+    CardAccess? Function(String ownerUid)? accessTo,
+  }) => <Person>[
+    for (final Person p in people)
+      if (!chosen(p) &&
+          eligibilityOf(p, accessTo: accessTo) == ShareEligibility.ready)
+        p,
+  ];
+
+  /// Under "שתף הכל": the complete cards from before sharing started, which
+  /// were deliberately not opened by themselves.
+  static List<Person> earlierNotShared(
+    Iterable<Person> people, {
+    CardAccess? Function(String ownerUid)? accessTo,
+  }) {
+    final DateTime? start = since;
+    if (start == null || mode == ShareMode.none || mode == ShareMode.selected) {
+      return const <Person>[];
+    }
+    return <Person>[
+      for (final Person p in addable(people, accessTo: accessTo))
+        if (p.createdAt.isBefore(start) && !excluded.contains(p.id)) p,
+    ];
+  }
 
   static bool _running = false;
   static bool _again = false;
@@ -237,11 +356,15 @@ abstract final class NetworkSharing {
       for (final Person p in sharedNow(people, accessTo: accessTo)) p.id: p,
     };
 
-    // Whatever is no longer chosen, complete or consented leaves first.
+    // Whatever is no longer chosen, complete or consented leaves first. A
+    // card also sent to somebody one by one keeps its photos for them.
+    final Set<String> sentOnes = sent;
     for (final String id in held.keys) {
       if (!desired.containsKey(id)) {
         await col.doc(id).delete();
-        await _deletePhotos(uid, id, keep: const <String>{});
+        if (!sentOnes.contains(id)) {
+          await _deletePhotos(uid, id, keep: const <String>{});
+        }
       }
     }
 
@@ -298,7 +421,9 @@ abstract final class NetworkSharing {
               photoPaths: paths,
             ),
           );
-      await _deletePhotos(uid, person.id, keep: paths.toSet());
+      if (!sentOnes.contains(person.id)) {
+        await _deletePhotos(uid, person.id, keep: paths.toSet());
+      }
       count++;
     }
     publishedCount.value = count;

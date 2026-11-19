@@ -159,7 +159,7 @@ void main() {
         _person('b'),
         _person('c', photos: const <String>[]),
       ];
-      NetworkSharing.setMode(ShareMode.none);
+      NetworkSharing.debugReset(since: DateTime(2026, 10, 1));
       expect(NetworkSharing.sharedNow(people), isEmpty);
       NetworkSharing.setMode(ShareMode.all);
       expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
@@ -172,12 +172,77 @@ void main() {
         'b',
       ]);
       NetworkSharing.setMode(ShareMode.allExcept);
+      NetworkSharing.setSelected(<String>{});
       NetworkSharing.setExcluded(<String>{'a'});
       expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
         'b',
       ]);
-      NetworkSharing.setMode(ShareMode.none);
+      NetworkSharing.debugReset();
     });
+
+    test('cards from before sharing started never open by themselves', () {
+      final List<Person> people = <Person>[_person('a'), _person('b')];
+      NetworkSharing.debugReset();
+      // Sharing starts now; both friends were added on 1.11.
+      NetworkSharing.setMode(ShareMode.all);
+      expect(NetworkSharing.since, isNotNull);
+      expect(NetworkSharing.sharedNow(people), isEmpty);
+      expect(
+        NetworkSharing.earlierNotShared(people).map((Person p) => p.id),
+        <String>['a', 'b'],
+      );
+      // Added by hand, in one go.
+      NetworkSharing.add(<String>['a']);
+      expect(NetworkSharing.sharedNow(people).map((Person p) => p.id), <String>[
+        'a',
+      ]);
+      expect(
+        NetworkSharing.earlierNotShared(people).map((Person p) => p.id),
+        <String>['b'],
+      );
+      // A friend added after sharing started is in at once.
+      final Person fresh = Person(
+        id: 'n',
+        firstName: 'דנה',
+        lastName: 'לוי',
+        gender: Gender.female,
+        createdAt: DateTime.now().add(const Duration(minutes: 1)),
+        updatedAt: DateTime.now(),
+        description: 'כרטיס',
+        photosPaths: const <String>['/photos/n.jpg'],
+      );
+      expect(NetworkSharing.chosen(fresh), isTrue);
+      // Taken out again.
+      NetworkSharing.remove(people.first);
+      expect(NetworkSharing.sharedNow(people), isEmpty);
+      NetworkSharing.debugReset();
+    });
+
+    test(
+      "a single's consented personal card is in by default, unless kept out",
+      () {
+        final Person own = _person('s', cardOwnerUid: 'single');
+        CardAccess? access(String owner) => _row(owner, onward: true);
+        NetworkSharing.debugReset();
+        NetworkSharing.setMode(ShareMode.selected);
+        expect(
+          NetworkSharing.sharedNow(<Person>[own], accessTo: access),
+          hasLength(1),
+        );
+        NetworkSharing.remove(own);
+        expect(NetworkSharing.excluded, contains('s'));
+        expect(
+          NetworkSharing.sharedNow(<Person>[own], accessTo: access),
+          isEmpty,
+        );
+        // Sharing off: nothing, whatever the single said.
+        NetworkSharing.debugReset();
+        expect(
+          NetworkSharing.sharedNow(<Person>[own], accessTo: access),
+          isEmpty,
+        );
+      },
+    );
   });
 
   group('the shared card document', () {
@@ -208,7 +273,7 @@ void main() {
       );
       final String rules = File('firestore.rules').readAsStringSync();
       final String block = rules.substring(
-        rules.indexOf('match /sharedCards/{ownerUid}/cards/{personId}'),
+        rules.indexOf('function sharedCardOk('),
       );
       final String list = block.substring(
         block.indexOf('hasOnly(['),
@@ -239,7 +304,14 @@ void main() {
       expect(pool, hasLength(1));
       expect(pool.single.certain, isTrue);
       expect(pool.single.holders, hasLength(2));
-      expect(pool.single.sourceLabel, 'אצל יונתן ושרה');
+      expect(pool.single.sourceLabel, 'דרך 2 שדכנים');
+    });
+
+    test('one holder is named in full: "דרך יונתן כהן"', () {
+      final List<SharedPoolEntry> pool = SharedPool.build(<SharedCard>[
+        _shared('u1', 'a', ownerName: 'יונתן כהן'),
+      ]);
+      expect(pool.single.sourceLabel, 'דרך יונתן כהן');
     });
 
     test('the same personal card at two matchmakers is one card', () {
@@ -251,14 +323,41 @@ void main() {
       expect(pool.single.certain, isTrue);
     });
 
-    test('a similar name at two matchmakers is joined, but marked unsure', () {
+    test('a similar name at two matchmakers is listed, never joined', () {
       final List<SharedPoolEntry> pool = SharedPool.build(<SharedCard>[
         _shared('u1', 'a'),
         _shared('u2', 'b', first: 'נועא', age: 26, ownerName: 'שרה'),
       ]);
+      expect(pool, hasLength(2));
+      for (final SharedPoolEntry e in pool) {
+        expect(e.heldByMany, isFalse);
+        expect(e.similar, hasLength(1));
+        expect(e.similar.single.ownerUid, isNot(e.primary.ownerUid));
+      }
+    });
+
+    test("a single's own personal card leads over a card typed by hand", () {
+      final List<SharedPoolEntry> pool = SharedPool.build(<SharedCard>[
+        _shared('u1', 'a', phone: '0501111111', first: 'נועה ישן'),
+        _shared(
+          'u2',
+          'b',
+          phone: '0501111111',
+          cardOwnerUid: 's1',
+          ownerName: 'שרה',
+        ),
+      ]);
       expect(pool, hasLength(1));
-      expect(pool.single.certain, isFalse);
-      expect(pool.single.heldByMany, isTrue);
+      expect(pool.single.primary.cardOwnerUid, 's1');
+      expect(pool.single.holders, hasLength(2));
+    });
+
+    test('my own personal card at another matchmaker is not shown to me', () {
+      final List<SharedPoolEntry> pool = SharedPool.build(
+        <SharedCard>[_shared('u1', 'a', cardOwnerUid: 'me')],
+        myCardOwners: <String>{'me'},
+      );
+      expect(pool, isEmpty);
     });
 
     test('never joined: different phones, different ages, one matchmaker', () {
@@ -277,10 +376,7 @@ void main() {
         hasLength(2),
       );
       expect(
-        SharedPool.build(<SharedCard>[
-          _shared('u1', 'a'),
-          _shared('u1', 'b'),
-        ]),
+        SharedPool.build(<SharedCard>[_shared('u1', 'a'), _shared('u1', 'b')]),
         hasLength(2),
       );
     });

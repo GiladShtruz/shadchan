@@ -3,6 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:shadchan/services/matchmaker_connections.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:provider/provider.dart';
+import 'package:shadchan/providers/card_access_provider.dart';
+import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/services/network_sharing.dart';
+import 'package:shadchan/utils/gender_text.dart';
 
 /// "המאגר המשותף" at the head of המאגר שלי: how many cards the connected
 /// matchmakers share, and ideas waiting for an answer — or, with nobody
@@ -20,8 +26,13 @@ class NetworkLink extends StatelessWidget {
         MatchmakerNetwork.cards,
         MatchmakerNetwork.proposals,
         MatchmakerConnections.connections,
+        NetworkSharing.revision,
       ]),
       builder: (BuildContext context, _) {
+        final int mine = NetworkSharing.sharedNow(
+          context.watch<PersonRepository>().getAll(),
+          accessTo: context.watch<CardAccessProvider>().accessTo,
+        ).length;
         final int connected = MatchmakerNetwork.connectedNames.length;
         final int cards = MatchmakerNetwork.cards.value.length;
         final int waiting = MatchmakerNetwork.incomingPending.length;
@@ -34,7 +45,9 @@ class NetworkLink extends StatelessWidget {
             ? (waiting == 1
                   ? 'הצעת רעיון אחת ממתינה לתשובה שלך'
                   : '$waiting הצעות רעיון ממתינות לתשובה שלך')
-            : '$cards כרטיסים מ־$connected שדכנים מחוברים';
+            : '{אתה משתף|את משתפת} $mine כרטיסים · דרך השדכנים שלך פתוחים '
+                      'לך עוד $cards'
+                  .forGender(context.userGender);
         return Material(
           color: dark ? AppColors.surfaceDm : AppColors.cardCream,
           borderRadius: BorderRadius.circular(16),
@@ -90,6 +103,15 @@ class NetworkLink extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (connected > 0)
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: ink,
+                      ),
+                      onPressed: () => context.push('/network/sharing'),
+                      child: const Text('ניהול'),
+                    ),
                   Icon(Icons.chevron_right_rounded, color: ink),
                 ],
               ),

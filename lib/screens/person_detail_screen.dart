@@ -1,3 +1,6 @@
+import 'package:shadchan/screens/network_screen.dart';
+import 'package:shadchan/screens/sharing_settings_screen.dart';
+import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/services/couple_workspace_service.dart';
@@ -476,6 +479,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     person,
                     ProfileStatus.mazelTov,
                   );
+                case 'sendToMatchmaker':
+                  await NetworkActions.sendCard(context, person);
+                case 'shareInNetwork':
+                  if (NetworkSharing.chosen(person)) {
+                    NetworkSharing.remove(person);
+                  } else if (await SharingSettingsScreen.confirmAdding(
+                    context,
+                    count: 1,
+                  )) {
+                    NetworkSharing.add(<String>[person.id]);
+                  }
                 case 'board':
                   HomeBoardActions.toggle(
                     context,
@@ -542,6 +556,33 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     ),
                   ),
                 const PopupMenuDivider(),
+                // One card to one matchmaker (chat or WhatsApp), and whether
+                // it is in the share with every connected matchmaker.
+                const PopupMenuItem<String>(
+                  value: 'sendToMatchmaker',
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.send_outlined),
+                      SizedBox(width: 10),
+                      Text('שליחה לשדכן/ית'),
+                    ],
+                  ),
+                ),
+                if (NetworkSharing.isComplete(person))
+                  PopupMenuItem<String>(
+                    value: 'shareInNetwork',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.diversity_3_outlined),
+                        const SizedBox(width: 10),
+                        Text(
+                          NetworkSharing.chosen(person)
+                              ? 'הוצאה מהשיתוף עם שדכנים'
+                              : 'הוספה לשיתוף עם שדכנים',
+                        ),
+                      ],
+                    ),
+                  ),
                 PopupMenuItem<String>(
                   value: 'board',
                   height: HomeBoardActions.menuItemHeight,
