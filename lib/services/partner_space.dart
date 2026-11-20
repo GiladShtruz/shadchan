@@ -208,6 +208,7 @@ abstract final class PartnerSpace {
     _cardsSub = null;
     _cardsOf = null;
     _uid = null;
+    _lastPrint = null;
     current.value = null;
     partnerCards.value = const <SharedCard>[];
     partnerCardsLoaded.value = false;
@@ -308,7 +309,10 @@ abstract final class PartnerSpace {
       'status': 'ended',
       'endedAt': FieldValue.serverTimestamp(),
     });
-    if (ok) unawaited(_takeDownMine());
+    if (ok) {
+      _lastPrint = null;
+      unawaited(_takeDownMine());
+    }
     return ok;
   }
 
@@ -349,6 +353,11 @@ abstract final class PartnerSpace {
   static bool _running = false;
   static bool _again = false;
 
+  /// What was last published in full, so an unchanged database costs no
+  /// server read at all — the publish runs on every change of the database,
+  /// and most of them do not touch anything the partner sees.
+  static String? _lastPrint;
+
   /// Brings `partnerCards/{uid}/cards` to exactly [publishable], writing only
   /// what changed. Quiet on any failure — the next change tries again.
   static Future<void> publish({
@@ -379,6 +388,12 @@ abstract final class PartnerSpace {
   ) async {
     final String? me = _uid;
     if (me == null) return;
+    final List<Person> shown = publishable(people);
+    final String print =
+        '${partnerUid ?? ''}|${jsonEncode(<Object?>[
+          for (final Person p in shown) <Object?>[p.id, SharedCardCodec.values(p, ownerUid: me, ownerName: ownerName), CardPhotoPrivacy.shareable(p).take(maxPhotos).map(PhotoPickerService.basenameOf).toList()],
+        ])}';
+    if (print == _lastPrint) return;
     final CollectionReference<Map<String, dynamic>> col = FirebaseFirestore
         .instance
         .collection('partnerCards')
@@ -394,7 +409,7 @@ abstract final class PartnerSpace {
             d.id: d.data(),
         };
     final Map<String, Person> desired = <String, Person>{
-      for (final Person p in publishable(people)) p.id: p,
+      for (final Person p in shown) p.id: p,
     };
     for (final String id in held.keys) {
       if (!desired.containsKey(id)) {
@@ -444,6 +459,7 @@ abstract final class PartnerSpace {
         await _deletePhotos(me, person.id, keep: paths.toSet());
       }
     }
+    _lastPrint = print;
   }
 
   static bool _sameValues(
