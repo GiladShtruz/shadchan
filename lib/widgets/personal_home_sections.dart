@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shadchan/utils/avatar_image.dart';
 
 import 'package:flutter/material.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -175,7 +176,9 @@ class MatchmakerFace extends StatelessWidget {
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.softBlue,
-      foregroundImage: hasPhoto ? NetworkImage(photo) : null,
+      foregroundImage: hasPhoto
+          ? avatarImage(context, photo, diameter: radius * 2)
+          : null,
       child: Text(
         initial,
         style: theme.textTheme.titleMedium?.copyWith(

@@ -92,6 +92,12 @@ abstract final class OfflineCache {
 
   static void saveVerifiedCardOwners(Iterable<String> owners) {
     final List<String> sorted = owners.toSet().toList()..sort();
+    final Set<String>? before = _owners;
+    if (before != null &&
+        before.length == sorted.length &&
+        before.containsAll(sorted)) {
+      return;
+    }
     _owners = sorted.toSet();
     write(_cardOwnersKey, <String, Object?>{'owners': sorted});
   }

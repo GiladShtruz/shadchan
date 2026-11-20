@@ -85,4 +85,22 @@ void main() {
       expect(line, isNot(contains('...')));
     }
   });
+
+  test('the action list: who first, then one short line', () {
+    expect(HomeActionLines.couple(male: yossi, female: noa), 'נועה × יוסי');
+    expect(
+      HomeActionLines.ideaNext(MatchStage.newIdea, male: yossi, female: noa),
+      'לשאול את יוסי מה דעתו',
+    );
+    expect(
+      HomeActionLines.ideaNext(MatchStage.askedMale, male: yossi, female: noa),
+      'מחכים לתשובה מיוסי',
+    );
+    expect(
+      HomeActionLines.pair(male: yossi, female: noa),
+      'רעיון מהמאגר: נועה × יוסי',
+    );
+    expect(HomeActionLines.pairNext(Gender.female), 'נראה מתאים? פתחי רעיון');
+    expect(HomeActionLines.personNext(noa), 'לבדוק מה חדש אצלה');
+  });
 }

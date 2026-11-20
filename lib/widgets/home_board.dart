@@ -190,6 +190,14 @@ T? _maybeWatch<T>(BuildContext context) {
   }
 }
 
+T? _maybeRead<T>(BuildContext context) {
+  try {
+    return Provider.of<T>(context, listen: false);
+  } on ProviderNotFoundException {
+    return null;
+  }
+}
+
 class _HomeBoardSectionState extends State<HomeBoardSection> {
   /// How many whole rows the window shows before it scrolls; half a row more
   /// peeks out under them, so the list plainly goes on.
@@ -1455,8 +1463,10 @@ class _BoardRow extends StatelessWidget {
   final bool flat;
 
   /// A single face, and each of a couple's two.
-  double get _r => flat ? 22 : 18;
-  double get _r2 => flat ? 17 : 15;
+  double get _r => flat ? 24 : 18;
+  // A little larger on the action list: two faces side by side are what
+  // say which couple a row is about, before its words do.
+  double get _r2 => flat ? 21 : 15;
   final PersonRepository personRepository;
   final MatchRepository matchRepository;
 
@@ -1521,6 +1531,7 @@ class _BoardRow extends StatelessWidget {
         title: title,
         startAccent: startAccent,
         subtitle: subtitle,
+        mark: mark,
         fresh: item.fresh,
         onTap: onTap,
         onLongPress: (BuildContext anchor) => _MenuButton.open(anchor, menu),
@@ -1663,12 +1674,13 @@ class _BoardRow extends StatelessWidget {
         return _row(
           context,
           leading: HomeCardAvatar(person: person, radius: _r),
-          title: wrote ? reminder : HomeActionPhrases.personReminder(person),
+          title: person.fullName.trim(),
           subtitle: hasNote
               ? note
               : wrote
-              ? 'תזכורת · ${person.fullName.trim()}'
-              : null,
+              ? reminder
+              : HomeActionLines.personNext(person),
+          mark: Icons.notifications_none_rounded,
           startAccent: AppColors.genderAccent(person.gender, dark: dark),
           onTap: () {
             _seen();
@@ -1712,16 +1724,9 @@ class _BoardRow extends StatelessWidget {
           reminder != null &&
           reminder.isNotEmpty &&
           reminder != MatchRepository.defaultReminderNote;
-      final String title = wrote
-          ? reminder
-          : reminder != null || step == null
-          ? HomeActionPhrases.ideaReminder(
-              status: match.status,
-              step: step,
-              male: male,
-              female: female,
-            )
-          : HomeActionPhrases.ideaStep(step, male: male, female: female);
+      // Who first — "הודיה × אבי" — then one short line of what to do: the
+      // matchmaker's own words, else how long it has been quiet, else the
+      // step it waits on.
       return _row(
         context,
         leading: HomeCardCoupleAvatars(
@@ -1729,12 +1734,20 @@ class _BoardRow extends StatelessWidget {
           personB: female,
           radius: _r2,
         ),
-        title: title,
+        title: HomeActionLines.couple(male: male, female: female),
         subtitle: hasNote
             ? note
             : wrote
-            ? 'תזכורת · ${_firstName(male)} ו${_firstName(female)}'
-            : MatchStaleness.shortNudge(match),
+            ? reminder
+            : MatchStaleness.shortNudge(match) ??
+                  HomeActionLines.ideaNext(
+                    MatchStage.of(match),
+                    male: male,
+                    female: female,
+                  ),
+        mark: reminder != null
+            ? Icons.notifications_none_rounded
+            : Icons.lightbulb_outline_rounded,
         startAccent: AppColors.genderAccent(Gender.male, dark: dark),
         endAccent: AppColors.genderAccent(Gender.female, dark: dark),
         onTap: () {
@@ -1779,8 +1792,8 @@ class _BoardRow extends StatelessWidget {
       context,
       leading: HomeCardAvatar(person: person, radius: _r),
       // On the action list the line is the action itself.
-      title: flat ? (item.line ?? '') : person.fullName.trim(),
-      subtitle: flat ? null : item.line,
+      title: person.fullName.trim(),
+      subtitle: flat ? HomeActionLines.cardFriendNext(person) : item.line,
       mark: Icons.badge_outlined,
       startAccent: AppColors.genderAccent(person.gender, dark: dark),
       onTap: () {
@@ -1960,10 +1973,13 @@ class _BoardRow extends StatelessWidget {
         radius: _r2,
       ),
       title: flat
-          ? HomeActionPhrases.pair(male: pair.male, female: pair.female)
+          ? HomeActionLines.pair(male: pair.male, female: pair.female)
           : '${_firstName(pair.male)} & ${_firstName(pair.female)}',
+      mark: Icons.auto_awesome_outlined,
       subtitle: flat
-          ? (pair.reasons.isEmpty ? null : pair.reasons.join(' · '))
+          ? HomeActionLines.pairNext(
+              _maybeRead<UserProfileProvider>(context)?.gender,
+            )
           : pair.reasons.isEmpty
           ? 'רעיון שהמאגר מציע לך'
           : 'הצעה מהמאגר · ${pair.reasons.join(' · ')}',

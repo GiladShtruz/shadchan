@@ -20,9 +20,19 @@ class HomeProgress {
     this.count,
     this.goal,
     this.unit,
+    this.subline,
+    this.rankIdeas,
   });
 
   final String line;
+
+  /// The small line under the scale — "עוד 81 רעיונות לשדכן בכיר 🏆" — or
+  /// null when the line already says it.
+  final String? subline;
+
+  /// Set for the rank version: the ideas opened, so a tap can open the
+  /// ladder.
+  final int? rankIdeas;
 
   /// Between 0 and 1, for the scale under the line.
   final double progress;
@@ -45,6 +55,8 @@ class HomeProgress {
   }
 
   /// The milestone version, for a database under a hundred.
+  ///
+  /// "73/100 חברים במאגר · עוד 27 ליעד הבא", over a scale of 73 out of 100.
   static HomeProgress milestone(int friends) {
     final HomeMilestone m = HomeMilestone.forCount(friends);
     final int? target = m.target;
@@ -52,10 +64,9 @@ class HomeProgress {
       return HomeProgress(line: friendsLine(friends), progress: 1);
     }
     final int missing = target - friends;
-    final String more = missing == 1 ? 'עוד חבר אחד' : 'עוד $missing חברים';
     return HomeProgress(
-      line: '$more ליעד הבא – $target',
-      progress: m.progress,
+      line: '$friends/$target חברים במאגר · עוד $missing ליעד הבא',
+      progress: (friends / target).clamp(0.0, 1.0),
       count: friends,
       goal: target,
       unit: 'חברים',
@@ -108,20 +119,28 @@ class HomeProgress {
   ///
   /// The scale is ideas opened out of the next rank's figure — the same two
   /// numbers "43 מתוך 50 רעיונות" prints beside it.
+  ///
+  /// "🏆 שדכן מקצוען · 219/300 רעיונות", a thin scale of 219 out of 300, and
+  /// under it "עוד 81 רעיונות לשדכן בכיר 🏆".
   static HomeProgress rank({required int ideas, Gender? gender}) {
+    final String title = MatchmakerRanks.titleAt(ideas, gender);
     final MatchmakerRank? to = MatchmakerRanks.next(ideas);
     if (to == null) {
       return HomeProgress(
-        line: MatchmakerRanks.progressLine(ideas, gender),
+        line: '$title · $ideas רעיונות',
+        subline: MatchmakerRanks.progressLine(ideas, gender),
         progress: 1,
+        rankIdeas: ideas,
       );
     }
     return HomeProgress(
-      line: MatchmakerRanks.progressLine(ideas, gender),
-      progress: (ideas / to.ideas).clamp(0.0, 1.0),
+      line: '$title · $ideas/${to.ideas} רעיונות',
+      subline: MatchmakerRanks.progressLine(ideas, gender),
+      progress: MatchmakerRanks.progress(ideas),
       count: ideas,
       goal: to.ideas,
       unit: 'רעיונות',
+      rankIdeas: ideas,
     );
   }
 

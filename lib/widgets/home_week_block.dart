@@ -429,53 +429,43 @@ class _ChallengeBar extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: challenge.progress),
-            duration: const Duration(milliseconds: 650),
-            curve: Curves.easeOutCubic,
-            builder: (BuildContext context, double value, _) {
-              return LinearProgressIndicator(
-                value: value,
-                minHeight: 9,
-                backgroundColor: dark
-                    ? AppColors.dividerDm
-                    : AppColors.primaryLight,
-                valueColor: AlwaysStoppedAnimation<Color>(fill),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 6),
-        // Both halves give way: at 1.5x text neither may push the other off.
+        // The bar and where it stands, on one line: "6/10 רעיונות".
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Flexible(
-              flex: 4,
-              child: Text(
-                challenge.progressLabel,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  height: 1.4,
-                  color: fill,
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: challenge.progress),
+                  duration: const Duration(milliseconds: 650),
+                  curve: Curves.easeOutCubic,
+                  builder: (BuildContext context, double value, _) {
+                    return LinearProgressIndicator(
+                      value: value,
+                      minHeight: 7,
+                      backgroundColor: dark
+                          ? AppColors.dividerDm
+                          : AppColors.primaryLight,
+                      valueColor: AlwaysStoppedAnimation<Color>(fill),
+                    );
+                  },
                 ),
               ),
             ),
-            if (lastWeek != null) ...<Widget>[
-              const SizedBox(width: 10),
-              Flexible(
-                flex: 5,
-                child: Text(
-                  lastWeek,
-                  textAlign: TextAlign.end,
-                  style: theme.textTheme.labelSmall?.copyWith(height: 1.4),
-                ),
+            const SizedBox(width: 10),
+            Text(
+              challenge.progressLabel,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: fill,
               ),
-            ],
+            ),
           ],
         ),
+        if (lastWeek != null) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(lastWeek, style: theme.textTheme.labelSmall),
+        ],
       ],
     );
   }

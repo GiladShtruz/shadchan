@@ -724,7 +724,7 @@ void main() {
   );
 
   testWidgets(
-    'home: "החברים שלך בשדכן" shows approved full cards as suggestion cards, on a narrow phone with large text',
+    'home: "החברים שלך במאגר" shows full cards with a photo as suggestion cards, on a narrow phone with large text',
     (tester) async {
       final DateTime now = DateTime.now();
       final String photo = '${directory.path}/dana.jpg';
@@ -791,6 +791,7 @@ void main() {
       expect(find.text(HomeCardFriendsSection.title), findsOneWidget);
       expect(find.text('דנה כהן'), findsOneWidget);
       expect(find.text('התאמות'), findsOneWidget);
+      expect(find.text(HomeCardFriendsSection.cardOwnersLink), findsOneWidget);
       // No photo on the device: not drawn.
       expect(find.text('טל לוי'), findsNothing);
       // נועה keeps a card and has not given access: not in the row.

@@ -156,7 +156,11 @@ void main() {
       expect(behind.subline, contains('בשבוע שעבר הגענו ל־80'));
       expect(behind.beatsRecord, isFalse);
       expect(behind.progress, closeTo(20 / 90, 0.001));
-      expect(behind.headline, 'בשבוע שעבר הגענו ל־80, השבוע מגיעים ל־90');
+      expect(
+        behind.headline,
+        'שבוע שעבר הגענו ל־80 רעיונות. השבוע היעד הוא 90 — שוברים את השיא.',
+      );
+      expect(behind.progressLabel, '20/90 רעיונות');
 
       final CommunityChallenge ahead = CommunityChallenge(
         metric: ChallengeMetric.ideas,
@@ -169,6 +173,16 @@ void main() {
       // A bar cannot be more than full.
       expect(ahead.progress, 1);
       expect(ahead.subline, contains('שברנו את השיא'));
+      expect(ahead.headline, contains('כבר שברנו את השיא'));
+      // A record above the shared target: the aim is raised past it.
+      const CommunityChallenge high = CommunityChallenge(
+        metric: ChallengeMetric.ideas,
+        target: 100,
+        current: 6,
+        record: 128,
+      );
+      expect(high.aim, 150);
+      expect(high.headline, contains('השבוע היעד הוא 150'));
     });
 
     test('claims no record when this device never saw last week', () {

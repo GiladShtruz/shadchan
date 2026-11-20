@@ -100,6 +100,15 @@ class PersonRepository extends ChangeNotifier {
   }
 
   void setVerifiedCardOwners(Set<String> owners) {
+    // Called on every snapshot of the access rows, metadata-only ones
+    // included. Notifying when the set did not move redrew every screen that
+    // shows a friend, many times a minute (stutter, 2026-11-20).
+    final Set<String>? current = _verifiedCardOwners;
+    if (current != null &&
+        current.length == owners.length &&
+        current.containsAll(owners)) {
+      return;
+    }
     _verifiedCardOwners = Set<String>.from(owners);
     notifyListeners();
   }

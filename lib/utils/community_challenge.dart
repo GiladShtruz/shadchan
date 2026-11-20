@@ -159,9 +159,11 @@ class CommunityChallenge {
     if (title.isNotEmpty) return title;
     final int? last = record;
     if (last != null && last > 0) {
-      return 'בשבוע שעבר הגענו ל־$last, השבוע מגיעים ל־$aim';
+      final String reached = 'שבוע שעבר הגענו ל־$last ${metric.shortNoun}.';
+      if (beatsRecord) return '$reached השבוע כבר שברנו את השיא! 🎉';
+      return '$reached השבוע היעד הוא $aim — שוברים את השיא.';
     }
-    return 'השבוע מנסים להגיע יחד ל־$aim ${metric.targetNoun}';
+    return 'השבוע היעד הוא $aim ${metric.shortNoun}.';
   }
 
   /// The one figure this week is measured against — in the headline, in the
@@ -179,7 +181,7 @@ class CommunityChallenge {
   /// that is not above last week's.
   int get recordTarget {
     final int last = record ?? 0;
-    return target > last ? target : last + 1;
+    return target > last ? target : CommunityChallenge.targetFor(metric, last);
   }
 
   /// The line under it: what happened last week, or — with nothing to compare
@@ -210,7 +212,7 @@ class CommunityChallenge {
   bool get beatsRecord => record != null && record! > 0 && current > record!;
 
   /// "43 מתוך 100 רעיונות".
-  String get progressLabel => '$current מתוך $aim ${metric.shortNoun}';
+  String get progressLabel => '$current/$aim ${metric.shortNoun}';
 
   /// "בשבוע שעבר: 120 רעיונות" — the compact line beside the bar, or null
   /// when this device saw no completed week.
@@ -234,7 +236,9 @@ class CommunityChallenge {
     final WeeklyCommunityGoal? configured = goal != null && goal.isValid
         ? goal
         : null;
-    final ChallengeMetric metric = configured?.metric ?? metricFor(weekKey);
+    // Without an administrator's goal the week is about ideas: the figure
+    // the home page measures ("שבוע שעבר הגענו ל־X רעיונות").
+    final ChallengeMetric metric = configured?.metric ?? ChallengeMetric.ideas;
     final int? record = metric.valueInSnapshot(previousWeek);
     return CommunityChallenge(
       metric: metric,

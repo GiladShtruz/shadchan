@@ -110,10 +110,13 @@ void main() {
       current: 40,
       record: 120,
     );
-    expect(seen.headline, 'בשבוע שעבר הגענו ל־120, השבוע מגיעים ל־121');
+    expect(
+      seen.headline,
+      'שבוע שעבר הגענו ל־120 רעיונות. השבוע היעד הוא 140 — שוברים את השיא.',
+    );
     // The bar is measured against the same figure the headline names.
-    expect(seen.progressLabel, '40 מתוך 121 רעיונות');
-    expect(seen.progress, closeTo(40 / 121, 0.001));
+    expect(seen.progressLabel, '40/140 רעיונות');
+    expect(seen.progress, closeTo(40 / 140, 0.001));
     expect(seen.lastWeekLabel, isNull);
     const CommunityChallenge titled = CommunityChallenge(
       metric: ChallengeMetric.ideas,
@@ -226,7 +229,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 700));
       expect(find.text('יחד פותחים רעיונות'), findsOneWidget);
-      expect(find.text('6 מתוך 20 רעיונות'), findsOneWidget);
+      expect(find.text('6/20 רעיונות'), findsOneWidget);
       expect(
         tester
             .widget<LinearProgressIndicator>(
@@ -246,7 +249,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 700));
       expect(find.text('מגדילים את המעגל'), findsOneWidget);
-      expect(find.text('4 מתוך 40 חברים'), findsOneWidget);
+      expect(find.text('4/40 חברים'), findsOneWidget);
       expect(find.text('יחד פותחים רעיונות'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       unawaited(goals.close());

@@ -156,77 +156,87 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
           appBar: AppBar(
             title: const Text('הוספת אנשי קשר'),
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(56),
+              preferredSize: const Size.fromHeight(56 + _OtherWays.height),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: SegmentedButton<_AddContactsMode>(
-                  style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.resolveWith<Color?>((
-                      Set<WidgetState> states,
-                    ) {
-                      if (states.contains(WidgetState.selected)) {
-                        return selectedBackground;
-                      }
-                      return unselectedBackground;
-                    }),
-                    foregroundColor: WidgetStateProperty.resolveWith<Color?>((
-                      Set<WidgetState> states,
-                    ) {
-                      if (states.contains(WidgetState.selected)) {
-                        return selectedForeground;
-                      }
-                      return unselectedForeground;
-                    }),
-                    iconColor: WidgetStateProperty.resolveWith<Color?>((
-                      Set<WidgetState> states,
-                    ) {
-                      if (states.contains(WidgetState.selected)) {
-                        return selectedForeground;
-                      }
-                      return unselectedForeground;
-                    }),
-                    side: WidgetStateProperty.resolveWith<BorderSide?>((
-                      Set<WidgetState> states,
-                    ) {
-                      if (states.contains(WidgetState.selected)) {
-                        return BorderSide(
-                          color: selectedForeground,
-                          width: 1.2,
-                        );
-                      }
-                      return BorderSide(
-                        color: unselectedForeground.withValues(alpha: 0.45),
-                      );
-                    }),
-                    textStyle: WidgetStatePropertyAll<TextStyle?>(
-                      theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    // The other two ways in, one tap away — the contacts
+                    // below are the default, not the only way.
+                    const _OtherWays(),
+                    SegmentedButton<_AddContactsMode>(
+                      style: ButtonStyle(
+                        backgroundColor:
+                            WidgetStateProperty.resolveWith<Color?>((
+                              Set<WidgetState> states,
+                            ) {
+                              if (states.contains(WidgetState.selected)) {
+                                return selectedBackground;
+                              }
+                              return unselectedBackground;
+                            }),
+                        foregroundColor:
+                            WidgetStateProperty.resolveWith<Color?>((
+                              Set<WidgetState> states,
+                            ) {
+                              if (states.contains(WidgetState.selected)) {
+                                return selectedForeground;
+                              }
+                              return unselectedForeground;
+                            }),
+                        iconColor: WidgetStateProperty.resolveWith<Color?>((
+                          Set<WidgetState> states,
+                        ) {
+                          if (states.contains(WidgetState.selected)) {
+                            return selectedForeground;
+                          }
+                          return unselectedForeground;
+                        }),
+                        side: WidgetStateProperty.resolveWith<BorderSide?>((
+                          Set<WidgetState> states,
+                        ) {
+                          if (states.contains(WidgetState.selected)) {
+                            return BorderSide(
+                              color: selectedForeground,
+                              width: 1.2,
+                            );
+                          }
+                          return BorderSide(
+                            color: unselectedForeground.withValues(alpha: 0.45),
+                          );
+                        }),
+                        textStyle: WidgetStatePropertyAll<TextStyle?>(
+                          theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  // The default view is named first.
-                  segments: const <ButtonSegment<_AddContactsMode>>[
-                    ButtonSegment<_AddContactsMode>(
-                      value: _AddContactsMode.list,
-                      icon: Icon(Icons.view_list),
-                      label: Text('רשימה'),
-                    ),
-                    ButtonSegment<_AddContactsMode>(
-                      value: _AddContactsMode.swipe,
-                      icon: Icon(Icons.style),
-                      label: Text('החלקה'),
+                      // The default view is named first.
+                      segments: const <ButtonSegment<_AddContactsMode>>[
+                        ButtonSegment<_AddContactsMode>(
+                          value: _AddContactsMode.list,
+                          icon: Icon(Icons.view_list),
+                          label: Text('רשימה'),
+                        ),
+                        ButtonSegment<_AddContactsMode>(
+                          value: _AddContactsMode.swipe,
+                          icon: Icon(Icons.style),
+                          label: Text('החלקה'),
+                        ),
+                      ],
+                      selected: <_AddContactsMode>{_mode},
+                      onSelectionChanged: (Set<_AddContactsMode> selection) {
+                        final _AddContactsMode next = selection.first;
+                        setState(() {
+                          _mode = next;
+                          if (next == _AddContactsMode.list) {
+                            _listMounted = true;
+                          }
+                        });
+                      },
                     ),
                   ],
-                  selected: <_AddContactsMode>{_mode},
-                  onSelectionChanged: (Set<_AddContactsMode> selection) {
-                    final _AddContactsMode next = selection.first;
-                    setState(() {
-                      _mode = next;
-                      if (next == _AddContactsMode.list) {
-                        _listMounted = true;
-                      }
-                    });
-                  },
                 ),
               ),
             ),
@@ -251,6 +261,51 @@ class _AddContactsScreenState extends State<AddContactsScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "הוספה ידנית" | "הוספה מרוכזת באמצעות AI", at the top of the page.
+class _OtherWays extends StatelessWidget {
+  const _OtherWays();
+
+  static const double height = 50;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ButtonStyle style = OutlinedButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      textStyle: theme.textTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w800,
+      ),
+    );
+    Widget button(IconData icon, String label, String route) => Expanded(
+      child: OutlinedButton.icon(
+        style: style,
+        onPressed: () => context.push(route),
+        icon: Icon(icon, size: 18),
+        label: FittedBox(fit: BoxFit.scaleDown, child: Text(label)),
+      ),
+    );
+    return SizedBox(
+      height: height,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          children: <Widget>[
+            button(Icons.edit_note_rounded, 'הוספה ידנית', '/people/add'),
+            const SizedBox(width: 8),
+            button(
+              Icons.auto_awesome_outlined,
+              'הוספה מרוכזת באמצעות AI',
+              '/people/ai',
+            ),
+          ],
         ),
       ),
     );

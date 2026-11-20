@@ -76,3 +76,51 @@ abstract final class HomeActionPhrases {
               'לחשוב {לו|לה} על רעיון'
           .forGender(_g(person));
 }
+
+/// The action list's rows: who it is about first ("הודיה × אבי"), and under
+/// it one short grey line of what to do ("לשאול את אבי מה דעתו"). Short
+/// enough to fit one line on a narrow phone — never cut with "…".
+abstract final class HomeActionLines {
+  static String _first(Person? person, String fallback) =>
+      HomeActionPhrases._first(person, fallback);
+
+  /// "הודיה × אבי" — the woman first, as a couple is said aloud.
+  static String couple({Person? male, Person? female}) =>
+      '${_first(female, 'הבחורה')} × ${_first(male, 'הבחור')}';
+
+  /// What to do next with an open idea, by where it stands.
+  static String ideaNext(MatchStage stage, {Person? male, Person? female}) {
+    final String him = _first(male, 'הבחור');
+    final String her = _first(female, 'הבחורה');
+    switch (stage) {
+      case MatchStage.newIdea:
+        return 'לשאול את $him מה דעתו';
+      case MatchStage.askedMale:
+        return 'מחכים לתשובה מ$him';
+      case MatchStage.askedFemale:
+        return 'מחכים לתשובה מ$her';
+      case MatchStage.askedBoth:
+        return 'מחכים לתשובה משניהם';
+      case MatchStage.dating:
+        return 'לשאול את $him אם להמשיך';
+    }
+  }
+
+  /// "רעיון מהמאגר: נועה × איתמר".
+  static String pair({required Person male, required Person female}) =>
+      'רעיון מהמאגר: ${couple(male: male, female: female)}';
+
+  /// "נראה מתאים? פתח רעיון".
+  static String pairNext(Gender? matchmaker) =>
+      'נראה מתאים? {פתח|פתחי} רעיון'.forGender(matchmaker);
+
+  /// A friend reminder with no words of the matchmaker's own.
+  static String personNext(Person person) =>
+      'לבדוק מה {חדש אצלו|חדש אצלה}'.forGender(HomeActionPhrases._g(person));
+
+  /// A friend whose personal card arrived, with no idea yet.
+  static String cardFriendNext(Person person) =>
+      '{הוסיף|הוסיפה} כרטיס אישי · לחשוב {לו|לה} על רעיון'.forGender(
+        HomeActionPhrases._g(person),
+      );
+}

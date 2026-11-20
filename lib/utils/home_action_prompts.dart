@@ -62,43 +62,37 @@ abstract final class HomeActionPrompts {
         HomeActionPrompt(
           kind: HomeActionPromptKind.askCardFriends,
           title: cardFriendsToAsk == 1
-              ? g('חבר אחד שלך מנהל כרטיס אישי · {בקש|בקשי} גישה')
-              : g(
-                  '$cardFriendsToAsk חברים שלך מנהלים כרטיס אישי · '
-                  '{בקש|בקשי} גישה',
-                ),
-          subtitle: 'הכרטיס יתעדכן אצלך מעצמו',
+              ? 'חבר אחד שלך מנהל כרטיס אישי'
+              : '$cardFriendsToAsk חברים שלך מנהלים כרטיס אישי',
+          subtitle: g('{בקש|בקשי} גישה לכרטיס'),
         ),
       if (!hasPhoto)
         HomeActionPrompt(
           kind: HomeActionPromptKind.addPhoto,
-          title: g('{הוסף|הוסיפי} תמונת פרופיל'),
-          subtitle: 'כך חברים ושדכנים יזהו אותך',
+          title: 'עוד אין לך תמונת פרופיל',
+          subtitle: g('{הוסף|הוסיפי} תמונה'),
         ),
       if (hasFriends && friendsWithoutCard > 0)
         HomeActionPrompt(
           kind: HomeActionPromptKind.inviteFriends,
           title: friendsWithoutCard == 1
-              ? g('חבר אחד שלך עדיין בלי כרטיס אישי · {הזמן|הזמיני} אותו')
-              : g(
-                  '$friendsWithoutCard חברים שלך עדיין בלי כרטיס אישי · '
-                  '{הזמן|הזמיני} אותם',
-                ),
-          subtitle: 'כרטיס אישי מתעדכן אצלך מעצמו',
+              ? 'חבר אחד עדיין בלי כרטיס אישי'
+              : '$friendsWithoutCard חברים עדיין בלי כרטיס אישי',
+          subtitle: friendsWithoutCard == 1
+              ? g('{שלח|שלחי} לו הזמנה')
+              : g('{שלח|שלחי} להם הזמנה'),
         ),
       if (connectedMatchmakers < fewConnections)
         HomeActionPrompt(
           kind: HomeActionPromptKind.connectMatchmakers,
-          title: g(
-            '{התחבר|התחברי} לשדכנים נוספים ו{בקש|בקשי} גישה למאגרים שלהם',
-          ),
-          subtitle: 'שדכנים מאנשי הקשר שלך',
+          title: 'שדכנים מאנשי הקשר שלך',
+          subtitle: g('{התחבר|התחברי} אליהם'),
         ),
       if (!hasAbout)
         HomeActionPrompt(
           kind: HomeActionPromptKind.completeProfile,
-          title: g('{כתוב|כתבי} משפט קצר עליך'),
-          subtitle: 'מופיע בפרופיל שלך לשדכנים אחרים',
+          title: 'משפט קצר עליך',
+          subtitle: g('{כתוב|כתבי} כמה מילים לפרופיל'),
         ),
     ];
   }

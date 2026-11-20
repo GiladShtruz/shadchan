@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shadchan/utils/avatar_image.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +28,8 @@ import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/services/matchmaker_network.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/widgets/network_onboarding.dart';
+import 'package:shadchan/widgets/accent_stripe.dart';
+import 'package:shadchan/utils/screen_perf.dart';
 
 /// The groups of "שדכנים שאני מכיר", read from the two live sources.
 KnownMatchmakerGroups _groups(BuildContext context, {bool listen = true}) {
@@ -68,13 +71,44 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
   ContactsPermissionState? _permission;
   bool _scanning = false;
 
+  /// The performance log of this visit (`PERF known-matchmakers …`).
+  late final CardAccessProvider _access = context.read<CardAccessProvider>();
+  late final ScreenPerf _perf = ScreenPerf(
+    'known-matchmakers',
+    listeners: () =>
+        _access.listenerCount +
+        MatchmakerConnections.listenerCount +
+        MatchmakerNetwork.listenerCount,
+  );
+
+  /// The grouping, kept until one of its inputs actually changed. It used to
+  /// be recomputed — sorting and matching every helper against every
+  /// connection — on every notification of every provider the page watched.
+  KnownMatchmakerGroups? _groups;
+  Object? _groupsKey;
+
+  /// Cards each connected matchmaker shares with me, counted once per pool
+  /// change rather than once per row per build.
+  Map<String, int> _sharesByOwner = const <String, int>{};
+  List<SharedCard>? _sharesFrom;
+
   @override
   void initState() {
     super.initState();
+    _perf; // Starts the clock.
     WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
   }
 
+  @override
+  void dispose() {
+    _perf.leave();
+    super.dispose();
+  }
+
   Future<void> _connect() async {
+    // The services are app-wide and already running (CloudSyncScheduler
+    // starts them). These calls are no-ops then; they only matter when the
+    // page is opened before Firebase finished starting.
     if (FirebaseBootstrap.isReady) {
       unawaited(MatchmakerConnections.start());
       unawaited(MatchmakerNetwork.start());
@@ -89,8 +123,10 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
     if (!mounted) return;
     setState(() => _permission = state);
     if (state == ContactsPermissionState.granted) {
-      // Never prompts: refreshes an address book this phone may already read,
-      // at most once a day unless something changed.
+      // Never prompts, and at most once in half an hour: the whole address
+      // book is read and hashed (off the UI thread), so it is not repeated
+      // on every visit.
+      _perf.read();
       unawaited(ContactHashUpload.run());
     }
   }
@@ -106,9 +142,42 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
     setState(() => _permission = state);
     if (state == ContactsPermissionState.granted) {
       setState(() => _scanning = true);
+      _perf.read();
       await ContactHashUpload.run(force: true);
       if (mounted) setState(() => _scanning = false);
     }
+  }
+
+  KnownMatchmakerGroups _groupsFor(CardAccessProvider access) {
+    final Object key = Object.hash(
+      access.helpersRevision,
+      identityHashCode(MatchmakerConnections.connections.value),
+      identityHashCode(ContactHashUpload.contactNames.value),
+      MatchmakerConnections.uid ?? access.uid,
+    );
+    if (key != _groupsKey || _groups == null) {
+      _groupsKey = key;
+      _groups = KnownMatchmakers.build(
+        me: MatchmakerConnections.uid ?? access.uid,
+        helpers: access.knownHelpers,
+        connections: MatchmakerConnections.connections.value,
+        nameOf: (CardHelper h) => ContactHashUpload.nameFor(h.phoneHash),
+      );
+    }
+    return _groups!;
+  }
+
+  Map<String, int> _shares() {
+    final List<SharedCard> pool = MatchmakerNetwork.cards.value;
+    if (!identical(pool, _sharesFrom)) {
+      _sharesFrom = pool;
+      final Map<String, int> counts = <String, int>{};
+      for (final SharedCard c in pool) {
+        counts[c.ownerUid] = (counts[c.ownerUid] ?? 0) + 1;
+      }
+      _sharesByOwner = counts;
+    }
+    return _sharesByOwner;
   }
 
   @override
@@ -126,106 +195,130 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
   }
 
   Widget _build(BuildContext context) {
+    _perf.build();
     final ThemeData theme = Theme.of(context);
-    final CardAccessProvider access = context.watch<CardAccessProvider>();
-    final UserProfileProvider profile = context.watch<UserProfileProvider>();
-    final KnownMatchmakerGroups groups = _groups(context);
+    // Only what the list needs: the helpers' revision and whether they are
+    // loaded — not every notification of the provider (access rows, card
+    // syncs, reports), each of which used to redraw the whole page.
+    final CardAccessProvider access = context.read<CardAccessProvider>();
+    context.select<CardAccessProvider, (int, bool, String?)>(
+      (CardAccessProvider a) => (a.helpersRevision, a.helpersLoaded, a.uid),
+    );
+    final String? myPhone = context.select<UserProfileProvider, String?>(
+      (UserProfileProvider p) => p.myPhone,
+    );
+    final KnownMatchmakerGroups groups = _groupsFor(access);
+    final Map<String, int> shares = _shares();
     final bool loading =
         !access.helpersLoaded && !MatchmakerConnections.loaded.value;
     final bool noContacts =
         _permission != null && _permission != ContactsPermissionState.granted;
+    if (!loading || noContacts) _perf.contentReady();
+
+    Widget box(Widget child) => SliverToBoxAdapter(child: child);
 
     return Scaffold(
       appBar: AppBar(title: const Text('שדכנים שאני מכיר')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-            child: Text(
-              'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. חיבור הוא הדדי — צד אחד '
-              'מבקש והשני מאשר. מרגע האישור, מה שכל אחד מכם בחר לשתף זמין '
-              'לשני, ואפשר לשוחח בצ\'אט גם בלי לשתף דבר.',
-              style: theme.textTheme.bodySmall,
+      body: CustomScrollView(
+        slivers: <Widget>[
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            sliver: SliverList.list(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                  child: Text(
+                    'שדכנים מאנשי הקשר שלך שמשתמשים בשדכן. חיבור הוא הדדי — '
+                    'צד אחד מבקש והשני מאשר. מרגע האישור, מה שכל אחד מכם בחר '
+                    'לשתף זמין לשני, ואפשר לשוחח בצ\'אט גם בלי לשתף דבר.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+                if (NetworkSharing.mode == ShareMode.none &&
+                    !NetworkSharing.onboardingDone)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: NetworkOnboardingCard(),
+                  ),
+                const _SharingSummary(),
+                if (noContacts)
+                  _Notice(
+                    text:
+                        'כדי למצוא שדכנים שאת/ה מכיר/ה, צריך גישה לאנשי הקשר. '
+                        'רק אנשים ששמורים אצלך בטלפון יופיעו כאן.',
+                    action:
+                        _permission == ContactsPermissionState.permanentlyDenied
+                        ? 'פתיחת הגדרות הטלפון'
+                        : 'לאפשר גישה לאנשי קשר',
+                    onAction: _askForContacts,
+                  ),
+                if (myPhone == null)
+                  _Notice(
+                    text:
+                        'כדי ששדכנים שמכירים אותך ימצאו אותך כאן, אפשר להוסיף '
+                        'את המספר שלך. הוא לא מוצג לאף אחד.',
+                    action: 'הוספת המספר שלי',
+                    onAction: () async {
+                      final UserProfileProvider profile = context
+                          .read<UserProfileProvider>();
+                      final String? phone = await MyPhoneDialog.show(
+                        context,
+                        purpose: MyPhonePurpose.matchmaker,
+                      );
+                      if (phone != null) await profile.setMyPhone(phone);
+                    },
+                  ),
+                if (_scanning || (loading && !noContacts))
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (groups.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
+                    child: Text(
+                      noContacts
+                          ? 'הרשימה תופיע אחרי שתאפשר/י גישה לאנשי הקשר.'
+                          : 'עוד לא מצאנו שדכנים מאנשי הקשר שלך בשדכן. '
+                                'כשמישהו מהם יצטרף, נעדכן אותך.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+              ],
             ),
           ),
-          if (NetworkSharing.mode == ShareMode.none &&
-              !NetworkSharing.onboardingDone)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 10),
-              child: NetworkOnboardingCard(),
-            ),
-          const _SharingSummary(),
-          if (noContacts)
-            _Notice(
-              text:
-                  'כדי למצוא שדכנים שאת/ה מכיר/ה, צריך גישה לאנשי הקשר. '
-                  'רק אנשים ששמורים אצלך בטלפון יופיעו כאן.',
-              action: _permission == ContactsPermissionState.permanentlyDenied
-                  ? 'פתיחת הגדרות הטלפון'
-                  : 'לאפשר גישה לאנשי קשר',
-              onAction: _askForContacts,
-            ),
-          if (profile.myPhone == null)
-            _Notice(
-              text:
-                  'כדי ששדכנים שמכירים אותך ימצאו אותך כאן, אפשר להוסיף את '
-                  'המספר שלך. הוא לא מוצג לאף אחד.',
-              action: 'הוספת המספר שלי',
-              onAction: () async {
-                final String? phone = await MyPhoneDialog.show(
-                  context,
-                  purpose: MyPhonePurpose.matchmaker,
-                );
-                if (phone != null) await profile.setMyPhone(phone);
-              },
-            ),
-          if (_scanning || (loading && !noContacts))
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (groups.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
-              child: Text(
-                noContacts
-                    ? 'הרשימה תופיע אחרי שתאפשר/י גישה לאנשי הקשר.'
-                    : 'עוד לא מצאנו שדכנים מאנשי הקשר שלך בשדכן. '
-                          'כשמישהו מהם יצטרף, נעדכן אותך.',
-                style: theme.textTheme.bodyMedium,
+          // Each group is a lazily built list: only the rows on screen are
+          // laid out, painted and have their photo loaded.
+          for (final (String title, Color accent, List<KnownMatchmaker> list)
+              in <(String, Color, List<KnownMatchmaker>)>[
+                ('מחוברים', AppColors.primaryDark, groups.connected),
+                ('בקשות חיבור', AppColors.secondary, groups.requests),
+                ('שדכנים מאנשי הקשר', AppColors.femaleAccent, groups.contacts),
+              ])
+            if (list.isNotEmpty) ...<Widget>[
+              box(
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: _GroupTitle(title, list.length),
+                ),
               ),
-            ),
-          if (groups.connected.isNotEmpty) ...<Widget>[
-            _GroupTitle('מחוברים', groups.connected.length),
-            _GroupCard(
-              accent: AppColors.primaryDark,
-              children: <Widget>[
-                for (final KnownMatchmaker m in groups.connected)
-                  KnownMatchmakerRow(matchmaker: m),
-              ],
-            ),
-          ],
-          if (groups.requests.isNotEmpty) ...<Widget>[
-            _GroupTitle('בקשות חיבור', groups.requests.length),
-            _GroupCard(
-              accent: AppColors.secondary,
-              children: <Widget>[
-                for (final KnownMatchmaker m in groups.requests)
-                  KnownMatchmakerRow(matchmaker: m),
-              ],
-            ),
-          ],
-          if (groups.contacts.isNotEmpty) ...<Widget>[
-            _GroupTitle('שדכנים מאנשי הקשר', groups.contacts.length),
-            _GroupCard(
-              accent: AppColors.femaleAccent,
-              children: <Widget>[
-                for (final KnownMatchmaker m in groups.contacts)
-                  KnownMatchmakerRow(matchmaker: m),
-              ],
-            ),
-          ],
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                sliver: SliverList.builder(
+                  itemCount: list.length,
+                  itemBuilder: (BuildContext context, int i) => _GroupRow(
+                    accent: accent,
+                    first: i == 0,
+                    last: i == list.length - 1,
+                    child: KnownMatchmakerRow(
+                      matchmaker: list[i],
+                      sharesWithMe: shares[list[i].uid] ?? 0,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
@@ -238,15 +331,35 @@ class _KnownMatchmakersScreenState extends State<KnownMatchmakersScreen> {
 class _SharingSummary extends StatelessWidget {
   const _SharingSummary();
 
+  /// The count of my shared cards, kept until the database, the sharing
+  /// choice or the access rows actually changed — it walks every friend.
+  static Object? _mineKey;
+  static int _mine = 0;
+
   @override
   Widget build(BuildContext context) {
-    final PersonRepository repo = context.watch<PersonRepository>();
-    final CardAccessProvider access = context.watch<CardAccessProvider>();
+    final PersonRepository repo = context.read<PersonRepository>();
+    final CardAccessProvider access = context.read<CardAccessProvider>();
+    final int peopleRev = context.select<PersonRepository, int>(
+      (PersonRepository r) => r.revision,
+    );
+    final int accessRev = context.select<CardAccessProvider, int>(
+      (CardAccessProvider a) => a.revision,
+    );
     final int connected = MatchmakerNetwork.connectedNames.length;
-    final int mine = NetworkSharing.sharedNow(
-      repo.getAll(),
-      accessTo: access.accessTo,
-    ).length;
+    final Object key = Object.hash(
+      peopleRev,
+      accessRev,
+      NetworkSharing.revision.value,
+    );
+    if (key != _mineKey) {
+      _mineKey = key;
+      _mine = NetworkSharing.sharedNow(
+        repo.getAll(),
+        accessTo: access.accessTo,
+      ).length;
+    }
+    final int mine = _mine;
     final Map<String, int> theirs = <String, int>{};
     for (final SharedCard c in MatchmakerNetwork.cards.value) {
       theirs[c.ownerUid] = (theirs[c.ownerUid] ?? 0) + 1;
@@ -349,23 +462,50 @@ class _GroupTitle extends StatelessWidget {
   }
 }
 
-class _GroupCard extends StatelessWidget {
-  const _GroupCard({required this.accent, required this.children});
+/// One row of a group, drawn as a slice of one paper card: rounded at the
+/// top of the first row and the foot of the last, the group's rule under the
+/// last, a hairline between the rest.
+class _GroupRow extends StatelessWidget {
+  const _GroupRow({
+    required this.accent,
+    required this.first,
+    required this.last,
+    required this.child,
+  });
   final Color accent;
-  final List<Widget> children;
+  final bool first;
+  final bool last;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final Color line = Theme.of(context).colorScheme.outlineVariant;
-    return HomePaperCard(
-      stripe: accent,
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    const Radius r = Radius.circular(20);
+    return Material(
+      color: dark
+          ? theme.colorScheme.surfaceContainerHighest
+          : theme.colorScheme.surface,
+      borderRadius: BorderRadius.vertical(
+        top: first ? r : Radius.zero,
+        bottom: last ? r : Radius.zero,
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (int i = 0; i < children.length; i++) ...<Widget>[
-            if (i > 0)
-              Divider(height: 1, indent: 64, endIndent: 12, color: line),
-            children[i],
+          if (first) const SizedBox(height: 4),
+          if (!first)
+            Divider(
+              height: 1,
+              indent: 64,
+              endIndent: 12,
+              color: theme.colorScheme.outlineVariant,
+            ),
+          child,
+          if (last) ...<Widget>[
+            const SizedBox(height: 4),
+            AccentUnderline(color: accent),
           ],
         ],
       ),
@@ -395,7 +535,9 @@ class KnownMatchmakerFace extends StatelessWidget {
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.softBlue,
-      foregroundImage: hasPhoto ? NetworkImage(photo) : null,
+      foregroundImage: hasPhoto
+          ? avatarImage(context, photo, diameter: radius * 2)
+          : null,
       child: Text(
         initial,
         style: TextStyle(
@@ -411,8 +553,15 @@ class KnownMatchmakerFace extends StatelessWidget {
 /// One compact row: face, name, last activity and database size, and the
 /// one thing to do about them. The whole row opens the basic profile.
 class KnownMatchmakerRow extends StatelessWidget {
-  const KnownMatchmakerRow({super.key, required this.matchmaker});
+  const KnownMatchmakerRow({
+    super.key,
+    required this.matchmaker,
+    this.sharesWithMe = 0,
+  });
   final KnownMatchmaker matchmaker;
+
+  /// Cards this matchmaker shares with me — counted by the list, once.
+  final int sharesWithMe;
 
   @override
   Widget build(BuildContext context) {
@@ -421,9 +570,6 @@ class KnownMatchmakerRow extends StatelessWidget {
     final String details = m.detailsLine;
     final String? state = KnownMatchmakers.stateLabel(m);
     final String name = m.name.isEmpty ? 'שדכן/ית' : m.name;
-    final int sharesWithMe = MatchmakerNetwork.cards.value
-        .where((SharedCard c) => c.ownerUid == m.uid)
-        .length;
     return InkWell(
       onTap: () => AppNavigation.open(
         context,

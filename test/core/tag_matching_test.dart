@@ -2,7 +2,6 @@ import 'package:shadchan/models/card_access.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadchan/models/person.dart';
-import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/services/account_sync_engine.dart';
 import 'package:shadchan/services/card_sync_engine.dart';
 import 'package:shadchan/services/personal_card_service.dart';
@@ -141,33 +140,24 @@ void main() {
           createdAt: DateTime(2026, 1, 1),
           updatedAt: DateTime(2026, 1, 1),
         );
-    FriendWithCard friend(
-      String uid,
-      FriendCardState state, {
-      Person? record,
-    }) =>
-        FriendWithCard(ownerUid: uid, name: uid, state: state, person: record);
 
-    test('only approved full cards with a photo, newest activity first', () {
-      final List<FriendWithCard> all = <FriendWithCard>[
-        friend('old', FriendCardState.sees, record: person('old')),
-        friend('edited', FriendCardState.sees, record: person('edited')),
-        friend('approved', FriendCardState.sees, record: person('approved')),
-        friend(
-          'no-photo',
-          FriendCardState.sees,
-          record: person('no-photo', photo: false),
-        ),
-        friend(
-          'no-text',
-          FriendCardState.sees,
-          record: person('no-text', text: '  '),
-        ),
-        friend('pending', FriendCardState.pending, record: person('pending')),
-        friend('ask', FriendCardState.requestable, record: person('ask')),
-      ];
+    test('every full card with a photo, newest activity first', () {
+      final Person old = person('old');
+      final Person edited = person('edited');
+      final Person approved = person('approved')..cardOwnerUid = 'approved';
+      final Person byHand = person('by-hand')
+        ..updatedAt = DateTime(2026, 11, 12);
+      final Person hidden = person('hidden')..hidden = true;
       final List<CardFriendSlide> slides = HomeCardFriendsSection.slidesFor(
-        all,
+        <Person>[
+          old,
+          edited,
+          approved,
+          byHand,
+          hidden,
+          person('no-photo', photo: false),
+          person('no-text', text: '  '),
+        ],
         latestEventByPerson: <String, DateTime>{
           'edited': DateTime(2026, 11, 10),
         },
@@ -183,9 +173,46 @@ void main() {
       );
       expect(slides.map((CardFriendSlide s) => s.person.id), <String>[
         'approved',
+        'by-hand',
         'edited',
         'old',
       ]);
+    });
+
+    test('the newest lead; the rest turn over with the visit', () {
+      final List<CardFriendSlide> ranked = <CardFriendSlide>[
+        for (int i = 0; i < 30; i++)
+          CardFriendSlide(
+            person: person('p$i'),
+            lastActivityAt: DateTime(2026, 1, 30 - i),
+          ),
+      ];
+      bool all(CardFriendSlide _) => true;
+      final List<CardFriendSlide> a = HomeCardFriendsSection.pick(
+        ranked,
+        seed: 0,
+        hasPhoto: all,
+      );
+      final List<CardFriendSlide> b = HomeCardFriendsSection.pick(
+        ranked,
+        seed: 1,
+        hasPhoto: all,
+      );
+      expect(a, hasLength(HomeCardFriendsSection.maxSlides));
+      expect(a.take(6).map((CardFriendSlide s) => s.person.id), <String>[
+        'p0',
+        'p1',
+        'p2',
+        'p3',
+        'p4',
+        'p5',
+      ]);
+      expect(
+        b.take(6).map((CardFriendSlide s) => s.person.id),
+        a.take(6).map((CardFriendSlide s) => s.person.id),
+      );
+      expect(a[6].person.id, isNot(b[6].person.id));
+      expect(a.map((CardFriendSlide s) => s.person.id).toSet(), hasLength(20));
     });
   });
 
