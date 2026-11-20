@@ -1338,6 +1338,34 @@ service cloud.firestore {
     // sorted) — every card and idea between them is talked about in the same
     // thread. `type` leaves room for groups later; only `direct` chats can be
     // opened today, and only between connected matchmakers.
+    // A single and a matchmaker are tied by a card when either asked the
+    // other or one gave the other access — anything but a block.
+    function cardTie(a, b) {
+      return (exists(accessPath(a, b)) && get(accessPath(a, b)).data.status != 'blocked')
+          || (exists(accessPath(b, a)) && get(accessPath(b, a)).data.status != 'blocked');
+    }
+    // Two accounts in one couple space (`partnerships/{a}_{b}`, sorted).
+    function partnerPath(a, b) {
+      return /databases/$(database)/documents/partnerships/$(a < b ? a + '_' + b : b + '_' + a);
+    }
+    function partnerOf(other) {
+      return other != request.auth.uid
+        && exists(partnerPath(request.auth.uid, other))
+        && get(partnerPath(request.auth.uid, other)).data.status == 'active';
+    }
+
+    // Who may talk to whom: connected matchmakers, matchmakers saved in each
+    // other's phones, a single and a matchmaker tied by a card, and partners.
+    // Asked when a chat is made and on every message — a tie that ended (a
+    // disconnect, a block) leaves the history readable and closes the chat.
+    function chatPeerAllowed(kind, other) {
+      return kind == 'single' ? cardTie(request.auth.uid, other)
+        : kind == 'partners' ? partnerOf(other)
+        : (connectedTo(other)
+           || knownPhoneInContacts(request.auth.uid, other)
+           || knownPhoneInContacts(other, request.auth.uid));
+    }
+
     match /chats/{chatId} {
       function member() {
         return request.auth.uid in resource.data.members;
@@ -1345,13 +1373,17 @@ service cloud.firestore {
       function otherOf(d) {
         return d.members[0] == request.auth.uid ? d.members[1] : d.members[0];
       }
+      function mayStart(d) {
+        return chatPeerAllowed(d.get('kind', 'matchmakers'), otherOf(d));
+      }
       allow read: if durable() && member();
+      // The chat is created by its first message, in the same write.
       allow create: if durable()
                     && request.resource.data.keys().hasOnly([
                          'members', 'type', 'kind', 'names', 'createdAt', 'updatedAt',
                          'lastText', 'lastFromUid', 'lastAt', 'readAt'])
                     && request.resource.data.type == 'direct'
-                    && request.resource.data.kind == 'matchmakers'
+                    && request.resource.data.kind in ['matchmakers', 'single', 'partners']
                     && request.resource.data.members is list
                     && request.resource.data.members.size() == 2
                     && request.resource.data.members[0] < request.resource.data.members[1]
@@ -1359,7 +1391,11 @@ service cloud.firestore {
                     && request.auth.uid in request.resource.data.members
                     && request.resource.data.names is map
                     && request.resource.data.createdAt == request.time
-                    && connectedTo(otherOf(request.resource.data));
+                    && request.resource.data.get('lastText', '') is string
+                    && request.resource.data.get('lastText', '').size() <= 200
+                    && request.resource.data.get('lastFromUid', request.auth.uid) == request.auth.uid
+                    && request.resource.data.get('readAt', {}).keys().hasOnly([request.auth.uid])
+                    && mayStart(request.resource.data);
       allow update: if durable() && member()
                     && request.resource.data.members == resource.data.members
                     && request.resource.data.type == resource.data.type
@@ -1376,11 +1412,16 @@ service cloud.firestore {
         function chat() {
           return get(/databases/$(database)/documents/chats/$(chatId)).data;
         }
+        // Read as it will be after this write: the first message arrives in
+        // the same batch that creates its chat.
+        function chatAfter() {
+          return getAfter(/databases/$(database)/documents/chats/$(chatId)).data;
+        }
         allow read: if durable() && request.auth.uid in chat().members;
         allow create: if durable()
-                      && request.auth.uid in chat().members
-                      && (chat().type != 'direct'
-                          || connectedTo(chat().members[0] == request.auth.uid ? chat().members[1] : chat().members[0]))
+                      && request.auth.uid in chatAfter().members
+                      && chatPeerAllowed(chatAfter().get('kind', 'matchmakers'),
+                           chatAfter().members[0] == request.auth.uid ? chatAfter().members[1] : chatAfter().members[0])
                       && request.resource.data.keys().hasOnly(['fromUid', 'text', 'at', 'ref'])
                       && request.resource.data.fromUid == request.auth.uid
                       && request.resource.data.at == request.time

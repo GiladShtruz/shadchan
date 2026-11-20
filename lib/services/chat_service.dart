@@ -77,6 +77,7 @@ class ChatThread {
     required this.members,
     required this.type,
     required this.names,
+    this.kind = 'matchmakers',
     this.lastText = '',
     this.lastFromUid,
     this.lastAt,
@@ -86,6 +87,11 @@ class ChatThread {
   final String id;
   final List<String> members;
   final String type;
+
+  /// Who the chat is between: `matchmakers`, `single` (a single and a
+  /// matchmaker who keeps or asked for their card) or `partners` (a couple
+  /// space).
+  final String kind;
   final Map<String, String> names;
   final String lastText;
   final String? lastFromUid;
@@ -98,7 +104,8 @@ class ChatThread {
   /// What this thread is called from [me]'s side.
   String titleFor(String me) {
     final String name = (names[otherOf(me)] ?? '').trim();
-    return name.isEmpty ? 'שדכן/ית' : name;
+    if (name.isNotEmpty) return name;
+    return kind == 'single' ? 'צ\'אט' : 'שדכן/ית';
   }
 
   bool isUnreadFor(String me) {
@@ -121,6 +128,7 @@ class ChatThread {
           if (m is String) m,
       ],
       type: (data['type'] as String?) ?? 'direct',
+      kind: (data['kind'] as String?) ?? 'matchmakers',
       names: <String, String>{
         if (names is Map)
           for (final MapEntry<dynamic, dynamic> e in names.entries)
@@ -214,49 +222,70 @@ abstract final class ChatService {
     return null;
   }
 
-  /// The chat with [otherUid], created on first use. Null when it cannot be
-  /// opened (not connected, offline on first use).
+  /// The other member of a direct chat, read off its id (`{a}_{b}`, sorted).
+  static String otherOfId(String chatId, String me) {
+    final int cut = chatId.indexOf('_');
+    if (cut <= 0) return '';
+    final String a = chatId.substring(0, cut);
+    final String b = chatId.substring(cut + 1);
+    return a == me ? b : a;
+  }
+
+  /// The route of the chat with [otherUid]. **Nothing is written by opening
+  /// it**: the chat is created by its first message, and from then on the
+  /// same id always opens the same conversation — never a second one.
+  static String routeTo({
+    required String me,
+    required String otherUid,
+    String? theirName,
+    String kind = 'matchmakers',
+  }) => Uri(
+    path: '/chats/${directId(me, otherUid)}',
+    queryParameters: <String, String>{
+      if (theirName != null && theirName.trim().isNotEmpty)
+        'name': theirName.trim(),
+      if (kind != 'matchmakers') 'kind': kind,
+    },
+  ).toString();
+
+  /// The account's uid, waiting for the sign-in to settle when the service
+  /// has not started yet — a message typed in the first second must not be
+  /// dropped because `start()` was still on its way.
+  static Future<String?> me() async =>
+      _uid ?? (_uid = await PersonalCardService.durableUid());
+
+  /// Kept for older callers: the id of the chat with [otherUid]. Writes
+  /// nothing — see [routeTo].
   static Future<String?> openDirect({
     required String otherUid,
     required String myName,
     required String theirName,
   }) async {
-    final String? me = _uid ?? await PersonalCardService.durableUid();
-    if (me == null || otherUid == me) return null;
-    _uid ??= me;
-    final String id = directId(me, otherUid);
-    if (thread(id) != null) return id;
-    final DocumentReference<Map<String, dynamic>> doc = FirebaseFirestore
-        .instance
-        .collection('chats')
-        .doc(id);
+    final String? uid = await me();
+    if (uid == null || otherUid == uid || otherUid.isEmpty) return null;
+    return directId(uid, otherUid);
+  }
+
+  /// Whether the chat document exists on the server. False for a chat with
+  /// no message yet — which is also what a refused read looks like, and
+  /// either way the screen shows an empty conversation ready for a first
+  /// message.
+  static Future<bool> exists(String chatId) async {
+    if (thread(chatId) != null) return true;
     try {
-      final DocumentSnapshot<Map<String, dynamic>> snap = await doc.get();
-      if (snap.exists) return id;
+      final DocumentSnapshot<Map<String, dynamic>> snap =
+          await FirebaseFirestore.instance
+              .collection('chats')
+              .doc(chatId)
+              .get();
+      return snap.exists;
     } catch (_) {
-      // Not readable: it does not exist yet (or the rules said no — the
-      // create below will say the same).
-    }
-    try {
-      await doc.set(<String, Object?>{
-        'members': <String>[me, otherUid]..sort(),
-        'type': 'direct',
-        'kind': 'matchmakers',
-        'names': <String, String>{
-          me: _short(myName),
-          otherUid: _short(theirName),
-        },
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      return id;
-    } catch (error, stackTrace) {
-      _log(error, stackTrace);
-      return null;
+      return false;
     }
   }
 
-  /// The messages of [chatId], oldest first, live.
+  /// The messages of [chatId], oldest first, live. A chat that cannot be read
+  /// (not created yet) is an empty conversation, not an error.
   static Stream<List<ChatMessage>> messages(String chatId) {
     return FirebaseFirestore.instance
         .collection('chats')
@@ -281,33 +310,74 @@ abstract final class ChatService {
                 system: d.data()['system'] == true,
               ),
           ];
-        });
+        })
+        .handleError((Object error) => _log(error));
   }
 
   /// Sends [text] (with what it is about, when there is something).
-  static Future<bool> send(String chatId, String text, {ChatRef? ref}) async {
-    final String? me = _uid;
+  ///
+  /// The first message of a chat creates it, in the same write: the chat and
+  /// its first line arrive together or not at all. [kind], [myName] and
+  /// [theirName] are only used then.
+  static Future<bool> send(
+    String chatId,
+    String text, {
+    ChatRef? ref,
+    String? myName,
+    String? theirName,
+    String kind = 'matchmakers',
+  }) async {
+    final String? uid = await me();
     final String body = text.trim();
-    if (me == null || body.isEmpty) return false;
+    if (uid == null || body.isEmpty) return false;
+    final String other = otherOfId(chatId, uid);
+    if (other.isEmpty || other == uid) return false;
     final FirebaseFirestore db = FirebaseFirestore.instance;
     final DocumentReference<Map<String, dynamic>> chat = db
         .collection('chats')
         .doc(chatId);
+    final String last = body.length > 200 ? body.substring(0, 200) : body;
     try {
+      final bool known = await exists(chatId);
       final WriteBatch batch = db.batch();
+      if (!known) {
+        batch.set(chat, <String, Object?>{
+          'members': <String>[uid, other]..sort(),
+          'type': 'direct',
+          'kind': kind,
+          'names': <String, String>{
+            if ((myName ?? '').trim().isNotEmpty) uid: _short(myName!),
+            if ((theirName ?? '').trim().isNotEmpty) other: _short(theirName!),
+          },
+          'lastText': last,
+          'lastFromUid': uid,
+          'lastAt': FieldValue.serverTimestamp(),
+          'readAt': <String, Object?>{uid: FieldValue.serverTimestamp()},
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
       batch.set(chat.collection('messages').doc(), <String, Object?>{
-        'fromUid': me,
+        'fromUid': uid,
         'text': body.length > 4000 ? body.substring(0, 4000) : body,
         'at': FieldValue.serverTimestamp(),
         if (ref != null) 'ref': ref.toMap(),
       });
-      batch.update(chat, <String, Object?>{
-        'lastText': body.length > 200 ? body.substring(0, 200) : body,
-        'lastFromUid': me,
-        'lastAt': FieldValue.serverTimestamp(),
-        'readAt.$me': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      if (known) {
+        batch.update(chat, <String, Object?>{
+          'lastText': last,
+          'lastFromUid': uid,
+          'lastAt': FieldValue.serverTimestamp(),
+          'readAt.$uid': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      if (!known) {
+        // The first message is awaited: if the rules say no, the screen
+        // must say so instead of showing a line that never arrives.
+        await batch.commit();
+        return true;
+      }
       // Not awaited past the local write: Firestore keeps the message
       // queued through a bad connection, like WhatsApp's clock.
       unawaited(batch.commit().catchError(_log));
@@ -323,7 +393,8 @@ abstract final class ChatService {
     final String? me = _uid;
     if (me == null) return;
     final ChatThread? t = thread(chatId);
-    if (t != null && !t.isUnreadFor(me)) return;
+    // A chat with no message yet has nothing to mark.
+    if (t == null || !t.isUnreadFor(me)) return;
     try {
       await FirebaseFirestore.instance
           .collection('chats')

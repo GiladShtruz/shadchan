@@ -232,6 +232,9 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       unawaited(_startPushAndReminders());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());
+      // Chats are for everybody — a single talks to the matchmakers who keep
+      // their card — so they start whatever area this account works in.
+      unawaited(ChatService.start());
       // "שדכנים שאני מכיר": the connections this account is part of.
       if (WorkspaceStore.matchmakerEnabled) {
         unawaited(MatchmakerConnections.start());

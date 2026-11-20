@@ -791,6 +791,8 @@ abstract final class AppRouter {
               return ChatScreen(
                 chatId: state.pathParameters['id'] ?? '',
                 initialRef: extra is ChatRef ? extra : null,
+                otherName: state.uri.queryParameters['name'],
+                kind: state.uri.queryParameters['kind'] ?? 'matchmakers',
               );
             },
           ),
