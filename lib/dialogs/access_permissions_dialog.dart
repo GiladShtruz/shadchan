@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/onward_share_switch.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/services/offline_guard.dart';
 import 'package:shadchan/dialogs/my_phone_dialog.dart';
@@ -78,6 +79,11 @@ abstract final class PersonalAccessFlow {
                     value: lookingValue,
                     onChanged: (bool? v) => setState(() => lookingValue = v!),
                   ),
+                const SizedBox(height: 6),
+                Text(
+                  OnwardShareSwitch.partnerNote,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ],
             ),
             actions: <Widget>[

@@ -166,6 +166,21 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // A couple space: the photos of the database published to the partner.
+    // Written and read here by the owner only; the partner receives them
+    // through the `sharedCardPhoto` callable while the couple space lasts.
+    match /partnerCards/{ownerUid}/{personId}/{fileName} {
+      function isOwner() {
+        return request.auth != null
+            && request.auth.uid == ownerUid
+            && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      }
+      allow read, delete: if isOwner();
+      allow write: if isOwner()
+                   && request.resource.size < 12 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
     match /personalCards/{ownerUid}/{fileName} {
       function isOwner() {
         return request.auth != null

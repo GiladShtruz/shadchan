@@ -2,6 +2,7 @@ import 'package:shadchan/widgets/personal_community_news.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/widgets/cream_page.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadchan/screens/partner_space_screen.dart';
 import 'package:shadchan/screens/account_gate_screens.dart';
 import 'package:shadchan/screens/account_screen.dart';
 import 'package:shadchan/services/account_sync_ledger.dart';
@@ -797,6 +798,19 @@ abstract final class AppRouter {
             },
           ),
         ],
+      ),
+      // The couple space, and the partner's database.
+      GoRoute(
+        path: PartnerSpaceScreen.route,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (BuildContext context, GoRouterState state) =>
+            const PartnerSpaceScreen(),
+      ),
+      GoRoute(
+        path: PartnerDatabaseScreen.route,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (BuildContext context, GoRouterState state) =>
+            const PartnerDatabaseScreen(),
       ),
       GoRoute(
         path: '/married',

@@ -25,6 +25,14 @@ class OnwardShareSwitch extends StatelessWidget {
       'את השדכנים שאישרת ומחוברים אליהם באפליקציה, לצפייה בלבד, ואינו ממשיך '
       'לעבור הלאה. כל פנייה אליך עוברת דרך השדכן שאישרת.';
 
+  /// What a matchmaker's couple space means for a single's card — said
+  /// wherever a single decides who sees it.
+  static const String partnerNote =
+      'שדכן שאישרת עשוי לחשוב על הכרטיס שלך יחד עם בן/בת הזוג שלו במרחב '
+      'זוגי באפליקציה — צפייה בלבד. זה עדיין לא שיתוף ציבורי ולא מאפשר '
+      'להעביר את הכרטיס הלאה, ואם תבטל/י לשדכן את הגישה, הכרטיס ייעלם גם '
+      'מבן/בת הזוג שלו.';
+
   /// What turning it off does.
   static const String offExplanation =
       'הכרטיס שלך יישאר זמין לשדכנים שאישרת, אבל לא יוצג לשדכנים שהם מכירים.';
@@ -62,7 +70,7 @@ class OnwardShareSwitch extends StatelessWidget {
     builder: (BuildContext context) => AlertDialog(
       title: const Text('שיתוף דרך השדכנים שלי'),
       content: const SingleChildScrollView(
-        child: Text('$explanation\n\n$offExplanation'),
+        child: Text('$explanation\n\n$offExplanation\n\n$partnerNote'),
       ),
       actions: <Widget>[
         TextButton(

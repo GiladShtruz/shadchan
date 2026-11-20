@@ -1256,6 +1256,80 @@ service cloud.firestore {
       allow delete: if durable() && request.auth.uid == ownerUid;
     }
 
+    // ---- The couple space (2026-11-20) -----------------------------------
+    //
+    // Two personal accounts, two personal databases, and one tie between
+    // them: `partnerships/{a}_{b}` (uids sorted). While it is active, each
+    // partner reads the other's whole database — the card fields, photos,
+    // tags and "מה מחפש" each one publishes to `partnerCards/{uid}/cards`,
+    // never a phone, a note, history or a reminder. Ending it closes every
+    // read at once; nothing moves between the databases.
+    match /partnerships/{pairId} {
+      function pairOk(d) {
+        return d.keys().hasOnly([
+                 'uids', 'fromUid', 'toUid', 'status', 'names',
+                 'createdAt', 'updatedAt', 'endedAt'])
+          && d.uids is list && d.uids.size() == 2
+          && d.uids[0] < d.uids[1]
+          && pairId == d.uids[0] + '_' + d.uids[1]
+          && d.fromUid in d.uids && d.toUid in d.uids && d.fromUid != d.toUid
+          && d.status in ['pending', 'active', 'ended']
+          && d.names is map
+          && d.updatedAt == request.time;
+      }
+      allow read: if durable() && request.auth.uid in resource.data.uids;
+      // An invitation: by the one who sends it, waiting for the other's yes.
+      // A pair that ended may be invited again by either side.
+      allow create: if durable() && pairOk(request.resource.data)
+                    && request.resource.data.fromUid == request.auth.uid
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.createdAt == request.time;
+      allow update: if durable() && pairOk(request.resource.data)
+                    && request.auth.uid in resource.data.uids
+                    && request.resource.data.uids == resource.data.uids
+                    && (
+                      // The one invited says yes — mutual approval.
+                      (resource.data.status == 'pending'
+                       && resource.data.toUid == request.auth.uid
+                       && request.resource.data.status == 'active')
+                      ||
+                      // Either side ends it (or withdraws an invitation).
+                      (request.resource.data.status == 'ended')
+                      ||
+                      // After an end, either side invites again.
+                      (resource.data.status == 'ended'
+                       && request.resource.data.status == 'pending'
+                       && request.resource.data.fromUid == request.auth.uid)
+                    );
+      allow delete: if false;
+    }
+
+    function partnerCardOk(d, ownerUid, personId) {
+      return d.keys().hasOnly([
+               'ownerUid', 'ownerName', 'personId', 'firstName', 'lastName',
+               'gender', 'dateOfBirth', 'age', 'religiousLevel',
+               'religiousLevelOther', 'city', 'description', 'heightCm',
+               'maritalStatus', 'region', 'preferredMinAge', 'preferredMaxAge',
+               'preferredMinHeightCm', 'preferredMaxHeightCm',
+               'preferredRegions', 'preferredMaritalStatuses',
+               'preferredReligiousLevels', 'preferredReligiousLevelOtherLabels',
+               'tags', 'photoPaths', 'identity', 'cardOwnerUid', 'status',
+               'updatedAt'])
+        && d.ownerUid == ownerUid && d.personId == personId
+        && d.ownerName is string && d.ownerName.size() <= 80
+        && d.description is string && d.description.size() <= 4000
+        && d.photoPaths is list && d.photoPaths.size() <= 6
+        && d.tags is list && d.tags.size() <= 40
+        && d.status in ['available', 'busy', 'onBreak']
+        && d.updatedAt == request.time;
+    }
+    match /partnerCards/{ownerUid}/cards/{personId} {
+      allow read: if durable() && (request.auth.uid == ownerUid || partnerOf(ownerUid));
+      allow create, update: if durable() && request.auth.uid == ownerUid
+                            && partnerCardOk(request.resource.data, ownerUid, personId);
+      allow delete: if durable() && request.auth.uid == ownerUid;
+    }
+
     // One card sent to one connected matchmaker — from a chat, even when it
     // is not in the shared pool. The same whitelist as a shared card; only
     // the matchmaker it was sent to reads it, and only while the two stay
@@ -1298,14 +1372,24 @@ service cloud.firestore {
       allow read: if durable() && request.auth.uid in resource.data.uids;
       allow create: if durable() && proposalOk(request.resource.data)
                     && request.resource.data.fromUid == request.auth.uid
-                    && request.resource.data.status == 'pending'
                     && request.resource.data.createdAt == request.time
                     && request.resource.data.sides.size() == 0
-                    && connectedTo(request.resource.data.toUid)
-                    && (exists(/databases/$(database)/documents/sharedCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId))
-                        || exists(/databases/$(database)/documents/sentCards/$(request.resource.data.toUid)/to/$(request.auth.uid)/cards/$(request.resource.data.target.personId)))
-                    && (request.resource.data.candidate.get('cardOwnerUid', null) == null
-                        || get(accessPath(request.resource.data.candidate.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true);
+                    && (
+                      // Between connected matchmakers: offered, and opened by
+                      // the yes of the one who holds the card.
+                      (request.resource.data.status == 'pending'
+                       && connectedTo(request.resource.data.toUid)
+                       && (exists(/databases/$(database)/documents/sharedCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId))
+                           || exists(/databases/$(database)/documents/sentCards/$(request.resource.data.toUid)/to/$(request.auth.uid)/cards/$(request.resource.data.target.personId)))
+                       && (request.resource.data.candidate.get('cardOwnerUid', null) == null
+                           || get(accessPath(request.resource.data.candidate.cardOwnerUid, databaseUid())).data.get('shareOnward', false) == true))
+                      ||
+                      // Between partners: open at once, on a card of the
+                      // partner's database — no request for approval.
+                      (request.resource.data.status == 'approved'
+                       && partnerOf(request.resource.data.toUid)
+                       && exists(/databases/$(database)/documents/partnerCards/$(request.resource.data.toUid)/cards/$(request.resource.data.target.personId)))
+                    );
       allow update: if durable() && proposalOk(request.resource.data)
                     && request.auth.uid in resource.data.uids
                     && request.resource.data.uids == resource.data.uids
@@ -1362,6 +1446,7 @@ service cloud.firestore {
       return kind == 'single' ? cardTie(request.auth.uid, other)
         : kind == 'partners' ? partnerOf(other)
         : (connectedTo(other)
+           || partnerOf(other)
            || knownPhoneInContacts(request.auth.uid, other)
            || knownPhoneInContacts(other, request.auth.uid));
     }

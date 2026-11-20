@@ -16,6 +16,8 @@ import 'package:shadchan/models/shared_card.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/network_screen.dart';
+import 'package:shadchan/screens/partner_space_screen.dart';
+import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/services/ai_chat_command.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/services/shared_ideas.dart';
@@ -392,6 +394,8 @@ class _ChatScreenState extends State<ChatScreen> {
   /// The cards the other matchmaker shares with this one, or sent in here.
   List<SharedCard> get _theirCards {
     final String other = _other;
+    // A partner's whole database is open in a couple space.
+    if (PartnerSpace.isPartner(other)) return PartnerSpace.partnerCards.value;
     return <SharedCard>[
       for (final SharedCard c in <SharedCard>[
         ...MatchmakerNetwork.cards.value,
@@ -399,6 +403,24 @@ class _ChatScreenState extends State<ChatScreen> {
       ])
         if (c.ownerUid == other) c,
     ];
+  }
+
+  /// An idea for [target]: between partners it opens at once on both phones;
+  /// otherwise it is offered to the matchmaker who holds the card.
+  Future<void> _ideaFor(SharedCard target, {Person? candidate}) async {
+    if (PartnerSpace.isPartner(target.ownerUid)) {
+      if (candidate == null) {
+        await PartnerCardSheet.openIdea(context, target);
+      } else {
+        await PartnerCardSheet.openIdeaWith(
+          context,
+          mine: candidate,
+          card: target,
+        );
+      }
+      return;
+    }
+    await NetworkActions.propose(context, target, candidate: candidate);
   }
 
   /// Reads a free sentence as "open an idea between these two": the local
@@ -480,7 +502,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       return true;
     }
-    await NetworkActions.propose(context, target, candidate: me);
+    await _ideaFor(target, candidate: me);
     return true;
   }
 
@@ -589,7 +611,7 @@ class _ChatScreenState extends State<ChatScreen> {
       (SharedCard c) => sharedSummaryOf(c.person),
     );
     if (target == null || !mounted) return;
-    await NetworkActions.propose(context, target);
+    await _ideaFor(target);
   }
 
   void _openRef(ChatRef ref) {

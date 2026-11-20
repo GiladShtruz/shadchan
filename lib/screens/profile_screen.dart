@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/screens/partner_space_screen.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/dialogs/account_dialogs.dart';
@@ -207,6 +208,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // the page that other people read, and it is drawn as a group of its own
       // so that is never in doubt: a few rows, each saying what is currently
       // filled in, and the whole of the public page behind them.
+      // "המרחב הזוגי שלנו": both of them, and the three ways in — or, before
+      // there is one, the invitation to open it.
+      if (matchmaker) const PartnerSpaceProfileArea(),
       // Matchmakers among the contacts — the colleagues already known.
       if (matchmaker)
         SettingsGroup(
