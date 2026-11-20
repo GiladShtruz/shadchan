@@ -8,18 +8,24 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/community_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
+import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/community_profile_store.dart';
 import 'package:shadchan/services/community_service.dart';
+import 'package:shadchan/services/tips_service.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_highlight.dart';
 import 'package:shadchan/utils/community_period.dart';
 import 'package:shadchan/utils/dating_history.dart';
+import 'package:shadchan/utils/enums.dart';
+import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/monthly_stats.dart';
 import 'package:shadchan/utils/home_typography.dart';
 import 'package:shadchan/widgets/activity_figure_row.dart';
 import 'package:shadchan/widgets/community_widgets.dart';
+import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_section.dart';
 
 /// "הפעילות שלי" — everything the app counts, on one screen, in the order a
@@ -69,6 +75,42 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
   /// not change under the reader while the screen is open, and moved on
   /// immediately so the next visit opens on a different one.
   late final int _greetingCursor = CommunityProfileStore.greetingCursor;
+
+  /// The built-in tips, in one order picked per visit — fixed for the life of
+  /// the screen so a swipe back really returns to the previous tip.
+  late final List<String> _tipOrder = List<String>.of(MatchmakerTips.tips)
+    ..shuffle();
+
+  /// "טיפ לשדכן" — moved here from בית, to take one block off the home page.
+  /// The built-in tips first (unsigned), then every approved community tip
+  /// with its author's name.
+  List<HomeTip> _tips(BuildContext context) {
+    final Gender? gender = context.watch<UserProfileProvider>().gender;
+    final TipsProvider? tips = _maybeTips(context);
+    if (tips == null) {
+      return <HomeTip>[
+        for (final String text in _tipOrder)
+          HomeTip(text: text.forGender(gender)),
+      ];
+    }
+    return <HomeTip>[
+      for (final BuiltInTip tip in tips.builtInTips(_tipOrder))
+        if (!tip.hidden) HomeTip(text: tip.text.forGender(gender)),
+      for (final CommunityTip tip in tips.visibleCommunity)
+        HomeTip(
+          text: tip.text,
+          author: tip.authorName.isEmpty ? null : tip.authorName,
+        ),
+    ];
+  }
+
+  static TipsProvider? _maybeTips(BuildContext context) {
+    try {
+      return Provider.of<TipsProvider>(context);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
 
   @override
   void initState() {
@@ -201,6 +243,12 @@ class _CommunityActivityScreenState extends State<CommunityActivityScreen> {
                         excludedFromDating: excluded,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  HomeTipCarousel(
+                    tips: _tips(context),
+                    userGender: context.watch<UserProfileProvider>().gender,
+                    onAddTip: () => context.push('/profile/tips'),
                   ),
                   const SizedBox(height: 16),
                   if (signedIn && community.isHidden)

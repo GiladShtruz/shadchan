@@ -55,7 +55,10 @@ class PersonAvatar extends StatelessWidget {
   /// The first photo that is actually on the device. One missing file — a
   /// card photo still downloading, say — never costs the person their face
   /// when another of their photos is there.
-  String? _firstExistingPhotoPath() {
+  String? _firstExistingPhotoPath() => firstExistingPhoto(person);
+
+  /// The first of [person]'s photos that is on this device, or null.
+  static String? firstExistingPhoto(Person person) {
     for (final String path in person.photosPaths) {
       if (_exists(path)) {
         return path;
@@ -69,6 +72,9 @@ class PersonAvatar extends StatelessWidget {
   /// (one deleted later falls back through the image's own error builder);
   /// a missing one is asked again, since a card photo may still be arriving.
   static final Set<String> _known = <String>{};
+
+  /// Whether a photo file is on this device, remembered once found.
+  static bool hasFile(String path) => _exists(path);
 
   static bool _exists(String path) {
     if (_known.contains(path)) return true;

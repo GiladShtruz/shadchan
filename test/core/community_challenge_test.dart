@@ -156,6 +156,7 @@ void main() {
       expect(behind.subline, contains('בשבוע שעבר הגענו ל־80'));
       expect(behind.beatsRecord, isFalse);
       expect(behind.progress, closeTo(20 / 90, 0.001));
+      expect(behind.headline, 'בשבוע שעבר הגענו ל־80, השבוע מגיעים ל־90');
 
       final CommunityChallenge ahead = CommunityChallenge(
         metric: ChallengeMetric.ideas,

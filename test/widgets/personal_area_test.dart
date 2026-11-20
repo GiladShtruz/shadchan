@@ -698,45 +698,67 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('חברים שמנהלים כרטיס אישי'), findsOneWidget);
       expect(find.text('להזמין חברים להוסיף כרטיס אישי'), findsOneWidget);
-      expect(find.text('אישרו לי גישה'), findsOneWidget);
-      expect(find.text('בקשות גישה חדשות'), findsOneWidget);
+      // Three tabs, "אישרו לי גישה" open by default.
+      expect(find.text('אישרו לי גישה · 1'), findsOneWidget);
+      expect(find.textContaining('אפשר לבקש גישה'), findsOneWidget);
+      expect(find.text('ביקשתי ומחכה'), findsOneWidget);
+      expect(find.text('דנה כהן'), findsOneWidget);
+      expect(find.text('נועה'), findsNothing);
+      // The friends still to ask are on the second tab.
+      await tester.tap(find.textContaining('אפשר לבקש גישה'));
+      await tester.pumpAndSettle();
       expect(find.text('נועה'), findsOneWidget);
       expect(find.text('בקשת גישה'), findsOneWidget);
-      expect(find.text('דנה כהן'), findsOneWidget);
-      // The ones still to ask lead, then those who already said yes.
-      expect(
-        tester.getTopLeft(find.text('בקשות גישה חדשות')).dy,
-        lessThan(tester.getTopLeft(find.text('נועה')).dy),
-      );
-      expect(
-        tester.getTopLeft(find.text('נועה')).dy,
-        lessThan(tester.getTopLeft(find.text('אישרו לי גישה')).dy),
-      );
-      expect(
-        tester.getTopLeft(find.text('אישרו לי גישה')).dy,
-        lessThan(tester.getTopLeft(find.text('דנה כהן')).dy),
-      );
       // A friend who has not given access is a name and a button: the row
       // opens nothing.
       expect(
         find.ancestor(of: find.text('נועה'), matching: find.byType(InkWell)),
         findsNothing,
       );
+      // Searching reaches the whole database.
+      await tester.enterText(find.byType(TextField), 'דנה');
+      await tester.pumpAndSettle();
+      expect(find.text('דנה כהן'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
   testWidgets(
-    'home: "החברים שלך בשדכן" shows approved full cards as a carousel, on a narrow phone with large text',
+    'home: "החברים שלך בשדכן" shows approved full cards as suggestion cards, on a narrow phone with large text',
     (tester) async {
       final DateTime now = DateTime.now();
+      final String photo = '${directory.path}/dana.jpg';
+      await tester.runAsync(() => File(photo).writeAsBytes(<int>[0, 1, 2]));
+      // A second approved friend whose photo is not on the device: never a
+      // card with an empty circle.
+      final Person tal = Person(
+        id: 'tal-card',
+        firstName: 'טל',
+        lastName: 'לוי',
+        gender: Gender.female,
+        description: 'בת 27, אוהבת לקרוא',
+        photosPaths: const <String>['/missing/tal.jpg'],
+        cardOwnerUid: 'owner-tal',
+        createdAt: now,
+        updatedAt: now,
+      );
+      await tester.runAsync(() => peopleBox.put(tal.id, tal));
+      access.grants.add(
+        const CardAccess(
+          ownerUid: 'owner-tal',
+          matchmakerUid: 'me',
+          status: CardAccessStatus.approved,
+          requestedBy: 'owner',
+          ownerName: 'טל לוי',
+        ),
+      );
       final Person dana = Person(
         id: 'dana-card',
         firstName: 'דנה',
         lastName: 'כהן',
         gender: Gender.female,
         description: 'בת 26, אוהבת טיולים ומוזיקה',
-        photosPaths: const <String>['/missing/dana.jpg'],
+        photosPaths: <String>[photo],
         cardOwnerUid: 'owner-dana',
         createdAt: now,
         updatedAt: now,
@@ -767,15 +789,19 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text(HomeCardFriendsSection.title), findsOneWidget);
-      expect(find.text('דנה'), findsOneWidget);
       expect(find.text('דנה כהן'), findsOneWidget);
-      // נועה keeps a card and has not given access: not in the carousel,
-      // counted in the line under it.
+      expect(find.text('התאמות'), findsOneWidget);
+      // No photo on the device: not drawn.
+      expect(find.text('טל לוי'), findsNothing);
+      // נועה keeps a card and has not given access: not in the row.
       expect(find.text('נועה'), findsNothing);
-      expect(find.text('עוד חבר אחד מנהל כרטיס אישי'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(() => peopleBox.delete(dana.id));
+      access.grants.removeWhere((CardAccess a) => a.ownerUid == 'owner-tal');
+      await tester.runAsync(() async {
+        await peopleBox.delete(dana.id);
+        await peopleBox.delete(tal.id);
+      });
     },
   );
 

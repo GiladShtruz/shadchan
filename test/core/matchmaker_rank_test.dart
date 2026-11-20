@@ -24,6 +24,9 @@ void main() {
   test('the home line names the next rank', () {
     final HomeProgress p = HomeProgress.rank(ideas: 43, gender: Gender.male);
     expect(p.line, 'עוד 7 רעיונות כדי להפוך ל־שדכן פעיל');
+    expect(p.fractionLabel, '43 מתוך 50 רעיונות');
+    expect(p.progress, closeTo(43 / 50, 1e-9));
+    expect(HomeProgress.rank(ideas: 1200).fractionLabel, isNull);
     expect(
       HomeProgress.rank(ideas: 49, gender: Gender.female).line,
       'עוד רעיון אחד כדי להפוך ל־שדכנית פעילה',

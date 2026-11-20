@@ -58,6 +58,17 @@ class PersonRepository extends ChangeNotifier {
     }
   }
 
+  /// Bumped on every change this repository announces — a cheap key for a
+  /// screen that memoises something it computed over the whole database.
+  int get revision => _revision;
+  int _revision = 0;
+
+  @override
+  void notifyListeners() {
+    _revision++;
+    super.notifyListeners();
+  }
+
   @override
   void dispose() {
     ConnectivityStatus.offline.removeListener(_onConnectivityChanged);

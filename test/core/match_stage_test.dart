@@ -189,10 +189,19 @@ void main() {
       );
 
       expect(nudgeAfter(6), isNull);
-      expect(nudgeAfter(7), 'עבר שבוע בלי עדכון – שווה לקדם את הרעיון');
-      expect(nudgeAfter(21), 'עברו 3 שבועות בלי עדכון – שווה לקדם את הרעיון');
-      expect(nudgeAfter(31), 'עבר חודש בלי עדכון – שווה לקדם את הרעיון');
-      expect(nudgeAfter(95), 'עברו 3 חודשים בלי עדכון – שווה לקדם את הרעיון');
+      expect(nudgeAfter(7), 'עבר שבוע מאז העדכון האחרון – שווה לקדם את הרעיון');
+      expect(
+        nudgeAfter(21),
+        'עברו 3 שבועות מאז העדכון האחרון – שווה לקדם את הרעיון',
+      );
+      expect(
+        nudgeAfter(31),
+        'עבר חודש מאז העדכון האחרון – שווה לקדם את הרעיון',
+      );
+      expect(
+        nudgeAfter(95),
+        'עברו 3 חודשים מאז העדכון האחרון – שווה לקדם את הרעיון',
+      );
     });
 
     test('a closed proposal is never nudged', () {

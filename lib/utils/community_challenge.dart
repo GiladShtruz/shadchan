@@ -152,15 +152,27 @@ class CommunityChallenge {
 
   final String title;
 
-  /// The invitation, in the plural, with no name in it — short:
-  /// "שבוע שעבר הגענו ל־120 · השבוע שוברים שיא: 132".
+  /// The invitation, in the plural, with no name in it — and always the
+  /// same figure the bar under it is measured against ([aim]):
+  /// "בשבוע שעבר הגענו ל־120, השבוע מגיעים ל־132".
   String get headline {
     if (title.isNotEmpty) return title;
     final int? last = record;
     if (last != null && last > 0) {
-      return 'שבוע שעבר הגענו ל־$last · השבוע שוברים שיא: $recordTarget';
+      return 'בשבוע שעבר הגענו ל־$last, השבוע מגיעים ל־$aim';
     }
-    return 'השבוע מנסים להגיע יחד ל־$target ${metric.targetNoun}';
+    return 'השבוע מנסים להגיע יחד ל־$aim ${metric.targetNoun}';
+  }
+
+  /// The one figure this week is measured against — in the headline, in the
+  /// bar and in "X מתוך Y". With last week known and no administrator's title,
+  /// it is the record to beat ([recordTarget]); otherwise the shared target.
+  /// A headline that names one number over a bar measured against another is
+  /// what made the block read as two unrelated facts.
+  int get aim {
+    final int? last = record;
+    if (title.isEmpty && last != null && last > 0) return recordTarget;
+    return target;
   }
 
   /// The figure "שוברים שיא" aims at: the week's target, and never a number
@@ -186,19 +198,19 @@ class CommunityChallenge {
 
   /// Between 0 and 1, for the one bar.
   double get progress {
-    if (target <= 0) {
+    if (aim <= 0) {
       return 0;
     }
-    final double ratio = current / target;
+    final double ratio = current / aim;
     return ratio.clamp(0.0, 1.0);
   }
 
-  bool get reachedTarget => current >= target;
+  bool get reachedTarget => current >= aim;
 
   bool get beatsRecord => record != null && record! > 0 && current > record!;
 
   /// "43 מתוך 100 רעיונות".
-  String get progressLabel => '$current מתוך $target ${metric.shortNoun}';
+  String get progressLabel => '$current מתוך $aim ${metric.shortNoun}';
 
   /// "בשבוע שעבר: 120 רעיונות" — the compact line beside the bar, or null
   /// when this device saw no completed week.

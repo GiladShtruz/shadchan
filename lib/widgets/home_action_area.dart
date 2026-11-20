@@ -169,46 +169,87 @@ class HomeWeeklyProgress extends StatelessWidget {
     );
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
-    final Color fill = progress.progress >= 1
+    final bool full = progress.progress >= 1;
+    final Color fill = full
         ? (dark ? AppColors.statusDatingDm : AppColors.statusDating)
         : (dark ? AppColors.secondaryDarkDm : AppColors.secondary);
+    final String? fraction = progress.fractionLabel;
+    final String label = fraction == null
+        ? progress.line
+        : '${progress.line} · $fraction';
+    // One small framed block — the line, the scale, and beside the scale how
+    // far along it is ("7 מתוך 10 רעיונות"). A bare stripe under a sentence
+    // read as a decoration that had come loose from it.
     return Semantics(
-      label: progress.line,
+      label: label,
       excludeSemantics: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: AlignmentDirectional.centerStart,
-            child: Text(
-              progress.line,
-              maxLines: 1,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 5),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: progress.progress),
-              duration: const Duration(milliseconds: 600),
-              curve: Curves.easeOutCubic,
-              builder: (BuildContext context, double value, _) =>
-                  LinearProgressIndicator(
-                    value: value,
-                    minHeight: 5,
-                    backgroundColor: dark
-                        ? AppColors.primaryLightDarkDm
-                        : AppColors.primaryLight,
-                    valueColor: AlwaysStoppedAnimation<Color>(fill),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+        decoration: BoxDecoration(
+          color: fill.withValues(alpha: dark ? 0.12 : 0.07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: fill.withValues(alpha: 0.28)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(
+                  full ? Icons.emoji_events_rounded : Icons.flag_rounded,
+                  size: 16,
+                  color: fill,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    progress.line,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 7),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0, end: progress.progress),
+                      duration: const Duration(milliseconds: 600),
+                      curve: Curves.easeOutCubic,
+                      builder: (BuildContext context, double value, _) =>
+                          LinearProgressIndicator(
+                            value: value,
+                            minHeight: 8,
+                            backgroundColor: dark
+                                ? AppColors.primaryLightDarkDm
+                                : AppColors.primaryLight,
+                            valueColor: AlwaysStoppedAnimation<Color>(fill),
+                          ),
+                    ),
+                  ),
+                ),
+                if (fraction != null) ...<Widget>[
+                  const SizedBox(width: 10),
+                  Text(
+                    fraction,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: fill,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

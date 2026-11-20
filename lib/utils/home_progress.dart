@@ -14,12 +14,35 @@ import 'package:shadchan/utils/matchmaker_rank.dart';
 /// רעיונות", "6 חברים יצאו לדייט בזכותך", "2 חברים התחתנו בזכותך". A figure
 /// at zero is never said; the lines that are true take turns, one a day.
 class HomeProgress {
-  const HomeProgress({required this.line, required this.progress});
+  const HomeProgress({
+    required this.line,
+    required this.progress,
+    this.count,
+    this.goal,
+    this.unit,
+  });
 
   final String line;
 
   /// Between 0 and 1, for the scale under the line.
   final double progress;
+
+  /// Where the matchmaker stands and the figure the scale runs to, so the
+  /// bar is never a stripe on its own: "7 מתוך 10 רעיונות". Null when there
+  /// is no goal ahead (the top of a ladder).
+  final int? count;
+  final int? goal;
+
+  /// The plural noun after the figures — "רעיונות", "חברים".
+  final String? unit;
+
+  /// "7 מתוך 10 רעיונות", or null when there is nothing to measure against.
+  String? get fractionLabel {
+    final int? c = count;
+    final int? g = goal;
+    if (c == null || g == null || g <= 0) return null;
+    return '$c מתוך $g${unit == null ? '' : ' $unit'}';
+  }
 
   /// The milestone version, for a database under a hundred.
   static HomeProgress milestone(int friends) {
@@ -30,7 +53,13 @@ class HomeProgress {
     }
     final int missing = target - friends;
     final String more = missing == 1 ? 'עוד חבר אחד' : 'עוד $missing חברים';
-    return HomeProgress(line: '$more ליעד הבא – $target', progress: m.progress);
+    return HomeProgress(
+      line: '$more ליעד הבא – $target',
+      progress: m.progress,
+      count: friends,
+      goal: target,
+      unit: 'חברים',
+    );
   }
 
   /// "יש לך 37 חברים", "יש לך חבר אחד", "עוד אין לך חברים במאגר".
@@ -76,11 +105,25 @@ class HomeProgress {
   /// The version from a hundred friends on: the way to the next matchmaker
   /// rank — "עוד 7 רעיונות כדי להפוך ל־שדכן פעיל" — measured against that
   /// rank's threshold.
-  static HomeProgress rank({required int ideas, Gender? gender}) =>
-      HomeProgress(
+  ///
+  /// The scale is ideas opened out of the next rank's figure — the same two
+  /// numbers "43 מתוך 50 רעיונות" prints beside it.
+  static HomeProgress rank({required int ideas, Gender? gender}) {
+    final MatchmakerRank? to = MatchmakerRanks.next(ideas);
+    if (to == null) {
+      return HomeProgress(
         line: MatchmakerRanks.progressLine(ideas, gender),
-        progress: MatchmakerRanks.progress(ideas),
+        progress: 1,
       );
+    }
+    return HomeProgress(
+      line: MatchmakerRanks.progressLine(ideas, gender),
+      progress: (ideas / to.ideas).clamp(0.0, 1.0),
+      count: ideas,
+      goal: to.ideas,
+      unit: 'רעיונות',
+    );
+  }
 
   /// How far [value] is between the round figure under it and the next one —
   /// 5s under fifty, 10s under two hundred, 25s after: 24 is 0.8 of the way
