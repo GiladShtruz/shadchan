@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
@@ -19,6 +20,31 @@ class NotificationService {
   // because a person reminder was saved after it (and the other way round).
   static int _latestMatchRequestId = 0;
   static int _latestPersonRequestId = 0;
+
+  /// **What is on the device now, per notification id** — the line each
+  /// reminder was last scheduled with. A refresh plans the whole list in Dart
+  /// first and then talks to the plugin only about the ids whose line
+  /// changed.
+  ///
+  /// This is the stutter fix of 2026-11-20. Every change to the database —
+  /// and every batch the account sync brings down from the server — used to
+  /// cancel *every* pending reminder and schedule every one again: up to 55
+  /// round trips to the platform per change, and on Android each one makes
+  /// the plugin re-serialise its whole saved list on the main thread, the
+  /// same thread that delivers touches. Scrolling stuttered while the phone
+  /// was busy rewriting reminders nobody had changed. Null until the first
+  /// refresh of the launch, which still starts from a clean slate.
+  static bool _birthdaysCleared = false;
+  static Map<int, String>? _matchScheduled;
+  static Map<int, String>? _personScheduled;
+
+  /// A burst of changes (a sync batch, an import) is one refresh, a moment
+  /// after the last of them.
+  static const Duration _coalesce = Duration(milliseconds: 1500);
+  static Timer? _matchTimer;
+  static Timer? _personTimer;
+  static List<Completer<void>> _matchWaiting = <Completer<void>>[];
+  static List<Completer<void>> _personWaiting = <Completer<void>>[];
 
   /// The tint Android puts on `ic_notification` (a white-on-transparent mark:
   /// Android draws a notification icon from its alpha alone, which is why the
@@ -273,9 +299,13 @@ class NotificationService {
   /// scheduled any more. This clears the ones older versions already put on the
   /// device (ids 10000-19999) so users stop receiving them.
   static Future<void> cancelBirthdayNotifications() async {
-    if (!_isInitialized) {
+    // Once a launch is enough: nothing schedules them any more, and listing
+    // every pending notification on each edit was a platform round trip per
+    // keystroke-save.
+    if (!_isInitialized || _birthdaysCleared) {
       return;
     }
+    _birthdaysCleared = true;
 
     _scheduleQueue = _scheduleQueue
         .then((_) async {
@@ -308,29 +338,40 @@ class NotificationService {
       return;
     }
 
-    final int requestId = ++_latestMatchRequestId;
     final List<MatchIdea> matchesSnapshot = List<MatchIdea>.from(matches);
-
-    _scheduleQueue = _scheduleQueue
-        .then((_) async {
-          if (requestId != _latestMatchRequestId) {
-            return;
+    final Completer<void> done = Completer<void>();
+    _matchWaiting.add(done);
+    _matchTimer?.cancel();
+    _matchTimer = Timer(_coalesce, () {
+      final List<Completer<void>> waiting = _matchWaiting;
+      _matchWaiting = <Completer<void>>[];
+      final int requestId = ++_latestMatchRequestId;
+      _scheduleQueue = _scheduleQueue
+          .then((_) async {
+            if (requestId != _latestMatchRequestId) {
+              return;
+            }
+            await _scheduleMatchRemindersInternal(
+              matchesSnapshot,
+              describe: describe,
+              requestId: requestId,
+            );
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            debugPrint(
+              'NotificationService.scheduleMatchReminders failed: '
+              '$error\n$stackTrace',
+            );
+          });
+      unawaited(
+        _scheduleQueue.whenComplete(() {
+          for (final Completer<void> c in waiting) {
+            if (!c.isCompleted) c.complete();
           }
-
-          await _scheduleMatchRemindersInternal(
-            matchesSnapshot,
-            describe: describe,
-            requestId: requestId,
-          );
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          debugPrint(
-            'NotificationService.scheduleMatchReminders failed: '
-            '$error\n$stackTrace',
-          );
-        });
-
-    await _scheduleQueue;
+        }),
+      );
+    });
+    await done.future;
   }
 
   /// Schedules the per-person "check on them again" reminders — the ones set
@@ -345,29 +386,40 @@ class NotificationService {
       return;
     }
 
-    final int requestId = ++_latestPersonRequestId;
     final List<PersonReminderNotification> snapshot =
         List<PersonReminderNotification>.from(reminders);
-
-    _scheduleQueue = _scheduleQueue
-        .then((_) async {
-          if (requestId != _latestPersonRequestId) {
-            return;
+    final Completer<void> done = Completer<void>();
+    _personWaiting.add(done);
+    _personTimer?.cancel();
+    _personTimer = Timer(_coalesce, () {
+      final List<Completer<void>> waiting = _personWaiting;
+      _personWaiting = <Completer<void>>[];
+      final int requestId = ++_latestPersonRequestId;
+      _scheduleQueue = _scheduleQueue
+          .then((_) async {
+            if (requestId != _latestPersonRequestId) {
+              return;
+            }
+            await _schedulePersonRemindersInternal(
+              snapshot,
+              requestId: requestId,
+            );
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            debugPrint(
+              'NotificationService.schedulePersonReminders failed: '
+              '$error\n$stackTrace',
+            );
+          });
+      unawaited(
+        _scheduleQueue.whenComplete(() {
+          for (final Completer<void> c in waiting) {
+            if (!c.isCompleted) c.complete();
           }
-
-          await _schedulePersonRemindersInternal(
-            snapshot,
-            requestId: requestId,
-          );
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          debugPrint(
-            'NotificationService.schedulePersonReminders failed: '
-            '$error\n$stackTrace',
-          );
-        });
-
-    await _scheduleQueue;
+        }),
+      );
+    });
+    await done.future;
   }
 
   /// The one notification the app sends that the matchmaker did not ask for.
@@ -542,6 +594,8 @@ class NotificationService {
       return;
     }
 
+    _matchScheduled = null;
+    _personScheduled = null;
     try {
       await _plugin.cancelAll();
     } catch (error, stackTrace) {
@@ -567,75 +621,65 @@ class NotificationService {
     required int requestId,
   }) async {
     try {
-      final List<PendingNotificationRequest> pending = await _plugin
-          .pendingNotificationRequests();
-      for (final PendingNotificationRequest req in pending) {
-        if (req.id >= 20000 && req.id < 30000) {
-          await _plugin.cancel(req.id);
+      final List<_PlannedNotification> planned = <_PlannedNotification>[];
+      if (!serverDelivers && _wantsReminders) {
+        final List<PlannedReminder<MatchIdea>> due =
+            <PlannedReminder<MatchIdea>>[];
+        for (final MatchIdea match in matches) {
+          final tz.TZDateTime? scheduledTime = _notificationTime(
+            match.reminderDate,
+          );
+          if (scheduledTime != null) {
+            due.add(PlannedReminder<MatchIdea>(at: scheduledTime, item: match));
+          }
         }
-      }
-      if (serverDelivers || !_wantsReminders) {
-        return;
-      }
-
-      final List<PlannedReminder<MatchIdea>> due =
-          <PlannedReminder<MatchIdea>>[];
-      for (final MatchIdea match in matches) {
-        final tz.TZDateTime? scheduledTime = _notificationTime(
-          match.reminderDate,
+        final ReminderSchedulePlan<MatchIdea> plan = ReminderSchedulePlan.build(
+          due,
+          maxNotifications: _maxMatchNotifications,
         );
-        if (scheduledTime != null) {
-          due.add(PlannedReminder<MatchIdea>(at: scheduledTime, item: match));
-        }
-      }
-      final ReminderSchedulePlan<MatchIdea> plan = ReminderSchedulePlan.build(
-        due,
-        maxNotifications: _maxMatchNotifications,
-      );
-
-      int notifId = 20000;
-      for (final PlannedReminder<MatchIdea> planned in plan.single) {
-        if (requestId != _latestMatchRequestId) {
-          return;
-        }
-        final MatchIdea match = planned.item;
-        final MatchReminderText text =
-            describe?.call(match) ??
-            MatchReminderText(
-              title: match.reminderNote ?? 'תזכורת לרעיון',
-              body: 'תזכורת לרעיון',
-            );
-        await _plugin.zonedSchedule(
-          notifId++,
-          text.title,
-          text.body,
-          tz.TZDateTime.from(planned.at, tz.local),
-          _matchNotificationDetails,
-          payload: '$_routePayloadPrefix/matches/${match.id}',
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        );
-      }
-      for (final ReminderBundle<MatchIdea> bundle in plan.bundles) {
-        if (requestId != _latestMatchRequestId) {
-          return;
+        int notifId = 20000;
+        for (final PlannedReminder<MatchIdea> p in plan.single) {
+          final MatchIdea match = p.item;
+          final MatchReminderText text =
+              describe?.call(match) ??
+              MatchReminderText(
+                title: match.reminderNote ?? 'תזכורת לרעיון',
+                body: 'תזכורת לרעיון',
+              );
+          planned.add(
+            _PlannedNotification(
+              id: notifId++,
+              title: text.title,
+              body: text.body,
+              at: tz.TZDateTime.from(p.at, tz.local),
+              payload: '$_routePayloadPrefix/matches/${match.id}',
+            ),
+          );
         }
         // Every one of them is still a row on the notifications page; this
         // one push is only the knock on the door.
-        await _plugin.zonedSchedule(
-          notifId++,
-          'יש לך ${bundle.count} רעיונות שכדאי לחזור אליהם',
-          'התזכורות מחכות בעמוד ההתראות',
-          tz.TZDateTime.from(bundle.at, tz.local),
-          _matchNotificationDetails,
-          payload: '$_routePayloadPrefix/reminders',
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        );
+        for (final ReminderBundle<MatchIdea> bundle in plan.bundles) {
+          planned.add(
+            _PlannedNotification(
+              id: notifId++,
+              title: 'יש לך ${bundle.count} רעיונות שכדאי לחזור אליהם',
+              body: 'התזכורות מחכות בעמוד ההתראות',
+              at: tz.TZDateTime.from(bundle.at, tz.local),
+              payload: '$_routePayloadPrefix/reminders',
+            ),
+          );
+        }
       }
+      _matchScheduled = await _apply(
+        planned,
+        previous: _matchScheduled,
+        range: (20000, 30000),
+        details: _matchNotificationDetails,
+        stillCurrent: () => requestId == _latestMatchRequestId,
+      );
     } catch (error, stackTrace) {
+      // Unknown state on the device: the next refresh starts clean.
+      _matchScheduled = null;
       debugPrint(
         'NotificationService.scheduleMatchReminders failed: '
         '$error\n$stackTrace',
@@ -643,81 +687,123 @@ class NotificationService {
     }
   }
 
+  /// Brings the device's pending notifications in [range] to [planned],
+  /// touching only the ids whose line changed. Returns what is now scheduled,
+  /// or null when the work was abandoned half-way (a newer refresh took
+  /// over), so the next one starts clean.
+  static Future<Map<int, String>?> _apply(
+    List<_PlannedNotification> planned, {
+    required Map<int, String>? previous,
+    required (int, int) range,
+    required NotificationDetails details,
+    required bool Function() stillCurrent,
+  }) async {
+    final Map<int, String> next = <int, String>{
+      for (final _PlannedNotification p in planned) p.id: p.signature,
+    };
+    if (previous != null && mapEquals(previous, next)) {
+      // Nothing a reminder says or when it fires has changed: nothing to do.
+      return previous;
+    }
+    if (previous == null) {
+      // First refresh of the launch: whatever an earlier run left behind goes.
+      final List<PendingNotificationRequest> pending = await _plugin
+          .pendingNotificationRequests();
+      for (final PendingNotificationRequest req in pending) {
+        if (req.id >= range.$1 &&
+            req.id < range.$2 &&
+            !next.containsKey(req.id)) {
+          await _plugin.cancel(req.id);
+        }
+      }
+    } else {
+      for (final int id in previous.keys) {
+        if (!next.containsKey(id)) await _plugin.cancel(id);
+      }
+    }
+    for (final _PlannedNotification p in planned) {
+      if (!stillCurrent()) return null;
+      if (previous != null && previous[p.id] == p.signature) continue;
+      // Scheduling an id that is already pending replaces it.
+      await _plugin.zonedSchedule(
+        p.id,
+        p.title,
+        p.body,
+        p.at,
+        details,
+        payload: p.payload,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    }
+    return next;
+  }
+
   static Future<void> _schedulePersonRemindersInternal(
     List<PersonReminderNotification> reminders, {
     required int requestId,
   }) async {
     try {
-      final List<PendingNotificationRequest> pending = await _plugin
-          .pendingNotificationRequests();
-      for (final PendingNotificationRequest req in pending) {
-        if (req.id >= 30000 && req.id < 40000) {
-          await _plugin.cancel(req.id);
+      final List<_PlannedNotification> planned = <_PlannedNotification>[];
+      if (!serverDelivers && _wantsReminders) {
+        final List<PlannedReminder<PersonReminderNotification>> due =
+            <PlannedReminder<PersonReminderNotification>>[];
+        for (final PersonReminderNotification reminder in reminders) {
+          final tz.TZDateTime? scheduledTime = _notificationTime(reminder.date);
+          if (scheduledTime != null) {
+            due.add(
+              PlannedReminder<PersonReminderNotification>(
+                at: scheduledTime,
+                item: reminder,
+              ),
+            );
+          }
         }
-      }
-      if (serverDelivers || !_wantsReminders) {
-        return;
-      }
-
-      final List<PlannedReminder<PersonReminderNotification>> due =
-          <PlannedReminder<PersonReminderNotification>>[];
-      for (final PersonReminderNotification reminder in reminders) {
-        final tz.TZDateTime? scheduledTime = _notificationTime(reminder.date);
-        if (scheduledTime != null) {
-          due.add(
-            PlannedReminder<PersonReminderNotification>(
-              at: scheduledTime,
-              item: reminder,
+        final ReminderSchedulePlan<PersonReminderNotification> plan =
+            ReminderSchedulePlan.build(
+              due,
+              maxNotifications: _maxPersonNotifications,
+            );
+        int notifId = 30000;
+        for (final PlannedReminder<PersonReminderNotification> p
+            in plan.single) {
+          final PersonReminderNotification reminder = p.item;
+          final String note = (reminder.note ?? '').trim();
+          planned.add(
+            _PlannedNotification(
+              id: notifId++,
+              title: note.isNotEmpty ? note : 'לבדוק שוב עם ${reminder.name}',
+              body: note.isNotEmpty ? 'תזכורת · ${reminder.name}' : 'תזכורת',
+              at: tz.TZDateTime.from(p.at, tz.local),
+              payload: reminder.personId.isEmpty
+                  ? null
+                  : '$_routePayloadPrefix/people/${reminder.personId}',
+            ),
+          );
+        }
+        for (final ReminderBundle<PersonReminderNotification> bundle
+            in plan.bundles) {
+          planned.add(
+            _PlannedNotification(
+              id: notifId++,
+              title: 'יש לך ${bundle.count} חברים לבדוק שוב איתם',
+              body: 'התזכורות מחכות בעמוד ההתראות',
+              at: tz.TZDateTime.from(bundle.at, tz.local),
+              payload: '$_routePayloadPrefix/reminders',
             ),
           );
         }
       }
-      final ReminderSchedulePlan<PersonReminderNotification> plan =
-          ReminderSchedulePlan.build(
-            due,
-            maxNotifications: _maxPersonNotifications,
-          );
-
-      int notifId = 30000;
-      for (final PlannedReminder<PersonReminderNotification> planned
-          in plan.single) {
-        if (requestId != _latestPersonRequestId) {
-          return;
-        }
-        final PersonReminderNotification reminder = planned.item;
-        final String note = (reminder.note ?? '').trim();
-        await _plugin.zonedSchedule(
-          notifId++,
-          note.isNotEmpty ? note : 'לבדוק שוב עם ${reminder.name}',
-          note.isNotEmpty ? 'תזכורת · ${reminder.name}' : 'תזכורת',
-          tz.TZDateTime.from(planned.at, tz.local),
-          _personNotificationDetails,
-          payload: reminder.personId.isEmpty
-              ? null
-              : '$_routePayloadPrefix/people/${reminder.personId}',
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        );
-      }
-      for (final ReminderBundle<PersonReminderNotification> bundle
-          in plan.bundles) {
-        if (requestId != _latestPersonRequestId) {
-          return;
-        }
-        await _plugin.zonedSchedule(
-          notifId++,
-          'יש לך ${bundle.count} חברים לבדוק שוב איתם',
-          'התזכורות מחכות בעמוד ההתראות',
-          tz.TZDateTime.from(bundle.at, tz.local),
-          _personNotificationDetails,
-          payload: '$_routePayloadPrefix/reminders',
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        );
-      }
+      _personScheduled = await _apply(
+        planned,
+        previous: _personScheduled,
+        range: (30000, 40000),
+        details: _personNotificationDetails,
+        stillCurrent: () => requestId == _latestPersonRequestId,
+      );
     } catch (error, stackTrace) {
+      _personScheduled = null;
       debugPrint(
         'NotificationService.schedulePersonReminders failed: '
         '$error\n$stackTrace',
@@ -766,4 +852,25 @@ class MatchReminderText {
 
   final String title;
   final String body;
+}
+
+/// One reminder notification as planned, before the plugin is asked.
+class _PlannedNotification {
+  const _PlannedNotification({
+    required this.id,
+    required this.title,
+    required this.body,
+    required this.at,
+    this.payload,
+  });
+
+  final int id;
+  final String title;
+  final String body;
+  final tz.TZDateTime at;
+  final String? payload;
+
+  /// Everything the device shows or acts on — equal lines need no call.
+  String get signature =>
+      '${at.millisecondsSinceEpoch}|$title|$body|${payload ?? ''}';
 }
