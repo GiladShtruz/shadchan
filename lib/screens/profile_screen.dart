@@ -756,9 +756,7 @@ class _OwnRank extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MatchRepository? matches = _maybeWatchRepo<MatchRepository>(context);
-    final PersonRepository? people = _maybeWatchRepo<PersonRepository>(
-      context,
-    );
+    final PersonRepository? people = _maybeWatchRepo<PersonRepository>(context);
     if (matches == null || people == null) {
       return const SizedBox.shrink();
     }
@@ -870,7 +868,14 @@ class UserProfileAvatar extends StatelessWidget {
         gender ?? Gender.unknown,
         dark: dark,
       ),
-      foregroundImage: hasPhoto ? FileImage(File(path)) : null,
+      foregroundImage: hasPhoto
+          ? ResizeImage(
+              FileImage(File(path)),
+              width: (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+                  .ceil(),
+              policy: ResizeImagePolicy.fit,
+            )
+          : null,
       child: hasPhoto
           ? null
           : (initial.isNotEmpty

@@ -50,12 +50,24 @@ class SharedPhoto extends StatelessWidget {
     final String? p = path;
     final Widget fallback = PersonAvatar(person: person, radius: radius);
     if (p == null) return fallback;
+    final int decode = (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+        .ceil();
     return FutureBuilder<File?>(
       future: MatchmakerNetwork.photo(ownerUid, p),
+      initialData: MatchmakerNetwork.photoNow(ownerUid, p),
       builder: (BuildContext context, AsyncSnapshot<File?> snap) {
         final File? file = snap.data;
         if (file == null) return fallback;
-        return CircleAvatar(radius: radius, backgroundImage: FileImage(file));
+        return CircleAvatar(
+          radius: radius,
+          // Decoded at the size it is drawn.
+          backgroundImage: ResizeImage(
+            FileImage(file),
+            width: decode,
+            height: decode,
+            policy: ResizeImagePolicy.fit,
+          ),
+        );
       },
     );
   }

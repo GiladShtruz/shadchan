@@ -27,6 +27,47 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     override fun onCreate(savedInstanceState: Bundle?) {
         consumeIncomingIntent(intent)
         super.onCreate(savedInstanceState)
+        preferHighestRefreshRate()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // MIUI/HyperOS may drop the window back to 60 Hz when the app returns
+        // from the background; ask again.
+        preferHighestRefreshRate()
+    }
+
+    /**
+     * Asks for the screen's fastest refresh rate at its current resolution.
+     *
+     * Xiaomi's MIUI and HyperOS keep an app at 60 Hz unless the window asks
+     * for more, so on a 90/120 Hz Xiaomi screen the app scrolled visibly less
+     * smoothly than the phone's own apps. Every failure is ignored: the
+     * system default simply stays.
+     */
+    private fun preferHighestRefreshRate() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            @Suppress("DEPRECATION")
+            val display = windowManager.defaultDisplay ?: return
+            val current = display.mode
+            var best = current
+            for (mode in display.supportedModes) {
+                if (mode.physicalWidth == current.physicalWidth &&
+                    mode.physicalHeight == current.physicalHeight &&
+                    mode.refreshRate > best.refreshRate
+                ) {
+                    best = mode
+                }
+            }
+            if (best.modeId != window.attributes.preferredDisplayModeId) {
+                val params = window.attributes
+                params.preferredDisplayModeId = best.modeId
+                window.attributes = params
+            }
+        } catch (ignored: Exception) {
+            // The system default refresh rate stays.
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

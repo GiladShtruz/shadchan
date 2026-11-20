@@ -112,7 +112,14 @@ class HomeCardFriendsSection extends StatelessWidget {
     return slides;
   }
 
+  static Map<String, DateTime>? _latestMemo;
+  static int _latestRevision = -1;
+
+  /// Walked once per change of the database, not on every rebuild of the
+  /// home page.
   static Map<String, DateTime> _latestEvents(PersonRepository people) {
+    final Map<String, DateTime>? memo = _latestMemo;
+    if (memo != null && _latestRevision == people.revision) return memo;
     final Map<String, DateTime> latest = <String, DateTime>{};
     for (final PersonEvent e in people.getAllEvents()) {
       if (!_activity.contains(e.type)) continue;
@@ -121,7 +128,8 @@ class HomeCardFriendsSection extends StatelessWidget {
         latest[e.personId] = e.createdAt;
       }
     }
-    return latest;
+    _latestRevision = people.revision;
+    return _latestMemo = latest;
   }
 
   @override
