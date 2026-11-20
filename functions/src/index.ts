@@ -25,6 +25,7 @@ export {
  * a courtesy.
  */
 export { savePrivateLooking } from './private_looking';
+export { restoreRevokedGrants } from './grant_restore';
 export { cardPhoto } from './card_photos';
 export {
   sharedCardPhoto,

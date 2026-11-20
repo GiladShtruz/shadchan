@@ -214,6 +214,8 @@ abstract final class AccountSyncCodec {
     // Which home recommendation this phone showed last — written on every
     // visit, and meaningless on another phone.
     'home.nextStep',
+    // That this phone already asked the server to repair revoked grants.
+    'access.grantsRestored.',
     // How this phone's address book read went (`ContactsHealth`).
     'contacts.health',
     // The day this phone started logging notifications (`ReminderLog.since`).

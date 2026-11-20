@@ -7,6 +7,7 @@ import 'package:shadchan/services/analytics_service.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:shadchan/models/card_access.dart';
@@ -414,6 +415,30 @@ class CardAccessProvider extends ChangeNotifier {
     return _uid != null;
   }
 
+  /// The device-only setting that remembers the repair below ran for an
+  /// account (`access.` is in the sync's deny-list).
+  static String restoredKey(String uid) => 'access.grantsRestored.$uid';
+
+  /// Puts back the approvals the old couple merge revoked (see
+  /// `restoreRevokedGrants` in the Functions). Once per account on this
+  /// device; a failure is simply tried again on the next start. The listeners
+  /// then see the rows turn approved by themselves.
+  Future<void> _restoreRevokedGrants(String uid) async {
+    final Box<dynamic>? settings = _settingsBox;
+    if (settings == null || settings.get(restoredKey(uid)) == true) return;
+    try {
+      await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable(
+            'restoreRevokedGrants',
+            options: HttpsCallableOptions(timeout: const Duration(seconds: 90)),
+          )
+          .call<dynamic>(<String, Object?>{});
+      await settings.put(restoredKey(uid), true);
+    } catch (error) {
+      _log(error);
+    }
+  }
+
   /// Connects, once Firebase is up and a durable account is signed in.
   Future<void> start() async {
     if (_disposed ||
@@ -430,6 +455,7 @@ class CardAccessProvider extends ChangeNotifier {
         return;
       }
       _uid = uid;
+      unawaited(_restoreRevokedGrants(uid));
       final FirebaseFirestore db = FirebaseFirestore.instance;
       final CollectionReference<Map<String, dynamic>> access = db.collection(
         PersonalCardService.accessCollection,
