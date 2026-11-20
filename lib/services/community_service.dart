@@ -12,6 +12,7 @@ import 'package:shadchan/services/firebase_bootstrap.dart';
 import 'package:shadchan/services/offline_cache.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/community_period.dart';
+import 'package:shadchan/utils/avatar_image.dart';
 
 /// One matchmaker's own figures, as this device believes them.
 ///
@@ -763,25 +764,38 @@ abstract final class CommunityService {
       return '';
     }
 
-    if (CommunityProfileStore.uploadedAvatarPath == path &&
+    // The remembered path carries a marker for "uploaded small" — a picture
+    // published by an older version (a whole camera frame, downloaded by
+    // every phone that draws this face) is uploaded once more, shrunk.
+    final String remembered = '$path$_smallMark';
+    if (CommunityProfileStore.uploadedAvatarPath == remembered &&
         CommunityProfileStore.uploadedAvatarUrl.isNotEmpty) {
       return CommunityProfileStore.uploadedAvatarUrl;
     }
 
     try {
       final Reference ref = _avatarRef(user.uid);
-      await ref.putFile(
-        File(path),
-        SettableMetadata(contentType: 'image/jpeg'),
+      final Uint8List? small = await shrinkImageBytes(
+        await File(path).readAsBytes(),
       );
+      if (small != null) {
+        await ref.putData(small, SettableMetadata(contentType: 'image/png'));
+      } else {
+        await ref.putFile(
+          File(path),
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+      }
       final String url = await ref.getDownloadURL();
-      CommunityProfileStore.rememberAvatar(path: path, url: url);
+      CommunityProfileStore.rememberAvatar(path: remembered, url: url);
       return url;
     } catch (_) {
       // The row simply keeps the default avatar. Nothing else is affected.
       return CommunityProfileStore.uploadedAvatarUrl;
     }
   }
+
+  static const String _smallMark = '#small';
 
   static Reference _avatarRef(String uid) =>
       FirebaseStorage.instance.ref('$membersCollection/$uid/avatar.jpg');

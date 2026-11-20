@@ -42,7 +42,28 @@ abstract final class ContactHashUpload {
   static Future<ContactsPermissionState> permission() =>
       ContactsImportService.checkPermission();
 
-  static Future<ContactScanOutcome> run({bool force = false}) async {
+  /// When the last full read of the address book finished in this process.
+  static DateTime? _lastScan;
+  static Future<ContactScanOutcome>? _running;
+
+  /// A read of the whole address book is seconds of work on a large one, and
+  /// it was asked for on every app resume and every visit to "שדכנים שאני
+  /// מכיר". Unforced, it now runs at most once in [_minGap].
+  static const Duration _minGap = Duration(minutes: 30);
+
+  static Future<ContactScanOutcome> run({bool force = false}) {
+    final Future<ContactScanOutcome>? running = _running;
+    if (running != null) return running;
+    final DateTime? last = _lastScan;
+    if (!force && last != null && DateTime.now().difference(last) < _minGap) {
+      return Future<ContactScanOutcome>.value(ContactScanOutcome.unchanged);
+    }
+    final Future<ContactScanOutcome> future = _run(force: force);
+    _running = future;
+    return future.whenComplete(() => _running = null);
+  }
+
+  static Future<ContactScanOutcome> _run({required bool force}) async {
     try {
       if (await ContactsImportService.checkPermission() !=
           ContactsPermissionState.granted) {
@@ -54,23 +75,22 @@ abstract final class ContactHashUpload {
           ContactProperty.phone,
         },
       );
-      final Set<String> hashes = <String>{};
-      final Map<String, String> names = <String, String>{};
-      for (final Contact contact in contacts) {
-        final String name = ContactsImportService.displayNameOf(contact);
-        for (final Phone phone in contact.phones) {
-          final String? hash = PhoneIdentity.hash(phone.number);
-          if (hash == null) {
-            continue;
-          }
-          hashes.add(hash);
-          if (name.isNotEmpty) {
-            names.putIfAbsent(hash, () => name);
-          }
-        }
+      // The hashing (one sha256 per number, thousands of them) runs off the
+      // UI thread, so the screens stay smooth while it works.
+      final List<List<String>> plain = <List<String>>[
+        for (final Contact contact in contacts)
+          <String>[
+            ContactsImportService.displayNameOf(contact),
+            for (final Phone phone in contact.phones) phone.number,
+          ],
+      ];
+      final ({List<String> sorted, Map<String, String> names}) hashed =
+          await compute(_hashAll, plain);
+      _lastScan = DateTime.now();
+      if (!mapEquals(hashed.names, contactNames.value)) {
+        contactNames.value = hashed.names;
       }
-      contactNames.value = names;
-      final List<String> sorted = hashes.toList()..sort();
+      final List<String> sorted = hashed.sorted;
       final String print = SyncStateStore.fingerprint(<String, Object?>{
         'hashes': sorted,
       });
@@ -94,7 +114,31 @@ abstract final class ContactHashUpload {
     }
   }
 
+  /// [contacts] as `[name, number, number…]`; runs in an isolate.
+  static ({List<String> sorted, Map<String, String> names}) _hashAll(
+    List<List<String>> contacts,
+  ) {
+    final Set<String> hashes = <String>{};
+    final Map<String, String> names = <String, String>{};
+    for (final List<String> contact in contacts) {
+      if (contact.isEmpty) continue;
+      final String name = contact.first;
+      for (final String number in contact.skip(1)) {
+        final String? hash = PhoneIdentity.hash(number);
+        if (hash == null) {
+          continue;
+        }
+        hashes.add(hash);
+        if (name.isNotEmpty) {
+          names.putIfAbsent(hash, () => name);
+        }
+      }
+    }
+    return (sorted: hashes.toList()..sort(), names: names);
+  }
+
   static Future<void> forget() async {
+    _lastScan = null;
     contactNames.value = const <String, String>{};
     await _settings?.deleteAll(<String>[_printKey, _atKey]);
   }

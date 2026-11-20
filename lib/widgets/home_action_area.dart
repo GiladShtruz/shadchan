@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/add_people_dialog.dart';
@@ -16,6 +17,14 @@ import 'package:shadchan/widgets/home_add_hub.dart';
 T? _maybeWatch<T>(BuildContext context) {
   try {
     return Provider.of<T>(context);
+  } on ProviderNotFoundException {
+    return null;
+  }
+}
+
+T? _maybeRead<T>(BuildContext context) {
+  try {
+    return Provider.of<T>(context, listen: false);
   } on ProviderNotFoundException {
     return null;
   }
@@ -128,7 +137,7 @@ class HomeNextStepTitle extends StatelessWidget {
 /// The compact progress line between "הפעולה הבאה שלך" and its list.
 ///
 /// **Up to a hundred friends, building the database is the goal**: the staged
-/// milestones 10 → 25 → 50 → 100 ("עוד 7 חברים ליעד הבא – 50").
+/// milestones 10 → 25 → 50 → 100 ("73/100 חברים במאגר · עוד 27 ליעד הבא").
 ///
 /// **From a hundred, a real figure of the matchmaker's own** — the ideas they
 /// opened, the friends who went out or married thanks to them — as the next
@@ -173,84 +182,73 @@ class HomeWeeklyProgress extends StatelessWidget {
     final Color fill = full
         ? (dark ? AppColors.statusDatingDm : AppColors.statusDating)
         : (dark ? AppColors.secondaryDarkDm : AppColors.secondary);
-    final String? fraction = progress.fractionLabel;
-    final String label = fraction == null
-        ? progress.line
-        : '${progress.line} · $fraction';
-    // One small framed block — the line, the scale, and beside the scale how
-    // far along it is ("7 מתוך 10 רעיונות"). A bare stripe under a sentence
-    // read as a decoration that had come loose from it.
+    final String? sub = progress.subline;
+    final int? ideas = progress.rankIdeas;
+    // Clean and compact, no card of its own: the line, a thin scale, and —
+    // for a rank — one small line on what is next. It reads as the head of
+    // the action list under it, not as a block beside it.
+    final Widget body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          progress.line,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: progress.progress),
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeOutCubic,
+            builder: (BuildContext context, double value, _) =>
+                LinearProgressIndicator(
+                  value: value,
+                  minHeight: 4,
+                  backgroundColor: dark
+                      ? AppColors.primaryLightDarkDm
+                      : AppColors.primaryLight,
+                  valueColor: AlwaysStoppedAnimation<Color>(fill),
+                ),
+          ),
+        ),
+        if (sub != null) ...<Widget>[
+          const SizedBox(height: 5),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
     return Semantics(
-      label: label,
+      label: <String>[progress.line, ?sub].join(' · '),
       excludeSemantics: true,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
-        decoration: BoxDecoration(
-          color: fill.withValues(alpha: dark ? 0.12 : 0.07),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: fill.withValues(alpha: 0.28)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(
-                  full ? Icons.emoji_events_rounded : Icons.flag_rounded,
-                  size: 16,
-                  color: fill,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    progress.line,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
+      button: ideas != null,
+      child: ideas == null
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: body,
+            )
+          : InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => MatchmakerRankSheet.show(
+                context,
+                ideas: ideas,
+                gender: _maybeRead<UserProfileProvider>(context)?.gender,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: body,
+              ),
             ),
-            const SizedBox(height: 7),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0, end: progress.progress),
-                      duration: const Duration(milliseconds: 600),
-                      curve: Curves.easeOutCubic,
-                      builder: (BuildContext context, double value, _) =>
-                          LinearProgressIndicator(
-                            value: value,
-                            minHeight: 8,
-                            backgroundColor: dark
-                                ? AppColors.primaryLightDarkDm
-                                : AppColors.primaryLight,
-                            valueColor: AlwaysStoppedAnimation<Color>(fill),
-                          ),
-                    ),
-                  ),
-                ),
-                if (fraction != null) ...<Widget>[
-                  const SizedBox(width: 10),
-                  Text(
-                    fraction,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: fill,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

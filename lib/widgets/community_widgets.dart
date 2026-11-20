@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/avatar_image.dart';
 import 'package:shadchan/utils/app_icons.dart';
 import 'package:shadchan/widgets/home_section.dart';
 import 'package:go_router/go_router.dart';
@@ -731,8 +732,8 @@ class _RankAvatar extends StatelessWidget {
       return fallback;
     }
     return ClipOval(
-      child: Image.network(
-        url,
+      child: Image(
+        image: avatarImage(context, url, diameter: _radius * 2),
         width: _radius * 2,
         height: _radius * 2,
         fit: BoxFit.cover,

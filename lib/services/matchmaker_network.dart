@@ -47,6 +47,10 @@ abstract final class MatchmakerNetwork {
 
   static String? _uid;
   static String? get uid => _uid;
+
+  /// Firestore listeners held here right now (for the performance log).
+  static int get listenerCount =>
+      _cardSubs.length + _sentSubs.length + (_proposalSub == null ? 0 : 1);
   static bool _starting = false;
   static final Map<
     String,

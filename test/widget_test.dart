@@ -763,10 +763,12 @@ void main() {
     expect(find.text('כל חבר שמצטרף למאגר הוא עוד סיכוי להתאמה'), findsNothing);
     // Under a hundred friends: the milestone, as one compact line between
     // the heading and the list — at the foot of the page now.
-    await _scrollHomeTo(tester, find.text('עוד 9 חברים ליעד הבא – 10'));
+    await _scrollHomeTo(tester, find.text('1/10 חברים במאגר · עוד 9 ליעד הבא'));
     expect(
       tester.getCenter(find.text('הפעולה הבאה שלך')).dy,
-      lessThan(tester.getCenter(find.text('עוד 9 חברים ליעד הבא – 10')).dy),
+      lessThan(
+        tester.getCenter(find.text('1/10 חברים במאגר · עוד 9 ליעד הבא')).dy,
+      ),
     );
 
     // The list of what to do next has no title and no shelves; with no work
@@ -778,7 +780,7 @@ void main() {
     expect(find.text(HomeCommunityLink.compactShareLabel), findsOneWidget);
     expect(find.text('כרטיסים וגישה'), findsNothing);
     expect(find.textContaining('תמונת פרופיל'), findsOneWidget);
-    expect(find.textContaining('לשדכנים נוספים'), findsOneWidget);
+    expect(find.text('שדכנים מאנשי הקשר שלך'), findsOneWidget);
     expect(find.text('הוספה ללוח'), findsNothing);
 
     await tester.tap(find.text('לכל הלוח'));
@@ -880,10 +882,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // **The row says what to do, as a whole sentence**: a brand-new
-    // proposal, so the boy is asked first — and about whom.
-    const String action = 'לשאול את דוד מה הוא חושב על שרה';
+    // **The row says who, then what**: "שרה × דוד", and under it a brand-new
+    // proposal's step — the boy is asked first.
+    const String action = 'שרה × דוד';
     await _scrollHomeTo(tester, find.text(action));
+    expect(find.text('לשאול את דוד מה דעתו'), findsOneWidget);
 
     // Nobody pinned this proposal: it is on the list because it is open.
     expect(

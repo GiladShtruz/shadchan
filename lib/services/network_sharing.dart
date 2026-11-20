@@ -248,38 +248,39 @@ abstract final class NetworkSharing {
   ///    matchmaker can still keep it out;
   ///  - under "שתף הכל", every card added since sharing started ([since]) —
   ///    never the older ones by themselves.
-  static bool chosen(Person person) {
-    final ShareMode current = mode;
-    if (current == ShareMode.none) return false;
-    if (excluded.contains(person.id)) return false;
-    if (selected.contains(person.id)) return true;
-    if ((person.cardOwnerUid ?? '').isNotEmpty) return true;
-    if (current == ShareMode.selected) return false;
-    final DateTime? start = since;
-    return start == null || !person.createdAt.isBefore(start);
-  }
+  static bool chosen(Person person) => _Choice.now().includes(person);
 
   /// The friends shared right now: chosen and [ShareEligibility.ready].
+  ///
+  /// The choice is read once for the whole list — it used to be decoded from
+  /// the settings again for every friend, on every rebuild of a screen.
   static List<Person> sharedNow(
     Iterable<Person> people, {
     CardAccess? Function(String ownerUid)? accessTo,
-  }) => <Person>[
-    for (final Person p in people)
-      if (chosen(p) &&
-          eligibilityOf(p, accessTo: accessTo) == ShareEligibility.ready)
-        p,
-  ];
+  }) {
+    final _Choice choice = _Choice.now();
+    if (choice.mode == ShareMode.none) return <Person>[];
+    return <Person>[
+      for (final Person p in people)
+        if (choice.includes(p) &&
+            eligibilityOf(p, accessTo: accessTo) == ShareEligibility.ready)
+          p,
+    ];
+  }
 
   /// Complete cards that could join the share and have not.
   static List<Person> addable(
     Iterable<Person> people, {
     CardAccess? Function(String ownerUid)? accessTo,
-  }) => <Person>[
-    for (final Person p in people)
-      if (!chosen(p) &&
-          eligibilityOf(p, accessTo: accessTo) == ShareEligibility.ready)
-        p,
-  ];
+  }) {
+    final _Choice choice = _Choice.now();
+    return <Person>[
+      for (final Person p in people)
+        if (!choice.includes(p) &&
+            eligibilityOf(p, accessTo: accessTo) == ShareEligibility.ready)
+          p,
+    ];
+  }
 
   /// Under "שתף הכל": the complete cards from before sharing started, which
   /// were deliberately not opened by themselves.
@@ -291,9 +292,10 @@ abstract final class NetworkSharing {
     if (start == null || mode == ShareMode.none || mode == ShareMode.selected) {
       return const <Person>[];
     }
+    final Set<String> out = excluded;
     return <Person>[
       for (final Person p in addable(people, accessTo: accessTo))
-        if (p.createdAt.isBefore(start) && !excluded.contains(p.id)) p,
+        if (p.createdAt.isBefore(start) && !out.contains(p.id)) p,
     ];
   }
 
@@ -458,4 +460,31 @@ abstract final class NetworkSharing {
 
   /// Stops sharing everything at once — "ביטול השיתוף".
   static void stopAll() => setMode(ShareMode.none);
+}
+
+/// The sharing choice, read from the settings once.
+class _Choice {
+  _Choice(this.mode, this.selected, this.excluded, this.since);
+
+  factory _Choice.now() => _Choice(
+    NetworkSharing.mode,
+    NetworkSharing.selected,
+    NetworkSharing.excluded,
+    NetworkSharing.since,
+  );
+
+  final ShareMode mode;
+  final Set<String> selected;
+  final Set<String> excluded;
+  final DateTime? since;
+
+  bool includes(Person person) {
+    if (mode == ShareMode.none) return false;
+    if (excluded.contains(person.id)) return false;
+    if (selected.contains(person.id)) return true;
+    if ((person.cardOwnerUid ?? '').isNotEmpty) return true;
+    if (mode == ShareMode.selected) return false;
+    final DateTime? start = since;
+    return start == null || !person.createdAt.isBefore(start);
+  }
 }

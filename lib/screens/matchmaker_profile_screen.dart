@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/avatar_image.dart';
 import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -379,8 +380,8 @@ class _Header extends StatelessWidget {
           fallback
         else
           ClipOval(
-            child: Image.network(
-              photoUrl,
+            child: Image(
+              image: avatarImage(context, photoUrl, diameter: _radius * 2),
               width: _radius * 2,
               height: _radius * 2,
               fit: BoxFit.cover,

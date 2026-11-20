@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/widgets/accent_stripe.dart';
 
 /// One row the way "הלוח שלי" draws it: an accent bar in the person's colour
@@ -191,8 +192,15 @@ class BoardRow extends StatelessWidget {
 
   Widget _buildFlat(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
     final String? sub = subtitle?.trim();
+    final IconData? why = mark;
     final ValueChanged<BuildContext>? longPress = onLongPress;
+    final Color muted = theme.colorScheme.onSurfaceVariant;
+    // The action list: on the bare white page, a hairline between rows (the
+    // list draws it), no frame and no coloured ground — the kind of action
+    // is told by one small icon only, and something new by a small
+    // brown-orange dot.
     return Builder(
       builder: (BuildContext rowContext) => InkWell(
         onTap: onTap,
@@ -200,7 +208,7 @@ class BoardRow extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 64),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 9),
             child: Row(
               children: <Widget>[
                 leading,
@@ -218,34 +226,42 @@ class BoardRow extends StatelessWidget {
                               height: 7,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: theme.colorScheme.secondary,
+                                color: dark
+                                    ? AppColors.secondaryDarkDm
+                                    : AppColors.secondary,
                               ),
                             ),
                             const SizedBox(width: 6),
                           ],
-                          // The whole sentence, always: an action cut off
-                          // with "…" is an action nobody can read. It wraps.
                           Flexible(
                             child: Text(
                               title,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.fade,
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
-                                height: 1.3,
                                 color: titleColor,
                               ),
                             ),
                           ),
+                          if (why != null) ...<Widget>[
+                            const SizedBox(width: 6),
+                            Icon(why, size: 15, color: muted),
+                          ],
                         ],
                       ),
                       if (sub != null && sub.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 2),
-                        // Always one short line under the action.
+                        // One short grey line, always one line — faded at
+                        // the edge rather than cut with "…".
                         Text(
                           sub,
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          overflow: TextOverflow.fade,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: subtitleColor,
+                            color: subtitleColor ?? muted,
                           ),
                         ),
                       ],
@@ -257,8 +273,8 @@ class BoardRow extends StatelessWidget {
                   // Material's chevrons mirror themselves in RTL: this one
                   // points left, into the item.
                   Icons.chevron_right_rounded,
-                  size: 22,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  size: 20,
+                  color: muted.withValues(alpha: 0.7),
                 ),
               ],
             ),

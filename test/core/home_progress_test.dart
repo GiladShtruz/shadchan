@@ -6,20 +6,29 @@ void main() {
   group('under a hundred friends: the staged milestones', () {
     test('the friends there are and how many to the next target', () {
       final HomeProgress p = HomeProgress.milestone(37);
-      expect(p.line, 'עוד 13 חברים ליעד הבא – 50');
+      expect(p.line, '37/50 חברים במאגר · עוד 13 ליעד הבא');
       expect(p.fractionLabel, '37 מתוך 50 חברים');
       expect(p.progress, greaterThan(0));
       expect(p.progress, lessThan(1));
     });
 
     test('one friend and none', () {
-      expect(HomeProgress.milestone(1).line, 'עוד 9 חברים ליעד הבא – 10');
-      expect(HomeProgress.milestone(0).line, 'עוד 10 חברים ליעד הבא – 10');
+      expect(
+        HomeProgress.milestone(1).line,
+        '1/10 חברים במאגר · עוד 9 ליעד הבא',
+      );
+      expect(
+        HomeProgress.milestone(0).line,
+        '0/10 חברים במאגר · עוד 10 ליעד הבא',
+      );
     });
   });
 
-  test('one friend short says so in words', () {
-    expect(HomeProgress.milestone(24).line, 'עוד חבר אחד ליעד הבא – 25');
+  test('the 73/100 example', () {
+    expect(
+      HomeProgress.milestone(73).line,
+      '73/100 חברים במאגר · עוד 27 ליעד הבא',
+    );
   });
 
   group('from a hundred: a real figure of the matchmaker\'s own', () {

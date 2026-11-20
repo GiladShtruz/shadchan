@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shadchan/utils/avatar_image.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -27,7 +28,6 @@ import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/utils/activity_stats.dart';
 import 'package:shadchan/utils/dating_history.dart';
-import 'package:shadchan/utils/matchmaker_rank.dart';
 import 'package:shadchan/widgets/matchmaker_rank_badge.dart';
 
 /// "הפרופיל שלי" — the matchmaker's own page, and the one place the app's
@@ -635,7 +635,9 @@ class _AccountAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: 20,
       backgroundColor: theme.colorScheme.primaryContainer,
-      foregroundImage: photoUrl == null ? null : NetworkImage(photoUrl!),
+      foregroundImage: photoUrl == null
+          ? null
+          : avatarImage(context, photoUrl!, diameter: 40),
       child: initial.isEmpty
           ? Icon(
               Icons.person_outline,
@@ -770,12 +772,10 @@ class _OwnRank extends StatelessWidget {
       matchStatusEvents: matches.getAllStatusEvents(),
       excludedFromDating: DatingCountExclusions.all(),
     ).ideas;
-    if (MatchmakerRanks.current(ideas) == null) {
-      return const SizedBox.shrink();
-    }
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: MatchmakerRankBadge(
+        own: true,
         ideas: ideas,
         gender: _maybeWatchRepo<UserProfileProvider>(context)?.gender,
       ),

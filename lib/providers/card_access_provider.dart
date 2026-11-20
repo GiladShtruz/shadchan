@@ -58,10 +58,29 @@ class CardAccessProvider extends ChangeNotifier {
     }
   }
   bool _disposed = false;
+
+  /// Bumped on every notification, so a screen can keep a figure it computed
+  /// from this provider until something here actually moved.
+  int get revision => _revision;
+  int _revision = 0;
+
+  /// Bumped only when the helpers list (or whether it is loaded) changed.
+  int get helpersRevision => _helpersRevision;
+  int _helpersRevision = 0;
+  String _helpersPrint = '';
+  String _ownerPrint = '';
+  String _granteePrint = '';
+  String _matchmakerPrint = '';
+
   @override
   void notifyListeners() {
+    _revision++;
     if (!_disposed) super.notifyListeners();
   }
+
+  /// How many Firestore listeners this provider holds right now — for the
+  /// performance log of "שדכנים שאני מכיר".
+  int get listenerCount => _subscriptions.length + _cardSubscriptions.length;
 
   String _workspaceKey = '';
   Future<void> _workspaceChain = Future<void>.value();
@@ -344,6 +363,19 @@ class CardAccessProvider extends ChangeNotifier {
     QuerySnapshot<Map<String, dynamic>> snap, {
     required bool byGrantee,
   }) {
+    final String print =
+        '${snap.metadata.isFromCache}|'
+        '${snap.docs.map((d) => '${d.id}:${d.data()}').join(';')}';
+    if (print == (byGrantee ? _granteePrint : _matchmakerPrint)) {
+      // A metadata-only snapshot with nothing new: no rebuild, no disk
+      // write, no reconcile over the whole database.
+      return;
+    }
+    if (byGrantee) {
+      _granteePrint = print;
+    } else {
+      _matchmakerPrint = print;
+    }
     final Map<String, CardAccess> target = byGrantee
         ? _rowsByGrantee
         : _rowsByMatchmakerUid;
@@ -467,8 +499,13 @@ class CardAccessProvider extends ChangeNotifier {
               .where('ownerUid', isEqualTo: uid)
               .snapshots(includeMetadataChanges: true)
               .listen((QuerySnapshot<Map<String, dynamic>> snap) {
-                _ownerAccessLoaded =
+                final bool loaded =
                     !snap.metadata.isFromCache || snap.docs.isNotEmpty;
+                final String print =
+                    '$loaded|${snap.docs.map((d) => '${d.id}:${d.data()}').join(';')}';
+                final bool same = print == _ownerPrint;
+                _ownerPrint = print;
+                _ownerAccessLoaded = loaded;
                 _asOwner = <CardAccess>[
                   for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
                       in snap.docs)
@@ -483,7 +520,7 @@ class CardAccessProvider extends ChangeNotifier {
                     ),
                   );
                 }
-                notifyListeners();
+                if (!same) notifyListeners();
               }, onError: _log),
         )
         ..add(
@@ -543,6 +580,14 @@ class CardAccessProvider extends ChangeNotifier {
               .doc('helpers')
               .snapshots(includeMetadataChanges: true)
               .listen((DocumentSnapshot<Map<String, dynamic>> snap) {
+                final bool loaded = snap.exists || !snap.metadata.isFromCache;
+                // A metadata-only snapshot (cache → server, a pending write
+                // elsewhere) carries the same list: nothing to rebuild. Every
+                // screen that watches this provider used to redraw for it.
+                final String print = '$loaded|${snap.data()}';
+                if (print == _helpersPrint) return;
+                _helpersPrint = print;
+                _helpersRevision++;
                 final Object? list = snap.data()?['helpers'];
                 _helpers = <CardHelper>[
                   if (list is List)
@@ -586,7 +631,7 @@ class CardAccessProvider extends ChangeNotifier {
                           phoneHash: item['phoneHash'] as String?,
                         ),
                 ];
-                _helpersLoaded = snap.exists || !snap.metadata.isFromCache;
+                _helpersLoaded = loaded;
                 notifyListeners();
               }, onError: _log),
         );
@@ -630,6 +675,11 @@ class CardAccessProvider extends ChangeNotifier {
     _helpers = <CardHelper>[];
     _friends = <CardHelper>[];
     _helpersLoaded = false;
+    _helpersPrint = '';
+    _ownerPrint = '';
+    _granteePrint = '';
+    _matchmakerPrint = '';
+    _helpersRevision++;
     _ownerAccessLoaded = false;
     _lookups.clear();
     _applying.clear();

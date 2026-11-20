@@ -3,141 +3,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/services/offline_guard.dart';
-import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/contacts_import_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
-import 'package:shadchan/utils/enums.dart';
-import 'package:shadchan/utils/gender_text.dart';
 
-/// The ways a contact can get into the database. Mirrors the "הוספת חברים"
-/// tiles on the home screen so both entry points offer the same choices.
-enum AddPeopleMethod { fromContacts, manual, ai }
-
-/// Asks how the user wants to add contacts and routes to the chosen flow.
+/// "הוספת חברים": straight to the contacts page.
+///
+/// **The fast way is the default.** It used to ask first — contacts, by hand
+/// or AI — in a dialog of its own; now the contacts page opens at once, and
+/// carries "הוספה ידנית" and "הוספה מרוכזת באמצעות AI" at its top.
 abstract final class AddPeopleDialog {
   static Future<void> show(BuildContext context) async {
     if (!OfflineGuard.allow(context)) {
       return;
     }
-    // The seconds spent reading this dialog are seconds the contact cache can
-    // be coming off disk in. It touches no permission and no address book —
-    // only a Hive box the app wrote itself — so warming it here costs nothing
-    // even when the answer turns out to be "הוספה ידנית".
     unawaited(ContactsImportService.prewarmCache());
-
-    // Backing out of a flow returns to this choice, not to the page under it:
-    // the dialog is the step before, so it is what "back" should land on.
-    // A flow that finished — something was added, or it moved on to a profile
-    // or to the database — ends the loop.
-    while (context.mounted) {
-      final AddPeopleMethod? method = await showDialog<AddPeopleMethod>(
-        context: context,
-        builder: (BuildContext dialogContext) => const _AddPeopleDialog(),
-      );
-      if (method == null || !context.mounted) {
-        return;
-      }
-
-      final String location = GoRouter.of(
-        context,
-      ).routerDelegate.currentConfiguration.uri.toString();
-      final Object? result = await context.push<Object?>(switch (method) {
-        AddPeopleMethod.fromContacts => '/people/import',
-        AddPeopleMethod.manual => '/people/add',
-        AddPeopleMethod.ai => '/people/ai',
-      });
-      if (!context.mounted || result != null) {
-        return;
-      }
-      // Only a plain back press leaves the caller's page on top again, at the
-      // same location. A save that replaced the form with a profile, or an
-      // import that went to המאגר שלי, does not.
-      final bool backWhereWeStarted =
-          (ModalRoute.of(context)?.isCurrent ?? true) &&
-          GoRouter.of(
-                context,
-              ).routerDelegate.currentConfiguration.uri.toString() ==
-              location;
-      if (!backWhereWeStarted) {
-        return;
-      }
-    }
-  }
-}
-
-class _AddPeopleDialog extends StatelessWidget {
-  const _AddPeopleDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-
-    // A single calm slate accent carries the whole dialog. The window is the
-    // size of its three choices and nothing more — a title line, the rows and
-    // one quiet sentence; no illustration and no empty band above them.
-    final Color slate = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
-
-    return Dialog(
-      backgroundColor: theme.colorScheme.surface,
-      clipBehavior: Clip.antiAlias,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    'הוספת חברים למאגר',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                AddDialogCloseButton(
-                  slate: slate,
-                  dark: dark,
-                  onTap: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            AddMethodCard(
-              icon: Icons.contacts_rounded,
-              title: 'הוספה מאנשי הקשר',
-              slate: slate,
-              dark: dark,
-              onTap: () =>
-                  Navigator.of(context).pop(AddPeopleMethod.fromContacts),
-            ),
-            const SizedBox(height: 10),
-            AddMethodCard(
-              icon: Icons.edit_rounded,
-              title: 'הוספה ידנית',
-              slate: slate,
-              dark: dark,
-              onTap: () => Navigator.of(context).pop(AddPeopleMethod.manual),
-            ),
-            const SizedBox(height: 10),
-            AddMethodCard(
-              icon: Icons.auto_awesome_rounded,
-              title: 'הוספה באמצעות AI',
-              slate: slate,
-              dark: dark,
-              onTap: () => Navigator.of(context).pop(AddPeopleMethod.ai),
-            ),
-            const SizedBox(height: 14),
-            _SecurityFooter(slate: slate),
-          ],
-        ),
-      ),
-    );
+    await context.push<Object?>('/people/import');
   }
 }
 
@@ -227,41 +107,6 @@ class _IconBadge extends StatelessWidget {
         color: slate.withValues(alpha: dark ? 0.22 : 0.12),
       ),
       child: Icon(icon, color: slate, size: 22),
-    );
-  }
-}
-
-class _SecurityFooter extends StatelessWidget {
-  const _SecurityFooter({required this.slate});
-
-  final Color slate;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Gender? gender = context.userGender;
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Icon(
-          Icons.verified_user_rounded,
-          size: 14,
-          color: slate.withValues(alpha: 0.8),
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            'המידע נשמר בצורה מאובטחת ורק {אתה רואה|את רואה} אותו'.forGender(
-              gender,
-            ),
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

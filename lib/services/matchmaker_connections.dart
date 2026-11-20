@@ -50,6 +50,10 @@ abstract final class MatchmakerConnections {
   static String? _uid;
   static bool _starting = false;
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  static String? _print;
+
+  /// Firestore listeners held here right now (for the performance log).
+  static int get listenerCount => _sub == null ? 0 : 1;
 
   /// This account's uid once connected.
   static String? get uid => _uid;
@@ -80,14 +84,22 @@ abstract final class MatchmakerConnections {
           .snapshots(includeMetadataChanges: true)
           .listen((QuerySnapshot<Map<String, dynamic>> snap) {
             if (_uid != uid) return;
+            if (!snap.metadata.isFromCache || snap.docs.isNotEmpty) {
+              loaded.value = true;
+            }
+            // Metadata-only snapshots carry the same rows: replacing the list
+            // would wake every listener (and the network's listener sync)
+            // for nothing.
+            final String print = snap.docs
+                .map((d) => '${d.id}:${d.data()}')
+                .join(';');
+            if (print == _print) return;
+            _print = print;
             connections.value = <MatchmakerConnection>[
               for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
                   in snap.docs)
                 ?MatchmakerConnection.fromMap(doc.id, doc.data()),
             ];
-            if (!snap.metadata.isFromCache || snap.docs.isNotEmpty) {
-              loaded.value = true;
-            }
           }, onError: _log);
     } catch (error, stackTrace) {
       _log(error, stackTrace);
@@ -100,6 +112,7 @@ abstract final class MatchmakerConnections {
   static Future<void> stop() async {
     await _sub?.cancel();
     _sub = null;
+    _print = null;
     _uid = null;
     connections.value = const <MatchmakerConnection>[];
     loaded.value = false;

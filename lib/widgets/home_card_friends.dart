@@ -7,12 +7,12 @@ import 'package:shadchan/models/card_access.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/models/person_event.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
-import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/friends_with_cards_screen.dart';
 import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/person_navigation.dart';
+import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
 
 T? _maybeWatch<T>(BuildContext context) {
@@ -25,13 +25,8 @@ T? _maybeWatch<T>(BuildContext context) {
 
 /// One friend in the carousel, and when their card last moved.
 class CardFriendSlide {
-  const CardFriendSlide({
-    required this.friend,
-    required this.person,
-    required this.lastActivityAt,
-  });
+  const CardFriendSlide({required this.person, required this.lastActivityAt});
 
-  final FriendWithCard friend;
   final Person person;
 
   /// The photo drawn on the card: the first one actually on this device. A
@@ -39,32 +34,38 @@ class CardFriendSlide {
   /// with an empty circle is exactly what this row must never draw.
   String? get photoPath => PersonAvatar.firstExistingPhoto(person);
 
-  /// The latest meaningful thing that happened to this card: the owner
-  /// changed details or a photo, their status moved, or they gave (or
+  /// The latest meaningful thing that happened to this friend: their record
+  /// was edited, their card synced, their status moved, or they gave (or
   /// widened) access. The carousel is ordered by it, newest first.
   final DateTime lastActivityAt;
 }
 
-/// "החברים שלך בשדכן" — on בית, under the two add buttons.
+/// "החברים שלך במאגר" — on בית, under the two add buttons.
 ///
-/// **Only friends this matchmaker can actually open:** access approved, a
-/// card with text, and a photo that is really on this device. Drawn the way
-/// Instagram draws "הצעות בשבילך": a continuous horizontal row of small cards,
-/// each a round photo, the full name and one "התאמות" button — newest
-/// activity first, so a card that changed today or a friend who has just
-/// said yes comes to the front by itself.
+/// **Every friend in the database with a full card** — card text and a
+/// photo really on this device — whether the matchmaker wrote the card or the
+/// friend keeps their own. Drawn the way Instagram draws "הצעות בשבילך": a
+/// continuous horizontal row of compact cards, each a large round photo, the
+/// full name and one "התאמות" button.
 ///
-/// Under the carousel, one line to everybody else who keeps a card:
-/// "עוד X חברים מנהלים כרטיס אישי".
+/// **Newest first, and a little different each visit.** The friends updated
+/// most recently lead ([fixedLead]); the rest of the row turns over on every
+/// app open and return, so the database keeps coming back to mind instead of
+/// the same ten faces. Only [maxSlides] are ever built, and the row builds
+/// lazily as it scrolls.
 ///
-/// Nothing is drawn while there is nobody to show and nobody to ask.
-class HomeCardFriendsSection extends StatelessWidget {
+/// Under it, always: "חברים שלי שמנהלים כרטיס אישי".
+class HomeCardFriendsSection extends StatefulWidget {
   const HomeCardFriendsSection({super.key});
 
-  static const String title = 'החברים שלך בשדכן';
+  static const String title = 'החברים שלך במאגר';
+  static const String cardOwnersLink = 'חברים שלי שמנהלים כרטיס אישי';
 
   /// How many slides the carousel holds at most.
-  static const int maxSlides = 15;
+  static const int maxSlides = 20;
+
+  /// How many of the most recently updated always lead the row.
+  static const int fixedLead = 6;
 
   /// The event kinds that count as a card moving.
   static const Set<PersonEventType> _activity = <PersonEventType>{
@@ -78,38 +79,63 @@ class HomeCardFriendsSection extends StatelessWidget {
       (person.description?.trim().isNotEmpty ?? false) &&
       person.photosPaths.any((String p) => p.trim().isNotEmpty);
 
-  /// The slides, newest activity first. Pure, for tests.
+  /// The friends who can be in the row, newest activity first. Pure, for
+  /// tests: [hasPhoto] says whether a photo is really on the device.
   static List<CardFriendSlide> slidesFor(
-    List<FriendWithCard> friends, {
+    Iterable<Person> people, {
     required Map<String, DateTime> latestEventByPerson,
     required CardAccess? Function(String ownerUid) rowOf,
   }) {
     final List<CardFriendSlide> slides = <CardFriendSlide>[];
-    for (final FriendWithCard friend in friends) {
-      final Person? person = friend.person;
-      if (friend.state != FriendCardState.sees ||
-          person == null ||
-          person.hidden ||
+    for (final Person person in people) {
+      if (person.hidden ||
+          person.needsReview ||
+          person.profileStatus == ProfileStatus.mazelTov ||
           !isFullCard(person)) {
         continue;
       }
-      DateTime last = person.createdAt;
+      DateTime last = person.updatedAt.isAfter(person.createdAt)
+          ? person.updatedAt
+          : person.createdAt;
+      final String? owner = person.cardOwnerUid;
       for (final DateTime? at in <DateTime?>[
         latestEventByPerson[person.id],
-        rowOf(friend.ownerUid)?.updatedAt,
-        friend.cardCreatedAt,
+        owner == null || owner.isEmpty ? null : rowOf(owner)?.updatedAt,
       ]) {
         if (at != null && at.isAfter(last)) last = at;
       }
-      slides.add(
-        CardFriendSlide(friend: friend, person: person, lastActivityAt: last),
-      );
+      slides.add(CardFriendSlide(person: person, lastActivityAt: last));
     }
     slides.sort(
       (CardFriendSlide a, CardFriendSlide b) =>
           b.lastActivityAt.compareTo(a.lastActivityAt),
     );
     return slides;
+  }
+
+  /// The row for one visit: the [fixedLead] newest, then the rest turned by
+  /// [seed] — each at most once, only those with a photo on the device
+  /// ([hasPhoto]), [maxSlides] in all.
+  static List<CardFriendSlide> pick(
+    List<CardFriendSlide> ranked, {
+    required int seed,
+    bool Function(CardFriendSlide slide)? hasPhoto,
+  }) {
+    final bool Function(CardFriendSlide) ok =
+        hasPhoto ?? (CardFriendSlide s) => s.photoPath != null;
+    final List<CardFriendSlide> out = <CardFriendSlide>[];
+    int i = 0;
+    for (; i < ranked.length && out.length < fixedLead; i++) {
+      if (ok(ranked[i])) out.add(ranked[i]);
+    }
+    final List<CardFriendSlide> rest = ranked.sublist(i);
+    if (rest.isEmpty) return out;
+    final int start = (seed * 7).abs() % rest.length;
+    for (int k = 0; k < rest.length && out.length < maxSlides; k++) {
+      final CardFriendSlide s = rest[(start + k) % rest.length];
+      if (ok(s)) out.add(s);
+    }
+    return out;
   }
 
   static Map<String, DateTime>? _latestMemo;
@@ -133,45 +159,90 @@ class HomeCardFriendsSection extends StatelessWidget {
   }
 
   @override
+  State<HomeCardFriendsSection> createState() => _HomeCardFriendsSectionState();
+}
+
+class _HomeCardFriendsSectionState extends State<HomeCardFriendsSection>
+    with WidgetsBindingObserver {
+  static int _visits = 0;
+  late int _seed = _visits++;
+
+  Object? _key;
+  List<CardFriendSlide> _shown = const <CardFriendSlide>[];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the app is a new visit: the row turns over.
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() => _seed = _visits++);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final CardAccessProvider? access = _maybeWatch<CardAccessProvider>(context);
     final PersonRepository? people = _maybeWatch<PersonRepository>(context);
-    if (access == null || people == null) {
+    if (people == null) {
       return const SizedBox.shrink();
     }
-    final List<FriendWithCard> all = FriendsWithCards.build(
-      access: access,
-      people: people,
-      inbox: _maybeWatch<InboxProvider>(context),
-    );
-    if (all.isEmpty) {
-      return const SizedBox.shrink();
+    // Only the access rows' revision — not every notification — and only
+    // to date a friend's last activity.
+    final CardAccessProvider? access = _maybeRead<CardAccessProvider>(context);
+    final int accessRev = access == null
+        ? 0
+        : context.select<CardAccessProvider, int>(
+            (CardAccessProvider a) => a.revision,
+          );
+    final Object key = Object.hash(people.revision, accessRev, _seed);
+    if (key != _key) {
+      _key = key;
+      _shown = HomeCardFriendsSection.pick(
+        HomeCardFriendsSection.slidesFor(
+          people.getAll(),
+          latestEventByPerson: HomeCardFriendsSection._latestEvents(people),
+          rowOf: access?.accessTo ?? (_) => null,
+        ),
+        seed: _seed,
+      );
     }
-    final List<CardFriendSlide> slides = slidesFor(
-      all,
-      latestEventByPerson: _latestEvents(people),
-      rowOf: access.accessTo,
-    ).where((CardFriendSlide s) => s.photoPath != null).toList();
-    final List<CardFriendSlide> shown = slides.take(maxSlides).toList();
-    final int more = all.length - shown.length;
     final ThemeData theme = Theme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
-          title,
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w900,
+        if (_shown.isNotEmpty) ...<Widget>[
+          Text(
+            HomeCardFriendsSection.title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        ),
-        if (shown.isNotEmpty) ...<Widget>[
           const SizedBox(height: 10),
-          _Carousel(slides: shown),
+          _Carousel(slides: _shown),
+          const SizedBox(height: 6),
         ],
-        if (more > 0 || shown.isEmpty) _MoreLink(more: more),
+        const _CardOwnersButton(),
       ],
     );
+  }
+}
+
+T? _maybeRead<T>(BuildContext context) {
+  try {
+    return Provider.of<T>(context, listen: false);
+  } on ProviderNotFoundException {
+    return null;
   }
 }
 
@@ -180,7 +251,7 @@ class _Carousel extends StatelessWidget {
 
   final List<CardFriendSlide> slides;
 
-  static const double _width = 128;
+  static const double _width = 132;
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +260,7 @@ class _Carousel extends StatelessWidget {
     ).scale(1).clamp(1, 1.4);
     return SizedBox(
       // The photo is fixed; the name and the button grow with the font.
-      height: 92 + 84 * scale,
+      height: 102 + 84 * scale,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
@@ -218,7 +289,7 @@ class _Slide extends StatelessWidget {
   final CardFriendSlide slide;
   final double width;
 
-  static const double _photo = 76;
+  static const double _photo = 86;
 
   @override
   Widget build(BuildContext context) {
@@ -354,40 +425,33 @@ class _Slide extends StatelessWidget {
   }
 }
 
-class _MoreLink extends StatelessWidget {
-  const _MoreLink({required this.more});
-
-  final int more;
+/// "חברים שלי שמנהלים כרטיס אישי" — always under the row, to the page of
+/// the friends who keep their own card.
+class _CardOwnersButton extends StatelessWidget {
+  const _CardOwnersButton();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Color link = dark ? AppColors.primaryDarkDm : AppColors.primaryDark;
-    final String text = more <= 0
-        ? 'לכל החברים שמנהלים כרטיס אישי'
-        : more == 1
-        ? 'עוד חבר אחד מנהל כרטיס אישי'
-        : 'עוד $more חברים מנהלים כרטיס אישי';
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () => context.push(FriendsWithCardsScreen.route),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                text,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: link,
-                ),
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, size: 18, color: link),
-          ],
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: OutlinedButton.icon(
+        onPressed: () => context.push(FriendsWithCardsScreen.route),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: link,
+          side: BorderSide(color: link.withValues(alpha: 0.45)),
+          visualDensity: VisualDensity.compact,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
+        icon: const Icon(Icons.badge_outlined, size: 18),
+        label: const Text(HomeCardFriendsSection.cardOwnersLink),
       ),
     );
   }
