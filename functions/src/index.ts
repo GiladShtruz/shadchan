@@ -25,6 +25,7 @@ export {
  * a courtesy.
  */
 export { savePrivateLooking } from './private_looking';
+export { restoreRevokedGrants } from './grant_restore';
 export { cardPhoto } from './card_photos';
 export {
   sharedCardPhoto,
@@ -32,8 +33,9 @@ export {
   onChatMessageCreated,
   onCardAccessShareOnward,
   onPersonalCardDeletedUnshare,
+  onPartnershipWritten,
 } from './network';
-import { deleteNetworkOf } from './network';
+import { deleteNetworkOf, deletePartnerCardsOf } from './network';
 import { isActiveCard } from './card_activity';
 import { initializeApp } from 'firebase-admin/app';
 import {
@@ -938,6 +940,10 @@ export const onAccountDeleted = functionsV1
     await deleteConnectionsOf(uid);
     // The cards shared with them, ideas offered between them, chats.
     await deleteNetworkOf(uid);
+    // A couple space: the database published to the partner, and the tie.
+    await deletePartnerCardsOf(uid);
+    for (const p of (await db.collection('partnerships').where('uids', 'array-contains', uid).get()).docs)
+      await p.ref.delete();
     // Deleting it counts this matchmaker out of every tag word they used.
     await db.collection('tagUsage').doc(uid).delete();
     // The support view of this account's sync (counts and error codes).

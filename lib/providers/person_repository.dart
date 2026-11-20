@@ -27,10 +27,27 @@ class PersonRepository extends ChangeNotifier {
     // Offline, the friends' cards last confirmed by the server are shown as
     // they were; the line between shown and hidden moves with the connection.
     ConnectivityStatus.offline.addListener(_onConnectivityChanged);
+    // A write that reaches the box without passing through this repository
+    // (the account sync, a migration) drops the sorted copy too.
+    _boxWatch = _box.watch().listen((_) => _allCache = null);
     // Pending notifications do not survive a reinstall or a device restart on
     // every Android build, so the whole set is re-scheduled on startup.
     _refreshPersonRemindersInBackground();
   }
+
+  StreamSubscription<BoxEvent>? _boxWatch;
+
+  /// The readable people, sorted by first name — kept between calls.
+  ///
+  /// **This was the heaviest thing on the home screen.** Every `getAll()`
+  /// sorted the whole database again, lower-casing two names per comparison,
+  /// and one home rebuild asks for it around twenty times: with a few hundred
+  /// friends that is tens of thousands of short-lived strings per frame —
+  /// garbage collection that shows up as a stutter in the middle of a
+  /// scroll, worst on phones that throttle hard (Xiaomi/MIUI). Now it is
+  /// sorted once per change, with each name lower-cased once.
+  List<Person>? _allCache;
+  int _allCacheLength = -1;
 
   final Box<Person> _box;
   final Box<PersonNote>? _noteBox;
@@ -58,8 +75,21 @@ class PersonRepository extends ChangeNotifier {
     }
   }
 
+  /// Bumped on every change this repository announces — a cheap key for a
+  /// screen that memoises something it computed over the whole database.
+  int get revision => _revision;
+  int _revision = 0;
+
+  @override
+  void notifyListeners() {
+    _revision++;
+    _allCache = null;
+    super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    unawaited(_boxWatch?.cancel());
     ConnectivityStatus.offline.removeListener(_onConnectivityChanged);
     super.dispose();
   }
@@ -139,9 +169,25 @@ class PersonRepository extends ChangeNotifier {
   }
 
   List<Person> getAll() {
-    final List<Person> people = _readableValues.toList();
-    people.sort(_sortByFirstName);
-    return people;
+    final List<Person>? cached = _allCache;
+    // The length guards a write made a moment ago whose box event has not
+    // arrived yet (an add or a delete); an edit always comes through
+    // [notifyListeners] or the box's own event.
+    if (cached != null && _allCacheLength == _box.length) {
+      return List<Person>.of(cached);
+    }
+    final List<Person> readable = _readableValues.toList();
+    final List<String> keys = <String>[
+      for (final Person p in readable) p.firstName.toLowerCase(),
+    ];
+    final List<int> order = List<int>.generate(readable.length, (int i) => i)
+      ..sort((int a, int b) => keys[a].compareTo(keys[b]));
+    final List<Person> people = <Person>[
+      for (final int i in order) readable[i],
+    ];
+    _allCache = people;
+    _allCacheLength = _box.length;
+    return List<Person>.of(people);
   }
 
   List<Person> getPending() {

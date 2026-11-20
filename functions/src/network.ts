@@ -30,13 +30,16 @@ import { connectionId } from './matchmaker_connections';
 /** The largest photo returned inline. */
 export const MAX_SHARED_PHOTO_BYTES = 8 * 1024 * 1024;
 
-/** `sharedCards/{ownerUid}/{personId}/{file}` and nothing else. */
+/**
+ * `sharedCards/{ownerUid}/{personId}/{file}` — or, for a couple space,
+ * `partnerCards/{ownerUid}/{personId}/{file}` — and nothing else.
+ */
 export function validSharedPhotoPath(ownerUid: string, path: unknown): path is string {
   if (typeof path !== 'string' || !ownerUid || ownerUid.includes('/')) return false;
   const parts = path.split('/');
   return (
     parts.length === 4 &&
-    parts[0] === 'sharedCards' &&
+    (parts[0] === 'sharedCards' || parts[0] === 'partnerCards') &&
     parts[1] === ownerUid &&
     parts.slice(2).every((p) => p.length > 0 && p !== '.' && p !== '..')
   );
@@ -54,12 +57,24 @@ export interface SharedPhotoAccess {
    * idea's photos reachable after the two disconnect.
    */
   inProposal: boolean;
+  /** `partnerships/{a}_{b}` of the two, if any — a couple space. */
+  partnership?: Record<string, unknown> | undefined;
 }
 
 /** Whether [a.uid] may receive [a.path]. */
 export function mayReadSharedPhoto(a: SharedPhotoAccess): boolean {
   if (!validSharedPhotoPath(a.ownerUid, a.path)) return false;
   if (a.uid === a.ownerUid) return true;
+  const partnerPhoto = a.path.startsWith('partnerCards/');
+  // A partner's whole database is open to the other partner while the couple
+  // space is active — and only to them.
+  if (partnerPhoto) {
+    if (a.partnership?.status === 'active') {
+      const uids = Array.isArray(a.partnership.uids) ? a.partnership.uids : [];
+      if (uids.includes(a.uid) && uids.includes(a.ownerUid)) return true;
+    }
+    return a.inProposal;
+  }
   if (a.connection?.status === 'approved') {
     const uids = Array.isArray(a.connection.uids) ? a.connection.uids : [];
     if (uids.includes(a.uid) && uids.includes(a.ownerUid)) return true;
@@ -95,12 +110,16 @@ export const sharedCardPhoto = onCall(
       throw new HttpsError('invalid-argument', 'נתיב לא תקין');
     }
     const db = getFirestore();
-    const connection = await db.doc(`matchmakerConnections/${connectionId(uid, ownerUid)}`).get();
+    const [connection, partnership] = await Promise.all([
+      db.doc(`matchmakerConnections/${connectionId(uid, ownerUid)}`).get(),
+      db.doc(`partnerships/${connectionId(uid, ownerUid)}`).get(),
+    ]);
     let allowed = mayReadSharedPhoto({
       uid,
       ownerUid,
       path,
       connection: connection.exists ? connection.data() : undefined,
+      partnership: partnership.exists ? partnership.data() : undefined,
       inProposal: false,
     });
     if (!allowed && uid !== ownerUid) {
@@ -147,6 +166,16 @@ export function proposalNotice(
       body: `${candidate} ו${target} – לאשר את הרעיון?`,
       // The offer is already in the chat between the two; activity in the
       // network is never pushed — only a request to connect is.
+      push: false,
+    };
+  }
+  if (was === null && now === 'approved') {
+    // A couple space: the idea is already open on both phones.
+    return {
+      to: 'to',
+      kind: 'ideaProposalApproved',
+      title: `${doc.fromName || 'בן/בת הזוג'} פתח/ה רעיון משותף`,
+      body: `${candidate} ו${target} — הרעיון פתוח אצל שניכם`,
       push: false,
     };
   }
@@ -204,6 +233,8 @@ export function proposalEvents(
 ): string[] {
   const events: string[] = [];
   if (was !== now) {
+    // Between partners an idea opens at once, with no question asked.
+    if (was === null && now === 'approved') events.push(`נפתח רעיון משותף: ${pair}`);
     if (was === 'pending' && now === 'approved') events.push(`הרעיון ${pair} אושר ונפתח`);
     if (was === 'pending' && now === 'declined') events.push(`הרעיון ${pair} לא אושר`);
     if (was === 'pending' && now === 'withdrawn') events.push(`ההצעה ${pair} בוטלה`);
@@ -463,5 +494,33 @@ export async function deleteNetworkOf(uid: string): Promise<void> {
   const chats = await db.collection('chats').where('members', 'array-contains', uid).get();
   for (const chat of chats.docs) {
     await db.recursiveDelete(chat.ref);
+  }
+}
+
+/**
+ * A couple space ended: each side's published database is taken down at
+ * once, whoever ended it — the rules already refuse every read, this only
+ * removes what nobody can see any more. Nothing is deleted from either
+ * personal database, and ideas already opened stay with both as history.
+ */
+export const onPartnershipWritten = onDocumentWritten('partnerships/{id}', async (event) => {
+  const after = event.data?.after;
+  const before = event.data?.before;
+  const ended = !after?.exists || after.get('status') === 'ended';
+  const wasActive = before?.exists && before.get('status') === 'active';
+  if (!ended || !wasActive) return;
+  const uids: string[] = (before.get('uids') as string[]) ?? [];
+  for (const uid of uids) await deletePartnerCardsOf(uid);
+});
+
+/** Removes `partnerCards/{uid}` — the documents and their photos. */
+export async function deletePartnerCardsOf(uid: string): Promise<void> {
+  const db = getFirestore();
+  const cards = await db.collection(`partnerCards/${uid}/cards`).get();
+  for (const d of cards.docs) await d.ref.delete();
+  try {
+    await getStorage().bucket().deleteFiles({ prefix: `partnerCards/${uid}/` });
+  } catch (error) {
+    logger.warn('deletePartnerCardsOf: photos', { error: String(error) });
   }
 }

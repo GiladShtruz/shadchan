@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/screens/partner_space_screen.dart';
 import 'package:shadchan/utils/app_navigation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadchan/dialogs/account_dialogs.dart';
@@ -207,6 +208,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // the page that other people read, and it is drawn as a group of its own
       // so that is never in doubt: a few rows, each saying what is currently
       // filled in, and the whole of the public page behind them.
+      // "המרחב הזוגי שלנו": both of them, and the three ways in — or, before
+      // there is one, the invitation to open it.
+      if (matchmaker) const PartnerSpaceProfileArea(),
       // Matchmakers among the contacts — the colleagues already known.
       if (matchmaker)
         SettingsGroup(
@@ -756,9 +760,7 @@ class _OwnRank extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MatchRepository? matches = _maybeWatchRepo<MatchRepository>(context);
-    final PersonRepository? people = _maybeWatchRepo<PersonRepository>(
-      context,
-    );
+    final PersonRepository? people = _maybeWatchRepo<PersonRepository>(context);
     if (matches == null || people == null) {
       return const SizedBox.shrink();
     }
@@ -870,7 +872,14 @@ class UserProfileAvatar extends StatelessWidget {
         gender ?? Gender.unknown,
         dark: dark,
       ),
-      foregroundImage: hasPhoto ? FileImage(File(path)) : null,
+      foregroundImage: hasPhoto
+          ? ResizeImage(
+              FileImage(File(path)),
+              width: (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+                  .ceil(),
+              policy: ResizeImagePolicy.fit,
+            )
+          : null,
       child: hasPhoto
           ? null
           : (initial.isNotEmpty

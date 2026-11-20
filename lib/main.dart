@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shadchan/services/analytics_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -49,6 +50,13 @@ Future<void> main() async {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // **Touch resampling — the Xiaomi scroll fix.** Phones that sample the
+      // screen at 240–480 Hz (most of Xiaomi/Redmi/POCO under MIUI and
+      // HyperOS) deliver touch events out of step with the display, and
+      // Flutter then moves a list by uneven amounts frame to frame: the
+      // "shaking", jumping scroll reported on those phones and nowhere else.
+      // Resampling lines every frame up with an interpolated touch position.
+      GestureBinding.instance.resamplingEnabled = true;
       // Error measurement: the type of what went wrong and nothing else — no
       // message, no stack, nothing a name or a number could hide in.
       final void Function(FlutterErrorDetails)? previous = FlutterError.onError;

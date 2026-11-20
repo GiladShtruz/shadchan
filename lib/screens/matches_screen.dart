@@ -855,7 +855,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
     return <Widget>[
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         sliver: SliverList.list(
           children: <Widget>[
             if (showReminders) ...<Widget>[
@@ -881,12 +881,29 @@ class _MatchesScreenState extends State<MatchesScreen> {
               ),
               const SizedBox(height: 8),
             ],
-            for (int i = 0; i < matches.length; i++) ...<Widget>[
-              _card(matches[i], personRepository),
-              if (showCta && i == _ctaAfter - 1) cta,
-            ],
-            if (showCta && matches.length < _ctaAfter) cta,
           ],
+        ),
+      ),
+      // The ideas themselves, built only as they scroll into view: a long
+      // list made every card on every rebuild, which is what a scroll felt.
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+        sliver: SliverList.builder(
+          itemCount: matches.length + (showCta ? 1 : 0),
+          itemBuilder: (BuildContext context, int index) {
+            if (showCta) {
+              final int ctaAt = matches.length < _ctaAfter
+                  ? matches.length
+                  : _ctaAfter;
+              if (index == ctaAt) return cta;
+              if (index > ctaAt) index--;
+            }
+            final MatchIdea match = matches[index];
+            return KeyedSubtree(
+              key: ValueKey<String>(match.id),
+              child: _card(match, personRepository),
+            );
+          },
         ),
       ),
     ];
@@ -954,11 +971,12 @@ class _MatchesScreenState extends State<MatchesScreen> {
       else
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-          sliver: SliverList.list(
-            children: <Widget>[
-              for (final MatchIdea match in shown)
-                _card(match, personRepository),
-            ],
+          sliver: SliverList.builder(
+            itemCount: shown.length,
+            itemBuilder: (BuildContext context, int index) => KeyedSubtree(
+              key: ValueKey<String>(shown[index].id),
+              child: _card(shown[index], personRepository),
+            ),
           ),
         ),
     ];

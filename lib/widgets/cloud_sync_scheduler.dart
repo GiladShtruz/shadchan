@@ -11,6 +11,7 @@ import 'package:shadchan/services/contact_hash_upload.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/services/community_tags_service.dart';
 import 'package:shadchan/services/database_hash_upload.dart';
@@ -232,6 +233,9 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
       unawaited(_startPushAndReminders());
       unawaited(context.read<CardAccessProvider>().start());
       unawaited(context.read<InboxProvider>().start());
+      // Chats are for everybody — a single talks to the matchmakers who keep
+      // their card — so they start whatever area this account works in.
+      unawaited(ChatService.start());
       // "שדכנים שאני מכיר": the connections this account is part of.
       if (WorkspaceStore.matchmakerEnabled) {
         unawaited(MatchmakerConnections.start());
@@ -408,11 +412,15 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
   Future<void> _startNetwork() async {
     await MatchmakerNetwork.start();
     await ChatService.start();
+    // The couple space: the tie, and the partner's database while it lasts.
+    await PartnerSpace.start();
     if (!mounted || _networkWired) {
       _publishNetwork();
       return;
     }
     _networkWired = true;
+    // The moment the partner says yes, this database goes to them.
+    PartnerSpace.current.addListener(_publishNetwork);
     MatchmakerNetwork.proposals.addListener(_reconcileSharedIdeas);
     NetworkSharing.revision.addListener(_publishNetwork);
     _accessForNetwork = context.read<CardAccessProvider>()
@@ -433,6 +441,13 @@ class _CloudSyncSchedulerState extends State<CloudSyncScheduler>
         people: context.read<PersonRepository>().getAll(),
         ownerName: context.read<UserProfileProvider>().fullName ?? '',
         accessTo: access.accessTo,
+      ),
+    );
+    // A couple space: the whole database, view only, for the partner.
+    unawaited(
+      PartnerSpace.publish(
+        people: context.read<PersonRepository>().getAll(),
+        ownerName: context.read<UserProfileProvider>().fullName ?? '',
       ),
     );
     SharedIdeas.reportStatuses(context.read<MatchRepository>());

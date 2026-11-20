@@ -21,6 +21,7 @@ import {
   updateDoc,
   collection,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 
 const A = 'mmA'; // shares
@@ -217,6 +218,46 @@ test('after a disconnect the chat stays readable but takes no new messages', asy
     setDoc(doc(as(A), `chats/${PAIR}/messages/m3`), {
       fromUid: A, text: 'שלום', at: serverTimestamp(),
     }),
+  );
+});
+
+test('the first message creates the chat, in the same write', async () => {
+  const db = as(A);
+  const batch = writeBatch(db);
+  batch.set(doc(db, `chats/${PAIR}`), chat({
+    lastText: 'שלום', lastFromUid: A, lastAt: serverTimestamp(),
+    readAt: { [A]: serverTimestamp() },
+  }));
+  batch.set(doc(db, `chats/${PAIR}/messages/first`), {
+    fromUid: A, text: 'שלום', at: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(getDoc(doc(as(B), `chats/${PAIR}/messages/first`)));
+});
+
+test('a single and the matchmaker who keeps their card can chat; a stranger cannot', async () => {
+  const id = S < A ? `${S}_${A}` : `${A}_${S}`;
+  const members = [S, A].sort();
+  const db = as(S);
+  const batch = writeBatch(db);
+  batch.set(doc(db, `chats/${id}`), chat({ members, kind: 'single', names: {} }));
+  batch.set(doc(db, `chats/${id}/messages/m1`), {
+    fromUid: S, text: 'היי', at: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(
+    setDoc(doc(as(A), `chats/${id}/messages/m2`), {
+      fromUid: A, text: 'שלום', at: serverTimestamp(),
+    }),
+  );
+  // No card between them, not connected, not in contacts.
+  const other = S < C ? `${S}_${C}` : `${C}_${S}`;
+  await assertFails(
+    setDoc(doc(as(S), `chats/${other}`), chat({ members: [S, C].sort(), kind: 'single' })),
+  );
+  // A kind nobody knows.
+  await assertFails(
+    setDoc(doc(as(B), `chats/${PAIR}`), chat({ kind: 'group' })),
   );
 });
 

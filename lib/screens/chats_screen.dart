@@ -16,12 +16,22 @@ import 'package:shadchan/models/shared_card.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/screens/network_screen.dart';
+import 'package:shadchan/screens/partner_space_screen.dart';
+import 'package:shadchan/services/partner_space.dart';
 import 'package:shadchan/services/ai_chat_command.dart';
 import 'package:shadchan/services/network_sharing.dart';
 import 'package:shadchan/services/shared_ideas.dart';
 import 'package:shadchan/utils/chat_idea_command.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/chat_objects.dart';
+
+T? _maybeRead<T>(BuildContext context) {
+  try {
+    return Provider.of<T>(context, listen: false);
+  } on ProviderNotFoundException {
+    return null;
+  }
+}
 
 /// "צ'אטים" — every conversation of this account, newest first, the way a
 /// messaging app lists them: a face, a name, the last line, its time, and a
@@ -118,14 +128,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     title: Text(c.names[c.otherOf(me)] ?? 'שדכן/ית'),
                     subtitle: const Text('להתחיל שיחה'),
                     onTap: () async {
-                      final String? id = await ChatService.openDirect(
-                        otherUid: c.otherOf(me),
-                        myName: c.names[me] ?? '',
-                        theirName: c.names[c.otherOf(me)] ?? '',
+                      await context.push(
+                        ChatService.routeTo(
+                          me: me,
+                          otherUid: c.otherOf(me),
+                          theirName: c.names[c.otherOf(me)],
+                        ),
                       );
-                      if (id != null && context.mounted) {
-                        await context.push('/chats/$id');
-                      }
                     },
                   ),
               ],
@@ -216,13 +225,58 @@ class _ThreadRow extends StatelessWidget {
   }
 }
 
+/// Opens the one continuing chat with [otherUid] — from a profile, a list of
+/// matchmakers or a list of singles. Nothing is written until the first
+/// message; the same pair always reaches the same conversation.
+abstract final class ChatLauncher {
+  static Future<void> open(
+    BuildContext context, {
+    required String otherUid,
+    required String otherName,
+    String kind = 'matchmakers',
+  }) async {
+    final String? me = await ChatService.me();
+    if (!context.mounted) return;
+    if (me == null || otherUid.isEmpty || otherUid == me) {
+      AppNotice.show(
+        context,
+        'אפשר לפתוח צ\'אט אחרי ההתחברות לחשבון.',
+        isError: true,
+      );
+      return;
+    }
+    await context.push(
+      ChatService.routeTo(
+        me: me,
+        otherUid: otherUid,
+        theirName: otherName,
+        kind: kind,
+      ),
+    );
+  }
+}
+
 /// One conversation, WhatsApp-like: bubbles, day chips, a writing field at
 /// the foot. A message can carry what it is about ([ChatRef]) — a card or an
 /// idea — so one thread holds months of them.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.chatId, this.initialRef});
+  const ChatScreen({
+    super.key,
+    required this.chatId,
+    this.initialRef,
+    this.otherName,
+    this.kind = 'matchmakers',
+  });
 
   final String chatId;
+
+  /// The other side's name, for a chat that has no message yet (and so no
+  /// document to read it from).
+  final String? otherName;
+
+  /// `matchmakers`, `single` or `partners` — written when the first message
+  /// creates the chat.
+  final String kind;
 
   /// What the chat was opened about; sent with the next message.
   final ChatRef? initialRef;
@@ -233,11 +287,16 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _text = TextEditingController();
-  late final Stream<List<ChatMessage>> _messages = ChatService.messages(
-    widget.chatId,
-  );
+
+  /// Listened to only once the chat exists: a chat with no message yet
+  /// cannot be read, and a refused listener would never recover.
+  Stream<List<ChatMessage>>? _messages;
   ChatRef? _ref;
   bool _canSend = false;
+  bool _sending = false;
+
+  /// Whether the server answered whether this chat exists yet.
+  bool _checked = false;
 
   @override
   void initState() {
@@ -245,7 +304,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _ref = widget.initialRef;
     ChatService.openChatId = widget.chatId;
     unawaited(ChatService.start());
-    unawaited(ChatService.markRead(widget.chatId));
+    unawaited(_load());
     _text.addListener(() {
       final bool can = _text.text.trim().isNotEmpty;
       if (can != _canSend) setState(() => _canSend = can);
@@ -260,9 +319,22 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  /// Finds out whether the chat exists — opening an existing one at once,
+  /// and a new one as an empty conversation ready for its first message.
+  Future<void> _load() async {
+    await ChatService.me();
+    final bool exists = await ChatService.exists(widget.chatId);
+    if (!mounted) return;
+    setState(() {
+      _checked = true;
+      if (exists) _messages = ChatService.messages(widget.chatId);
+    });
+    if (exists) unawaited(ChatService.markRead(widget.chatId));
+  }
+
   Future<void> _send() async {
     final String body = _text.text.trim();
-    if (body.isEmpty) return;
+    if (body.isEmpty || _sending) return;
     if (!OfflineGuard.allow(context)) return;
     // "פתח רעיון בין יעל כהן לאורי לוי": done, not sent as words.
     if (ChatIdeaCommand.looksLike(body)) {
@@ -272,25 +344,58 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
     }
-    final bool ok = await ChatService.send(widget.chatId, body, ref: _ref);
-    if (!ok || !mounted) return;
-    _text.clear();
-    setState(() => _ref = null);
+    await _deliver(body, ref: _ref);
   }
 
-  String get _other {
-    final String me = ChatService.uid ?? '';
-    return ChatService.thread(widget.chatId)?.otherOf(me) ?? '';
+  /// Sends one line — creating the chat when this is its first message.
+  Future<bool> _deliver(String body, {ChatRef? ref}) async {
+    final bool first = _messages == null;
+    setState(() => _sending = true);
+    final bool ok = await ChatService.send(
+      widget.chatId,
+      body,
+      ref: ref,
+      kind: widget.kind,
+      myName: _maybeRead<UserProfileProvider>(context)?.fullName,
+      theirName: _otherName,
+    );
+    if (!mounted) return ok;
+    setState(() => _sending = false);
+    if (!ok) {
+      AppNotice.show(
+        context,
+        'ההודעה לא נשלחה. אפשר לבדוק את החיבור ולנסות שוב.',
+        isError: true,
+      );
+      return false;
+    }
+    _text.clear();
+    setState(() {
+      _ref = null;
+      if (first) _messages = ChatService.messages(widget.chatId);
+    });
+    return true;
   }
+
+  /// The other side, read off the chat's id — known before the chat exists.
+  String get _other =>
+      ChatService.otherOfId(widget.chatId, ChatService.uid ?? '');
 
   String get _otherName {
     final String me = ChatService.uid ?? '';
-    return ChatService.thread(widget.chatId)?.titleFor(me) ?? '';
+    final ChatThread? t = ChatService.thread(widget.chatId);
+    final String fromThread = (t?.names[t.otherOf(me)] ?? '').trim();
+    if (fromThread.isNotEmpty) return fromThread;
+    final String given = (widget.otherName ?? '').trim();
+    if (given.isNotEmpty) return given;
+    return MatchmakerNetwork.connectedNames[_other] ?? '';
   }
 
   /// The cards the other matchmaker shares with this one, or sent in here.
   List<SharedCard> get _theirCards {
     final String other = _other;
+    // A partner's whole database is open in a couple space.
+    if (PartnerSpace.isPartner(other)) return PartnerSpace.partnerCards.value;
     return <SharedCard>[
       for (final SharedCard c in <SharedCard>[
         ...MatchmakerNetwork.cards.value,
@@ -298,6 +403,24 @@ class _ChatScreenState extends State<ChatScreen> {
       ])
         if (c.ownerUid == other) c,
     ];
+  }
+
+  /// An idea for [target]: between partners it opens at once on both phones;
+  /// otherwise it is offered to the matchmaker who holds the card.
+  Future<void> _ideaFor(SharedCard target, {Person? candidate}) async {
+    if (PartnerSpace.isPartner(target.ownerUid)) {
+      if (candidate == null) {
+        await PartnerCardSheet.openIdea(context, target);
+      } else {
+        await PartnerCardSheet.openIdeaWith(
+          context,
+          mine: candidate,
+          card: target,
+        );
+      }
+      return;
+    }
+    await NetworkActions.propose(context, target, candidate: candidate);
   }
 
   /// Reads a free sentence as "open an idea between these two": the local
@@ -379,7 +502,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       return true;
     }
-    await NetworkActions.propose(context, target, candidate: me);
+    await _ideaFor(target, candidate: me);
     return true;
   }
 
@@ -465,8 +588,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
       NetworkSharing.noteSent(person.id);
-      await ChatService.send(
-        widget.chatId,
+      await _deliver(
         'שלחתי לך את הכרטיס של ${person.fullName}',
         ref: ChatRef(
           kind: 'card',
@@ -489,7 +611,7 @@ class _ChatScreenState extends State<ChatScreen> {
       (SharedCard c) => sharedSummaryOf(c.person),
     );
     if (target == null || !mounted) return;
-    await NetworkActions.propose(context, target);
+    await _ideaFor(target);
   }
 
   void _openRef(ChatRef ref) {
@@ -521,12 +643,13 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (BuildContext context, _, _) {
         final String me = ChatService.uid ?? '';
         final ChatThread? thread = ChatService.thread(widget.chatId);
-        final String other = thread?.otherOf(me) ?? '';
-        final String title = thread?.titleFor(me) ?? 'צ\'אט';
-        final bool connected =
-            thread == null ||
-            thread.type != 'direct' ||
-            MatchmakerNetwork.connectedNames.containsKey(other);
+        final String other = _other;
+        final String title = _otherName.isEmpty ? 'צ\'אט' : _otherName;
+        final String kind = thread?.kind ?? widget.kind;
+        // The composer is always there: whether a message may be sent is the
+        // server's answer (connected matchmakers, a single and a matchmaker
+        // who keeps or asked for their card, partners), and a refusal is said
+        // in words rather than by a field that silently vanished.
         return Scaffold(
           backgroundColor: dark
               ? theme.scaffoldBackgroundColor
@@ -534,7 +657,7 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: AppBar(
             titleSpacing: 0,
             title: InkWell(
-              onTap: other.isEmpty
+              onTap: other.isEmpty || kind != 'matchmakers'
                   ? null
                   : () => context.push('/known-matchmakers/$other'),
               child: Row(
@@ -549,81 +672,88 @@ class _ChatScreenState extends State<ChatScreen> {
           body: Column(
             children: <Widget>[
               Expanded(
-                child: StreamBuilder<List<ChatMessage>>(
-                  stream: _messages,
-                  builder: (BuildContext context, snap) {
-                    final List<ChatMessage> list =
-                        snap.data ?? const <ChatMessage>[];
-                    if (snap.hasData) {
-                      unawaited(ChatService.markRead(widget.chatId));
-                    }
-                    if (list.isEmpty) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            snap.hasData
-                                ? 'זו תחילת השיחה. כל הכרטיסים והרעיונות ביניכם — '
-                                      'כאן, בשיחה אחת.'
-                                : '',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      );
-                    }
-                    final List<Widget> items = <Widget>[];
-                    DateTime? day;
-                    for (final ChatMessage m in list) {
-                      final DateTime at = m.at ?? DateTime.now();
-                      final DateTime d = DateTime(at.year, at.month, at.day);
-                      if (day != d) {
-                        day = d;
-                        items.add(_DayChip(day: d));
-                      }
-                      if (m.system) {
-                        final ChatRef? ref = m.ref;
-                        items.add(
-                          ChatSystemLine(
-                            text: m.text,
-                            onTap: ref == null ? null : () => _openRef(ref),
-                          ),
-                        );
-                        continue;
-                      }
-                      items.add(
-                        _Bubble(message: m, mine: m.fromUid == me, me: me),
-                      );
-                    }
-                    return ListView(
-                      reverse: true,
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                      children: items.reversed.toList(),
-                    );
-                  },
-                ),
+                child: !_checked
+                    ? const Center(child: CircularProgressIndicator())
+                    : StreamBuilder<List<ChatMessage>>(
+                        stream:
+                            _messages ??
+                            Stream<List<ChatMessage>>.value(
+                              const <ChatMessage>[],
+                            ),
+                        builder: (BuildContext context, snap) {
+                          final List<ChatMessage> list =
+                              snap.data ?? const <ChatMessage>[];
+                          if (snap.hasData && _messages != null) {
+                            unawaited(ChatService.markRead(widget.chatId));
+                          }
+                          if (list.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  snap.hasData
+                                      ? (_messages == null
+                                            ? 'עוד אין הודעות. השיחה תיפתח עם ההודעה '
+                                                  'הראשונה — ותישאר אותה שיחה גם '
+                                                  'בהמשך.'
+                                            : 'זו תחילת השיחה. כל הכרטיסים והרעיונות '
+                                                  'ביניכם — כאן, בשיחה אחת.')
+                                      : '',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                            );
+                          }
+                          final List<Widget> items = <Widget>[];
+                          DateTime? day;
+                          for (final ChatMessage m in list) {
+                            final DateTime at = m.at ?? DateTime.now();
+                            final DateTime d = DateTime(
+                              at.year,
+                              at.month,
+                              at.day,
+                            );
+                            if (day != d) {
+                              day = d;
+                              items.add(_DayChip(day: d));
+                            }
+                            if (m.system) {
+                              final ChatRef? ref = m.ref;
+                              items.add(
+                                ChatSystemLine(
+                                  text: m.text,
+                                  onTap: ref == null
+                                      ? null
+                                      : () => _openRef(ref),
+                                ),
+                              );
+                              continue;
+                            }
+                            items.add(
+                              _Bubble(
+                                message: m,
+                                mine: m.fromUid == me,
+                                me: me,
+                              ),
+                            );
+                          }
+                          return ListView(
+                            reverse: true,
+                            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                            children: items.reversed.toList(),
+                          );
+                        },
+                      ),
               ),
-              if (connected)
-                _Composer(
-                  controller: _text,
-                  canSend: _canSend,
-                  refLabel: _ref?.label,
-                  onClearRef: () => setState(() => _ref = null),
-                  onSend: _send,
-                  onAttach: _attach,
-                )
-              else
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'החיבור ביניכם הסתיים — אפשר לקרוא את השיחה, לא לשלוח בה.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                ),
+              _Composer(
+                controller: _text,
+                canSend: _canSend && !_sending,
+                refLabel: _ref?.label,
+                onClearRef: () => setState(() => _ref = null),
+                onSend: _send,
+                onAttach: _attach,
+              ),
             ],
           ),
         );

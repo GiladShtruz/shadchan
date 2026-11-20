@@ -1,25 +1,32 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/dialogs/card_link_dialog.dart';
 import 'package:shadchan/dialogs/invite_card_friends_sheet.dart';
 import 'package:shadchan/models/card_access.dart';
+import 'package:shadchan/models/match_idea.dart';
 import 'package:shadchan/models/person.dart';
 import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/inbox_provider.dart';
+import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/services/contact_hash_upload.dart';
 import 'package:shadchan/utils/app_colors.dart';
+import 'package:shadchan/utils/date_utils.dart';
 import 'package:shadchan/utils/enums.dart';
 import 'package:shadchan/utils/gender_text.dart';
+import 'package:shadchan/utils/match_suggestion_utils.dart';
 import 'package:shadchan/utils/person_navigation.dart';
 import 'package:shadchan/utils/phone_identity.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/card_invite.dart';
 import 'package:shadchan/widgets/person_avatar.dart';
-import 'package:shadchan/widgets/person_list_card.dart';
 import 'package:shadchan/widgets/personal_home_sections.dart';
 
 /// Where a matchmaker stands with one friend's personal card.
@@ -285,6 +292,15 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
         ownerPhoneHash: hash,
       );
 
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final CardAccessProvider access = context.watch<CardAccessProvider>();
@@ -299,9 +315,7 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
     final List<FriendWithCard> approved = friends
         .where((FriendWithCard f) => f.approved)
         .toList();
-    // Two lists, never one: the friends still to ask — a card made this week
-    // leading, newest first — and the requests already sent and waiting for
-    // the friend's yes.
+    // A card made this week leads, newest first, then by name.
     final List<FriendWithCard> toAsk =
         friends
             .where((FriendWithCard f) => f.state == FriendCardState.requestable)
@@ -316,54 +330,381 @@ class _FriendsWithCardsScreenState extends State<FriendsWithCardsScreen> {
         .where((FriendWithCard f) => f.state == FriendCardState.pending)
         .toList();
     final ThemeData theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text(FriendsWithCardsScreen.title)),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 32),
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-            child: Text(
-              'עם גישה, הכרטיס שלהם מתעדכן אצלך במאגר מעצמו.',
-              style: theme.textTheme.bodySmall,
+
+    // Three clear tabs — "אישרו לי גישה" first and open by default, because
+    // that is the list a matchmaker works from; asking and waiting are the
+    // two other states, each in its own place.
+    final int initialTab = widget.requestOwnerUid != null ? 1 : 0;
+    return DefaultTabController(
+      length: 3,
+      initialIndex: initialTab,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(FriendsWithCardsScreen.title),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(112),
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  child: SizedBox(
+                    height: 44,
+                    child: TextField(
+                      controller: _search,
+                      onChanged: (String v) => setState(() => _query = v),
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        hintText: 'חיפוש בכל המאגר',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _query.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'ניקוי',
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () {
+                                  _search.clear();
+                                  setState(() => _query = '');
+                                },
+                              ),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                TabBar(
+                  isScrollable: false,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  tabs: <Widget>[
+                    _CountTab('אישרו לי גישה', approved.length),
+                    _CountTab('אפשר לבקש גישה', toAsk.length),
+                    _CountTab('ביקשתי ומחכה', pending.length),
+                  ],
+                ),
+              ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+        ),
+        body: _query.trim().isNotEmpty
+            ? _SearchResults(query: _query.trim(), friends: friends)
+            : TabBarView(
+                children: <Widget>[
+                  _ApprovedTab(friends: approved),
+                  _ToAskTab(
+                    friends: toAsk,
+                    now: now,
+                    emptyText: friends.isEmpty && !access.helpersLoaded
+                        ? 'הרשימה תופיע לאחר החיבור לחשבון.'
+                        : 'אין כרגע חברים חדשים לבקש מהם גישה.',
+                  ),
+                  _PendingTab(friends: pending),
+                ],
+              ),
+        bottomNavigationBar: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
             child: OutlinedButton.icon(
               onPressed: () => InviteCardFriendsSheet.show(context),
               icon: const Icon(Icons.person_add_alt_1_outlined, size: 20),
-              label: const Text('להזמין חברים להוסיף כרטיס אישי'),
-            ),
-          ),
-          if (friends.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                access.helpersLoaded
-                    ? 'עוד לא מצאנו חברים שלך שהוסיפו כרטיס אישי.'
-                    : 'הרשימה תופיע לאחר החיבור לחשבון.',
-                style: theme.textTheme.bodyMedium,
+              label: Text(
+                'להזמין חברים להוסיף כרטיס אישי',
+                style: theme.textTheme.labelLarge,
               ),
             ),
-          if (toAsk.isNotEmpty) ...<Widget>[
-            const _GroupTitle('בקשות גישה חדשות'),
-            for (final FriendWithCard friend in toAsk)
-              friend.isNew(now)
-                  ? _NewCardRow(friend: friend)
-                  : _WaitingRow(friend: friend),
-          ],
-          if (pending.isNotEmpty) ...<Widget>[
-            const _GroupTitle('ממתינים לאישור שלי'),
-            for (final FriendWithCard friend in pending)
-              _WaitingRow(friend: friend),
-          ],
-          if (approved.isNotEmpty) ...<Widget>[
-            const _GroupTitle('אישרו לי גישה'),
-            for (final FriendWithCard friend in approved)
-              _ApprovedRow(friend: friend),
-          ],
-        ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A tab's name and how many are in it.
+class _CountTab extends StatelessWidget {
+  const _CountTab(this.label, this.count);
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tab(
+      height: 40,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          count > 0 ? '$label · $count' : label,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyTab extends StatelessWidget {
+  const _EmptyTab(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ),
+    );
+  }
+}
+
+/// "אישרו לי גישה": one large card per friend, built only as it scrolls in.
+class _ApprovedTab extends StatelessWidget {
+  const _ApprovedTab({required this.friends});
+  final List<FriendWithCard> friends;
+
+  @override
+  Widget build(BuildContext context) {
+    if (friends.isEmpty) {
+      return const _EmptyTab(
+        'עוד אין חברים שאישרו לך גישה לכרטיס שלהם.\n'
+        'בלשונית "אפשר לבקש גישה" אפשר לבקש.',
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      itemCount: friends.length,
+      // Each card draws its own photos: keep a little ahead, never everything.
+      cacheExtent: 600,
+      itemBuilder: (BuildContext context, int index) {
+        final FriendWithCard friend = friends[index];
+        return Padding(
+          key: ValueKey<String>(friend.ownerUid),
+          padding: const EdgeInsets.only(bottom: 14),
+          child: RepaintBoundary(child: _ApprovedRow(friend: friend)),
+        );
+      },
+    );
+  }
+}
+
+/// "אפשר לבקש גישה": the friends who added a card this week first, each as
+/// "חדש! משה הוסיף כרטיס אישי · בקש גישה"; then everybody else.
+class _ToAskTab extends StatelessWidget {
+  const _ToAskTab({
+    required this.friends,
+    required this.now,
+    required this.emptyText,
+  });
+  final List<FriendWithCard> friends;
+  final DateTime now;
+  final String emptyText;
+
+  @override
+  Widget build(BuildContext context) {
+    if (friends.isEmpty) return _EmptyTab(emptyText);
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 24),
+      itemCount: friends.length + 1,
+      itemBuilder: (BuildContext context, int index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+            child: Text(
+              'עם גישה, הכרטיס שלהם מתעדכן אצלך במאגר מעצמו.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          );
+        }
+        final FriendWithCard friend = friends[index - 1];
+        return friend.isNew(now)
+            ? _NewCardRow(
+                key: ValueKey<String>(friend.ownerUid),
+                friend: friend,
+              )
+            : _WaitingRow(
+                key: ValueKey<String>(friend.ownerUid),
+                friend: friend,
+              );
+      },
+    );
+  }
+}
+
+/// "ביקשתי ומחכה": a compact list, each row with a WhatsApp link that opens a
+/// chat with the friend and a gentle reminder already written.
+class _PendingTab extends StatelessWidget {
+  const _PendingTab({required this.friends});
+  final List<FriendWithCard> friends;
+
+  @override
+  Widget build(BuildContext context) {
+    if (friends.isEmpty) {
+      return const _EmptyTab('אין בקשות שממתינות לאישור.');
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+      itemCount: friends.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 60),
+      itemBuilder: (BuildContext context, int index) => _PendingRow(
+        key: ValueKey<String>(friends[index].ownerUid),
+        friend: friends[index],
+      ),
+    );
+  }
+}
+
+/// The reminder a matchmaker sends a friend who has not answered yet.
+String pendingReminderMessage(Gender? friendGender) =>
+    'היי, ביקשתי ממך גישה לכרטיס שלך בשדכן 🙂 אשמח אם '
+    '${switch (friendGender) {
+      Gender.female => 'תאשרי',
+      Gender.male => 'תאשר',
+      _ => 'תאשר/י',
+    }} כשמתאים לך.';
+
+class _PendingRow extends StatelessWidget {
+  const _PendingRow({super.key, required this.friend});
+  final FriendWithCard friend;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Person? person = friend.person;
+    final String? phone = person?.phone;
+    final bool canWrite = phone != null && phone.trim().isNotEmpty;
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      leading: ExcludeSemantics(
+        child: IgnorePointer(
+          child: person != null
+              ? PersonAvatar(person: person, radius: 20)
+              : _InitialAvatar(name: friend.name),
+        ),
+      ),
+      title: Text(
+        friend.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      subtitle: const Text('ממתין לאישור'),
+      trailing: TextButton.icon(
+        onPressed: canWrite
+            ? () => WhatsAppUtils.openChatWithText(
+                phone,
+                pendingReminderMessage(person?.gender),
+              )
+            : null,
+        icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
+        label: const Text('תזכורת'),
+      ),
+    );
+  }
+}
+
+/// Searching from this page reaches the whole database: a friend who keeps a
+/// card shows where they stand, and one who does not is offered an
+/// invitation to add one.
+class _SearchResults extends StatelessWidget {
+  const _SearchResults({required this.query, required this.friends});
+  final String query;
+  final List<FriendWithCard> friends;
+
+  @override
+  Widget build(BuildContext context) {
+    final PersonRepository people = context.watch<PersonRepository>();
+    final String q = query.toLowerCase();
+    final Map<String, FriendWithCard> byPerson = <String, FriendWithCard>{
+      for (final FriendWithCard f in friends)
+        if (f.person != null) f.person!.id: f,
+    };
+    final List<Person> hits = people
+        .getAll()
+        .where(
+          (Person p) =>
+              !p.hidden &&
+              (p.fullName.toLowerCase().contains(q) ||
+                  (p.phone ?? '').contains(q)),
+        )
+        .take(80)
+        .toList();
+    // Friends with a card who are not (yet) in the database are found by
+    // the name the card carries.
+    final List<FriendWithCard> outside = friends
+        .where(
+          (FriendWithCard f) =>
+              f.person == null && f.name.toLowerCase().contains(q),
+        )
+        .toList();
+    if (hits.isEmpty && outside.isEmpty) {
+      return const _EmptyTab('לא נמצאו חברים בשם הזה במאגר.');
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+      children: <Widget>[
+        for (final FriendWithCard f in outside) _searchRowFor(f),
+        for (final Person p in hits)
+          byPerson[p.id] != null
+              ? _searchRowFor(byPerson[p.id]!)
+              : _InviteRow(key: ValueKey<String>(p.id), person: p),
+      ],
+    );
+  }
+
+  Widget _searchRowFor(FriendWithCard f) => switch (f.state) {
+    FriendCardState.sees || FriendCardState.awaitingLink => Padding(
+      key: ValueKey<String>('s-${f.ownerUid}'),
+      padding: const EdgeInsets.only(bottom: 10),
+      child: _ApprovedRow(friend: f),
+    ),
+    FriendCardState.pending => _PendingRow(
+      key: ValueKey<String>('s-${f.ownerUid}'),
+      friend: f,
+    ),
+    FriendCardState.requestable => _WaitingRow(
+      key: ValueKey<String>('s-${f.ownerUid}'),
+      friend: f,
+    ),
+  };
+}
+
+/// A friend in the database who does not keep a personal card: one line and
+/// an invitation to add one.
+class _InviteRow extends StatelessWidget {
+  const _InviteRow({super.key, required this.person});
+  final Person person;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      leading: PersonAvatar(person: person, radius: 20),
+      title: Text(
+        person.fullName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      subtitle: Text(
+        '{לא מנהל|לא מנהלת} כרטיס אישי'.forGender(
+          person.gender == Gender.female ? Gender.female : Gender.male,
+        ),
+      ),
+      onTap: () => openPersonProfile(context, person.id),
+      trailing: TextButton(
+        onPressed: () => CardInviteFlow.invite(context, person),
+        child: const Text('הזמנה להוסיף כרטיס'),
       ),
     );
   }
@@ -392,28 +733,11 @@ Person _standIn(FriendWithCard friend) {
   );
 }
 
-class _GroupTitle extends StatelessWidget {
-  const _GroupTitle(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsetsDirectional.fromSTEB(8, 18, 8, 6),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-/// A friend who gave access: the same row as any friend in המאגר שלי, the
-/// whole card and every photo one tap away. While the card waits for the
-/// matchmaker's yes on a friend kept by hand, the row says so and asks.
+/// A friend who gave access, as the large card: a real photo with paging
+/// between the photos, the name, age · city, when the card last moved, how
+/// many matches the database has for them, and their open ideas (or "פתיחת
+/// רעיון"). The card opens the full profile. While the card waits for the
+/// matchmaker's yes on a friend kept by hand, it says so and asks.
 class _ApprovedRow extends StatelessWidget {
   const _ApprovedRow({required this.friend});
   final FriendWithCard friend;
@@ -434,18 +758,9 @@ class _ApprovedRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        PersonListCard(
-          person: person,
-          heroEnabled: false,
-          onTap: () => openPersonProfile(context, person.id),
-          onToggleFavorite: () =>
-              context.read<PersonRepository>().toggleFavorite(person.id),
-          onOpenWhatsApp: () => WhatsAppUtils.openChat(person),
-          keepWhatsAppSlot: true,
-        ),
         if (awaiting)
           Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 10),
+            padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 8),
             child: Row(
               children: <Widget>[
                 Expanded(
@@ -474,7 +789,228 @@ class _ApprovedRow extends StatelessWidget {
               ],
             ),
           ),
+        _BigFriendCard(person: person, ownerUid: friend.ownerUid),
       ],
+    );
+  }
+}
+
+class _BigFriendCard extends StatefulWidget {
+  const _BigFriendCard({required this.person, required this.ownerUid});
+  final Person person;
+  final String ownerUid;
+
+  static const double photoHeight = 300;
+
+  @override
+  State<_BigFriendCard> createState() => _BigFriendCardState();
+}
+
+class _BigFriendCardState extends State<_BigFriendCard> {
+  int _page = 0;
+
+  /// Counted once per person and database revision: the match count walks
+  /// the database, and a card scrolled past and back must not walk it again.
+  static final Map<String, int> _matchCounts = <String, int>{};
+  static int _countsRevision = -1;
+
+  int _matchCount(PersonRepository people) {
+    final int revision = people.revision;
+    if (revision != _countsRevision) {
+      _matchCounts.clear();
+      _countsRevision = revision;
+    }
+    return _matchCounts.putIfAbsent(widget.person.id, () {
+      int n = 0;
+      for (final Person candidate in people.getAll()) {
+        if (MatchSuggestionUtils.matchesBasicPreferences(
+          source: widget.person,
+          candidate: candidate,
+        )) {
+          n++;
+        }
+      }
+      return n;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final Person person = widget.person;
+    final PersonRepository people = context.watch<PersonRepository>();
+    final MatchRepository matches = context.watch<MatchRepository>();
+    final List<String> photos = <String>[
+      for (final String p in person.photosPaths)
+        if (p.trim().isNotEmpty && PersonAvatar.hasFile(p)) p,
+    ];
+    final Color accent = AppColors.genderAccent(person.gender, dark: dark);
+    final int open = matches
+        .getByPersonId(person.id)
+        .where((MatchIdea m) => !m.status.isArchived)
+        .length;
+    final int matchCount = _matchCount(people);
+    final List<String> facts = <String>[
+      if (person.age != null) 'גיל ${person.age}',
+      if ((person.city ?? '').trim().isNotEmpty) person.city!.trim(),
+    ];
+    final double ratio = MediaQuery.devicePixelRatioOf(context);
+    final double width = MediaQuery.sizeOf(context).width;
+
+    return Material(
+      color: theme.colorScheme.surface,
+      elevation: 1.5,
+      shadowColor: Colors.black.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => openPersonProfile(context, person.id),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            SizedBox(
+              height: _BigFriendCard.photoHeight,
+              child: photos.isEmpty
+                  ? ColoredBox(
+                      color: AppColors.genderSurface(person.gender, dark: dark),
+                      child: Center(
+                        child: PersonAvatar(person: person, radius: 56),
+                      ),
+                    )
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        PageView.builder(
+                          itemCount: photos.length,
+                          onPageChanged: (int i) => setState(() => _page = i),
+                          itemBuilder: (BuildContext context, int i) => Image(
+                            // Decoded at the width it is drawn.
+                            image: ResizeImage(
+                              FileImage(File(photos[i])),
+                              width: (width * ratio).round(),
+                              policy: ResizeImagePolicy.fit,
+                            ),
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, _, _) => ColoredBox(
+                              color: AppColors.genderSurface(
+                                person.gender,
+                                dark: dark,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (photos.length > 1)
+                          PositionedDirectional(
+                            bottom: 10,
+                            start: 0,
+                            end: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: <Widget>[
+                                for (int i = 0; i < photos.length; i++)
+                                  Container(
+                                    width: i == _page ? 16 : 7,
+                                    height: 7,
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 2.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: i == _page ? 0.95 : 0.6,
+                                      ),
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+            Container(height: 3, color: accent),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    person.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: accent,
+                    ),
+                  ),
+                  if (facts.isNotEmpty)
+                    Text(
+                      facts.join(' · '),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'עודכן לאחרונה ${AppDateUtils.timeAgoShort(person.updatedAt)}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              openSuggestionsFor(context, person.id),
+                          icon: const Icon(Icons.favorite_border, size: 18),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              matchCount == 1
+                                  ? 'התאמה אחת'
+                                  : '$matchCount התאמות',
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: open > 0
+                            ? FilledButton.tonalIcon(
+                                onPressed: () =>
+                                    openPersonProfile(context, person.id),
+                                icon: const Icon(
+                                  Icons.lightbulb_outline_rounded,
+                                  size: 18,
+                                ),
+                                label: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    open == 1
+                                        ? 'רעיון פתוח אחד'
+                                        : '$open רעיונות פתוחים',
+                                  ),
+                                ),
+                              )
+                            : FilledButton.tonalIcon(
+                                onPressed: () =>
+                                    openSuggestionsFor(context, person.id),
+                                icon: const Icon(Icons.add_rounded, size: 18),
+                                label: const FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text('פתיחת רעיון'),
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -484,7 +1020,7 @@ class _ApprovedRow extends StatelessWidget {
 /// not open, and the picture is not a way into anything — nothing here can
 /// be viewed, saved, shared or forwarded until the friend says yes.
 class _WaitingRow extends StatelessWidget {
-  const _WaitingRow({required this.friend});
+  const _WaitingRow({super.key, required this.friend});
   final FriendWithCard friend;
 
   @override
@@ -551,9 +1087,9 @@ class _WaitingRow extends StatelessWidget {
 
 /// A friend whose card was made in the last week, and who has not been asked
 /// yet: drawn ahead of everything, on a warm wash, as one sentence —
-/// "חדש! משה הוסיף כרטיס לשדכן · בקש גישה".
+/// "חדש! משה הוסיף כרטיס אישי · בקש גישה".
 class _NewCardRow extends StatelessWidget {
-  const _NewCardRow({required this.friend});
+  const _NewCardRow({super.key, required this.friend});
   final FriendWithCard friend;
 
   @override
@@ -610,7 +1146,7 @@ class _NewCardRow extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        TextSpan(text: '$first $added כרטיס לשדכן · '),
+                        TextSpan(text: '$first $added כרטיס אישי · '),
                         TextSpan(
                           text: '{בקש|בקשי} גישה'.forGender(context.userGender),
                           style: TextStyle(

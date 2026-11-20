@@ -8,7 +8,8 @@ import 'package:shadchan/services/photo_picker_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 
 /// The matchmaker's own small photo at the start of the home greeting — the
-/// right, in RTL — or, with no photo yet, a clear "+" that adds one.
+/// right, in RTL — or, with no photo yet, WhatsApp's empty-profile figure
+/// with a small camera-and-plus badge that adds one.
 ///
 /// This replaces the separate "הוסף תמונת פרופיל" line that used to sit
 /// lower on the page: the place a face belongs is next to the name.
@@ -37,6 +38,17 @@ class HomeGreetingAvatar extends StatelessWidget {
     final Color blue = dark ? AppColors.primaryDarkDm : AppColors.primary;
 
     if (path == null) {
+      // WhatsApp's own empty profile: a grey default figure in a circle, and
+      // a small round camera-with-plus badge on its lower edge saying where
+      // the photo goes. A bare "+" in a ring read as a button for something
+      // else.
+      final Color ground = dark
+          ? const Color(0xFF3A4247)
+          : const Color(0xFFDFE5E7);
+      final Color figure = dark
+          ? const Color(0xFF8A969C)
+          : const Color(0xFFFFFFFF);
+      final double badge = (size * 0.42).clamp(18.0, 26.0);
       return Semantics(
         button: true,
         label: 'הוספת תמונת פרופיל',
@@ -45,15 +57,54 @@ class HomeGreetingAvatar extends StatelessWidget {
           child: InkResponse(
             onTap: () => _addPhoto(context),
             radius: size / 2 + 4,
-            child: Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: blue.withValues(alpha: dark ? 0.18 : 0.10),
-                border: Border.all(color: blue, width: 1.6),
+            child: SizedBox(
+              width: size + badge * 0.25,
+              height: size + badge * 0.25,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ground,
+                    ),
+                    child: ClipOval(
+                      child: Align(
+                        alignment: const Alignment(0, 0.9),
+                        child: Icon(
+                          Icons.person_rounded,
+                          size: size * 0.95,
+                          color: figure,
+                        ),
+                      ),
+                    ),
+                  ),
+                  PositionedDirectional(
+                    end: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: badge,
+                      height: badge,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: blue,
+                        border: Border.all(
+                          color: theme.scaffoldBackgroundColor,
+                          width: 2,
+                        ),
+                      ),
+                      // Material's own camera-with-a-plus.
+                      child: Icon(
+                        Icons.add_a_photo_rounded,
+                        size: badge * 0.58,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(Icons.add_rounded, size: size * 0.55, color: blue),
             ),
           ),
         ),

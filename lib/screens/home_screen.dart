@@ -9,12 +9,10 @@ import 'package:shadchan/providers/account_provider.dart';
 import 'package:shadchan/providers/match_repository.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/providers/personal_card_provider.dart';
-import 'package:shadchan/providers/tips_provider.dart';
 import 'package:shadchan/providers/user_profile_provider.dart';
 import 'package:shadchan/services/home_board_store.dart';
 import 'package:shadchan/services/home_search_filter_store.dart';
 import 'package:shadchan/services/recent_activity_store.dart';
-import 'package:shadchan/services/tips_service.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/community_counts.dart';
 import 'package:shadchan/utils/community_prompt_gate.dart';
@@ -25,11 +23,9 @@ import 'package:shadchan/utils/search_navigation.dart';
 import 'package:shadchan/utils/home_open_ideas.dart';
 import 'package:shadchan/utils/home_search.dart';
 import 'package:shadchan/utils/home_typography.dart';
-import 'package:shadchan/utils/matchmaker_tips.dart';
 import 'package:shadchan/utils/whatsapp_utils.dart';
 import 'package:shadchan/widgets/app_notice.dart';
 import 'package:shadchan/widgets/home_app_bar.dart';
-import 'package:shadchan/widgets/home_blocks.dart';
 import 'package:shadchan/widgets/home_board.dart';
 import 'package:shadchan/widgets/home_engagement_card.dart';
 import 'package:shadchan/widgets/activity_figure_row.dart';
@@ -80,15 +76,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// The single vertical gap between every block on the page.
   static const double _blockGap = 14;
-
-  /// The built-in tips, in one order picked per visit.
-  ///
-  /// Fixed for the life of the screen because the tip block is now swiped
-  /// rather than re-rolled: a list that reshuffled on every rebuild would put a
-  /// different tip behind the same backwards swipe. Rotating between visits is
-  /// what stops the same tip greeting the matchmaker every morning.
-  late final List<String> _tipOrder = List<String>.of(MatchmakerTips.tips)
-    ..shuffle();
 
   @override
   void initState() {
@@ -451,14 +438,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // when there is none, which is nearly always.
         block(const HomeEngagementCard()),
 
-        // 6. The tip.
-        block(
-          HomeTipCarousel(
-            tips: _tips(context),
-            userGender: userGender,
-            onAddTip: () => context.push('/profile/tips'),
-          ),
-        ),
+        // The tip moved to the activity page (/activity): one block fewer
+        // between the figures and "הפעולה הבאה שלך".
 
         // 7. Last on the page and open-ended: "הפעולה הבאה שלך" — the
         // progress line, then what to do next, ten more at a time, and under
@@ -486,28 +467,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ],
     );
-  }
-
-  /// The rotation the tip block swipes through: the tips that ship with the app
-  /// first, then every approved community tip.
-  ///
-  /// The built-in ones are unsigned — there is nobody to credit — while a
-  /// community tip carries the name of the matchmaker who wrote it. The order
-  /// is fixed for the life of the screen so a swipe back really does return to
-  /// the previous tip.
-  List<HomeTip> _tips(BuildContext context) {
-    final Gender? gender = context.watch<UserProfileProvider>().gender;
-    final TipsProvider tips = context.watch<TipsProvider>();
-    final List<CommunityTip> community = tips.visibleCommunity;
-    return <HomeTip>[
-      for (final BuiltInTip tip in tips.builtInTips(_tipOrder))
-        if (!tip.hidden) HomeTip(text: tip.text.forGender(gender)),
-      for (final CommunityTip tip in community)
-        HomeTip(
-          text: tip.text,
-          author: tip.authorName.isEmpty ? null : tip.authorName,
-        ),
-    ];
   }
 
   // --- Search -------------------------------------------------------------

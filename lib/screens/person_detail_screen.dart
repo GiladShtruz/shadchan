@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:shadchan/screens/chats_screen.dart';
 import 'package:shadchan/services/card_photo_privacy.dart';
 import 'package:shadchan/widgets/photo_not_shareable_note.dart';
 import 'package:shadchan/widgets/card_status_timestamp.dart';
@@ -481,6 +482,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   );
                 case 'sendToMatchmaker':
                   await NetworkActions.sendCard(context, person);
+                case 'chatSingle':
+                  await ChatLauncher.open(
+                    context,
+                    otherUid: person.cardOwnerUid!,
+                    otherName: person.fullName,
+                    kind: 'single',
+                  );
                 case 'shareInNetwork':
                   if (NetworkSharing.chosen(person)) {
                     NetworkSharing.remove(person);
@@ -551,6 +559,21 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                               person.gender,
                             ),
                           ),
+                        ),
+                      ],
+                    ),
+                  ),
+                // A friend who keeps their own card: one chat with them in
+                // the app, beside WhatsApp.
+                if ((person.cardOwnerUid ?? '').isNotEmpty)
+                  PopupMenuItem<String>(
+                    value: 'chatSingle',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.chat_bubble_outline_rounded),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text('צ\'אט עם ${person.firstName.trim()}'),
                         ),
                       ],
                     ),

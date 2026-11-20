@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadchan/models/card_access.dart';
+import 'package:shadchan/screens/chats_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shadchan/utils/personal_whats_new.dart';
 import 'package:shadchan/utils/enums.dart';
@@ -250,7 +252,30 @@ abstract final class MatchmakerFriendActions {
       friend,
       PersonalHelpersStore.hidden,
     );
+    // A chat with this matchmaker, once there is a card between them (asked
+    // for or given). A couple's shared database is not a person to chat with.
+    final CardAccess? row = friend.row;
+    final bool canChat =
+        row != null &&
+        row.status != CardAccessStatus.blocked &&
+        row.granteeUids.length <= 1;
+    final Widget? chat = canChat
+        ? OutlinedButton.icon(
+            onPressed: () => run(
+              () => ChatLauncher.open(
+                context,
+                otherUid: row.matchmakerUid,
+                otherName: friend.name,
+                kind: 'single',
+              ),
+            ),
+            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+            label: Text('צ\'אט עם ${friend.name.trim().split(' ').first}'),
+          )
+        : null;
     return <Widget>[
+      ?chat,
+      if (chat != null) const SizedBox(height: 8),
       if (friend.state == MatchmakerFriendState.requested) ...<Widget>[
         FilledButton(
           onPressed: () => run(() => PersonalAccessFlow.grant(context, friend)),

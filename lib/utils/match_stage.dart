@@ -227,33 +227,41 @@ abstract final class MatchStaleness {
     return (now ?? DateTime.now()).difference(match.updatedAt) >= after;
   }
 
-  /// "עבר שבוע בלי עדכון – שווה לקדם את הרעיון", or the same in months once it
-  /// has been much longer than a week — a proposal untouched since May should
-  /// not be told it has been a week.
+  /// "עבר שבוע מאז העדכון האחרון – שווה לקדם את הרעיון", or the same in
+  /// months once it has been much longer than a week — a proposal untouched
+  /// since May should not be told it has been a week.
+  ///
+  /// Said as time that passed, never as something missing: "כבר 3 חודשים
+  /// בלי עדכון" read as a reproach.
   static String? nudge(MatchIdea match, {DateTime? now}) {
     if (!isStale(match, now: now)) {
       return null;
     }
     final int days = (now ?? DateTime.now()).difference(match.updatedAt).inDays;
-    if (days >= 60) {
-      return 'עברו ${days ~/ 30} חודשים בלי עדכון – שווה לקדם את הרעיון';
-    }
-    if (days >= 30) {
-      return 'עבר חודש בלי עדכון – שווה לקדם את הרעיון';
-    }
-    if (days >= 14) {
-      return 'עברו ${days ~/ 7} שבועות בלי עדכון – שווה לקדם את הרעיון';
-    }
-    return 'עבר שבוע בלי עדכון – שווה לקדם את הרעיון';
+    return '${sinceLastUpdate(days)} – שווה לקדם את הרעיון';
   }
 
   /// The same, said in a few words for one short line under an action:
-  /// "כבר חודשיים בלי עדכון".
+  /// "עברו חודשיים מאז העדכון האחרון".
   static String? shortNudge(MatchIdea match, {DateTime? now}) {
     if (!isStale(match, now: now)) {
       return null;
     }
-    return 'כבר ${quietFor((now ?? DateTime.now()).difference(match.updatedAt).inDays)} בלי עדכון';
+    return sinceLastUpdate(
+      (now ?? DateTime.now()).difference(match.updatedAt).inDays,
+    );
+  }
+
+  /// "עבר שבוע מאז העדכון האחרון", "עברו 3 חודשים מאז העדכון האחרון",
+  /// "עברה שנה מאז העדכון האחרון".
+  static String sinceLastUpdate(int days) {
+    final String span = quietFor(days);
+    final String verb = span == 'שנה'
+        ? 'עברה'
+        : (span == 'שבוע' || span == 'חודש')
+        ? 'עבר'
+        : 'עברו';
+    return '$verb $span מאז העדכון האחרון';
   }
 
   /// "שבוע", "שבועיים", "3 שבועות", "חודש", "חודשיים", "5 חודשים", "שנה".

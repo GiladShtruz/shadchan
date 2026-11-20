@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:shadchan/screens/couple_workspace_screen.dart';
+import 'package:shadchan/screens/partner_space_screen.dart';
+import 'package:shadchan/services/partner_space.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -114,14 +115,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle: profile.fullName ?? 'עוד לא הוגדר',
                   onTap: () => _editName(profile),
                 ),
+                // The couple space: two personal databases, each open to the
+                // other — never one merged database (the old couple model,
+                // still separable from inside this screen).
                 SettingsRow(
-                  icon: Icons.people_outline,
-                  title: 'יצירת מאגר זוגי / צירוף בן או בת זוג',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const CoupleWorkspaceScreen(),
-                    ),
-                  ),
+                  icon: Icons.favorite_border_rounded,
+                  title: PartnerSpace.isActive
+                      ? 'המרחב הזוגי שלנו'
+                      : 'פתיחת מרחב זוגי',
+                  subtitle: PartnerSpace.isActive
+                      ? 'עם ${PartnerSpace.partnerFirstName}'
+                      : 'לחשוב יחד עם בן/בת הזוג — כל אחד עם המאגר שלו',
+                  onTap: () => context.push(PartnerSpaceScreen.route),
                 ),
                 // Only for an account with both areas: the page a launch
                 // opens on. Asked once by [HomeAreaDialog]; changed here.

@@ -10,8 +10,10 @@ import 'package:shadchan/providers/card_access_provider.dart';
 import 'package:shadchan/providers/inbox_provider.dart';
 import 'package:shadchan/providers/person_repository.dart';
 import 'package:shadchan/screens/friends_with_cards_screen.dart';
+import 'package:shadchan/screens/person_detail_screen.dart';
 import 'package:shadchan/utils/app_colors.dart';
 import 'package:shadchan/utils/person_navigation.dart';
+import 'package:shadchan/widgets/person_avatar.dart';
 
 T? _maybeWatch<T>(BuildContext context) {
   try {
@@ -32,6 +34,11 @@ class CardFriendSlide {
   final FriendWithCard friend;
   final Person person;
 
+  /// The photo drawn on the card: the first one actually on this device. A
+  /// friend whose photos have not arrived yet is not shown at all — a card
+  /// with an empty circle is exactly what this row must never draw.
+  String? get photoPath => PersonAvatar.firstExistingPhoto(person);
+
   /// The latest meaningful thing that happened to this card: the owner
   /// changed details or a photo, their status moved, or they gave (or
   /// widened) access. The carousel is ordered by it, newest first.
@@ -41,9 +48,11 @@ class CardFriendSlide {
 /// "החברים שלך בשדכן" — on בית, under the two add buttons.
 ///
 /// **Only friends this matchmaker can actually open:** access approved, a
-/// card with text, and a photo. Drawn as a horizontal carousel of large
-/// portrait photos, newest activity first — a card that changed today, or a
-/// friend who has just said yes, comes to the front by itself.
+/// card with text, and a photo that is really on this device. Drawn the way
+/// Instagram draws "הצעות בשבילך": a continuous horizontal row of small cards,
+/// each a round photo, the full name and one "התאמות" button — newest
+/// activity first, so a card that changed today or a friend who has just
+/// said yes comes to the front by itself.
 ///
 /// Under the carousel, one line to everybody else who keeps a card:
 /// "עוד X חברים מנהלים כרטיס אישי".
@@ -103,7 +112,14 @@ class HomeCardFriendsSection extends StatelessWidget {
     return slides;
   }
 
+  static Map<String, DateTime>? _latestMemo;
+  static int _latestRevision = -1;
+
+  /// Walked once per change of the database, not on every rebuild of the
+  /// home page.
   static Map<String, DateTime> _latestEvents(PersonRepository people) {
+    final Map<String, DateTime>? memo = _latestMemo;
+    if (memo != null && _latestRevision == people.revision) return memo;
     final Map<String, DateTime> latest = <String, DateTime>{};
     for (final PersonEvent e in people.getAllEvents()) {
       if (!_activity.contains(e.type)) continue;
@@ -112,7 +128,8 @@ class HomeCardFriendsSection extends StatelessWidget {
         latest[e.personId] = e.createdAt;
       }
     }
-    return latest;
+    _latestRevision = people.revision;
+    return _latestMemo = latest;
   }
 
   @override
@@ -134,7 +151,7 @@ class HomeCardFriendsSection extends StatelessWidget {
       all,
       latestEventByPerson: _latestEvents(people),
       rowOf: access.accessTo,
-    );
+    ).where((CardFriendSlide s) => s.photoPath != null).toList();
     final List<CardFriendSlide> shown = slides.take(maxSlides).toList();
     final int more = all.length - shown.length;
     final ThemeData theme = Theme.of(context);
@@ -163,8 +180,7 @@ class _Carousel extends StatelessWidget {
 
   final List<CardFriendSlide> slides;
 
-  static const double _width = 132;
-  static const double _height = 176;
+  static const double _width = 128;
 
   @override
   Widget build(BuildContext context) {
@@ -172,20 +188,20 @@ class _Carousel extends StatelessWidget {
       context,
     ).scale(1).clamp(1, 1.4);
     return SizedBox(
-      // The name under the photo grows with the system font; the photo does
-      // not.
-      height: _height + 26 * scale,
+      // The photo is fixed; the name and the button grow with the font.
+      height: 92 + 84 * scale,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
+        // Built as it scrolls, each card on its own layer: a long row of
+        // photos must not cost a frame.
         itemCount: slides.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (BuildContext context, int index) => RepaintBoundary(
           child: _Slide(
             key: ValueKey<String>(slides[index].person.id),
             slide: slides[index],
             width: _width,
-            height: _height,
           ),
         ),
       ),
@@ -193,29 +209,24 @@ class _Carousel extends StatelessWidget {
   }
 }
 
-/// One friend: a large rounded photo, a soft shade at its foot, the first
-/// name over the shade and the full name under the photo.
+/// One friend, as a small card: a round photo, the full name under it, and
+/// "התאמות" at the foot. The card opens the friend's profile; the button
+/// opens their matches.
 class _Slide extends StatelessWidget {
-  const _Slide({
-    super.key,
-    required this.slide,
-    required this.width,
-    required this.height,
-  });
+  const _Slide({super.key, required this.slide, required this.width});
 
   final CardFriendSlide slide;
   final double width;
-  final double height;
+
+  static const double _photo = 76;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool dark = theme.brightness == Brightness.dark;
     final Person person = slide.person;
-    final String path = person.photosPaths.firstWhere(
-      (String p) => p.trim().isNotEmpty,
-    );
-    final double ratio = MediaQuery.devicePixelRatioOf(context);
+    final String path = slide.photoPath!;
+    final int cache = (_photo * MediaQuery.devicePixelRatioOf(context)).round();
     final Color accent = AppColors.genderAccent(person.gender, dark: dark);
     final bool fresh =
         DateTime.now().difference(slide.lastActivityAt) <
@@ -223,92 +234,62 @@ class _Slide extends StatelessWidget {
 
     return SizedBox(
       width: width,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Material(
-            elevation: 2,
-            shadowColor: Colors.black.withValues(alpha: 0.25),
-            borderRadius: BorderRadius.circular(18),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () => openPersonProfile(context, person.id),
-              child: SizedBox(
-                height: height,
-                child: Stack(
-                  fit: StackFit.expand,
+      child: Material(
+        color: theme.colorScheme.surface,
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => openPersonProfile(context, person.id),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+            child: Column(
+              children: <Widget>[
+                Stack(
+                  clipBehavior: Clip.none,
                   children: <Widget>[
-                    Image(
-                      // Decoded at the size it is drawn — a full camera photo
-                      // per slide is what makes a carousel stutter.
-                      image: ResizeImage(
-                        FileImage(File(path)),
-                        width: (width * ratio).round(),
-                        policy: ResizeImagePolicy.fit,
-                      ),
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      filterQuality: FilterQuality.medium,
-                      errorBuilder: (_, _, _) => ColoredBox(
-                        color: AppColors.genderSurface(
-                          person.gender,
-                          dark: dark,
-                        ),
-                        child: Icon(
-                          Icons.person_outline_rounded,
-                          size: 48,
-                          color: accent,
-                        ),
-                      ),
-                    ),
-                    // A soft shade at the foot so the name reads on any photo.
-                    const DecoratedBox(
+                    Container(
+                      width: _photo,
+                      height: _photo,
+                      padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          stops: <double>[0.55, 1],
-                          colors: <Color>[
-                            Colors.transparent,
-                            Color(0x99000000),
-                          ],
+                        shape: BoxShape.circle,
+                        border: Border.all(color: accent, width: 2),
+                      ),
+                      child: ClipOval(
+                        child: Image(
+                          // Decoded at the size it is drawn — a full camera
+                          // photo per card is what makes a row stutter.
+                          image: ResizeImage(
+                            FileImage(File(path)),
+                            width: cache,
+                            height: cache,
+                            policy: ResizeImagePolicy.fit,
+                          ),
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => ColoredBox(
+                            color: AppColors.genderSurface(
+                              person.gender,
+                              dark: dark,
+                            ),
+                            child: Icon(
+                              Icons.person_outline_rounded,
+                              color: accent,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                    PositionedDirectional(
-                      start: 10,
-                      end: 10,
-                      bottom: 9,
-                      child: Text(
-                        person.firstName.trim().isEmpty
-                            ? person.fullName
-                            : person.firstName.trim(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          shadows: const <Shadow>[
-                            Shadow(color: Color(0x66000000), blurRadius: 4),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // A thin line in the friend's own colour along the foot.
-                    PositionedDirectional(
-                      start: 0,
-                      end: 0,
-                      bottom: 0,
-                      child: Container(height: 3, color: accent),
                     ),
                     if (fresh)
                       PositionedDirectional(
-                        top: 8,
-                        start: 8,
+                        top: -4,
+                        end: -10,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
+                            horizontal: 6,
+                            vertical: 1,
                           ),
                           decoration: BoxDecoration(
                             color: dark
@@ -327,20 +308,47 @@ class _Slide extends StatelessWidget {
                       ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      person.fullName.trim(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  height: 32,
+                  child: FilledButton(
+                    onPressed: () => openSuggestionsFor(context, person.id),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      backgroundColor: dark
+                          ? AppColors.primaryDarkDm
+                          : AppColors.primaryDark,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    child: const FittedBox(child: Text('התאמות')),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            person.fullName.trim(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

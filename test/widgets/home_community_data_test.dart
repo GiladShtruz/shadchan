@@ -110,7 +110,10 @@ void main() {
       current: 40,
       record: 120,
     );
-    expect(seen.headline, 'שבוע שעבר הגענו ל־120 · השבוע שוברים שיא: 121');
+    expect(seen.headline, 'בשבוע שעבר הגענו ל־120, השבוע מגיעים ל־121');
+    // The bar is measured against the same figure the headline names.
+    expect(seen.progressLabel, '40 מתוך 121 רעיונות');
+    expect(seen.progress, closeTo(40 / 121, 0.001));
     expect(seen.lastWeekLabel, isNull);
     const CommunityChallenge titled = CommunityChallenge(
       metric: ChallengeMetric.ideas,

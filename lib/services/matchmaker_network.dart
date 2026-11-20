@@ -311,11 +311,22 @@ abstract final class MatchmakerNetwork {
   /// A photo of a shared card, fetched once through the `sharedCardPhoto`
   /// callable and kept in the app's own cache folder. Never a download URL.
   static Future<File?> photo(String ownerUid, String path) {
-    return _photos.putIfAbsent(
-      '$ownerUid|$path',
-      () => _fetchPhoto(ownerUid, path),
-    );
+    final String key = '$ownerUid|$path';
+    return _photos.putIfAbsent(key, () async {
+      final File? file = await _fetchPhoto(ownerUid, path);
+      if (file != null) _photoFiles[key] = file;
+      return file;
+    });
   }
+
+  /// Photos already on the device, by key — so a list drawn again shows the
+  /// face at once instead of the default avatar for a frame (a flicker on
+  /// every scroll of a long list).
+  static final Map<String, File> _photoFiles = <String, File>{};
+
+  /// The photo when it has already been fetched, else null.
+  static File? photoNow(String ownerUid, String path) =>
+      _photoFiles['$ownerUid|$path'];
 
   static Future<File?> _fetchPhoto(String ownerUid, String path) async {
     try {

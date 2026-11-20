@@ -7,6 +7,7 @@ void main() {
     test('the friends there are and how many to the next target', () {
       final HomeProgress p = HomeProgress.milestone(37);
       expect(p.line, 'עוד 13 חברים ליעד הבא – 50');
+      expect(p.fractionLabel, '37 מתוך 50 חברים');
       expect(p.progress, greaterThan(0));
       expect(p.progress, lessThan(1));
     });

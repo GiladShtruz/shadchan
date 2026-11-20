@@ -50,12 +50,24 @@ class SharedPhoto extends StatelessWidget {
     final String? p = path;
     final Widget fallback = PersonAvatar(person: person, radius: radius);
     if (p == null) return fallback;
+    final int decode = (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+        .ceil();
     return FutureBuilder<File?>(
       future: MatchmakerNetwork.photo(ownerUid, p),
+      initialData: MatchmakerNetwork.photoNow(ownerUid, p),
       builder: (BuildContext context, AsyncSnapshot<File?> snap) {
         final File? file = snap.data;
         if (file == null) return fallback;
-        return CircleAvatar(radius: radius, backgroundImage: FileImage(file));
+        return CircleAvatar(
+          radius: radius,
+          // Decoded at the size it is drawn.
+          backgroundImage: ResizeImage(
+            FileImage(file),
+            width: decode,
+            height: decode,
+            policy: ResizeImagePolicy.fit,
+          ),
+        );
       },
     );
   }
@@ -147,29 +159,37 @@ abstract final class NetworkActions {
     String? message,
   }) async {
     if (!OfflineGuard.allow(context)) return;
-    final String? id = await ChatService.openDirect(
-      otherUid: otherUid,
-      myName: _myName(context),
-      theirName: otherName,
-    );
+    final String? me = await ChatService.me();
     if (!context.mounted) return;
-    if (id == null) {
+    if (me == null || otherUid.isEmpty || otherUid == me) {
       AppNotice.show(
         context,
-        'לא הצלחנו לפתוח את הצ\'אט. אפשר לשוחח רק עם שדכנים מחוברים.',
+        'לא הצלחנו לפתוח את הצ\'אט. צריך להיות מחובר/ת לחשבון.',
         isError: true,
       );
       return;
     }
+    final String id = ChatService.directId(me, otherUid);
     if (message != null && ref != null) {
       // Sent at once: the card or idea is already in the conversation when
-      // it opens.
-      await ChatService.send(id, message, ref: ref);
+      // it opens. This first line also creates the chat when there was none.
+      await ChatService.send(
+        id,
+        message,
+        ref: ref,
+        myName: _myName(context),
+        theirName: otherName,
+      );
       if (!context.mounted) return;
-      await context.push('/chats/$id');
+      await context.push(
+        ChatService.routeTo(me: me, otherUid: otherUid, theirName: otherName),
+      );
       return;
     }
-    await context.push('/chats/$id', extra: ref);
+    await context.push(
+      ChatService.routeTo(me: me, otherUid: otherUid, theirName: otherName),
+      extra: ref,
+    );
   }
 
   /// "הצעת רעיון": picks a friend from this matchmaker's own database for
@@ -244,6 +264,8 @@ abstract final class NetworkActions {
         chatId,
         note.trim().isEmpty ? 'הצעתי רעיון: $pair' : note.trim(),
         ref: ChatRef(kind: 'proposal', id: id, label: pair),
+        myName: _myName(context),
+        theirName: target.ownerName,
       );
     }
     if (!context.mounted) return id;

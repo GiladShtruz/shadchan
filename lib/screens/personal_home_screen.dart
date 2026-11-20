@@ -340,6 +340,12 @@ class _PersonalFooter extends StatelessWidget {
           ),
         ),
         FooterLink(
+          icon: icon(Icons.chat_bubble_outline_rounded),
+          label: 'צ\'אטים',
+          theme: theme,
+          onTap: () => context.push('/chats'),
+        ),
+        FooterLink(
           icon: icon(Icons.lock_outline_rounded),
           label: 'ניהול ופרטיות',
           theme: theme,

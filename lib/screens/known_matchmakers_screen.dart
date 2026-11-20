@@ -901,7 +901,18 @@ class _ConnectPanel extends StatelessWidget {
               icon: const Icon(Icons.handshake_outlined),
               label: const Text('להתחבר'),
             ),
-          const SizedBox(height: 8),
+          // Saved in each other's phones is enough to talk — a connection is
+          // what opens cards and ideas between the two.
+          TextButton.icon(
+            onPressed: () => NetworkActions.chatWith(
+              context,
+              otherUid: m.uid,
+              otherName: name,
+            ),
+            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+            label: const Text('שליחת הודעה בצ\'אט'),
+          ),
+          const SizedBox(height: 4),
           Text(
             '$name יקבל/תקבל בקשה ויוכל/תוכל לאשר.',
             textAlign: TextAlign.center,

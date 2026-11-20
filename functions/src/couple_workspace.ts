@@ -483,50 +483,41 @@ async function mergeCouple(
     // hold: a merge that fails after this point is completed, never undone.
     await mark(code, 'grants');
     failedAt = 'grants';
-    // Individual consent never silently expands to a spouse. Ask again as the named pair.
+    // **Every grant stays exactly as it was** (2026-11-20). This step used
+    // to revoke every approval both spouses held and ask the singles again in
+    // the pair's name — and nothing ever gave the approvals back, which is
+    // how matchmakers lost access to cards they had been given. A single's
+    // grant to a matchmaker now also covers that matchmaker's partner, view
+    // only (see the couple space); the pair's row is written approved
+    // wherever either spouse already had the single's yes.
     const owners = new Map<string, any>();
     for (const member of members) {
       const grants = await db
         .collection('cardAccess')
         .where('matchmakerUid', '==', member)
+        .where('status', '==', 'approved')
         .get();
-      for (const grant of grants.docs) {
-        if (
-          grant.get('status') === 'approved' ||
-          grant.get('status') === 'pending'
-        )
+      for (const grant of grants.docs)
+        if (grant.get('cardGranted') !== false)
           owners.set(grant.get('ownerUid'), grant.data());
-        if (grant.get('status') === 'blocked') continue;
-        await grant.ref.update({
-          status: 'revoked',
-          cardGranted: false,
-          lookingGranted: false,
-          cardRequested: false, lookingRequested: false,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
     }
     for (const [owner, old] of owners) {
-      if (
-        (await db.doc(`cardAccess/${owner}_${primary}`).get()).get('status') ===
-        'blocked'
-      )
-        continue;
-      await db
-        .doc(`cardAccess/${owner}_${primary}`)
-        .set({
-          ...old,
-          ownerUid: owner,
-          matchmakerUid: primary,
-          matchmakerName: name,
-          granteeUids: members,
-          status: 'pending',
-          requestedBy: 'matchmaker',
-          cardGranted: false,
-          lookingGranted: false,
-          cardRequested: false, lookingRequested: false,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
+      const pairRef = db.doc(`cardAccess/${owner}_${primary}`);
+      const pairStatus = (await pairRef.get()).get('status');
+      if (pairStatus === 'blocked' || pairStatus === 'declined') continue;
+      await pairRef.set({
+        ...old,
+        ownerUid: owner,
+        matchmakerUid: primary,
+        matchmakerName: name,
+        granteeUids: members,
+        status: 'approved',
+        cardGranted: true,
+        lookingGranted: false,
+        cardRequested: false,
+        lookingRequested: false,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     }
     // A paired database has one public score, never two.
     await db.doc(`communityMembers/${uid}`).delete();

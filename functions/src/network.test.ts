@@ -95,3 +95,21 @@ test('network notices sit under their own switches', () => {
   assert.equal(categoryOf('chatMessage'), 'chats');
   assert.equal(categoryOf('shareOnwardRequest'), 'access');
 });
+
+test('a partner photo reaches the partner only while the couple space is active', () => {
+  const base = { ownerUid: 'a', path: 'partnerCards/a/p1/x.jpg', inProposal: false, connection: undefined };
+  assert.equal(validSharedPhotoPath('a', 'partnerCards/a/p1/x.jpg'), true);
+  assert.equal(
+    mayReadSharedPhoto({ ...base, uid: 'b', partnership: { status: 'active', uids: ['a', 'b'] } }),
+    true,
+  );
+  assert.equal(
+    mayReadSharedPhoto({ ...base, uid: 'b', partnership: { status: 'ended', uids: ['a', 'b'] } }),
+    false,
+  );
+  // A connection between matchmakers never opens a partner's database.
+  assert.equal(
+    mayReadSharedPhoto({ ...base, uid: 'c', connection: { status: 'approved', uids: ['a', 'c'] } }),
+    false,
+  );
+});
